@@ -1,4 +1,3 @@
-import { validDeliveryAddress } from "./delivery-requirements";
 import { useEffect, useRef, useState } from "react";
 import { sameValue } from "./shared/draft";
 import { confirmDiscardDraft } from "./shared/editor-flow";
@@ -31,6 +30,25 @@ export function CorrectionPanel({
     ctx = shipmentContext(state, ship),
     [after, setAfter] = useState<Recipient>(() => structuredClone(ctx.recipient)),
     [search, setSearch] = useState<string>();
+  const addressRequest = useRef(0);
+  const nativeAddress = (value: string) => {
+    const request = ++addressRequest.current;
+    void businessCoreCall<{
+      addressStatus: "COMPLETE" | "INCOMPLETE";
+      addressParts: Recipient["addressParts"];
+    }>("rules", "assess_delivery_address", { value })
+      .then(({ addressStatus, addressParts }) => {
+        if (request !== addressRequest.current) return;
+        setAfter((previous) => {
+          if (previous.address !== value) return previous;
+          return { ...previous, addressStatus, addressParts };
+        });
+      }).catch((error) => {
+        if (request === addressRequest.current)
+          onNotice("Rust 정정 주소 검증 실패: " +
+            (error instanceof Error ? error.message : String(error)), "error");
+      });
+  };
   const changed = !sameValue(after, ctx.recipient);
   const closeDraft = () => void confirmDiscardDraft("공장 전달 후 정정 요청", changed, onClose, busy);
   const requests = state.workflow!.changeRequests.filter((r) => r.shipmentId === sid);
@@ -122,19 +140,18 @@ export function CorrectionPanel({
               >
                 <input
                   value={after[field]}
-                  onChange={(e) =>
-                    setAfter({
-                      ...after,
-                      [field]: e.target.value,
-                      ...(field === "address"
-                        ? {
-                            addressStatus: validDeliveryAddress(e.target.value)
-                              ? ("COMPLETE" as const)
-                              : ("INCOMPLETE" as const),
-                          }
-                        : {}),
-                    })
-                  }
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
+                    setAfter((previous) => {
+                      const next = { ...previous, [field]: value };
+                      if (field === "address") {
+                        next.addressStatus = "INCOMPLETE";
+                        delete next.addressParts;
+                      }
+                      return next;
+                    });
+                    if (field === "address") nativeAddress(value);
+                  }}
                 />
               </Field>
             ))}
