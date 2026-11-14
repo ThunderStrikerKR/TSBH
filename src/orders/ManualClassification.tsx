@@ -216,6 +216,7 @@ function ManualClassificationEditor({
     const previousModel = model;
     void businessCoreCall<ManualRustDraft>("rules", "apply_manual_classification", {
       action: "set_manual_product", model, cell, value, state, order, product,
+      candidateIds: Array.from({ length: 20 }, () => crypto.randomUUID()),
       assignmentOrder: Object.keys(model.assignments),
     }).then((result) => {
       if (latestInputs.current.model !== previousModel ||
@@ -290,6 +291,7 @@ function ManualClassificationEditor({
     void businessCoreCall<ManualRustDraft>("rules", "apply_manual_classification", {
       action: assigned ? "release_manual_block" : "assign_manual_block",
       model, id, cell, clear: !!assigned, state, order,
+      candidateIds: Array.from({ length: 20 }, () => crypto.randomUUID()),
       assignmentOrder: Object.keys(model.assignments),
     }).then((result) => {
       if (latestInputs.current.model !== previousModel ||

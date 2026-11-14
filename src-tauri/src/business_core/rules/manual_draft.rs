@@ -155,6 +155,31 @@ fn set_item(payload:&Value,value:&str)->Result<Value,String>{
             "unitPrice":null,"origin":"FACTORY","defaulted":false,
             "issues":[],"url":"","quantityConfirmed":false});
     }
+    // Preserve the original parser.ts distinction between the raw line and
+    // a leading/model-code label, even when no catalog item was resolved.
+    if str_field(field(&item,"match"),"kind")=="UNKNOWN" {
+        let model=regex::Regex::new(r"(?i)(?:BD\s*)?\d{3}[A-Za-z0-9-]*")
+            .map_err(|e|e.to_string())?.find(value).map(|m|m.as_str().to_string());
+        if let Some(code)=model {
+            set(&mut item,"name",json!(code))?;
+            set(&mut item["match"],"term",json!(code))?;
+        }else{
+            let re=regex::Regex::new(r"(?i)\s*(?:\d+|세|삼)\s*(?:개|대|ea).*")
+                .map_err(|e|e.to_string())?;
+            let name=re.replace(value,"").trim().to_string();
+            set(&mut item,"name",json!(if name.is_empty(){"상품 확인 필요".to_string()}else{name}))?;
+        }
+    }
+    // TS parseOrder allocates opaque UUIDs for candidate evidence. React
+    // provides UUIDs, Rust owns candidate decisions and the final ordering.
+    if let Some(candidates)=item.get_mut("productCandidates").and_then(Value::as_array_mut){
+        let ids=rows(field(payload,"candidateIds"));
+        for (i,candidate) in candidates.iter_mut().enumerate(){
+            if let Some(id)=ids.get(i).and_then(Value::as_str){
+                set(candidate,"id",json!(id))?;
+            }
+        }
+    }
     set(&mut item,"id",json!(iid))?;
     set(&mut item,"raw",json!(value))?;
     set(&mut item,"quantity",Value::Null)?;

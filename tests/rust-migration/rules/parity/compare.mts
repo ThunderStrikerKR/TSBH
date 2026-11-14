@@ -3746,21 +3746,26 @@ manualDraftCase("assign a source quantity","assign_manual_block",
    {recipientId:"r1",itemId:"mi1",field:"quantity"},baseState as any,manualBaselineOrder));
 
 
-// Free-text manual product cells must not regress to a different parser.
-// Use the exact same seeded product and client for the original TS oracle.
+// The original parser consumes random UUIDs for evidence candidates.
+// Supply a deterministic stream to the TS oracle, and send its generated
+// candidate UUIDs as injected input to native Rust. Compare every other field.
 const manualTextState:any=copy(baseState);
 manualTextState.products=[{...copy(product),defaultColor:"Black",code:"709"}];
 manualTextState.aliases=[];
 manualTextState.categories=[];
 manualTextState.brands=[];
 for(const raw of ["가상 상품", "709 2개", "미등록 상품"]) {
-  manualDraftCase("free-text product "+raw,"set_manual_product",{
-    model:manualDraft,
+  const uuidList=Array.from({length:40},(_,i)=>
+    "00000000-0000-4000-8000-"+String(i).padStart(12,"0"));
+  const tsModel=deterministicIds(uuidList,()=>
+    setManualValue(manualDraft,{recipientId:"r1",itemId:"mi1",field:"product"},
+      raw,manualTextState,manualBaselineOrder));
+  const candidateIds=tsModel.rows[0].items[0].productCandidates?.map((c:any)=>c.id)??[];
+  add("manual draft: free-text product "+raw,"apply_manual_classification",{
+    action:"set_manual_product",model:manualDraft,
     cell:{recipientId:"r1",itemId:"mi1",field:"product"},
-    value:raw,state:manualTextState,order:manualBaselineOrder,
-  },()=>setManualValue(manualDraft,
-    {recipientId:"r1",itemId:"mi1",field:"product"},
-    raw,manualTextState,manualBaselineOrder));
+    value:raw,state:manualTextState,order:manualBaselineOrder,candidateIds,
+  },()=>({model:tsModel,assignmentOrder:Object.keys(tsModel.assignments)}));
 }
 
 // Native postal address parsing and recipient eligibility from the ORIGINAL
