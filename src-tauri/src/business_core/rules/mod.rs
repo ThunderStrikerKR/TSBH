@@ -13,6 +13,7 @@ mod correction_rules;
 mod reception_operations;
 mod kakao_title;
 mod manual_classification;
+mod manual_draft;
 mod message_template_validation;
 mod catalog_item;
 mod retail_operations;
@@ -101,7 +102,11 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "apply_raw_correction" => raw_corrections::apply(&payload),
         "apply_retail_action" => retail_operations::apply(&payload),
         "apply_reception_action" => reception_operations::apply(&payload),
-        "apply_manual_classification" => manual_classification::apply(&payload),
+        "apply_manual_classification" => match str_field(&payload, "action") {
+            "initial_manual" | "set_manual_product" | "assign_manual_block" | "release_manual_block" =>
+                manual_draft::execute(&payload),
+            _ => manual_classification::apply(&payload)
+        },
         "validate_automatic_templates" => message_template_validation::validate(&payload),
         "validate_provisional_product_notices" => message_template_validation::validate_provisional(&payload),
         "create_catalog_item" => catalog_item::make(&payload),
