@@ -1,6 +1,8 @@
 //! Synthetic fixtures only. Run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml
 #[path = "../../../../src-tauri/src/business_core/rules/mod.rs"]
 pub mod rules;
+#[path = "../../../../src-tauri/src/business_core/recognition/mod.rs"]
+pub mod recognition;
 
 #[cfg(test)]
 mod regression {

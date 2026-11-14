@@ -3,6 +3,8 @@
 //! tests/rust-migration/rules/Cargo.toml --bin json_rules
 #[path = "../../../../../src-tauri/src/business_core/rules/mod.rs"]
 mod rules;
+#[path = "../../../../../src-tauri/src/business_core/recognition/mod.rs"]
+mod recognition;
 
 use std::io::{self, BufRead};
 

@@ -142,7 +142,7 @@ fn set_item(payload:&Value,value:&str)->Result<Value,String>{
             str_field(c,"id")==str_field(req(payload,"order").unwrap_or(&Value::Null),"clientId"))
             .cloned().unwrap_or_else(||json!({"id":"","tier":"wholesale",
                 "payment":"PREPAID","overrides":{},"shippingFeeExcluded":false}));
-        let analyzed=crate::business_core::recognition::execute("analyze_order",
+        let analyzed=super::super::recognition::execute("analyze_order",
             json!({"raw":value,"client":client,"state":state}))?;
         let items=rows(field(&analyzed,"recipients")).iter()
             .flat_map(|r|rows(field(r,"items")).iter()).collect::<Vec<_>>();

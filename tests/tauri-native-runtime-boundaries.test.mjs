@@ -10,7 +10,9 @@ test("manual final application is Rust-owned and failure preserves draft", () =>
   assert.match(view, /latestInputs\.current\.order !== submittedOrder/);
   assert.match(view, /latestInputs\.current\.model !== submittedModel/);
   assert.doesNotMatch(view, /\bapplyManual\(/);
-  assert.match(router, /"apply_manual_classification" => manual_classification::apply/);
+  assert.match(router, /"apply_manual_classification" => match str_field/);
+  assert.match(router, /manual_draft::execute/);
+  assert.match(router, /_ => manual_classification::apply/);
   const parity = read("tests/rust-migration/rules/parity/compare.mts");
   assert.match(parity, /manual classification: /);
   assert.match(parity, /order:applyManual\(o,m\)/);
