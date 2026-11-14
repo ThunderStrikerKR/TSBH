@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CorrectionPanel } from "./CorrectionPanel";
 import { ActualFreightField } from "./ActualFreightField";
 import { contactProblem } from "./contact";
-import { deliveryRequirements, validDeliveryAddress } from "./delivery-requirements";
+import { deliveryRequirements } from "./delivery-requirements";
 import { IssueResolver } from "./IssueResolver";
 import { LinkContext, Linked } from "./LinkedText";
 import { OrderItemEditor } from "./OrderItemEditor";
@@ -16,6 +16,7 @@ import { internalModel } from "./matching";
 import { useOrderDesk, type OrderDeskProps } from "./orders/useOrderDesk";
 import { nativeApproveMissingQuantity, nativeBillingSnapshot, nativeClientChangeIssue, nativeConfirmProposedProduct, nativeRepriceEditedOrder, nativeReconcileWorkflow } from "./orders/native-rules";
 import { businessCoreCall } from "./tauri-bridge";
+import type { Order } from "./types";
 import { Field, clone } from "./ui";
 export function OrderDesk(props: OrderDeskProps) {
   const [changeRequest, setChangeRequest] = useState<string>();
