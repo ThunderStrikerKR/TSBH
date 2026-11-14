@@ -3750,6 +3750,9 @@ manualDraftCase("assign a source quantity","assign_manual_block",
 // Use the exact same seeded product and client for the original TS oracle.
 const manualTextState:any=copy(baseState);
 manualTextState.products=[{...copy(product),defaultColor:"Black",code:"709"}];
+manualTextState.aliases=[];
+manualTextState.categories=[];
+manualTextState.brands=[];
 for(const raw of ["가상 상품", "709 2개", "미등록 상품"]) {
   manualDraftCase("free-text product "+raw,"set_manual_product",{
     model:manualDraft,
