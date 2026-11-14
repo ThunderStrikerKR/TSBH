@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CorrectionPanel } from "./CorrectionPanel";
 import { ActualFreightField } from "./ActualFreightField";
 import { contactProblem } from "./contact";
-import { deliveryRequirements } from "./delivery-requirements";
+import { useNativeDeliveryRequirements } from "./useNativeDeliveryRequirements";
 import { IssueResolver } from "./IssueResolver";
 import { LinkContext, Linked } from "./LinkedText";
 import { OrderItemEditor } from "./OrderItemEditor";
@@ -65,6 +65,7 @@ export function OrderDesk(props: OrderDeskProps) {
     chooseProduct,
     itemEditing,
   } = useOrderDesk(props);
+  const delivery = useNativeDeliveryRequirements(draft.recipients, draft.receptionVersion !== 1);
   const addressRequests = useRef<Record<string, number>>({});
   const addressMounted = useRef(true);
   useEffect(() => {
@@ -367,7 +368,7 @@ export function OrderDesk(props: OrderDeskProps) {
                               <Field label="이름">
                                 <input
                                   aria-invalid={
-                                    !deliveryRequirements(r, draft.receptionVersion !== 1).name
+                                    !delivery.byId[r.id]?.name
                                   }
                                   value={r.name}
                                   disabled={exported}
@@ -390,7 +391,7 @@ export function OrderDesk(props: OrderDeskProps) {
                               <Field label="주소">
                                 <input
                                   aria-invalid={
-                                    !deliveryRequirements(r, draft.receptionVersion !== 1).address
+                                    !delivery.byId[r.id]?.address
                                   }
                                   value={r.address}
                                   disabled={exported}
@@ -418,7 +419,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                 <Field label="휴대폰">
                                   <input
                                     aria-invalid={
-                                      !deliveryRequirements(r, draft.receptionVersion !== 1).contact
+                                      !delivery.byId[r.id]?.contact
                                     }
                                     value={r.mobile}
                                     disabled={exported}
@@ -435,7 +436,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                       )
                                     }
                                   />
-                                  {!deliveryRequirements(r, draft.receptionVersion !== 1).contact &&
+                                  {!delivery.byId[r.id]?.contact &&
                                     r.mobile && (
                                       <small className="form-error">
                                         {contactProblem(r.mobile, true)}
@@ -447,7 +448,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                 <Field label="전화">
                                   <input
                                     aria-invalid={
-                                      !deliveryRequirements(r, draft.receptionVersion !== 1).contact
+                                      !delivery.byId[r.id]?.contact
                                     }
                                     value={r.phone}
                                     disabled={exported}
@@ -464,7 +465,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                       )
                                     }
                                   />
-                                  {!deliveryRequirements(r, draft.receptionVersion !== 1).contact &&
+                                  {!delivery.byId[r.id]?.contact &&
                                     r.phone && (
                                       <small className="form-error">
                                         {contactProblem(r.phone, false)}
