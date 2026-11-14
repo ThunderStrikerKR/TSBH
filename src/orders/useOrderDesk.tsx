@@ -19,7 +19,6 @@ import { registeredProducts, sortProducts } from "../product-models";
 import type { NoticeSink } from "../shared/notices";
 import type { Item, Order, Product, State } from "../types";
 import { clone } from "../ui";
-import { pendingIssue } from "../validation";
 import { groupShipments } from "../workflow";
 type SaveMode = "save" | "notify" | "pay" | "queue" | "wait";
 export type OrderDeskProps = {
@@ -480,10 +479,24 @@ export function useOrderDesk({
     });
   const question = (b: StaffBlock) => {
     if (!b.issueId) return;
-    onChange((previous) => ({
-      ...pendingIssue(previous, b.issueId!, state.settings.operatorName || "직원"),
-      requestedIssueIds: [...new Set([...(previous.requestedIssueIds ?? []), b.issueId!])],
-    }));
+    const sourceDraft = draft;
+    const issueId = b.issueId;
+    void businessCoreCall<{ order: Order }>("rules", "apply_issue_action", {
+      action: "pending_issue", order: sourceDraft, issueId,
+      actor: state.settings.operatorName || "직원", now: new Date().toISOString(),
+    }).then(({ order: next }) => {
+      if (latestRulesInput.current.draft !== sourceDraft) return;
+      onChange((previous) => {
+        if (previous !== sourceDraft) return previous;
+        return {
+          ...next,
+          requestedIssueIds: [...new Set([...(previous.requestedIssueIds ?? []), issueId])],
+        };
+      });
+    }).catch((error) => onNotice(
+      "Rust 주문 확인 요청 처리 실패: " +
+      (error instanceof Error ? error.message : String(error)), "error",
+    ));
   };
   const shownRecipient =
     activeShipment?.recipientId ??
