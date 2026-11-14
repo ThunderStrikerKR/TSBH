@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CorrectionPanel } from "./CorrectionPanel";
 import { ActualFreightField } from "./ActualFreightField";
 import { contactProblem } from "./contact";
-import { deliveryRequirements, validDeliveryAddress } from "./delivery-requirements";
+import { useNativeDeliveryRequirements } from "./useNativeDeliveryRequirements";
 import { IssueResolver } from "./IssueResolver";
 import { LinkContext, Linked } from "./LinkedText";
 import { OrderItemEditor } from "./OrderItemEditor";
@@ -16,7 +16,7 @@ import { internalModel } from "./matching";
 import { useOrderDesk, type OrderDeskProps } from "./orders/useOrderDesk";
 import { nativeApproveMissingQuantity, nativeBillingSnapshot, nativeClientChangeIssue, nativeConfirmProposedProduct, nativeRepriceEditedOrder, nativeReconcileWorkflow } from "./orders/native-rules";
 import { businessCoreCall } from "./tauri-bridge";
-import { addressParts } from "./parser";
+import type { Order } from "./types";
 import { Field, clone } from "./ui";
 export function OrderDesk(props: OrderDeskProps) {
   const [changeRequest, setChangeRequest] = useState<string>();
@@ -65,6 +65,41 @@ export function OrderDesk(props: OrderDeskProps) {
     chooseProduct,
     itemEditing,
   } = useOrderDesk(props);
+  const delivery = useNativeDeliveryRequirements(draft.recipients, draft.receptionVersion !== 1);
+  const addressRequests = useRef<Record<string, number>>({});
+  const addressMounted = useRef(true);
+  useEffect(() => {
+    addressMounted.current = true;
+    return () => { addressMounted.current = false; };
+  }, []);
+  const applyNativeAddress = (recipientId: string, value: string) => {
+    const token = (addressRequests.current[recipientId] ?? 0) + 1;
+    addressRequests.current[recipientId] = token;
+    const sourceOrderId = draft.id;
+    void businessCoreCall<{
+      valid: boolean;
+      addressParts: NonNullable<Order["recipients"][number]["addressParts"]>;
+      addressStatus: "COMPLETE" | "INCOMPLETE";
+    }>("rules", "assess_delivery_address", { value })
+      .then(({ addressParts, addressStatus }) => {
+        if (!addressMounted.current ||
+            addressRequests.current[recipientId] !== token) return;
+        onChange((previous) => {
+          if (previous.id !== sourceOrderId) return previous;
+          const original = previous.recipients.find((r) => r.id === recipientId);
+          if (!original || original.address !== value) return previous;
+          const next = structuredClone(previous);
+          const row = next.recipients.find((r) => r.id === recipientId)!;
+          row.addressParts = addressParts;
+          row.addressStatus = addressStatus;
+          return next;
+        });
+      }).catch((error) => {
+        if (addressMounted.current && addressRequests.current[recipientId] === token)
+          onNotice("Rust 배송 주소 확인 실패: " +
+            (error instanceof Error ? error.message : String(error)), "error");
+      });
+  };
   if (draft.orderType === "RETAIL")
     return (
       <>
@@ -294,12 +329,14 @@ export function OrderDesk(props: OrderDeskProps) {
                       if (field && ["name", "address", "phone", "mobile"].includes(field)) {
                         (r as unknown as Record<string, unknown>)[field] = value;
                         r.confirmedFields = [...new Set([...(r.confirmedFields ?? []), field])];
-                        if (field === "address")
-                          r.addressStatus = validDeliveryAddress(r.address)
-                            ? "COMPLETE"
-                            : "INCOMPLETE";
+                        if (field === "address") {
+                          delete r.addressParts;
+                          r.addressStatus = "INCOMPLETE";
+                        }
                       }
                     }, false);
+                    const field = b.kind?.slice(10);
+                    if (field === "address") applyNativeAddress(b.recipientId, value);
                   }}
                 />
                 <div className="recipient-body">
@@ -331,7 +368,7 @@ export function OrderDesk(props: OrderDeskProps) {
                               <Field label="이름">
                                 <input
                                   aria-invalid={
-                                    !deliveryRequirements(r, draft.receptionVersion !== 1).name
+                                    !delivery.byId[r.id]?.name
                                   }
                                   value={r.name}
                                   disabled={exported}
@@ -354,26 +391,26 @@ export function OrderDesk(props: OrderDeskProps) {
                               <Field label="주소">
                                 <input
                                   aria-invalid={
-                                    !deliveryRequirements(r, draft.receptionVersion !== 1).address
+                                    !delivery.byId[r.id]?.address
                                   }
                                   value={r.address}
                                   disabled={exported}
-                                  onChange={(e) =>
+                                  onChange={(e) => {
                                     recEdit(
                                       r.id,
                                       (r) => {
                                         r.address = e.target.value;
-                                        r.addressParts = addressParts(e.target.value);
+                                        delete r.addressParts;
                                         r.confirmedFields = [
                                           ...new Set([...(r.confirmedFields ?? []), "address"]),
                                         ];
-                                        r.addressStatus = validDeliveryAddress(r.address)
-                                          ? "COMPLETE"
-                                          : "INCOMPLETE";
+                                        // Never presume a typed address is deliverable before Rust checks it.
+                                        r.addressStatus = "INCOMPLETE";
                                       },
                                       false,
-                                    )
-                                  }
+                                    );
+                                    applyNativeAddress(r.id, e.target.value);
+                                  }}
                                 />
                               </Field>
                             </Linked>
@@ -382,7 +419,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                 <Field label="휴대폰">
                                   <input
                                     aria-invalid={
-                                      !deliveryRequirements(r, draft.receptionVersion !== 1).contact
+                                      !delivery.byId[r.id]?.contact
                                     }
                                     value={r.mobile}
                                     disabled={exported}
@@ -399,7 +436,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                       )
                                     }
                                   />
-                                  {!deliveryRequirements(r, draft.receptionVersion !== 1).contact &&
+                                  {!delivery.byId[r.id]?.contact &&
                                     r.mobile && (
                                       <small className="form-error">
                                         {contactProblem(r.mobile, true)}
@@ -411,7 +448,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                 <Field label="전화">
                                   <input
                                     aria-invalid={
-                                      !deliveryRequirements(r, draft.receptionVersion !== 1).contact
+                                      !delivery.byId[r.id]?.contact
                                     }
                                     value={r.phone}
                                     disabled={exported}
@@ -428,7 +465,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                       )
                                     }
                                   />
-                                  {!deliveryRequirements(r, draft.receptionVersion !== 1).contact &&
+                                  {!delivery.byId[r.id]?.contact &&
                                     r.phone && (
                                       <small className="form-error">
                                         {contactProblem(r.phone, false)}

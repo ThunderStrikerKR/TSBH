@@ -460,6 +460,44 @@ try{
   record("compact WebView2 reception layout",geometry);
   await snap(page,"03-native-reception-compact-1024");
 
+  // P0 real manual-classification React path. Exercise the installed native
+  // EXE WebView2 rather than a mocked businessCoreCall.
+  const originalSnapshot=await page.evaluate(()=>window.bando.load());
+  await page.getByRole("button",{name:"수동 분류",exact:true}).click();
+  await page.locator(".manual-workspace-body").waitFor({timeout:20000});
+  await page.waitForFunction(()=> (window.__bandoNativeCalls||[]).some(call=>
+    call.command==="business_core_call" && call.domain==="rules" &&
+    call.operation==="apply_manual_classification" && call.action==="initial_manual"),
+    null,{timeout:20000});
+  const nativeBlock=page.locator(".manual-block").first();
+  await nativeBlock.waitFor({timeout:20000});
+  const beforeBlockCalls=await page.evaluate(()=> (window.__bandoNativeCalls||[]).length);
+  const previousBinding=await nativeBlock.getAttribute("aria-pressed");
+  await nativeBlock.click();
+  await page.waitForFunction(({count})=>(window.__bandoNativeCalls||[])
+    .slice(count).some(call=>
+      call.command==="business_core_call" && call.operation==="apply_manual_classification" &&
+      (call.action==="assign_manual_block" || call.action==="release_manual_block")),
+    {count:beforeBlockCalls},{timeout:20000});
+  const draftResult=await page.evaluate(async()=>({
+    trace:(window.__bandoNativeCalls||[]).filter(call=>
+      call.command==="business_core_call" && call.operation==="apply_manual_classification")
+      .map(call=>call.action),
+    persisted:await window.bando.load(),
+    status:document.querySelector(".manual-status")?.textContent?.slice(0,400),
+  }));
+  assert.ok(draftResult.trace.includes(previousBinding==="true"
+    ?"release_manual_block":"assign_manual_block"));
+  assert.equal(draftResult.persisted.revision,originalSnapshot.revision,
+    "Manual source-block edits must not commit SQLite before explicit approval");
+  assert.equal(JSON.stringify(draftResult.persisted.orders),
+    JSON.stringify(originalSnapshot.orders),"Manual draft must preserve saved orders");
+  record("real Windows EXE manual source-block Rust IPC with no SQLite writes",{
+    rustActions:draftResult.trace,manualStatus:draftResult.status,
+    unchangedRevision:draftResult.persisted.revision});
+  await snap(page,"04-real-native-manual-source-block");
+
+
   assert.equal(report.issues.length,0,
     "Browser UI errors: "+report.issues.join("\n"));
   report.status="REAL_NATIVE_RECEPTION_SMOKE_PASSED";

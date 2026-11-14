@@ -2,6 +2,8 @@
 pub mod output;
 #[path = "../../../../src-tauri/src/business_core/rules/mod.rs"]
 pub mod rules;
+#[path = "../../../../src-tauri/src/business_core/recognition/mod.rs"]
+pub mod recognition;
 
 #[cfg(test)]
 mod tests {

@@ -65,9 +65,13 @@ test("native Rust pricing/shipping effects protect persisted records and explici
   assert.match(priceEffect, /!liveClient \|\| !passivePricingAllowed/);
   assert.match(freightEffect, /!passivePricingAllowed && !shippingPending/,
     "Saved orders may refresh freight only after a deliberate edit marked pending");
+  assert.match(source, /"rules", "should_refresh_pricing"/,
+    "Actual React runtime must fetch passive price eligibility from Rust");
+  assert.doesNotMatch(source, /shouldRefreshUncommittedOrderPricing\(/,
+    "Original TS eligibility is a differential oracle only");
   for (const block of [priceEffect, freightEffect]) {
-    assert.match(block, /shouldRefreshUncommittedOrderPricing\(previous, persisted\)/,
-      "The latest draft must be rechecked before any async native result is applied");
+    assert.match(block, /previous !== draft/,
+      "The exact draft must be rechecked before an asynchronous native result is applied");
     assert.match(block, /ruleRequests\.current/,
       "Out-of-order native responses must be rejected");
   }

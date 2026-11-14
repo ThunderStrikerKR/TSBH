@@ -13,6 +13,7 @@ mod correction_rules;
 mod reception_operations;
 mod kakao_title;
 mod manual_classification;
+mod manual_draft;
 mod message_template_validation;
 mod catalog_item;
 mod retail_operations;
@@ -68,6 +69,14 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         },
         "reprice_order" => pricing::reprice_order(&payload),
         "should_refresh_pricing" => Ok(json!({"refresh": pricing::should_refresh(&payload)?})),
+        "assess_delivery_address" => {
+            let value=required_str(&payload,"value")?;
+            Ok(json!({
+                "valid":issues::valid_address(value),
+                "addressParts":manual_classification::manual_address_parts(value),
+                "addressStatus":if issues::valid_address(value){"COMPLETE"}else{"INCOMPLETE"},
+            }))
+        },
         "shipping_manager_view" => shipping::shipping_manager_view(&payload),
         "apply_shipping_action" => shipping::shipping_action(&payload),
         "shipping_read" => shipping_read::project(&payload),
@@ -90,6 +99,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             req(&payload, "state")?, required_str(&payload, "orderId")?,
         ),
         "order_issues" => Ok(json!({"issues": issues::order_issues(req(&payload,"order")?)})),
+        "delivery_requirements" => issues::delivery_requirements(&payload),
         "apply_issue_action" => issues::issue_action(&payload),
         "apply_product_action" => product_confirmation::apply(&payload),
         "record_message_copy" => message_audit::record(&payload),
@@ -101,7 +111,11 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "apply_raw_correction" => raw_corrections::apply(&payload),
         "apply_retail_action" => retail_operations::apply(&payload),
         "apply_reception_action" => reception_operations::apply(&payload),
-        "apply_manual_classification" => manual_classification::apply(&payload),
+        "apply_manual_classification" => match str_field(&payload, "action") {
+            "initial_manual" | "set_manual_product" | "assign_manual_block" | "release_manual_block" =>
+                manual_draft::execute(&payload),
+            _ => manual_classification::apply(&payload)
+        },
         "validate_automatic_templates" => message_template_validation::validate(&payload),
         "validate_provisional_product_notices" => message_template_validation::validate_provisional(&payload),
         "create_catalog_item" => catalog_item::make(&payload),

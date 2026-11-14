@@ -155,7 +155,9 @@ test("manual classification final approved order is produced by native Rust, nev
   assert.match(manual, /onApply\(prepared\)/);
   assert.doesNotMatch(manual, /onApply\(applyManual\(/);
   assert.match(rust, /fn synchronize\(order:&mut Value\)/);
-  assert.match(dispatcher, /"apply_manual_classification" => manual_classification::apply/);
+  assert.match(dispatcher, /"apply_manual_classification" => match str_field/);
+  assert.match(dispatcher, /manual_draft::execute/);
+  assert.match(dispatcher, /_ => manual_classification::apply/);
 });
 
 

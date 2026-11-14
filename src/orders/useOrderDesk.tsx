@@ -19,8 +19,6 @@ import { registeredProducts, sortProducts } from "../product-models";
 import type { NoticeSink } from "../shared/notices";
 import type { Item, Order, Product, State } from "../types";
 import { clone } from "../ui";
-import { pendingIssue } from "../validation";
-import { shouldRefreshUncommittedOrderPricing } from "./passive-pricing";
 import { groupShipments } from "../workflow";
 type SaveMode = "save" | "notify" | "pay" | "queue" | "wait";
 export type OrderDeskProps = {
@@ -127,11 +125,35 @@ export function useOrderDesk({
     : undefined;
 
   const persisted = persistedOrders ?? state.orders;
-  const saved = persisted.some((o) => o.id === draft.id),
-    // Saved orders retain historical prices even when their preview state
-    // contains a revised product/shipping master.
-    passivePricingAllowed = shouldRefreshUncommittedOrderPricing(draft, persisted),
-    exported = draft.status === "EXPORTED" || activeShipment?.transferred === true ||
+  const saved = persisted.some((o) => o.id === draft.id);
+  // The Rust rules engine owns whether an uncommitted order may follow current prices.
+  // The signature is only an IPC freshness key; it is not a TS eligibility rule.
+  const pricingEligibilityKey = JSON.stringify({
+    id: draft.id, confirmedAt: draft.confirmedAt, deletedAt: draft.deletedAt,
+    pricesLocked: draft.pricesLocked,
+    persistedIds: persisted.map((record) => record.id),
+  });
+  const [nativeEligibility, setNativeEligibility] = useState<{
+    key: string; refresh: boolean;
+  }>();
+  useEffect(() => {
+    let active = true;
+    void businessCoreCall<{ refresh: boolean }>("rules", "should_refresh_pricing", {
+      order: draft, persistedOrders: persisted,
+    }).then(({ refresh }) => {
+      if (active) setNativeEligibility({ key: pricingEligibilityKey, refresh });
+    }).catch((error) => {
+      if (active) {
+        setNativeEligibility(undefined);
+        onNotice("Rust 가격 갱신 조건 확인 실패: " +
+          (error instanceof Error ? error.message : String(error)), "error");
+      }
+    });
+    return () => { active = false; };
+  }, [pricingEligibilityKey]);
+  const passivePricingAllowed =
+    nativeEligibility?.key === pricingEligibilityKey && nativeEligibility.refresh;
+  const exported = draft.status === "EXPORTED" || activeShipment?.transferred === true ||
       (!flowReady && (state.workflow?.shipments.some((ship) =>
         ship.orderId === draft.id && ship.transferred && !ship.legacyArchived) ?? false));
   useEffect(() => {
@@ -177,7 +199,7 @@ export function useOrderDesk({
           current.rulesClientSignature !== rulesClientSignature) return;
       onChange((previous) => {
         if (request !== ruleRequests.current.price ||
-            !shouldRefreshUncommittedOrderPricing(previous, persisted) ||
+            previous !== draft ||
             previous.id !== orderId ||
             JSON.stringify(previous.recipients) !== before) return previous;
         const next = { ...previous, recipients: order.recipients };
@@ -227,7 +249,8 @@ export function useOrderDesk({
             previous.id !== orderId || previous.pricesLocked ||
             previous.shippingMode === "MANUAL" ||
             JSON.stringify(previous.recipients) !== before ||
-            (!shouldRefreshUncommittedOrderPricing(previous, persisted) &&
+            previous !== draft ||
+            (!passivePricingAllowed &&
               !(previous.shippingVersion === "" && previous.shippingFee === null)))
           return previous;
         const fee = liveClient?.shippingFeeExcluded ? 0 : result.total;
@@ -456,10 +479,24 @@ export function useOrderDesk({
     });
   const question = (b: StaffBlock) => {
     if (!b.issueId) return;
-    onChange((previous) => ({
-      ...pendingIssue(previous, b.issueId!, state.settings.operatorName || "직원"),
-      requestedIssueIds: [...new Set([...(previous.requestedIssueIds ?? []), b.issueId!])],
-    }));
+    const sourceDraft = draft;
+    const issueId = b.issueId;
+    void businessCoreCall<{ order: Order }>("rules", "apply_issue_action", {
+      action: "pending_issue", order: sourceDraft, issueId,
+      actor: state.settings.operatorName || "직원", now: new Date().toISOString(),
+    }).then(({ order: next }) => {
+      if (latestRulesInput.current.draft !== sourceDraft) return;
+      onChange((previous) => {
+        if (previous !== sourceDraft) return previous;
+        return {
+          ...next,
+          requestedIssueIds: [...new Set([...(previous.requestedIssueIds ?? []), issueId])],
+        };
+      });
+    }).catch((error) => onNotice(
+      "Rust 주문 확인 요청 처리 실패: " +
+      (error instanceof Error ? error.message : String(error)), "error",
+    ));
   };
   const shownRecipient =
     activeShipment?.recipientId ??

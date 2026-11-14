@@ -41,9 +41,10 @@ import { factoryConflictConfirmation } from "../../../../src/factory-conflict-re
 import { validateProvisionalProductNotices } from "../../../../src/provisional-product-notices.ts";
 import { validateAutomaticMessageTemplates } from "../../../../src/automatic-message-templates.ts";
 import { addressInfo, addressParts } from "../../../../src/parser.ts";
+import { validDeliveryAddress, deliveryRequirements } from "../../../../src/delivery-requirements.ts";
 import { companyClient, companyParty } from "../../../../src/order-types.ts";
 import { explicitSender } from "../../../../src/explicit-sender.ts";
-import { applyManual, setManualValue, type ManualModel } from "../../../../src/orders/manual-classification.ts";
+import { initialManual, assignManualBlock, releaseManualBlock, applyManual, setManualValue, type ManualModel } from "../../../../src/orders/manual-classification.ts";
 import { rememberTitle, rememberedTitleClient } from "../../../../src/title-clients.ts";
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
@@ -3668,6 +3669,137 @@ productNoticeCase("over 2000 Unicode code points rejected",{"p1":"😀".repeat(2
 productNoticeCase("nonstring rejected",{"p1":5},false);
 productNoticeCase("5001 notices rejected",Object.fromEntries(
   Array.from({length:5001},(_,i)=>["p"+i,"주의"])),false);
+
+
+// P0 manual-draft migration: actual TypeScript baseline and Rust IPC dispatcher.
+// Keep both the original data and the explicit JS assignment insertion order.
+const manualBaselineOrder:any={
+  ...copy(order), confirmedAt:undefined,
+  raw:"가상명\n가상 상품 2개",analysisRaw:"가상명\n가상 상품 2개",
+  recipients:[{
+    ...copy(recipient), name:"가상명",
+    items:[{...copy(item),id:"mi1",name:"가상 상품",quantity:2}],
+    sources:[{start:0,end:3,field:"name",targetId:"r1"}],
+    candidates:[{start:0,end:3,field:"name",targetId:"r1"}]
+  }],
+  analysisEvidence:[{start:4,end:9,kind:"product",itemId:"mi1"}],
+};
+const manualDraft:ManualModel={
+ rows:[{...copy(recipient),id:"r1",name:"",address:"",phone:"",
+   mobile:"",note:"",items:[{...copy(item),id:"mi1",name:"",productId:null,
+     variantId:null,quantity:null,quantityConfirmed:false,issues:[],sources:[]}]}] as any,
+ blocks:[
+  {id:"0:3",start:0,end:3,field:"name",targetId:"r1",text:"가상명"},
+  {id:"4:9",start:4,end:9,field:"product",targetId:"mi1",text:"가상 상품"}
+ ] as any,
+ assignments:{}
+};
+function manualDraftCase(name:string,action:string,payload:any,baseline:()=>ManualModel){
+ add("manual draft: "+name,"apply_manual_classification",{action,...payload},
+    ()=>{const model=baseline();return {model,assignmentOrder:Object.keys(model.assignments)};});
+}
+add("manual draft: initial source blocks","apply_manual_classification",
+ {action:"initial_manual",order:manualBaselineOrder},
+ ()=>{const model=initialManual(manualBaselineOrder);return {model,assignmentOrder:Object.keys(model.assignments)};});
+const savedManual:any=copy(manualBaselineOrder);
+savedManual.manualClassification={
+ blocks:[{id:"0:3",start:0,end:3,field:"name",targetId:"r1",text:"가상명"}],
+ assignments:{"0:3":{recipientId:"r1",field:"name",value:"가상명"}}
+};
+add("manual draft: reopen saved assignments","apply_manual_classification",
+ {action:"initial_manual",order:savedManual,assignmentOrder:["0:3"]},
+ ()=>{const model=initialManual(savedManual);return {model,assignmentOrder:Object.keys(model.assignments)};});
+manualDraftCase("assign recipient name","assign_manual_block",
+ {model:manualDraft,id:"0:3",cell:{recipientId:"r1",field:"name"},
+  state:baseState,order:manualBaselineOrder,assignmentOrder:[]},
+ ()=>assignManualBlock(manualDraft,"0:3",{recipientId:"r1",field:"name"},baseState as any,manualBaselineOrder));
+const linkedModel=assignManualBlock(manualDraft,"0:3",{recipientId:"r1",field:"name"},baseState as any,manualBaselineOrder);
+manualDraftCase("release recipient name","release_manual_block",
+ {model:linkedModel,id:"0:3",clear:true,state:baseState,order:manualBaselineOrder,
+  assignmentOrder:Object.keys(linkedModel.assignments)},
+ ()=>releaseManualBlock(linkedModel,"0:3",true,baseState as any,manualBaselineOrder));
+manualDraftCase("release without clearing a linked field","release_manual_block",
+ {model:linkedModel,id:"0:3",clear:false,state:baseState,order:manualBaselineOrder,
+  assignmentOrder:Object.keys(linkedModel.assignments)},
+ ()=>releaseManualBlock(linkedModel,"0:3",false,baseState as any,manualBaselineOrder));
+manualDraftCase("release missing block no-op","release_manual_block",
+ {model:manualDraft,id:"missing",clear:true,state:baseState,order:manualBaselineOrder},
+ ()=>releaseManualBlock(manualDraft,"missing",true,baseState as any,manualBaselineOrder));
+const manualChosenProduct:any={...copy(product),defaultColor:"Black"};
+manualDraftCase("select registered product","set_manual_product",
+ {model:manualDraft,cell:{recipientId:"r1",itemId:"mi1",field:"product"},
+  value:"가상 상품",product:manualChosenProduct,state:baseState,order:manualBaselineOrder},
+ ()=>setManualValue(manualDraft,{recipientId:"r1",itemId:"mi1",field:"product"},
+   "가상 상품",baseState as any,manualBaselineOrder,manualChosenProduct));
+manualDraftCase("clear product cell","set_manual_product",
+ {model:manualDraft,cell:{recipientId:"r1",itemId:"mi1",field:"product"},
+  value:"",state:baseState,order:manualBaselineOrder},
+ ()=>setManualValue(manualDraft,{recipientId:"r1",itemId:"mi1",field:"product"},
+   "",baseState as any,manualBaselineOrder));
+manualDraftCase("assign a source quantity","assign_manual_block",
+ {model:{...manualDraft,blocks:[{id:"0:2",start:0,end:2,
+   field:"quantity",text:"2개",targetId:"mi1"}]} as any,
+  id:"0:2",cell:{recipientId:"r1",itemId:"mi1",field:"quantity"},
+  state:baseState,order:manualBaselineOrder},
+ ()=>assignManualBlock({...manualDraft,blocks:[{id:"0:2",start:0,end:2,
+   field:"quantity",text:"2개",targetId:"mi1"}]} as any,"0:2",
+   {recipientId:"r1",itemId:"mi1",field:"quantity"},baseState as any,manualBaselineOrder));
+
+
+// The original parser consumes random UUIDs for evidence candidates.
+// Supply a deterministic stream to the TS oracle, and send its generated
+// candidate UUIDs as injected input to native Rust. Compare every other field.
+const manualTextState:any=copy(baseState);
+manualTextState.products=[{...copy(product),defaultColor:"Black",code:"709"}];
+manualTextState.aliases=[];
+manualTextState.categories=[];
+manualTextState.brands=[];
+for(const raw of ["가상 상품", "709 2개", "미등록 상품"]) {
+  const uuidList=Array.from({length:40},(_,i)=>
+    "00000000-0000-4000-8000-"+String(i).padStart(12,"0"));
+  const tsModel=deterministicIds(uuidList,()=>
+    setManualValue(manualDraft,{recipientId:"r1",itemId:"mi1",field:"product"},
+      raw,manualTextState,manualBaselineOrder));
+  const candidateIds=tsModel.rows[0].items[0].productCandidates?.map((c:any)=>c.id)??[];
+  add("manual draft: free-text product "+raw,"apply_manual_classification",{
+    action:"set_manual_product",model:manualDraft,
+    cell:{recipientId:"r1",itemId:"mi1",field:"product"},
+    value:raw,state:manualTextState,order:manualBaselineOrder,candidateIds,
+  },()=>({model:tsModel,assignmentOrder:Object.keys(tsModel.assignments)}));
+}
+
+// Native postal address parsing and recipient eligibility from the ORIGINAL
+// TypeScript helpers. The live UI now uses these Rust decisions exclusively.
+for(const value of [
+  "", "서울특별시 강남구 테헤란로 10 101호", "경기도 수원시 팔달구 인계동 123",
+  "서울특별시 마포구 월드컵로 20", "경기도 의정부시 시민로 100",
+  "사서함 123", "도로 주소 없음", "지번 확인 #123",
+  "전화 010-1234-5678", "부산광역시 해운대구 센텀대로 25",
+]) {
+  add("native delivery address: "+value,"assess_delivery_address",{value},
+    ()=>({valid:validDeliveryAddress(value),
+      addressParts:addressParts(value),
+      addressStatus:validDeliveryAddress(value)?"COMPLETE":"INCOMPLETE"}));
+}
+function deliveryCase(name:string,alter:(row:any)=>void,legacy=false) {
+  const row:any=copy(recipient);
+  alter(row);
+  add("delivery eligibility: "+name,"delivery_requirements",{
+    rows:[row],allowLegacyAddressConfirmation:legacy
+  },()=>({results:[{recipientId:row.id,
+    ...deliveryRequirements(row,legacy)}]}));
+}
+deliveryCase("valid recipient",()=>{});
+deliveryCase("empty name",r=>{r.name="";});
+deliveryCase("unconfirmed incomplete address",r=>{r.addressStatus="INCOMPLETE";});
+deliveryCase("legacy verified address",r=>{r.addressStatus="CONFIRMED";r.address="창고 별관";},true);
+deliveryCase("legacy unverified address",r=>{r.addressStatus="CONFIRMED";r.address="창고 별관";},false);
+deliveryCase("missing contacts",r=>{r.phone="";r.mobile="";});
+deliveryCase("unmatched product",r=>{r.items[0].variantId=null;});
+deliveryCase("missing quantity",r=>{r.items[0].quantity=null;});
+deliveryCase("quantity unconfirmed",r=>{r.items[0].quantityConfirmed=false;});
+deliveryCase("unsafe JS quantity",r=>{r.items[0].quantity=9007199254740992;});
+deliveryCase("no items",r=>{r.items=[];});
 
 const runner=spawnSync(rustBinary||"cargo",rustBinary?[]:[
   "run","--quiet","--manifest-path",

@@ -1,23 +1,19 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ProductSearchDialog } from "../ProductSearchDialog";
 import { businessCoreCall } from "../tauri-bridge";
-import { deliveryRequirements } from "../delivery-requirements";
+import { useNativeDeliveryRequirements, evaluateNativeDeliveryRequirements } from "../useNativeDeliveryRequirements";
+import { useNativeOrderIssues } from "./useNativeOrderIssues";
 import { usePendingChanges } from "../shared/pending-changes";
 import { confirmDiscardDraft } from "../shared/editor-flow";
 import type { NoticeSink } from "../shared/notices";
 import type { Order, Product, State } from "../types";
-import { orderIssues } from "../validation";
 import { ManualPrompt } from "./ManualPrompt";
 import {
-  assignManualBlock,
   cellKey,
   emptyManualItem,
-  initialManual,
   manualValue,
   newManualRecipient,
   pendingManualQuantity,
-  releaseManualBlock,
-  setManualValue,
   validManualQuantity,
   type Cell,
   type ManualModel,
@@ -30,22 +26,77 @@ type Frame = {
   pending?: Cell;
   rollback?: Frame;
 };
-export function ManualClassification({
-  state,
-  order,
-  onApply,
-  onClose,
-}: {
+type ManualClassificationProps = {
   state: State;
   order: Order;
   onApply: (order: Order) => void;
   onClose: () => void;
   onNotice: NoticeSink;
-}) {
-  const [model, setModel] = useState(() => initialManual(order));
+};
+type ManualRustDraft = { model: ManualModel; assignmentOrder: string[] };
+function orderedNativeModel(result: ManualRustDraft): ManualModel {
+  // JSON maps do not preserve the JS original assignment insertion sequence.
+  const keys = [...new Set([...result.assignmentOrder, ...Object.keys(result.model.assignments)])];
+  return {
+    ...result.model,
+    assignments: Object.fromEntries(
+      keys.filter((key) => Object.hasOwn(result.model.assignments, key))
+        .map((key) => [key, result.model.assignments[key]]),
+    ),
+  };
+}
+export function ManualClassification(props: ManualClassificationProps) {
+  const [loaded, setLoaded] = useState<{ orderId: string; model: ManualModel }>();
+  const [loadingError, setLoadingError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setLoadingError("");
+    setLoaded(undefined);
+    void businessCoreCall<ManualRustDraft>("rules", "apply_manual_classification", {
+      action: "initial_manual",
+      order: props.order,
+      assignmentOrder: Object.keys(props.order.manualClassification?.assignments ?? {}),
+    }).then((result) => {
+      if (active) setLoaded({ orderId: props.order.id, model: orderedNativeModel(result) });
+    }).catch((error) => {
+      if (active) setLoadingError("Rust 수동 분류 초기화 실패: " +
+        (error instanceof Error ? error.message : String(error)));
+    });
+    return () => { active = false; };
+  }, [props.order.id, retry]);
+  if (!loaded || loaded.orderId !== props.order.id) return (
+    <section className="manual-workspace" role="dialog" aria-label="수동 분류">
+      <header className="manual-workspace-heading">
+        <h2>수동 분류</h2>
+        <button onClick={props.onClose}>닫기 ×</button>
+      </header>
+      {loadingError
+        ? <div role="alert">{loadingError}
+            <button onClick={() => setRetry((value) => value + 1)}>다시 시도</button>
+          </div>
+        : <p role="status">Rust에서 원문 블록을 구성하고 있습니다.</p>}
+    </section>
+  );
+  return <ManualClassificationEditor key={loaded.orderId}
+    {...props} initialModel={loaded.model}/>;
+}
+function ManualClassificationEditor({
+  state,
+  order,
+  onApply,
+  onClose,
+  initialModel,
+}: ManualClassificationProps & { initialModel: ManualModel }) {
+  const [model, setModel] = useState(() => initialModel);
+  const nativeDraftLock = useRef(false);
+  const [nativeDraftBusy, setNativeDraftBusy] = useState(false);
   const manualQuantityRequest = useRef<Record<string, number>>({});
   const manualTextRequest = useRef<Record<string, number>>({});
   const manualQuantityPending = useRef<Set<string>>(new Set());
+  const delivery = useNativeDeliveryRequirements(model.rows, order.receptionVersion !== 1);
+  const inspection = useMemo(() => ({ ...order, recipients: model.rows }), [order, model.rows]);
+  const nativeOrderIssues = useNativeOrderIssues(inspection);
   const latestInputs = useRef({ order, model });
   latestInputs.current = { order, model };
   const initial = useRef(JSON.stringify(model));
@@ -110,23 +161,31 @@ export function ManualClassification({
   const allowed = (cell: Cell) =>
     !pendingRef.current || cellKey(pendingRef.current) === cellKey(cell);
   const nextMissing = (next: ManualModel, cell: Cell) => {
-    const slots = next.rows.flatMap((row) => {
-      const required = deliveryRequirements(row, order.receptionVersion !== 1);
-      return [
-        !required.name && { recipientId: row.id, field: "name" },
-        !required.address && { recipientId: row.id, field: "address" },
-        !required.contact && { recipientId: row.id, field: "mobile" },
-      ].filter(Boolean) as Cell[];
-    });
-    const rowIndex = next.rows.findIndex((row) => row.id === cell.recipientId);
-    const fields = ["name", "address", "mobile", "phone"];
-    const position = rowIndex * 4 + fields.indexOf(cell.field);
-    const following = slots.find(
-      (slot) =>
-        next.rows.findIndex((row) => row.id === slot.recipientId) * 4 + fields.indexOf(slot.field) >
-        position,
-    );
-    if (following) focus(following);
+    // The next required field is selected from a fresh native projection.
+    // A completed previous request must not move focus after later edits.
+    const expected = JSON.stringify(next.rows);
+    void evaluateNativeDeliveryRequirements(next.rows, order.receptionVersion !== 1)
+      .then((results) => {
+        if (JSON.stringify(latestInputs.current.model.rows) !== expected) return;
+        const byId = new Map(results.map((item) => [item.recipientId, item]));
+        const slots = next.rows.flatMap((row) => {
+          const required = byId.get(row.id);
+          if (!required) return [];
+          return [
+            !required.name && { recipientId: row.id, field: "name" },
+            !required.address && { recipientId: row.id, field: "address" },
+            !required.contact && { recipientId: row.id, field: "mobile" },
+          ].filter(Boolean) as Cell[];
+        });
+        const rowIndex = next.rows.findIndex((row) => row.id === cell.recipientId);
+        const fields = ["name", "address", "mobile", "phone"];
+        const position = rowIndex * 4 + fields.indexOf(cell.field);
+        const following = slots.find((slot) =>
+          next.rows.findIndex((row) => row.id === slot.recipientId) * 4 +
+          fields.indexOf(slot.field) > position);
+        if (following) focus(following);
+      }).catch((e) => fail("Rust 배송 필수정보 조회 실패: " +
+        (e instanceof Error ? e.message : String(e)), cell));
   };
   const cancelProduct = () => {
     const cell = pendingRef.current;
@@ -151,9 +210,18 @@ export function ManualClassification({
     focus({ ...cell, field: "product" });
   };
   const selectProduct = (cell: Cell, value: string, product?: Product) => {
-    if (!allowed(cell)) return;
-    attempt(() => {
-      const next = setManualValue(model, cell, value, state, order, product);
+    if (!allowed(cell) || nativeDraftLock.current) return;
+    nativeDraftLock.current = true;
+    setNativeDraftBusy(true);
+    const previousModel = model;
+    void businessCoreCall<ManualRustDraft>("rules", "apply_manual_classification", {
+      action: "set_manual_product", model, cell, value, state, order, product,
+      candidateIds: Array.from({ length: 20 }, () => crypto.randomUUID()),
+      assignmentOrder: Object.keys(model.assignments),
+    }).then((result) => {
+      if (latestInputs.current.model !== previousModel ||
+          latestInputs.current.order !== order) return;
+      const next = orderedNativeModel(result);
       checkpoint();
       beforeProduct.current = frame();
       setModel(next);
@@ -166,7 +234,12 @@ export function ManualClassification({
       setSearch(undefined);
       setPending({ ...cell, field: "quantity" });
       focus({ ...cell, field: "quantity" });
-    }, cell);
+      setError(undefined);
+    }).catch((e) => fail(e instanceof Error ? e.message : String(e), cell))
+      .finally(() => {
+        nativeDraftLock.current = false;
+        setNativeDraftBusy(false);
+      });
   };
   const finishQuantity = (): boolean => {
     const cell = pendingRef.current;
@@ -195,46 +268,35 @@ export function ManualClassification({
     return true;
   };
   const useBlock = (id: string) => {
+    if (nativeDraftLock.current) return;
     const assigned = model.assignments[id];
-    if (assigned) {
-      if (pendingRef.current && assigned.itemId !== pendingRef.current.itemId) {
-        fail("선택한 상품의 수량을 먼저 확정하세요.", pendingRef.current);
-        return;
-      }
-      attempt(() => {
-        const next = releaseManualBlock(model, id, true, state, order);
-        checkpoint();
-        setModel(next);
-        setEntry((old) => {
-          const copy = { ...old };
-          delete copy[cellKey(assigned)];
-          return copy;
-        });
-        if (assigned.itemId)
-          setQuantityText((old) => {
-            const copy = { ...old };
-            delete copy[cellKey({ ...assigned, field: "quantity" })];
-            return copy;
-          });
-        if (assigned.field === "product") {
-          setPending(undefined);
-          beforeProduct.current = undefined;
-        }
-        if (assigned.field === "quantity") setPending({ ...assigned, field: "quantity" });
-      }, assigned);
+    if (assigned && pendingRef.current &&
+        assigned.itemId !== pendingRef.current.itemId) {
+      fail("선택한 상품의 수량을 먼저 확정하세요.", pendingRef.current);
       return;
     }
-    const cell = pendingRef.current ?? active;
+    const cell = assigned ?? pendingRef.current ?? active;
     if (!cell) {
       fail("입력할 셀을 선택하세요.");
       return;
     }
-    if (pendingRef.current && model.blocks.find((block) => block.id === id)?.field !== "quantity") {
+    if (!assigned && pendingRef.current &&
+        model.blocks.find((block) => block.id === id)?.field !== "quantity") {
       fail("선택한 상품의 수량을 먼저 확정하세요.", pendingRef.current);
       return;
     }
-    attempt(() => {
-      const next = assignManualBlock(model, id, cell, state, order);
+    const previousModel = model;
+    nativeDraftLock.current = true;
+    setNativeDraftBusy(true);
+    void businessCoreCall<ManualRustDraft>("rules", "apply_manual_classification", {
+      action: assigned ? "release_manual_block" : "assign_manual_block",
+      model, id, cell, clear: !!assigned, state, order,
+      candidateIds: Array.from({ length: 20 }, () => crypto.randomUUID()),
+      assignmentOrder: Object.keys(model.assignments),
+    }).then((result) => {
+      if (latestInputs.current.model !== previousModel ||
+          latestInputs.current.order !== order) return;
+      const next = orderedNativeModel(result);
       checkpoint();
       setModel(next);
       setEntry((old) => {
@@ -242,7 +304,18 @@ export function ManualClassification({
         delete copy[cellKey(cell)];
         return copy;
       });
-      if (cell.field === "product") {
+      if (assigned) {
+        if (assigned.itemId) setQuantityText((old) => {
+          const copy = { ...old };
+          delete copy[cellKey({ ...assigned, field: "quantity" })];
+          return copy;
+        });
+        if (assigned.field === "product") {
+          setPending(undefined);
+          beforeProduct.current = undefined;
+        }
+        if (assigned.field === "quantity") setPending({ ...assigned, field: "quantity" });
+      } else if (cell.field === "product") {
         beforeProduct.current = frame();
         setPending({ ...cell, field: "quantity" });
         setQuantityText((old) => ({ ...old, [cellKey({ ...cell, field: "quantity" })]: "" }));
@@ -252,7 +325,12 @@ export function ManualClassification({
         setPending(undefined);
         beforeProduct.current = undefined;
       } else nextMissing(next, cell);
-    }, cell);
+      setError(undefined);
+    }).catch((e) => fail(e instanceof Error ? e.message : String(e), cell))
+      .finally(() => {
+        nativeDraftLock.current = false;
+        setNativeDraftBusy(false);
+      });
   };
   const resize = (n: number) => {
     if (!Number.isSafeInteger(n) || n < 1 || n > 100) {
@@ -442,7 +520,9 @@ export function ManualClassification({
   const textCell = (cell: Cell, label: string) => {
     const key = cellKey(cell),
       row = model.rows.find((row) => row.id === cell.recipientId)!,
-      required = deliveryRequirements(row, order.receptionVersion !== 1);
+      required = delivery.byId[row.id] ?? {
+        name: false, address: false, contact: false, product: false, quantity: false,
+      };
     const item = row.items.find((item) => item.id === cell.itemId);
     const invalid =
       cell.field === "name"
@@ -562,7 +642,7 @@ export function ManualClassification({
             });
             return;
           }
-          attempt(() => setModel(setManualValue(model, cell, value, state, order)), cell);
+          fail("지원하지 않는 수동 필드입니다.", cell);
         }}
         onBlur={() => {
           if (
@@ -671,10 +751,10 @@ export function ManualClassification({
         entry[cellKey({ recipientId: row.id, itemId: item.id, field: "product" })] !== undefined,
     ),
   );
-  const issues = orderIssues({ ...order, recipients: model.rows }).filter(
+  const issues = nativeOrderIssues.issues.filter(
     (issue) => issue.severity === "ACTION",
   );
-  const layer = completion || !!confirm || !!search;
+  const layer = completion || !!confirm || !!search || nativeDraftBusy;
   return (
     <section
       ref={root}
@@ -866,7 +946,7 @@ export function ManualClassification({
             <button
               className="primary"
               disabled={
-                !!pending || !model.rows.length || uncommitted || !!pendingManualQuantity(model)
+                !delivery.ready || !nativeOrderIssues.ready || nativeDraftBusy || !!pending || !model.rows.length || uncommitted || !!pendingManualQuantity(model)
               }
               onClick={() => setCompletion(true)}
             >
@@ -914,7 +994,7 @@ export function ManualClassification({
             <button
               className="primary"
               data-autofocus
-              disabled={applying.current}
+              disabled={applying.current || nativeDraftBusy}
               onClick={() => {
                 if (applying.current) return;
                 applying.current = true;

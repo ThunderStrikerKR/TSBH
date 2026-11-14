@@ -34,7 +34,7 @@ fn quantity_from_input(input: &str) -> Value {
 }
 // Port of parser.ts::addressParts, used by the manual recipient address cell.
 // Keys with no evidence must be absent (not null), matching JS undefined.
-fn manual_address_parts(value: &str) -> Value {
+pub(super) fn manual_address_parts(value: &str) -> Value {
     let provinces = ["서울특별시","서울","부산광역시","부산","대구광역시","대구",
         "인천광역시","인천","광주광역시","광주","대전광역시","대전",
         "울산광역시","울산","세종특별자치시","세종","경기도","경기",
