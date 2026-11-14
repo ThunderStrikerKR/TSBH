@@ -89,6 +89,35 @@ pub(super) fn valid_address(value:&str)->bool {
     }
     false
 }
+/// Exact recipient-delivery eligibility from src/delivery-requirements.ts.
+/// This read-only projection is authoritative in the manual and order screens.
+pub(super) fn delivery_requirements(payload: &Value) -> Result<Value, String> {
+    let recipients=rows(req(payload,"rows")?);
+    let allow_legacy=field(payload,"allowLegacyAddressConfirmation").as_bool()==Some(true);
+    let results=recipients.iter().map(|row|{
+        let address=str_field(row,"address");
+        let address_ok=!address.trim().is_empty() &&
+            ((allow_legacy && str_field(row,"addressStatus")=="CONFIRMED") ||
+             (str_field(row,"addressStatus")!="INCOMPLETE" && valid_address(address)));
+        let items=rows(field(row,"items"));
+        let product_ok=!items.is_empty() && items.iter().all(|i|
+            !str_field(i,"productId").is_empty() && !str_field(i,"variantId").is_empty()
+        );
+        let quantity_ok=!items.is_empty() && items.iter().all(|i|
+            field(i,"quantity").as_i64().is_some_and(|q|
+                (1..=9_007_199_254_740_991).contains(&q)) &&
+            field(i,"quantityConfirmed")!=&Value::Bool(false)
+        );
+        json!({"recipientId":field(row,"id"),
+            "name":!str_field(row,"name").trim().is_empty(),
+            "address":address_ok,
+            "contact":valid_contact(str_field(row,"phone")) ||
+                      valid_contact(str_field(row,"mobile")),
+            "product":product_ok,"quantity":quantity_ok})
+    }).collect::<Vec<_>>();
+    Ok(json!({"results":results}))
+}
+
 fn contact_problem(value:&str,mobile:bool)->String {
     let digits:String=value.chars()
         .filter(|c|!c.is_whitespace()&&!['(',')','.','-'].contains(c)).collect();
