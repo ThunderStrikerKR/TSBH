@@ -20,7 +20,6 @@ import type { NoticeSink } from "../shared/notices";
 import type { Item, Order, Product, State } from "../types";
 import { clone } from "../ui";
 import { pendingIssue } from "../validation";
-import { shouldRefreshUncommittedOrderPricing } from "./passive-pricing";
 import { groupShipments } from "../workflow";
 type SaveMode = "save" | "notify" | "pay" | "queue" | "wait";
 export type OrderDeskProps = {
@@ -127,11 +126,35 @@ export function useOrderDesk({
     : undefined;
 
   const persisted = persistedOrders ?? state.orders;
-  const saved = persisted.some((o) => o.id === draft.id),
-    // Saved orders retain historical prices even when their preview state
-    // contains a revised product/shipping master.
-    passivePricingAllowed = shouldRefreshUncommittedOrderPricing(draft, persisted),
-    exported = draft.status === "EXPORTED" || activeShipment?.transferred === true ||
+  const saved = persisted.some((o) => o.id === draft.id);
+  // The Rust rules engine owns whether an uncommitted order may follow current prices.
+  // The signature is only an IPC freshness key; it is not a TS eligibility rule.
+  const pricingEligibilityKey = JSON.stringify({
+    id: draft.id, confirmedAt: draft.confirmedAt, deletedAt: draft.deletedAt,
+    pricesLocked: draft.pricesLocked,
+    persistedIds: persisted.map((record) => record.id),
+  });
+  const [nativeEligibility, setNativeEligibility] = useState<{
+    key: string; refresh: boolean;
+  }>();
+  useEffect(() => {
+    let active = true;
+    void businessCoreCall<{ refresh: boolean }>("rules", "should_refresh_pricing", {
+      order: draft, persistedOrders: persisted,
+    }).then(({ refresh }) => {
+      if (active) setNativeEligibility({ key: pricingEligibilityKey, refresh });
+    }).catch((error) => {
+      if (active) {
+        setNativeEligibility(undefined);
+        onNotice("Rust 가격 갱신 조건 확인 실패: " +
+          (error instanceof Error ? error.message : String(error)), "error");
+      }
+    });
+    return () => { active = false; };
+  }, [pricingEligibilityKey]);
+  const passivePricingAllowed =
+    nativeEligibility?.key === pricingEligibilityKey && nativeEligibility.refresh;
+  const exported = draft.status === "EXPORTED" || activeShipment?.transferred === true ||
       (!flowReady && (state.workflow?.shipments.some((ship) =>
         ship.orderId === draft.id && ship.transferred && !ship.legacyArchived) ?? false));
   useEffect(() => {
@@ -177,7 +200,7 @@ export function useOrderDesk({
           current.rulesClientSignature !== rulesClientSignature) return;
       onChange((previous) => {
         if (request !== ruleRequests.current.price ||
-            !shouldRefreshUncommittedOrderPricing(previous, persisted) ||
+            previous !== draft ||
             previous.id !== orderId ||
             JSON.stringify(previous.recipients) !== before) return previous;
         const next = { ...previous, recipients: order.recipients };
