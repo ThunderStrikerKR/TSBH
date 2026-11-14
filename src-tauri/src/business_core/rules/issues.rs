@@ -70,7 +70,7 @@ fn valid_contact(value:&str)->bool {
           (digits.starts_with("050")&&digits.len()==12)) &&
         (!digits.starts_with("010") || digits.len()==11)
 }
-fn valid_address(value:&str)->bool {
+pub(super) fn valid_address(value:&str)->bool {
     let s=value.trim();
     if s.is_empty()||s.contains('#')||s.contains('@'){return false;}
     for marker in ["대로","로","길","사서함"]{

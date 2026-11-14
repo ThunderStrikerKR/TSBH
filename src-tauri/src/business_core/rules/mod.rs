@@ -69,6 +69,14 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         },
         "reprice_order" => pricing::reprice_order(&payload),
         "should_refresh_pricing" => Ok(json!({"refresh": pricing::should_refresh(&payload)?})),
+        "assess_delivery_address" => {
+            let value=required_str(&payload,"value")?;
+            Ok(json!({
+                "valid":issues::valid_address(value),
+                "addressParts":manual_classification::manual_address_parts(value),
+                "addressStatus":if issues::valid_address(value){"COMPLETE"}else{"INCOMPLETE"},
+            }))
+        },
         "shipping_manager_view" => shipping::shipping_manager_view(&payload),
         "apply_shipping_action" => shipping::shipping_action(&payload),
         "shipping_read" => shipping_read::project(&payload),
