@@ -393,7 +393,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                   }
                                   value={r.address}
                                   disabled={exported}
-                                  onChange={(e) =>
+                                  onChange={(e) => {
                                     recEdit(
                                       r.id,
                                       (r) => {
