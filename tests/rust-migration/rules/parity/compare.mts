@@ -3708,33 +3708,34 @@ savedManual.manualClassification={
 add("manual draft: reopen saved assignments","apply_manual_classification",
  {action:"initial_manual",order:savedManual,assignmentOrder:["0:3"]},
  ()=>{const model=initialManual(savedManual);return {model,assignmentOrder:Object.keys(model.assignments)};});
-manualDraftCase("assign recipient name","manual_assign_block",
+manualDraftCase("assign recipient name","assign_manual_block",
  {model:manualDraft,id:"0:3",cell:{recipientId:"r1",field:"name"},
   state:baseState,order:manualBaselineOrder,assignmentOrder:[]},
  ()=>assignManualBlock(manualDraft,"0:3",{recipientId:"r1",field:"name"},baseState as any,manualBaselineOrder));
 const linkedModel=assignManualBlock(manualDraft,"0:3",{recipientId:"r1",field:"name"},baseState as any,manualBaselineOrder);
-manualDraftCase("release recipient name","manual_release_block",
+manualDraftCase("release recipient name","release_manual_block",
  {model:linkedModel,id:"0:3",clear:true,state:baseState,order:manualBaselineOrder,
   assignmentOrder:Object.keys(linkedModel.assignments)},
  ()=>releaseManualBlock(linkedModel,"0:3",true,baseState as any,manualBaselineOrder));
-manualDraftCase("release without clearing a linked field","manual_release_block",
+manualDraftCase("release without clearing a linked field","release_manual_block",
  {model:linkedModel,id:"0:3",clear:false,state:baseState,order:manualBaselineOrder,
   assignmentOrder:Object.keys(linkedModel.assignments)},
  ()=>releaseManualBlock(linkedModel,"0:3",false,baseState as any,manualBaselineOrder));
-manualDraftCase("release missing block no-op","manual_release_block",
+manualDraftCase("release missing block no-op","release_manual_block",
  {model:manualDraft,id:"missing",clear:true,state:baseState,order:manualBaselineOrder},
  ()=>releaseManualBlock(manualDraft,"missing",true,baseState as any,manualBaselineOrder));
+const manualChosenProduct:any={...copy(product),defaultColor:"Black"};
 manualDraftCase("select registered product","set_manual_product",
  {model:manualDraft,cell:{recipientId:"r1",itemId:"mi1",field:"product"},
-  value:"가상 상품",product,state:baseState,order:manualBaselineOrder},
+  value:"가상 상품",product:manualChosenProduct,state:baseState,order:manualBaselineOrder},
  ()=>setManualValue(manualDraft,{recipientId:"r1",itemId:"mi1",field:"product"},
-   "가상 상품",baseState as any,manualBaselineOrder,product as any));
+   "가상 상품",baseState as any,manualBaselineOrder,manualChosenProduct));
 manualDraftCase("clear product cell","set_manual_product",
  {model:manualDraft,cell:{recipientId:"r1",itemId:"mi1",field:"product"},
   value:"",state:baseState,order:manualBaselineOrder},
  ()=>setManualValue(manualDraft,{recipientId:"r1",itemId:"mi1",field:"product"},
    "",baseState as any,manualBaselineOrder));
-manualDraftCase("assign a source quantity","manual_assign_block",
+manualDraftCase("assign a source quantity","assign_manual_block",
  {model:{...manualDraft,blocks:[{id:"0:2",start:0,end:2,
    field:"quantity",text:"2개",targetId:"mi1"}]} as any,
   id:"0:2",cell:{recipientId:"r1",itemId:"mi1",field:"quantity"},
