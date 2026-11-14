@@ -250,7 +250,8 @@ export function useOrderDesk({
             previous.id !== orderId || previous.pricesLocked ||
             previous.shippingMode === "MANUAL" ||
             JSON.stringify(previous.recipients) !== before ||
-            (!shouldRefreshUncommittedOrderPricing(previous, persisted) &&
+            previous !== draft ||
+            (!passivePricingAllowed &&
               !(previous.shippingVersion === "" && previous.shippingFee === null)))
           return previous;
         const fee = liveClient?.shippingFeeExcluded ? 0 : result.total;
