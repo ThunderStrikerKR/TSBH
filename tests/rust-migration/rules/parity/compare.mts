@@ -43,7 +43,7 @@ import { validateAutomaticMessageTemplates } from "../../../../src/automatic-mes
 import { addressInfo, addressParts } from "../../../../src/parser.ts";
 import { companyClient, companyParty } from "../../../../src/order-types.ts";
 import { explicitSender } from "../../../../src/explicit-sender.ts";
-import { applyManual, setManualValue, type ManualModel } from "../../../../src/orders/manual-classification.ts";
+import { initialManual, assignManualBlock, releaseManualBlock, applyManual, setManualValue, type ManualModel } from "../../../../src/orders/manual-classification.ts";
 import { rememberTitle, rememberedTitleClient } from "../../../../src/title-clients.ts";
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
@@ -3668,6 +3668,80 @@ productNoticeCase("over 2000 Unicode code points rejected",{"p1":"😀".repeat(2
 productNoticeCase("nonstring rejected",{"p1":5},false);
 productNoticeCase("5001 notices rejected",Object.fromEntries(
   Array.from({length:5001},(_,i)=>["p"+i,"주의"])),false);
+
+
+// P0 manual-draft migration: actual TypeScript baseline and Rust IPC dispatcher.
+// Keep both the original data and the explicit JS assignment insertion order.
+const manualOrder:any={
+  ...copy(order), confirmedAt:undefined,
+  raw:"가상명\n가상 상품 2개",analysisRaw:"가상명\n가상 상품 2개",
+  recipients:[{
+    ...copy(recipient), name:"가상명",
+    items:[{...copy(item),id:"mi1",name:"가상 상품",quantity:2}],
+    sources:[{start:0,end:3,field:"name",targetId:"r1"}],
+    candidates:[{start:0,end:3,field:"name",targetId:"r1"}]
+  }],
+  analysisEvidence:[{start:4,end:9,kind:"product",itemId:"mi1"}],
+};
+const manualDraft:ManualModel={
+ rows:[{...copy(recipient),id:"r1",name:"",address:"",phone:"",
+   mobile:"",note:"",items:[{...copy(item),id:"mi1",name:"",productId:null,
+     variantId:null,quantity:null,quantityConfirmed:false,issues:[],sources:[]}]}] as any,
+ blocks:[
+  {id:"0:3",start:0,end:3,field:"name",targetId:"r1",text:"가상명"},
+  {id:"4:9",start:4,end:9,field:"product",targetId:"mi1",text:"가상 상품"}
+ ] as any,
+ assignments:{}
+};
+function manualDraftCase(name:string,action:string,payload:any,baseline:()=>ManualModel){
+ add("manual draft: "+name,"apply_manual_classification",{action,...payload},
+    ()=>{const model=baseline();return {model,assignmentOrder:Object.keys(model.assignments)};});
+}
+add("manual draft: initial source blocks","apply_manual_classification",
+ {action:"initial_manual",order:manualOrder},
+ ()=>{const model=initialManual(manualOrder);return {model,assignmentOrder:Object.keys(model.assignments)};});
+const savedManual:any=copy(manualOrder);
+savedManual.manualClassification={
+ blocks:[{id:"0:3",start:0,end:3,field:"name",targetId:"r1",text:"가상명"}],
+ assignments:{"0:3":{recipientId:"r1",field:"name",value:"가상명"}}
+};
+add("manual draft: reopen saved assignments","apply_manual_classification",
+ {action:"initial_manual",order:savedManual,assignmentOrder:["0:3"]},
+ ()=>{const model=initialManual(savedManual);return {model,assignmentOrder:Object.keys(model.assignments)};});
+manualDraftCase("assign recipient name","manual_assign_block",
+ {model:manualDraft,id:"0:3",cell:{recipientId:"r1",field:"name"},
+  state:baseState,order:manualOrder,assignmentOrder:[]},
+ ()=>assignManualBlock(manualDraft,"0:3",{recipientId:"r1",field:"name"},baseState as any,manualOrder));
+const linkedModel=assignManualBlock(manualDraft,"0:3",{recipientId:"r1",field:"name"},baseState as any,manualOrder);
+manualDraftCase("release recipient name","manual_release_block",
+ {model:linkedModel,id:"0:3",clear:true,state:baseState,order:manualOrder,
+  assignmentOrder:Object.keys(linkedModel.assignments)},
+ ()=>releaseManualBlock(linkedModel,"0:3",true,baseState as any,manualOrder));
+manualDraftCase("release without clearing a linked field","manual_release_block",
+ {model:linkedModel,id:"0:3",clear:false,state:baseState,order:manualOrder,
+  assignmentOrder:Object.keys(linkedModel.assignments)},
+ ()=>releaseManualBlock(linkedModel,"0:3",false,baseState as any,manualOrder));
+manualDraftCase("release missing block no-op","manual_release_block",
+ {model:manualDraft,id:"missing",clear:true,state:baseState,order:manualOrder},
+ ()=>releaseManualBlock(manualDraft,"missing",true,baseState as any,manualOrder));
+manualDraftCase("select registered product","set_manual_product",
+ {model:manualDraft,cell:{recipientId:"r1",itemId:"mi1",field:"product"},
+  value:"가상 상품",product,state:baseState,order:manualOrder},
+ ()=>setManualValue(manualDraft,{recipientId:"r1",itemId:"mi1",field:"product"},
+   "가상 상품",baseState as any,manualOrder,product as any));
+manualDraftCase("clear product cell","set_manual_product",
+ {model:manualDraft,cell:{recipientId:"r1",itemId:"mi1",field:"product"},
+  value:"",state:baseState,order:manualOrder},
+ ()=>setManualValue(manualDraft,{recipientId:"r1",itemId:"mi1",field:"product"},
+   "",baseState as any,manualOrder));
+manualDraftCase("assign a source quantity","manual_assign_block",
+ {model:{...manualDraft,blocks:[{id:"0:2",start:0,end:2,
+   field:"quantity",text:"2개",targetId:"mi1"}]} as any,
+  id:"0:2",cell:{recipientId:"r1",itemId:"mi1",field:"quantity"},
+  state:baseState,order:manualOrder},
+ ()=>assignManualBlock({...manualDraft,blocks:[{id:"0:2",start:0,end:2,
+   field:"quantity",text:"2개",targetId:"mi1"}]} as any,"0:2",
+   {recipientId:"r1",itemId:"mi1",field:"quantity"},baseState as any,manualOrder));
 
 const runner=spawnSync(rustBinary||"cargo",rustBinary?[]:[
   "run","--quiet","--manifest-path",
