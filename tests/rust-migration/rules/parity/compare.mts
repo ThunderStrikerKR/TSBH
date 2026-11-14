@@ -3746,6 +3746,20 @@ manualDraftCase("assign a source quantity","assign_manual_block",
    {recipientId:"r1",itemId:"mi1",field:"quantity"},baseState as any,manualBaselineOrder));
 
 
+// Free-text manual product cells must not regress to a different parser.
+// Use the exact same seeded product and client for the original TS oracle.
+const manualTextState:any=copy(baseState);
+manualTextState.products=[{...copy(product),defaultColor:"Black",code:"709"}];
+for(const raw of ["가상 상품", "709 2개", "미등록 상품"]) {
+  manualDraftCase("free-text product "+raw,"set_manual_product",{
+    model:manualDraft,
+    cell:{recipientId:"r1",itemId:"mi1",field:"product"},
+    value:raw,state:manualTextState,order:manualBaselineOrder,
+  },()=>setManualValue(manualDraft,
+    {recipientId:"r1",itemId:"mi1",field:"product"},
+    raw,manualTextState,manualBaselineOrder));
+}
+
 // Native postal address parsing and recipient eligibility from the ORIGINAL
 // TypeScript helpers. The live UI now uses these Rust decisions exclusively.
 for(const value of [
