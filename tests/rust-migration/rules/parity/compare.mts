@@ -41,6 +41,7 @@ import { factoryConflictConfirmation } from "../../../../src/factory-conflict-re
 import { validateProvisionalProductNotices } from "../../../../src/provisional-product-notices.ts";
 import { validateAutomaticMessageTemplates } from "../../../../src/automatic-message-templates.ts";
 import { addressInfo, addressParts } from "../../../../src/parser.ts";
+import { validDeliveryAddress, deliveryRequirements } from "../../../../src/delivery-requirements.ts";
 import { companyClient, companyParty } from "../../../../src/order-types.ts";
 import { explicitSender } from "../../../../src/explicit-sender.ts";
 import { initialManual, assignManualBlock, releaseManualBlock, applyManual, setManualValue, type ManualModel } from "../../../../src/orders/manual-classification.ts";
@@ -3743,6 +3744,40 @@ manualDraftCase("assign a source quantity","assign_manual_block",
  ()=>assignManualBlock({...manualDraft,blocks:[{id:"0:2",start:0,end:2,
    field:"quantity",text:"2개",targetId:"mi1"}]} as any,"0:2",
    {recipientId:"r1",itemId:"mi1",field:"quantity"},baseState as any,manualBaselineOrder));
+
+
+// Native postal address parsing and recipient eligibility from the ORIGINAL
+// TypeScript helpers. The live UI now uses these Rust decisions exclusively.
+for(const value of [
+  "", "서울특별시 강남구 테헤란로 10 101호", "경기도 수원시 팔달구 인계동 123",
+  "서울특별시 마포구 월드컵로 20", "경기도 의정부시 시민로 100",
+  "사서함 123", "도로 주소 없음", "지번 확인 #123",
+  "전화 010-1234-5678", "부산광역시 해운대구 센텀대로 25",
+]) {
+  add("native delivery address: "+value,"assess_delivery_address",{value},
+    ()=>({valid:validDeliveryAddress(value),
+      addressParts:addressParts(value),
+      addressStatus:validDeliveryAddress(value)?"COMPLETE":"INCOMPLETE"}));
+}
+function deliveryCase(name:string,alter:(row:any)=>void,legacy=false) {
+  const row:any=copy(recipient);
+  alter(row);
+  add("delivery eligibility: "+name,"delivery_requirements",{
+    rows:[row],allowLegacyAddressConfirmation:legacy
+  },()=>({results:[{recipientId:row.id,
+    ...deliveryRequirements(row,legacy)}]}));
+}
+deliveryCase("valid recipient",()=>{});
+deliveryCase("empty name",r=>{r.name="";});
+deliveryCase("unconfirmed incomplete address",r=>{r.addressStatus="INCOMPLETE";});
+deliveryCase("legacy verified address",r=>{r.addressStatus="CONFIRMED";r.address="창고 별관";},true);
+deliveryCase("legacy unverified address",r=>{r.addressStatus="CONFIRMED";r.address="창고 별관";},false);
+deliveryCase("missing contacts",r=>{r.phone="";r.mobile="";});
+deliveryCase("unmatched product",r=>{r.items[0].variantId=null;});
+deliveryCase("missing quantity",r=>{r.items[0].quantity=null;});
+deliveryCase("quantity unconfirmed",r=>{r.items[0].quantityConfirmed=false;});
+deliveryCase("unsafe JS quantity",r=>{r.items[0].quantity=9007199254740992;});
+deliveryCase("no items",r=>{r.items=[];});
 
 const runner=spawnSync(rustBinary||"cargo",rustBinary?[]:[
   "run","--quiet","--manifest-path",
