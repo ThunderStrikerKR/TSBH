@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ProductSearchDialog } from "../ProductSearchDialog";
 import { businessCoreCall } from "../tauri-bridge";
-import { deliveryRequirements } from "../delivery-requirements";
+import { useNativeDeliveryRequirements, evaluateNativeDeliveryRequirements } from "../useNativeDeliveryRequirements";
+import { useNativeOrderIssues } from "./useNativeOrderIssues";
 import { usePendingChanges } from "../shared/pending-changes";
 import { confirmDiscardDraft } from "../shared/editor-flow";
 import type { NoticeSink } from "../shared/notices";
 import type { Order, Product, State } from "../types";
-import { orderIssues } from "../validation";
 import { ManualPrompt } from "./ManualPrompt";
 import {
   cellKey,
@@ -94,6 +94,9 @@ function ManualClassificationEditor({
   const manualQuantityRequest = useRef<Record<string, number>>({});
   const manualTextRequest = useRef<Record<string, number>>({});
   const manualQuantityPending = useRef<Set<string>>(new Set());
+  const delivery = useNativeDeliveryRequirements(model.rows, order.receptionVersion !== 1);
+  const inspection = useMemo(() => ({ ...order, recipients: model.rows }), [order, model.rows]);
+  const nativeOrderIssues = useNativeOrderIssues(inspection);
   const latestInputs = useRef({ order, model });
   latestInputs.current = { order, model };
   const initial = useRef(JSON.stringify(model));
@@ -158,23 +161,31 @@ function ManualClassificationEditor({
   const allowed = (cell: Cell) =>
     !pendingRef.current || cellKey(pendingRef.current) === cellKey(cell);
   const nextMissing = (next: ManualModel, cell: Cell) => {
-    const slots = next.rows.flatMap((row) => {
-      const required = deliveryRequirements(row, order.receptionVersion !== 1);
-      return [
-        !required.name && { recipientId: row.id, field: "name" },
-        !required.address && { recipientId: row.id, field: "address" },
-        !required.contact && { recipientId: row.id, field: "mobile" },
-      ].filter(Boolean) as Cell[];
-    });
-    const rowIndex = next.rows.findIndex((row) => row.id === cell.recipientId);
-    const fields = ["name", "address", "mobile", "phone"];
-    const position = rowIndex * 4 + fields.indexOf(cell.field);
-    const following = slots.find(
-      (slot) =>
-        next.rows.findIndex((row) => row.id === slot.recipientId) * 4 + fields.indexOf(slot.field) >
-        position,
-    );
-    if (following) focus(following);
+    // The next required field is selected from a fresh native projection.
+    // A completed previous request must not move focus after later edits.
+    const expected = JSON.stringify(next.rows);
+    void evaluateNativeDeliveryRequirements(next.rows, order.receptionVersion !== 1)
+      .then((results) => {
+        if (JSON.stringify(latestInputs.current.model.rows) !== expected) return;
+        const byId = new Map(results.map((item) => [item.recipientId, item]));
+        const slots = next.rows.flatMap((row) => {
+          const required = byId.get(row.id);
+          if (!required) return [];
+          return [
+            !required.name && { recipientId: row.id, field: "name" },
+            !required.address && { recipientId: row.id, field: "address" },
+            !required.contact && { recipientId: row.id, field: "mobile" },
+          ].filter(Boolean) as Cell[];
+        });
+        const rowIndex = next.rows.findIndex((row) => row.id === cell.recipientId);
+        const fields = ["name", "address", "mobile", "phone"];
+        const position = rowIndex * 4 + fields.indexOf(cell.field);
+        const following = slots.find((slot) =>
+          next.rows.findIndex((row) => row.id === slot.recipientId) * 4 +
+          fields.indexOf(slot.field) > position);
+        if (following) focus(following);
+      }).catch((e) => fail("Rust 배송 필수정보 조회 실패: " +
+        (e instanceof Error ? e.message : String(e)), cell));
   };
   const cancelProduct = () => {
     const cell = pendingRef.current;
@@ -507,7 +518,9 @@ function ManualClassificationEditor({
   const textCell = (cell: Cell, label: string) => {
     const key = cellKey(cell),
       row = model.rows.find((row) => row.id === cell.recipientId)!,
-      required = deliveryRequirements(row, order.receptionVersion !== 1);
+      required = delivery.byId[row.id] ?? {
+        name: false, address: false, contact: false, product: false, quantity: false,
+      };
     const item = row.items.find((item) => item.id === cell.itemId);
     const invalid =
       cell.field === "name"
@@ -736,7 +749,7 @@ function ManualClassificationEditor({
         entry[cellKey({ recipientId: row.id, itemId: item.id, field: "product" })] !== undefined,
     ),
   );
-  const issues = orderIssues({ ...order, recipients: model.rows }).filter(
+  const issues = nativeOrderIssues.issues.filter(
     (issue) => issue.severity === "ACTION",
   );
   const layer = completion || !!confirm || !!search || nativeDraftBusy;
@@ -931,7 +944,7 @@ function ManualClassificationEditor({
             <button
               className="primary"
               disabled={
-                nativeDraftBusy || !!pending || !model.rows.length || uncommitted || !!pendingManualQuantity(model)
+                !delivery.ready || !nativeOrderIssues.ready || nativeDraftBusy || !!pending || !model.rows.length || uncommitted || !!pendingManualQuantity(model)
               }
               onClick={() => setCompletion(true)}
             >
