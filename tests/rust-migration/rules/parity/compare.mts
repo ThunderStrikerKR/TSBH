@@ -3672,7 +3672,7 @@ productNoticeCase("5001 notices rejected",Object.fromEntries(
 
 // P0 manual-draft migration: actual TypeScript baseline and Rust IPC dispatcher.
 // Keep both the original data and the explicit JS assignment insertion order.
-const manualOrder:any={
+const manualBaselineOrder:any={
   ...copy(order), confirmedAt:undefined,
   raw:"가상명\n가상 상품 2개",analysisRaw:"가상명\n가상 상품 2개",
   recipients:[{
@@ -3698,9 +3698,9 @@ function manualDraftCase(name:string,action:string,payload:any,baseline:()=>Manu
     ()=>{const model=baseline();return {model,assignmentOrder:Object.keys(model.assignments)};});
 }
 add("manual draft: initial source blocks","apply_manual_classification",
- {action:"initial_manual",order:manualOrder},
- ()=>{const model=initialManual(manualOrder);return {model,assignmentOrder:Object.keys(model.assignments)};});
-const savedManual:any=copy(manualOrder);
+ {action:"initial_manual",order:manualBaselineOrder},
+ ()=>{const model=initialManual(manualBaselineOrder);return {model,assignmentOrder:Object.keys(model.assignments)};});
+const savedManual:any=copy(manualBaselineOrder);
 savedManual.manualClassification={
  blocks:[{id:"0:3",start:0,end:3,field:"name",targetId:"r1",text:"가상명"}],
  assignments:{"0:3":{recipientId:"r1",field:"name",value:"가상명"}}
@@ -3710,38 +3710,38 @@ add("manual draft: reopen saved assignments","apply_manual_classification",
  ()=>{const model=initialManual(savedManual);return {model,assignmentOrder:Object.keys(model.assignments)};});
 manualDraftCase("assign recipient name","manual_assign_block",
  {model:manualDraft,id:"0:3",cell:{recipientId:"r1",field:"name"},
-  state:baseState,order:manualOrder,assignmentOrder:[]},
- ()=>assignManualBlock(manualDraft,"0:3",{recipientId:"r1",field:"name"},baseState as any,manualOrder));
-const linkedModel=assignManualBlock(manualDraft,"0:3",{recipientId:"r1",field:"name"},baseState as any,manualOrder);
+  state:baseState,order:manualBaselineOrder,assignmentOrder:[]},
+ ()=>assignManualBlock(manualDraft,"0:3",{recipientId:"r1",field:"name"},baseState as any,manualBaselineOrder));
+const linkedModel=assignManualBlock(manualDraft,"0:3",{recipientId:"r1",field:"name"},baseState as any,manualBaselineOrder);
 manualDraftCase("release recipient name","manual_release_block",
- {model:linkedModel,id:"0:3",clear:true,state:baseState,order:manualOrder,
+ {model:linkedModel,id:"0:3",clear:true,state:baseState,order:manualBaselineOrder,
   assignmentOrder:Object.keys(linkedModel.assignments)},
- ()=>releaseManualBlock(linkedModel,"0:3",true,baseState as any,manualOrder));
+ ()=>releaseManualBlock(linkedModel,"0:3",true,baseState as any,manualBaselineOrder));
 manualDraftCase("release without clearing a linked field","manual_release_block",
- {model:linkedModel,id:"0:3",clear:false,state:baseState,order:manualOrder,
+ {model:linkedModel,id:"0:3",clear:false,state:baseState,order:manualBaselineOrder,
   assignmentOrder:Object.keys(linkedModel.assignments)},
- ()=>releaseManualBlock(linkedModel,"0:3",false,baseState as any,manualOrder));
+ ()=>releaseManualBlock(linkedModel,"0:3",false,baseState as any,manualBaselineOrder));
 manualDraftCase("release missing block no-op","manual_release_block",
- {model:manualDraft,id:"missing",clear:true,state:baseState,order:manualOrder},
- ()=>releaseManualBlock(manualDraft,"missing",true,baseState as any,manualOrder));
+ {model:manualDraft,id:"missing",clear:true,state:baseState,order:manualBaselineOrder},
+ ()=>releaseManualBlock(manualDraft,"missing",true,baseState as any,manualBaselineOrder));
 manualDraftCase("select registered product","set_manual_product",
  {model:manualDraft,cell:{recipientId:"r1",itemId:"mi1",field:"product"},
-  value:"가상 상품",product,state:baseState,order:manualOrder},
+  value:"가상 상품",product,state:baseState,order:manualBaselineOrder},
  ()=>setManualValue(manualDraft,{recipientId:"r1",itemId:"mi1",field:"product"},
-   "가상 상품",baseState as any,manualOrder,product as any));
+   "가상 상품",baseState as any,manualBaselineOrder,product as any));
 manualDraftCase("clear product cell","set_manual_product",
  {model:manualDraft,cell:{recipientId:"r1",itemId:"mi1",field:"product"},
-  value:"",state:baseState,order:manualOrder},
+  value:"",state:baseState,order:manualBaselineOrder},
  ()=>setManualValue(manualDraft,{recipientId:"r1",itemId:"mi1",field:"product"},
-   "",baseState as any,manualOrder));
+   "",baseState as any,manualBaselineOrder));
 manualDraftCase("assign a source quantity","manual_assign_block",
  {model:{...manualDraft,blocks:[{id:"0:2",start:0,end:2,
    field:"quantity",text:"2개",targetId:"mi1"}]} as any,
   id:"0:2",cell:{recipientId:"r1",itemId:"mi1",field:"quantity"},
-  state:baseState,order:manualOrder},
+  state:baseState,order:manualBaselineOrder},
  ()=>assignManualBlock({...manualDraft,blocks:[{id:"0:2",start:0,end:2,
    field:"quantity",text:"2개",targetId:"mi1"}]} as any,"0:2",
-   {recipientId:"r1",itemId:"mi1",field:"quantity"},baseState as any,manualOrder));
+   {recipientId:"r1",itemId:"mi1",field:"quantity"},baseState as any,manualBaselineOrder));
 
 const runner=spawnSync(rustBinary||"cargo",rustBinary?[]:[
   "run","--quiet","--manifest-path",
