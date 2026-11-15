@@ -885,15 +885,37 @@ try {
           return {valid:true};
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
             args.operation === "upsert_brand") {
+          // Mirror catalog_clients/brands.rs:upsert_brand. A string of aliases
+          // is INPUT only; Rust returns a normalized array and evidenceUrl.
+          // Sending the input string back to React crashes b.aliases.join().
           const {state:input,editing,id,name,korean,aliases,evidence}=args.payload;
-          if(!name?.trim()) throw Error("브랜드 이름이 누락되었습니다.");
+          const brandId=editing||id;
+          if(!brandId || !name?.trim()) throw Error("브랜드 공식명을 입력하세요.");
+          const evidenceUrl=(evidence??"").trim();
+          let parsed;
+          try{parsed=new URL(evidenceUrl);}catch{throw Error("브랜드 확인 근거는 HTTPS URL이어야 합니다.");}
+          if(parsed.protocol!=="https:"||!parsed.hostname||parsed.username||parsed.password)
+            throw Error("브랜드 확인 근거는 HTTPS URL이어야 합니다.");
+          const normalized=(x)=>x.normalize("NFKC").trim().toLowerCase().replace(/\\s+/g," ");
+          const byAlias=new Map();
+          for(const term of (aliases??"").split(",")){
+            const trimmed=term.trim();
+            if(trimmed)byAlias.set(normalized(trimmed),trimmed);
+          }
+          const record={id:brandId,name:name.trim(),korean:(korean??"").trim(),
+            aliases:[...byAlias.values()],evidenceUrl};
           const next=structuredClone(input);
-          const found=next.brands?.findIndex(row=>row.id===(editing??id))??-1;
-          const record={...(found>=0?next.brands[found]:{}),
-            id:editing??id,name,korean,aliases,evidence};
-          if(!next.brands)next.brands=[];
-          if(found>=0)next.brands[found]=record;
-          else next.brands.push(record);
+          next.brands=(next.brands??[]).filter(b=>!editing||b.id!==editing);
+          const terms=[record.name,record.korean,...record.aliases]
+            .filter(Boolean).map(normalized);
+          for(const existing of next.brands){
+            const used=[existing.name,existing.korean,...(existing.aliases??[])]
+              .filter(Boolean).map(normalized);
+            if(terms.some(term=>used.includes(term)))
+              throw Error("브랜드 공식명, 한글명 또는 검색 별칭이 다른 브랜드와 중복됩니다.");
+          }
+          next.brands.push(record);
+          window.__navRustBrandUpserts=(window.__navRustBrandUpserts??0)+1;
           return {state:next};
         }
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
@@ -1869,25 +1891,16 @@ try {
   assert.equal(await brandInput.inputValue(),"CI브랜드수정취소시험");
   await editBrand("CI검증브랜드B");
   await leave.getByRole("button", {name:"저장 안 함"}).click();
-  // The React-controlled value is the source of truth. After a native
-  // dialog closes, Playwright's inputValue() can get stuck waiting on a
-  // focus-restoration render even while the accessible input is visible.
-  // Check the actual visible DOM input and keep the role selector assertion.
-  const readVisibleEditorValue = async (label) => navPage.evaluate((name) => {
-    const input=document.querySelector('input[aria-label="'+name+'"]');
-    if(!input || !input.getClientRects().length)
-      throw Error("Editor is not visibly mounted: "+name);
-    return input.value;
-  },label);
-  assert.equal(await brandInput.count(),1,
-    "Brand editor must remain discoverable by its accessible name");
-  assert.equal(await readVisibleEditorValue("브랜드 공식명"),"CI검증브랜드B");
+  assert.equal(await brandInput.inputValue(),"CI검증브랜드B");
   await editBrand("CI검증브랜드A");
   await brandInput.fill("CI검증브랜드A-저장");
   await editBrand("CI검증브랜드B");
   await leave.getByRole("button", {name:"저장",exact:true}).click();
-  assert.equal(await readVisibleEditorValue("브랜드 공식명"),"CI검증브랜드B");
+  assert.equal(await brandInput.inputValue(),"CI검증브랜드B");
   assert.equal((await mockState()).state.brands.find(b => b.id==="ci-brand-a").name,"CI검증브랜드A-저장");
+  assert.deepEqual((await mockState()).state.brands.find(b => b.id==="ci-brand-a").aliases,[]);
+  assert.ok((await navPage.evaluate(()=>window.__navRustBrandUpserts??0))>0,
+    "Brand save must invoke native upsert_brand");
   console.log("PASS: brand target switch Save / Discard / Cancel");
 
   await productSubnav.getByRole("button", {name:"별칭 관리"}).click();
@@ -1912,15 +1925,15 @@ try {
   await editAlias("CI회귀별칭B");
   await checkPrompt("alias switch");
   await leave.getByRole("button", {name:"취소",exact:true}).click();
-  assert.equal(await readVisibleEditorValue("관리 별칭"),"CI별칭수정취소시험");
+  assert.equal(await aliasInput.inputValue(),"CI별칭수정취소시험");
   await editAlias("CI회귀별칭B");
   await leave.getByRole("button", {name:"저장 안 함"}).click();
-  assert.equal(await readVisibleEditorValue("관리 별칭"),"CI회귀별칭B");
+  assert.equal(await aliasInput.inputValue(),"CI회귀별칭B");
   await editAlias("CI회귀별칭A");
   await aliasInput.fill("CI회귀별칭A저장검사");
   await editAlias("CI회귀별칭B");
   await leave.getByRole("button", {name:"저장",exact:true}).click();
-  assert.equal(await readVisibleEditorValue("관리 별칭"),"CI회귀별칭B");
+  assert.equal(await aliasInput.inputValue(),"CI회귀별칭B");
   assert.equal((await mockState()).state.aliases.find(a => a.id==="ci-alias-a").text,"CI회귀별칭A저장검사");
   console.log("PASS: alias target switch Save / Discard / Cancel");
 
