@@ -273,7 +273,7 @@ jobs:
           $exe = "native-exe/bando_hub.exe"
           $digest = "native-exe/bando_hub.exe.sha256"
           if (!(Test-Path $exe) -or !(Test-Path $digest)) { throw "CI native EXE or checksum missing" }
-          $expected = ((Get-Content $digest -Raw).Trim() -split '\\s+')[0]
+          $expected = ((Get-Content $digest -Raw).Trim() -split '\s+')[0]
           $actual = (Get-FileHash $exe -Algorithm SHA256).Hash
           if ($expected -ne $actual) { throw "EXE SHA256 mismatch between native UI and client persistence audits" }
           Write-Host "Exact-HEAD Windows EXE SHA256: $actual"
@@ -295,7 +295,7 @@ jobs:
   # One green or red conclusion for PR #24. No skipped/failed gate can be
   # mistaken for a successful full migration. The Draft PR stays unmerged.
   final-rust-migration-gate:
-    name: PR #24 final Rust integration gate
+    name: "PR #24 final Rust integration gate"
     if: ${{ always() && github.ref_name == 'integration/final-rust-migration-20261116' }}
     needs:
       - output-rust
