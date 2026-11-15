@@ -73,7 +73,7 @@ export function TestDatabasePanel({ state, onReset }: { state: State; onReset: (
       >
         백업 후 테스트 데이터 초기화
       </button>
-      <p className="form-error">{error}</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
       <BackupRestoreDrill onRestored={onReset} />
     </section>
   );
