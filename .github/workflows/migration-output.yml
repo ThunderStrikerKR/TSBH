@@ -262,6 +262,12 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - name: Provision Python sqlite3 for independent relational-row assertions
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate SQL audit helper syntax
+        run: python -m py_compile scripts/assert-client-core-row.py
       - name: Retrieve identical CI-only Windows binary
         uses: actions/download-artifact@v4
         with:
