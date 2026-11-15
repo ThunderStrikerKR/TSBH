@@ -7,6 +7,7 @@ on:
       - migration/27-unified-rust
       - migration/28-ts-runtime-closure
       - migration/28-reception-manual-rust
+      - migration/28-order-edit-rules-rust
       - migration/05-factory-reply
       - integration/06-history-settlement
   workflow_dispatch:
@@ -55,7 +56,7 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
   windows-p1p2-real-exe:
-    if: github.ref_name == 'migration/27-unified-rust' || github.ref_name == 'migration/03-integration' || github.ref_name == 'migration/28-ts-runtime-closure' || github.ref_name == 'migration/28-reception-manual-rust'
+    if: github.ref_name == 'migration/27-unified-rust' || github.ref_name == 'migration/03-integration' || github.ref_name == 'migration/28-ts-runtime-closure' || github.ref_name == 'migration/28-reception-manual-rust' || github.ref_name == 'migration/28-order-edit-rules-rust'
     runs-on: windows-latest
     timeout-minutes: 75
     steps:
