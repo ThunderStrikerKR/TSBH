@@ -1869,54 +1869,24 @@ try {
   assert.equal(await brandInput.inputValue(),"CI브랜드수정취소시험");
   await editBrand("CI검증브랜드B");
   await leave.getByRole("button", {name:"저장 안 함"}).click();
-  const brandSwitchState = await navPage.evaluate(() => ({
-    activeMenu:[...document.querySelectorAll('[aria-label="업무 메뉴"] [aria-current="page"]')]
-      .map(el=>el.textContent?.trim()),
-    activeProductTabs:[...document.querySelectorAll('[aria-label="상품 관리 메뉴"] button')]
-      .filter(el=>el.getAttribute("aria-current")==="page").map(el=>el.textContent?.trim()),
-    brandInputs:document.querySelectorAll('input[aria-label="브랜드 공식명"]').length,
-    brandRows:[...document.querySelectorAll(".registry-brand-manager .registry-row strong")]
-      .map(el=>el.textContent?.trim()).slice(0,5),
-    dialogs:[...document.querySelectorAll("dialog")].map(el=>({
-      name:el.getAttribute("aria-label"),open:el.open,text:el.textContent?.trim().slice(0,150),
-    })),
-    alerts:[...document.querySelectorAll('[role="alert"]')].map(el=>el.textContent?.trim()).slice(0,5),
-    headings:[...document.querySelectorAll("h1,h2")].map(el=>el.textContent?.trim()).slice(0,12),
-  }));
-  console.log("BRAND_AFTER_DISCARD_DIAGNOSTICS",JSON.stringify(brandSwitchState));
-  const brandAccessibility = await navPage.evaluate(() => {
-    const input=document.querySelector('input[aria-label="브랜드 공식명"]');
-    if(!input)return {exists:false};
-    const ancestors=[];let current=input;
-    while(current && ancestors.length<9){
-      const styles=getComputedStyle(current);
-      ancestors.push({tag:current.tagName,className:String(current.className).slice(0,90),
-        display:styles.display,visibility:styles.visibility,
-        ariaHidden:current.getAttribute("aria-hidden"),inert:current.inert});
-      current=current.parentElement;
-    }
-    return {exists:true,value:input.value,visible:!!input.getClientRects().length,
-      name:input.getAttribute("aria-label"),ancestors};
-  });
-  console.log("BRAND_ACCESSIBILITY_DIAGNOSTICS",JSON.stringify({
-    accessibility:brandAccessibility,roleCount:await brandInput.count(),
-    selectorCount:await navPage.locator('input[aria-label="브랜드 공식명"]').count(),
-  }));
-  assert.equal(brandSwitchState.brandInputs,1,
-    "Brand discard must retain its mounted editor: "+JSON.stringify(brandSwitchState));
-  // The input is visible, accessible and has the correct React-controlled
-  // value. Reading it from the DOM avoids a Playwright inputValue() race
-  // during the native dialog close/focus restoration frame.
-  assert.equal(brandAccessibility.visible,true,
-    "Brand editor must remain visible after discarding record changes");
+  // The React-controlled value is the source of truth. After a native
+  // dialog closes, Playwright's inputValue() can get stuck waiting on a
+  // focus-restoration render even while the accessible input is visible.
+  // Check the actual visible DOM input and keep the role selector assertion.
+  const readVisibleEditorValue = async (label) => navPage.evaluate((name) => {
+    const input=document.querySelector('input[aria-label="'+name+'"]');
+    if(!input || !input.getClientRects().length)
+      throw Error("Editor is not visibly mounted: "+name);
+    return input.value;
+  },label);
   assert.equal(await brandInput.count(),1,
     "Brand editor must remain discoverable by its accessible name");
-  assert.equal(brandAccessibility.value,"CI검증브랜드B");
+  assert.equal(await readVisibleEditorValue("브랜드 공식명"),"CI검증브랜드B");
   await editBrand("CI검증브랜드A");
   await brandInput.fill("CI검증브랜드A-저장");
   await editBrand("CI검증브랜드B");
   await leave.getByRole("button", {name:"저장",exact:true}).click();
-  assert.equal(await brandInput.inputValue(),"CI검증브랜드B");
+  assert.equal(await readVisibleEditorValue("브랜드 공식명"),"CI검증브랜드B");
   assert.equal((await mockState()).state.brands.find(b => b.id==="ci-brand-a").name,"CI검증브랜드A-저장");
   console.log("PASS: brand target switch Save / Discard / Cancel");
 
@@ -1942,15 +1912,15 @@ try {
   await editAlias("CI회귀별칭B");
   await checkPrompt("alias switch");
   await leave.getByRole("button", {name:"취소",exact:true}).click();
-  assert.equal(await aliasInput.inputValue(),"CI별칭수정취소시험");
+  assert.equal(await readVisibleEditorValue("관리 별칭"),"CI별칭수정취소시험");
   await editAlias("CI회귀별칭B");
   await leave.getByRole("button", {name:"저장 안 함"}).click();
-  assert.equal(await aliasInput.inputValue(),"CI회귀별칭B");
+  assert.equal(await readVisibleEditorValue("관리 별칭"),"CI회귀별칭B");
   await editAlias("CI회귀별칭A");
   await aliasInput.fill("CI회귀별칭A저장검사");
   await editAlias("CI회귀별칭B");
   await leave.getByRole("button", {name:"저장",exact:true}).click();
-  assert.equal(await aliasInput.inputValue(),"CI회귀별칭B");
+  assert.equal(await readVisibleEditorValue("관리 별칭"),"CI회귀별칭B");
   assert.equal((await mockState()).state.aliases.find(a => a.id==="ci-alias-a").text,"CI회귀별칭A저장검사");
   console.log("PASS: alias target switch Save / Discard / Cancel");
 
