@@ -59,7 +59,7 @@ test("native Rust pricing/shipping effects protect persisted records and explici
   const source = readFileSync(new URL("../src/orders/useOrderDesk.tsx", import.meta.url), "utf8");
   const parts = source.split(/\n  useEffect\(\(\) => \{/);
   const priceEffect = parts.find((part) => part.includes('"rules", "reprice_order"'));
-  const freightEffect = parts.find((part) => part.includes('"rules", "calculate_shipping"'));
+  const freightEffect = parts.find((part) => part.includes('action: "calculate_order_shipping"'));
   assert.ok(priceEffect, "New receptions must invoke the real Rust repricing engine");
   assert.ok(freightEffect, "Auto freight must invoke the real Rust shipping engine");
   assert.match(priceEffect, /!liveClient \|\| !passivePricingAllowed/);
@@ -75,14 +75,17 @@ test("native Rust pricing/shipping effects protect persisted records and explici
     assert.match(block, /ruleRequests\.current/,
       "Out-of-order native responses must be rejected");
   }
-  assert.match(source, /const edit = \([\s\S]*?next\.shippingFee = null;[\s\S]*?next\.shippingVersion = "";/,
-    "Explicit staff edits must invalidate old freight until Rust recalculates it");
+  assert.match(source, /action: "prepare_order_edit"/,
+    "Explicit staff edits must delegate shipping invalidation to Rust");
+  const rust = readFileSync(new URL("../src-tauri/src/business_core/rules/order_edit.rs", import.meta.url), "utf8");
+  assert.match(rust, /set\(order,"shippingFee",Value::Null\)/);
+  assert.match(rust, /set\(order,"shippingVersion",json!\(""\)\)/);
   assert.doesNotMatch(source, /recommendShipping\(previous, state\)/,
     "React must not silently revert to TypeScript tariff computation");
   const orderDesk = readFileSync(new URL("../src/OrderDesk.tsx", import.meta.url), "utf8");
-  assert.match(orderDesk, /onDealer=\{async \(c\) => \{[\s\S]*?nativeRepriceEditedOrder\(/,
-    "Dealer change must call the real Rust unit-price resolver");
-  assert.match(orderDesk, /nativeReconcileWorkflow\(state, next\)/,
+  assert.match(orderDesk, /onDealer=\{async \(c\) => \{[\s\S]*?action: "change_order_client"/,
+    "Dealer change must call the compiled Rust price and invoice reducer");
+  assert.match(orderDesk, /nativeReconcileWorkflow\(sourceState, next\)/,
     "Saved dealer edits must run Rust workflow reconciliation");
 });
 
