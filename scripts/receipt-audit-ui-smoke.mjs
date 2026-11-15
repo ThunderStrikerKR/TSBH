@@ -840,6 +840,39 @@ try {
               v.wholesale==null||v.semi==null||v.retail==null))
           ).map(p=>p.id);
         }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "shipping_read") {
+          const input=args.payload.state,sh=input.shipping??{groups:[],productRules:{},combinations:[]};
+          const effective=(input.products??[]).map(product=>{
+            const group=sh.groups?.find(g=>g.id===product.shippingGroupId&&!g.deletedAt)??null;
+            const rule=group?.current??sh.productRules?.[product.id]??null;
+            return {productId:product.id,group,rule,
+              editableRule:rule?structuredClone(rule):null};
+          });
+          return {effective,groups:(sh.groups??[]).filter(g=>!g.deletedAt).map(g=>({
+            id:g.id,editableRule:structuredClone(g.current)})),
+            combinations:(sh.combinations??[]).map(c=>({id:c.id,current:!!c.active}))};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_shipping_action" &&
+            args.payload?.action === "product_freight_view") {
+          const input=args.payload.state,sh=input.shipping??{groups:[],productRules:{}};
+          const views=Object.fromEntries((input.products??[]).map(product=>{
+            const group=sh.groups?.find(g=>g.id===product.shippingGroupId&&!g.deletedAt)??null;
+            const rule=group?.current??sh.productRules?.[product.id]??null;
+            return [product.id,{group:group?{id:group.id,name:group.name}:null,
+              rule:rule?structuredClone(rule):null,
+              editableRule:rule?structuredClone(rule):null}];
+          }));
+          window.__navRustProductFreightReads=(window.__navRustProductFreightReads??0)+1;
+          return {views};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_shipping_action" &&
+            args.payload?.action === "default_product_rule") {
+          return {rule:{version:args.payload.versionId,at:args.payload.now,
+            maxBundle:null,maxConfirmed:false,fees:{},perItem:null,notes:""}};
+        }
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
             args.operation === "alias_problems") return [];
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
@@ -1657,6 +1690,8 @@ try {
   console.log("PASS: freight product rows match compact vertical rhythm");
 
   // Closing a freight editor must prompt while the original dialog is still open.
+  assert.ok((await navPage.evaluate(()=>window.__navRustProductFreightReads??0))>0,
+    "Freight product editor must wait for the native product_freight_view result");
   await navPage.getByRole("button",{name:"기본 운임 설정"}).first().click();
   const freightEditor = navPage.getByRole("dialog",{name:/운임 설정/});
   await auditModalLayout(freightEditor,"상품별 운임 설정");
