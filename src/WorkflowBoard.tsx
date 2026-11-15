@@ -380,9 +380,8 @@ export function WorkflowBoard({
                   <span>
                     금액 재안내 필요 / 이전 {won(g.notices.at(-1)?.total ?? null)} → 현재{" "}
                     {won(nativeGroup?.totals.total ?? null)} / 차액{" "}
-                    {nativeGroup?.totals.total !== null &&
-                      nativeGroup?.totals.total !== undefined && g.notices.length
-                      ? won(nativeGroup.totals.total - g.notices.at(-1)!.total)
+                    {nativeGroup?.noticeDelta != null
+                      ? won(nativeGroup.noticeDelta)
                       : "확인 필요"}
                   </span>
                 )}
