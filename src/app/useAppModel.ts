@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { confirmAction, askSaveChanges } from "../dialogs";
-import { orderClient } from "../domain";
 import { businessCoreCall } from "../tauri-bridge";
 import { newReception } from "../orders/reception";
 import { sameValue } from "../shared/draft";
@@ -224,29 +223,22 @@ export function useAppModel() {
       !state.orders.some((o) => o.id === draft.id)
     )
       throw Error("최종 검수 후 주문 확인 완료로 정식 접수하세요.");
-    const c = orderClient(draft, state);
-    if (!c) throw Error("거래처를 선택하세요.");
-    // The native Rust rules engine owns amounts, approvals, status and queue
-    // membership. A result for an older draft/revision must not be committed.
+    // A text edit can be visible before Rust has finalized business flags.
+    // Reject saving that intermediate object, even when the user clicks quickly.
+    if (draft.pendingNativeEdit)
+      throw Error("주문 수정의 Rust 검증이 완료된 후 저장하세요.");
     const sourceState = state;
     const sourceDraft = draft;
-    let preparedDraft = sourceDraft;
-    // A user may press Save before the pending native tariff calculation
-    // finishes. Never persist an interim empty freight/version marker.
-    if (sourceDraft.shippingMode === "AUTO" &&
-        sourceDraft.shippingVersion === "" && sourceDraft.shippingFee === null) {
-      const freight = await businessCoreCall<{ total: number | null; version: string }>(
-        "rules", "calculate_shipping", { order: sourceDraft, state: sourceState },
-      );
-      if (latestSaveInputs.current.state !== sourceState ||
-          latestSaveInputs.current.draft !== sourceDraft)
-        throw Error("운임 계산 중 주문이 변경되었습니다. 확인 후 다시 저장하세요.");
-      preparedDraft = {
-        ...sourceDraft,
-        shippingFee: c.shippingFeeExcluded ? 0 : freight.total,
-        shippingVersion: freight.version,
-      };
-    }
+    // Client choice, frozen-client terms, freight waiver and the pending AUTO
+    // tariff all come from ONE native reducer. React supplies no price policy.
+    const { order: preparedDraft, client: c } = await businessCoreCall<{
+      order: Order; client: State["clients"][number];
+    }>("rules", "order_edit_rules", {
+      action: "prepare_order_save", state: sourceState, order: sourceDraft,
+    });
+    if (latestSaveInputs.current.state !== sourceState ||
+        latestSaveInputs.current.draft !== sourceDraft)
+      throw Error("주문 정보가 변경되었습니다. 최신 내용을 확인한 뒤 다시 저장하세요.");
     const result = await businessCoreCall<{ state: State; order: Order }>(
       "rules", "save_order", {
         state: sourceState, order: preparedDraft, client: c,
