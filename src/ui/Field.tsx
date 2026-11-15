@@ -5,7 +5,7 @@ const FieldContext = createContext<{ id: string; label: string } | undefined>(un
 export function useField() {
   return useContext(FieldContext);
 }
-export function Field({ label, children, help }: { label: string; children: ReactNode; help?: HelpTooltipText }) {
+export function Field({ label, children, help, helpTitle = label }: { label: string; children: ReactNode; help?: HelpTooltipText; helpTitle?: string }) {
   const id = useId();
   const native = Children.toArray(children).find(
     (child) =>
@@ -20,7 +20,7 @@ export function Field({ label, children, help }: { label: string; children: Reac
         {help ? (
           <div className="field-label-wrap">
             <label className="field-label" htmlFor={target}>{label}</label>
-            <HelpTooltip title={label} {...help} />
+            <HelpTooltip title={helpTitle} {...help} />
           </div>
         ) : (
           <label className="field-label" htmlFor={target}>{label}</label>
