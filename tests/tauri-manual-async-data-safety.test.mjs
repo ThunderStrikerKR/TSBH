@@ -32,11 +32,13 @@ test("a failed name/address/contact/note call cannot silently apply the older mo
 });
 
 test("pending native cell operations cannot race structural edits, reset, undo, or product selection", () => {
-  assert.match(source, /const requireNativeCellsSettled = \(\) => \{\s*if \(\!nativeTextPending\.current\.size && \!manualQuantityPending\.current\.size\)/);
-  for (const action of ["cancelProduct", "resize", "addProduct", "removeProduct"]) {
-    const re = new RegExp("const " + action + " = \\([^]*?\\) => \\{\\s*if \\(\\!requireNativeCellsSettled\\(\\)\\) return;");
-    assert.match(source, re, action);
-  }
+  assert.match(source, /const requireNativeCellsSettled = \(\) => \{\s*if \(\!nativeDraftLock\.current && \!nativeTextPending\.current\.size &&[\s\S]*?\!manualQuantityPending\.current\.size\) return true/);
+  assert.match(source, /const nativeStructure = async \(/);
+  assert.match(source, /if \(\!requireNativeCellsSettled\(\)\) return false;\s*const previousModel = model;\s*nativeDraftLock\.current = true/);
+  assert.match(source, /const cancelProduct = \(\) => \{\s*if \(\!requireNativeCellsSettled\(\)\) return/);
+  assert.match(source, /const resize = \(n: number\) => \{\s*if \(\!requireNativeCellsSettled\(\)\) return/);
+  assert.match(source, /const addProduct = \(recipientId: string\) => \{[\s\S]*?nativeStructure\("add_manual_item"/);
+  assert.match(source, /const removeProduct = \(cell: Cell\) => \{[\s\S]*?nativeStructure\("remove_manual_item"/);
   assert.match(source, /const selectProduct = \([^]*?\) => \{\s*if \(\!allowed\(cell\) \|\| nativeDraftLock\.current \|\| \!requireNativeCellsSettled\(\)\) return/);
   assert.match(source, /const useBlock = \(id: string\) => \{\s*if \(nativeDraftLock\.current \|\| \!requireNativeCellsSettled\(\)\) return/);
   assert.match(source, /event\.key\.toLowerCase\(\) === "z"\) \{\s*event\.preventDefault\(\);\s*if \(\!requireNativeCellsSettled\(\)\) return/);
