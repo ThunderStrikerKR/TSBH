@@ -56,7 +56,8 @@ test("dealer change is one native mutation and cannot reapply stale React draft 
   assert.doesNotMatch(change,/nativeRepriceEditedOrder\(/);
   assert.match(rules,/super::client_change::check/);
   assert.match(rules,/super::reply_rules::billing\(before,state,"거래처 변경",now\)/);
-  assert.match(rules,/super::pricing::reprice_order/);
+  assert.match(rules,/fn reprice_for_new_dealer\(/);
+  assert.match(rules,/super::pricing::resolve_unit_price/);
   assert.match(rules,/let freight=effective_shipping\(&changed,state\)/);
   const adapters=read("src/orders/native-rules.ts");
   assert.doesNotMatch(adapters,/export async function nativeRepriceEditedOrder/);
