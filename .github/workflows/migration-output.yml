@@ -298,6 +298,53 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # Reuse the exact same CI Windows EXE artifact. Navigation and modal
+  # assertions use actual WebView2/CDP, not a browser-only React mock.
+  windows-all-menus-dialogs:
+    name: Real Windows 8 menus, 5 settings tabs, 4 modal top-layer checks
+    if: github.ref_name == 'integration/final-rust-migration-20261116'
+    needs: windows-p1p2-real-exe
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require syntactically valid real Windows screen audit
+        run: node --check scripts/final-windows-full-screen-audit.mjs
+      - name: Reuse binary from this exact Git SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: tsbh-final-rust-exact-head-ci-exe
+          path: native-exe
+      - name: Verify binary SHA256 unchanged
+        shell: pwsh
+        run: |
+          $exe = "native-exe/bando_hub.exe"
+          $digest = "native-exe/bando_hub.exe.sha256"
+          if (!(Test-Path $exe) -or !(Test-Path $digest)) { throw "EXE or checksum missing" }
+          $expected = ((Get-Content $digest -Raw).Trim() -split '\s+')[0]
+          $actual = (Get-FileHash $exe -Algorithm SHA256).Hash
+          if ($expected -ne $actual) { throw "Screen audit binary differs from Rust IPC binary" }
+          Write-Host "Verified exact Windows EXE SHA256: $actual"
+      - name: Install WebView2 inspector, not browser emulator
+        run: npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.55.1
+      - name: Real Windows menu, settings, modal and geometry audit
+        env:
+          BANDO_NATIVE_EXE: ${{ github.workspace }}\native-exe\bando_hub.exe
+          BANDO_NATIVE_OUT: native-full-screen-evidence
+          BANDO_NATIVE_BIN_COMMIT: ${{ github.sha }}
+        run: node scripts/final-windows-full-screen-audit.mjs
+      - name: Preserve all Windows GUI screenshots, geometry and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsbh-final-rust-native-8menus-5settings-4modals
+          path: native-full-screen-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
   # One green or red conclusion for PR #24. No skipped/failed gate can be
   # mistaken for a successful full migration. The Draft PR stays unmerged.
   final-rust-migration-gate:
@@ -309,6 +356,7 @@ jobs:
       - windows-native
       - windows-p1p2-real-exe
       - windows-client-registration-persistence
+      - windows-all-menus-dialogs
       - output-ts-rust-parity
       - order-save-ts-rust-parity
       - rules-comprehensive-parity
@@ -319,7 +367,7 @@ jobs:
       - history-ts-rust-parity
     runs-on: ubuntu-latest
     steps:
-      - name: Require all thirteen verified gates to succeed
+      - name: Require all fourteen verified gates to succeed
         env:
           GATE_RESULTS: ${{ toJSON(needs) }}
         run: |
@@ -331,7 +379,7 @@ jobs:
           for (const item of report) {
             console.log(`${item.result === 'success' ? 'PASS' : 'BLOCKED'}: ${item.name} = ${item.result}`);
           }
-          if (report.length !== 13 || report.some(item => item.result !== 'success')) {
+          if (report.length !== 14 || report.some(item => item.result !== 'success')) {
             console.error('PR #24 migration remains BLOCKED. No missing or skipped job counts as success.');
             process.exitCode = 1;
           } else {
