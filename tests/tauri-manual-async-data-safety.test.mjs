@@ -26,8 +26,12 @@ test("a failed name/address/contact/note call cannot silently apply the older mo
   assert.match(source, /const uncommitted = Object\.keys\(entry\)\.length > 0/);
   const footer = section('<footer className="manual-footer">', '{search && (');
   assert.match(footer, /\!delivery\.ready \|\| \!nativeOrderIssues\.ready \|\| nativeDraftBusy \|\| nativeTextBusy/);
-  assert.match(footer, /\|\| uncommitted \|\| !!pendingManualQuantity\(model\)/);
-  assert.match(footer, /onClick=\{\(\) => \{\s*if \(\!requireNativeCellsSettled\(\) \|\| Object\.keys\(entry\)\.length > 0\)/);
+  // The quantity eligibility is now a fingerprint-matched native Rust
+  // projection. A pending or failed native check never enables Apply.
+  assert.match(footer, /\|\| uncommitted \|\|[\s\S]*?\!quantityReady \|\| quantityStatus\?\.pending === true/);
+  assert.match(footer, /if \(\!quantityReady \|\| quantityStatus\?\.pending === true\)/);
+  assert.match(footer, /if \(\!requireNativeCellsSettled\(\) \|\| Object\.keys\(entry\)\.length > 0\)/);
+  assert.doesNotMatch(footer, /pendingManualQuantity\(/);
   assert.match(source, /setEntry\(\(old\) => \{\s*const next = \{ \.\.\.old \};\s*delete next\[key\]/);
 });
 
