@@ -309,6 +309,13 @@ function checkBoardPreview(name, mutate = () => {}) {
         transferred: ships.some((ship) => ship.transferred === true),
         shipmentCount: ships.length,
         totals: groupTotals(state,group.id),
+        // The original live board displayed current TS group total minus
+        // the most recent issued notice. Native Rust must match that value.
+        noticeDelta: group.notices?.length &&
+          typeof groupTotals(state,group.id).total === "number" &&
+          typeof group.notices.at(-1)?.total === "number"
+          ? groupTotals(state,group.id).total - group.notices.at(-1).total
+          : null,
         vatLabel: vats.every(Boolean) ? "부가세 포함" :
           vats.some(Boolean) ? "부가세 포함/별도" : "부가세 별도",
         shipments: ships.map((ship) => {
