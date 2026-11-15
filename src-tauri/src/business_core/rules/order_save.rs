@@ -81,6 +81,9 @@ pub(super) fn save(payload: &Value) -> Result<Value,String> {
     if str_field(old,"status") == "EXPORTED" {
         return Err("공장 전달 완료 주문은 변경할 수 없습니다.".into());
     }
+    if has_value(field(old,"pendingNativeEdit")) {
+        return Err("주문 수정의 Rust 검증이 완료된 후 저장하세요.".into());
+    }
     let mut order = old.clone();
     // Only the first editable change of an already locked, untransferred
     // order can create a historical invoice snapshot. The timestamp/reason
