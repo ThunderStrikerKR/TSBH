@@ -1,29 +1,17 @@
-import { paymentWasCopied } from "./automatic-message";
+import { nativePaymentWasCopied } from "./native-automatic-message";
+import { useNativeWorkflowBoard } from "./orders/useNativeWorkflowBoard";
 import { useEffect, useRef, useState } from "react";
 import { confirmAction } from "./dialogs";
 import { won } from "./domain";
-import { deleteGroup, restoreGroup } from "./group-trash";
+import { nativeApplyWorkflowAction, nativeChangeGroup } from "./orders/native-rules";
 import { internalModel } from "./matching";
 import type { NoticeSink } from "./shared/notices";
 import type { State } from "./types";
 import { Field, Modal } from "./ui";
-import { blocking, orderIssues } from "./validation";
+
 import {
-  advanceGroup,
-  confirmGroupPayment,
-  detachShipment,
   groupShipments,
-  groupStep,
-  groupTotals,
-  paymentBalance,
-  processGroup,
-  regroupShipment,
   shipmentContext,
-  shipmentFreightCode,
-  shipmentTotals,
-  shipmentVat,
-  undoGroup,
-  workflowIssues,
 } from "./workflow";
 export interface WorkflowSelection {
   orderId: string;
@@ -53,6 +41,8 @@ export function SignalLights({ step, notice = false }: { step: number; notice?: 
 }
 export function WorkflowBoard({
   state,
+  previewReady = true,
+  previewError = "",
   persistedState,
   selection,
   activeKey,
@@ -65,6 +55,8 @@ export function WorkflowBoard({
   onStageHover?: (v: { groupId: string; step: number } | undefined) => void;
   stageHover?: { groupId: string; step: number };
   state: State;
+  previewReady?: boolean;
+  previewError?: string;
   persistedState?: State;
   activeKey?: string;
   selection?: WorkflowSelection;
@@ -73,6 +65,8 @@ export function WorkflowBoard({
   onNotice: NoticeSink;
 }) {
   const [undoDelete, setUndoDelete] = useState<{ gid: string; at: string }>();
+  const native = useNativeWorkflowBoard(state);
+  const ready = previewReady && native.ready;
   useEffect(() => {
     if (!undoDelete) return;
     const end = (e: Event) => {
@@ -100,9 +94,11 @@ export function WorkflowBoard({
   useEffect(() => {
     const id = hoveredGroup.current;
     if (!id) return;
-    const step = groupStep(state, id);
+    if (!ready) return;
+    const step = native.byId[id]?.step;
+    if (step === undefined) return;
     onStageHover?.(step < 4 ? { groupId: id, step: step + 1 } : undefined);
-  }, [state.workflow, onStageHover]);
+  }, [ready, native.byId, onStageHover]);
   const [collapsed, setCollapsed] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [manage, setManage] = useState<string>();
@@ -138,13 +134,13 @@ export function WorkflowBoard({
     }, 100);
     return () => clearInterval(timer);
   }, [latestDeadline]);
-  const run = async (fn: () => State, stageGroupId?: string) => {
-    if (inFlight.current || (stageGroupId && (stageDeadlines[stageGroupId] ?? 0) > Date.now()))
+  const run = async (fn: () => Promise<State> | State, stageGroupId?: string) => {
+    if (!ready || inFlight.current || (stageGroupId && (stageDeadlines[stageGroupId] ?? 0) > Date.now()))
       return;
     inFlight.current = true;
     setBusy(true);
     try {
-      await onSave(fn());
+      await onSave(await fn());
       if (stageGroupId) {
         const at = Date.now();
         setDeadlines((previous) => ({
@@ -154,9 +150,10 @@ export function WorkflowBoard({
         setClock(at);
       }
     } catch (e) {
-      const issue = stageGroupId
-        ? workflowIssues(state, stageGroupId).find((issue) =>
-            blocking(issue, Math.min(4, groupStep(state, stageGroupId) + 1)),
+      const issue = native.ready && stageGroupId
+        ? native.byId[stageGroupId]?.issues.find((issue) =>
+            issue.severity === "ACTION" &&
+            issue.blockingStage <= Math.min(4, native.byId[stageGroupId]?.nextStep ?? 4),
           )
         : undefined;
       if (stageGroupId && issue) {
@@ -186,12 +183,19 @@ export function WorkflowBoard({
         <b>발주서 묶음</b>
         <small>배송 건별 정보 / 묶음별 진행</small>
       </div>
+      {(previewError || native.error) && (
+        <p role="alert">업무 미리보기 계산 오류: {previewError || native.error}</p>
+      )}
+      {!ready && !previewError && !native.error && (
+        <p role="status" className="muted">주문 미리보기 계산 중</p>
+      )}
       {!groups.length && (
         <p className="muted">거래처와 발주 원문을 입력하면 수취인별 배송 건이 생성됩니다.</p>
       )}
       {groups.map((g) => {
+        const nativeGroup = native.byId[g.id];
         const ss = groupShipments(state, g.id),
-          step = groupStep(state, g.id),
+          step = nativeGroup?.step ?? 0,
           first = shipmentContext(state, ss[0]),
           open = !collapsed.includes(g.id),
           selected = selection?.groupId === g.id;
@@ -238,18 +242,18 @@ export function WorkflowBoard({
                 <b>{first.client.displayName || first.client.name}</b>
               </span>
               <button
-                disabled={first.order.receptionVersion === 1 && !first.order.confirmedAt}
+                disabled={!ready || (first.order.receptionVersion === 1 && !first.order.confirmedAt)}
                 onClick={() => setManage(g.id)}
               >
                 묶음 관리
               </button>
               <button
                 className="trash-button"
-                disabled={first.order.receptionVersion === 1 && !first.order.confirmedAt}
+                disabled={!ready || (first.order.receptionVersion === 1 && !first.order.confirmedAt)}
                 aria-label={"주문 묶음 삭제 " + first.client.name}
                 onClick={async () => {
                   if (
-                    busy ||
+                    busy || !ready ||
                     !(await confirmAction(
                       first.client.name +
                         " / 배송 " +
@@ -260,7 +264,7 @@ export function WorkflowBoard({
                     return;
                   setBusy(true);
                   try {
-                    const next = deleteGroup(state, g.id);
+                    const next = await nativeChangeGroup(state, g.id, "delete_group");
                     await onSave(next);
                     setUndoDelete({
                       gid: g.id,
@@ -288,13 +292,13 @@ export function WorkflowBoard({
             </header>
             {first.order.orderType !== "RETAIL" && (
               <div className="workflow-progress">
-                <SignalLights step={step} notice={g.needsNotice} />
+                {ready && nativeGroup && <SignalLights step={step} notice={g.needsNotice} />}
                 {step === 3 && (
-                  <b className="waiting-payment">{won(groupTotals(state, g.id).total)}</b>
+                  <b className="waiting-payment">{won(nativeGroup?.totals.total ?? null)}</b>
                 )}
                 <button
                   className="primary"
-                  disabled={busy || remaining > 0 || ss.some((s) => s.transferred)}
+                  disabled={!ready || busy || remaining > 0 || ss.some((s) => s.transferred)}
                   aria-label={buttonLabel}
                   onMouseEnter={() => {
                     hoveredGroup.current = g.id;
@@ -307,7 +311,7 @@ export function WorkflowBoard({
                   onClick={async () => {
                     if (
                       (step === 2 || (g.needsNotice && step >= 2)) &&
-                      !paymentWasCopied(actionState(g.id), g.id) &&
+                      !(await nativePaymentWasCopied(actionState(g.id), g.id)) &&
                       !(await confirmAction(
                         "계좌 안내 메시지를 복사한 기록이 없습니다. 다른 방법으로 안내하셨나요?",
                         { cancel: "돌아가기", accept: "전달 완료로 처리" },
@@ -315,12 +319,15 @@ export function WorkflowBoard({
                     )
                       return;
                     void run(
-                      () =>
+                      () => nativeApplyWorkflowAction(
+                        actionState(g.id),
                         step === 4 && !g.needsNotice
-                          ? processGroup(actionState(g.id), g.id)
+                          ? "process_group"
                           : step === 3 && !g.needsNotice
-                            ? confirmGroupPayment(actionState(g.id), g.id)
-                            : advanceGroup(actionState(g.id), g.id),
+                            ? "confirm_group_payment"
+                            : "advance_group",
+                        { groupId: g.id },
+                      ),
                       g.id,
                     );
                   }}
@@ -329,29 +336,30 @@ export function WorkflowBoard({
                 </button>
                 <button
                   className="workflow-undo"
-                  disabled={busy || step === 0 || ss.some((s) => s.transferred)}
+                  disabled={!ready || busy || step === 0 || ss.some((s) => s.transferred)}
                   title="이전 단계 취소"
                   aria-label="이전 단계 취소"
-                  onClick={() => void run(() => undoGroup(actionState(g.id), g.id))}
+                  onClick={() => void run(() =>
+                    nativeApplyWorkflowAction(actionState(g.id), "undo_group", { groupId: g.id }))}
                 >
                   ↶
                 </button>
               </div>
             )}
             <div className="flow-fixed-summary">
-              <span>배송 {ss.length}건</span>
-              <span>입금 예정 {won(groupTotals(state, g.id).total)}</span>
-              <span>
-                {first.order.recipients.some((r) => shipmentVat(first.order, r))
-                  ? "부가세 적용"
-                  : "부가세 미추가"}
-              </span>
-              <span>
-                운임{" "}
-                {ss.every((s) => shipmentTotals(state, s).shipping !== null)
-                  ? won(ss.reduce((sum, s) => sum + shipmentTotals(state, s).shipping!, 0))
-                  : "확인 필요"}
-              </span>
+              <div className="flow-summary-line">
+                <span>배송 {ss.length}건</span>
+                <span>
+                  총 운임{" "}
+                  {won(nativeGroup?.totals.shipping ?? null)}
+                </span>
+              </div>
+              <div className="flow-summary-line">
+                <span>입금 예정 {won(nativeGroup?.totals.total ?? null)}</span>
+                <span>
+                  {nativeGroup?.vatLabel ?? "계산 중"}
+                </span>
+              </div>
             </div>
             {(g.needsNotice || ss.some((s) => s.rechecks?.some((c) => !c.resolvedAt))) && (
               <div className="flow-recheck">
@@ -371,9 +379,10 @@ export function WorkflowBoard({
                 {g.needsNotice && (
                   <span>
                     금액 재안내 필요 / 이전 {won(g.notices.at(-1)?.total ?? null)} → 현재{" "}
-                    {won(groupTotals(state, g.id).total)} / 차액{" "}
-                    {groupTotals(state, g.id).total !== null && g.notices.length
-                      ? won(groupTotals(state, g.id).total! - g.notices.at(-1)!.total)
+                    {won(nativeGroup?.totals.total ?? null)} / 차액{" "}
+                    {nativeGroup?.totals.total !== null &&
+                      nativeGroup?.totals.total !== undefined && g.notices.length
+                      ? won(nativeGroup.totals.total - g.notices.at(-1)!.total)
                       : "확인 필요"}
                   </span>
                 )}
@@ -388,6 +397,7 @@ export function WorkflowBoard({
                 </div>
                 {ss.map((s) => {
                   const { recipient } = shipmentContext(state, s);
+                  const nativeShipment = nativeGroup?.shipments.find((row) => row.shipmentId === s.id);
                   return (
                     <button
                       key={s.id}
@@ -419,7 +429,7 @@ export function WorkflowBoard({
                           <span
                             className={
                               "product-chip" +
-                              (orderIssues(first.order).some(
+                              (nativeGroup?.issues.some(
                                 (issue) => issue.itemId === i.id && issue.severity === "ACTION",
                               )
                                 ? " product-chip-error"
@@ -433,11 +443,9 @@ export function WorkflowBoard({
                         ))}
                       </span>
                       <span className="shipment-freight">
-                        {shipmentFreightCode(shipmentContext(state, s).order, recipient) === "020"
-                          ? "후불"
-                          : shipmentTotals(state, s).shipping === null
-                            ? "확인 필요"
-                            : won(shipmentTotals(state, s).shipping)}
+                        {nativeShipment?.freightCode === "020"
+                          ? "착불"
+                          : won(nativeShipment?.totals.shipping ?? null)}
                       </span>
                     </button>
                   );
@@ -460,7 +468,7 @@ export function WorkflowBoard({
                   undoDelete.at
                 )
                   throw Error("직전 삭제 상태가 변경되었습니다.");
-                await onSave(restoreGroup(state, undoDelete.gid));
+                await onSave(await nativeChangeGroup(state, undoDelete.gid, "restore_group"));
                 setUndoDelete(undefined);
               } catch (e) {
                 onNotice(e instanceof Error ? e.message : String(e), "error");
@@ -502,6 +510,7 @@ function GroupManagement({
   onSave: (s: State) => Promise<void>;
   onNotice: NoticeSink;
 }) {
+  const native = useNativeWorkflowBoard(state);
   const ss = groupShipments(state, groupId),
     g = state.workflow!.groups.find((g) => g.id === groupId)!,
     [target, setTarget] = useState(""),
@@ -514,10 +523,10 @@ function GroupManagement({
       t.dealerId === g.dealerId &&
       groupShipments(state, t.id).some((s) => !s.transferred),
   );
-  const run = async (fn: () => State) => {
+  const run = async (fn: () => Promise<State> | State) => {
     setBusy(true);
     try {
-      await onSave(fn());
+      await onSave(await fn());
     } catch (e) {
       onNotice(e instanceof Error ? e.message : String(e), "error");
     } finally {
@@ -529,17 +538,17 @@ function GroupManagement({
       <p>
         발주{" "}
         {String(state.workflow!.sources.find((s) => s.id === g.sourceId)!.number).padStart(3, "0")}{" "}
- / 현재 {ss.length}건 / {won(groupTotals(state, groupId).total)}
+ / 현재 {ss.length}건 / {won(native.byId[groupId]?.totals.total ?? null)}
       </p>
       {ss.map((s) => (
         <div className="flow-manage-row" key={s.id}>
           <span>
             {shipmentContext(state, s).recipient.name} / {s.step}/4 완료 / 입금{" "}
-            {won(paymentBalance(state, s).paid)}
+            {won(native.byId[groupId]?.shipments.find((row) => row.shipmentId === s.id)?.paid ?? null)}
           </span>
           <button
-            disabled={busy || ss.length < 2 || s.transferred}
-            onClick={() => void run(() => detachShipment(state, s.id))}
+            disabled={!native.ready || busy || ss.length < 2 || s.transferred}
+            onClick={() => void run(() => nativeApplyWorkflowAction(state, "detach_shipment", { shipmentId: s.id }))}
           >
             이 배송 건 분리
           </button>
@@ -555,7 +564,7 @@ function GroupManagement({
                   {groupShipments(state, t.id)
                     .map((s) => shipmentContext(state, s).recipient.name)
                     .join(", ")}{" "}
- / {groupStep(state, t.id)}/4 / {won(groupTotals(state, t.id).total)}
+ / {native.byId[t.id]?.step ?? "—"}/4 / {won(native.byId[t.id]?.totals.total ?? null)}
                 </option>
               ))}
             </select>
@@ -567,8 +576,8 @@ function GroupManagement({
           {ss.map((s) => (
             <button
               key={s.id}
-              disabled={busy || !target || s.transferred}
-              onClick={() => void run(() => regroupShipment(state, s.id, target, ack))}
+              disabled={!native.ready || busy || !target || s.transferred}
+              onClick={() => void run(() => nativeApplyWorkflowAction(state, "regroup_shipment", { shipmentId: s.id, targetGroupId: target, ack }))}
             >
               {shipmentContext(state, s).recipient.name} 다시 묶기
             </button>

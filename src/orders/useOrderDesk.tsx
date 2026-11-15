@@ -1,27 +1,25 @@
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type WorkflowSelection } from "../WorkflowBoard";
 import {
-  itemFromProduct,
   normalizeColor,
   orderClient,
-  repriceOrder,
-  resolvePrice,
   unassignedClient,
 } from "../domain";
 import type { StaffBlock } from "../hub-messages";
-import { hubMessages } from "../hub-messages";
-import { addressParts, mergeParsedItem, parseEvidence } from "../parser";
-import { registeredProducts, sortProducts, variantLabel } from "../product-models";
-import { billingSnapshot } from "../replies";
+import { businessCoreCall } from "../tauri-bridge";
+import { useNativeWorkflowReconcile } from "./useNativeWorkflowReconcile";
+import { useNativeWorkflowBoard } from "./useNativeWorkflowBoard";
+import { useNativeOrderPreview } from "./useNativeOrderPreview";
+import { useNativeOrderIssues } from "./useNativeOrderIssues";
+import { assertRustReceptionAnalysis, receptionAnalysisAllowed } from "./rust-reception";
+import { registeredProducts, sortProducts } from "../product-models";
+
 import type { NoticeSink } from "../shared/notices";
-import { recommendShipping } from "../shipping";
 import type { Item, Order, Product, State } from "../types";
 import { clone } from "../ui";
-import { pendingIssue } from "../validation";
-import { matchingRecipient, rebindEvidence } from "../order-evidence";
-import { groupMessages, groupShipments, reconcileWorkflow } from "../workflow";
+import { groupShipments } from "../workflow";
 type SaveMode = "save" | "notify" | "pay" | "queue" | "wait";
 export type OrderDeskProps = {
   onRawEditDirty?: (dirty: boolean) => void;
@@ -40,6 +38,10 @@ export type OrderDeskProps = {
   onSelectWorkflow: (s: WorkflowSelection) => void;
   onWorkflowSave: (s: State) => Promise<void>;
   state: State;
+  // HubWorkspace may supply a preview state containing unsaved orders.
+  // Use the authoritative persisted order set when deciding whether this
+  // record is a new reception that may track current master prices.
+  persistedOrders?: readonly Pick<Order, "id">[];
   draft: Order;
   onChange: (next: Order | ((previous: Order) => Order)) => void;
   onSave: (mode: SaveMode) => Promise<void>;
@@ -51,6 +53,7 @@ export type OrderDeskProps = {
 };
 export function useOrderDesk({
   state,
+  persistedOrders,
   draft,
   onChange,
   onSave,
@@ -87,7 +90,6 @@ export function useOrderDesk({
   const place = (content: ReactNode, node?: HTMLElement | null) =>
     portalTargets ? (node ? createPortal(content, node) : null) : content;
   const [source, setSource] = useState(draft.analysisRaw ?? draft.raw),
-    [links] = useState({ payment: false, options: false }),
     [selected, setSelected] = useState<string[]>([]);
   const client = orderClient(draft, state),
     liveClient = state.clients.find((c) => c.id === draft.clientId && !c.deletedAt) ?? client,
@@ -96,7 +98,16 @@ export function useOrderDesk({
     () => sortProducts(registeredProducts(state.products)),
     [state.products],
   );
-  const flowState = useMemo(() => reconcileWorkflow(state, draft), [state, draft]);
+  // Live order-detail reconciliation is a read-only Rust computation.
+  // In-flight calculations never fall back to the old TS workflow engine.
+  const overlay = useMemo(() => [draft], [draft]);
+  const nativeFlow = useNativeWorkflowReconcile(state, overlay);
+  const flowState = nativeFlow.state;
+  const flowReady = nativeFlow.ready;
+  const nativeBoard = useNativeWorkflowBoard(flowState);
+  const nativeOrder = useNativeOrderPreview(flowState, draft, flowReady);
+  const nativeIssues = useNativeOrderIssues(draft);
+  const flowSummaryReady = flowReady && nativeBoard.ready && nativeOrder.ready && nativeIssues.ready;
   const flowGroups = (flowState.workflow?.groups ?? []).filter((g) =>
     groupShipments(flowState, g.id).some((s) => s.orderId === draft.id),
   );
@@ -109,12 +120,42 @@ export function useOrderDesk({
   const activeShipments = activeGroupId ? groupShipments(flowState, activeGroupId) : [];
   const activeShipment =
     activeShipments.find((s) => s.id === workflowSelection?.shipmentId) ?? activeShipments[0];
+  const activeShipmentPreview = flowSummaryReady && activeGroupId && activeShipment
+    ? nativeBoard.byId[activeGroupId]?.shipments.find((entry) => entry.shipmentId === activeShipment.id)
+    : undefined;
 
-  const generated = activeGroupId
-    ? groupMessages(flowState, activeGroupId, links)
-    : hubMessages(draft, state, undefined, links);
-  const saved = state.orders.some((o) => o.id === draft.id),
-    exported = draft.status === "EXPORTED" || activeShipment?.transferred === true;
+  const persisted = persistedOrders ?? state.orders;
+  const saved = persisted.some((o) => o.id === draft.id);
+  // The Rust rules engine owns whether an uncommitted order may follow current prices.
+  // The signature is only an IPC freshness key; it is not a TS eligibility rule.
+  const pricingEligibilityKey = JSON.stringify({
+    id: draft.id, confirmedAt: draft.confirmedAt, deletedAt: draft.deletedAt,
+    pricesLocked: draft.pricesLocked,
+    persistedIds: persisted.map((record) => record.id),
+  });
+  const [nativeEligibility, setNativeEligibility] = useState<{
+    key: string; refresh: boolean;
+  }>();
+  useEffect(() => {
+    let active = true;
+    void businessCoreCall<{ refresh: boolean }>("rules", "should_refresh_pricing", {
+      order: draft, persistedOrders: persisted,
+    }).then(({ refresh }) => {
+      if (active) setNativeEligibility({ key: pricingEligibilityKey, refresh });
+    }).catch((error) => {
+      if (active) {
+        setNativeEligibility(undefined);
+        onNotice("Rust 가격 갱신 조건 확인 실패: " +
+          (error instanceof Error ? error.message : String(error)), "error");
+      }
+    });
+    return () => { active = false; };
+  }, [pricingEligibilityKey]);
+  const passivePricingAllowed =
+    nativeEligibility?.key === pricingEligibilityKey && nativeEligibility.refresh;
+  const exported = draft.status === "EXPORTED" || activeShipment?.transferred === true ||
+      (!flowReady && (state.workflow?.shipments.some((ship) =>
+        ship.orderId === draft.id && ship.transferred && !ship.legacyArchived) ?? false));
   useEffect(() => {
     if (viewMode === "details" && highlight)
       document
@@ -129,143 +170,261 @@ export function useOrderDesk({
   useEffect(() => {
     if (viewMode !== "details") onRawEditDirty?.(rawEditing && source !== draft.raw);
   }, [rawEditing, source, draft.raw, viewMode, onRawEditDirty]);
+  // Rust responses for pricing and shipping may arrive after the employee
+  // has changed the draft or the master catalog. Reject those stale results
+  // rather than overwriting newer manually approved information.
+  const ruleRequests = useRef({ price: 0, shipping: 0 });
+  const rulesClientSignature = JSON.stringify(liveClient ?? null);
+  const latestRulesInput = useRef({ draft, state, rulesClientSignature, saved });
+  latestRulesInput.current = { draft, state, rulesClientSignature, saved };
+  const isCurrentOrderInput = (sourceDraft: Order, sourceState: State): boolean =>
+    latestRulesInput.current.draft === sourceDraft &&
+    latestRulesInput.current.state === sourceState;
+  // Editable text stays responsive in React. A transient intent prevents any
+  // save until Rust has decided invoice freeze, notification/payment flags,
+  // dispatch origin and freight invalidation for the latest complete draft.
   useEffect(() => {
-    if (!liveClient) return;
-    onChange((previous) => {
-      if (previous.pricesLocked) return previous;
-      const next = repriceOrder(previous, liveClient, state);
-      for (const r of next.recipients)
-        if (
-          state.workflow?.shipments.some(
-            (s) =>
-              s.orderId === previous.id && s.recipientId === r.id && (s.transferred || s.step >= 3),
-          )
-        ) {
-          const old = previous.recipients.find((x) => x.id === r.id);
-          if (old) Object.assign(r, clone(old));
-        }
-      if (JSON.stringify(previous.recipients) === JSON.stringify(next.recipients)) return previous;
-      return next;
+    if (!draft.pendingNativeEdit) return;
+    const sourceDraft = draft;
+    const sourceState = state;
+    let current = true;
+    void businessCoreCall<{ order: Order }>("rules", "order_edit_rules", {
+      action: "prepare_order_edit", order: sourceDraft, state: sourceState,
+    }).then(({ order: native }) => {
+      if (!current || !isCurrentOrderInput(sourceDraft, sourceState)) return;
+      onChange((previous) => previous === sourceDraft ? native : previous);
+    }).catch((error) => {
+      if (current && isCurrentOrderInput(sourceDraft, sourceState))
+        onNotice("Rust 주문 수정 상태 확인 실패 — 저장하지 않았습니다: " +
+          (error instanceof Error ? error.message : String(error)), "error");
     });
-  }, [state.products, liveClient?.id, liveClient?.tier, JSON.stringify(liveClient?.overrides)]);
+    return () => { current = false; };
+  }, [draft, state]);
+
   useEffect(() => {
-    onChange((previous) => {
-      if (previous.pricesLocked || previous.shippingMode === "MANUAL") return previous;
-      const result = recommendShipping(previous, state),
-        fee = liveClient?.shippingFeeExcluded ? 0 : result.total;
-      if (previous.shippingFee === fee && previous.shippingVersion === result.version)
-        return previous;
-      return {
-        ...previous,
-        shippingFee: fee,
-        shippingVersion: result.version,
-        shippingMode: "AUTO",
-      };
+    const request = ++ruleRequests.current.price;
+    if (!liveClient || !passivePricingAllowed || draft.pendingNativeEdit) return;
+    const before = JSON.stringify(draft.recipients);
+    const orderId = draft.id;
+    void businessCoreCall<{ order: Order; refreshed: boolean }>(
+      "rules", "reprice_order", {
+        order: draft,
+        client: liveClient,
+        state,
+        persistedOrders: persisted,
+      },
+    ).then(({ order, refreshed }) => {
+      const current = latestRulesInput.current;
+      if (!refreshed || request !== ruleRequests.current.price ||
+          current.state !== state || current.draft.id !== orderId ||
+          current.rulesClientSignature !== rulesClientSignature) return;
+      onChange((previous) => {
+        if (request !== ruleRequests.current.price ||
+            previous !== draft ||
+            previous.id !== orderId ||
+            JSON.stringify(previous.recipients) !== before) return previous;
+        const next = { ...previous, recipients: order.recipients };
+        // Factory-transferred and further-confirmed rows are frozen even if
+        // a catalog update has occurred since the receipt was entered.
+        for (const r of next.recipients)
+          if (state.workflow?.shipments.some((ship) =>
+            ship.orderId === previous.id && ship.recipientId === r.id &&
+            (ship.transferred || ship.step >= 3))) {
+            const old = previous.recipients.find((row) => row.id === r.id);
+            if (old) Object.assign(r, clone(old));
+          }
+        return JSON.stringify(previous.recipients) === JSON.stringify(next.recipients)
+          ? previous : next;
+      });
+    }).catch((error) => {
+      if (request === ruleRequests.current.price)
+        onNotice("Rust 단가 계산 실패: " +
+          (error instanceof Error ? error.message : String(error)), "error");
     });
-  }, [state.shipping, state.products, draft.recipients, liveClient?.shippingFeeExcluded]);
+    return () => { if (request === ruleRequests.current.price) ruleRequests.current.price++; };
+  }, [
+    draft.id, draft.recipients, state.products, liveClient?.id,
+    liveClient?.tier, JSON.stringify(liveClient?.overrides),
+    passivePricingAllowed, draft.pendingNativeEdit,
+  ]);
   useEffect(() => {
+    const request = ++ruleRequests.current.shipping;
+    // Existing completed orders are not repriced passively. The empty version
+    // marker is set only by an explicit employee edit requiring new freight.
+    const shippingPending = draft.shippingVersion === "" && draft.shippingFee === null;
+    if ((!passivePricingAllowed && !shippingPending) ||
+        draft.pendingNativeEdit ||
+        draft.shippingMode === "MANUAL" || draft.pricesLocked ||
+        draft.deletedAt || exported ||
+        !draft.recipients.some((r) => r.items.length > 0)) return;
+    const before = JSON.stringify(draft.recipients);
+    const orderId = draft.id;
+    void businessCoreCall<{ total: number | null; version: string }>(
+      "rules", "order_edit_rules", {
+        action: "calculate_order_shipping", order: draft, state,
+      },
+    ).then((result) => {
+      const current = latestRulesInput.current;
+      if (request !== ruleRequests.current.shipping ||
+          current.state !== state || current.draft.id !== orderId ||
+          current.rulesClientSignature !== rulesClientSignature) return;
+      onChange((previous) => {
+        if (request !== ruleRequests.current.shipping ||
+            previous.id !== orderId || previous.pricesLocked ||
+            previous.shippingMode === "MANUAL" ||
+            JSON.stringify(previous.recipients) !== before ||
+            previous !== draft ||
+            (!passivePricingAllowed &&
+              !(previous.shippingVersion === "" && previous.shippingFee === null)))
+          return previous;
+        const fee = result.total; // waiver decision is owned by Rust
+        if (previous.shippingFee === fee &&
+            previous.shippingVersion === result.version) return previous;
+        return {
+          ...previous, shippingFee: fee,
+          shippingVersion: result.version, shippingMode: "AUTO",
+        };
+      });
+    }).catch((error) => {
+      if (request === ruleRequests.current.shipping)
+        onNotice("Rust 운임 계산 실패: " +
+          (error instanceof Error ? error.message : String(error)), "error");
+    });
+    return () => {
+      if (request === ruleRequests.current.shipping) ruleRequests.current.shipping++;
+    };
+  }, [
+    draft.id, draft.recipients, draft.shippingMode, draft.shippingFee,
+    draft.shippingVersion, draft.pricesLocked, draft.deletedAt,
+    state.shipping, state.products, liveClient?.shippingFeeExcluded,
+    passivePricingAllowed, exported,
+  ]);
+  // Every native response is associated with a specific draft, raw text,
+  // client and catalog revision. A completed previous request must never
+  // replace newer typing, a newly selected order or employee corrections.
+  const recognitionRequest = useRef(0);
+  // RETAIL's companyParty() can allocate a new equal object each render.
+  // A semantic signature prevents repeated native calls on those renders.
+  const clientSignature = JSON.stringify(liveClient ?? null);
+  const latestReceptionInput = useRef({
+    orderId: draft.id,
+    clientId: draft.clientId,
+    source,
+    saved,
+    manual: !!draft.manualClassification,
+    products: state.products,
+    aliases: state.aliases,
+    clientSignature,
+  });
+  latestReceptionInput.current = {
+    orderId: draft.id,
+    clientId: draft.clientId,
+    source,
+    saved,
+    manual: !!draft.manualClassification,
+    products: state.products,
+    aliases: state.aliases,
+    clientSignature,
+  };
+  useEffect(() => {
+    const request = ++recognitionRequest.current;
     if (
       viewMode === "details" ||
       saved ||
-      (draft.manualClassification && draft.analysisRaw === source) ||
-      (draft.analysisRaw === source && draft.analysisClientId === draft.clientId)
-    )
-      return;
+      !!draft.manualClassification ||
+      !receptionAnalysisAllowed(draft, source, pricingClient.id)
+    ) return;
+    const orderId = draft.id;
+    const clientId = draft.clientId;
     const timer = setTimeout(() => {
-      onChange((previous) => {
-        const evidence = source.trim()
-          ? parseEvidence(source, liveClient, {
+      const pending: Promise<unknown> = source.trim()
+        ? businessCoreCall<unknown>("recognition", "analyze_order", {
+            raw: source,
+            client: liveClient ?? null,
+            state: {
               ...state,
               products: state.products.filter(
                 (p) => p.catalog !== "DEMO" && !p.variants.some((v) => v.source === "DEMO"),
               ),
-            })
-          : { recipients: [], candidates: [], unassigned: [] };
-        const parsed = evidence.recipients;
-        const originalParsed = clone(parsed);
-        const usedRecipients = new Set<string>();
-        for (const r of parsed) {
-          const old = matchingRecipient(r, previous.recipients, usedRecipients, parsed);
-          if (old) usedRecipients.add(old.id);
-          if (!old) continue;
-
-          rebindEvidence(evidence.candidates, "recipientId", r.id, old.id);
-          r.id = old.id;
-          const usedItems = new Set<string>();
-          for (const span of r.sources ?? []) {
-            span.targetId = r.id;
-            span.recipientId = r.id;
-          }
-          for (const field of old.confirmedFields ?? [])
-            if (["name", "address", "phone", "mobile", "note"].includes(field))
-              (r as unknown as Record<string, unknown>)[field] = (
-                old as unknown as Record<string, unknown>
-              )[field];
-          r.confirmedFields = old.confirmedFields;
-          r.dispatchOrigin = old.dispatchOrigin;
-          r.actualFreight = old.actualFreight;
-          r.freightCode = old.freightCode;
-          r.vatDefault = old.vatDefault;
-          r.vatOverride = old.vatOverride;
-          r.shippingCharges = old.shippingCharges;
-          if (old.confirmedFields?.includes("address")) {
-            r.addressStatus = old.addressStatus;
-            r.addressParts = old.addressParts ?? addressParts(old.address);
-          }
-          for (const item of r.items) {
-            const prior = old.items.find((i) => i.raw === item.raw && !usedItems.has(i.id));
-            if (prior) {
-              usedItems.add(prior.id);
-
-              rebindEvidence(evidence.candidates, "itemId", item.id, prior.id);
-              item.id = prior.id;
-              Object.assign(item, mergeParsedItem(item, prior));
-              const product = state.products.find((p) => p.id === item.productId);
-              if (product && item.variantId)
-                item.unitPrice = resolvePrice(product, item.variantId, pricingClient);
-              for (const span of item.sources ?? []) {
-                span.targetId = item.id;
-                span.recipientId = r.id;
-              }
-            }
-          }
-        }
-        if (previous.orderType)
-          for (const row of parsed) {
-            row.dispatchOrigin ??= "FACTORY";
-            row.items.forEach((item) => (item.origin = row.dispatchOrigin!));
-          }
-        const next = {
-          ...previous,
-          analysisEvidence: evidence.candidates,
-          analysisSnapshot:
-            previous.analysisSnapshot?.raw === source
-              ? previous.analysisSnapshot
-              : {
-                  at: new Date().toISOString(),
-                  raw: source,
-                  ruleVersion: "parser-v0808",
-                  recipients: originalParsed,
-                },
-          raw: source,
-          analysisRaw: source,
-          analysisClientId: pricingClient.id,
-          recipients: parsed,
-          pricesLocked: false,
-          notified: false,
-          paid: false,
-          postpaidApproved: false,
-          status: "REVIEW" as const,
-        };
-        const reco = recommendShipping(next, state);
-        next.shippingFee = pricingClient.shippingFeeExcluded ? 0 : reco.total;
-        next.shippingMode = "AUTO";
-        next.shippingVersion = reco.version;
-        return next;
+            },
+          })
+        : Promise.resolve({ recipients: [], candidates: [], unassigned: [] });
+      void pending.then(async (result) => {
+        const latest = latestReceptionInput.current;
+        if (
+          request !== recognitionRequest.current ||
+          latest.orderId !== orderId ||
+          latest.clientId !== clientId ||
+          latest.source !== source ||
+          latest.saved || latest.manual ||
+          latest.products !== state.products ||
+          latest.aliases !== state.aliases ||
+          latest.clientSignature !== clientSignature
+        ) return;
+        assertRustReceptionAnalysis(result, source);
+        // Rust owns stable recipient/item identity, confirmed-field retention,
+        // evidence rebinding and order state reset. No legacy TS merge is run.
+        const { order: merged } = await businessCoreCall<{ order: Order }>(
+          "rules", "merge_reception_analysis", {
+            previous: draft,
+            evidence: result,
+            raw: source,
+            clientId: pricingClient.id,
+            at: new Date().toISOString(),
+          },
+        );
+        const settled = latestReceptionInput.current;
+        if (
+          request !== recognitionRequest.current ||
+          settled.orderId !== orderId ||
+          settled.clientId !== clientId ||
+          settled.source !== source ||
+          settled.saved || settled.manual ||
+          settled.products !== state.products ||
+          settled.aliases !== state.aliases ||
+          settled.clientSignature !== clientSignature
+        ) return;
+        onChange((previous) => {
+          const active = latestReceptionInput.current;
+          if (
+            request !== recognitionRequest.current ||
+            active.orderId !== orderId ||
+            active.clientId !== clientId ||
+            active.source !== source ||
+            active.saved || active.manual ||
+            active.products !== state.products ||
+            active.aliases !== state.aliases ||
+            active.clientSignature !== clientSignature ||
+            previous !== draft ||
+            previous.id !== orderId ||
+            previous.clientId !== clientId ||
+            !receptionAnalysisAllowed(previous, source, pricingClient.id)
+          ) return previous;
+          return merged;
+        });
+      }).catch((error: unknown) => {
+        const latest = latestReceptionInput.current;
+        if (
+          request !== recognitionRequest.current ||
+          latest.orderId !== orderId ||
+          latest.clientId !== clientId ||
+          latest.source !== source ||
+          latest.saved || latest.manual
+        ) return;
+        onNotice("Rust 발주서 자동 분석 실패: " +
+          (error instanceof Error ? error.message : String(error)), "error");
       });
     }, 350);
-    return () => clearTimeout(timer);
-  }, [source, draft.clientId, viewMode]);
+    return () => {
+      clearTimeout(timer);
+      if (recognitionRequest.current === request) recognitionRequest.current++;
+    };
+  }, [
+    source, draft.id, draft.clientId, draft.analysisRaw, draft.analysisClientId,
+    draft.manualClassification, draft.confirmedAt, draft.pricesLocked,
+    viewMode, saved, pricingClient.id, clientSignature,
+    state.products, state.aliases,
+  ]);
   const run = async (fn: () => Promise<unknown> | unknown) => {
     try {
       await fn();
@@ -284,32 +443,13 @@ export function useOrderDesk({
     }
     onChange((previous) => {
       const next = clone(previous);
-      if (previous.pricesLocked && !activeGroupId)
-        next.billingHistory = [
-          ...(next.billingHistory ?? []),
-          billingSnapshot(previous, state, reason),
-        ];
-      next.pricesLocked = false;
-      next.clientSnapshot = liveClient ? clone(liveClient) : next.clientSnapshot;
-      next.notified = false;
-      next.paid = false;
-      next.postpaidApproved = false;
-      next.status = "REVIEW";
-      fn(next);
-      if (next.orderType)
-        for (const row of next.recipients) {
-          row.dispatchOrigin ??= "FACTORY";
-          row.items.forEach((item) => (item.origin = row.dispatchOrigin!));
-        }
-      next.updatedAt = new Date().toISOString();
-      if (recalculateShipping) {
-        next.shippingMode = "AUTO";
-        const reco = recommendShipping(next, state);
-        next.shippingFee = state.clients.find((c) => c.id === next.clientId)?.shippingFeeExcluded
-          ? 0
-          : reco.total;
-        next.shippingVersion = reco.version;
-      }
+      fn(next); // UI's field change only; no financial/workflow mutation here.
+      const firstIntent = previous.pendingNativeEdit;
+      next.pendingNativeEdit = firstIntent ? {
+        ...firstIntent,
+        recalculateShipping: firstIntent.recalculateShipping || recalculateShipping,
+      } : { at: new Date().toISOString(), reason, recalculateShipping };
+      // The Rust reducer alone can clear pendingNativeEdit.
       return next;
     });
   };
@@ -338,8 +478,8 @@ export function useOrderDesk({
     !draft.raw.trim() && !draft.recipients.length
       ? []
       : flowGroups.length
-        ? flowGroups.flatMap((g) => groupMessages(flowState, g.id).validation)
-        : generated.validation;
+        ? flowGroups.flatMap((g) => nativeBoard.byId[g.id]?.issues ?? [])
+        : nativeIssues.issues;
   const staffBlocks: StaffBlock[] = allBlocks
     .filter((b, i, a) => a.findIndex((x) => x.issueId === b.issueId) === i)
     .map((b) => {
@@ -352,23 +492,33 @@ export function useOrderDesk({
           (b.kind === "APPLIED" ? " × " + item?.quantity : "") +
           (item?.recognitionReason ? " / " + item.recognitionReason : ""),
         choices:
-          b.kind === "OPTION" && item
-            ? products
-                .find((p) => p.id === item.productId)
-                ?.variants.map((v) => ({ label: variantLabel(v), value: v.id }))
-            : b.kind.startsWith("CANDIDATE_")
-              ? r?.candidates
-                  ?.filter((c) => c.field === b.kind.slice(10))
-                  .map((c) => ({ label: c.label, value: c.value }))
-              : undefined,
+          b.kind.startsWith("CANDIDATE_")
+            ? r?.candidates
+                ?.filter((c) => c.field === b.kind.slice(10))
+                .map((c) => ({ label: c.label, value: c.value }))
+            : undefined,
       };
     });
   const question = (b: StaffBlock) => {
     if (!b.issueId) return;
-    onChange((previous) => ({
-      ...pendingIssue(previous, b.issueId!, state.settings.operatorName || "직원"),
-      requestedIssueIds: [...new Set([...(previous.requestedIssueIds ?? []), b.issueId!])],
-    }));
+    const sourceDraft = draft;
+    const issueId = b.issueId;
+    void businessCoreCall<{ order: Order }>("rules", "apply_issue_action", {
+      action: "pending_issue", order: sourceDraft, issueId,
+      actor: state.settings.operatorName || "직원", now: new Date().toISOString(),
+    }).then(({ order: next }) => {
+      if (latestRulesInput.current.draft !== sourceDraft) return;
+      onChange((previous) => {
+        if (previous !== sourceDraft) return previous;
+        return {
+          ...next,
+          requestedIssueIds: [...new Set([...(previous.requestedIssueIds ?? []), issueId])],
+        };
+      });
+    }).catch((error) => onNotice(
+      "Rust 주문 확인 요청 처리 실패: " +
+      (error instanceof Error ? error.message : String(error)), "error",
+    ));
   };
   const shownRecipient =
     activeShipment?.recipientId ??
@@ -381,8 +531,9 @@ export function useOrderDesk({
       onManual?.();
       return;
     }
-    if (block.kind === "ITEM" && block.recipientId) {
-      setProductSearch({ rid: block.recipientId });
+    if ((block.kind === "ITEM" || block.kind === "OPTION") && block.recipientId) {
+      // A configuration is a standalone product, never a secondary dropdown selection.
+      setProductSearch({ rid: block.recipientId, iid: block.itemId });
       return;
     }
     if (exported && block.itemId) {
@@ -476,34 +627,58 @@ export function useOrderDesk({
     );
   }
   const chooseProduct = (rid: string, p: Product, iid?: string) => {
-    if (iid)
-      itemEdit(rid, iid, (item) => {
-        const proposal = !item.productId || !!item.modelProposal?.required;
-        const old = {
-          id: item.id,
-          raw: item.raw,
-          sources: item.sources,
-          quantityConfirmed: item.quantityConfirmed,
-        };
-        Object.assign(item, itemFromProduct(p, pricingClient, undefined, item.quantity), old, {
-          manuallyConfirmed: true,
-        });
-        item.match = { kind: "CODE", term: p.code, productIds: [p.id] };
-        item.temporary = false;
-        delete item.pendingAlias;
-        if (proposal) {
-          item.modelProposal = { original: old.raw, required: true };
-          item.issues.push("추천 상품 고객 확인 필요");
-        }
-      });
-    else
-      recEdit(rid, (r) =>
-        r.items.push({
-          ...itemFromProduct(p, pricingClient, undefined, null),
-          quantityConfirmed: false,
-        }),
+    if (p.variants.length !== 1 || p.requiresOption) {
+      onNotice(p.requiresOption
+        ? "상품 구성이 미확정입니다. 판매 구성을 확인한 뒤 독립 상품으로 등록하세요."
+        : "상품 가격 기록이 정확히 하나가 아닙니다. 상품 데이터를 확인하세요.", "error");
+      return;
+    }
+    const orderId = draft.id;
+    const itemId = iid;
+    const variantId = p.variants[0].id;
+    void run(async () => {
+      const { item: catalogItem } = await businessCoreCall<{ item: Item }>(
+        "rules", "create_catalog_item", {
+          product: p, variantId, client: pricingClient,
+          quantity: null, newItemId: crypto.randomUUID(),
+        },
       );
-    setProductSearch(undefined);
+      const current = latestRulesInput.current;
+      if (current.draft.id !== orderId || current.state !== state ||
+          current.rulesClientSignature !== rulesClientSignature ||
+          current.draft.deletedAt || current.draft.status === "EXPORTED")
+        return;
+      if (itemId) {
+        // The visible product name, old evidence and manually confirmed
+        // quantity survive; only the price comes from native Rust.
+        if (!current.draft.recipients.some((r) =>
+          r.id === rid && r.items.some((item) => item.id === itemId))) return;
+        itemEdit(rid, itemId, (item) => {
+          const proposal = !item.productId || !!item.modelProposal?.required;
+          const old = {
+            id: item.id, raw: item.raw, sources: item.sources,
+            quantityConfirmed: item.quantityConfirmed,
+          };
+          const currentQuantity = item.quantity;
+          Object.assign(item, catalogItem, old, {
+            quantity: currentQuantity,
+            manuallyConfirmed: true, unitPrice: catalogItem.unitPrice,
+          });
+          item.match = { kind: "NAME", term: p.name, productIds: [p.id] };
+          item.temporary = false;
+          delete item.pendingAlias;
+          if (proposal) {
+            item.modelProposal = { original: old.raw, required: true };
+            item.issues.push("추천 상품 고객 확인 필요");
+          }
+        });
+      } else {
+        recEdit(rid, (r) => r.items.push({
+          ...catalogItem, quantityConfirmed: false,
+        }));
+      }
+      setProductSearch(undefined);
+    });
   };
   return {
     highlight,
@@ -530,11 +705,17 @@ export function useOrderDesk({
     recEdit,
     products,
     pricingClient,
+    isCurrentOrderInput,
     shownRecipient,
     setItemEditing,
     itemEdit,
     activeShipment,
+    activeShipmentPreview,
     flowState,
+    flowReady,
+    flowSummaryReady,
+    flowSummaryError: nativeFlow.error || nativeBoard.error || nativeOrder.error || nativeIssues.error,
+    orderPreview: nativeOrder.result,
     setProductSearch,
     edit,
     activeGroupId,

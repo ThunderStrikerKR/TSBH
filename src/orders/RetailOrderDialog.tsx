@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { sameValue } from "../shared/draft";
+import { confirmDiscardDraft } from "../shared/editor-flow";
 import { Modal, Field, MoneyInput } from "../ui";
-import { itemFromProduct } from "../domain";
+import { businessCoreCall } from "../tauri-bridge";
 import { companyClient, companySenderMissing } from "../order-types";
 import { deliveryRequirements } from "../delivery-requirements";
 import { contactProblem } from "../contact";
 import { ProductSearchDialog } from "../ProductSearchDialog";
-import { newRetailOrder, confirmRetail } from "./retail";
-import type { State } from "../types";
+import { newRetailOrder } from "./retail";
+import { nativeConfirmRetail } from "./native-rules";
+import type { Item, State } from "../types";
 export function RetailOrderDialog({
   state,
   onSave,
@@ -27,6 +30,14 @@ export function RetailOrderDialog({
     [attempted, setAttempted] = useState(false),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const initial = useRef(structuredClone(order));
+  const addingProduct = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+  const closeDraft = () => void confirmDiscardDraft("직접 입력 주문", !sameValue(order, initial.current), onClose, busy);
   useEffect(() => onDraft?.(order), [order, onDraft]);
   const row = order.recipients[0],
     required = deliveryRequirements(row),
@@ -34,7 +45,7 @@ export function RetailOrderDialog({
       setOrder({ ...order, recipients: [{ ...row, ...values }] });
   return (
     <>
-      <Modal title="소매 주문 작성" draft={order} busy={busy} onClose={onClose}>
+      <Modal title="직접 입력" draft={order} busy={busy} onClose={closeDraft}>
         <div className="retail-order-dialog">
           <div className="retail-order-body">
             <p>주문처: 반도스탠드</p>
@@ -154,32 +165,36 @@ export function RetailOrderDialog({
                     type="number"
                     min="1"
                     step="1"
-                    value={item.quantity ?? 1}
-                    onChange={(e) =>
+                    value={item.quantity ?? ""}
+                    onChange={(e) => {
+                      const quantity = e.target.value === "" ? null : Number(e.target.value);
+                      if (quantity !== null && (!Number.isSafeInteger(quantity) || quantity < 1)) return;
                       change({
                         items: row.items.map((i) =>
                           i.id === item.id
                             ? {
                                 ...i,
-                                quantity: e.target.value === "" ? null : Number(e.target.value),
-                                quantityConfirmed: true,
+                                quantity,
+                                quantityConfirmed: quantity !== null,
                               }
                             : i,
                         ),
-                      })
-                    }
+                      });
+                    }}
                   />
                   <button
                     aria-label={"수량 증가 " + (index + 1)}
-                    onClick={() =>
+                    onClick={() => {
+                      const quantity = (item.quantity ?? 1) + 1;
+                      if (!Number.isSafeInteger(quantity)) return;
                       change({
                         items: row.items.map((i) =>
                           i.id === item.id
-                            ? { ...i, quantity: (i.quantity ?? 1) + 1, quantityConfirmed: true }
+                            ? { ...i, quantity, quantityConfirmed: true }
                             : i,
                         ),
-                      })
-                    }
+                      });
+                    }}
                   >
                     +
                   </button>
@@ -206,7 +221,9 @@ export function RetailOrderDialog({
                 {companySenderMissing(state.settings).map((text) => (
                   <p key={text}>{text}</p>
                 ))}
-                {onSettings && <button onClick={onSettings}>반도스탠드 정보 설정</button>}
+                {onSettings && <button onClick={() => void confirmDiscardDraft(
+                  "직접 입력 주문", !sameValue(order,initial.current),onSettings,busy,
+                )}>반도스탠드 정보 설정</button>}
               </div>
             )}
             <Field label="출고지">
@@ -230,7 +247,7 @@ export function RetailOrderDialog({
             <span role="status" className="form-error">
               {error}
             </span>
-            <button onClick={onClose}>취소</button>
+            <button type="button" disabled={busy} onClick={closeDraft}>닫기</button>
             <button
               className="primary"
               disabled={busy}
@@ -238,7 +255,7 @@ export function RetailOrderDialog({
                 setAttempted(true);
                 setBusy(true);
                 try {
-                  await onSave(confirmRetail(state, order));
+                  await onSave(await nativeConfirmRetail(state, order));
                   onClose();
                 } catch (e) {
                   setError(String(e));
@@ -255,14 +272,44 @@ export function RetailOrderDialog({
       {search && (
         <ProductSearchDialog
           state={state}
-          onClose={() => setSearch(false)}
-          onChoose={(p) => {
-            const item = itemFromProduct(p, companyClient(state.settings), p.variants[0].color, 1);
-            item.quantityConfirmed = false;
-            item.unitPrice = null;
-            item.origin = row.dispatchOrigin ?? "FACTORY";
-            change({ items: [...row.items, item] });
-            setSearch(false);
+          onClose={() => { if (!addingProduct.current) setSearch(false); }}
+          onChoose={(product) => {
+            if (addingProduct.current || busy) return;
+            addingProduct.current = true;
+            setBusy(true);
+            setError("");
+            const selectedVariant = product.variants[0];
+            void businessCoreCall<{ item: Item }>("rules", "create_catalog_item", {
+              product, client: companyClient(state.settings),
+              color: selectedVariant?.color,
+              variantId: product.variants.length === 1 ? selectedVariant?.id : undefined,
+              newItemId: crypto.randomUUID(), quantity: 1,
+            }).then(({ item: catalogItem }) => {
+              if (!alive.current) return;
+              if (!catalogItem.variantId) {
+                throw Error(catalogItem.issues[0] || "등록된 독립 상품을 선택하세요.");
+              }
+              const item: Item = {
+                ...catalogItem, quantityConfirmed: false, unitPrice: null,
+              };
+              // Preserve the newest recipient and dispatch-origin edits while
+              // the native command was running; never append a stale shipment.
+              setOrder((previous) => ({
+                ...previous,
+                recipients: previous.recipients.map((recipient, index) =>
+                  index === 0 ? {
+                    ...recipient, items: [...recipient.items, {
+                      ...item, origin: recipient.dispatchOrigin ?? "FACTORY",
+                    }],
+                  } : recipient),
+              }));
+              setSearch(false);
+            }).catch((cause) => {
+              if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+            }).finally(() => {
+              addingProduct.current = false;
+              if (alive.current) setBusy(false);
+            });
           }}
         />
       )}

@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { ClassificationFilters } from "./Classification";
 import { validProductUrl } from "./domain";
 import { internalModel } from "./matching";
-import { classifiedProducts } from "./product-registry";
-import { searchProducts } from "./product-search";
+import { useNativeProductIds } from "./native-catalog-queries";
 import { useAsyncTask } from "./shared/useAsyncTask";
 import type { Product, State } from "./types";
 import { Modal } from "./ui";
@@ -22,24 +21,14 @@ export function ProductSearchDialog({
 }) {
   const { run: openLink } = useAsyncTask();
   const [query, setQuery] = useState(""),
-    [major, setMajor] = useState(""),
-    [minor, setMinor] = useState(""),
+    [category, setCategory] = useState(""),
     [brand, setBrand] = useState(""),
     input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
-  const classifiedIds = useMemo(
-    () => new Set(classifiedProducts(state, major, minor, brand).map((p) => p.id)),
-    [state.products, state.categories, major, minor, brand],
-  );
-  const rows = useMemo(
-    () =>
-      searchProducts(state, query, clientId).filter(
-        (p) =>
-          p.catalog !== "DEMO" &&
-          !p.variants.some((v) => v.source === "DEMO") &&
-          classifiedIds.has(p.id),
-      ),
-    [state, query, clientId, major, minor, brand],
+  const {products: rows, error: searchError, pending} = useNativeProductIds(
+    state, "search_products", {
+      query, clientId, major: category, brand, excludeDemo: true,
+    }, [query, clientId, category, brand],
   );
   return (
     <Surface title="상품 검색" onClose={onClose}>
@@ -55,16 +44,15 @@ export function ProductSearchDialog({
       <div className="manager-filters">
         <ClassificationFilters
           state={state}
-          major={major}
-          minor={minor}
+          category={category}
           brand={brand}
-          onChange={(a, b, c) => {
-            setMajor(a);
-            setMinor(b);
-            setBrand(c);
+          onChange={(nextCategory, nextBrand) => {
+            setCategory(nextCategory);
+            setBrand(nextBrand);
           }}
         />
       </div>
+      {searchError && <p role="alert" className="warnings">{searchError}</p>}
       <div className="product-search-results">
         {rows.slice(0, 100).map((p) => (
           <article key={p.id}>
@@ -82,7 +70,7 @@ export function ProductSearchDialog({
             )}
           </article>
         ))}
-        {!rows.length && <p>검색 결과가 없습니다.</p>}
+        {!rows.length && !pending && !searchError && <p>검색 결과가 없습니다.</p>}
       </div>
     </Surface>
   );

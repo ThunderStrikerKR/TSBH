@@ -1,13 +1,10 @@
-import { validDeliveryAddress } from "./delivery-requirements";
-import { useState } from "react";
-import {
-  confirmCorrection,
-  copiedCorrection,
-  correctionMessage,
-  correctionStatus,
-  requestCorrection,
-} from "./corrections";
-import { itemFromProduct } from "./domain";
+import { useEffect, useRef, useState } from "react";
+import { sameValue } from "./shared/draft";
+import { confirmDiscardDraft } from "./shared/editor-flow";
+
+import { nativeApplyCorrectionAction } from "./orders/native-rules";
+import { businessCoreCall } from "./tauri-bridge";
+import type { Item } from "./types";
 import { internalModel } from "./matching";
 import { ProductSearchDialog } from "./ProductSearchDialog";
 import type { NoticeSink } from "./shared/notices";
@@ -33,29 +30,92 @@ export function CorrectionPanel({
     ctx = shipmentContext(state, ship),
     [after, setAfter] = useState<Recipient>(() => structuredClone(ctx.recipient)),
     [search, setSearch] = useState<string>();
+  const addressRequest = useRef(0);
+  const nativeAddress = (value: string) => {
+    const request = ++addressRequest.current;
+    void businessCoreCall<{
+      addressStatus: "COMPLETE" | "INCOMPLETE";
+      addressParts: Recipient["addressParts"];
+    }>("rules", "assess_delivery_address", { value })
+      .then(({ addressStatus, addressParts }) => {
+        if (request !== addressRequest.current) return;
+        setAfter((previous) => {
+          if (previous.address !== value) return previous;
+          return { ...previous, addressStatus, addressParts };
+        });
+      }).catch((error) => {
+        if (request === addressRequest.current)
+          onNotice("Rust 정정 주소 검증 실패: " +
+            (error instanceof Error ? error.message : String(error)), "error");
+      });
+  };
+  const changed = !sameValue(after, ctx.recipient);
+  const closeDraft = () => void confirmDiscardDraft("공장 전달 후 정정 요청", changed, onClose, busy);
   const requests = state.workflow!.changeRequests.filter((r) => r.shipmentId === sid);
+  // The authoritative status and exact factory copy text are Rust projections.
+  // Do not display or copy a stale response from a previous SQLite revision.
+  type CorrectionSummary = { id: string; status: string; text: string | null };
+  const [correctionsView, setCorrectionsView] = useState<{
+    source: State; shipmentId: string; records: CorrectionSummary[];
+  }>();
+  const [correctionsError, setCorrectionsError] = useState("");
+  useEffect(() => {
+    let active = true;
+    setCorrectionsError("");
+    void businessCoreCall<{ records: CorrectionSummary[] }>(
+      "output", "render_correction_summaries", { state, shipmentId: sid },
+    ).then(({ records }) => {
+      if (active) setCorrectionsView({ source: state, shipmentId: sid, records });
+    }).catch((error) => {
+      if (active) {
+        setCorrectionsView(undefined);
+        setCorrectionsError(error instanceof Error ? error.message : String(error));
+      }
+    });
+    return () => { active = false; };
+  }, [state, sid]);
+  const nativeRecords = correctionsView?.source === state && correctionsView.shipmentId === sid
+    ? correctionsView.records : undefined;
+  const latestSelection = useRef({ state, search });
+  latestSelection.current = { state, search };
   const setProduct = (p: Product) => {
-    const c = ctx.client;
-    setAfter((r) => ({
-      ...r,
-      items: r.items.map((i) =>
-        i.id === search
+    const target = search;
+    if (!target || busy) return;
+    const client = ctx.client;
+    void run(async () => {
+      // The old itemFromProduct helper must not calculate a TS quote before
+      // its unitPrice is overwritten. Only a registered independent variant
+      // can be quoted; unconfigured products keep the original null price.
+      const variantId = p.variants.length === 1 && !p.requiresOption
+        ? p.variants[0].id : undefined;
+      const { item: catalogItem } = await businessCoreCall<{ item: Item }>(
+        "rules", "create_catalog_item", {
+          product: p, client, variantId,
+          quantity: null, newItemId: crypto.randomUUID(),
+        },
+      );
+      if (latestSelection.current.state !== state ||
+          latestSelection.current.search !== target) return;
+      setAfter((recipient) => ({
+        ...recipient,
+        items: recipient.items.map((item) => item.id === target
           ? {
-              ...itemFromProduct(p, c, undefined, i.quantity),
-              id: i.id,
+              ...catalogItem,
+              id: item.id,
+              quantity: item.quantity,
               manuallyConfirmed: true,
               quantityConfirmed: true,
               issues: [],
-              sources: i.sources,
+              sources: item.sources,
             }
-          : i,
-      ),
-    }));
-    setSearch(undefined);
+          : item),
+      }));
+      setSearch(undefined);
+    });
   };
   return (
     <>
-      <Modal draft={after} busy={busy} title="공장 전달 후 정정 요청" onClose={onClose}>
+      <Modal draft={after} busy={busy} title="공장 전달 후 정정 요청" onClose={closeDraft}>
         <p>
           배송 ID {sid} / 원본 전달 스냅샷과 입금 이력은 보존합니다. 새 출고 주문을 만들지 않습니다.
         </p>
@@ -80,19 +140,18 @@ export function CorrectionPanel({
               >
                 <input
                   value={after[field]}
-                  onChange={(e) =>
-                    setAfter({
-                      ...after,
-                      [field]: e.target.value,
-                      ...(field === "address"
-                        ? {
-                            addressStatus: validDeliveryAddress(e.target.value)
-                              ? ("COMPLETE" as const)
-                              : ("INCOMPLETE" as const),
-                          }
-                        : {}),
-                    })
-                  }
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
+                    setAfter((previous) => {
+                      const next = { ...previous, [field]: value };
+                      if (field === "address") {
+                        next.addressStatus = "INCOMPLETE";
+                        delete next.addressParts;
+                      }
+                      return next;
+                    });
+                    if (field === "address") nativeAddress(value);
+                  }}
                 />
               </Field>
             ))}
@@ -106,10 +165,16 @@ export function CorrectionPanel({
                   value={i.quantity ?? ""}
                   onChange={(e) => {
                     const quantity = e.target.value === "" ? null : Number(e.target.value);
+                    if (quantity !== null && (!Number.isSafeInteger(quantity) || quantity < 1)) {
+                      onNotice("정정 수량은 1 이상의 안전한 정수로 입력하세요.", "error");
+                      return;
+                    }
                     setAfter({
                       ...after,
                       items: after.items.map((x) =>
-                        x.id === i.id ? { ...x, quantity, quantityConfirmed: true } : x,
+                        x.id === i.id
+                          ? { ...x, quantity, quantityConfirmed: quantity !== null }
+                          : x,
                       ),
                     });
                   }}
@@ -135,14 +200,19 @@ export function CorrectionPanel({
             ))}
             <button
               disabled={busy}
-              onClick={() => void run(() => onSave(requestCorrection(state, sid, after)))}
+              onClick={() => void (async () => {
+                const result = await run(async () => onSave(await nativeApplyCorrectionAction(state, "request_correction", { shipmentId: sid, afterRecipient: after })));
+                if (result.ok) onClose();
+              })()}
             >
               정정 요청 등록
             </button>
           </>
         )}
+        {correctionsError && <p role="alert" className="form-error">{correctionsError}</p>}
         {requests.map((r) => {
-          const status = correctionStatus(state, r.id);
+          const native = nativeRecords?.find((entry) => entry.id === r.id);
+          const status = native?.status;
           return (
             <article className="correction-request" key={r.id}>
               <h3>
@@ -150,20 +220,22 @@ export function CorrectionPanel({
                   ? "공장 반영 직원 확인"
                   : status === "PENDING_FACTORY"
                     ? "공장 반영 대기"
-                    : "정정 요청 등록"}
+                    : status === undefined ? "정정 상태 조회 중" : "정정 요청 등록"}
               </h3>
               <small>
                 {r.at} / {r.actor}
               </small>
               {r.afterRecipient ? (
                 <>
-                  <pre>{correctionMessage(state, r.id)}</pre>
+                  <pre>{native?.text ?? (correctionsError || "정정 문구 생성 중")}</pre>
                   <button
-                    disabled={busy || status === "CONFIRMED"}
+                    disabled={busy || !native?.text || status === "CONFIRMED"}
                     onClick={() =>
                       void run(async () => {
-                        await window.bando!.copy(correctionMessage(state, r.id));
-                        await onSave(copiedCorrection(state, r.id));
+                        if (!native?.text || correctionsView?.source !== state)
+                          throw Error("최신 공장 정정 문구를 불러오지 못했습니다.");
+                        await window.bando!.copy(native.text);
+                        await onSave(await nativeApplyCorrectionAction(state, "copied_correction", { requestId: r.id }));
                         onNotice(
                           "정정 문구를 복사했습니다. 실제 공장 반영은 아직 대기 상태입니다.",
                           "success",
@@ -177,7 +249,7 @@ export function CorrectionPanel({
                     disabled={
                       busy || status !== "PENDING_FACTORY" || !!ship.delivery || !!ship.collectedAt
                     }
-                    onClick={() => void run(() => onSave(confirmCorrection(state, r.id)))}
+                    onClick={() => void run(async () => onSave(await nativeApplyCorrectionAction(state, "confirm_correction", { requestId: r.id })))}
                   >
                     실제 공장 반영 확인
                   </button>

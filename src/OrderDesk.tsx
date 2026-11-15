@@ -1,10 +1,8 @@
-import { WorkingRawDialog } from "./WorkingRawDialog";
-import { rawCorrectionAllowed } from "./working-raw";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CorrectionPanel } from "./CorrectionPanel";
 import { ActualFreightField } from "./ActualFreightField";
 import { contactProblem } from "./contact";
-import { deliveryRequirements, validDeliveryAddress } from "./delivery-requirements";
+import { useNativeDeliveryRequirements } from "./useNativeDeliveryRequirements";
 import { IssueResolver } from "./IssueResolver";
 import { LinkContext, Linked } from "./LinkedText";
 import { OrderItemEditor } from "./OrderItemEditor";
@@ -12,17 +10,18 @@ import { ProductSearchDialog } from "./ProductSearchDialog";
 import { SourceDocument } from "./SourceDocument";
 import { StaffChecks } from "./StaffChecks";
 import { WorkflowFooter, WorkflowFreightRows } from "./WorkflowFooter";
-import { repriceOrder, resolvePrice, won } from "./domain";
-import { confirmProposedProduct } from "./issue-actions";
+import { won } from "./domain";
+
 import { internalModel } from "./matching";
 import { useOrderDesk, type OrderDeskProps } from "./orders/useOrderDesk";
-import { addressParts } from "./parser";
-import { billingSnapshot } from "./replies";
+import { nativeApproveMissingQuantity, nativeConfirmProposedProduct, nativeReconcileWorkflow } from "./orders/native-rules";
+import { businessCoreCall } from "./tauri-bridge";
+import type { Order } from "./types";
 import { Field, clone } from "./ui";
-import { clientChangeIssue, orderGrandTotal, reconcileWorkflow, shipmentVat } from "./workflow";
 export function OrderDesk(props: OrderDeskProps) {
-  const [correcting, setCorrecting] = useState(false);
   const [changeRequest, setChangeRequest] = useState<string>();
+  const [approvingQuantity, setApprovingQuantity] = useState(false);
+  const quantityActionInFlight = useRef(false);
   const {
     highlight,
     linkController,
@@ -43,15 +42,20 @@ export function OrderDesk(props: OrderDeskProps) {
     portalTargets,
     staffBlocks,
     selectIssue,
-    question,
     recEdit,
     products,
     pricingClient,
+    isCurrentOrderInput,
     shownRecipient,
     setItemEditing,
     itemEdit,
     activeShipment,
+    activeShipmentPreview,
     flowState,
+    flowReady,
+    flowSummaryReady,
+    flowSummaryError,
+    orderPreview,
     setProductSearch,
     activeGroupId,
     run,
@@ -61,6 +65,41 @@ export function OrderDesk(props: OrderDeskProps) {
     chooseProduct,
     itemEditing,
   } = useOrderDesk(props);
+  const delivery = useNativeDeliveryRequirements(draft.recipients, draft.receptionVersion !== 1);
+  const addressRequests = useRef<Record<string, number>>({});
+  const addressMounted = useRef(true);
+  useEffect(() => {
+    addressMounted.current = true;
+    return () => { addressMounted.current = false; };
+  }, []);
+  const applyNativeAddress = (recipientId: string, value: string) => {
+    const token = (addressRequests.current[recipientId] ?? 0) + 1;
+    addressRequests.current[recipientId] = token;
+    const sourceOrderId = draft.id;
+    void businessCoreCall<{
+      valid: boolean;
+      addressParts: NonNullable<Order["recipients"][number]["addressParts"]>;
+      addressStatus: "COMPLETE" | "INCOMPLETE";
+    }>("rules", "assess_delivery_address", { value })
+      .then(({ addressParts, addressStatus }) => {
+        if (!addressMounted.current ||
+            addressRequests.current[recipientId] !== token) return;
+        onChange((previous) => {
+          if (previous.id !== sourceOrderId) return previous;
+          const original = previous.recipients.find((r) => r.id === recipientId);
+          if (!original || original.address !== value) return previous;
+          const next = structuredClone(previous);
+          const row = next.recipients.find((r) => r.id === recipientId)!;
+          row.addressParts = addressParts;
+          row.addressStatus = addressStatus;
+          return next;
+        });
+      }).catch((error) => {
+        if (addressMounted.current && addressRequests.current[recipientId] === token)
+          onNotice("Rust 배송 주소 확인 실패: " +
+            (error instanceof Error ? error.message : String(error)), "error");
+      });
+  };
   if (draft.orderType === "RETAIL")
     return (
       <>
@@ -148,32 +187,33 @@ export function OrderDesk(props: OrderDeskProps) {
               onOrder={onChange}
               onDealer={async (c) => {
                 if (c.id === draft.clientId) return;
-                const issue = clientChangeIssue(state, draft, c.id);
-                if (issue) throw Error(issue);
-                if (exported || draft.deletedAt)
-                  throw Error("완료 / 삭제된 주문의 거래처는 변경할 수 없습니다.");
-                const next = repriceOrder(
-                  {
-                    ...clone(draft),
-                    clientId: c.id,
-                    clientSnapshot: clone(c),
-                    pricesLocked: false,
-                    notified: false,
-                    paid: false,
-                    postpaidApproved: false,
-                    status: "REVIEW",
+                const sourceDraft = draft;
+                const sourceState = state;
+                // Rust validates historical payment/transfer constraints,
+                // selects the dealer, snapshots old invoices, reprices products
+                // and invalidates the old dealer's freight atomically.
+                const { order: next } = await businessCoreCall<{ order: Order }>(
+                  "rules", "order_edit_rules", {
+                    action: "change_order_client", state: sourceState,
+                    order: sourceDraft, dealerId: c.id,
+                    now: new Date().toISOString(),
                   },
-                  c,
-                  state,
                 );
-                if (draft.pricesLocked)
-                  next.billingHistory = [
-                    ...(next.billingHistory ?? []),
-                    billingSnapshot(draft, state, "거래처 변경"),
-                  ];
-                next.updatedAt = new Date().toISOString();
-                if (saved) await onWorkflowSave(reconcileWorkflow(state, next));
-                onChange(next);
+                if (!isCurrentOrderInput(sourceDraft, sourceState))
+                  throw Error("주문 또는 거래처 정보가 변경되었습니다. 다시 선택하세요.");
+                if (saved) {
+                  // Reconciliation is committed once. Read back the SQLite
+                  // authority: useAppModel can intentionally retain a current
+                  // unsaved editor even when an unrelated workflow saves.
+                  await onWorkflowSave(await nativeReconcileWorkflow(sourceState, next));
+                  const persisted = await window.bando!.load();
+                  const committed = persisted.orders.find((row) => row.id === next.id);
+                  if (!committed)
+                    throw Error("저장된 거래처 변경 주문을 다시 확인할 수 없습니다.");
+                  onChange((current) => current === sourceDraft ? committed : current);
+                } else {
+                  onChange(next);
+                }
               }}
               onSave={onWorkflowSave}
               onSaveState={onSaveState}
@@ -185,13 +225,58 @@ export function OrderDesk(props: OrderDeskProps) {
           place(
             <section className="desk-pane review-pane compact-review">
               <div className="review-layout">
-                {rawCorrectionAllowed(flowState, draft) && (
-                  <button onClick={() => setCorrecting(true)}>원문 정정</button>
-                )}
                 <StaffChecks
                   blocks={staffBlocks}
+                  loading={!flowSummaryReady && !flowSummaryError}
+                  error={!flowSummaryReady ? flowSummaryError : ""}
                   onSelect={selectIssue}
-                  onQuestion={question}
+                  approvingQuantity={approvingQuantity}
+                  canApproveOne={(b) => {
+                    if (exported || !b.recipientId || !b.itemId) return false;
+                    const item = draft.recipients.find((r) => r.id === b.recipientId)
+                      ?.items.find((i) => i.id === b.itemId);
+                    return !!item && !!item.productId && !!item.variantId &&
+                      item.quantityConfirmed === false &&
+                      item.match?.kind !== "QUANTITY" &&
+                      !item.issues.some((issue) => /여러|불명확/.test(issue));
+                  }}
+                  onApproveOne={(b) => {
+                    if (quantityActionInFlight.current || exported || !b.itemId || !b.recipientId)
+                      return;
+                    const row = draft.recipients.find((r) => r.id === b.recipientId);
+                    const item = row?.items.find((i) => i.id === b.itemId);
+                    if (!item || !item.productId || !item.variantId ||
+                        item.quantityConfirmed !== false || item.match?.kind === "QUANTITY" ||
+                        item.issues.some((issue) => /여러|불명확/.test(issue))) return;
+                    quantityActionInFlight.current = true;
+                    setApprovingQuantity(true);
+                    void run(async () => {
+                      try {
+                        const approved = await nativeApproveMissingQuantity(
+                          draft, b.recipientId, b.itemId!,
+                          state.settings.operatorName?.trim() || "직원",
+                        );
+                        if (!isCurrentOrderInput(draft, state))
+                          throw Error("주문 정보가 변경되었습니다. 수량 확인을 다시 진행하세요.");
+                        const source = approved.recipients.find((r) => r.id === b.recipientId)
+                          ?.items.find((i) => i.id === b.itemId);
+                        if (!source?.quantityApproval) throw Error("잠정 수량 승인 기록이 없습니다.");
+                        // Preserve the normal order edit's price-history and
+                        // freight invalidation, without running TS approval rules.
+                        recEdit(b.recipientId, (recipient) => {
+                          const target = recipient.items.find((i) => i.id === b.itemId);
+                          if (!target) return;
+                          target.quantity = source.quantity;
+                          target.quantityConfirmed = source.quantityConfirmed;
+                          target.quantityApproval = source.quantityApproval;
+                          target.manuallyConfirmed = source.manuallyConfirmed;
+                        });
+                      } finally {
+                        quantityActionInFlight.current = false;
+                        setApprovingQuantity(false);
+                      }
+                    });
+                  }}
                   onCancelApproval={(b) => {
                     if (b.itemId)
                       recEdit(
@@ -203,38 +288,48 @@ export function OrderDesk(props: OrderDeskProps) {
                         false,
                       );
                   }}
-                  onCandidate={(b, value) =>
-                    recEdit(
-                      b.recipientId,
-                      (r) => {
-                        if (b.kind === "OPTION") {
-                          const i = r.items.find((i) => i.id === b.itemId),
-                            p = products.find((p) => p.id === i?.productId),
-                            v = p?.variants.find((v) => v.id === value);
-                          if (i && p && v) {
-                            i.variantId = v.id;
-                            i.color = v.color;
-                            i.url = v.url;
-                            i.unitPrice = resolvePrice(p, v.id, pricingClient);
-                            i.issues = i.issues.filter((x) => !/색상|옵션/.test(x));
-                            i.manuallyConfirmed = true;
-                            delete i.quantityApproval;
-                          }
-                          return;
+                  onCandidate={(b, value) => {
+                    if (b.kind === "OPTION") {
+                      const row = draft.recipients.find((r) => r.id === b.recipientId);
+                      const item = row?.items.find((i) => i.id === b.itemId);
+                      const product = products.find((p) => p.id === item?.productId);
+                      const variant = product?.variants.find((v) => v.id === value);
+                      if (!item || !product || !variant) return;
+                      void run(async () => {
+                        const { unitPrice } = await businessCoreCall<{ unitPrice: number | null }>(
+                          "rules", "resolve_unit_price", {
+                            product, variantId: variant.id, client: pricingClient,
+                          },
+                        );
+                        if (!isCurrentOrderInput(draft, state)) return;
+                        recEdit(b.recipientId, (r) => {
+                          const current = r.items.find((i) => i.id === b.itemId);
+                          if (!current || current.productId !== product.id) return;
+                          current.variantId = variant.id;
+                          current.color = variant.color;
+                          current.url = variant.url;
+                          current.unitPrice = unitPrice;
+                          current.issues = current.issues.filter((x) => !/색상|옵션/.test(x));
+                          current.manuallyConfirmed = true;
+                          delete current.quantityApproval;
+                        }, false);
+                      });
+                      return;
+                    }
+                    recEdit(b.recipientId, (r) => {
+                      const field = b.kind?.slice(10);
+                      if (field && ["name", "address", "phone", "mobile"].includes(field)) {
+                        (r as unknown as Record<string, unknown>)[field] = value;
+                        r.confirmedFields = [...new Set([...(r.confirmedFields ?? []), field])];
+                        if (field === "address") {
+                          delete r.addressParts;
+                          r.addressStatus = "INCOMPLETE";
                         }
-                        const field = b.kind?.slice(10);
-                        if (field && ["name", "address", "phone", "mobile"].includes(field)) {
-                          (r as unknown as Record<string, unknown>)[field] = value;
-                          r.confirmedFields = [...new Set([...(r.confirmedFields ?? []), field])];
-                          if (field === "address")
-                            r.addressStatus = validDeliveryAddress(r.address)
-                              ? "COMPLETE"
-                              : "INCOMPLETE";
-                        }
-                      },
-                      false,
-                    )
-                  }
+                      }
+                    }, false);
+                    const field = b.kind?.slice(10);
+                    if (field === "address") applyNativeAddress(b.recipientId, value);
+                  }}
                 />
                 <div className="recipient-body">
                   <header className="recipient-section-heading">
@@ -254,7 +349,7 @@ export function OrderDesk(props: OrderDeskProps) {
                   </header>
                   <div className="receipt-panel-content">
                     {!draft.recipients.length && (
-                      <p className="detail-empty">발주 원문을 입력하거나 배송 건을 선택하세요.</p>
+                      <p className="empty detail-empty">발주 원문을 입력하거나 배송 건을 선택하세요.</p>
                     )}
                     {draft.recipients
                       .filter((r) => r.id === shownRecipient)
@@ -265,7 +360,7 @@ export function OrderDesk(props: OrderDeskProps) {
                               <Field label="이름">
                                 <input
                                   aria-invalid={
-                                    !deliveryRequirements(r, draft.receptionVersion !== 1).name
+                                    !delivery.byId[r.id]?.name
                                   }
                                   value={r.name}
                                   disabled={exported}
@@ -288,26 +383,26 @@ export function OrderDesk(props: OrderDeskProps) {
                               <Field label="주소">
                                 <input
                                   aria-invalid={
-                                    !deliveryRequirements(r, draft.receptionVersion !== 1).address
+                                    !delivery.byId[r.id]?.address
                                   }
                                   value={r.address}
                                   disabled={exported}
-                                  onChange={(e) =>
+                                  onChange={(e) => {
                                     recEdit(
                                       r.id,
                                       (r) => {
                                         r.address = e.target.value;
-                                        r.addressParts = addressParts(e.target.value);
+                                        delete r.addressParts;
                                         r.confirmedFields = [
                                           ...new Set([...(r.confirmedFields ?? []), "address"]),
                                         ];
-                                        r.addressStatus = validDeliveryAddress(r.address)
-                                          ? "COMPLETE"
-                                          : "INCOMPLETE";
+                                        // Never presume a typed address is deliverable before Rust checks it.
+                                        r.addressStatus = "INCOMPLETE";
                                       },
                                       false,
-                                    )
-                                  }
+                                    );
+                                    applyNativeAddress(r.id, e.target.value);
+                                  }}
                                 />
                               </Field>
                             </Linked>
@@ -316,7 +411,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                 <Field label="휴대폰">
                                   <input
                                     aria-invalid={
-                                      !deliveryRequirements(r, draft.receptionVersion !== 1).contact
+                                      !delivery.byId[r.id]?.contact
                                     }
                                     value={r.mobile}
                                     disabled={exported}
@@ -333,7 +428,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                       )
                                     }
                                   />
-                                  {!deliveryRequirements(r, draft.receptionVersion !== 1).contact &&
+                                  {!delivery.byId[r.id]?.contact &&
                                     r.mobile && (
                                       <small className="form-error">
                                         {contactProblem(r.mobile, true)}
@@ -345,7 +440,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                 <Field label="전화">
                                   <input
                                     aria-invalid={
-                                      !deliveryRequirements(r, draft.receptionVersion !== 1).contact
+                                      !delivery.byId[r.id]?.contact
                                     }
                                     value={r.phone}
                                     disabled={exported}
@@ -362,7 +457,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                       )
                                     }
                                   />
-                                  {!deliveryRequirements(r, draft.receptionVersion !== 1).contact &&
+                                  {!delivery.byId[r.id]?.contact &&
                                     r.phone && (
                                       <small className="form-error">
                                         {contactProblem(r.phone, false)}
@@ -411,40 +506,6 @@ export function OrderDesk(props: OrderDeskProps) {
                       .filter((r) => r.id === shownRecipient)
                       .map((r) => (
                         <article key={r.id}>
-                          <div className="dispatch-origin" aria-label="배송 건 출고지">
-                            {(["FACTORY", "STORE"] as const).map((origin) => (
-                              <button
-                                key={origin}
-                                disabled={exported}
-                                aria-pressed={
-                                  (r.dispatchOrigin ??
-                                    (r.items.every((i) => i.origin === "STORE")
-                                      ? "STORE"
-                                      : r.items.every((i) => i.origin === "FACTORY")
-                                        ? "FACTORY"
-                                        : undefined)) === origin
-                                }
-                                onClick={() =>
-                                  recEdit(
-                                    r.id,
-                                    (row) => {
-                                      const previous =
-                                        row.dispatchOrigin ?? row.items[0]?.origin ?? "FACTORY";
-                                      row.dispatchOrigin = origin;
-                                      row.items.forEach((i) => (i.origin = origin));
-                                      if (row.shippingCharges)
-                                        row.shippingCharges = {
-                                          [origin]: row.shippingCharges[previous] ?? null,
-                                        };
-                                    },
-                                    false,
-                                  )
-                                }
-                              >
-                                {origin === "FACTORY" ? "공장" : "매장"}
-                              </button>
-                            ))}
-                          </div>
                           <table className="compact-items">
                             <thead>
                               <tr>
@@ -485,7 +546,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                         onChange={(e) => {
                                           const q =
                                             e.target.value === "" ? null : Number(e.target.value);
-                                          if (q !== null && (!Number.isInteger(q) || q < 1)) return;
+                                          if (q !== null && (!Number.isSafeInteger(q) || q < 1)) return;
                                           itemEdit(r.id, i.id, (item) => {
                                             item.quantity = q;
                                             item.quantityConfirmed = true;
@@ -503,21 +564,25 @@ export function OrderDesk(props: OrderDeskProps) {
                                         className="item-row-edit item-amount"
                                         onClick={() => setItemEditing({ rid: r.id, iid: i.id })}
                                       >
-                                        {i.unitPrice !== null &&
-                                        i.quantity !== null &&
-                                        i.productId &&
-                                        i.variantId
-                                          ? won(i.unitPrice * i.quantity)
+                                        {flowSummaryReady && orderPreview
+                                          ? won(orderPreview.lineAmounts.find(
+                                              (entry) => entry.recipientId === r.id &&
+                                                entry.itemId === i.id,
+                                            )?.amount ?? null)
                                           : "확인 필요"}
                                       </button>
                                     </Linked>
                                   </td>
                                 </tr>
                               ))}
-                              {activeShipment?.recipientId === r.id && (
+                              {flowSummaryReady && activeShipmentPreview &&
+                                activeShipment?.recipientId === r.id && (
                                 <WorkflowFreightRows
                                   state={flowState}
                                   shipment={activeShipment}
+                                  freightCode={activeShipmentPreview.freightCode}
+                                  displayCharges={activeShipmentPreview.displayCharges}
+                                  freightEditingBlocked={activeShipmentPreview.freightEditingBlocked}
                                   activeKey={highlight}
                                   onFreight={(origin, value) =>
                                     recEdit(
@@ -543,6 +608,41 @@ export function OrderDesk(props: OrderDeskProps) {
                             >
                               ＋ 상품 추가
                             </button>
+                            <div className="dispatch-origin" role="group" aria-label="발송지">
+                              <span className="dispatch-origin-label">발송지:</span>
+                              {(["FACTORY", "STORE"] as const).map((origin) => (
+                                <button
+                                  key={origin}
+                                  disabled={exported}
+                                  aria-pressed={
+                                    (r.dispatchOrigin ??
+                                      (r.items.every((i) => i.origin === "STORE")
+                                        ? "STORE"
+                                        : r.items.every((i) => i.origin === "FACTORY")
+                                          ? "FACTORY"
+                                          : undefined)) === origin
+                                  }
+                                  onClick={() =>
+                                    recEdit(
+                                      r.id,
+                                      (row) => {
+                                        const previous =
+                                          row.dispatchOrigin ?? row.items[0]?.origin ?? "FACTORY";
+                                        row.dispatchOrigin = origin;
+                                        row.items.forEach((i) => (i.origin = origin));
+                                        if (row.shippingCharges)
+                                          row.shippingCharges = {
+                                            [origin]: row.shippingCharges[previous] ?? null,
+                                          };
+                                      },
+                                      false,
+                                    )
+                                  }
+                                >
+                                  {origin === "FACTORY" ? "공장" : "매장"}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </article>
                       ))}
@@ -552,44 +652,39 @@ export function OrderDesk(props: OrderDeskProps) {
                       </div>
                     )}
                   </div>
-                  {activeShipment && activeGroupId ? (
+                  {flowSummaryReady && activeShipmentPreview && activeShipment && activeGroupId ? (
                     <WorkflowFooter
                       state={flowState}
                       shipment={activeShipment}
+                      vatIncluded={activeShipmentPreview.vatIncluded}
                       groupId={activeGroupId}
                       onVat={(v) =>
                         recEdit(activeShipment.recipientId, (r) => (r.vatOverride = v), false)
                       }
-                      onSave={() => void run(() => onWorkflowSave(flowState))}
                     />
                   ) : null}
                 </section>
               </div>
+              {flowSummaryError && (
+                <p role="alert">주문 미리보기 계산 오류: {flowSummaryError}</p>
+              )}
+              {!flowReady && !flowSummaryError && (
+                <p role="status" className="muted">주문 금액 및 업무 미리보기 계산 중</p>
+              )}
               <div className="order-grand-total">
                 총 주문 금액{" "}
                 <span className="shipment-count">
                   | 택배{" "}
-                  {flowState.workflow?.shipments.filter(
-                    (s) =>
-                      s.orderId === draft.id &&
-                      !s.legacyArchived &&
-                      !flowState.workflow?.groups.find((g) => g.id === s.groupId)?.deletedAt,
-                  ).length ?? 0}
+                  {flowSummaryReady ? orderPreview?.shipmentCount ?? 0 : "—"}
                   건 |
                 </span>
                 <b>
-                  {orderGrandTotal(flowState, draft.id) === null
-                    ? "—"
-                    : won(orderGrandTotal(flowState, draft.id))}
+                  {flowSummaryReady && orderPreview?.total !== null &&
+                  orderPreview?.total !== undefined ? won(orderPreview.total) : "—"}
                 </b>
                 <small>
                   (
-                  {draft.recipients.some((r) => shipmentVat(draft, r)) &&
-                  draft.recipients.some((r) => !shipmentVat(draft, r))
-                    ? "배송 건별 부가세 적용"
-                    : draft.recipients.some((r) => shipmentVat(draft, r))
-                      ? "부가세 포함"
-                      : "부가세 별도"}
+                  {flowSummaryReady ? orderPreview?.vatLabel ?? "확인 필요" : "확인 필요"}
                   )
                 </small>
               </div>
@@ -661,7 +756,7 @@ export function OrderDesk(props: OrderDeskProps) {
                 }}
                 onConfirm={() =>
                   void run(async () => {
-                    const result = confirmProposedProduct(state, draft, r.id, i.id);
+                    const result = await nativeConfirmProposedProduct(state, draft, r.id, i.id);
                     if (JSON.stringify(result.state.aliases) !== JSON.stringify(state.aliases))
                       await onSaveState(result.state);
                     onChange(result.order);
@@ -672,19 +767,6 @@ export function OrderDesk(props: OrderDeskProps) {
             ) : null;
           })()}
       </div>
-      {correcting && (
-        <WorkingRawDialog
-          state={flowState}
-          order={draft}
-          onClose={() => setCorrecting(false)}
-          onApply={async (next) => {
-            const updated = next.orders.find((o) => o.id === draft.id)!;
-            if (saved) await onSaveState(next);
-            setSource(updated.analysisRaw ?? updated.raw);
-            onChange(updated);
-          }}
-        />
-      )}
     </LinkContext.Provider>
   );
 }

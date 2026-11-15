@@ -1,22 +1,17 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ProductSearchDialog } from "../ProductSearchDialog";
-import { deliveryRequirements } from "../delivery-requirements";
+import { businessCoreCall } from "../tauri-bridge";
+import { useNativeDeliveryRequirements, evaluateNativeDeliveryRequirements } from "../useNativeDeliveryRequirements";
+import { useNativeOrderIssues } from "./useNativeOrderIssues";
 import { usePendingChanges } from "../shared/pending-changes";
+import { confirmDiscardDraft } from "../shared/editor-flow";
 import type { NoticeSink } from "../shared/notices";
 import type { Order, Product, State } from "../types";
-import { orderIssues } from "../validation";
 import { ManualPrompt } from "./ManualPrompt";
 import {
-  applyManual,
-  assignManualBlock,
   cellKey,
-  emptyManualItem,
-  initialManual,
   manualValue,
-  newManualRecipient,
   pendingManualQuantity,
-  releaseManualBlock,
-  setManualValue,
   validManualQuantity,
   type Cell,
   type ManualModel,
@@ -29,19 +24,83 @@ type Frame = {
   pending?: Cell;
   rollback?: Frame;
 };
-export function ManualClassification({
-  state,
-  order,
-  onApply,
-  onClose,
-}: {
+type ManualClassificationProps = {
   state: State;
   order: Order;
   onApply: (order: Order) => void;
   onClose: () => void;
   onNotice: NoticeSink;
-}) {
-  const [model, setModel] = useState(() => initialManual(order));
+};
+type ManualRustDraft = { model: ManualModel; assignmentOrder: string[] };
+function orderedNativeModel(result: ManualRustDraft): ManualModel {
+  // JSON maps do not preserve the JS original assignment insertion sequence.
+  const keys = [...new Set([...result.assignmentOrder, ...Object.keys(result.model.assignments)])];
+  return {
+    ...result.model,
+    assignments: Object.fromEntries(
+      keys.filter((key) => Object.hasOwn(result.model.assignments, key))
+        .map((key) => [key, result.model.assignments[key]]),
+    ),
+  };
+}
+export function ManualClassification(props: ManualClassificationProps) {
+  const [loaded, setLoaded] = useState<{ orderId: string; model: ManualModel }>();
+  const [loadingError, setLoadingError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setLoadingError("");
+    setLoaded(undefined);
+    void businessCoreCall<ManualRustDraft>("rules", "apply_manual_classification", {
+      action: "initial_manual",
+      order: props.order,
+      assignmentOrder: Object.keys(props.order.manualClassification?.assignments ?? {}),
+    }).then((result) => {
+      if (active) setLoaded({ orderId: props.order.id, model: orderedNativeModel(result) });
+    }).catch((error) => {
+      if (active) setLoadingError("Rust 수동 분류 초기화 실패: " +
+        (error instanceof Error ? error.message : String(error)));
+    });
+    return () => { active = false; };
+  }, [props.order.id, retry]);
+  if (!loaded || loaded.orderId !== props.order.id) return (
+    <section className="manual-workspace" role="dialog" aria-label="수동 분류">
+      <header className="manual-workspace-heading">
+        <h2>수동 분류</h2>
+        <button onClick={props.onClose}>닫기 ×</button>
+      </header>
+      {loadingError
+        ? <div role="alert">{loadingError}
+            <button onClick={() => setRetry((value) => value + 1)}>다시 시도</button>
+          </div>
+        : <p role="status">Rust에서 원문 블록을 구성하고 있습니다.</p>}
+    </section>
+  );
+  return <ManualClassificationEditor key={loaded.orderId}
+    {...props} initialModel={loaded.model}/>;
+}
+function ManualClassificationEditor({
+  state,
+  order,
+  onApply,
+  onClose,
+  initialModel,
+}: ManualClassificationProps & { initialModel: ManualModel }) {
+  const [model, setModel] = useState(() => initialModel);
+  const nativeDraftLock = useRef(false);
+  const [nativeDraftBusy, setNativeDraftBusy] = useState(false);
+  const manualQuantityRequest = useRef<Record<string, number>>({});
+  const manualTextRequest = useRef<Record<string, number>>({});
+  const manualQuantityPending = useRef<Set<string>>(new Set());
+  // Native text responses can arrive after a different cell edit. The visible
+  // input overlay is NOT a committed draft row until Rust acknowledges it.
+  const nativeTextPending = useRef<Set<string>>(new Set());
+  const [nativeTextBusy, setNativeTextBusy] = useState(false);
+  const delivery = useNativeDeliveryRequirements(model.rows, order.receptionVersion !== 1);
+  const inspection = useMemo(() => ({ ...order, recipients: model.rows }), [order, model.rows]);
+  const nativeOrderIssues = useNativeOrderIssues(inspection);
+  const latestInputs = useRef({ order, model });
+  latestInputs.current = { order, model };
   const initial = useRef(JSON.stringify(model));
   const [count, setCount] = useState(String(model.rows.length));
   const [active, setActive] = useState<Cell>(),
@@ -58,7 +117,10 @@ export function ManualClassification({
     beforeProduct = useRef<Frame | undefined>(undefined);
   const editStart = useRef<{ cell: Cell; frame: Frame } | undefined>(undefined),
     applying = useRef(false);
-  usePendingChanges(JSON.stringify(model) !== initial.current || Object.keys(entry).length > 0);
+  const dirty = JSON.stringify(model) !== initial.current || Object.keys(entry).length > 0 ||
+    count !== String(model.rows.length);
+  usePendingChanges(dirty);
+  const closeDraft = () => void confirmDiscardDraft("수동 분류", dirty, onClose);
   const frame = (): Frame =>
     structuredClone({ model, entry, quantityText, pending, rollback: beforeProduct.current });
   const checkpoint = () => {
@@ -90,6 +152,70 @@ export function ManualClassification({
   };
   const fail = (message: string, cell?: Cell) =>
     setError({ key: cell ? cellKey(cell) : undefined, message });
+  const markNativeTextPending = (key: string, busy: boolean) => {
+    if (busy) nativeTextPending.current.add(key);
+    else nativeTextPending.current.delete(key);
+    setNativeTextBusy(nativeTextPending.current.size > 0);
+  };
+  const requireNativeCellsSettled = () => {
+    if (!nativeDraftLock.current && !nativeTextPending.current.size &&
+        !manualQuantityPending.current.size) return true;
+    fail("입력한 배송 정보와 수량의 Rust 처리가 끝난 뒤 다시 시도하세요.");
+    return false;
+  };
+  const nativeStructure = async (
+    action: "resize_manual_rows" | "add_manual_item" | "remove_manual_item" |
+      "confirm_manual_quantity" | "reset_manual_rows",
+    changes: Record<string, unknown>,
+    success?: (next: ManualModel) => void,
+  ): Promise<boolean> => {
+    if (!requireNativeCellsSettled()) return false;
+    const previousModel = model;
+    nativeDraftLock.current = true;
+    setNativeDraftBusy(true);
+    try {
+      const response = await businessCoreCall<ManualRustDraft>(
+        "rules", "apply_manual_classification", {
+          action, model: previousModel,
+          assignmentOrder: Object.keys(previousModel.assignments),
+          ...changes,
+        },
+      );
+      if (latestInputs.current.order !== order ||
+          latestInputs.current.model !== previousModel)
+        throw Error("수동 분류 내용이 변경되었습니다. 최신 내용을 확인하고 다시 시도하세요.");
+      const next = orderedNativeModel(response);
+      checkpoint();
+      setModel(next);
+      success?.(next);
+      setError(undefined);
+      return true;
+    } catch (e) {
+      fail(e instanceof Error ? e.message : String(e));
+      return false;
+    } finally {
+      nativeDraftLock.current = false;
+      setNativeDraftBusy(false);
+    }
+  };
+  // React merges only the fields returned by the Rust quantity reducer.
+  // This prevents another cell's recent input from being overwritten by an
+  // older response that originated from the same model snapshot.
+  const applyNativeQuantity = (current: ManualModel, updated: ManualModel, cell: Cell) => {
+    const nativeItem = updated.rows.find((row) => row.id === cell.recipientId)
+      ?.items.find((item) => item.id === cell.itemId);
+    if (!nativeItem) return current;
+    const next = structuredClone(current);
+    const item = next.rows.find((row) => row.id === cell.recipientId)
+      ?.items.find((item) => item.id === cell.itemId);
+    if (!item) return current;
+    item.quantity = nativeItem.quantity;
+    item.quantityConfirmed = nativeItem.quantityConfirmed;
+    item.issues = nativeItem.issues;
+    if (nativeItem.quantityApproval) item.quantityApproval = nativeItem.quantityApproval;
+    else delete item.quantityApproval;
+    return next;
+  };
   const attempt = (action: () => void, cell?: Cell) => {
     try {
       action();
@@ -99,27 +225,37 @@ export function ManualClassification({
     }
   };
   const allowed = (cell: Cell) =>
-    !pendingRef.current || cellKey(pendingRef.current) === cellKey(cell);
+    !nativeDraftBusy && (!pendingRef.current ||
+      cellKey(pendingRef.current) === cellKey(cell));
   const nextMissing = (next: ManualModel, cell: Cell) => {
-    const slots = next.rows.flatMap((row) => {
-      const required = deliveryRequirements(row, order.receptionVersion !== 1);
-      return [
-        !required.name && { recipientId: row.id, field: "name" },
-        !required.address && { recipientId: row.id, field: "address" },
-        !required.contact && { recipientId: row.id, field: "mobile" },
-      ].filter(Boolean) as Cell[];
-    });
-    const rowIndex = next.rows.findIndex((row) => row.id === cell.recipientId);
-    const fields = ["name", "address", "mobile", "phone"];
-    const position = rowIndex * 4 + fields.indexOf(cell.field);
-    const following = slots.find(
-      (slot) =>
-        next.rows.findIndex((row) => row.id === slot.recipientId) * 4 + fields.indexOf(slot.field) >
-        position,
-    );
-    if (following) focus(following);
+    // The next required field is selected from a fresh native projection.
+    // A completed previous request must not move focus after later edits.
+    const expected = JSON.stringify(next.rows);
+    void evaluateNativeDeliveryRequirements(next.rows, order.receptionVersion !== 1)
+      .then((results) => {
+        if (JSON.stringify(latestInputs.current.model.rows) !== expected) return;
+        const byId = new Map(results.map((item) => [item.recipientId, item]));
+        const slots = next.rows.flatMap((row) => {
+          const required = byId.get(row.id);
+          if (!required) return [];
+          return [
+            !required.name && { recipientId: row.id, field: "name" },
+            !required.address && { recipientId: row.id, field: "address" },
+            !required.contact && { recipientId: row.id, field: "mobile" },
+          ].filter(Boolean) as Cell[];
+        });
+        const rowIndex = next.rows.findIndex((row) => row.id === cell.recipientId);
+        const fields = ["name", "address", "mobile", "phone"];
+        const position = rowIndex * 4 + fields.indexOf(cell.field);
+        const following = slots.find((slot) =>
+          next.rows.findIndex((row) => row.id === slot.recipientId) * 4 +
+          fields.indexOf(slot.field) > position);
+        if (following) focus(following);
+      }).catch((e) => fail("Rust 배송 필수정보 조회 실패: " +
+        (e instanceof Error ? e.message : String(e)), cell));
   };
   const cancelProduct = () => {
+    if (!requireNativeCellsSettled()) return;
     const cell = pendingRef.current;
     if (!cell) return;
     checkpoint();
@@ -142,9 +278,18 @@ export function ManualClassification({
     focus({ ...cell, field: "product" });
   };
   const selectProduct = (cell: Cell, value: string, product?: Product) => {
-    if (!allowed(cell)) return;
-    attempt(() => {
-      const next = setManualValue(model, cell, value, state, order, product);
+    if (!allowed(cell) || nativeDraftLock.current || !requireNativeCellsSettled()) return;
+    nativeDraftLock.current = true;
+    setNativeDraftBusy(true);
+    const previousModel = model;
+    void businessCoreCall<ManualRustDraft>("rules", "apply_manual_classification", {
+      action: "set_manual_product", model, cell, value, state, order, product,
+      candidateIds: Array.from({ length: 20 }, () => crypto.randomUUID()),
+      assignmentOrder: Object.keys(model.assignments),
+    }).then((result) => {
+      if (latestInputs.current.model !== previousModel ||
+          latestInputs.current.order !== order) return;
+      const next = orderedNativeModel(result);
       checkpoint();
       beforeProduct.current = frame();
       setModel(next);
@@ -157,71 +302,57 @@ export function ManualClassification({
       setSearch(undefined);
       setPending({ ...cell, field: "quantity" });
       focus({ ...cell, field: "quantity" });
-    }, cell);
+      setError(undefined);
+    }).catch((e) => fail(e instanceof Error ? e.message : String(e), cell))
+      .finally(() => {
+        nativeDraftLock.current = false;
+        setNativeDraftBusy(false);
+      });
   };
-  const finishQuantity = (): boolean => {
+  const finishQuantity = async (): Promise<boolean> => {
     const cell = pendingRef.current;
     if (!cell) return true;
-    const item = model.rows
-      .find((row) => row.id === cell.recipientId)
-      ?.items.find((item) => item.id === cell.itemId);
-    if (!item || !validManualQuantity(item.quantity)) {
-      fail("수량을 1 이상의 정수로 입력하세요.", cell);
-      focus(cell);
+    if (nativeTextPending.current.size || manualQuantityPending.current.has(cellKey(cell))) {
+      fail("수취인 정보 또는 수량의 Rust 처리가 끝난 뒤 다시 시도하세요.", cell);
       return false;
     }
-    const next = structuredClone(model);
-    next.rows
-      .find((row) => row.id === cell.recipientId)!
-      .items.find((item) => item.id === cell.itemId)!.quantityConfirmed = true;
-    checkpoint();
-    setModel(next);
-    setPending(undefined);
-    beforeProduct.current = undefined;
-    setError(undefined);
-    return true;
+    const ok = await nativeStructure("confirm_manual_quantity", { cell }, () => {
+      setPending(undefined);
+      beforeProduct.current = undefined;
+    });
+    if (!ok) focus(cell);
+    return ok;
   };
   const useBlock = (id: string) => {
+    if (nativeDraftLock.current || !requireNativeCellsSettled()) return;
     const assigned = model.assignments[id];
-    if (assigned) {
-      if (pendingRef.current && assigned.itemId !== pendingRef.current.itemId) {
-        fail("선택한 상품의 수량을 먼저 확정하세요.", pendingRef.current);
-        return;
-      }
-      attempt(() => {
-        const next = releaseManualBlock(model, id, true, state, order);
-        checkpoint();
-        setModel(next);
-        setEntry((old) => {
-          const copy = { ...old };
-          delete copy[cellKey(assigned)];
-          return copy;
-        });
-        if (assigned.itemId)
-          setQuantityText((old) => {
-            const copy = { ...old };
-            delete copy[cellKey({ ...assigned, field: "quantity" })];
-            return copy;
-          });
-        if (assigned.field === "product") {
-          setPending(undefined);
-          beforeProduct.current = undefined;
-        }
-        if (assigned.field === "quantity") setPending({ ...assigned, field: "quantity" });
-      }, assigned);
+    if (assigned && pendingRef.current &&
+        assigned.itemId !== pendingRef.current.itemId) {
+      fail("선택한 상품의 수량을 먼저 확정하세요.", pendingRef.current);
       return;
     }
-    const cell = pendingRef.current ?? active;
+    const cell = assigned ?? pendingRef.current ?? active;
     if (!cell) {
       fail("입력할 셀을 선택하세요.");
       return;
     }
-    if (pendingRef.current && model.blocks.find((block) => block.id === id)?.field !== "quantity") {
+    if (!assigned && pendingRef.current &&
+        model.blocks.find((block) => block.id === id)?.field !== "quantity") {
       fail("선택한 상품의 수량을 먼저 확정하세요.", pendingRef.current);
       return;
     }
-    attempt(() => {
-      const next = assignManualBlock(model, id, cell, state, order);
+    const previousModel = model;
+    nativeDraftLock.current = true;
+    setNativeDraftBusy(true);
+    void businessCoreCall<ManualRustDraft>("rules", "apply_manual_classification", {
+      action: assigned ? "release_manual_block" : "assign_manual_block",
+      model, id, cell, clear: !!assigned, state, order,
+      candidateIds: Array.from({ length: 20 }, () => crypto.randomUUID()),
+      assignmentOrder: Object.keys(model.assignments),
+    }).then((result) => {
+      if (latestInputs.current.model !== previousModel ||
+          latestInputs.current.order !== order) return;
+      const next = orderedNativeModel(result);
       checkpoint();
       setModel(next);
       setEntry((old) => {
@@ -229,7 +360,18 @@ export function ManualClassification({
         delete copy[cellKey(cell)];
         return copy;
       });
-      if (cell.field === "product") {
+      if (assigned) {
+        if (assigned.itemId) setQuantityText((old) => {
+          const copy = { ...old };
+          delete copy[cellKey({ ...assigned, field: "quantity" })];
+          return copy;
+        });
+        if (assigned.field === "product") {
+          setPending(undefined);
+          beforeProduct.current = undefined;
+        }
+        if (assigned.field === "quantity") setPending({ ...assigned, field: "quantity" });
+      } else if (cell.field === "product") {
         beforeProduct.current = frame();
         setPending({ ...cell, field: "quantity" });
         setQuantityText((old) => ({ ...old, [cellKey({ ...cell, field: "quantity" })]: "" }));
@@ -239,9 +381,15 @@ export function ManualClassification({
         setPending(undefined);
         beforeProduct.current = undefined;
       } else nextMissing(next, cell);
-    }, cell);
+      setError(undefined);
+    }).catch((e) => fail(e instanceof Error ? e.message : String(e), cell))
+      .finally(() => {
+        nativeDraftLock.current = false;
+        setNativeDraftBusy(false);
+      });
   };
   const resize = (n: number) => {
+    if (!requireNativeCellsSettled()) return;
     if (!Number.isSafeInteger(n) || n < 1 || n > 100) {
       fail("배송 건수는 1~100건입니다.");
       return;
@@ -256,29 +404,23 @@ export function ManualClassification({
       return;
     }
     const execute = () => {
-      const next = structuredClone(model);
-      next.rows = next.rows.slice(0, n);
-      while (next.rows.length < n) next.rows.push(newManualRecipient());
-      const ids = new Set(next.rows.map((row) => row.id));
-      next.assignments = Object.fromEntries(
-        Object.entries(next.assignments).filter(([, a]) => ids.has(a.recipientId)),
+      const newRecipientIds = Array.from(
+        { length: Math.max(0, n - model.rows.length) },
+        () => crypto.randomUUID(),
       );
-      setModel(next);
-      setCount(String(n));
-      setEntry({});
-      setQuantityText({});
-      history.current = [];
-      setError(undefined);
-      if (active && !ids.has(active.recipientId)) setActive(undefined);
+      void nativeStructure("resize_manual_rows", { count: n, newRecipientIds }, (next) => {
+        const ids = new Set(next.rows.map((row) => row.id));
+        setCount(String(next.rows.length));
+        setEntry({});
+        setQuantityText({});
+        history.current = [];
+        if (active && !ids.has(active.recipientId)) setActive(undefined);
+      });
     };
     const removed = model.rows.slice(n);
     const populated = removed.some(
       (row) =>
-        row.name ||
-        row.address ||
-        row.mobile ||
-        row.phone ||
-        row.note ||
+        row.name || row.address || row.mobile || row.phone || row.note ||
         row.items.some((item) => item.name || item.productId || item.quantity !== null) ||
         Object.values(model.assignments).some((a) => a.recipientId === row.id),
     );
@@ -292,31 +434,15 @@ export function ManualClassification({
     else execute();
   };
   const addProduct = (recipientId: string) => {
-    const item = emptyManualItem();
-    checkpoint();
-    setModel((old) => ({
-      ...old,
-      rows: old.rows.map((row) =>
-        row.id === recipientId ? { ...row, items: [...row.items, item] } : row,
-      ),
-    }));
-    setError(undefined);
-    focus({ recipientId, itemId: item.id, field: "product" });
+    const itemId = crypto.randomUUID();
+    void nativeStructure("add_manual_item", { recipientId, itemId }, () => {
+      focus({ recipientId, itemId, field: "product" });
+    });
   };
   const removeProduct = (cell: Cell) => {
-    checkpoint();
-    setModel((old) => ({
-      ...old,
-      rows: old.rows.map((row) =>
-        row.id === cell.recipientId
-          ? { ...row, items: row.items.filter((item) => item.id !== cell.itemId) }
-          : row,
-      ),
-      assignments: Object.fromEntries(
-        Object.entries(old.assignments).filter(([, a]) => a.itemId !== cell.itemId),
-      ),
-    }));
-    setError(undefined);
+    void nativeStructure("remove_manual_item", {
+      recipientId: cell.recipientId, itemId: cell.itemId,
+    });
   };
   const move = (cell: Cell, key: string, shift = false) => {
     const inputs = Array.from(
@@ -345,13 +471,14 @@ export function ManualClassification({
       target.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
   };
-  const keyDown = (event: KeyboardEvent<HTMLInputElement>, cell: Cell) => {
+  const keyDown = async (event: KeyboardEvent<HTMLInputElement>, cell: Cell) => {
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") return;
     const key = cellKey(cell);
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
+      if (!requireNativeCellsSettled()) return;
       if (pendingRef.current) {
         cancelProduct();
         return;
@@ -416,7 +543,7 @@ export function ManualClassification({
     }
     if (pendingRef.current) {
       if (cell.field === "quantity" && (event.key === "Enter" || event.key === "Tab")) {
-        if (!finishQuantity()) return;
+        if (!(await finishQuantity())) return;
         requestAnimationFrame(() => move(cell, event.key, event.shiftKey));
         return;
       } else {
@@ -429,7 +556,9 @@ export function ManualClassification({
   const textCell = (cell: Cell, label: string) => {
     const key = cellKey(cell),
       row = model.rows.find((row) => row.id === cell.recipientId)!,
-      required = deliveryRequirements(row, order.receptionVersion !== 1);
+      required = delivery.byId[row.id] ?? {
+        name: false, address: false, contact: false, product: false, quantity: false,
+      };
     const item = row.items.find((item) => item.id === cell.itemId);
     const invalid =
       cell.field === "name"
@@ -448,7 +577,7 @@ export function ManualClassification({
         ? (entry[key] ?? manualValue(model, cell))
         : cell.field === "quantity"
           ? (quantityText[key] ?? manualValue(model, cell))
-          : manualValue(model, cell);
+          : (entry[key] ?? manualValue(model, cell));
     const input = (
       <input
         data-cell={key}
@@ -478,17 +607,75 @@ export function ManualClassification({
             return;
           }
           if (cell.field === "quantity") {
+            const request = (manualQuantityRequest.current[key] ?? 0) + 1;
+            manualQuantityRequest.current[key] = request;
+            manualQuantityPending.current.add(key);
             setQuantityText((old) => ({ ...old, [key]: value }));
-            const next = setManualValue(model, cell, value, state, order);
-            next.rows
-              .find((row) => row.id === cell.recipientId)!
-              .items.find((item) => item.id === cell.itemId)!.quantityConfirmed = false;
             if (!pendingRef.current) beforeProduct.current = frame();
-            setModel(next);
             setPending(cell);
+            // Incomplete typing is a draft; Rust owns quantity parsing and
+            // invalidation of prior approval/quantity-related issues.
+            void businessCoreCall<{ model: ManualModel }>(
+              "rules", "apply_manual_classification", {
+                action: "set_manual_quantity_draft", model, cell, value,
+              },
+            ).then(({ model: updated }) => {
+              if (manualQuantityRequest.current[key] !== request ||
+                  latestInputs.current.order !== order) return;
+              manualQuantityPending.current.delete(key);
+              setModel((current) => applyNativeQuantity(current, updated, cell));
+            }).catch((e) => {
+              if (manualQuantityRequest.current[key] === request) {
+                manualQuantityPending.current.delete(key);
+                fail(e instanceof Error ? e.message : String(e), cell);
+              }
+            });
             return;
           }
-          attempt(() => setModel(setManualValue(model, cell, value, state, order)), cell);
+          if (["name", "address", "phone", "mobile", "note"].includes(cell.field)) {
+            const request = (manualTextRequest.current[key] ?? 0) + 1;
+            manualTextRequest.current[key] = request;
+            markNativeTextPending(key, true);
+            setEntry((old) => ({ ...old, [key]: value }));
+            void businessCoreCall<{ model: ManualModel }>(
+              "rules", "apply_manual_classification", {
+                action: "set_manual_recipient_field", model, cell, value,
+              },
+            ).then(({ model: updated }) => {
+              if (manualTextRequest.current[key] !== request) return;
+              if (latestInputs.current.order !== order)
+                throw Error("원본 주문이 변경되었습니다. 수동 분류를 다시 열어주세요.");
+              const changed = updated.rows.find((row) => row.id === cell.recipientId);
+              if (!changed) throw Error("배송 행을 선택하세요.");
+              setModel((current) => {
+                const next = structuredClone(current);
+                const row = next.rows.find((row) => row.id === cell.recipientId);
+                if (!row) return current;
+                const field = cell.field as "name" | "address" | "phone" | "mobile" | "note";
+                row[field] = changed[field];
+                if (field === "address") {
+                  row.addressParts = changed.addressParts;
+                  delete row.addressStatus;
+                }
+                row.confirmedFields = [...new Set([...(row.confirmedFields ?? []), field])];
+                return next;
+              });
+              setEntry((old) => {
+                const next = { ...old };
+                delete next[key];
+                return next;
+              });
+            }).catch((e) => {
+              if (manualTextRequest.current[key] === request)
+                fail(e instanceof Error ? e.message : String(e), cell);
+            }).finally(() => {
+              // Superseded responses must not release the newer field request.
+              if (manualTextRequest.current[key] === request)
+                markNativeTextPending(key, false);
+            });
+            return;
+          }
+          fail("지원하지 않는 수동 필드입니다.", cell);
         }}
         onBlur={() => {
           if (
@@ -503,18 +690,38 @@ export function ManualClassification({
     );
     if (cell.field !== "quantity") return input;
     const increment = (delta: number) => {
-      if (!allowed(cell)) return;
+      if (!allowed(cell) || manualQuantityPending.current.has(key) ||
+          nativeTextPending.current.size) return;
       checkpoint();
-      const value = Math.max(1, Number(manualValue(model, cell) || 0) + delta);
-      const next = setManualValue(model, cell, String(value), state, order);
-      next.rows
-        .find((r) => r.id === cell.recipientId)!
-        .items.find((i) => i.id === cell.itemId)!.quantityConfirmed = true;
-      setModel(next);
-      setQuantityText((old) => ({ ...old, [key]: String(value) }));
-      setPending(undefined);
-      setError(undefined);
-      requestAnimationFrame(() => focus(cell));
+      const request = (manualQuantityRequest.current[key] ?? 0) + 1;
+      manualQuantityRequest.current[key] = request;
+      manualQuantityPending.current.add(key);
+      void businessCoreCall<{ model: ManualModel }>(
+        "rules", "apply_manual_classification", {
+          action: "step_manual_quantity", model, cell, delta,
+        },
+      ).then(({ model: updated }) => {
+        if (manualQuantityRequest.current[key] !== request ||
+            latestInputs.current.order !== order) return;
+        manualQuantityPending.current.delete(key);
+        const item = updated.rows.find((row) => row.id === cell.recipientId)
+          ?.items.find((item) => item.id === cell.itemId);
+        if (!item || !validManualQuantity(item.quantity) ||
+            item.quantityConfirmed !== true) {
+          fail("수량을 1 이상의 정수로 입력하세요.", cell);
+          return;
+        }
+        setModel((current) => applyNativeQuantity(current, updated, cell));
+        setQuantityText((old) => ({ ...old, [key]: String(item.quantity) }));
+        setPending(undefined);
+        setError(undefined);
+        requestAnimationFrame(() => focus(cell));
+      }).catch((e) => {
+        if (manualQuantityRequest.current[key] === request) {
+          manualQuantityPending.current.delete(key);
+          fail(e instanceof Error ? e.message : String(e), cell);
+        }
+      });
     };
     return (
       <div className="manual-quantity-cell">
@@ -563,20 +770,20 @@ export function ManualClassification({
     cursor = block.end;
   }
   segments.push((order.analysisRaw ?? order.raw).slice(cursor));
-  const uncommitted = model.rows.some((row) =>
-    row.items.some(
-      (item) =>
-        entry[cellKey({ recipientId: row.id, itemId: item.id, field: "product" })] !== undefined,
-    ),
-  );
-  const issues = orderIssues({ ...order, recipients: model.rows }).filter(
+  const unassignedCount = model.blocks.filter((block) => !model.assignments[block.id]).length;
+  // Any unacknowledged name/address/contact/note is as important as an
+  // uncommitted product: never apply model.rows if the visible text differs.
+  const uncommitted = Object.keys(entry).length > 0;
+  const issues = nativeOrderIssues.issues.filter(
     (issue) => issue.severity === "ACTION",
   );
-  const layer = completion || !!confirm || !!search;
+  const layer = completion || !!confirm || !!search || nativeDraftBusy;
   return (
     <section
       ref={root}
       className="manual-workspace"
+      data-native-text-pending={nativeTextBusy}
+      data-native-cell-uncommitted={uncommitted}
       role="dialog"
       aria-modal="false"
       aria-label="수동 분류"
@@ -584,6 +791,7 @@ export function ManualClassification({
         if (event.nativeEvent.isComposing || layer) return;
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
           event.preventDefault();
+          if (!requireNativeCellsSettled()) return;
           const previous = history.current.pop();
           if (previous) {
             restore(previous);
@@ -596,27 +804,31 @@ export function ManualClassification({
         <header className="manual-workspace-heading">
           <h2>수동 분류</h2>
           <button
-            onClick={() =>
+            disabled={nativeTextBusy || nativeDraftBusy || manualQuantityPending.current.size > 0}
+            onClick={() => {
+              if (!requireNativeCellsSettled()) return;
               setConfirm({
                 title: "전체 초기화",
                 message: "구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.",
                 execute: () => {
-                  setModel({ ...model, rows: [newManualRecipient()], assignments: {} });
-                  setCount("1");
-                  setActive(undefined);
-                  setPending(undefined);
-                  setEntry({});
-                  setQuantityText({});
-                  history.current = [];
-                  beforeProduct.current = undefined;
-                  setError(undefined);
+                  void nativeStructure("reset_manual_rows", {
+                    recipientId: crypto.randomUUID(),
+                  }, () => {
+                    setCount("1");
+                    setActive(undefined);
+                    setPending(undefined);
+                    setEntry({});
+                    setQuantityText({});
+                    history.current = [];
+                    beforeProduct.current = undefined;
+                  });
                 },
-              })
-            }
+              });
+            }}
           >
             초기화
           </button>
-          <button onClick={onClose}>닫기 ×</button>
+          <button onClick={closeDraft}>닫기 ×</button>
         </header>
         <div className="manual-classification">
           <div className="manual-status" role="status" data-error-cell={error?.key}>
@@ -625,16 +837,17 @@ export function ManualClassification({
                 <span>선택한 상품의 수량을 확정하세요.</span>
               </>
             ) : (
-              <span>
-                {error?.message || "셀 선택 → 원문 블록 배정 / 방향키/Tab 이동 / Ctrl+Z 복구"}
-              </span>
+              <div className="manual-help-or-error">
+                {error?.message || <strong>미배정됨: {unassignedCount}개</strong>}
+              </div>
             )}
             {pending && error && <small>{error.message}</small>}
           </div>
           <div className="manual-columns">
             <section className="manual-source">
-              <h3>발주 원문</h3>
-              <small>흰 블록: 미배정 / 회색 블록: 클릭하여 강제 회수</small>
+              <header className="manual-source-heading">
+                <h3>붙여넣은 내용</h3>
+              </header>
               <pre>{segments}</pre>
             </section>
             <section className="manual-sheet">
@@ -644,7 +857,7 @@ export function ManualClassification({
                   <span>배송 건수</span>
                   <button
                     aria-label="배송 건수 감소"
-                    disabled={!!pending || model.rows.length <= 1}
+                    disabled={!!pending || nativeTextBusy || model.rows.length <= 1}
                     onClick={() => resize(model.rows.length - 1)}
                   >
                     −
@@ -655,8 +868,9 @@ export function ManualClassification({
                     min={1}
                     max={100}
                     value={count}
-                    disabled={!!pending}
+                    disabled={!!pending || nativeTextBusy}
                     onChange={(event) => {
+                      if (!requireNativeCellsSettled()) return;
                       setCount(event.target.value);
                       if (event.target.value !== "") resize(Number(event.target.value));
                     }}
@@ -664,7 +878,7 @@ export function ManualClassification({
                   />
                   <button
                     aria-label="배송 건수 증가"
-                    disabled={!!pending || model.rows.length >= 100}
+                    disabled={!!pending || nativeTextBusy || model.rows.length >= 100}
                     onClick={() => resize(model.rows.length + 1)}
                   >
                     +
@@ -672,119 +886,108 @@ export function ManualClassification({
                 </div>
               </div>
               <div className="manual-grid-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      {[
-                        "배송",
-                        "이름",
-                        "주소",
-                        "휴대폰",
-                        "전화",
-                        "배송 요청",
-                        "상품",
-                        "수량",
-                        "행 동작",
-                      ].map((text) => (
-                        <th key={text}>{text}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {model.rows.map((row, index) =>
-                      (row.items.length ? row.items : [undefined]).map((item, itemIndex) => (
-                        <tr key={item?.id ?? row.id}>
-                          {itemIndex === 0 && (
-                            <>
-                              <th rowSpan={Math.max(row.items.length, 1)}>배송 {index + 1}</th>
-                              {["name", "address", "mobile", "phone", "note"].map((field, n) => (
-                                <td key={field} rowSpan={Math.max(row.items.length, 1)}>
-                                  {textCell(
-                                    { recipientId: row.id, field },
-                                    `배송 ${index + 1} ${["이름", "주소", "휴대폰", "전화", "배송 요청"][n]}`,
-                                  )}
-                                </td>
-                              ))}
-                            </>
-                          )}
-                          <td>
-                            {item ? (
+                <table className="manual-delivery-table">
+                  <colgroup>
+                    <col className="manual-col-shipment" />
+                    <col className="manual-col-name" />
+                    <col className="manual-col-address" />
+                    <col className="manual-col-mobile" />
+                    <col className="manual-col-phone" />
+                    <col className="manual-col-note" />
+                  </colgroup>
+                  {model.rows.map((row, index) => (
+                    <tbody key={row.id} className="manual-shipment-group">
+                      <tr className="manual-shipment-heading">
+                        {["배송", "이름", "주소", "휴대폰", "전화", "배송 요청"].map((label) => (
+                          <th key={label} scope="col">{label}</th>
+                        ))}
+                      </tr>
+                      <tr className="manual-recipient-row">
+                        <th scope="row">배송 {index + 1}</th>
+                        {["name", "address", "mobile", "phone", "note"].map((field, n) => (
+                          <td key={field}>
+                            {textCell(
+                              { recipientId: row.id, field },
+                              `배송 ${index + 1} ${["이름", "주소", "휴대폰", "전화", "배송 요청"][n]}`,
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                      <tr className="manual-product-section">
+                        <td colSpan={6}>
+                          <div className="manual-products-header">
+                            <span>상품</span>
+                            <span>수량</span>
+                            <span>행 동작</span>
+                          </div>
+                          {row.items.map((item, itemIndex) => (
+                            <div className="manual-product-row" key={item.id}>
                               <div className="manual-product-cell">
                                 {textCell(
                                   { recipientId: row.id, itemId: item.id, field: "product" },
                                   `배송 ${index + 1} 상품 ${itemIndex + 1}`,
                                 )}
                                 <button
-                                  disabled={!!pending}
-                                  onClick={() =>
-                                    setSearch({
-                                      recipientId: row.id,
-                                      itemId: item.id,
-                                      field: "product",
-                                    })
-                                  }
+                                  disabled={!!pending || nativeTextBusy}
+                                  onClick={() => { if (!requireNativeCellsSettled()) return; setSearch({
+                                    recipientId: row.id,
+                                    itemId: item.id,
+                                    field: "product",
+                                  }); }}
                                 >
                                   검색
                                 </button>
                               </div>
-                            ) : (
-                              <button
-                                className="manual-missing-product"
-                                aria-invalid="true"
-                                disabled={!!pending}
-                                onClick={() => addProduct(row.id)}
-                              >
-                                상품 추가
-                              </button>
-                            )}
-                          </td>
-                          <td>
-                            {item &&
-                              textCell(
-                                { recipientId: row.id, itemId: item.id, field: "quantity" },
-                                `배송 ${index + 1} 수량 ${itemIndex + 1}`,
-                              )}
-                          </td>
-                          <td>
-                            {item && (
-                              <>
-                                <button
-                                  disabled={!!pending}
-                                  onClick={() =>
-                                    removeProduct({
-                                      recipientId: row.id,
-                                      itemId: item.id,
-                                      field: "product",
-                                    })
-                                  }
-                                >
-                                  상품 행 제외
-                                </button>
-                                {itemIndex === 0 && (
-                                  <button disabled={!!pending} onClick={() => addProduct(row.id)}>
-                                    상품 추가
-                                  </button>
+                              <div>
+                                {textCell(
+                                  { recipientId: row.id, itemId: item.id, field: "quantity" },
+                                  `배송 ${index + 1} 수량 ${itemIndex + 1}`,
                                 )}
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      )),
-                    )}
-                  </tbody>
+                              </div>
+                              <div className="manual-product-actions">
+                                <button
+                                  disabled={!!pending || nativeTextBusy}
+                                  onClick={() => removeProduct({
+                                    recipientId: row.id,
+                                    itemId: item.id,
+                                    field: "product",
+                                  })}
+                                >
+                                  상품 제거
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="manual-add-product">
+                            <button disabled={!!pending || nativeTextBusy} onClick={() => addProduct(row.id)}>
+                              상품 추가
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  ))}
                 </table>
               </div>
             </section>
           </div>
           <footer className="manual-footer">
             <span>적용 후 확인 {issues.length}개 / 정식 접수는 주문 확인 완료</span>
-            <button onClick={onClose}>취소</button>
+            <button onClick={closeDraft}>닫기</button>
             <button
               className="primary"
               disabled={
+                !delivery.ready || !nativeOrderIssues.ready || nativeDraftBusy || nativeTextBusy ||
                 !!pending || !model.rows.length || uncommitted || !!pendingManualQuantity(model)
               }
-              onClick={() => setCompletion(true)}
+              onClick={() => {
+                if (!requireNativeCellsSettled() || Object.keys(entry).length > 0) {
+                  if (Object.keys(entry).length > 0)
+                    fail("아직 적용되지 않은 수취인 또는 상품 입력이 있습니다. 다시 확인하세요.");
+                  return;
+                }
+                setCompletion(true);
+              }}
             >
               초안에 적용
             </button>
@@ -800,7 +1003,7 @@ export function ManualClassification({
             setSearch(undefined);
             if (active) focus(active);
           }}
-          onChoose={(product) => selectProduct(search, product.code, product)}
+          onChoose={(product) => selectProduct(search, product.name, product)}
         />
       )}
       {confirm && (
@@ -830,17 +1033,27 @@ export function ManualClassification({
             <button
               className="primary"
               data-autofocus
+              disabled={applying.current || nativeDraftBusy}
               onClick={() => {
                 if (applying.current) return;
                 applying.current = true;
-                try {
-                  onApply(applyManual(order, model));
+                const submittedOrder = order, submittedModel = model;
+                void businessCoreCall<{ order: Order }>(
+                  "rules", "apply_manual_classification", {
+                    action: "apply_manual", order: submittedOrder, model: submittedModel,
+                    assignmentOrder: Object.keys(submittedModel.assignments),
+                  },
+                ).then(({ order: prepared }) => {
+                  if (latestInputs.current.order !== submittedOrder ||
+                      latestInputs.current.model !== submittedModel) {
+                    throw Error("수동 분류 내용이 변경되었습니다. 최신 내용을 확인하고 다시 적용하세요.");
+                  }
+                  onApply(prepared);
                   onClose();
-                } catch (e) {
-                  applying.current = false;
+                }).catch((e) => {
                   setCompletion(false);
-                  fail(String(e));
-                }
+                  fail(e instanceof Error ? e.message : String(e));
+                }).finally(() => { applying.current = false; });
               }}
             >
               피드백 없이 진행

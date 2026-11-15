@@ -1,19 +1,25 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { HubPanels, defaultPanels } from "./HubPanels";
+import { askSaveChanges } from "./dialogs";
+import { requestPageLeave } from "./shared/page-leave";
 import { LinkContext } from "./LinkedText";
 import { MessageWorkspace } from "./MessageWorkspace";
 import { OrderDesk } from "./OrderDesk";
 import { WorkflowBoard, type WorkflowSelection } from "./WorkflowBoard";
 import { newReception } from "./orders/reception";
+import { nativeReconcileWorkflow } from "./orders/native-rules";
+import { useNativeWorkflowReconcile } from "./orders/useNativeWorkflowReconcile";
+import { retainUnsavedOrderEdits } from "./order-edit-snapshots";
 import type { Order } from "./types";
-import { groupShipments, reconcileWorkflow } from "./workflow";
+import { groupShipments } from "./workflow";
 import { activeShipments, validSelection } from "./workspace-selection";
 type Props = ComponentProps<typeof OrderDesk> & {
   externalKakao: boolean;
   onNew: () => void;
   onRememberSelection: (s: WorkflowSelection) => void;
   onResetDock: () => void;
+  onRegisterOrderLeaveGuard?: (guard?: () => Promise<{ proceed: boolean; handledDraft: boolean }>) => void;
 };
 const ManualClassification = lazy(() =>
   import("./orders/ManualClassification").then((module) => ({
@@ -22,7 +28,11 @@ const ManualClassification = lazy(() =>
 );
 export function HubWorkspace(props: Props) {
   const [manual, setManual] = useState(false);
+  const [discardRevision, setDiscardRevision] = useState(0);
   const deletedSelection = useRef<WorkflowSelection | undefined>(undefined);
+  const leaveGuardRef = useRef<() => Promise<{ proceed: boolean; handledDraft: boolean }>>(
+    async () => ({ proceed: true, handledDraft: false }),
+  );
   const { state, draft } = props;
   const [receptionId, setReceptionId] = useState(draft.id);
   useEffect(() => {
@@ -36,20 +46,14 @@ export function HubWorkspace(props: Props) {
     [edits, setEdits] = useState<Record<string, Order>>({}),
     [active, setActive] = useState(""),
     [stageHover, setStageHover] = useState<{ groupId: string; step: number }>();
-  const setSelected = (
-    value:
-      | WorkflowSelection
-      | undefined
-      | ((previous: WorkflowSelection | undefined) => WorkflowSelection | undefined),
-  ) => {
-    const next = typeof value === "function" ? value(selected) : value;
+  const applySelection = (next: WorkflowSelection | undefined) => {
     if (next) {
       setReceptionId(next.orderId);
       if (
         next.orderId !== draft.id &&
         receptionId === draft.id &&
         draft.raw.trim() &&
-        JSON.stringify(draft) !== JSON.stringify(state.orders.find((o) => o.id === draft.id))
+        !state.orders.some((o) => o.id === draft.id)
       )
         setEdits((old) => ({ ...old, [draft.id]: structuredClone(draft) }));
     }
@@ -59,8 +63,27 @@ export function HubWorkspace(props: Props) {
       next?.groupId === selected?.groupId
     )
       return;
-    // Data ownership changes immediately; animation must never delay which recipient is edited.
+    // After the user has chosen what happens to edits, change data ownership immediately.
     flushSync(() => commitSelection(next));
+  };
+  const setSelected = (
+    value:
+      | WorkflowSelection
+      | undefined
+      | ((previous: WorkflowSelection | undefined) => WorkflowSelection | undefined),
+  ) => {
+    const next = typeof value === "function" ? value(selected) : value;
+    if (next?.shipmentId === selected?.shipmentId && next?.orderId === selected?.orderId && next?.groupId === selected?.groupId) return;
+    void (async () => {
+      // In-place shipment changes can unmount an actual-freight editor too.
+      const fields = await requestPageLeave((message) => props.onNotice(message, "error"));
+      if (!fields.proceed) return;
+      if (selected?.orderId && next?.orderId && selected.orderId !== next.orderId) {
+        const leave = await leaveGuardRef.current();
+        if (!leave.proceed) return;
+      }
+      applySelection(next);
+    })().catch((error) => props.onNotice(String(error), "error"));
   };
   useEffect(() => {
     if (!selected?.shipmentId) return;
@@ -73,17 +96,22 @@ export function HubWorkspace(props: Props) {
     );
     return () => clearTimeout(timer);
   }, [selected?.shipmentId]);
-  const base = useMemo(() => {
-    let next = state;
-    for (const order of Object.values(edits))
-      if (order.id !== draft.id && order.clientId) next = reconcileWorkflow(next, order);
-    return next;
-  }, [state, edits, draft.id]);
-  const preview = useMemo(
-    () => (draft.clientId ? reconcileWorkflow(base, draft) : base),
-    [base, draft],
+  // The old synchronous TypeScript reconciliation must not be the live
+  // workflow board's authority. Rust evaluates each employee draft overlay,
+  // returning only temporary preview state with no SQLite writes.
+  const independentEdits = useMemo(
+    () => Object.values(edits).filter((order) => order.id !== draft.id && order.clientId),
+    [edits, draft.id],
   );
+  const nativeBase = useNativeWorkflowReconcile(state, independentEdits);
+  const base = nativeBase.state;
+  const nativePreview = useNativeWorkflowReconcile(base, draft.clientId ? [draft] : []);
+  const preview = nativePreview.state;
+  const previewReady = nativeBase.ready && nativePreview.ready;
   useEffect(() => {
+    // Selection and active shipment identity must never be rewritten from a
+    // pending, non-authoritative render of the previous draft.
+    if (!previewReady) return;
     const fresh = receptionId === draft.id && !state.orders.some((o) => o.id === draft.id);
     const next = fresh
       ? draft.recipients.length
@@ -99,7 +127,7 @@ export function HubWorkspace(props: Props) {
       commitSelection(next);
       if (next) setReceptionId(next.orderId);
     }
-  }, [selected, preview, receptionId, draft]);
+  }, [selected, preview, receptionId, draft, previewReady]);
   useEffect(() => {
     if (selected) props.onRememberSelection(selected);
   }, [selected, props.onRememberSelection]);
@@ -110,7 +138,6 @@ export function HubWorkspace(props: Props) {
         state.orders.find((o) => o.id === selected.orderId && !o.deletedAt))
     : undefined;
   const onSave = async (next: typeof state) => {
-    const savingEdits = edits;
     const removed =
       next.workflow?.groups.filter(
         (g) => g.deletedAt && !state.workflow?.groups.find((old) => old.id === g.id)?.deletedAt,
@@ -122,16 +149,8 @@ export function HubWorkspace(props: Props) {
     const removedCurrent = removed.some((g) => g.id === selected?.groupId);
     if (removedCurrent) deletedSelection.current = selected;
     await props.onWorkflowSave(next);
-    setEdits((previous) =>
-      Object.fromEntries(
-        Object.entries(previous).filter(
-          ([id, o]) =>
-            activeShipments(next).some((s) => s.orderId === id) &&
-            (!next.orders.find((n) => n.id === id) ||
-              JSON.stringify(o) !== JSON.stringify(savingEdits[id])),
-        ),
-      ),
-    );
+    // A workflow save for another order must not discard this order's unsaved edits.
+    setEdits((previous) => retainUnsavedOrderEdits(previous, next.orders));
     if (removed.length || restored.length) {
       props.onNotice("");
       const target = validSelection(
@@ -156,6 +175,39 @@ export function HubWorkspace(props: Props) {
       }
     }
   };
+  leaveGuardRef.current = async () => {
+    const orderId = selected?.orderId ?? receptionId;
+    const persisted = state.orders.find((order) => order.id === orderId);
+    const pending = orderId === draft.id ? draft : edits[orderId];
+    if (!persisted || !pending || JSON.stringify(pending) === JSON.stringify(persisted))
+      return { proceed: true, handledDraft: false };
+    const choice = await askSaveChanges(
+      "수정한 주문 정보가 저장되지 않았습니다. 저장하고 이동할까요?",
+    );
+    if (choice === "cancel") return { proceed: false, handledDraft: false };
+    if (choice === "save") {
+      try {
+        await onSave(await nativeReconcileWorkflow(state, pending));
+      } catch (error) {
+        props.onNotice(error instanceof Error ? error.message : String(error), "error");
+        return { proceed: false, handledDraft: false };
+      }
+    } else {
+      if (orderId === draft.id) props.onChange(structuredClone(persisted));
+      setEdits((previous) => {
+        if (!(orderId in previous)) return previous;
+        const next = { ...previous };
+        delete next[orderId];
+        return next;
+      });
+      setDiscardRevision((value) => value + 1);
+    }
+    return { proceed: true, handledDraft: orderId === draft.id };
+  };
+  useEffect(() => {
+    props.onRegisterOrderLeaveGuard?.(() => leaveGuardRef.current());
+    return () => props.onRegisterOrderLeaveGuard?.(undefined);
+  }, [props.onRegisterOrderLeaveGuard]);
   const changeDetail: Props["onChange"] = (value) => {
     const current = detail ?? draft;
     if (
@@ -224,9 +276,19 @@ export function HubWorkspace(props: Props) {
       setEdits((old) => ({ ...old, [next.id]: next }));
     }
   };
-  const messageOrder = receptionOrder,
-    messageState = messageOrder.clientId ? reconcileWorkflow(base, messageOrder) : base,
-    messageGroup =
+  const messageOrder = receptionOrder;
+  const messageOverlay = useMemo(
+    () => messageOrder.id !== draft.id && (messageOrder.clientId || messageOrder.orderType === "RETAIL")
+      ? [messageOrder] : [],
+    [messageOrder, draft.id],
+  );
+  const nativeMessage = useNativeWorkflowReconcile(base, messageOverlay);
+  // Reuse the already reconciled draft preview instead of dispatching a
+  // second identical Rust IPC for the currently edited reception.
+  const messageState = messageOrder.id === draft.id ? preview : nativeMessage.state;
+  const messageReady = messageOrder.id === draft.id
+    ? previewReady : nativeBase.ready && nativeMessage.ready;
+  const messageGroup =
       selected?.orderId === messageOrder.id &&
       selected?.groupId &&
       groupShipments(messageState, selected.groupId).length > 0
@@ -278,7 +340,7 @@ export function HubWorkspace(props: Props) {
           <div
             className="hub-reception-stack"
             style={{
-              gridTemplateRows: `minmax(160px,${verticalRatio}fr) 6px minmax(160px,${1 - verticalRatio}fr)`,
+              gridTemplateRows: `minmax(275px,${verticalRatio}fr) 6px minmax(160px,${1 - verticalRatio}fr)`,
             }}
           >
             <div ref={setSource} className="hub-portal-target" />
@@ -354,6 +416,8 @@ export function HubWorkspace(props: Props) {
             </header>
             <WorkflowBoard
               state={preview}
+              previewReady={previewReady}
+              previewError={nativeBase.error || nativePreview.error}
               persistedState={base}
               selection={selected}
               activeKey={active}
@@ -372,7 +436,7 @@ export function HubWorkspace(props: Props) {
             <MessageWorkspace
               state={messageState}
               order={messageOrder}
-              gid={messageGroup}
+              gid={messageReady ? messageGroup : undefined}
               onOrder={(o) => {
                 changeReception(o);
               }}
@@ -394,8 +458,9 @@ export function HubWorkspace(props: Props) {
       <div className="hub-order-engine">
         <OrderDesk
           {...props}
-          key={receptionOrder.id + ":reception"}
+          key={receptionOrder.id + ":reception:" + discardRevision}
           state={base}
+          persistedOrders={state.orders}
           draft={receptionOrder}
           onChange={changeReception}
           viewMode="reception"
@@ -406,8 +471,9 @@ export function HubWorkspace(props: Props) {
         />
         <OrderDesk
           {...props}
-          key={(detail?.id ?? draft.id) + ":" + (selected?.groupId ?? "empty")}
+          key={(detail?.id ?? draft.id) + ":" + (selected?.groupId ?? "empty") + ":" + discardRevision}
           state={base}
+          persistedOrders={state.orders}
           draft={detail ?? draft}
           viewMode="details"
           onManual={() => setManual(true)}
@@ -417,7 +483,7 @@ export function HubWorkspace(props: Props) {
           onSelectWorkflow={setSelected}
           onChange={changeDetail}
           onWorkflowSave={onSave}
-          onSave={() => onSave(reconcileWorkflow(base, detail ?? draft))}
+          onSave={async () => onSave(await nativeReconcileWorkflow(base, detail ?? draft))}
         />
       </div>
       {manual && (
