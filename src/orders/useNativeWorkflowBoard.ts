@@ -20,6 +20,8 @@ export type NativeGroupPreview = {
   step: number;
   nextStep: number;
   needsNotice: boolean;
+  /** Signed difference to the most recently issued notice; null if unavailable. */
+  noticeDelta: Price;
   transferred: boolean;
   shipmentCount: number;
   totals: { subtotal: Price; shipping: Price; vat: Price; total: Price };
