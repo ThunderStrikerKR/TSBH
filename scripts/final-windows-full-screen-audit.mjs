@@ -203,7 +203,11 @@ const captureDialog = async (name, trigger) => {
       .filter({ hasText: "최대 묶음 수량" }).count();
     assert.equal(anchoredHelp, 1,
       "Freight maximum-bundle help must be attached to its field label, not orphaned");
-    record("layout", "Freight quantity help anchored to its label");
+    const select = dialog.getByLabel("최대 묶음 수량");
+    assert.equal(await select.count(), 1,
+      "Freight select label must not collide with help button accessibility name");
+    assert.equal(await select.first().evaluate(el=>el.tagName), "SELECT");
+    record("layout", "Freight quantity help anchored with unique select label");
   }
   record("dialog", name, metrics);
   await capture("dialog", name);
