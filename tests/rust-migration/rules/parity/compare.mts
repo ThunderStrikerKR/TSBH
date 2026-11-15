@@ -22,7 +22,7 @@ import {
   deleteShippingGroup,
   changeShippingBasis,
 } from "../../../../src/shipping.ts";
-import { shipmentTotals, validateWorkflow, reconcileWorkflow, clientChangeIssue, deleteOrder, workflowIssues, stageIssues, applyOrderRawEdit, migrateWorkflow, advanceGroup, undoGroup, setShipmentFreight, processGroup, confirmGroupPayment, recordPayment, restoreShipment, markStoreSent, recordChangeRequest, setGroupAccount, detachShipment, regroupShipment, completeDelivery, groupContext, groupStep } from "../../../../src/workflow.ts";
+import { shipmentTotals, validateWorkflow, reconcileWorkflow, clientChangeIssue, deleteOrder, workflowIssues, stageIssues, applyOrderRawEdit, migrateWorkflow, advanceGroup, undoGroup, setShipmentFreight, processGroup, confirmGroupPayment, recordPayment, restoreShipment, markStoreSent, recordChangeRequest, setGroupAccount, detachShipment, regroupShipment, completeDelivery, groupContext, groupStep, groupTotals } from "../../../../src/workflow.ts";
 import { recordActualFreight } from "../../../../src/actual-freight.ts";
 import { dispatchState } from "../../../../src/factory-replies.ts";
 import { shouldRefreshUncommittedOrderPricing } from "../../../../src/orders/passive-pricing.ts";
@@ -192,6 +192,31 @@ add("expired combination epoch","calculate_shipping",{order,state:oldCombination
 add("shipment totals","calculate_shipment_totals",{
   state:baseState,shipmentId:"shipment:o1:r1"},
   ()=>shipmentTotals(baseState as any,baseState.workflow.shipments[0] as any));
+
+// Original React displayed (legacy groupTotals - most recent notice.total).
+// Compare its genuine TS monetary calculation against compiled Rust's live
+// preview_workflow projection. No separate hand-written expected amounts.
+function notificationAmountCase(name:string, priorDelta?:number) {
+  const state:any=copy(baseState);
+  const current=groupTotals(state,"group:o1").total;
+  if(typeof current!=="number" || !Number.isSafeInteger(current))
+    throw Error("Native notice parity baseline requires an integer TS group total");
+  if(priorDelta!==undefined){
+    state.workflow.groups[0].notices=[{
+      id:"historical-notice",at:now,actor:"이전 담당자",
+      total:current-priorDelta
+    }];
+  }
+  add("native workflow notice difference: "+name,
+    "preview_workflow",{state},
+    ()=>({noticeDelta:priorDelta===undefined?null:
+      groupTotals(state,"group:o1").total-
+        state.workflow.groups[0].notices.at(-1).total}));
+}
+notificationAmountCase("no issued notice");
+notificationAmountCase("unchanged invoice",0);
+notificationAmountCase("additional amount due",2200);
+notificationAmountCase("credit due",-1500);
 add("valid workflow","validate_workflow",{state:baseState},
   ()=>{validateWorkflow(baseState as any);return {valid:true};});
 const rule=copy(shipping.groups[0].current);
@@ -3831,6 +3856,13 @@ for(let i=0;i<cases.length;i++){
   let rust:unknown;
   try{rust=JSON.parse(output[i]);}
   catch {console.error("Invalid Rust JSON",c.name,output[i]);process.exit(2);}
+  // Native preview contains the complete group UI view model. This specific
+  // original-TS comparison isolates the exact notice-difference field.
+  if(c.operation==="preview_workflow" && (rust as any)?.ok===true){
+    rust={ok:true,value:{
+      noticeDelta:(rust as any).value?.groups?.[0]?.noticeDelta ?? null
+    }};
+  }
   // Rust action adapters return auxiliary metadata (step, paymentId,
   // entries, etc.) not returned by the pure TypeScript mutation functions.
   // Compare the COMPLETE resulting State, never only selected state fields.
