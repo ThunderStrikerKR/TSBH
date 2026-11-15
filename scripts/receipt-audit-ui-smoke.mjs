@@ -1862,6 +1862,11 @@ try {
   const productSubnav = navPage.getByRole("navigation", {name:"상품 관리 메뉴"});
   await productSubnav.getByRole("button", {name:"브랜드 관리"}).click();
   const brandInput = navPage.getByRole("textbox", {name:"브랜드 공식명"});
+  const readVisibleInput = (label) => navPage.evaluate((name)=>{
+    const field=document.querySelector('input[aria-label="'+name+'"]');
+    if(!field || !field.getClientRects().length) throw Error("Editor is not visibly mounted: "+name);
+    return field.value;
+  },label);
   const brandLayout = await navPage.locator(".registry-brand-manager").evaluate((root) => {
     const fields = [...root.querySelectorAll(".registry-edit-form > .field")];
     const firstRow = root.querySelector(".registry-list .registry-row");
@@ -1888,15 +1893,15 @@ try {
   await editBrand("CI검증브랜드B");
   await checkPrompt("brand switch");
   await leave.getByRole("button", {name:"취소",exact:true}).click();
-  assert.equal(await brandInput.inputValue(),"CI브랜드수정취소시험");
+  assert.equal(await readVisibleInput("브랜드 공식명"),"CI브랜드수정취소시험");
   await editBrand("CI검증브랜드B");
   await leave.getByRole("button", {name:"저장 안 함"}).click();
-  assert.equal(await brandInput.inputValue(),"CI검증브랜드B");
+  assert.equal(await readVisibleInput("브랜드 공식명"),"CI검증브랜드B");
   await editBrand("CI검증브랜드A");
   await brandInput.fill("CI검증브랜드A-저장");
   await editBrand("CI검증브랜드B");
   await leave.getByRole("button", {name:"저장",exact:true}).click();
-  assert.equal(await brandInput.inputValue(),"CI검증브랜드B");
+  assert.equal(await readVisibleInput("브랜드 공식명"),"CI검증브랜드B");
   assert.equal((await mockState()).state.brands.find(b => b.id==="ci-brand-a").name,"CI검증브랜드A-저장");
   assert.deepEqual((await mockState()).state.brands.find(b => b.id==="ci-brand-a").aliases,[]);
   assert.ok((await navPage.evaluate(()=>window.__navRustBrandUpserts??0))>0,
@@ -1925,15 +1930,15 @@ try {
   await editAlias("CI회귀별칭B");
   await checkPrompt("alias switch");
   await leave.getByRole("button", {name:"취소",exact:true}).click();
-  assert.equal(await aliasInput.inputValue(),"CI별칭수정취소시험");
+  assert.equal(await readVisibleInput("관리 별칭"),"CI별칭수정취소시험");
   await editAlias("CI회귀별칭B");
   await leave.getByRole("button", {name:"저장 안 함"}).click();
-  assert.equal(await aliasInput.inputValue(),"CI회귀별칭B");
+  assert.equal(await readVisibleInput("관리 별칭"),"CI회귀별칭B");
   await editAlias("CI회귀별칭A");
   await aliasInput.fill("CI회귀별칭A저장검사");
   await editAlias("CI회귀별칭B");
   await leave.getByRole("button", {name:"저장",exact:true}).click();
-  assert.equal(await aliasInput.inputValue(),"CI회귀별칭B");
+  assert.equal(await readVisibleInput("관리 별칭"),"CI회귀별칭B");
   assert.equal((await mockState()).state.aliases.find(a => a.id==="ci-alias-a").text,"CI회귀별칭A저장검사");
   console.log("PASS: alias target switch Save / Discard / Cancel");
 
