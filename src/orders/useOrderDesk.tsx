@@ -180,6 +180,27 @@ export function useOrderDesk({
   const isCurrentOrderInput = (sourceDraft: Order, sourceState: State): boolean =>
     latestRulesInput.current.draft === sourceDraft &&
     latestRulesInput.current.state === sourceState;
+  // Editable text stays responsive in React. A transient intent prevents any
+  // save until Rust has decided invoice freeze, notification/payment flags,
+  // dispatch origin and freight invalidation for the latest complete draft.
+  useEffect(() => {
+    if (!draft.pendingNativeEdit) return;
+    const sourceDraft = draft;
+    const sourceState = state;
+    let current = true;
+    void businessCoreCall<{ order: Order }>("rules", "order_edit_rules", {
+      action: "prepare_order_edit", order: sourceDraft, state: sourceState,
+    }).then(({ order: native }) => {
+      if (!current || !isCurrentOrderInput(sourceDraft, sourceState)) return;
+      onChange((previous) => previous === sourceDraft ? native : previous);
+    }).catch((error) => {
+      if (current && isCurrentOrderInput(sourceDraft, sourceState))
+        onNotice("Rust 주문 수정 상태 확인 실패 — 저장하지 않았습니다: " +
+          (error instanceof Error ? error.message : String(error)), "error");
+    });
+    return () => { current = false; };
+  }, [draft, state]);
+
   useEffect(() => {
     const request = ++ruleRequests.current.price;
     if (!liveClient || !passivePricingAllowed) return;
@@ -232,13 +253,16 @@ export function useOrderDesk({
     // marker is set only by an explicit employee edit requiring new freight.
     const shippingPending = draft.shippingVersion === "" && draft.shippingFee === null;
     if ((!passivePricingAllowed && !shippingPending) ||
+        draft.pendingNativeEdit ||
         draft.shippingMode === "MANUAL" || draft.pricesLocked ||
         draft.deletedAt || exported ||
         !draft.recipients.some((r) => r.items.length > 0)) return;
     const before = JSON.stringify(draft.recipients);
     const orderId = draft.id;
     void businessCoreCall<{ total: number | null; version: string }>(
-      "rules", "calculate_shipping", { order: draft, state },
+      "rules", "order_edit_rules", {
+        action: "calculate_order_shipping", order: draft, state,
+      },
     ).then((result) => {
       const current = latestRulesInput.current;
       if (request !== ruleRequests.current.shipping ||
@@ -253,7 +277,7 @@ export function useOrderDesk({
             (!passivePricingAllowed &&
               !(previous.shippingVersion === "" && previous.shippingFee === null)))
           return previous;
-        const fee = liveClient?.shippingFeeExcluded ? 0 : result.total;
+        const fee = result.total; // waiver decision is owned by Rust
         if (previous.shippingFee === fee &&
             previous.shippingVersion === result.version) return previous;
         return {
@@ -419,33 +443,13 @@ export function useOrderDesk({
     }
     onChange((previous) => {
       const next = clone(previous);
-      // First edit captures only the timestamp and intent. The original
-      // frozen amount/client/recipient snapshot is produced by Rust save_order
-      // from the authoritative persisted order in the same save transaction.
-      if (previous.pricesLocked && !activeGroupId &&
-          !(state.workflow?.shipments.some((ship) =>
-            ship.orderId === previous.id && !ship.legacyArchived) ?? false))
-        next.pendingBillingSnapshot = { at: new Date().toISOString(), reason };
-      next.pricesLocked = false;
-      next.clientSnapshot = liveClient ? clone(liveClient) : next.clientSnapshot;
-      next.notified = false;
-      next.paid = false;
-      next.postpaidApproved = false;
-      next.status = "REVIEW";
-      fn(next);
-      if (next.orderType)
-        for (const row of next.recipients) {
-          row.dispatchOrigin ??= "FACTORY";
-          row.items.forEach((item) => (item.origin = row.dispatchOrigin!));
-        }
-      next.updatedAt = new Date().toISOString();
-      if (recalculateShipping) {
-        next.shippingMode = "AUTO";
-        // A changed draft cannot retain its old freight as a valid amount.
-        // Async native Rust shipping will fill in the authoritative tariff.
-        next.shippingFee = null;
-        next.shippingVersion = "";
-      }
+      fn(next); // UI's field change only; no financial/workflow mutation here.
+      const firstIntent = previous.pendingNativeEdit;
+      next.pendingNativeEdit = firstIntent ? {
+        ...firstIntent,
+        recalculateShipping: firstIntent.recalculateShipping || recalculateShipping,
+      } : { at: new Date().toISOString(), reason, recalculateShipping };
+      // The Rust reducer alone can clear pendingNativeEdit.
       return next;
     });
   };
