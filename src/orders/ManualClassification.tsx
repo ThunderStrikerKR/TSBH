@@ -198,6 +198,24 @@ function ManualClassificationEditor({
       setNativeDraftBusy(false);
     }
   };
+  // React merges only the fields returned by the Rust quantity reducer.
+  // This prevents another cell's recent input from being overwritten by an
+  // older response that originated from the same model snapshot.
+  const applyNativeQuantity = (current: ManualModel, updated: ManualModel, cell: Cell) => {
+    const nativeItem = updated.rows.find((row) => row.id === cell.recipientId)
+      ?.items.find((item) => item.id === cell.itemId);
+    if (!nativeItem) return current;
+    const next = structuredClone(current);
+    const item = next.rows.find((row) => row.id === cell.recipientId)
+      ?.items.find((item) => item.id === cell.itemId);
+    if (!item) return current;
+    item.quantity = nativeItem.quantity;
+    item.quantityConfirmed = nativeItem.quantityConfirmed;
+    item.issues = nativeItem.issues;
+    if (nativeItem.quantityApproval) item.quantityApproval = nativeItem.quantityApproval;
+    else delete item.quantityApproval;
+    return next;
+  };
   const attempt = (action: () => void, cell?: Cell) => {
     try {
       action();
@@ -207,7 +225,8 @@ function ManualClassificationEditor({
     }
   };
   const allowed = (cell: Cell) =>
-    !pendingRef.current || cellKey(pendingRef.current) === cellKey(cell);
+    !nativeDraftBusy && (!pendingRef.current ||
+      cellKey(pendingRef.current) === cellKey(cell));
   const nextMissing = (next: ManualModel, cell: Cell) => {
     // The next required field is selected from a fresh native projection.
     // A completed previous request must not move focus after later edits.
@@ -594,26 +613,17 @@ function ManualClassificationEditor({
             setQuantityText((old) => ({ ...old, [key]: value }));
             if (!pendingRef.current) beforeProduct.current = frame();
             setPending(cell);
-            // Incomplete typing is a valid draft; only Rust interprets the quantity.
-            void businessCoreCall<{ quantity: number | null; quantityConfirmed: boolean }>(
+            // Incomplete typing is a draft; Rust owns quantity parsing and
+            // invalidation of prior approval/quantity-related issues.
+            void businessCoreCall<{ model: ManualModel }>(
               "rules", "apply_manual_classification", {
-                action: "parse_manual_quantity", value,
+                action: "set_manual_quantity_draft", model, cell, value,
               },
-            ).then(({ quantity }) => {
+            ).then(({ model: updated }) => {
               if (manualQuantityRequest.current[key] !== request ||
                   latestInputs.current.order !== order) return;
               manualQuantityPending.current.delete(key);
-              setModel((current) => {
-                const next = structuredClone(current);
-                const item = next.rows.find((row) => row.id === cell.recipientId)
-                  ?.items.find((item) => item.id === cell.itemId);
-                if (!item) return current;
-                item.quantity = quantity;
-                item.quantityConfirmed = false;
-                delete item.quantityApproval;
-                item.issues = item.issues.filter((issue) => !issue.includes("수량"));
-                return next;
-              });
+              setModel((current) => applyNativeQuantity(current, updated, cell));
             }).catch((e) => {
               if (manualQuantityRequest.current[key] === request) {
                 manualQuantityPending.current.delete(key);
@@ -680,36 +690,29 @@ function ManualClassificationEditor({
     );
     if (cell.field !== "quantity") return input;
     const increment = (delta: number) => {
-      if (!allowed(cell) || manualQuantityPending.current.has(key)) return;
+      if (!allowed(cell) || manualQuantityPending.current.has(key) ||
+          nativeTextPending.current.size) return;
       checkpoint();
-      const value = Math.max(1, Number(manualValue(model, cell) || 0) + delta);
       const request = (manualQuantityRequest.current[key] ?? 0) + 1;
       manualQuantityRequest.current[key] = request;
       manualQuantityPending.current.add(key);
-      void businessCoreCall<{ quantity: number | null; quantityConfirmed: boolean }>(
+      void businessCoreCall<{ model: ManualModel }>(
         "rules", "apply_manual_classification", {
-          action: "parse_manual_quantity", value: String(value),
+          action: "step_manual_quantity", model, cell, delta,
         },
-      ).then(({ quantity, quantityConfirmed }) => {
+      ).then(({ model: updated }) => {
         if (manualQuantityRequest.current[key] !== request ||
             latestInputs.current.order !== order) return;
         manualQuantityPending.current.delete(key);
-        if (!quantityConfirmed || quantity == null) {
+        const item = updated.rows.find((row) => row.id === cell.recipientId)
+          ?.items.find((item) => item.id === cell.itemId);
+        if (!item || !validManualQuantity(item.quantity) ||
+            item.quantityConfirmed !== true) {
           fail("수량을 1 이상의 정수로 입력하세요.", cell);
           return;
         }
-        setModel((current) => {
-          const next = structuredClone(current);
-          const item = next.rows.find((r) => r.id === cell.recipientId)
-            ?.items.find((i) => i.id === cell.itemId);
-          if (!item) return current;
-          item.quantity = quantity;
-          item.quantityConfirmed = true;
-          delete item.quantityApproval;
-          item.issues = item.issues.filter((issue) => !issue.includes("수량"));
-          return next;
-        });
-        setQuantityText((old) => ({ ...old, [key]: String(quantity) }));
+        setModel((current) => applyNativeQuantity(current, updated, cell));
+        setQuantityText((old) => ({ ...old, [key]: String(item.quantity) }));
         setPending(undefined);
         setError(undefined);
         requestAnimationFrame(() => focus(cell));
