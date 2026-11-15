@@ -334,7 +334,7 @@ export function ProductFreightPanel({
             </p>
           )}
           <div className="form-row">
-            <Field label="최대 묶음 수량" help={{
+            <Field label="최대 묶음 수량" helpTitle="최대 합포장 수량 초과" help={{
               purpose: "한 상자에 넣을 수 있는 최대 수량을 넘었을 때 배송비를 어떻게 처리하는지 안내합니다.",
               when: "주문 수량이 최대 묶음 수량을 초과했을 때 확인합니다.",
               steps: ["실제로 포장 가능한 조합을 확인합니다.", "확인된 조합의 운임을 따로 등록합니다.", "등록된 운임을 사용합니다."],
