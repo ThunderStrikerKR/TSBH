@@ -165,10 +165,16 @@ export function CorrectionPanel({
                   value={i.quantity ?? ""}
                   onChange={(e) => {
                     const quantity = e.target.value === "" ? null : Number(e.target.value);
+                    if (quantity !== null && (!Number.isSafeInteger(quantity) || quantity < 1)) {
+                      onNotice("정정 수량은 1 이상의 안전한 정수로 입력하세요.", "error");
+                      return;
+                    }
                     setAfter({
                       ...after,
                       items: after.items.map((x) =>
-                        x.id === i.id ? { ...x, quantity, quantityConfirmed: true } : x,
+                        x.id === i.id
+                          ? { ...x, quantity, quantityConfirmed: quantity !== null }
+                          : x,
                       ),
                     });
                   }}
