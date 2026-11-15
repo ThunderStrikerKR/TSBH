@@ -201,6 +201,21 @@ try {
                 {clientSnapshot:structuredClone(order.clientSnapshot)}:{}),
             }};
           }
+          if (command === "business_core_call" && args?.domain === "rules" &&
+              args?.operation === "finalize_billing_history") {
+            window.__storeNativeSteps ??= [];
+            window.__storeNativeSteps.push("finalize_billing_history");
+            // This UI fixture does not modify prices or historical invoices.
+            // The billing Rust reducer is checked by native parity tests.
+            return {state:structuredClone(args.payload.state)};
+          }
+          if (command === "business_core_call" && args?.domain === "rules" &&
+              args?.operation === "apply_reception_action" &&
+              args?.payload?.action === "persisted_reception_state") {
+            window.__storeNativeSteps ??= [];
+            window.__storeNativeSteps.push("persisted_reception_state");
+            return {state:structuredClone(args.payload.state)};
+          }
           if (command === "business_core_call" &&
               args?.domain === "output" &&
               args?.operation === "prepare_store_export") {
@@ -522,9 +537,13 @@ try {
   await page.getByRole("dialog", { name: "작업 확인" })
     .getByRole("button", { name: "확인", exact: true }).click();
   await page.waitForFunction(() => window.__storeCommit?.status === "STORE_SENT");
-  assert.deepEqual(await page.evaluate(() => window.__storeNativeSteps?.slice(0,4)),
-    ["prepare_store_export","prepare_store_export","finalize_export","mark_store_sent"],
-    "STORE preparation, finalize and staff shipping confirmation must use native Rust IPC");
+  const storeSteps=await page.evaluate(() => window.__storeNativeSteps);
+  assert.ok(storeSteps.includes("prepare_store_export") &&
+    storeSteps.includes("finalize_export") &&
+    storeSteps.includes("mark_store_sent") &&
+    storeSteps.includes("finalize_billing_history") &&
+    storeSteps.includes("persisted_reception_state"),
+    "STORE workflow must exercise native export, billing and reception save boundaries: "+storeSteps);
   // Cached product discovery must only populate the URL. No price or DB
   // update may occur until the separate live detail review is approved.
   await nav.getByRole("button", { name: "상품 관리" }).click();
