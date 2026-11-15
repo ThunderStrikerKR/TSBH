@@ -95,9 +95,11 @@ export function OrderHistory({
                       { timeZone: "Asia/Seoul" },
                     )}
                   </td>
-                  <td>{row.client?.name ?? "과거 거래처"}</td>
+                  <td><span className="order-history-client-name" title={row.client?.name ?? "과거 거래처"}>{row.client?.name ?? "과거 거래처"}</span></td>
                   <td>
                     <button
+                      className="order-history-recipient-toggle"
+                      title={row.recipients.map((recipient) => recipient.name).join(", ")}
                       aria-expanded={expanded.includes(row.order.id)}
                       onClick={() =>
                         setExpanded(
@@ -107,12 +109,16 @@ export function OrderHistory({
                         )
                       }
                     >
-                      {row.recipients.map((recipient) => recipient.name).join(", ")}
+                      <span className="order-history-recipient-name">{row.recipients[0]?.name ?? "수취인 미확인"}</span>
+                      <span className="order-history-recipient-meta">
+                        배송 {row.recipients.length}건 · {row.recipients.reduce((count, recipient) => count + recipient.items.length, 0)}품목
+                      </span>
                     </button>
                     {expanded.includes(row.order.id) &&
                       row.recipients.map((r) => (
-                        <div key={r.id}>
-                          {r.name} / {r.address}
+                        <div key={r.id} className="order-history-recipient-detail">
+                          <strong>{r.name}</strong>
+                          <p>배송 주소: {r.address}</p>
                           {r.items.map((item) => {
                             const linked = row.display.references.find((reference) =>
                               reference.recipientId === r.id && reference.itemId === item.id
@@ -149,14 +155,15 @@ export function OrderHistory({
                         / 부가세 {won(row.billing.vat)}
                       </small>
                     )}
-                    <small>
+                    <small className="order-history-item-preview" title={row.recipients
+                      .flatMap((recipient) => recipient.items.map((item) => internalModel(item.name) + " × " + item.quantity))
+                      .join(" / ")}>
                       {row.recipients
-                        .flatMap((recipient) =>
-                          recipient.items.map(
-                            (item) => internalModel(item.name) + " × " + item.quantity,
-                          ),
-                        )
+                        .flatMap((recipient) => recipient.items.map((item) => internalModel(item.name) + " × " + item.quantity))
+                        .slice(0, 2)
                         .join(" / ")}
+                      {row.recipients.reduce((count, recipient) => count + recipient.items.length, 0) > 2 &&
+                        ` 외 ${row.recipients.reduce((count, recipient) => count + recipient.items.length, 0) - 2}품목`}
                     </small>
                   </td>
                   <td>{row.status}</td>
