@@ -170,11 +170,13 @@ fn change_client(payload:&Value)->Result<Value,String>{
         history.push(snapshot);
         set(&mut changed,"billingHistory",json!(history))?;
     }
-    // Changing dealer may change freight waivers; do not retain old invoice
-    // freight as a valid quote while Rust recalculates it.
+    // A changed dealer may change freight waivers AND applicable tariffs.
+    // Quote before returning to React, so an immediate workflow save never
+    // persists the previous dealer's freight or an unconfirmed null marker.
     set(&mut changed,"shippingMode",json!("AUTO"))?;
-    set(&mut changed,"shippingFee",Value::Null)?;
-    set(&mut changed,"shippingVersion",json!(""))?;
+    let freight=effective_shipping(&changed,state)?;
+    set(&mut changed,"shippingFee",field(&freight,"total").clone())?;
+    set(&mut changed,"shippingVersion",field(&freight,"version").clone())?;
     Ok(json!({"order":changed}))
 }
 pub(super) fn execute(payload:&Value)->Result<Value,String>{
