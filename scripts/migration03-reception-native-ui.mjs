@@ -414,6 +414,9 @@ try{
   assert.ok(details.invoke.some(c=>c.command==="business_core_call"&&
     c.domain==="recognition"&&c.operation==="analyze_order"),
     "React must actually invoke native Rust recognition");
+  assert.ok(details.invoke.some(c=>c.command==="business_core_call"&&
+    c.domain==="rules"&&c.operation==="merge_reception_analysis"),
+    "React must also invoke native Rust for recipient and item merge");
   assert.ok(details.clipped,"Native clipboard read must be used");
   assert.ok(details.linked.some(x=>x.text?.includes("709")));
   assert.ok(details.linked.some(x=>x.text?.includes("GT-1")));
@@ -526,7 +529,30 @@ try{
     nativeOperation:"set_manual_recipient_field",
     unchangedRevision:afterText.revision,
   });
+
   await snap(page,"05-real-native-manual-recipient-edit");
+
+  const originalShipmentRows=await page.locator(".manual-shipment-group").count();
+  const beforeStructureCalls=await page.evaluate(()=> (window.__bandoNativeCalls||[]).length);
+  await page.getByRole("button",{name:"배송 건수 증가"}).click();
+  await page.waitForFunction(({count})=>(window.__bandoNativeCalls||[])
+    .slice(count).some(call=>call.command==="business_core_call" &&
+      call.operation==="apply_manual_classification" &&
+      call.action==="resize_manual_rows"),
+    {count:beforeStructureCalls},{timeout:20000});
+  await page.waitForFunction(({count})=>
+    document.querySelectorAll(".manual-shipment-group").length===count+1,
+    {count:originalShipmentRows},{timeout:20000});
+  const afterStructure=await page.evaluate(async()=>window.bando.load());
+  assert.equal(afterStructure.revision,originalSnapshot.revision,
+    "Native manual row expansion must remain a disposable draft");
+  assert.equal(JSON.stringify(afterStructure.orders),JSON.stringify(originalSnapshot.orders),
+    "Native manual row expansion must not modify persisted SQLite orders");
+  record("actual Windows EXE native manual row resize with no SQLite writes",{
+    before:originalShipmentRows,after:originalShipmentRows+1,
+    action:"resize_manual_rows",unchangedRevision:afterStructure.revision,
+  });
+  await snap(page,"06-real-native-manual-row-resize");
 
 
   assert.equal(report.issues.length,0,
