@@ -821,6 +821,43 @@ try {
         if (command === "startup_metrics")
           return { windowShownMs: null, databaseMs: 1, dataMs: null, readyMs: 1 };
         if (command === "workspace_mode") return false;
+        if (command === "business_core_call" &&
+            args?.domain === "catalog_clients" &&
+            ["management_products","classified_products"].includes(args.operation)) {
+          // Rust owns product filtering in production. The mock returns IDs
+          // only, so the real ProductManager must still render state products.
+          const {state:catalog,category="",brand="",query="",missing=false}=args.payload;
+          const needle=query.trim().toLocaleLowerCase();
+          window.__navNativeCatalogReads=(window.__navNativeCatalogReads??0)+1;
+          return (catalog.products??[]).filter(p=>
+            !p.deletedAt && p.active!==false &&
+            !p.supersededBy && p.variants?.length &&
+            (!category||p.category===category||p.categoryId===category) &&
+            (!brand||p.brandId===brand) &&
+            (!needle||[p.name,p.subtitle,p.code,p.modelKey].some(v=>
+              String(v??"").toLocaleLowerCase().includes(needle))) &&
+            (!missing||p.variants.some(v=>
+              v.wholesale==null||v.semi==null||v.retail==null))
+          ).map(p=>p.id);
+        }
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "client_candidates") {
+          const {clients=[],query=""}=args.payload;
+          const needle=query.trim().toLocaleLowerCase();
+          const ids=clients.filter(c=>!c.deletedAt &&
+            (!needle||[c.name,c.displayName,c.phone,c.mobile].some(v=>
+              String(v??"").toLocaleLowerCase().includes(needle)))).map(c=>c.id);
+          return {ids,suggestedIds:[]};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "factory_reply_review_statuses") return {reviews:[]};
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "finalize_billing_history")
+          return {state:structuredClone(args.payload.state)};
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_reception_action" &&
+            args.payload?.action === "persisted_reception_state")
+          return {state:structuredClone(args.payload.state)};
         if (command === "state_load") {
           if (window.__nextLoadMustFail) {
             window.__nextLoadMustFail = false;
@@ -1230,6 +1267,8 @@ try {
     fullHD.push({menu,...await measureFrame(menu,selector)});
   };
   await checkFullHD("상품 관리",".product-list-workspace .price-table-scroll");
+  assert.ok((await navPage.evaluate(()=>window.__navNativeCatalogReads??0))>0,
+    "Product list must request native management_products before measuring the visible table");
   const productNamePx=await navPage.locator(".product-prices .product-title-line b").first()
     .evaluate(el=>Number.parseFloat(getComputedStyle(el).fontSize));
   await checkFullHD("운임 관리",".shipping-product-list .shipping-table-scroll");
