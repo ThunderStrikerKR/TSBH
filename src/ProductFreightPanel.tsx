@@ -339,7 +339,7 @@ export function ProductFreightPanel({
               when: "주문 수량이 최대 묶음 수량을 초과했을 때 확인합니다.",
               steps: ["실제로 포장 가능한 조합을 확인합니다.", "확인된 조합의 운임을 따로 등록합니다.", "등록된 운임을 사용합니다."],
               result: "확인된 조합 운임을 다음 주문에서도 참고할 수 있습니다.",
-              caution: "확인되지 않은 배송비를 자동으로 추측해 계산하지 않습니다.",
+              caution: "확인되지 않은 배송비는 자동으로 추측해 계산하지 않습니다.",
             }}>
               <select
                 value={editing.rule.maxBundle ?? ""}
