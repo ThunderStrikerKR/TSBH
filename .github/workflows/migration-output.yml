@@ -2,18 +2,8 @@ name: Rust output migration isolation
 on:
   push:
     branches:
-      # main is the authoritative post-integration development baseline.
+      # main is the only normal integration target; old migration branches are archived.
       - main
-      - migration/03-integration
-      - migration/26-p1-p2-runtime-closure
-      - migration/27-unified-rust
-      - migration/28-ts-runtime-closure
-      - migration/28-reception-manual-rust
-      - migration/28-order-edit-rules-rust
-      # Former integration branch kept temporarily as a rollback reference.
-      - integration/final-rust-migration-20261116
-      - migration/05-factory-reply
-      - integration/06-history-settlement
   pull_request:
     branches:
       - main
