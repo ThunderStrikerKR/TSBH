@@ -553,6 +553,67 @@ try{
     action:"resize_manual_rows",unchangedRevision:afterStructure.revision,
   });
   await snap(page,"06-real-native-manual-row-resize");
+  // Verify this binary also contains the native order-edit/dealer/freight
+  // reducers, not merely a TypeScript screen with a matching function name.
+  // This IPC test is read-only and uses synthetic data, never the user DB.
+  const edits=await page.evaluate(async()=>{
+    const call=(action,fields)=>window.__TAURI_INTERNALS__.invoke(
+      "business_core_call",{
+        domain:"rules",operation:"order_edit_rules",payload:{action,...fields},
+      });
+    const prior=await window.bando.load();
+    const oldClient={id:"edit-dealer-1",tier:"wholesale",
+      payment:"PREPAID",shippingFeeExcluded:false,overrides:{},name:"가상1"};
+    const newClient={id:"edit-dealer-2",tier:"retail",
+      payment:"PREPAID",shippingFeeExcluded:true,overrides:{},name:"가상2"};
+    const state={clients:[oldClient,newClient],orders:[],products:[],
+      shipping:{epoch:1,groups:[],productRules:{},combinations:[]},
+      workflow:{shipments:[],groups:[],payments:[],queue:[]}};
+    const oldOrder={id:"edit-native-only",clientId:oldClient.id,
+      clientSnapshot:oldClient,orderType:"AGENCY",
+      recipients:[{id:"r1",name:"가상",address:"서울",items:[]}],
+      pricesLocked:true,status:"STATEMENT",paid:true,notified:true,
+      postpaidApproved:true,shippingFee:3000,shippingMode:"AUTO",
+      shippingVersion:"old",applyVat:false,vatAmount:0,freightCode:"010"};
+    const input={...oldOrder,recipients:[{...oldOrder.recipients[0],name:"직원 입력"}],
+      pendingNativeEdit:{at:"2026-11-15T01:00:00Z",
+        reason:"수취인 / 배송 정보 수정",recalculateShipping:true}};
+    const updated=await call("prepare_order_edit",{order:input,state});
+    if(updated.order.status!=="REVIEW"||updated.order.paid!==false||
+      updated.order.notified!==false||updated.order.pricesLocked!==false||
+      updated.order.shippingFee!==null||
+      updated.order.pendingNativeEdit!==undefined) {
+      throw Error("Native order-edit state transition failed");
+    }
+    let rejected=false;
+    try{await call("prepare_order_save",{order:input,state});}
+    catch{rejected=true;}
+    if(!rejected)throw Error("Unconfirmed native order edit was saveable");
+    const prepared=await call("prepare_order_save",{order:updated.order,state});
+    if(prepared.client.id!==oldClient.id||!prepared.order.shippingVersion){
+      throw Error("Native client and auto freight selection failed");
+    }
+    const changed=await call("change_order_client",{order:oldOrder,
+      state,dealerId:newClient.id,now:"2026-11-15T01:05:00Z"});
+    if(changed.order.clientId!==newClient.id||
+       changed.order.shippingFee!==0||
+       changed.order.paid!==false||
+       changed.order.billingHistory?.length!==1){
+      throw Error("Native dealer reprice/waiver/history transition failed");
+    }
+    const after=await window.bando.load();
+    if(prior.revision!==after.revision||
+      JSON.stringify(prior.orders)!==JSON.stringify(after.orders)){
+      throw Error("Read-only native order-edit probes touched SQLite");
+    }
+    return {status:updated.order.status,client:prepared.client.id,
+      waivedFreight:changed.order.shippingFee,
+      frozenHistory:changed.order.billingHistory.length,
+      rejectedIncompleteSave:rejected,unchangedRevision:after.revision};
+  });
+  record("real Windows EXE Rust order edit, dealer change and freight decisions",
+    edits);
+
 
 
   assert.equal(report.issues.length,0,
