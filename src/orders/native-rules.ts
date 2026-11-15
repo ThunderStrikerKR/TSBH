@@ -4,10 +4,8 @@
  */
 import { businessCoreCall } from "../tauri-bridge";
 import { assertRustReceptionAnalysis, type RustReceptionAnalysis } from "./rust-reception";
-import type { BillingSnapshot, Client, Order, Origin, Price, State } from "../types";
+import type { Order, Origin, Price, State } from "../types";
 
-/** The same billing snapshot as the legacy replies.ts oracle, including
- * frozen historical totals. This Rust result is never recomputed in TS. */
 /** Staff may explicitly assume one item only for a confirmed product whose
  * quantity is missing. Rust validates eligibility and records actor/time;
  * the caller must still apply this as an ordinary editable-order mutation. */
@@ -22,59 +20,6 @@ export async function nativeApproveMissingQuantity(
     },
   );
   return approved;
-}
-
-export async function nativeBillingSnapshot(
-  order: Order, state: State, reason: string,
-): Promise<BillingSnapshot> {
-  const { snapshot } = await businessCoreCall<{ snapshot: BillingSnapshot }>(
-    "rules", "apply_reply_action", {
-      action: "billing_snapshot", order, state, reason,
-      now: new Date().toISOString(),
-    },
-  );
-  return snapshot;
-}
-
-/** A change of dealer may invalidate already-issued or paid shipments.
- * Delegate this decision to Rust before re-pricing the selected draft. */
-export async function nativeClientChangeIssue(
-  state: State, order: Order, dealerId: string,
-): Promise<string | undefined> {
-  const { issue } = await businessCoreCall<{ issue: string | null }>(
-    "rules", "client_change_issue", { state, order, dealerId },
-  );
-  return issue ?? undefined;
-}
-
-export async function nativeRepriceEditedOrder(
-  order: Order,
-  client: Client,
-  state: State,
-): Promise<Order> {
-  const next = structuredClone(order);
-  const requests = next.recipients.flatMap((recipient) =>
-    recipient.items.flatMap((item) => {
-      const product = state.products.find((p) => p.id === item.productId);
-      return product && item.variantId
-        ? [{ item, product, variantId: item.variantId }]
-        : [];
-    }),
-  );
-  const prices = await Promise.all(
-    requests.map(({ product, variantId }) =>
-      businessCoreCall<{ unitPrice: number | null }>(
-        "rules", "resolve_unit_price", { product, variantId, client },
-      )),
-  );
-  requests.forEach(({ item, product, variantId }, index) => {
-    item.unitPrice = prices[index].unitPrice;
-    if (item.modelProposal?.required) {
-      const variant = product.variants.find((v) => v.id === variantId);
-      if (variant?.url) item.url = variant.url;
-    }
-  });
-  return next;
 }
 
 export async function nativeReconcileWorkflow(
