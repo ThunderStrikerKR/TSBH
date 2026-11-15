@@ -2315,6 +2315,9 @@ try {
   await popupOpen.click();
   const manual=navPage.getByRole("dialog",{name:"수동 분류"});
   await manual.waitFor();
+  // The initial dialog is a Rust IPC loading shell; do not inspect its
+  // geometry before the actual manual delivery grid has mounted.
+  await manual.locator(".manual-grid-scroll").waitFor({state:"visible"});
   const manualResult=await manual.evaluate(el=>{
     const box=el.getBoundingClientRect();
     const scroll=el.querySelector(".manual-grid-scroll");
