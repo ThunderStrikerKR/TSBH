@@ -4,6 +4,28 @@ use super::{field,find_by_id,has_value,req,required_str,rows,set,str_field};
 
 pub(super) fn apply(payload:&Value)->Result<Value,String>{
     match required_str(payload,"action")? {
+        "retail_preflight"=>{
+            let state=req(payload,"state")?;
+            let draft=req(payload,"draft")?;
+            let delivery=super::issues::delivery_requirements(&json!({
+                "rows":field(draft,"recipients"),
+                "allowLegacyAddressConfirmation":false
+            }))?;
+            Ok(json!({
+                "delivery":field(&delivery,"results"),
+                "senderIssues":super::validation::company_sender_missing(state),
+                "issues":super::validation::retail_issues(draft,state)
+            }))
+        },
+        "create_retail_item"=>{
+            // The sale customer and catalog quote both originate in Rust.
+            // Reuse the established catalog-item operation, not a second
+            // client/price algorithm in the browser.
+            let mut input=payload.clone();
+            let client=super::reconciliation::company_client(req(payload,"state")?);
+            set(&mut input,"client",client)?;
+            super::catalog_item::make(&input)
+        },
         "new_retail_order"=>{
             let order_id=required_str(payload,"orderId")?;
             let row_id=required_str(payload,"recipientId")?;
