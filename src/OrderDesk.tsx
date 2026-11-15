@@ -554,7 +554,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                         onChange={(e) => {
                                           const q =
                                             e.target.value === "" ? null : Number(e.target.value);
-                                          if (q !== null && (!Number.isInteger(q) || q < 1)) return;
+                                          if (q !== null && (!Number.isSafeInteger(q) || q < 1)) return;
                                           itemEdit(r.id, i.id, (item) => {
                                             item.quantity = q;
                                             item.quantityConfirmed = true;
