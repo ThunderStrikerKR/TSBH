@@ -94,6 +94,10 @@ function ManualClassificationEditor({
   const manualQuantityRequest = useRef<Record<string, number>>({});
   const manualTextRequest = useRef<Record<string, number>>({});
   const manualQuantityPending = useRef<Set<string>>(new Set());
+  // Native text responses can arrive after a different cell edit. The visible
+  // input overlay is NOT a committed draft row until Rust acknowledges it.
+  const nativeTextPending = useRef<Set<string>>(new Set());
+  const [nativeTextBusy, setNativeTextBusy] = useState(false);
   const delivery = useNativeDeliveryRequirements(model.rows, order.receptionVersion !== 1);
   const inspection = useMemo(() => ({ ...order, recipients: model.rows }), [order, model.rows]);
   const nativeOrderIssues = useNativeOrderIssues(inspection);
@@ -150,6 +154,17 @@ function ManualClassificationEditor({
   };
   const fail = (message: string, cell?: Cell) =>
     setError({ key: cell ? cellKey(cell) : undefined, message });
+  const markNativeTextPending = (key: string, busy: boolean) => {
+    if (busy) nativeTextPending.current.add(key);
+    else nativeTextPending.current.delete(key);
+    setNativeTextBusy(nativeTextPending.current.size > 0);
+  };
+  const requireNativeCellsSettled = () => {
+    if (!nativeTextPending.current.size && !manualQuantityPending.current.size)
+      return true;
+    fail("입력한 배송 정보와 수량의 Rust 처리가 끝난 뒤 다시 시도하세요.");
+    return false;
+  };
   const attempt = (action: () => void, cell?: Cell) => {
     try {
       action();
@@ -188,6 +203,7 @@ function ManualClassificationEditor({
         (e instanceof Error ? e.message : String(e)), cell));
   };
   const cancelProduct = () => {
+    if (!requireNativeCellsSettled()) return;
     const cell = pendingRef.current;
     if (!cell) return;
     checkpoint();
@@ -210,7 +226,7 @@ function ManualClassificationEditor({
     focus({ ...cell, field: "product" });
   };
   const selectProduct = (cell: Cell, value: string, product?: Product) => {
-    if (!allowed(cell) || nativeDraftLock.current) return;
+    if (!allowed(cell) || nativeDraftLock.current || !requireNativeCellsSettled()) return;
     nativeDraftLock.current = true;
     setNativeDraftBusy(true);
     const previousModel = model;
@@ -244,6 +260,10 @@ function ManualClassificationEditor({
   const finishQuantity = (): boolean => {
     const cell = pendingRef.current;
     if (!cell) return true;
+    if (nativeTextPending.current.size) {
+      fail("수취인 정보의 Rust 입력 확인이 끝난 뒤 수량을 확정하세요.", cell);
+      return false;
+    }
     if (manualQuantityPending.current.has(cellKey(cell))) {
       fail("입력 중인 수량을 확인하고 있습니다. 다시 완료해 주세요.", cell);
       return false;
@@ -268,7 +288,7 @@ function ManualClassificationEditor({
     return true;
   };
   const useBlock = (id: string) => {
-    if (nativeDraftLock.current) return;
+    if (nativeDraftLock.current || !requireNativeCellsSettled()) return;
     const assigned = model.assignments[id];
     if (assigned && pendingRef.current &&
         assigned.itemId !== pendingRef.current.itemId) {
@@ -333,6 +353,7 @@ function ManualClassificationEditor({
       });
   };
   const resize = (n: number) => {
+    if (!requireNativeCellsSettled()) return;
     if (!Number.isSafeInteger(n) || n < 1 || n > 100) {
       fail("배송 건수는 1~100건입니다.");
       return;
@@ -383,6 +404,7 @@ function ManualClassificationEditor({
     else execute();
   };
   const addProduct = (recipientId: string) => {
+    if (!requireNativeCellsSettled()) return;
     const item = emptyManualItem();
     checkpoint();
     setModel((old) => ({
@@ -395,6 +417,7 @@ function ManualClassificationEditor({
     focus({ recipientId, itemId: item.id, field: "product" });
   };
   const removeProduct = (cell: Cell) => {
+    if (!requireNativeCellsSettled()) return;
     checkpoint();
     setModel((old) => ({
       ...old,
@@ -443,6 +466,7 @@ function ManualClassificationEditor({
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
+      if (!requireNativeCellsSettled()) return;
       if (pendingRef.current) {
         cancelProduct();
         return;
@@ -608,14 +632,16 @@ function ManualClassificationEditor({
           if (["name", "address", "phone", "mobile", "note"].includes(cell.field)) {
             const request = (manualTextRequest.current[key] ?? 0) + 1;
             manualTextRequest.current[key] = request;
+            markNativeTextPending(key, true);
             setEntry((old) => ({ ...old, [key]: value }));
             void businessCoreCall<{ model: ManualModel }>(
               "rules", "apply_manual_classification", {
                 action: "set_manual_recipient_field", model, cell, value,
               },
             ).then(({ model: updated }) => {
-              if (manualTextRequest.current[key] !== request ||
-                  latestInputs.current.order !== order) return;
+              if (manualTextRequest.current[key] !== request) return;
+              if (latestInputs.current.order !== order)
+                throw Error("원본 주문이 변경되었습니다. 수동 분류를 다시 열어주세요.");
               const changed = updated.rows.find((row) => row.id === cell.recipientId);
               if (!changed) throw Error("배송 행을 선택하세요.");
               setModel((current) => {
@@ -639,6 +665,10 @@ function ManualClassificationEditor({
             }).catch((e) => {
               if (manualTextRequest.current[key] === request)
                 fail(e instanceof Error ? e.message : String(e), cell);
+            }).finally(() => {
+              // Superseded responses must not release the newer field request.
+              if (manualTextRequest.current[key] === request)
+                markNativeTextPending(key, false);
             });
             return;
           }
@@ -745,12 +775,9 @@ function ManualClassificationEditor({
   }
   segments.push((order.analysisRaw ?? order.raw).slice(cursor));
   const unassignedCount = model.blocks.filter((block) => !model.assignments[block.id]).length;
-  const uncommitted = model.rows.some((row) =>
-    row.items.some(
-      (item) =>
-        entry[cellKey({ recipientId: row.id, itemId: item.id, field: "product" })] !== undefined,
-    ),
-  );
+  // Any unacknowledged name/address/contact/note is as important as an
+  // uncommitted product: never apply model.rows if the visible text differs.
+  const uncommitted = Object.keys(entry).length > 0;
   const issues = nativeOrderIssues.issues.filter(
     (issue) => issue.severity === "ACTION",
   );
@@ -766,6 +793,7 @@ function ManualClassificationEditor({
         if (event.nativeEvent.isComposing || layer) return;
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
           event.preventDefault();
+          if (!requireNativeCellsSettled()) return;
           const previous = history.current.pop();
           if (previous) {
             restore(previous);
@@ -778,7 +806,9 @@ function ManualClassificationEditor({
         <header className="manual-workspace-heading">
           <h2>수동 분류</h2>
           <button
-            onClick={() =>
+            disabled={nativeTextBusy || nativeDraftBusy || manualQuantityPending.current.size > 0}
+            onClick={() => {
+              if (!requireNativeCellsSettled()) return;
               setConfirm({
                 title: "전체 초기화",
                 message: "구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.",
@@ -793,8 +823,8 @@ function ManualClassificationEditor({
                   beforeProduct.current = undefined;
                   setError(undefined);
                 },
-              })
-            }
+              });
+            }}
           >
             초기화
           </button>
@@ -827,7 +857,7 @@ function ManualClassificationEditor({
                   <span>배송 건수</span>
                   <button
                     aria-label="배송 건수 감소"
-                    disabled={!!pending || model.rows.length <= 1}
+                    disabled={!!pending || nativeTextBusy || model.rows.length <= 1}
                     onClick={() => resize(model.rows.length - 1)}
                   >
                     −
@@ -838,8 +868,9 @@ function ManualClassificationEditor({
                     min={1}
                     max={100}
                     value={count}
-                    disabled={!!pending}
+                    disabled={!!pending || nativeTextBusy}
                     onChange={(event) => {
+                      if (!requireNativeCellsSettled()) return;
                       setCount(event.target.value);
                       if (event.target.value !== "") resize(Number(event.target.value));
                     }}
@@ -847,7 +878,7 @@ function ManualClassificationEditor({
                   />
                   <button
                     aria-label="배송 건수 증가"
-                    disabled={!!pending || model.rows.length >= 100}
+                    disabled={!!pending || nativeTextBusy || model.rows.length >= 100}
                     onClick={() => resize(model.rows.length + 1)}
                   >
                     +
@@ -897,12 +928,12 @@ function ManualClassificationEditor({
                                   `배송 ${index + 1} 상품 ${itemIndex + 1}`,
                                 )}
                                 <button
-                                  disabled={!!pending}
-                                  onClick={() => setSearch({
+                                  disabled={!!pending || nativeTextBusy}
+                                  onClick={() => { if (!requireNativeCellsSettled()) return; setSearch({
                                     recipientId: row.id,
                                     itemId: item.id,
                                     field: "product",
-                                  })}
+                                  }); }}
                                 >
                                   검색
                                 </button>
@@ -915,7 +946,7 @@ function ManualClassificationEditor({
                               </div>
                               <div className="manual-product-actions">
                                 <button
-                                  disabled={!!pending}
+                                  disabled={!!pending || nativeTextBusy}
                                   onClick={() => removeProduct({
                                     recipientId: row.id,
                                     itemId: item.id,
@@ -928,7 +959,7 @@ function ManualClassificationEditor({
                             </div>
                           ))}
                           <div className="manual-add-product">
-                            <button disabled={!!pending} onClick={() => addProduct(row.id)}>
+                            <button disabled={!!pending || nativeTextBusy} onClick={() => addProduct(row.id)}>
                               상품 추가
                             </button>
                           </div>
@@ -946,9 +977,17 @@ function ManualClassificationEditor({
             <button
               className="primary"
               disabled={
-                !delivery.ready || !nativeOrderIssues.ready || nativeDraftBusy || !!pending || !model.rows.length || uncommitted || !!pendingManualQuantity(model)
+                !delivery.ready || !nativeOrderIssues.ready || nativeDraftBusy || nativeTextBusy ||
+                !!pending || !model.rows.length || uncommitted || !!pendingManualQuantity(model)
               }
-              onClick={() => setCompletion(true)}
+              onClick={() => {
+                if (!requireNativeCellsSettled() || Object.keys(entry).length > 0) {
+                  if (Object.keys(entry).length > 0)
+                    fail("아직 적용되지 않은 수취인 또는 상품 입력이 있습니다. 다시 확인하세요.");
+                  return;
+                }
+                setCompletion(true);
+              }}
             >
               초안에 적용
             </button>
