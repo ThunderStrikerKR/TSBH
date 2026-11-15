@@ -177,3 +177,59 @@ test("corrupt native evidence is rejected instead of silently falling back to Ty
   }),/원문 근거/);
   assert.throws(()=>assertRustReceptionAnalysis({recipients:[]},samples[0].raw),/형식/);
 });
+
+
+test("compiled Rust reception merge exactly matches original TS on all 20 recognitions and employee edits",()=>{
+  const at="2026-11-13T00:00:01.000Z";
+  const samplesToCompare=inputs.slice(0,20).map(entry=>({
+    label:"initial-"+entry.id,
+    previous:orderFor(entry.id),
+    evidence:natives.get(entry.id),
+    raw:entry.raw,
+  }));
+  const prior=apply(orderFor(13),13);
+  prior.recipients[0].confirmedFields=["address","name","mobile"];
+  prior.recipients[0].name="직원 확정 수취인";
+  prior.recipients[0].address="경기도 의정부시 시민로 100 직원확정";
+  prior.recipients[0].mobile="010-2222-3333";
+  prior.recipients[0].items[0].name="직원이 직접 확정한 상품명";
+  prior.recipients[0].items[0].manuallyConfirmed=true;
+  prior.recipients[0].items[0].quantityApproval={
+    at,actor:"직원",quantity:prior.recipients[0].items[0].quantity??1,
+  };
+  samplesToCompare.push({
+    label:"employee-confirmed-reanalysis",
+    previous:prior,
+    evidence:natives.get("13-edited"),
+    raw:samples[12].raw+" ",
+  });
+  const locked=structuredClone(prior);
+  locked.status="EXPORTED";
+  samplesToCompare.push({
+    label:"exported-locked",previous:locked,
+    evidence:natives.get("13-edited"),raw:samples[12].raw+" ",
+  });
+  const requests=samplesToCompare.map(row=>({
+    domain:"rules",operation:"merge_reception_analysis",
+    payload:{previous:row.previous,evidence:row.evidence,raw:row.raw,clientId:client.id,at},
+  }));
+  const result=spawnSync("cargo",["run","--quiet","--manifest-path",cargo,
+    "--bin","reception_runner"],{
+    cwd:root,input:JSON.stringify(requests),encoding:"utf8",
+    timeout:900_000,maxBuffer:60*1024*1024,
+  });
+  if(result.error)throw result.error;
+  assert.equal(result.status,0,"Rust reception merge runner:\n"+result.stderr);
+  const answers=JSON.parse(result.stdout);
+  assert.equal(answers.length,samplesToCompare.length);
+  for(const [index,row] of samplesToCompare.entries()){
+    const native=answers[index];
+    assert.equal(native.ok,true,"Rust merge rejected "+row.label+": "+native.error);
+    const original=applyRustReceptionAnalysis(row.previous,row.evidence,{
+      raw:row.raw,state,pricingClient:client,at,
+    });
+    const normalized=value=>JSON.parse(JSON.stringify(value));
+    assert.deepEqual(normalized(native.value.order),normalized(original),
+      "Rust and original TS reception merge differ: "+row.label);
+  }
+});
