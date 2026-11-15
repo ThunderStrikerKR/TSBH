@@ -841,6 +841,40 @@ try {
           ).map(p=>p.id);
         }
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "alias_problems") return [];
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "validate_model_groups") {
+          if (!args.payload?.state?.products) throw Error("검증할 모델군 데이터가 없습니다.");
+          return {valid:true};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            ["validate_automatic_templates","validate_provisional_product_notices"].includes(args.operation))
+          return {valid:true};
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "upsert_brand") {
+          const {state:input,editing,id,name,korean,aliases,evidence}=args.payload;
+          if(!name?.trim()) throw Error("브랜드 이름이 누락되었습니다.");
+          const next=structuredClone(input);
+          const found=next.brands?.findIndex(row=>row.id===(editing??id))??-1;
+          const record={...(found>=0?next.brands[found]:{}),
+            id:editing??id,name,korean,aliases,evidence};
+          if(!next.brands)next.brands=[];
+          if(found>=0)next.brands[found]=record;
+          else next.brands.push(record);
+          return {state:next};
+        }
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "save_alias") {
+          const {state:input,record}=args.payload;
+          if (!record?.text?.trim()||!record?.productId)
+            throw Error("별칭/상품 연결이 누락되었습니다.");
+          const next=structuredClone(input);
+          const index=next.aliases.findIndex(row=>row.id===record.id);
+          if(index>=0)next.aliases[index]=structuredClone(record);
+          else next.aliases.push(structuredClone(record));
+          return {state:next};
+        }
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
             args.operation === "upsert_product_from_editor") {
           const {state:input,product}=args.payload;
           if (!product?.id || !product.name?.trim())
@@ -929,9 +963,23 @@ try {
           return structuredClone(current);
         }
         if (command === "settings_patch") {
-          current.settings = { ...current.settings, ...args.changes };
-          current.revision = (current.revision ?? 0) + 1;
-          saveLog.push({type:"settings_patch", revision:current.revision, changes:structuredClone(args.changes)});
+          // This is still one revision-checked persistence operation. Rust
+          // validators are invoked separately above by the React editor.
+          for(const [key,value] of Object.entries(args.changes??{})){
+            const expected=args.expected?.[key];
+            const original=current.settings[key];
+            const semantic=v=>JSON.stringify(v??null,
+              (_k,x)=>x&&typeof x==="object"&&!Array.isArray(x)
+                ? Object.fromEntries(Object.entries(x).sort(([a],[b])=>a.localeCompare(b)))
+                : x);
+            if(semantic(original)!==semantic(expected) &&
+               semantic(original)!==semantic(value))
+              throw Error("실제 저장 시 동시 변경 충돌: "+key);
+          }
+          current.settings={...current.settings,...structuredClone(args.changes)};
+          current.revision=(current.revision??0)+1;
+          saveLog.push({type:"settings_patch",revision:current.revision,
+            changes:structuredClone(args.changes)});
           return structuredClone(current);
         }
         if (command === "capture_ocr") return { text:"검증 발주 원문 709B 2개",
