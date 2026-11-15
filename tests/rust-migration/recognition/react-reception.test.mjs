@@ -279,6 +279,22 @@ test("manual row/item mutations in compiled Rust match the original TypeScript d
         m.rows[0].items[0].quantityConfirmed=true;return m;},
     },
     {
+      name:"typed quantity parsed by native reducer",action:"set_manual_quantity_draft",
+      changes:{cell:{recipientId:"r1",itemId:"i1",field:"quantity"},value:"3개"},
+      expected:()=>{const m=clone(model);const item=m.rows[0].items[0];
+        item.quantity=3;item.quantityConfirmed=false;
+        item.issues=item.issues.filter(x=>!x.includes("수량"));
+        delete item.quantityApproval;return m;},
+    },
+    {
+      name:"quantity step changes from the existing model",action:"step_manual_quantity",
+      changes:{cell:{recipientId:"r1",itemId:"i1",field:"quantity"},delta:1},
+      expected:()=>{const m=clone(model);const item=m.rows[0].items[0];
+        item.quantity=3;item.quantityConfirmed=true;
+        item.issues=item.issues.filter(x=>!x.includes("수량"));
+        delete item.quantityApproval;return m;},
+    },
+    {
       name:"reset all manual rows",action:"reset_manual_rows",
       changes:{recipientId:"r-reset"},
       expected:()=>({...clone(model),
