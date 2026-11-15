@@ -118,7 +118,8 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             "initial_manual" | "set_manual_product" | "assign_manual_block" | "release_manual_block" =>
                 manual_draft::execute(&payload),
             "resize_manual_rows" | "add_manual_item" | "remove_manual_item" |
-            "confirm_manual_quantity" | "reset_manual_rows" =>
+            "confirm_manual_quantity" | "set_manual_quantity_draft" |
+            "step_manual_quantity" | "reset_manual_rows" =>
                 manual_structure::execute(&payload),
             _ => manual_classification::apply(&payload)
         },
