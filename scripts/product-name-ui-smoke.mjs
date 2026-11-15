@@ -51,6 +51,26 @@ try {
           windowShownMs:null, databaseMs:10, dataMs:null, readyMs:20,
         };
         case "state_load": return structuredClone(state);
+        case "business_core_call": {
+          // A real management product list now comes from Rust catalog_clients.
+          // The isolated browser smoke must emulate that native read instead of
+          // silently showing zero products because the old mock rejects IPC.
+          const {domain,operation,payload}=args??{};
+          if(domain!=="catalog_clients" || operation!=="management_products")
+            throw Error("Unexpected business core operation: "+domain+"/"+operation);
+          const {state:input,category="",brand="",query="",missing=false}=payload;
+          const needle=String(query).trim().toLocaleLowerCase();
+          return (input.products??[]).filter(p=>
+            !p.deletedAt && p.active!==false && !p.supersededBy &&
+            Array.isArray(p.variants) && p.variants.length>0 &&
+            (!category || p.category===category || p.categoryId===category) &&
+            (!brand || p.brandId===brand) &&
+            (!needle || [p.name,p.subtitle,p.code,p.modelKey].some(value=>
+              String(value??"").toLocaleLowerCase().includes(needle))) &&
+            (!missing || p.variants.some(v=>
+              v.wholesale==null || v.semi==null || v.retail==null))
+          ).map(p=>p.id);
+        }
         case "dock_status_native": return {
           active:false, mode:"ORIGINAL", ratio:0.8,
         };
