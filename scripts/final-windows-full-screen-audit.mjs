@@ -149,6 +149,13 @@ const captureDialog = async (name, trigger) => {
   assert.ok(metrics.topLayerHit, name + " is obscured by another UI layer");
   assert.ok(metrics.bounds.width > 200 && metrics.bounds.height > 100,
     name + " has invalid dialog geometry");
+  if (name === "상품/그룹 기본 운임 설정") {
+    const anchoredHelp = await dialog.locator(".field-label-wrap")
+      .filter({ hasText: "최대 묶음 수량" }).count();
+    assert.equal(anchoredHelp, 1,
+      "Freight maximum-bundle help must be attached to its field label, not orphaned");
+    record("layout", "Freight quantity help anchored to its label");
+  }
   record("dialog", name, metrics);
   await capture("dialog", name);
   await dialog.getByRole("button", { name: "닫기 ×", exact: true }).click();
@@ -244,6 +251,13 @@ try {
             }, title, {timeout: 22000}));
         });
         record("settings-tab", title);
+        if (title === "개발자 모드") {
+          const emptyErrors = await page.locator("#settings-panel-developer .form-error")
+            .evaluateAll(nodes => nodes.filter(el => !el.textContent?.trim()).length);
+          assert.equal(emptyErrors, 0,
+            "Developer TEST panel must not display an empty red error message");
+          record("layout", "Developer TEST panel has no empty red error box");
+        }
       }
     } else if (subtabGroups[menu]) {
       for (const title of subtabGroups[menu]) {
