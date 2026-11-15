@@ -14,6 +14,7 @@ $report = [ordered]@{
   started = (Get-Date).ToUniversalTime().ToString("o")
   status = "STARTED"
   checks = @()
+  sql = @()
   evidence = @()
   failures = @()
 }
@@ -116,6 +117,22 @@ function WaitFor([scriptblock]$predicate,[int]$seconds,[string]$label) {
   } while ((Get-Date) -lt $end)
   throw "Timed out: $label"
 }
+# An independent sqlite3 connection queries the *real relational table*,
+# rather than trusting a React list or a hydrated JavaScript snapshot.
+# The audit helper refuses all paths except the isolated developer-test DB.
+function InspectCoreRow([string]$phase,[string]$name,[string]$address,[string]$phone,[string]$expectedId = "") {
+  $validator = Join-Path $PSScriptRoot "assert-client-core-row.py"
+  $cmd = @($validator,"--database",$testSqlite,"--phase",$phase,
+    "--name",$name,"--address",$address,"--phone",$phone)
+  if ($expectedId) { $cmd += @("--expected-id",$expectedId) }
+  $raw = & python @cmd
+  if ($LASTEXITCODE -ne 0) { throw "Direct TEST core_clients SQLite check failed at $phase" }
+  $result = $raw | ConvertFrom-Json
+  $report.sql += $result
+  SaveReport
+  Write-Host "CLIENT_SQL_PASS: phase=$phase id=$($result.id) count=$($result.totalClientRows)"
+  return $result
+}
 function StartNative([string[]]$launchArguments) {
   $script:proc = Start-Process -FilePath $Exe -ArgumentList $launchArguments -WorkingDirectory (Split-Path $Exe) -PassThru
   WaitFor { $script:proc.Refresh(); $script:proc.MainWindowHandle -ne [IntPtr]::Zero } 45 "Tauri window"
@@ -157,15 +174,17 @@ public static class BandoClientInput {
   $testSqlite = Join-Path $env:APPDATA "com.bandostand.bandohub.tauri/developer-test/bando-hub-test.sqlite"
   WaitFor { Test-Path -LiteralPath $testSqlite } 40 "isolated developer SQLite"
   Check "Developer TEST database mode" (Test-Path -LiteralPath $testSqlite) "Must use developer-test/bando-hub-test.sqlite"
+  $name = "UIA 검증 거래처 " + [Guid]::NewGuid().ToString("N").Substring(0,8)
+  $address = "경기도 의정부시 시민로 100"
+  $phone = "02-742-9929"
+  $initialSql = InspectCoreRow "before" $name $address $phone
+  Check "core_clients has no rows before registration" ($initialSql.totalClientRows -eq 0)
   Click "거래처 관리"
   WaitFor { $null -ne (FindNode "＋ 거래처 등록" "Button") } 30 "client management loaded"
   Capture "01-clients-list"
   Click "＋ 거래처 등록"
   WaitFor { $null -ne (FindNode "거래처명" "Edit") } 25 "client registration modal fields"
   Capture "02-client-modal"
-  $name = "UIA 검증 거래처 " + [Guid]::NewGuid().ToString("N").Substring(0,8)
-  $address = "경기도 의정부시 시민로 100"
-  $phone = "02-742-9929"
   FillNative "거래처명" $name
   FillNative "거래처 주소" $address
   FillNative "전화번호" $phone
@@ -175,13 +194,19 @@ public static class BandoClientInput {
   WaitFor { @(Nodes | Where-Object { $_.name -eq $name }).Count -gt 0 } 20 "client appears in list"
   Capture "04-client-saved"
   Check "Client visible after native Rust save" $true $name
+  $savedSql = InspectCoreRow "saved" $name $address $phone
+  Check "core_clients committed exactly one row during EXE process" ($savedSql.totalClientRows -eq 1) "id=$($savedSql.id)"
   StopNative
+  $closedSql = InspectCoreRow "closed" $name $address $phone $savedSql.id
+  Check "core_clients committed row survives EXE process exit" ($closedSql.id -eq $savedSql.id) "id=$($savedSql.id)"
   StartNative @("--bando-developer-test")
   Click "거래처 관리"
   WaitFor { @(Nodes | Where-Object { $_.name -eq $name }).Count -gt 0 } 30 "saved client survived app restart"
   Check "Client persisted in TEST SQLite after restart" $true $name
+  $reopenedSql = InspectCoreRow "reopened" $name $address $phone $savedSql.id
+  Check "core_clients identical SQL ID and payload after EXE restart" ($reopenedSql.id -eq $savedSql.id) "id=$($reopenedSql.id)"
   Capture "05-client-reloaded"
-  $report.status = "PASSED_NATIVE_INPUT_RUST_SAVE_SQLITE_REOPEN"
+  $report.status = "PASSED_NATIVE_INPUT_RUST_CORE_CLIENTS_SQLITE_REOPEN"
   SaveReport
 } catch {
   $report.status = "FAILED"
