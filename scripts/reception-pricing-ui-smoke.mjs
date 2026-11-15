@@ -55,6 +55,25 @@ state.workflow.shipments.push({
   chargeMode:"AUTO", freightVersion:"archived-rule-id",
   infoSignature:"original-price", sender:client,
 });
+// Presentation-only fixture for the native list_order_history_view response.
+// Rust's history projection is tested independently; this browser test verifies
+// the real React table geometry, read-only behavior and background master refresh.
+const historicalView = [{
+  order:structuredClone(historical),
+  client:structuredClone(client),
+  recipients:[structuredClone(recipient)],
+  total:25332,
+  billing:{subtotal:17777,shipping:7555,vat:0,total:25332},
+  shipmentIds:["ci-price-shipment"],
+  deleted:false,
+  status:"처리 중",
+  display:{
+    trackingMessage:"",
+    paymentEvidenceMissing:false,
+    references:[{recipientId:recipient.id,itemId:item.id,
+      link:{name:product.name,via:"CURRENT"}}],
+  },
+}];
 const url="http://127.0.0.1:5174/";
 const root = new URL("../",import.meta.url);
 const server = spawn(process.execPath,
@@ -81,12 +100,13 @@ try {
   const consoleErrors=[];
   page.on("pageerror",error=>errors.push(error.message));
   page.on("console",msg=>{if(msg.type()==="error")consoleErrors.push(msg.text())});
-  await page.addInitScript(({savedState})=>{
+  await page.addInitScript(({savedState,historyView})=>{
     let backend=structuredClone(savedState);
     let reads=0;
     let writes=0;
+    let historyCalls=0;
     window.__historicState=()=>({
-      state:structuredClone(backend), reads,writes,
+      state:structuredClone(backend), reads,writes,historyCalls,
     });
     window.__changeMasterForTest=()=>{
       const old=backend.products[0];
@@ -103,13 +123,26 @@ try {
           windowShownMs:null,databaseMs:1,dataMs:null,readyMs:1,
         };
         if(cmd==="state_load"){reads++;return structuredClone(backend)}
+        if(cmd==="business_core_call"&&args.domain==="rules"&&
+          args.operation==="list_order_history_view") {
+          historyCalls++;
+          const {state:requested,query="",date=""}=args.payload??{};
+          if(!requested?.orders?.some(order=>order.id==="ci-price-order")) {
+            throw Error("Native history view was called without the test order state");
+          }
+          const row=historyView[0];
+          const search=(row.client.name+" "+row.order.raw).toLocaleLowerCase();
+          if(!search.includes(query.toLocaleLowerCase()) ||
+            (date&&date!==row.order.createdAt.slice(0,10)))return [];
+          return structuredClone(historyView);
+        }
         if(cmd==="dock_status_native")return {active:false,mode:"ORIGINAL",ratio:0.8};
         if(cmd==="product_image")return null;
         if(cmd==="state_save"){writes++;throw Error("Read-only historical order was unexpectedly saved")}
         throw Error("Unexpected history UI IPC: "+cmd);
       },
     };
-  },{savedState:state});
+  },{savedState:state,historyView:historicalView});
 
   await page.goto(url);
   const nav=page.getByRole("navigation",{name:"업무 메뉴"});
@@ -119,6 +152,9 @@ try {
   const historicalRow=page.locator(".order-history-list tbody tr")
     .filter({hasText:"과거단가보존"});
   await historicalRow.waitFor();
+  const openedHistory=await page.evaluate(()=>window.__historicState());
+  assert.ok(openedHistory.historyCalls>0,
+    "The UI must invoke native list_order_history_view rather than the retired TS orderHistory");
   // Order history is read-only; do not restore a removed action for this test.
   assert.equal(await historicalRow.getByRole("button",{name:"주문 열기"}).count(),0);
   // Column geometry must be identical before, during, and after expansion.
@@ -183,6 +219,7 @@ try {
   assert.equal(stored.shippingFee,7555);
   assert.equal(stored.shippingVersion,"archived-rule-id");
   assert.equal(result.writes,0,"Passive refresh must never write an order");
+  assert.ok(result.historyCalls>0,"History rendering must use Rust history IPC");
   assert.deepEqual(errors,[],"React runtime errors: "+errors.join("\n"));
   console.log("PASS: Stored order history remains read-only across expansion and master refresh",
     JSON.stringify({reads:result.reads,writes:result.writes,
