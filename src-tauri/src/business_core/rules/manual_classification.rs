@@ -277,6 +277,20 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
         }
         return Ok(json!({"model":model}));
     }
+    if action == "manual_quantity_status" {
+        let model=req(payload,"model")?;
+        let mut items=Vec::new();
+        for row in rows(field(model,"rows")) {
+            for item in rows(field(row,"items")) {
+                items.push(json!({
+                    "recipientId":field(row,"id"),
+                    "itemId":field(item,"id"),
+                    "valid":valid_quantity_item(item)
+                }));
+            }
+        }
+        return Ok(json!({"pending":pending_quantity(model),"items":items}));
+    }
     if action == "parse_manual_quantity" {
         let input = required_str(payload, "value")?;
         let quantity = quantity_from_input(input);
@@ -313,6 +327,22 @@ mod tests {
         assert_eq!(result["model"]["rows"][0]["name"],"가상 고객");
         assert_eq!(result["model"]["rows"][0]["confirmedFields"],json!(["name"]));
         assert_eq!(result["model"]["rows"][0]["items"][0]["quantity"],3);
+    }
+    #[test]
+    fn native_manual_quantity_status_uses_the_same_guard_as_apply() {
+        let mut model=json!({"rows":[{"id":"r1","items":[
+            {"id":"i1","name":"709","productId":"p1","quantity":null,"quantityConfirmed":false}
+        ]}]});
+        let read=apply(&json!({"action":"manual_quantity_status","model":model}))
+            .expect("status");
+        assert_eq!(read["pending"],json!(true));
+        assert_eq!(read["items"][0]["valid"],json!(false));
+        model["rows"][0]["items"][0]["quantity"]=json!(2);
+        model["rows"][0]["items"][0]["quantityConfirmed"]=json!(true);
+        let ready=apply(&json!({"action":"manual_quantity_status","model":model}))
+            .expect("status");
+        assert_eq!(ready["pending"],json!(false));
+        assert_eq!(ready["items"][0]["valid"],json!(true));
     }
     #[test]
     fn parses_original_manual_quantity_tokens() {
