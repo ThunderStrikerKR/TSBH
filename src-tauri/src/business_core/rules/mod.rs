@@ -11,6 +11,7 @@ mod order_mutations;
 mod group_operations;
 mod correction_rules;
 mod reception_operations;
+mod reception_merge;
 mod kakao_title;
 mod manual_classification;
 mod manual_draft;
@@ -112,6 +113,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "apply_raw_correction" => raw_corrections::apply(&payload),
         "apply_retail_action" => retail_operations::apply(&payload),
         "apply_reception_action" => reception_operations::apply(&payload),
+        "merge_reception_analysis" => reception_merge::execute(&payload),
         "apply_manual_classification" => match str_field(&payload, "action") {
             "initial_manual" | "set_manual_product" | "assign_manual_block" | "release_manual_block" =>
                 manual_draft::execute(&payload),
