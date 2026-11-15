@@ -325,7 +325,7 @@ export function useOrderDesk({
             },
           })
         : Promise.resolve({ recipients: [], candidates: [], unassigned: [] });
-      void pending.then((result) => {
+      void pending.then(async (result) => {
         const latest = latestReceptionInput.current;
         if (
           request !== recognitionRequest.current ||
@@ -338,6 +338,28 @@ export function useOrderDesk({
           latest.clientSignature !== clientSignature
         ) return;
         assertRustReceptionAnalysis(result, source);
+        // Rust owns stable recipient/item identity, confirmed-field retention,
+        // evidence rebinding and order state reset. No legacy TS merge is run.
+        const { order: merged } = await businessCoreCall<{ order: Order }>(
+          "rules", "merge_reception_analysis", {
+            previous: draft,
+            evidence: result,
+            raw: source,
+            clientId: pricingClient.id,
+            at: new Date().toISOString(),
+          },
+        );
+        const settled = latestReceptionInput.current;
+        if (
+          request !== recognitionRequest.current ||
+          settled.orderId !== orderId ||
+          settled.clientId !== clientId ||
+          settled.source !== source ||
+          settled.saved || settled.manual ||
+          settled.products !== state.products ||
+          settled.aliases !== state.aliases ||
+          settled.clientSignature !== clientSignature
+        ) return;
         onChange((previous) => {
           const active = latestReceptionInput.current;
           if (
@@ -349,16 +371,12 @@ export function useOrderDesk({
             active.products !== state.products ||
             active.aliases !== state.aliases ||
             active.clientSignature !== clientSignature ||
+            previous !== draft ||
             previous.id !== orderId ||
             previous.clientId !== clientId ||
             !receptionAnalysisAllowed(previous, source, pricingClient.id)
           ) return previous;
-          return applyRustReceptionAnalysis(previous, result, {
-            raw: source,
-            state,
-            pricingClient,
-            at: new Date().toISOString(),
-          });
+          return merged;
         });
       }).catch((error: unknown) => {
         const latest = latestReceptionInput.current;
