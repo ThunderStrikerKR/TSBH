@@ -8,6 +8,7 @@ mod issues;
 mod product_confirmation;
 mod message_audit;
 mod order_mutations;
+mod order_edit;
 mod group_operations;
 mod correction_rules;
 mod reception_operations;
@@ -52,6 +53,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             req(&payload,"state")?,required_str(&payload,"orderId")?,
         )})),
         "save_order" => order_save::save(&payload),
+        "order_edit_rules" => order_edit::execute(&payload),
         "calculate_price" => pricing::totals(req(&payload, "order")?, req(&payload, "client")?),
         "resolve_unit_price" => pricing::resolve_unit_price(
             req(&payload, "product")?,
