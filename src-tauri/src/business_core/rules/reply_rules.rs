@@ -33,6 +33,9 @@ pub(super) fn finalize_billing_history(payload:&Value)->Result<Value,String>{
     let orders=proposed.get_mut("orders").and_then(Value::as_array_mut)
         .ok_or("주문 목록 누락")?;
     for order in orders.iter_mut(){
+        if field(order,"pendingNativeEdit").is_object(){
+            return Err("주문 수정의 Rust 검증이 완료된 후 저장하세요.".into());
+        }
         let marker=order.get("pendingBillingSnapshot").cloned();
         // A transient marker must never reach SQLite, even on new drafts.
         if let Some(object)=order.as_object_mut(){
