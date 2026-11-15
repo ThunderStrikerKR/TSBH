@@ -230,7 +230,9 @@ mod tests{
         assert_eq!(live_client(&o,&state)["shippingFeeExcluded"],true);
         assert_eq!(client(&draft(),&state)["id"],"c1");
         state["clients"][1]["deletedAt"]=json!("today");
-        assert_eq!(live_client(&o,&state)["id"],"c1");
+        // The legacy client fallback permits the existing deleted master
+        // record for a draft until its dealer is explicitly changed.
+        assert_eq!(live_client(&o,&state)["id"],"c2");
     }
     #[test]fn pending_native_edits_cannot_be_prepared_for_persistence(){
         let mut order=draft();
