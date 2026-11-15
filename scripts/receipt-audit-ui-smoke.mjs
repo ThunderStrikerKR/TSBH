@@ -666,6 +666,15 @@ try {
           return { windowShownMs: null, databaseMs: 1, dataMs: null, readyMs: 1 };
         if (command === "workspace_mode") return false;
         if (command === "state_load") return structuredClone(current);
+        if (command === "business_core_call" && args.domain === "rules" &&
+            args.operation === "factory_reply_review_statuses") {
+          // The account fixture contains no factory replies. Keep unrelated
+          // background Rust reads from polluting account-edit assertions.
+          if ((args.payload?.state?.factoryReplies??[]).length)
+            throw Error("This isolated account mock does not cover factory reply records");
+          window.__accountNativeReviewReads=(window.__accountNativeReviewReads??0)+1;
+          return {reviews:[]};
+        }
         if (command === "dock_status_native")
           return { active: false, ratio: 0.8 };
         if (command === "settings_patch") {
@@ -702,6 +711,8 @@ try {
   assert.deepEqual(accountAddAlerts,[],
     "Account add save must not show an error: "+JSON.stringify(accountAddAlerts));
   assert.equal(await settingsPage.getByRole("button", { name: "설정 저장" }).isDisabled(), false);
+  assert.ok((await settingsPage.evaluate(() => window.__accountNativeReviewReads??0)) > 0,
+    "Account test must not conceal background Rust factory-notification IPC");
   const addChanges = await settingsPage.evaluate(() => window.__accountSave.changes);
   assert.equal(addChanges.accounts.length, 3);
   console.log("PASS: adding a third account saves with no false conflict");
