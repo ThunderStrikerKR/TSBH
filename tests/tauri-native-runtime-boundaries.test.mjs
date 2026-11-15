@@ -23,7 +23,10 @@ test("historical billing snapshot uses first edit metadata and native saved orig
   const save = read("src-tauri/src/business_core/rules/order_save.rs");
   const types = read("src/types.ts");
   assert.doesNotMatch(editor, /\bbillingSnapshot\(/);
-  assert.match(editor, /pendingBillingSnapshot = \{ at: new Date\(\)\.toISOString\(\), reason \}/);
+  assert.match(editor, /next\.pendingNativeEdit = firstIntent/);
+  const nativeEdit = read("src-tauri/src/business_core/rules/order_edit.rs");
+  assert.match(nativeEdit, /set\(order,"pendingBillingSnapshot"/);
+  assert.match(nativeEdit, /"prepare_order_edit" => prepare_edit\(payload\)/);
   assert.match(save, /super::reply_rules::billing\(previous,state,reason,at\)/);
   assert.match(save, /remove\("pendingBillingSnapshot"\)/);
   assert.match(save, /!flag\(ship,"legacyArchived"\)/);
