@@ -850,6 +850,15 @@ try {
           return {ids,suggestedIds:[]};
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "list_order_history_view") {
+          // The navigation fixture tests the native history screen's empty
+          // search state; authoritative history filtering lives in Rust.
+          const {query=""}=args.payload??{};
+          window.__navNativeHistoryReads=(window.__navNativeHistoryReads??0)+1;
+          if (query.includes("__CI_EMPTY_ORDER__")) return [];
+          return [];
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "factory_reply_review_statuses") return {reviews:[]};
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "finalize_billing_history")
@@ -1341,6 +1350,8 @@ try {
   await navPage.getByRole("textbox",{name:"주문 검색"}).fill("__CI_EMPTY_ORDER__");
   assert.equal(await navPage.locator(".order-history-list table.management-data-table").count(),1);
   await checkCompactEmpty(".order-history-list > .empty-state-compact","order history");
+  assert.ok((await navPage.evaluate(()=>window.__navNativeHistoryReads??0))>0,
+    "Order history empty search must call the native Rust projection");
   await navPage.getByRole("textbox",{name:"주문 검색"}).fill("");
 
   await navMenu.getByRole("button",{name:"운임 관리"}).click();
