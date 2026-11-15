@@ -10,9 +10,7 @@ import type { Order, Product, State } from "../types";
 import { ManualPrompt } from "./ManualPrompt";
 import {
   cellKey,
-  emptyManualItem,
   manualValue,
-  newManualRecipient,
   pendingManualQuantity,
   validManualQuantity,
   type Cell,
@@ -160,10 +158,45 @@ function ManualClassificationEditor({
     setNativeTextBusy(nativeTextPending.current.size > 0);
   };
   const requireNativeCellsSettled = () => {
-    if (!nativeTextPending.current.size && !manualQuantityPending.current.size)
-      return true;
+    if (!nativeDraftLock.current && !nativeTextPending.current.size &&
+        !manualQuantityPending.current.size) return true;
     fail("입력한 배송 정보와 수량의 Rust 처리가 끝난 뒤 다시 시도하세요.");
     return false;
+  };
+  const nativeStructure = async (
+    action: "resize_manual_rows" | "add_manual_item" | "remove_manual_item" |
+      "confirm_manual_quantity" | "reset_manual_rows",
+    changes: Record<string, unknown>,
+    success?: (next: ManualModel) => void,
+  ): Promise<boolean> => {
+    if (!requireNativeCellsSettled()) return false;
+    const previousModel = model;
+    nativeDraftLock.current = true;
+    setNativeDraftBusy(true);
+    try {
+      const response = await businessCoreCall<ManualRustDraft>(
+        "rules", "apply_manual_classification", {
+          action, model: previousModel,
+          assignmentOrder: Object.keys(previousModel.assignments),
+          ...changes,
+        },
+      );
+      if (latestInputs.current.order !== order ||
+          latestInputs.current.model !== previousModel)
+        throw Error("수동 분류 내용이 변경되었습니다. 최신 내용을 확인하고 다시 시도하세요.");
+      const next = orderedNativeModel(response);
+      checkpoint();
+      setModel(next);
+      success?.(next);
+      setError(undefined);
+      return true;
+    } catch (e) {
+      fail(e instanceof Error ? e.message : String(e));
+      return false;
+    } finally {
+      nativeDraftLock.current = false;
+      setNativeDraftBusy(false);
+    }
   };
   const attempt = (action: () => void, cell?: Cell) => {
     try {
@@ -257,35 +290,19 @@ function ManualClassificationEditor({
         setNativeDraftBusy(false);
       });
   };
-  const finishQuantity = (): boolean => {
+  const finishQuantity = async (): Promise<boolean> => {
     const cell = pendingRef.current;
     if (!cell) return true;
-    if (nativeTextPending.current.size) {
-      fail("수취인 정보의 Rust 입력 확인이 끝난 뒤 수량을 확정하세요.", cell);
+    if (nativeTextPending.current.size || manualQuantityPending.current.has(cellKey(cell))) {
+      fail("수취인 정보 또는 수량의 Rust 처리가 끝난 뒤 다시 시도하세요.", cell);
       return false;
     }
-    if (manualQuantityPending.current.has(cellKey(cell))) {
-      fail("입력 중인 수량을 확인하고 있습니다. 다시 완료해 주세요.", cell);
-      return false;
-    }
-    const item = model.rows
-      .find((row) => row.id === cell.recipientId)
-      ?.items.find((item) => item.id === cell.itemId);
-    if (!item || !validManualQuantity(item.quantity)) {
-      fail("수량을 1 이상의 정수로 입력하세요.", cell);
-      focus(cell);
-      return false;
-    }
-    const next = structuredClone(model);
-    next.rows
-      .find((row) => row.id === cell.recipientId)!
-      .items.find((item) => item.id === cell.itemId)!.quantityConfirmed = true;
-    checkpoint();
-    setModel(next);
-    setPending(undefined);
-    beforeProduct.current = undefined;
-    setError(undefined);
-    return true;
+    const ok = await nativeStructure("confirm_manual_quantity", { cell }, () => {
+      setPending(undefined);
+      beforeProduct.current = undefined;
+    });
+    if (!ok) focus(cell);
+    return ok;
   };
   const useBlock = (id: string) => {
     if (nativeDraftLock.current || !requireNativeCellsSettled()) return;
@@ -368,29 +385,23 @@ function ManualClassificationEditor({
       return;
     }
     const execute = () => {
-      const next = structuredClone(model);
-      next.rows = next.rows.slice(0, n);
-      while (next.rows.length < n) next.rows.push(newManualRecipient());
-      const ids = new Set(next.rows.map((row) => row.id));
-      next.assignments = Object.fromEntries(
-        Object.entries(next.assignments).filter(([, a]) => ids.has(a.recipientId)),
+      const newRecipientIds = Array.from(
+        { length: Math.max(0, n - model.rows.length) },
+        () => crypto.randomUUID(),
       );
-      setModel(next);
-      setCount(String(n));
-      setEntry({});
-      setQuantityText({});
-      history.current = [];
-      setError(undefined);
-      if (active && !ids.has(active.recipientId)) setActive(undefined);
+      void nativeStructure("resize_manual_rows", { count: n, newRecipientIds }, (next) => {
+        const ids = new Set(next.rows.map((row) => row.id));
+        setCount(String(next.rows.length));
+        setEntry({});
+        setQuantityText({});
+        history.current = [];
+        if (active && !ids.has(active.recipientId)) setActive(undefined);
+      });
     };
     const removed = model.rows.slice(n);
     const populated = removed.some(
       (row) =>
-        row.name ||
-        row.address ||
-        row.mobile ||
-        row.phone ||
-        row.note ||
+        row.name || row.address || row.mobile || row.phone || row.note ||
         row.items.some((item) => item.name || item.productId || item.quantity !== null) ||
         Object.values(model.assignments).some((a) => a.recipientId === row.id),
     );
@@ -404,33 +415,15 @@ function ManualClassificationEditor({
     else execute();
   };
   const addProduct = (recipientId: string) => {
-    if (!requireNativeCellsSettled()) return;
-    const item = emptyManualItem();
-    checkpoint();
-    setModel((old) => ({
-      ...old,
-      rows: old.rows.map((row) =>
-        row.id === recipientId ? { ...row, items: [...row.items, item] } : row,
-      ),
-    }));
-    setError(undefined);
-    focus({ recipientId, itemId: item.id, field: "product" });
+    const itemId = crypto.randomUUID();
+    void nativeStructure("add_manual_item", { recipientId, itemId }, () => {
+      focus({ recipientId, itemId, field: "product" });
+    });
   };
   const removeProduct = (cell: Cell) => {
-    if (!requireNativeCellsSettled()) return;
-    checkpoint();
-    setModel((old) => ({
-      ...old,
-      rows: old.rows.map((row) =>
-        row.id === cell.recipientId
-          ? { ...row, items: row.items.filter((item) => item.id !== cell.itemId) }
-          : row,
-      ),
-      assignments: Object.fromEntries(
-        Object.entries(old.assignments).filter(([, a]) => a.itemId !== cell.itemId),
-      ),
-    }));
-    setError(undefined);
+    void nativeStructure("remove_manual_item", {
+      recipientId: cell.recipientId, itemId: cell.itemId,
+    });
   };
   const move = (cell: Cell, key: string, shift = false) => {
     const inputs = Array.from(
@@ -459,7 +452,7 @@ function ManualClassificationEditor({
       target.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
   };
-  const keyDown = (event: KeyboardEvent<HTMLInputElement>, cell: Cell) => {
+  const keyDown = async (event: KeyboardEvent<HTMLInputElement>, cell: Cell) => {
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") return;
     const key = cellKey(cell);
@@ -531,7 +524,7 @@ function ManualClassificationEditor({
     }
     if (pendingRef.current) {
       if (cell.field === "quantity" && (event.key === "Enter" || event.key === "Tab")) {
-        if (!finishQuantity()) return;
+        if (!(await finishQuantity())) return;
         requestAnimationFrame(() => move(cell, event.key, event.shiftKey));
         return;
       } else {
@@ -815,15 +808,17 @@ function ManualClassificationEditor({
                 title: "전체 초기화",
                 message: "구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.",
                 execute: () => {
-                  setModel({ ...model, rows: [newManualRecipient()], assignments: {} });
-                  setCount("1");
-                  setActive(undefined);
-                  setPending(undefined);
-                  setEntry({});
-                  setQuantityText({});
-                  history.current = [];
-                  beforeProduct.current = undefined;
-                  setError(undefined);
+                  void nativeStructure("reset_manual_rows", {
+                    recipientId: crypto.randomUUID(),
+                  }, () => {
+                    setCount("1");
+                    setActive(undefined);
+                    setPending(undefined);
+                    setEntry({});
+                    setQuantityText({});
+                    history.current = [];
+                    beforeProduct.current = undefined;
+                  });
                 },
               });
             }}
