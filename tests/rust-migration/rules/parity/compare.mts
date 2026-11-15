@@ -33,6 +33,7 @@ import { paymentSignature } from "../../../../src/automatic-message.ts";
 import { orderIssues, approveMissingQuantity, pendingIssue } from "../../../../src/validation.ts";
 import { validateReceptionBoundary, newReception, replaceReception, persistedReceptionState } from "../../../../src/orders/reception.ts";
 import { confirmRetail, newRetailOrder } from "../../../../src/orders/retail.ts";
+import { retailIssues } from "../../../../src/orders/retail-validation.ts";
 import { rawCorrectableIssue, rawCorrectionAllowed, correctWorkingRaw } from "../../../../src/working-raw.ts";
 import { receiptOf, correctReceipt } from "../../../../src/receipt.ts";
 import { billingSnapshot, applyReply } from "../../../../src/replies.ts";
@@ -42,7 +43,7 @@ import { validateProvisionalProductNotices } from "../../../../src/provisional-p
 import { validateAutomaticMessageTemplates } from "../../../../src/automatic-message-templates.ts";
 import { addressInfo, addressParts } from "../../../../src/parser.ts";
 import { validDeliveryAddress, deliveryRequirements } from "../../../../src/delivery-requirements.ts";
-import { companyClient, companyParty } from "../../../../src/order-types.ts";
+import { companyClient, companyParty, companySenderMissing } from "../../../../src/order-types.ts";
 import { explicitSender } from "../../../../src/explicit-sender.ts";
 import { initialManual, assignManualBlock, releaseManualBlock, applyManual, setManualValue, type ManualModel } from "../../../../src/orders/manual-classification.ts";
 import { rememberTitle, rememberedTitleClient } from "../../../../src/title-clients.ts";
@@ -2778,6 +2779,57 @@ function retailDraft(){
   delete draft.senderSnapshot;
   return draft;
 }
+// Native retail preflight must use the identical source decisions as final
+// commit, rather than a React-specific validator that can disagree with Rust.
+function retailReadCase(name:string,change:(state:any,draft:any)=>void=()=>{}) {
+  const state:any=copy(baseState);
+  const draft:any=retailDraft();
+  change(state,draft);
+  add("retail native preflight: "+name,"apply_retail_action",{
+    action:"retail_preflight",state,draft
+  },()=>({
+    delivery:draft.recipients.map((row:any)=>({
+      recipientId:row.id,...deliveryRequirements(row,false)
+    })),
+    senderIssues:companySenderMissing(state.settings),
+    issues:retailIssues(draft,state)
+  }));
+}
+retailReadCase("valid original order");
+retailReadCase("missing sender settings",(s)=>{
+  s.settings.senderAddress="";
+  s.settings.senderPhone="";
+  s.settings.senderMobile="";
+});
+retailReadCase("invalid delivery and missing product",(_s,d)=>{
+  d.recipients[0].name="";
+  d.recipients[0].address="상세 주소 없음";
+  d.recipients[0].items[0].quantityConfirmed=false;
+});
+retailReadCase("invalid catalog selection",(s,d)=>{
+  d.recipients[0].items[0].productId="missing-product";
+  s.products[0].deletedAt=actionNow;
+});
+const retailCatalog: any=copy(product);
+retailCatalog.defaultColor="Black";
+const retailCatalogState:any=copy(baseState);
+add("retail native catalog quote: single black option","apply_retail_action",{
+  action:"create_retail_item",state:retailCatalogState,
+  product:retailCatalog,color:"Black",variantId:"v1",
+  quantity:1,newItemId:"retail-native-catalog-item"
+},()=>({item:deterministicIds(["retail-native-catalog-item"],
+  ()=>itemFromProduct(retailCatalog,companyClient(retailCatalogState.settings),
+    "Black",1,"v1"))}));
+const unresolvedRetailCatalog:any=copy(retailCatalog);
+unresolvedRetailCatalog.requiresOption=true;
+add("retail native catalog quote: unresolved sale configuration","apply_retail_action",{
+  action:"create_retail_item",state:retailCatalogState,
+  product:unresolvedRetailCatalog,color:"Black",quantity:1,
+  newItemId:"retail-native-unresolved-item"
+},()=>({item:deterministicIds(["retail-native-unresolved-item"],
+  ()=>itemFromProduct(unresolvedRetailCatalog,companyClient(retailCatalogState.settings),
+    "Black",1))}));
+
 function retailCase(name:string,mutate:(state:any,draft:any)=>void,success:boolean){
   const state:any=copy(baseState);
   const draft:any=retailDraft();
