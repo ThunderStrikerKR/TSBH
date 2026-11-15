@@ -55,7 +55,7 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
   windows-p1p2-real-exe:
-    if: github.ref_name == 'migration/27-unified-rust' || github.ref_name == 'migration/03-integration' || github.ref_name == 'migration/28-ts-runtime-closure'
+    if: github.ref_name == 'migration/27-unified-rust' || github.ref_name == 'migration/03-integration' || github.ref_name == 'migration/28-ts-runtime-closure' || github.ref_name == 'migration/28-reception-manual-rust'
     runs-on: windows-latest
     timeout-minutes: 75
     steps:
