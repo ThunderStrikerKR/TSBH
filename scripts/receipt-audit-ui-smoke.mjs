@@ -178,6 +178,29 @@ try {
             return undefined;
           }
           if (command === "state_load") return structuredClone(state);
+          if (command === "business_core_call" &&
+              args?.domain === "rules" &&
+              args?.operation === "apply_reception_action" &&
+              args?.payload?.action === "replace_reception") {
+            // Emulate the native reply shape for this UI-only test. The
+            // compiled Rust reducer has a separate unit/parity test; never
+            // restore the retired TypeScript reducer to the app's runtime.
+            const {order,raw,now}=args.payload;
+            if (order.confirmedAt) throw Error("확정된 발주 원문은 변경할 수 없습니다.");
+            if (raw.length > 100000) throw Error("발주 원문은 100,000자 이내로 붙여넣어 주세요.");
+            window.__ocrNativeReplacements = (window.__ocrNativeReplacements ?? 0) + 1;
+            return {order:{
+              id:order.id,clientId:raw.trim()?order.clientId:"",
+              raw,channel:"카카오톡",recipients:[],
+              shippingFee:null,applyVat:false,vatAmount:null,
+              status:"RECEIVED",notified:false,paid:false,
+              postpaidApproved:false,freightCode:"010",
+              createdAt:order.createdAt,updatedAt:now,
+              orderType:order.orderType??"AGENCY",receptionVersion:1,
+              ...(raw.trim()&&order.clientSnapshot?
+                {clientSnapshot:structuredClone(order.clientSnapshot)}:{}),
+            }};
+          }
           if (command === "backup_create") {
             const name = "C:\\BANDO_TEST\\developer-test\\backups\\manual-ui-" + (++testBackupSequence) + ".sqlite";
             testBackups.set(name, { state: structuredClone(state), audit: structuredClone(auditRecords) });
@@ -294,6 +317,8 @@ try {
     .fill("709B 2개\\n김테스트");
   await ocrReview.getByRole("button", { name: "원문 교체" }).click();
   await ocrReview.waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => window.__ocrNativeReplacements),1,
+    "OCR replacement must invoke Rust apply_reception_action, not a legacy TS mutation");
   await page.waitForFunction(() =>
     document.querySelector(".source-document")?.textContent?.includes("709B 2개"));
   // At the minimum Windows layout, the three source actions must remain
