@@ -639,7 +639,36 @@
   top: 0;
   z-index: 2;
 }
+/* Recorded orders must keep their six stable columns, but long dealer names
+   must wrap INSIDE the client cell rather than painting across the address,
+   status or billing columns. This does not change any column widths. */
+.app-v03 .management-container .order-history-list .management-data-table td:nth-child(2) {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .app-v03 .management-container .order-history-list .management-data-table td:nth-child(3) {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* Recipient names are interactive text, not an unbreakable toolbar action.
+   Their button and historical item summary must stay in the 42% detail cell. */
+.app-v03 .management-container .order-history-list .management-data-table td:nth-child(3) > button {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.app-v03 .management-container .order-history-list .management-data-table td:nth-child(3) > small {
+  display: block;
+  max-width: 100%;
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
