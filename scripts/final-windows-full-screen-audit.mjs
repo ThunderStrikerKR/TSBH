@@ -139,6 +139,10 @@ const openMenu = async name => {
   const unexpected = page.locator(".screen-boundary-error");
   assert.equal(await unexpected.count(), 0, "React error boundary after " + name);
   if (name === "주문 내역") {
+    // History rows arrive over asynchronous Rust IPC. Do not mistake the
+    // transient loading state (zero rows) for a completed empty result.
+    await page.getByText("주문 이력을 확인 중입니다.", {exact:true})
+      .waitFor({state:"hidden", timeout:30000});
     const empty = await page.locator(".order-history-list").evaluate(el => {
       const scroll = el.querySelector(".table-scroll"),
         rows = el.querySelectorAll("tbody tr").length,
