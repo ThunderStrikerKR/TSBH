@@ -972,6 +972,27 @@ try {
           return {state:structuredClone(args.payload.state)};
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "apply_reception_action" &&
+            args.payload?.action === "replace_reception") {
+          // Match reception_operations.rs:replace_reception. OCR must use the
+          // real React -> native IPC path; the mock is only the Rust response.
+          const {order,raw,now}=args.payload;
+          if(order.confirmedAt)throw Error("확정된 발주 원문은 변경할 수 없습니다.");
+          if(raw.length>100000)throw Error("발주 원문은 100,000자 이내로 붙여넣어 주세요.");
+          const next={
+            id:order.id,clientId:raw.trim()?order.clientId:"",
+            raw,channel:"카카오톡",recipients:[],shippingFee:null,
+            applyVat:false,vatAmount:null,status:"RECEIVED",
+            notified:false,paid:false,postpaidApproved:false,
+            freightCode:"010",createdAt:order.createdAt,updatedAt:now,
+            orderType:order.orderType??"AGENCY",receptionVersion:1,
+          };
+          if(raw.trim() && order.clientSnapshot!==undefined)
+            next.clientSnapshot=structuredClone(order.clientSnapshot);
+          window.__navNativeOcrReplacements=(window.__navNativeOcrReplacements??0)+1;
+          return {order:next};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_reception_action" &&
             args.payload?.action === "persisted_reception_state")
           return {state:structuredClone(args.payload.state)};
         if (command === "state_load") {
@@ -1739,6 +1760,8 @@ try {
   const ocr=navPage.getByRole("dialog",{name:"OCR 문자 인식 검토"});
   await ocr.getByRole("button",{name:"원문 교체"}).click();
   await navPage.waitForFunction(() => document.querySelector(".source-document")?.textContent?.includes("검증 발주 원문"));
+  assert.equal(await navPage.evaluate(() => window.__navNativeOcrReplacements),1,
+    "OCR review must use the native replace_reception action, not a TS-only update");
   await navMenu.getByRole("button",{name:"상품 관리"}).click();
   await checkPrompt("unconfirmed reception");
   await leave.getByRole("button",{name:"취소",exact:true}).click();
