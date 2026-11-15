@@ -988,6 +988,29 @@ try {
           return [];
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_workflow_action" &&
+            args.payload?.action === "record_actual_freight") {
+          // Corresponds to workflow.rs::record_actual_freight. The real
+          // workflow queue must receive an updated shipment snapshot before
+          // its existing revision-checked onSave can persist the change.
+          const {state:input,shipmentId,origin,value}=args.payload;
+          if(!["FACTORY","STORE"].includes(origin) ||
+              (value!==null&&(!Number.isSafeInteger(value)||value<0)))
+            throw Error("실제 운임은 0 이상의 원 단위 정수로 입력하세요.");
+          const updated=structuredClone(input);
+          const ship=updated.workflow?.shipments.find(row=>row.id===shipmentId);
+          if(!ship)throw Error("배송 건을 확인하세요.");
+          const order=updated.orders.find(row=>row.id===ship.orderId);
+          const recipient=order?.recipients.find(row=>row.id===ship.recipientId);
+          if(!recipient)throw Error("수취인 정보를 확인하세요.");
+          const before=Object.hasOwn(ship.actualFreight??{},origin)
+            ? ship.actualFreight[origin] : recipient.actualFreight??null;
+          if(before===value)return {state:updated,unchanged:true};
+          ship.actualFreight={...(ship.actualFreight??{}),[origin]:value};
+          window.__navRustFreightWrites=(window.__navRustFreightWrites??0)+1;
+          return {state:updated,unchanged:false};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "factory_reply_review_statuses") return {reviews:[]};
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "finalize_billing_history")
@@ -2105,6 +2128,8 @@ try {
   await leave.getByRole("button", {name:"저장",exact:true}).click();
   await navPage.waitForFunction(() => window.__navSaved().state.workflow.shipments
     .find(s=>s.id==="ci-store-ship").actualFreight?.STORE===4100);
+  assert.ok((await navPage.evaluate(()=>window.__navRustFreightWrites??0))>0,
+    "Actual freight Save must invoke Rust record_actual_freight");
   console.log("PASS: actual freight survives filtering and supports Save / Discard / Cancel");
 
   const cascadeInventory=cascadeSources.map(candidate=>{
