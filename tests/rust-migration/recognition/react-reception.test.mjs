@@ -233,3 +233,71 @@ test("compiled Rust reception merge exactly matches original TS on all 20 recogn
       "Rust and original TS reception merge differ: "+row.label);
   }
 });
+
+
+test("manual row/item mutations in compiled Rust match the original TypeScript draft transforms",async()=>{
+  const {newManualRecipient,emptyManualItem}=await tsImport(
+    "../../../src/orders/manual-classification.ts",import.meta.url);
+  const first={...newManualRecipient(),id:"r1",name:"김가상",
+    items:[{...emptyManualItem(),id:"i1",name:"709",quantity:2,quantityConfirmed:false}]};
+  const second={...newManualRecipient(),id:"r2",name:"박가상"};
+  const model={rows:[first,second],blocks:[{id:"b",text:"709",field:"product"}],
+    assignments:{b:{recipientId:"r1",itemId:"i1",field:"product",value:"709"}}};
+  const clone=(x)=>structuredClone(x);
+  const cases=[
+    {
+      name:"reduce shipment count",action:"resize_manual_rows",
+      changes:{count:1,newRecipientIds:[]},
+      expected:()=>{const m=clone(model);m.rows=m.rows.slice(0,1);
+        m.assignments=Object.fromEntries(Object.entries(m.assignments)
+          .filter(([,cell])=>m.rows.some(r=>r.id===cell.recipientId)));return m;},
+    },
+    {
+      name:"increase shipment count",action:"resize_manual_rows",
+      changes:{count:3,newRecipientIds:["r3"]},
+      expected:()=>{const m=clone(model);
+        m.rows.push({...newManualRecipient(),id:"r3"});return m;},
+    },
+    {
+      name:"add product row",action:"add_manual_item",
+      changes:{recipientId:"r2",itemId:"i2"},
+      expected:()=>{const m=clone(model);
+        m.rows[1].items.push({...emptyManualItem(),id:"i2"});return m;},
+    },
+    {
+      name:"remove product with source assignment",action:"remove_manual_item",
+      changes:{recipientId:"r1",itemId:"i1"},
+      expected:()=>{const m=clone(model);
+        m.rows[0].items=m.rows[0].items.filter(x=>x.id!=="i1");
+        m.assignments=Object.fromEntries(Object.entries(m.assignments)
+          .filter(([,cell])=>cell.itemId!=="i1"));return m;},
+    },
+    {
+      name:"confirm quantity",action:"confirm_manual_quantity",
+      changes:{cell:{recipientId:"r1",itemId:"i1",field:"quantity"}},
+      expected:()=>{const m=clone(model);
+        m.rows[0].items[0].quantityConfirmed=true;return m;},
+    },
+    {
+      name:"reset all manual rows",action:"reset_manual_rows",
+      changes:{recipientId:"r-reset"},
+      expected:()=>({...clone(model),
+        rows:[{...newManualRecipient(),id:"r-reset"}],assignments:{}}),
+    },
+  ];
+  const reqs=cases.map(c=>({domain:"rules",operation:"apply_manual_classification",
+    payload:{action:c.action,model,assignmentOrder:Object.keys(model.assignments),...c.changes}}));
+  const result=spawnSync("cargo",["run","--quiet","--manifest-path",cargo,
+    "--bin","reception_runner"],{
+    cwd:root,input:JSON.stringify(reqs),encoding:"utf8",
+    timeout:900_000,maxBuffer:60*1024*1024,
+  });
+  if(result.error)throw result.error;
+  assert.equal(result.status,0,"Manual Rust parity runner:\n"+result.stderr);
+  const answers=JSON.parse(result.stdout);
+  assert.equal(answers.length,cases.length);
+  for(const [i,entry] of cases.entries()){
+    assert.equal(answers[i].ok,true,entry.name+": "+answers[i].error);
+    assert.deepEqual(answers[i].value.model,entry.expected(),entry.name);
+  }
+});
