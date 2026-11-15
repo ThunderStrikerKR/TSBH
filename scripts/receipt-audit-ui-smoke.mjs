@@ -1904,7 +1904,14 @@ try {
   }));
   assert.equal(brandSwitchState.brandInputs,1,
     "Brand discard must retain its mounted editor: "+JSON.stringify(brandSwitchState));
-  assert.equal(await brandInput.inputValue(),"CI검증브랜드B");
+  // The input is visible, accessible and has the correct React-controlled
+  // value. Reading it from the DOM avoids a Playwright inputValue() race
+  // during the native dialog close/focus restoration frame.
+  assert.equal(brandAccessibility.visible,true,
+    "Brand editor must remain visible after discarding record changes");
+  assert.equal(await brandInput.count(),1,
+    "Brand editor must remain discoverable by its accessible name");
+  assert.equal(brandAccessibility.value,"CI검증브랜드B");
   await editBrand("CI검증브랜드A");
   await brandInput.fill("CI검증브랜드A-저장");
   await editBrand("CI검증브랜드B");
