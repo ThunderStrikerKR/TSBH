@@ -132,7 +132,7 @@ function ManualClassificationEditor({
     return () => { active = false; };
   }, [quantityFingerprint]);
   const quantityReady = quantityResult?.fingerprint === quantityFingerprint;
-  const quantityStatus = quantityReady ? quantityResult.result : undefined;
+  const quantityStatus = quantityReady && quantityResult ? quantityResult.result : undefined;
   const quantityError = quantityFailure?.fingerprint === quantityFingerprint
     ? quantityFailure.reason : "";
   const latestInputs = useRef({ order, model });
