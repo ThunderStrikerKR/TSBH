@@ -75,7 +75,29 @@ const capture = async (kind, name) => {
       return { x: +r.x.toFixed(1), y: +r.y.toFixed(1),
         width: +r.width.toFixed(1), height: +r.height.toFixed(1) };
     };
+    // Uniform computed-style inventory; screenshots alone cannot establish
+    // whether captions, buttons and inputs obey the same typography system.
+    const styles = (selector, limit=20) =>
+      [...document.querySelectorAll(selector)].filter(vis).slice(0,limit)
+        .map(el => {
+          const c=getComputedStyle(el);
+          return {
+            text:(el.getAttribute("aria-label")||el.textContent||"").trim().slice(0,60),
+            fontSize:parseFloat(c.fontSize), lineHeight:c.lineHeight,
+            fontWeight:c.fontWeight, padding:c.padding,
+            display:c.display, rect:rect(el)
+          };
+        });
     return {
+      typography:{
+        titles:styles(".page-heading h1",2),
+        tabs:styles(".management-tabbar > button",15),
+        sectionTitles:styles("h2",8),
+        tableHeaders:styles(".management-data-table thead th",8),
+        tableCells:styles(".management-data-table tbody td",8),
+        formControls:styles(".management-container input, .management-container select, .management-container textarea",12),
+        actionButtons:styles(".management-section-actions > button,.catalog-map-actions > button",12),
+      },
       viewport: { width: innerWidth, height: innerHeight },
       documentWidth: document.documentElement.scrollWidth,
       h1: [...document.querySelectorAll("h1")].filter(vis).map(el => el.textContent.trim()),
@@ -116,6 +138,29 @@ const openMenu = async name => {
   }
   const unexpected = page.locator(".screen-boundary-error");
   assert.equal(await unexpected.count(), 0, "React error boundary after " + name);
+  if (name === "주문 내역") {
+    const empty = await page.locator(".order-history-list").evaluate(el => {
+      const scroll = el.querySelector(".table-scroll"),
+        rows = el.querySelectorAll("tbody tr").length,
+        hint = el.querySelector(".empty-state");
+      return {
+        rows, empty:el.classList.contains("order-history-empty"),
+        height:el.getBoundingClientRect().height,
+        scrollWidth:scroll?.scrollWidth, clientWidth:scroll?.clientWidth,
+        tableMinWidth:getComputedStyle(el.querySelector("table")).minWidth,
+        hintText:hint?.textContent?.trim()||""
+      };
+    });
+    if(empty.rows === 0){
+      assert.ok(empty.empty && empty.hintText,
+        "Order-history zero-row state must expose its guidance");
+      assert.ok(empty.scrollWidth <= empty.clientWidth + 3,
+        "Order-history empty table must not retain 1000px horizontal overflow");
+      assert.ok(empty.height < 320,
+        "Order-history empty table must not consume nearly the full viewport");
+      record("layout","Compact empty order history without horizontal scrollbar",empty);
+    }
+  }
   record("menu", name);
   await capture("menu", name);
 };
@@ -284,6 +329,32 @@ try {
               (type === "상품 관리" || type === "거래처 관리" ? "page" : "true");
           }, {label:title,type:menu}, {timeout: 20000});
         });
+        if (menu === "상품 관리" && title === "카테고리 관리") {
+          const actions = await page.locator(".catalog-map-actions > button")
+            .evaluateAll(buttons => buttons.map(b=>{
+              const r=b.getBoundingClientRect();
+              return {name:b.textContent?.trim(),x:r.x,y:r.y,w:r.width,h:r.height};
+            }));
+          assert.equal(actions.length,4,"Category map must expose four actions");
+          assert.ok(actions.every(a=>Math.abs(a.y-actions[0].y)<2),
+            "Category actions must be in one consistent row at 1028px");
+          assert.ok(actions.every((a,i)=>i===0 || a.x>actions[i-1].x),
+            "Category action ordering must stay left-to-right");
+          record("layout","Four category actions aligned without orphan row",{actions});
+        }
+        if (menu === "운임 관리" && title === "동급 배송 그룹 지정") {
+          const scroll = await page.locator(".shipping-assignment-list .shipping-table-scroll")
+            .evaluate(el=>{
+              const max=el.scrollWidth-el.clientWidth;
+              el.scrollLeft=max;
+              const reached=el.scrollLeft;
+              el.scrollLeft=0;
+              return {max,reached,reset:el.scrollLeft};
+            });
+          assert.ok(scroll.max>100 && scroll.reached>100 && scroll.reset===0,
+            "Freight assignment table must expose and scroll long product information");
+          record("layout","Horizontal freight table scroll is reachable and reversible",scroll);
+        }
         if (menu === "거래처 관리" && title === "자동 메시지 편집") {
           for (const nested of ["상황별 공통 안내", "잠정 상품 선택 안내"]) {
             const inner = page.locator("nav[aria-label='자동 메시지 편집 종류']")
@@ -300,6 +371,21 @@ try {
       }
     }
   }
+
+  // Typography/layout contract: all management page headings share one
+  // baseline and title size. The reception screen has its own desk layout.
+  const titleMetrics=report.captures.filter(x=>x.kind==="menu" && x.name!=="접수")
+    .map(x=>({name:x.name,value:x.typography?.titles?.[0]}))
+    .filter(x=>x.value);
+  assert.ok(titleMetrics.length>=7,"All seven management title metrics must be captured");
+  assert.ok(titleMetrics.every(x=>Math.abs(x.value.fontSize-titleMetrics[0].value.fontSize)<0.25),
+    "Management page title font sizes diverged");
+  assert.ok(titleMetrics.every(x=>Math.abs(x.value.rect.x-titleMetrics[0].value.rect.x)<2),
+    "Management page titles drift horizontally");
+  record("layout","Seven management headings have one font size and x origin",{
+    fontSize:titleMetrics[0].value.fontSize,x:titleMetrics[0].value.rect.x,
+    screens:titleMetrics.map(x=>x.name)
+  });
 
   // Verify the largest four real editing dialogs and their top-layer hit-test.
   // No Save / Delete / Confirm action is ever pressed by this navigation audit.
