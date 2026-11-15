@@ -8,15 +8,28 @@ test("manual grid parses edited quantity using native Rust, never TS legacy pars
   const part = source.slice(source.indexOf('          if (cell.field === "quantity") {'),
     source.indexOf('          attempt(() => setModel(setManualValue(',source.indexOf('          if (cell.field === "quantity") {')));
   assert.match(part, /"rules", "apply_manual_classification"/);
-  assert.match(part, /action: "parse_manual_quantity", value/);
+  assert.match(part, /action: "set_manual_quantity_draft", model, cell, value/);
   assert.doesNotMatch(part, /setManualValue\(/);
   assert.match(part, /manualQuantityRequest\.current\[key\] !== request/);
   assert.match(source,/manualQuantityPending\.current\.has\(cellKey\(cell\)\)/);
   const incrementStart = source.indexOf("    const increment = (delta: number) => {");
   const stepper = source.slice(incrementStart, source.indexOf("    return (", incrementStart));
-  assert.match(stepper, /action: "parse_manual_quantity", value: String\(value\)/);
+  assert.match(stepper, /action: "step_manual_quantity", model, cell, delta/);
   assert.doesNotMatch(stepper, /setManualValue\(/);
 });
+test("manual draft quantity edits and steppers use Rust result fields, not JS calculations", () => {
+  const source = read("src/orders/ManualClassification.tsx");
+  const core = read("src-tauri/src/business_core/rules/manual_structure.rs");
+  const router = read("src-tauri/src/business_core/rules/mod.rs");
+  assert.match(source,/action: "set_manual_quantity_draft", model, cell, value/);
+  assert.match(source,/action: "step_manual_quantity", model, cell, delta/);
+  assert.match(source,/setModel\(\(current\) => applyNativeQuantity\(current, updated, cell\)\)/);
+  assert.match(core,/"set_manual_quantity_draft" => \{/);
+  assert.match(core,/"step_manual_quantity" => \{/);
+  assert.match(router,/"set_manual_quantity_draft"/);
+  assert.match(router,/"step_manual_quantity"/);
+});
+
 test("manual quantity Rust implementation has executable original TS differential cases", () => {
   const core = read("src-tauri/src/business_core/rules/manual_classification.rs");
   const parity = read("tests/rust-migration/rules/parity/compare.mts");
