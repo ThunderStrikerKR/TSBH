@@ -841,6 +841,33 @@ try {
           ).map(p=>p.id);
         }
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "upsert_product_from_editor") {
+          const {state:input,product}=args.payload;
+          if (!product?.id || !product.name?.trim())
+            throw Error("테스트 상품 정보가 불완전합니다.");
+          const next=structuredClone(input);
+          const index=next.products.findIndex(row=>row.id===product.id);
+          const updated=structuredClone(product);
+          if(index<0) next.products.push(updated);
+          else next.products[index]=updated;
+          window.__navRustProductUpserts=(window.__navRustProductUpserts??0)+1;
+          return {state:next};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_shipping_action" &&
+            args.payload?.action === "assign_products") {
+          const {state:input,assignments}=args.payload;
+          const next=structuredClone(input);
+          for (const [id,group] of Object.entries(assignments)) {
+            const product=next.products.find(row=>row.id===id);
+            if(!product) throw Error("배송 그룹 상품 누락: "+id);
+            if(group) product.shippingGroupId=group;
+            else delete product.shippingGroupId;
+          }
+          window.__navRustShippingAssignments=(window.__navRustShippingAssignments??0)+1;
+          return {state:next};
+        }
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
             args.operation === "upsert_client") {
           // Real application calls Rust upsert_client, then commits the
           // authoritative candidate through exactly one state_save.
@@ -1554,6 +1581,8 @@ try {
   const productAfter=await mockState();
   assert.equal(productAfter.saves.length,beforeProduct.saves.length+1);
   assert.ok(productAfter.state.products.some(p=>p.subtitle==="상품설명 저장 완료 검사"));
+  assert.ok((await navPage.evaluate(()=>window.__navRustProductUpserts??0))>0,
+    "Product details must use Rust upsert_product_from_editor");
   console.log("PASS: product detail Save / Discard / Cancel (actual React modal)");
 
   // The freight list should have the same dense vertical rhythm as product pricing.
