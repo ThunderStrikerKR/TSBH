@@ -368,7 +368,7 @@ export function RetailOrderDialog({
               };
               // Preserve the newest recipient and dispatch-origin edits while
               // the native command was running; never append a stale shipment.
-              setOrder((previous) => ({
+              setOrder((previous) => previous ? ({
                 ...previous,
                 recipients: previous.recipients.map((recipient, index) =>
                   index === 0 ? {
@@ -376,7 +376,7 @@ export function RetailOrderDialog({
                       ...item, origin: recipient.dispatchOrigin ?? "FACTORY",
                     }],
                   } : recipient),
-              }));
+              }) : previous);
               setSearch(false);
             }).catch((cause) => {
               if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
