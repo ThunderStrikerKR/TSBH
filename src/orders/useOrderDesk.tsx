@@ -13,7 +13,7 @@ import { useNativeWorkflowReconcile } from "./useNativeWorkflowReconcile";
 import { useNativeWorkflowBoard } from "./useNativeWorkflowBoard";
 import { useNativeOrderPreview } from "./useNativeOrderPreview";
 import { useNativeOrderIssues } from "./useNativeOrderIssues";
-import { applyRustReceptionAnalysis, assertRustReceptionAnalysis, receptionAnalysisAllowed } from "./rust-reception";
+import { assertRustReceptionAnalysis, receptionAnalysisAllowed } from "./rust-reception";
 import { registeredProducts, sortProducts } from "../product-models";
 
 import type { NoticeSink } from "../shared/notices";
