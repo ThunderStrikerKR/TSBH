@@ -56,6 +56,20 @@ try {
           // The isolated browser smoke must emulate that native read instead of
           // silently showing zero products because the old mock rejects IPC.
           const {domain,operation,payload}=args??{};
+          if(domain==="rules" && operation==="list_order_history")
+            return []; // Empty, read-only fixture: no orders have been confirmed.
+          if(domain==="output" && operation==="prepare_settlement") {
+            // Native output returns a report even for a day without orders;
+            // omitting this IPC previously left the table perpetually loading.
+            const {state:input,date}=payload;
+            const zero={date,revision:input.revision??0,
+              orderRows:[],paymentRows:[],warnings:[],
+              billedKnown:0,billedUnknown:0,productKnown:0,shippingKnown:0,
+              vatKnown:0,paidCash:0,allocatedCash:0,unallocatedCash:0,
+              postpaidKnown:0,outstandingKnown:0,outstandingUnknown:0,
+              actualFreightKnown:0,freightUnknown:0,approvedPaymentKnown:0};
+            return zero;
+          }
           if(domain!=="catalog_clients" || operation!=="management_products")
             throw Error("Unexpected business core operation: "+domain+"/"+operation);
           const {state:input,category="",brand="",query="",missing=false}=payload;
