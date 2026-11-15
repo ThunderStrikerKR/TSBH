@@ -673,6 +673,64 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+/* Dense history rows show a concise readable summary; every original name,
+   address and item remains available through the expand action or hover. */
+.app-v03 .management-container .order-history-list .order-history-client-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.app-v03 .management-container .order-history-list .management-data-table td:nth-child(3) > button.order-history-recipient-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  min-height: 30px;
+  padding: 4px 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.app-v03 .management-container .order-history-list .order-history-recipient-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-v03 .management-container .order-history-list .order-history-recipient-meta {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: calc(11px * var(--ui-scale, 1));
+  white-space: nowrap;
+}
+.app-v03 .management-container .order-history-list .management-data-table td:nth-child(3) > small.order-history-item-preview {
+  display: block;
+  margin: 5px 0 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-v03 .management-container .order-history-list .order-history-recipient-detail {
+  margin: 10px 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+}
+.app-v03 .management-container .order-history-list .order-history-recipient-detail > strong,
+.app-v03 .management-container .order-history-list .order-history-recipient-detail > p {
+  display: block;
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .app-v03 .management-container .order-history-list .management-data-table td:nth-child(3) > div,
 .app-v03 .management-container .order-history-list .management-data-table td:nth-child(3) p {
   min-width: 0;
