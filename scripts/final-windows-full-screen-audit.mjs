@@ -329,6 +329,24 @@ try {
               (type === "상품 관리" || type === "거래처 관리" ? "page" : "true");
           }, {label:title,type:menu}, {timeout: 20000});
         });
+        if (menu === "엑셀 관리") {
+          const emptyExcel=await page.locator(".excel-table-scroll.excel-list-empty")
+            .evaluateAll(nodes=>nodes.map(el=>({
+              scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,
+              headerCount:el.querySelectorAll("thead th").length,
+              rowCount:el.querySelectorAll("tbody tr").length,
+              guidance:el.querySelector(".empty-state")?.textContent?.trim()||""
+            })));
+          for(const data of emptyExcel){
+            assert.equal(data.rowCount,0,"Expected no Excel rows in empty-state workspace");
+            assert.ok(data.guidance,"Empty Excel queue must explain why no rows appear");
+            assert.ok(data.scrollWidth<=data.clientWidth+3,
+              "Empty Excel queue/history must not show a horizontal scrollbar");
+          }
+          if(emptyExcel.length) record("layout","Empty Excel table without horizontal scrolling",{
+            tab:title,details:emptyExcel
+          });
+        }
         if (menu === "상품 관리" && title === "카테고리 관리") {
           const actions = await page.locator(".catalog-map-actions > button")
             .evaluateAll(buttons => buttons.map(b=>{
