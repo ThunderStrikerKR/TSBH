@@ -874,6 +874,20 @@ try {
             maxBundle:null,maxConfirmed:false,fees:{},perItem:null,notes:""}};
         }
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "preview_registration_rows") {
+          // The UI test exercises ExcelJS input -> native preview IPC ->
+          // on-screen review. A missing category is deliberately HOLD, not
+          // an automatically approved synthetic product for registration.
+          const {state:input,rows=[],fingerprint}=args.payload;
+          window.__navRustRegistrationPreviews=(window.__navRustRegistrationPreviews??0)+1;
+          return {fingerprint,revision:input.revision??0,
+            rows:rows.map(row=>({
+              row:row.row,values:structuredClone(row.values),
+              status:"HOLD",errors:["카테고리 확인이 필요합니다."],
+              duplicateIds:[],
+            }))};
+        }
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
             args.operation === "alias_problems") return [];
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
             args.operation === "validate_model_groups") {
@@ -2380,6 +2394,8 @@ try {
       await dialog.waitFor();
       await dialog.locator('input[type="file"]').setInputFiles(registrationFile);
       await dialog.locator(".registration-preview").first().waitFor();
+      assert.ok((await navPage.evaluate(()=>window.__navRustRegistrationPreviews??0))>0,
+        "Bulk registration preview must use Rust preview_registration_rows");
       await measureStage7(popup+"-workbook-review",dialog);
       await closeNative(dialog);
     }else if(popup==="reply"){
