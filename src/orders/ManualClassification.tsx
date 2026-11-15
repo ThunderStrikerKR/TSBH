@@ -786,6 +786,8 @@ function ManualClassificationEditor({
     <section
       ref={root}
       className="manual-workspace"
+      data-native-text-pending={nativeTextBusy}
+      data-native-cell-uncommitted={uncommitted}
       role="dialog"
       aria-modal="false"
       aria-label="수동 분류"
