@@ -1063,6 +1063,23 @@ try {
           return {state:updated,unchanged:false};
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "analyze_factory_reply") {
+          // Review-only synthetic Excel fixture. The native UI must render a
+          // HOLD preview, never an automatically approved shipment. The real
+          // Rust matching tests run separately; this only mocks its IPC shape.
+          const {id,filename,sourceRows=[]}=args.payload;
+          window.__navRustFactoryReplyPreviews=(window.__navRustFactoryReplyPreviews??0)+1;
+          return {
+            reply:{id,filename,sourceRowCount:sourceRows.length},
+            rows:sourceRows.map(row=>({
+              row:row.row,name:row.name,tracking:row.tracking,
+              actual:/^\\d+$/.test(row.rawFreight??"")?Number(row.rawFreight):null,
+              applied:false,issue:"합성 UI 검사: 직원 확인 필요",
+            })),
+            applied:0,held:sourceRows.length,
+          };
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "factory_reply_review_statuses") return {reviews:[]};
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "finalize_billing_history")
@@ -2404,6 +2421,8 @@ try {
       await dialog.waitFor();
       assert.equal(await dialog.getByRole("button",{name:/DB 백업 후 회신/}).isDisabled(),true,
         "Synthetic factory preview must never allow production commit");
+      assert.ok((await navPage.evaluate(()=>window.__navRustFactoryReplyPreviews??0))>0,
+        "Factory reply review must invoke native analyze_factory_reply");
       await measureStage7(popup+"-workbook-review",dialog);
       await closeNative(dialog);
     }else{
