@@ -112,8 +112,8 @@ fn apply(payload:&Value)->Result<Value,String>{
         has_value(field(previous,"manualClassification"))||
         field(previous,"pricesLocked")==true||
         str_field(previous,"status")=="EXPORTED" ||
-        (str_field(previous,"analysisRaw")==raw &&
-         str_field(previous,"analysisClientId")==client_id) {
+        (field(previous,"analysisRaw").as_str()==Some(raw) &&
+         field(previous,"analysisClientId").as_str()==Some(client_id)) {
         return Ok(json!({"order":previous}));
     }
     let original=rows(field(evidence,"recipients")).to_vec();
