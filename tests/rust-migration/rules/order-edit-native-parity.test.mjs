@@ -166,6 +166,10 @@ for(const recalculateShipping of [true,false]){
   add("change dealer freezes old invoice and reprices atomically",
     "change_order_client",st,before,{order:legacyChangeDealer(before,st,"c2")},
     {dealerId:"c2",now});
+  const confirmed=clone(before);confirmed.confirmedAt="2026-11-14T00:00:00.000Z";
+  add("confirmed dealer change still reprices all configured products",
+    "change_order_client",st,confirmed,{order:legacyChangeDealer(confirmed,st,"c2")},
+    {dealerId:"c2",now});
   const notLocked=clone(before);notLocked.pricesLocked=false;
   add("change dealer does not freeze a nonlocked invoice",
     "change_order_client",st,notLocked,{order:legacyChangeDealer(notLocked,st,"c2")},
