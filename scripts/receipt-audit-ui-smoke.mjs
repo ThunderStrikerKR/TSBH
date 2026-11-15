@@ -201,6 +201,19 @@ try {
                 {clientSnapshot:structuredClone(order.clientSnapshot)}:{}),
             }};
           }
+          if (command === "business_core_call" &&
+              args?.domain === "catalog_clients" &&
+              args?.operation === "official_links") {
+            // Cached links are a read-only result from Rust; this test verifies
+            // the React search and URL-selection behavior, not URL validation.
+            const report=args.payload?.report;
+            if(!report?.products?.length)throw Error("수집본 상품 자료가 없습니다.");
+            window.__officialLinksNativeCalls=(window.__officialLinksNativeCalls??0)+1;
+            return report.products.flatMap(product=>
+              product.variants?.find(variant=>variant.url)?.url
+                ? [{name:product.name,url:product.variants.find(v=>v.url).url}]
+                : []);
+          }
           if (command === "business_core_call" && args?.domain === "rules" &&
               args?.operation === "finalize_billing_history") {
             window.__storeNativeSteps ??= [];
@@ -550,6 +563,8 @@ try {
   await page.getByRole("button", { name: "상품 추가" }).click();
   await page.getByRole("button", { name: "내장 수집본에서 상품 찾기" }).click();
   await page.getByText("2026년 11월 1일에 저장된 카탈로그의 상품 링크 2개입니다.", { exact: false }).waitFor();
+  assert.equal(await page.evaluate(()=>window.__officialLinksNativeCalls),1,
+    "Bundled product links must be read through Rust official_links IPC");
   await page.getByRole("textbox", { name: "수집본 상품 검색" }).fill("704");
   await page.getByText("검색 결과 1개 / 최대 40개 표시").waitFor();
   await page.getByRole("button", { name: "검증용 보면대 704" }).click();
