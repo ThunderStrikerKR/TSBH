@@ -52,6 +52,8 @@ test("dealer change is one native mutation and cannot reapply stale React draft 
   assert.match(change,/if \(!isCurrentOrderInput\(sourceDraft, sourceState\)\)/);
   assert.match(change,/if \(saved\) \{[\s\S]*?await onWorkflowSave\(await nativeReconcileWorkflow/);
   assert.match(change,/\} else \{\s*onChange\(next\)/);
+  assert.match(change,/const persisted = await window\.bando!\.load\(\)/);
+  assert.match(change,/onChange\(\(current\) => current === sourceDraft \? committed : current\)/);
   assert.doesNotMatch(change,/nativeBillingSnapshot\(/);
   assert.doesNotMatch(change,/nativeRepriceEditedOrder\(/);
   assert.match(rules,/super::client_change::check/);
