@@ -841,6 +841,19 @@ try {
           ).map(p=>p.id);
         }
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "upsert_client") {
+          // Real application calls Rust upsert_client, then commits the
+          // authoritative candidate through exactly one state_save.
+          const {state:input,client}=args.payload;
+          const next=structuredClone(input);
+          const index=next.clients.findIndex(row=>row.id===client.id);
+          const candidate=structuredClone(client);
+          if (index<0) next.clients.push(candidate);
+          else next.clients[index]=candidate;
+          window.__navRustClientUpserts=(window.__navRustClientUpserts??0)+1;
+          return {state:next};
+        }
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
             args.operation === "client_candidates") {
           const {clients=[],query=""}=args.payload;
           const needle=query.trim().toLocaleLowerCase();
@@ -1444,6 +1457,8 @@ try {
   await leave.getByRole("button",{name:"저장",exact:true}).click();
   await clientModal.waitFor({state:"detached"});
   assert.equal((await mockState()).state.clients.find(c=>c.id==="ci-store-dealer").address,"경기도 검증시 저장확인로 89");
+  assert.ok((await navPage.evaluate(()=>window.__navRustClientUpserts??0))>0,
+    "Client save must use Rust upsert_client before the SQLite commit");
   // Background refresh may consume the injected read failure after save.
   // The committed address remains authoritative and visible either way.
   assert.equal(await navPage.evaluate(
