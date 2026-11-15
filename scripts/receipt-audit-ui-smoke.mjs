@@ -1869,6 +1869,23 @@ try {
   assert.equal(await brandInput.inputValue(),"CI브랜드수정취소시험");
   await editBrand("CI검증브랜드B");
   await leave.getByRole("button", {name:"저장 안 함"}).click();
+  const brandSwitchState = await navPage.evaluate(() => ({
+    activeMenu:[...document.querySelectorAll('[aria-label="업무 메뉴"] [aria-current="page"]')]
+      .map(el=>el.textContent?.trim()),
+    activeProductTabs:[...document.querySelectorAll('[aria-label="상품 관리 메뉴"] button')]
+      .filter(el=>el.getAttribute("aria-current")==="page").map(el=>el.textContent?.trim()),
+    brandInputs:document.querySelectorAll('input[aria-label="브랜드 공식명"]').length,
+    brandRows:[...document.querySelectorAll(".registry-brand-manager .registry-row strong")]
+      .map(el=>el.textContent?.trim()).slice(0,5),
+    dialogs:[...document.querySelectorAll("dialog")].map(el=>({
+      name:el.getAttribute("aria-label"),open:el.open,text:el.textContent?.trim().slice(0,150),
+    })),
+    alerts:[...document.querySelectorAll('[role="alert"]')].map(el=>el.textContent?.trim()).slice(0,5),
+    headings:[...document.querySelectorAll("h1,h2")].map(el=>el.textContent?.trim()).slice(0,12),
+  }));
+  console.log("BRAND_AFTER_DISCARD_DIAGNOSTICS",JSON.stringify(brandSwitchState));
+  assert.equal(brandSwitchState.brandInputs,1,
+    "Brand discard must retain its mounted editor: "+JSON.stringify(brandSwitchState));
   assert.equal(await brandInput.inputValue(),"CI검증브랜드B");
   await editBrand("CI검증브랜드A");
   await brandInput.fill("CI검증브랜드A-저장");
