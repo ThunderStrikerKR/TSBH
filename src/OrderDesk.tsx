@@ -202,9 +202,15 @@ export function OrderDesk(props: OrderDeskProps) {
                 if (!isCurrentOrderInput(sourceDraft, sourceState))
                   throw Error("주문 또는 거래처 정보가 변경되었습니다. 다시 선택하세요.");
                 if (saved) {
-                  // Do not reapply a stale pre-save React draft after the
-                  // transaction returns an authoritative committed snapshot.
+                  // Reconciliation is committed once. Read back the SQLite
+                  // authority: useAppModel can intentionally retain a current
+                  // unsaved editor even when an unrelated workflow saves.
                   await onWorkflowSave(await nativeReconcileWorkflow(sourceState, next));
+                  const persisted = await window.bando!.load();
+                  const committed = persisted.orders.find((row) => row.id === next.id);
+                  if (!committed)
+                    throw Error("저장된 거래처 변경 주문을 다시 확인할 수 없습니다.");
+                  onChange((current) => current === sourceDraft ? committed : current);
                 } else {
                   onChange(next);
                 }
