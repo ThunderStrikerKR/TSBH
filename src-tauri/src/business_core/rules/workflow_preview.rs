@@ -15,6 +15,19 @@ fn sum_field(totals: &[Value], key: &str) -> Value {
         .map_or(Value::Null, |value| json!(value))
 }
 
+/// Rust owns the monetary comparison for re-notification; React only displays it.
+/// Never convert a missing/invalid historical amount into a misleading zero.
+fn notice_delta(group: &Value, current: &Value) -> Value {
+    let old = rows(field(group, "notices")).last()
+        .and_then(|notice| safe(field(notice, "total")));
+    let latest = safe(current);
+    match (latest, old) {
+        (Some(latest), Some(old)) => latest.checked_sub(old)
+            .map_or(Value::Null, |amount| json!(amount)),
+        _ => Value::Null,
+    }
+}
+
 fn vat_applies(order: &Value, recipient: &Value) -> bool {
     field(recipient, "vatOverride").as_bool()
         .or_else(|| field(recipient, "vatDefault").as_bool())
@@ -142,6 +155,7 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
                 }
             }
         }
+        let group_total = sum_field(&totals, "total");
         projected.push(json!({
             "groupId": group_id,
             "step": step,
@@ -153,8 +167,9 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
                 "subtotal": sum_field(&totals, "subtotal"),
                 "shipping": sum_field(&totals, "shipping"),
                 "vat": sum_field(&totals, "vat"),
-                "total": sum_field(&totals, "total")
+                "total": group_total,
             },
+            "noticeDelta": notice_delta(group, &group_total),
             "vatLabel": if all_vat { "부가세 포함" }
                 else if any_vat { "부가세 포함/별도" }
                 else { "부가세 별도" },
@@ -221,8 +236,21 @@ pub(super) fn project_order(payload: &Value) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::project;
-    use serde_json::json;
+    use super::{notice_delta, project};
+    use serde_json::{json, Value};
+
+    #[test]
+    fn re_notified_amounts_match_original_typescript_arithmetic() {
+        // Original UI: current group total - last issued notice.total.
+        let group = json!({"notices":[{"total":70000}]});
+        assert_eq!(notice_delta(&group, &json!(72000)), json!(2000));
+        assert_eq!(notice_delta(&group, &json!(69000)), json!(-1000));
+        assert_eq!(notice_delta(&group, &json!(70000)), json!(0));
+        assert_eq!(notice_delta(&json!({"notices":[]}), &json!(72000)), json!(null));
+        assert_eq!(notice_delta(&group, &Value::Null), json!(null));
+        assert_eq!(notice_delta(&json!({"notices":[{"total":null}]}), &json!(70000)), json!(null));
+        assert_eq!(notice_delta(&json!({"notices":[{"total":"70000"}]}), &json!(72000)), json!(null));
+    }
 
     #[test]
     fn no_workflow_groups_returns_empty_projection_without_creating_events() {
