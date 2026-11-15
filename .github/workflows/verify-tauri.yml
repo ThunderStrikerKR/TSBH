@@ -1,8 +1,6 @@
 name: Verify Tauri migration (draft)
 on:
-  push:
-    branches:
-      - feature/tauri-product-bulk-registration
+  # New work branches are checked only when proposed against main.
   pull_request:
     branches:
       - main
