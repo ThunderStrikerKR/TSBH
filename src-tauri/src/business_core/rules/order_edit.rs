@@ -69,7 +69,7 @@ fn reset_edit(order:&mut Value,state:&Value,reason:&str,now:&str,
         ("postpaidApproved",json!(false)),("status",json!("REVIEW"))] {
         set(order,key,value)?;
     }
-    if has_value(field(order,"orderType")) {
+    if !str_field(order,"orderType").is_empty() {
         for row in order["recipients"].as_array_mut()
             .ok_or("수취인 목록을 확인하세요.")? {
             if !has_value(field(row,"dispatchOrigin")) {
@@ -147,7 +147,7 @@ fn reprice_for_new_dealer(order:&mut Value,state:&Value,selected:&Value)->Result
                 if flag(field(item,"modelProposal"),"required"){
                     if let Some(variant)=rows(field(product,"variants")).iter()
                         .find(|v|str_field(v,"id")==vid){
-                        if has_value(field(variant,"url")){
+                        if !str_field(variant,"url").is_empty(){
                             set(item,"url",field(variant,"url").clone())?;
                         }
                     }
