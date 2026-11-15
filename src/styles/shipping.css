@@ -355,6 +355,31 @@
 .shipping-product-inline { display: flex; align-items: center; min-width: 0; gap: 8px; white-space: nowrap; overflow: hidden; }
 .shipping-product-inline > strong { flex: none; white-space: nowrap; }
 .shipping-product-description { display: inline-block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #a9a9a9; }
+/* In shipping-group assignment, a long subtitle must not expand the identity
+   column to 900px and hide the category/group editor. Full source remains
+   available through the existing title attribute; other freight tabs keep
+   their original column sizing. */
+.app-v03 .management-container .shipping-assignment-list table.management-data-table :is(th,td):nth-child(2) {
+  box-sizing: border-box;
+  width: 380px;
+  min-width: 380px;
+  max-width: 380px;
+}
+.app-v03 .management-container .shipping-assignment-list .shipping-product-inline {
+  width: 100%;
+  max-width: 100%;
+}
+.app-v03 .management-container .shipping-assignment-list .shipping-product-inline > strong {
+  flex: 0 1 auto;
+  max-width: 205px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-v03 .management-container .shipping-assignment-list .shipping-product-description {
+  flex: 1 1 auto;
+  max-width: 180px;
+}
 .shipping-product-name { max-width: 500px; }
 .shipping-product-name > strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .shipping-card table:not(.management-data-table) th, .shipping-card table:not(.management-data-table) td { padding-top: 9px; padding-bottom: 9px; }
