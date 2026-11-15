@@ -698,7 +698,9 @@ try {
   await settingsPage.waitForFunction(() => window.__accountSave?.saved === true);
   await settingsPage.waitForFunction(() => !document.body.textContent?.includes("저장하지 않은 설정이 있습니다.") &&
     !document.body.textContent?.includes("다른 작업에서 같은 설정이 변경되었습니다."));
-  assert.equal(await settingsPage.getByRole("alert").count(), 0);
+  const accountAddAlerts=await settingsPage.getByRole("alert").allTextContents();
+  assert.deepEqual(accountAddAlerts,[],
+    "Account add save must not show an error: "+JSON.stringify(accountAddAlerts));
   assert.equal(await settingsPage.getByRole("button", { name: "설정 저장" }).isDisabled(), false);
   const addChanges = await settingsPage.evaluate(() => window.__accountSave.changes);
   assert.equal(addChanges.accounts.length, 3);
@@ -713,7 +715,9 @@ try {
   await settingsPage.waitForFunction(() => window.__accountSave?.saved === true);
   await settingsPage.waitForFunction(() => !document.body.textContent?.includes("저장하지 않은 설정이 있습니다.") &&
     !document.body.textContent?.includes("다른 작업에서 같은 설정이 변경되었습니다."));
-  assert.equal(await settingsPage.getByRole("alert").count(), 0);
+  const accountDeleteAlerts=await settingsPage.getByRole("alert").allTextContents();
+  assert.deepEqual(accountDeleteAlerts,[],
+    "Account deletion must not show an error: "+JSON.stringify(accountDeleteAlerts));
   assert.equal(await settingsPage.getByRole("button", { name: "설정 저장" }).isDisabled(), false);
   const deleteChanges = await settingsPage.evaluate(() => window.__accountSave.changes);
   assert.equal(deleteChanges.accounts.length, 1);
