@@ -14,6 +14,13 @@ from pathlib import Path
 import sqlite3
 import sys
 
+# GitHub's Windows runner can expose Python stdout/stderr as cp1252 when
+# invoked from PowerShell, even when the PowerShell console uses UTF-8.
+# Do not let Korean synthetic client fields turn a valid SQLite assertion
+# into an encoding failure; preserve readable Unicode diagnostics.
+sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+
 
 def verify(args: argparse.Namespace) -> dict[str, object]:
     if os.environ.get("GITHUB_ACTIONS") != "true":
@@ -117,7 +124,7 @@ def main() -> int:
     except (AssertionError, OSError, sqlite3.Error, ValueError, KeyError) as exc:
         print(f"CORE_CLIENT_SQL_FAILED: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps(result, ensure_ascii=False))
+    print(json.dumps(result, ensure_ascii=True))
     return 0
 
 
