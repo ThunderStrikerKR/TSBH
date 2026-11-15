@@ -203,7 +203,7 @@ export function useOrderDesk({
 
   useEffect(() => {
     const request = ++ruleRequests.current.price;
-    if (!liveClient || !passivePricingAllowed) return;
+    if (!liveClient || !passivePricingAllowed || draft.pendingNativeEdit) return;
     const before = JSON.stringify(draft.recipients);
     const orderId = draft.id;
     void businessCoreCall<{ order: Order; refreshed: boolean }>(
@@ -245,7 +245,7 @@ export function useOrderDesk({
   }, [
     draft.id, draft.recipients, state.products, liveClient?.id,
     liveClient?.tier, JSON.stringify(liveClient?.overrides),
-    passivePricingAllowed,
+    passivePricingAllowed, draft.pendingNativeEdit,
   ]);
   useEffect(() => {
     const request = ++ruleRequests.current.shipping;
