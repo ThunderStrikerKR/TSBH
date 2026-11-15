@@ -165,32 +165,36 @@ export function RetailOrderDialog({
                     type="number"
                     min="1"
                     step="1"
-                    value={item.quantity ?? 1}
-                    onChange={(e) =>
+                    value={item.quantity ?? ""}
+                    onChange={(e) => {
+                      const quantity = e.target.value === "" ? null : Number(e.target.value);
+                      if (quantity !== null && (!Number.isSafeInteger(quantity) || quantity < 1)) return;
                       change({
                         items: row.items.map((i) =>
                           i.id === item.id
                             ? {
                                 ...i,
-                                quantity: e.target.value === "" ? null : Number(e.target.value),
-                                quantityConfirmed: true,
+                                quantity,
+                                quantityConfirmed: quantity !== null,
                               }
                             : i,
                         ),
-                      })
-                    }
+                      });
+                    }}
                   />
                   <button
                     aria-label={"수량 증가 " + (index + 1)}
-                    onClick={() =>
+                    onClick={() => {
+                      const quantity = (item.quantity ?? 1) + 1;
+                      if (!Number.isSafeInteger(quantity)) return;
                       change({
                         items: row.items.map((i) =>
                           i.id === item.id
-                            ? { ...i, quantity: (i.quantity ?? 1) + 1, quantityConfirmed: true }
+                            ? { ...i, quantity, quantityConfirmed: true }
                             : i,
                         ),
-                      })
-                    }
+                      });
+                    }}
                   >
                     +
                   </button>
