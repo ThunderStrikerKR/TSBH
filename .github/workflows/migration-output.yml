@@ -2,13 +2,15 @@ name: Rust output migration isolation
 on:
   push:
     branches:
+      # main is the authoritative post-integration development baseline.
+      - main
       - migration/03-integration
       - migration/26-p1-p2-runtime-closure
       - migration/27-unified-rust
       - migration/28-ts-runtime-closure
       - migration/28-reception-manual-rust
       - migration/28-order-edit-rules-rust
-      # PR #24: run ALL existing TS↔Rust suites on its exact source HEAD.
+      # Former integration branch kept temporarily as a rollback reference.
       - integration/final-rust-migration-20261116
       - migration/05-factory-reply
       - integration/06-history-settlement
@@ -58,7 +60,7 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
   windows-p1p2-real-exe:
-    if: github.ref_name == 'migration/27-unified-rust' || github.ref_name == 'migration/03-integration' || github.ref_name == 'migration/28-ts-runtime-closure' || github.ref_name == 'migration/28-reception-manual-rust' || github.ref_name == 'migration/28-order-edit-rules-rust' || github.ref_name == 'integration/final-rust-migration-20261116'
+    if: github.ref_name == 'main' || github.ref_name == 'migration/27-unified-rust' || github.ref_name == 'migration/03-integration' || github.ref_name == 'migration/28-ts-runtime-closure' || github.ref_name == 'migration/28-reception-manual-rust' || github.ref_name == 'migration/28-order-edit-rules-rust' || github.ref_name == 'integration/final-rust-migration-20261116'
     runs-on: windows-latest
     timeout-minutes: 75
     steps:
@@ -100,7 +102,7 @@ jobs:
           BANDO_P1P2_AUDIT: "true"
         run: node scripts/migration03-reception-native-ui.mjs
       - name: Publish exact-HEAD CI-only EXE for isolated client persistence audit
-        if: github.ref_name == 'integration/final-rust-migration-20261116'
+        if: github.ref_name == 'main' || github.ref_name == 'integration/final-rust-migration-20261116'
         uses: actions/upload-artifact@v4
         with:
           name: tsbh-final-rust-exact-head-ci-exe
@@ -256,7 +258,7 @@ jobs:
   # a developer's production SQLite database.
   windows-client-registration-persistence:
     name: Real Windows client registration, SQLite save and EXE relaunch
-    if: github.ref_name == 'integration/final-rust-migration-20261116'
+    if: github.ref_name == 'main' || github.ref_name == 'integration/final-rust-migration-20261116'
     needs: windows-p1p2-real-exe
     runs-on: windows-latest
     timeout-minutes: 35
@@ -302,7 +304,7 @@ jobs:
   # assertions use actual WebView2/CDP, not a browser-only React mock.
   windows-all-menus-dialogs:
     name: Real Windows 8 menus, 5 settings tabs, 4 modal top-layer checks
-    if: github.ref_name == 'integration/final-rust-migration-20261116'
+    if: github.ref_name == 'main' || github.ref_name == 'integration/final-rust-migration-20261116'
     needs: windows-p1p2-real-exe
     runs-on: windows-latest
     timeout-minutes: 45
@@ -349,7 +351,7 @@ jobs:
   # persisted developer TEST SQLite, not an empty-state screenshot/mock React.
   windows-populated-tables:
     name: Real Windows populated orders, prices and freight table layout
-    if: github.ref_name == 'integration/final-rust-migration-20261116'
+    if: github.ref_name == 'main' || github.ref_name == 'integration/final-rust-migration-20261116'
     needs: windows-p1p2-real-exe
     runs-on: windows-latest
     timeout-minutes: 45
@@ -392,11 +394,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # One green or red conclusion for PR #24. No skipped/failed gate can be
-  # mistaken for a successful full migration. The Draft PR stays unmerged.
+  # One required green or red conclusion for main and the former integration
+  # branch. No skipped/failed suite may be mistaken for successful CI.
   final-rust-migration-gate:
-    name: "PR #24 final Rust integration gate"
-    if: ${{ always() && github.ref_name == 'integration/final-rust-migration-20261116' }}
+    name: "Rust migration integration regression gate"
+    if: ${{ always() && (github.ref_name == 'main' || github.ref_name == 'integration/final-rust-migration-20261116') }}
     needs:
       - output-rust
       - frontend
@@ -428,9 +430,9 @@ jobs:
             console.log(`${item.result === 'success' ? 'PASS' : 'BLOCKED'}: ${item.name} = ${item.result}`);
           }
           if (report.length !== 15 || report.some(item => item.result !== 'success')) {
-            console.error('PR #24 migration remains BLOCKED. No missing or skipped job counts as success.');
+            console.error('Rust integration CI BLOCKED. No missing or skipped job counts as success.');
             process.exitCode = 1;
           } else {
-            console.log('CI GATES PASSED; installed Windows UX and real-data migration sign-off remain separate.');
+            console.log('MAIN RUST CI PASSED; installed Windows UX and real-data migration sign-off remain separate.');
           }
           NODE
