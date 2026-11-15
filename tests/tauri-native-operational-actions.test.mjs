@@ -134,8 +134,11 @@ test("order edit history is frozen natively at commit without delaying controlle
   const desk = source("src/orders/useOrderDesk.tsx");
   const rust = source("src-tauri/src/business_core/rules/reply_rules.rs");
   const dispatcher = source("src-tauri/src/business_core/rules/mod.rs");
-  assert.match(desk, /next\.pendingBillingSnapshot = \{/);
-  assert.match(desk, /at: new Date\(\)\.toISOString\(\), reason/);
+  assert.match(desk, /next\.pendingNativeEdit = firstIntent/);
+  assert.match(desk, /at: new Date\(\)\.toISOString\(\), reason, recalculateShipping/);
+  const nativeEdit = source("src-tauri/src/business_core/rules/order_edit.rs");
+  assert.match(nativeEdit, /set\(order,"pendingBillingSnapshot"/);
+  assert.match(nativeEdit, /"prepare_order_edit" => prepare_edit\(payload\)/);
   assert.doesNotMatch(desk, /billingSnapshot\(previous, state, reason\)/);
   assert.match(app, /"rules", "finalize_billing_history", \{ before: state!, state: next \}/);
   assert.match(app, /state: billed/);
