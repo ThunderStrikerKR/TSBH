@@ -201,6 +201,82 @@ try {
                 {clientSnapshot:structuredClone(order.clientSnapshot)}:{}),
             }};
           }
+          if (command === "business_core_call" &&
+              args?.domain === "output" &&
+              args?.operation === "prepare_store_export") {
+            // Real ExcelJS serialization and state_save below remain exercised;
+            // Rust's export reducer is covered by separate native parity tests.
+            const {state:current,ids}=args.payload;
+            window.__storeNativeSteps ??= [];
+            window.__storeNativeSteps.push("prepare_store_export");
+            if (!Array.isArray(ids)||!ids.length||new Set(ids).size!==ids.length)
+              throw Error("매장 배송 건 선택 오류");
+            const rows=ids.map(id=>{
+              const entry=current.workflow.queue.find(x=>x.id===id);
+              const ship=current.workflow.shipments.find(x=>x.id===entry?.shipmentId);
+              if (entry?.origin!=="STORE"||entry.status!=="QUEUED"||
+                  !ship?.transferred||ship.step!==4||!entry.snapshot)
+                throw Error("매장 발송 대기 상태의 배송 건만 선택하세요.");
+              const rec=entry.snapshot.recipient,send=entry.snapshot.sender;
+              const goods=rec.items.map(i=>
+                i.name+(i.color&&i.color!=="단일"?" "+i.color:"")+" "+i.quantity+"개"
+              ).join(" / ");
+              return {queueId:id,shipmentId:ship.id,orderId:ship.orderId,
+                values:[rec.name,"",rec.address,rec.phone??"",rec.mobile??"",
+                  "","",entry.snapshot.freightCode,goods,"",rec.note??"",
+                  send.displayName||send.name,send.postcode??"",send.address,
+                  send.phone??"",send.mobile??""]};
+            });
+            return {revision:current.revision??0,ids:[...ids],rows};
+          }
+          if (command === "business_core_call" &&
+              args?.domain === "output" &&
+              args?.operation === "finalize_export") {
+            const {state:current,preview,savedPath,origin,exportId,eventId,now}=args.payload;
+            window.__storeNativeSteps ??= [];
+            window.__storeNativeSteps.push("finalize_export");
+            if (origin!=="STORE"||!savedPath?.endsWith(".xlsx")||
+                (current.revision??0)!==preview.revision)
+              throw Error("매장 Excel 이력 검증 실패");
+            const next=structuredClone(current);
+            for(const id of preview.ids){
+              const queue=next.workflow.queue.find(x=>x.id===id);
+              if(!queue||queue.origin!=="STORE"||queue.status!=="QUEUED")
+                throw Error("매장 발송 이력에 불일치가 있습니다.");
+              Object.assign(queue,{status:"EXPORTED",exportId,exportedAt:now,fileOnly:true});
+            }
+            const filename=savedPath.split(/[/\\]/).at(-1);
+            next.exports.push({id:exportId,at:now,filename,savedPath,
+              orderIds:[...new Set(preview.rows.map(r=>r.orderId))],
+              queueEntryIds:[...preview.ids],snapshots:preview.ids.map(id=>
+                structuredClone(next.workflow.queue.find(q=>q.id===id)))});
+            next.workflow.events.push({id:eventId,at:now,
+              actor:next.settings.operatorName?.trim()||"직원",
+              action:"매장 발송 Excel 작성",
+              shipmentIds:[...new Set(preview.rows.map(r=>r.shipmentId))],
+              after:{exportId,filename}});
+            return {next,filename,exportId};
+          }
+          if (command === "business_core_call" &&
+              args?.domain === "rules" &&
+              args?.operation === "apply_workflow_action" &&
+              args?.payload?.action === "mark_store_sent") {
+            window.__storeNativeSteps ??= [];
+            window.__storeNativeSteps.push("mark_store_sent");
+            const next=structuredClone(args.payload.state);
+            const queue=next.workflow.queue.find(q=>q.id===args.payload.queueId);
+            if(queue?.origin!=="STORE"||queue.status!=="EXPORTED"||!queue.fileOnly)
+              throw Error("매장 발송 Excel 이력을 먼저 확인하세요.");
+            queue.status="STORE_SENT";
+            queue.fileOnly=false;
+            return {state:next};
+          }
+          if (command === "business_core_call" &&
+              args?.domain === "rules" &&
+              args?.operation === "validate_workflow" &&
+              window.__storeNativeSteps?.includes("mark_store_sent")) {
+            return {valid:true};
+          }
           if (command === "backup_create") {
             const name = "C:\\BANDO_TEST\\developer-test\\backups\\manual-ui-" + (++testBackupSequence) + ".sqlite";
             testBackups.set(name, { state: structuredClone(state), audit: structuredClone(auditRecords) });
@@ -446,6 +522,9 @@ try {
   await page.getByRole("dialog", { name: "작업 확인" })
     .getByRole("button", { name: "확인", exact: true }).click();
   await page.waitForFunction(() => window.__storeCommit?.status === "STORE_SENT");
+  assert.deepEqual(await page.evaluate(() => window.__storeNativeSteps?.slice(0,4)),
+    ["prepare_store_export","prepare_store_export","finalize_export","mark_store_sent"],
+    "STORE preparation, finalize and staff shipping confirmation must use native Rust IPC");
   // Cached product discovery must only populate the URL. No price or DB
   // update may occur until the separate live detail review is approved.
   await nav.getByRole("button", { name: "상품 관리" }).click();
