@@ -292,6 +292,22 @@ pub(super) fn validate(state: &Value, before: Option<&Value>) -> Result<(),Strin
     }
     Ok(())
 }
+/// Exact source-equivalent sender requirements from order-types.ts.
+pub(super) fn company_sender_missing(state:&Value)->Vec<String>{
+    let settings=field(state,"settings");
+    let mut issues=Vec::new();
+    if str_field(settings,"senderAddress").trim().is_empty(){
+        issues.push("설정의 반도스탠드 주소를 등록하세요.".into());
+    }
+    let preferred=if str_field(settings,"senderPhone").is_empty(){
+        str_field(settings,"senderMobile")
+    }else{str_field(settings,"senderPhone")};
+    if preferred.trim().is_empty(){
+        issues.push("설정의 반도스탠드 연락처를 등록하세요.".into());
+    }
+    issues
+}
+
 // Mirrors the source retailIssues() order: regular order ACTION issues,
 // dispatch/freight/product/quantity per recipient, company sender and sale
 // state. Deduplicate titles, preserving the original first occurrence order.
@@ -320,16 +336,9 @@ pub(super) fn retail_issues(order:&Value,state:&Value)->Vec<String>{
             }
         }
     }
-    let settings=field(state,"settings");
-    if str_field(settings,"senderAddress").trim().is_empty(){
-        issues.push("설정의 반도스탠드 주소를 등록하세요.".into());
-    }
-    let preferred=if str_field(settings,"senderPhone").is_empty(){
-        str_field(settings,"senderMobile")
-    }else{str_field(settings,"senderPhone")};
-    if preferred.trim().is_empty(){
-        issues.push("설정의 반도스탠드 연락처를 등록하세요.".into());
-    }
+    // The same native sender requirements are used by retail preflight and
+    // the definitive retail save gate; React does not independently decide.
+    issues.extend(company_sender_missing(state));
     for row in rows(field(order,"recipients")){
         for item in rows(field(row,"items")){
             let pid=str_field(item,"productId");
