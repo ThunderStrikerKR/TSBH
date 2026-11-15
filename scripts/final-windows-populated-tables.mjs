@@ -385,6 +385,19 @@ try{
     "Wide assignment table must retain horizontal scrolling for long names");
   assert.ok(assignment.reached.left>150,
     "Right-side assignment/status columns must be reachable");
+  assert.ok(assignment.headerWidths[1]<=440,
+    "Shipping assignment product identity column is unreasonably wide");
+  assert.ok(assignment.maxX<650,
+    "Shipping group selector requires excessive horizontal travel");
+  const longShippingTitle=await page.locator(
+    ".shipping-assignment-list .shipping-product-inline[title]"
+  ).evaluateAll(nodes=>nodes.filter(el=>el.title.length>65).length);
+  assert.ok(longShippingTitle>0,
+    "Truncated shipping model details must remain available on hover");
+  record("Group selector reachable without 900px oversized model-name column",{
+    nameColumnWidth:assignment.headerWidths[1],maxHorizontalScroll:assignment.maxX,
+    longNamesWithTitle:longShippingTitle
+  });
 
   await menu("주문 내역");
   // This is an explicit all-dates scope: no silently filtered test data.
@@ -404,6 +417,36 @@ try{
   const button=row.locator("button[aria-expanded]").first();
   const base=await page.locator(".order-history-list thead th")
     .evaluateAll(nodes=>nodes.map(el=>el.getBoundingClientRect().width));
+  const compactSummary=await row.evaluate(el=>{
+    const toggle=el.querySelector(".order-history-recipient-toggle");
+    const preview=el.querySelector(".order-history-item-preview");
+    const client=el.querySelector(".order-history-client-name");
+    if(!toggle||!preview||!client)return null;
+    const b=toggle.getBoundingClientRect(),p=preview.getBoundingClientRect();
+    return {
+      caption:toggle.textContent.trim(),
+      preview:preview.textContent.trim(),
+      buttonHeight:b.height,buttonScrollHeight:toggle.scrollHeight,
+      buttonBottom:b.bottom,previewTop:p.top,
+      previewClipped:preview.scrollWidth>preview.clientWidth,
+      fullRecipientTitle:toggle.title,fullItemsTitle:preview.title,
+      clientLineClamp:getComputedStyle(client).webkitLineClamp,
+    };
+  });
+  assert.ok(compactSummary,
+    "Populated history lacks the compact recipient/item summary");
+  assert.ok(compactSummary.buttonHeight>=28 &&
+    compactSummary.buttonScrollHeight<=compactSummary.buttonHeight+2,
+    "Order recipient button text overflows its own height");
+  assert.ok(compactSummary.previewTop>=compactSummary.buttonBottom-2,
+    "Long recipient names visually overlap the item preview");
+  assert.match(compactSummary.caption,/배송 3건.*6품목/,
+    "Collapsed history summary loses delivery/item counts");
+  assert.ok(compactSummary.fullRecipientTitle.length>40 &&
+    compactSummary.fullItemsTitle.length>40,
+    "History must preserve full recipient and product details on hover");
+  record("History row summary has no overlapping names or item descriptions",
+    compactSummary);
   await button.click();
   await row.getByText(/주문 당시:/).first().waitFor({state:"visible",timeout:15000});
   const expanded=await page.locator(".order-history-list thead th")
