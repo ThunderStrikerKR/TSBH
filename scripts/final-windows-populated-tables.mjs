@@ -46,14 +46,60 @@ const spawnApp=(args,kind)=>spawn(exe,args,{
 });
 async function bootstrap(){
   proc=spawnApp([],"baseline");
+  let seedBrowser=null;
+  let stderr="";
+  proc.stderr?.on("data",b=>{stderr+=b.toString()});
   try{
-    for(let i=0;i<130;i++){
-      if(proc.exitCode!==null)throw Error("Baseline EXE exited before DB initialization");
-      try{if((await fs.stat(master)).size>0)return;}catch{}
+    // SQLite creates the file *before* its schema and business-core state
+    // are committed. Killing the EXE as soon as the file appears leaves a
+    // corrupt/incomplete synthetic baseline: "Query returned no rows".
+    // Wait for the real native application to finish its Rust startup.
+    let completed=false;
+    for(let i=0;i<180;i++){
+      if(proc.exitCode!==null)
+        throw Error("Baseline EXE exited during migration: "+stderr.slice(-1600));
+      try{
+        const res=await fetch("http://127.0.0.1:"+port+"/json/list",
+          {signal:AbortSignal.timeout(900)});
+        if(res.ok){
+          const targets=await res.json();
+          if(targets.some(t=>t.type==="page" && /tauri|localhost/i.test(t.url||""))){
+            seedBrowser=await chromium.connectOverCDP(
+              "http://127.0.0.1:"+port,{timeout:4500});
+            for(const ctx of seedBrowser.contexts()){
+              for(const p of ctx.pages()){
+                if(!/tauri|localhost/i.test(p.url()))continue;
+                const ready=await p.evaluate(async()=>{
+                  if(!document.querySelector("nav[aria-label='업무 메뉴']"))
+                    return false;
+                  const status=await window.bando?.startupStatus?.();
+                  return status?.phase==="READY";
+                }).catch(()=>false);
+                if(ready){completed=true;break;}
+              }
+              if(completed)break;
+            }
+            if(completed)break;
+            await seedBrowser.close().catch(()=>{});
+            seedBrowser=null;
+          }
+        }
+      }catch{}
       await sleep(350);
     }
-    throw Error("Baseline app database was not created");
-  }finally{kill(proc.pid);proc=null;await sleep(900)}
+    if(!completed)
+      throw Error("Synthetic baseline never reached native Rust READY: "+
+        stderr.slice(-1200));
+    const stats=await fs.stat(master);
+    assert.ok(stats.size>0,"Baseline SQLite is empty after READY");
+    record("Synthetic baseline reached real Rust READY before exit",{
+      sqliteSize:stats.size
+    });
+  }finally{
+    await seedBrowser?.close().catch(()=>{});
+    kill(proc?.pid);proc=null;
+    await sleep(1200);
+  }
 }
 async function connect(kind){
   proc=spawnApp(["--bando-developer-test"],kind);
