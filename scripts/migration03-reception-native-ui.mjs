@@ -497,6 +497,37 @@ try{
     unchangedRevision:draftResult.persisted.revision});
   await snap(page,"04-real-native-manual-source-block");
 
+  // A real recipient text edit must reach Rust and update the in-memory draft
+  // before it can be treated as committed. Merely showing the typed text is
+  // insufficient: entry[] can differ from the native-acknowledged model.
+  const nameField=page.locator('input[aria-label="배송 1 이름"]');
+  await nameField.waitFor({timeout:20000});
+  const beforeTextCalls=await page.evaluate(()=> (window.__bandoNativeCalls||[]).length);
+  await nameField.fill("김검증");
+  await page.waitForFunction(({count})=> (window.__bandoNativeCalls||[])
+    .slice(count).some(call=>call.command==="business_core_call" &&
+      call.operation==="apply_manual_classification" &&
+      call.action==="set_manual_recipient_field"),
+    {count:beforeTextCalls},{timeout:20000});
+  await page.waitForFunction(()=> {
+    const field=document.querySelector('input[aria-label="배송 1 이름"]');
+    const draft=document.querySelector('.manual-workspace[data-native-text-pending]');
+    return field?.value==="김검증" &&
+      draft?.getAttribute("data-native-text-pending")==="false" &&
+      draft?.getAttribute("data-native-cell-uncommitted")==="false";
+  },null,{timeout:20000});
+  const afterText=await page.evaluate(async()=>window.bando.load());
+  assert.equal(afterText.revision,originalSnapshot.revision,
+    "A native-acknowledged recipient edit must still be a disposable draft");
+  assert.equal(JSON.stringify(afterText.orders),JSON.stringify(originalSnapshot.orders),
+    "Manual recipient input must not overwrite persisted SQLite orders");
+  record("real Windows native recipient text acknowledgement, no lost input or SQLite writes",{
+    field:await nameField.inputValue(),
+    nativeOperation:"set_manual_recipient_field",
+    unchangedRevision:afterText.revision,
+  });
+  await snap(page,"05-real-native-manual-recipient-edit");
+
 
   assert.equal(report.issues.length,0,
     "Browser UI errors: "+report.issues.join("\n"));
