@@ -345,6 +345,53 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # Populated management tables must be audited from actual Rust state_save +
+  # persisted developer TEST SQLite, not an empty-state screenshot/mock React.
+  windows-populated-tables:
+    name: Real Windows populated orders, prices and freight table layout
+    if: github.ref_name == 'integration/final-rust-migration-20261116'
+    needs: windows-p1p2-real-exe
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify populated table audit syntax
+        run: node --check scripts/final-windows-populated-tables.mjs
+      - name: Reuse exact-head Windows EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: tsbh-final-rust-exact-head-ci-exe
+          path: native-exe
+      - name: Verify EXE SHA256 before synthetic order save
+        shell: pwsh
+        run: |
+          $exe = "native-exe/bando_hub.exe"
+          $digest = "native-exe/bando_hub.exe.sha256"
+          if (!(Test-Path $exe) -or !(Test-Path $digest)) { throw "EXE or SHA256 missing" }
+          $expected = ((Get-Content $digest -Raw).Trim() -split '\s+')[0]
+          $actual = (Get-FileHash $exe -Algorithm SHA256).Hash
+          if ($expected -ne $actual) { throw "Populated-table EXE does not match source head" }
+          Write-Host "Verified exact Windows EXE SHA256: $actual"
+      - name: Install CDP inspector for native WebView2
+        run: npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.55.1
+      - name: Confirm 20 synthetic orders through Rust and audit populated UI
+        env:
+          BANDO_NATIVE_EXE: ${{ github.workspace }}\native-exe\bando_hub.exe
+          BANDO_NATIVE_OUT: populated-tables-evidence
+          BANDO_NATIVE_BIN_COMMIT: ${{ github.sha }}
+        run: node scripts/final-windows-populated-tables.mjs
+      - name: Archive populated-table screenshots and precise geometry report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsbh-final-rust-native-populated-20orders-60shipments
+          path: populated-tables-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
   # One green or red conclusion for PR #24. No skipped/failed gate can be
   # mistaken for a successful full migration. The Draft PR stays unmerged.
   final-rust-migration-gate:
@@ -357,6 +404,7 @@ jobs:
       - windows-p1p2-real-exe
       - windows-client-registration-persistence
       - windows-all-menus-dialogs
+      - windows-populated-tables
       - output-ts-rust-parity
       - order-save-ts-rust-parity
       - rules-comprehensive-parity
@@ -367,7 +415,7 @@ jobs:
       - history-ts-rust-parity
     runs-on: ubuntu-latest
     steps:
-      - name: Require all fourteen verified gates to succeed
+      - name: Require all fifteen verified gates to succeed
         env:
           GATE_RESULTS: ${{ toJSON(needs) }}
         run: |
@@ -379,7 +427,7 @@ jobs:
           for (const item of report) {
             console.log(`${item.result === 'success' ? 'PASS' : 'BLOCKED'}: ${item.name} = ${item.result}`);
           }
-          if (report.length !== 14 || report.some(item => item.result !== 'success')) {
+          if (report.length !== 15 || report.some(item => item.result !== 'success')) {
             console.error('PR #24 migration remains BLOCKED. No missing or skipped job counts as success.');
             process.exitCode = 1;
           } else {
