@@ -988,6 +988,44 @@ try {
           return [];
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_manual_classification" &&
+            args.payload?.action === "initial_manual") {
+          // Mirror manual_draft.rs::initial. The actual ManualClassification
+          // screen deliberately does NOT render its grid before native IPC
+          // initializes rows, evidence blocks and assignment ordering.
+          const order=args.payload.order;
+          if(order.confirmedAt)
+            throw Error("정식 주문은 수동 분류로 변경할 수 없습니다.");
+          const raw=order.analysisRaw??order.raw??"";
+          const rows=structuredClone(order.recipients??[]);
+          const spans=[];
+          for(const recipient of rows){
+            spans.push(...(recipient.sources??[]));
+            for(const item of recipient.items??[])spans.push(...(item.sources??[]));
+          }
+          for(const evidence of order.analysisEvidence??[]){
+            spans.push({...evidence,field:evidence.kind,
+              targetId:evidence.itemId??evidence.recipientId??order.id});
+          }
+          spans.sort((a,b)=>(a.start??Infinity)-(b.start??Infinity)||
+            (b.end??0)-(a.end??0));
+          const blocks=[];
+          for(const span of spans){
+            const start=span.start,end=span.end;
+            if(!Number.isInteger(start)||!Number.isInteger(end)||
+                start<0||end<=start||end>raw.length||
+                blocks.some(block=>start<block.end&&end>block.start))continue;
+            blocks.push({...span,id:start+":"+end,text:raw.slice(start,end)});
+          }
+          const assignments={};
+          if(order.manualClassification){
+            Object.assign(assignments,structuredClone(order.manualClassification.assignments??{}));
+          }
+          const model={rows,blocks:order.manualClassification?.blocks??blocks,assignments};
+          window.__navRustManualInitializations=(window.__navRustManualInitializations??0)+1;
+          return {model,assignmentOrder:Object.keys(assignments)};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "apply_workflow_action" &&
             args.payload?.action === "record_actual_freight") {
           // Corresponds to workflow.rs::record_actual_freight. The real
@@ -2285,6 +2323,8 @@ try {
       scrollPresent:!!scroll,scrollOverflow:scroll?getComputedStyle(scroll).overflowY:""};
   });
   assert.ok(manualResult.scrollPresent,"Manual classification requires an independent grid scrollbar");
+  assert.ok((await navPage.evaluate(()=>window.__navRustManualInitializations??0))>0,
+    "ManualClassification must await Rust initial_manual before rendering the grid");
   stage7Records.push({popup:"manual",...manualResult});
   await manual.getByRole("button",{name:"닫기 ×"}).click();
   await manual.waitFor({state:"hidden"});
