@@ -99,6 +99,23 @@
 .catalog-admin-workspace .catalog-panel-header p { color: #a5a5a5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .catalog-admin-workspace .catalog-map-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .catalog-admin-workspace .catalog-map-actions button { white-space: nowrap; min-height: 38px; }
+@media (max-width: 1220px) {
+  /* The reserved Kakao panel narrows the category editor. Preserve all four
+     operations in one coherent row instead of orphaning the last button. */
+  .catalog-admin-workspace .catalog-panel-titleline {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .catalog-admin-workspace .catalog-map-actions {
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+  .catalog-admin-workspace .catalog-map-actions > button { flex: 0 0 auto; }
+}
 .catalog-admin-workspace .catalog-map-selection {
   color: #c2c2c2; font-size: 12px; margin: 9px 0 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
