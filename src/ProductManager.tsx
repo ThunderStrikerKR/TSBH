@@ -336,7 +336,7 @@ export function ProductManager({
                       p.variants.map((v, index) => (
                         <tr key={v.id}>
                           <td>
-                            <div className="product-title-line">
+                            <div className="product-title-line" title={[p.name, p.subtitle].filter(Boolean).join(" / ")}>
                               <b>
                                 {p.name}{" "}
                               </b>
