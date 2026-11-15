@@ -1884,6 +1884,24 @@ try {
     headings:[...document.querySelectorAll("h1,h2")].map(el=>el.textContent?.trim()).slice(0,12),
   }));
   console.log("BRAND_AFTER_DISCARD_DIAGNOSTICS",JSON.stringify(brandSwitchState));
+  const brandAccessibility = await navPage.evaluate(() => {
+    const input=document.querySelector('input[aria-label="브랜드 공식명"]');
+    if(!input)return {exists:false};
+    const ancestors=[];let current=input;
+    while(current && ancestors.length<9){
+      const styles=getComputedStyle(current);
+      ancestors.push({tag:current.tagName,className:String(current.className).slice(0,90),
+        display:styles.display,visibility:styles.visibility,
+        ariaHidden:current.getAttribute("aria-hidden"),inert:current.inert});
+      current=current.parentElement;
+    }
+    return {exists:true,value:input.value,visible:!!input.getClientRects().length,
+      name:input.getAttribute("aria-label"),ancestors};
+  });
+  console.log("BRAND_ACCESSIBILITY_DIAGNOSTICS",JSON.stringify({
+    accessibility:brandAccessibility,roleCount:await brandInput.count(),
+    selectorCount:await navPage.locator('input[aria-label="브랜드 공식명"]').count(),
+  }));
   assert.equal(brandSwitchState.brandInputs,1,
     "Brand discard must retain its mounted editor: "+JSON.stringify(brandSwitchState));
   assert.equal(await brandInput.inputValue(),"CI검증브랜드B");
