@@ -487,6 +487,20 @@
   min-width: 760px;
   table-layout: auto;
 }
+/* Empty Excel queues/history should not inherit the full-row minimums that
+   protect long customer/product details in populated tables. */
+.app-v03 .management-container .excel-table-scroll.excel-list-empty {
+  overflow-x: hidden;
+  scrollbar-gutter: auto;
+}
+.app-v03 .management-container .excel-table-scroll.excel-list-empty table.management-data-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+.app-v03 .management-container .excel-table-scroll.excel-list-empty table.management-data-table thead th {
+  min-width: 0;
+  white-space: normal;
+}
 .app-v03 .management-container .excel-table-scroll table.excel-queue-table th:first-child,
 .app-v03 .management-container .excel-table-scroll table.excel-queue-table td:first-child {
   width: 42px;
