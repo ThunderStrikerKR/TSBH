@@ -598,6 +598,22 @@
   table-layout: fixed;
   min-width: 1000px;
 }
+/* A zero-row history is an empty state, not a full-height scrollable 1000px
+   data grid. Keep the fixed-width column contract untouched for real orders. */
+.app-v03 .management-container .order-history-list.order-history-empty {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.app-v03 .management-container .order-history-list.order-history-empty > .table-scroll {
+  flex: 0 0 auto;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+.app-v03 .management-container .order-history-list.order-history-empty .management-data-table {
+  min-width: 0;
+  width: 100%;
+}
 .app-v03 .management-container .order-history-list .management-data-table th:nth-child(1) { width: 12%; }
 .app-v03 .management-container .order-history-list .management-data-table th:nth-child(2) { width: 10%; }
 .app-v03 .management-container .order-history-list .management-data-table th:nth-child(3) { width: 42%; }
