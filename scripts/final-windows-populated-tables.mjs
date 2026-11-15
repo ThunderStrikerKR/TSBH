@@ -76,8 +76,23 @@ async function connect(kind){
   }
   assert.ok(ready,"Actual WebView2 CDP is unavailable");
   browser=await chromium.connectOverCDP("http://127.0.0.1:"+port,{timeout:30000});
-  page=browser.contexts()[0].pages().find(p=>/tauri|localhost/i.test(p.url()));
-  assert.ok(page,"No WebView2 Tauri page");
+  // WebView2 initially exposes a target while the Playwright context can
+  // still report about:blank or no page. Follow the proven existing native
+  // auditor's first-page fallback and wait for the real Tauri navigation.
+  for(let attempt=0;attempt<45;attempt++){
+    const contexts=browser.contexts();
+    const pages=contexts.flatMap(ctx=>ctx.pages());
+    page=pages.find(p=>/tauri|localhost/i.test(p.url()))||pages[0]||null;
+    if(page){
+      try{
+        await page.waitForURL(/tauri|localhost/i,{timeout:1800});
+        break;
+      }catch{ /* native WebView2 is still navigating */ }
+    }
+    await sleep(250);
+  }
+  assert.ok(page && /tauri|localhost/i.test(page.url()),
+    "No ready Tauri WebView2 page after CDP connection");
   page.setDefaultTimeout(30000);
   page.on("pageerror",e=>report.errors.push(e.message));
   await page.locator("nav[aria-label='업무 메뉴']").waitFor({state:"visible",timeout:30000});
