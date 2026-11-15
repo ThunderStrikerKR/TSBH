@@ -283,6 +283,9 @@ export interface Order {
    * snapshot from the authoritative persisted order and strips this field
    * before SQLite persistence. Never store a TS-computed billing snapshot. */
   pendingBillingSnapshot?: { at: string; reason: string };
+  /** Transient input intent. React may display edited fields immediately, but
+   * only Rust can clear this marker and commit the resulting business state. */
+  pendingNativeEdit?: { at: string; reason: string; recalculateShipping: boolean };
   shippingVersion?: string;
 }
 export interface BillingSnapshot {
