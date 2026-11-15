@@ -14,6 +14,7 @@ mod reception_operations;
 mod kakao_title;
 mod manual_classification;
 mod manual_draft;
+mod manual_structure;
 mod message_template_validation;
 mod catalog_item;
 mod retail_operations;
@@ -114,6 +115,9 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "apply_manual_classification" => match str_field(&payload, "action") {
             "initial_manual" | "set_manual_product" | "assign_manual_block" | "release_manual_block" =>
                 manual_draft::execute(&payload),
+            "resize_manual_rows" | "add_manual_item" | "remove_manual_item" |
+            "confirm_manual_quantity" | "reset_manual_rows" =>
+                manual_structure::execute(&payload),
             _ => manual_classification::apply(&payload)
         },
         "validate_automatic_templates" => message_template_validation::validate(&payload),
