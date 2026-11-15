@@ -316,7 +316,17 @@ try{
   assert.ok(products.rowCount>=300);
   // Long product names may overflow their own cell, but never force a
   // whole-window scrollbar or hide downstream price columns.
-  assert.ok(products.table.w>=products.viewport.w-3);
+  // A stable vertical scrollbar consumes ~8px inside the scroll viewport.
+  // The table must fill the client area, not the outer scrollport border box.
+  assert.ok(products.table.w>=products.clientW-2,
+    "Product table must fill its usable scroll client width");
+  const fullTitles=await page.locator(".product-title-line[title]").evaluateAll(nodes=>
+    nodes.filter(el=>el.getAttribute("title")?.length>65).length);
+  assert.ok(fullTitles>0,
+    "Clipped long product subtitles must be recoverable via full-text hover titles");
+  record("Full model/description hover text survives compact price rows",{
+    longRowsWithTitle:fullTitles
+  });
 
   await menu("운임 관리");
   await tab("[aria-label='배송 관리']","상품별 기본 운임");
