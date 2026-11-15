@@ -80,7 +80,7 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
             model["assignments"].as_object_mut().ok_or("배정 정보 오류")?
                 .retain(|_,cell|str_field(cell,"itemId")!=iid);
         },
-        "confirm_manual_quantity" => {
+        "confirm_manual_quantity" | "set_manual_quantity_draft" | "step_manual_quantity" => {
             let cell=req(payload,"cell")?;
             let rid=required_str(cell,"recipientId")?;
             let iid=required_str(cell,"itemId")?;
@@ -88,13 +88,39 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
                 .iter_mut().find(|r|str_field(r,"id")==rid).ok_or("배송 행을 선택하세요.")?;
             let item=recipient["items"].as_array_mut().ok_or("상품 목록을 확인하세요.")?
                 .iter_mut().find(|i|str_field(i,"id")==iid).ok_or("상품 행을 선택하세요.")?;
-            let amount=field(item,"quantity").as_i64()
-                .filter(|n|*n>=1 && *n<=MAX_SAFE)
-                .ok_or("수량을 1 이상의 정수로 입력하세요.")?;
-            set(item,"quantityConfirmed",json!(true))?;
-            // A valid quantity is confirmed without rewriting a staff-approved
-            // product, the evidence array or any other recipient field.
-            debug_assert!(amount>=1);
+            match action {
+                "confirm_manual_quantity" => {
+                    field(item,"quantity").as_i64()
+                        .filter(|n|*n>=1 && *n<=MAX_SAFE)
+                        .ok_or("수량을 1 이상의 정수로 입력하세요.")?;
+                    set(item,"quantityConfirmed",json!(true))?;
+                },
+                "set_manual_quantity_draft" => {
+                    let parsed=super::manual_classification::apply(&json!({
+                        "action":"parse_manual_quantity","value":required_str(payload,"value")?
+                    }))?;
+                    set(item,"quantity",field(&parsed,"quantity").clone())?;
+                    set(item,"quantityConfirmed",json!(false))?;
+                    item.as_object_mut().ok_or("상품 데이터 형식 오류")?.remove("quantityApproval");
+                    if let Some(issues)=item.get_mut("issues").and_then(Value::as_array_mut){
+                        issues.retain(|issue|!issue.as_str().unwrap_or("").contains("수량"));
+                    }
+                },
+                "step_manual_quantity" => {
+                    let delta=field(payload,"delta").as_i64()
+                        .filter(|n|*n==-1||*n==1).ok_or("수량 변경 단위 오류")?;
+                    let before=field(item,"quantity").as_i64().unwrap_or(0);
+                    let updated=before.saturating_add(delta).max(1);
+                    if updated>MAX_SAFE{return Err("안전한 정수 범위를 초과했습니다.".into());}
+                    set(item,"quantity",json!(updated))?;
+                    set(item,"quantityConfirmed",json!(true))?;
+                    item.as_object_mut().ok_or("상품 데이터 형식 오류")?.remove("quantityApproval");
+                    if let Some(issues)=item.get_mut("issues").and_then(Value::as_array_mut){
+                        issues.retain(|issue|!issue.as_str().unwrap_or("").contains("수량"));
+                    }
+                },
+                _=>unreachable!(),
+            }
         },
         "reset_manual_rows" => {
             let id=required_str(payload,"recipientId")?;
