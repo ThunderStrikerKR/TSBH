@@ -22,8 +22,10 @@ const client={id:"ci-dealer",name:"가상거래처",tier:"wholesale",
   overrides:{},active:true,payment:"PREPAID",identifiers:"",shippingFeeExcluded:false};
 state.clients=[...state.clients.filter(c=>c.id!==client.id),client];
 const { newReception }=await tsImport("../../../src/orders/reception.ts",import.meta.url);
-const { applyRustReceptionAnalysis,assertRustReceptionAnalysis,receptionAnalysisAllowed }=
+const { assertRustReceptionAnalysis,receptionAnalysisAllowed }=
   await tsImport("../../../src/orders/rust-reception.ts",import.meta.url);
+const { applyRustReceptionAnalysis }=
+  await tsImport("./ts-reception-merge-oracle.ts",import.meta.url);
 
 const selected=Array.from({length:20},(_,i)=>i+1);
 const inputs=selected.map(id=>({id,raw:samples[id-1].raw}));
