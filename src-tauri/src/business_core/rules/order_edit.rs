@@ -129,6 +129,34 @@ fn prepare_save(payload:&Value)->Result<Value,String>{
     }
     Ok(json!({"order":order,"client":selected}))
 }
+// Dealer changes explicitly reprice even when the existing order has a
+// confirmation timestamp: the original nativeRepriceEditedOrder used to
+// quote every configured product regardless of confirmedAt. The passive
+// reprice_order reducer correctly refuses frozen orders and must stay intact.
+fn reprice_for_new_dealer(order:&mut Value,state:&Value,selected:&Value)->Result<(),String>{
+    for recipient in order["recipients"].as_array_mut().ok_or("수취인 목록 오류")?{
+        for item in recipient["items"].as_array_mut().ok_or("상품 목록 오류")?{
+            let pid=str_field(item,"productId").to_owned();
+            let vid=str_field(item,"variantId").to_owned();
+            if vid.is_empty(){continue;}
+            let product=rows(field(state,"products")).iter()
+                .find(|p|str_field(p,"id")==pid);
+            if let Some(product)=product{
+                let quote=super::pricing::resolve_unit_price(product,&vid,selected)?;
+                set(item,"unitPrice",quote)?;
+                if flag(field(item,"modelProposal"),"required"){
+                    if let Some(variant)=rows(field(product,"variants")).iter()
+                        .find(|v|str_field(v,"id")==vid){
+                        if has_value(field(variant,"url")){
+                            set(item,"url",field(variant,"url").clone())?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
 fn change_client(payload:&Value)->Result<Value,String>{
     let state=req(payload,"state")?;
     let before=req(payload,"order")?;
@@ -161,10 +189,7 @@ fn change_client(payload:&Value)->Result<Value,String>{
         ("updatedAt",json!(now))]{
         set(&mut changed,key,value)?;
     }
-    let quoted=super::pricing::reprice_order(&json!({
-        "order":changed,"client":selected,"state":state,"explicitEdit":true
-    }))?;
-    changed=req(&quoted,"order")?.clone();
+    reprice_for_new_dealer(&mut changed,state,&selected)?;
     if let Some(snapshot)=historical{
         let mut history=rows(field(&changed,"billingHistory")).to_vec();
         history.push(snapshot);
