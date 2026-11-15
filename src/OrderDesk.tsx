@@ -14,7 +14,7 @@ import { won } from "./domain";
 
 import { internalModel } from "./matching";
 import { useOrderDesk, type OrderDeskProps } from "./orders/useOrderDesk";
-import { nativeApproveMissingQuantity, nativeBillingSnapshot, nativeClientChangeIssue, nativeConfirmProposedProduct, nativeRepriceEditedOrder, nativeReconcileWorkflow } from "./orders/native-rules";
+import { nativeApproveMissingQuantity, nativeConfirmProposedProduct, nativeReconcileWorkflow } from "./orders/native-rules";
 import { businessCoreCall } from "./tauri-bridge";
 import type { Order } from "./types";
 import { Field, clone } from "./ui";
@@ -187,41 +187,27 @@ export function OrderDesk(props: OrderDeskProps) {
               onOrder={onChange}
               onDealer={async (c) => {
                 if (c.id === draft.clientId) return;
-                const issue = await nativeClientChangeIssue(state, draft, c.id);
-                if (issue) throw Error(issue);
-                if (exported || draft.deletedAt)
-                  throw Error("완료 / 삭제된 주문의 거래처는 변경할 수 없습니다.");
-                const [next, snapshot] = await Promise.all([
-                  nativeRepriceEditedOrder(
-                    {
-                      ...clone(draft),
-                      clientId: c.id,
-                      clientSnapshot: clone(c),
-                      pricesLocked: false,
-                      notified: false,
-                      paid: false,
-                      postpaidApproved: false,
-                      status: "REVIEW",
-                    },
-                    c,
-                    state,
-                  ),
-                  draft.pricesLocked
-                    ? nativeBillingSnapshot(draft, state, "거래처 변경")
-                    : Promise.resolve(undefined),
-                ]);
-                // Async native decisions must not apply to another selected
-                // draft or a newly received catalog / persisted revision.
-                if (!isCurrentOrderInput(draft, state))
+                const sourceDraft = draft;
+                const sourceState = state;
+                // Rust validates historical payment/transfer constraints,
+                // selects the dealer, snapshots old invoices, reprices products
+                // and invalidates the old dealer's freight atomically.
+                const { order: next } = await businessCoreCall<{ order: Order }>(
+                  "rules", "order_edit_rules", {
+                    action: "change_order_client", state: sourceState,
+                    order: sourceDraft, dealerId: c.id,
+                    now: new Date().toISOString(),
+                  },
+                );
+                if (!isCurrentOrderInput(sourceDraft, sourceState))
                   throw Error("주문 또는 거래처 정보가 변경되었습니다. 다시 선택하세요.");
-                if (draft.pricesLocked)
-                  next.billingHistory = [
-                    ...(next.billingHistory ?? []),
-                    snapshot!,
-                  ];
-                next.updatedAt = new Date().toISOString();
-                if (saved) await onWorkflowSave(await nativeReconcileWorkflow(state, next));
-                onChange(next);
+                if (saved) {
+                  // Do not reapply a stale pre-save React draft after the
+                  // transaction returns an authoritative committed snapshot.
+                  await onWorkflowSave(await nativeReconcileWorkflow(sourceState, next));
+                } else {
+                  onChange(next);
+                }
               }}
               onSave={onWorkflowSave}
               onSaveState={onSaveState}
