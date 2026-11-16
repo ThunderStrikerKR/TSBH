@@ -113,7 +113,7 @@ fn reception_client(payload:&Value)->Result<Value,String>{
         .map(|hit|hit.0.as_str()).collect::<std::collections::HashSet<_>>();
     if explicit_ids.len()>1{
         return Ok(json!({"clientId":null,"source":"CONFLICT",
-            "detail":"발주서에 서로 다른 발주처가 명시되어 있습니다. 발주처를 직접 확인한 뒤 거래처를 선택하세요."}));
+            "detail":"발주서에 서로 다른 발주처가 있습니다. 거래처를 확인하세요."}));
     }
     let mut chat_match:Option<(String,&str,String)>=None;
     if let Some(chat)=chat{
@@ -145,23 +145,21 @@ fn reception_client(payload:&Value)->Result<Value,String>{
                 .find(|c|s(c,"id")==id).map(|c|s(c,"name").to_owned())
                 .unwrap_or_else(||id.to_owned());
             return Ok(json!({"clientId":null,"source":"CONFLICT",
-                "detail":format!("카카오톡 대화창 ‘{}’은 ‘{}’ 거래처로 연결되지만 발주서에는 ‘{}’이 발주처로 명시되어 있습니다. 현재 대화방과 발주처를 확인하고 직접 선택하세요.",
-                    title,dealer_name(&id),dealer_name(other))}));
+                "detail":format!("카카오톡 거래처 ‘{}’와 발주서 발주처 ‘{}’가 다릅니다. 확인하세요.",
+                    dealer_name(&id),dealer_name(other))}));
         }
         let count=confirmed_title_count(state,&title,&id);
-        let why=if source=="KAKAO_REMEMBERED"{"직원이 저장한 거래처 연결 기록"}
-            else{"등록된 거래처 이름 또는 별칭"};
         return Ok(json!({"clientId":id,"source":source,
             "chatTitle":title,"confirmedMatchCount":count,
-            "detail":format!("카카오톡 대화창 ‘{}’이 {}과 일치하여 자동 선택했습니다. 동일 제목으로 확정한 기존 주문 {}건. 주문 확인 단계에서 실제 대화방과 발주처를 확인하세요.",title,why,count)}));
+            "detail":format!("카카오톡 창 제목 '{}'를 거래처로 인식했습니다.",title)}));
     }
     // Never infer a dealer from recipient name, delivery address, or phone.
     if let Some((id,label,value,_))=raw_hits.first(){
         return Ok(json!({"clientId":id,"source":"RAW_EXPLICIT",
-            "detail":format!("발주서의 ‘{}: {}’ 표기가 등록된 거래처 정보와 일치해 자동 선택했습니다. 주문 확인 단계에서 발주처를 확인하세요.",label,value)}));
+            "detail":format!("발주서 '{}: {}'를 거래처로 인식했습니다.",label,value)}));
     }
     Ok(json!({"clientId":null,"source":"NONE",
-        "detail":"현재 카카오톡 대화방 또는 발주서에서 거래처를 확정할 수 없습니다. 다른 대화방이 열려 있거나 닫혀 있지 않은지 확인하고, 거래처를 직접 선택해 주세요."}))
+        "detail":"거래처를 찾지 못했습니다. 직접 선택하세요."}))
 }
 
 fn remember(payload:&Value)->Result<Value,String> {
@@ -277,7 +275,7 @@ mod tests {
         assert_eq!(same["clientId"],"a");
         assert_eq!(same["source"],"KAKAO_TITLE");
         assert_eq!(same["confirmedMatchCount"],1);
-        assert!(same["detail"].as_str().unwrap().contains("기존 주문 1건"));
+        assert_eq!(same["detail"],"카카오톡 창 제목 '홍천악기'를 거래처로 인식했습니다.");
         let conflicting=reception_client(&context("발주처: 서울악기\n708 2개")).unwrap();
         assert_eq!(conflicting["source"],"CONFLICT");
         assert_eq!(conflicting["clientId"],Value::Null);
