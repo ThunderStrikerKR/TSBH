@@ -19,6 +19,12 @@ test("clipboard paste combines active KakaoTalk HWND with Rust-only automatic de
   assert.match(source, /nativeAutoReceptionClient\(/);
   assert.match(source, /await nativeAutoReceptionClient\(/);
   assert.match(adapter, /"catalog_clients", "auto_match_reception_client"/);
+  const catalogDispatcher = read("src-tauri/src/business_core/catalog_clients.rs");
+  assert.match(catalogDispatcher, /"remember_title_client" \\| "auto_match_reception_client"\\s*=>\\s*title_clients::execute/,
+    "The live dispatcher must route automatic dealer matching");
+  assert.doesNotMatch(source, /거래처 자동 연결에 실패했습니다\\./,
+    "An optional dealer match cannot display a red error toast");
+  assert.match(source, /console\\.warn\\("거래처 자동 연결을 건너뛰었습니다\\."/);
   assert.doesNotMatch(source, /\brememberedTitleClient\(/);
   assert.match(source, /activeChatHandle = dock\.activeChatHandle/);
   assert.match(source, /latestReception\.current\.order !== order/);
