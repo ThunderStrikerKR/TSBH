@@ -381,9 +381,7 @@ export function OrderDesk(props: OrderDeskProps) {
                             <Linked linkKey={r.id + ":name"}>
                               <Field label="이름">
                                 <input
-                                  aria-invalid={
-                                    !delivery.byId[r.id]?.name
-                                  }
+                                  aria-invalid={delivery.ready ? !delivery.byId[r.id]?.name : undefined}
                                   value={r.name}
                                   disabled={exported}
                                   onChange={(e) =>
@@ -404,9 +402,7 @@ export function OrderDesk(props: OrderDeskProps) {
                             <Linked linkKey={r.id + ":address"}>
                               <Field label="주소">
                                 <input
-                                  aria-invalid={
-                                    !delivery.byId[r.id]?.address
-                                  }
+                                  aria-invalid={delivery.ready ? !delivery.byId[r.id]?.address : undefined}
                                   value={r.address}
                                   disabled={exported}
                                   onChange={(e) => {
@@ -432,9 +428,7 @@ export function OrderDesk(props: OrderDeskProps) {
                               <Linked linkKey={r.id + ":mobile"}>
                                 <Field label="휴대폰">
                                   <input
-                                    aria-invalid={
-                                      !delivery.byId[r.id]?.contact
-                                    }
+                                    aria-invalid={delivery.ready ? !delivery.byId[r.id]?.contact : undefined}
                                     value={r.mobile}
                                     disabled={exported}
                                     onChange={(e) =>
@@ -461,9 +455,7 @@ export function OrderDesk(props: OrderDeskProps) {
                               <Linked linkKey={r.id + ":phone"}>
                                 <Field label="전화">
                                   <input
-                                    aria-invalid={
-                                      !delivery.byId[r.id]?.contact
-                                    }
+                                    aria-invalid={delivery.ready ? !delivery.byId[r.id]?.contact : undefined}
                                     value={r.phone}
                                     disabled={exported}
                                     onChange={(e) =>

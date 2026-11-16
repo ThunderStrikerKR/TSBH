@@ -137,3 +137,9 @@
 - React `useNativeOrderLineAmounts`는 가격에 영향을 주는 원천 인자만 fingerprint로 관리해, 배송·연락처·원문 변경과 관계없이 이미 계산된 Rust 품목 금액을 표시. 품목값이 변경되면 오래된 값은 즉시 무효화함.
 - React 수량 곱셈을 부활시키지 않음. 전체 주문 총액·배송건수·부가세는 기존 `useNativeOrderPreview`의 Rust 결과 그대로 유지.
 - 원본과 다른 변경은 사용자가 확정한 Rust 업무 분리/비동기 안정화를 위한 신설 실행 경로다. Windows 29시나리오 검증 완료 여부는 해당 커밋 결과까지 별도 확인.
+
+## 후속 — 원문 입력·연락처 수정 중 검증 대기 시 허위 빨간 표시 제거
+
+- 기존 `OrderDesk.tsx`는 Rust 주소·연락처 검사가 아직 끝나지 않아 `delivery.byId`가 비어 있을 때도 `aria-invalid={!undefined}`로 필드를 즉시 오류 처리. 직원이 문자 하나 입력할 때마다 무효 표시가 나타났다 사라질 수 있었음.
+- `delivery.ready`가 false이면 `aria-invalid`를 미지정(`undefined`)하여, 완료된 Rust 결과만 입력 오류로 표시하도록 수정. 이름·주소·휴대폰·전화 4개 필드에 적용.
+- React가 주소/연락처 유효성을 별도로 계산하지 않음. Rust 판정 지연 상태를 오류로 오인하지 않는 표현 전용 수정.
