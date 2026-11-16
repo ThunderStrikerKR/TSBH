@@ -113,3 +113,17 @@ cargo test --manifest-path tests/rust-migration/integration/Cargo.toml
   계약을 없애고 고정 TS 원본 방식의 표시 분기를 검증하도록 교체.
 - **상태: PATCH_COMMITTED.** Rust·프런트엔드 CI와 실 Windows 4.2초 관찰
   결과는 별도로 확인한 뒤 검증 완료로 갱신할 것.
+
+## R35-001/002: 운임 읽기와 직원 검토 중간 상태 교정 (2026-11-17)
+
+- `src/useNativeShippingRead.ts`→`rules/shipping_read.rs`는 `products`와 `shipping`
+  데이터만 소비함. 기존 hook은 원본 전체 `state` 참조가 바뀌면 이미 검증된 운임 기록을
+  지우고 `운임 기준 조회 중`으로 되돌림. 의존성을 정확한 입력 두 가지로 축소.
+- `src/ProductFreightPanel.tsx`→`rules/shipping.rs::product_freight_view`도
+  `products`/`shipping`만 소비하므로 동일하게 축소. 관계없는 주문·알림 변경으로
+  등록 운임이 일시적으로 '확인 중'으로 되돌아가는 중간 상태 제거.
+- `src/StaffChecks.tsx`: Rust 검사 결과를 기다리는 동안 빈 배열을 곧바로
+  '필수 확인 사항 없음'으로 선언하던 분기를 수정. 완료/정상 상태일 때만 표시.
+- 신규 `tests/tauri-shipping-loading-parity.test.mjs`는 위 로직 회귀를 고정.
+- 실제 가격·운임 규칙은 Rust만 결정. 상태 갱신 트리거 외 계산 규칙은 변경하지 않음.
+- 상태 **PATCH_COMMITTED**. CI / 실제 Windows 사용자 행동 결과는 별도 확인.

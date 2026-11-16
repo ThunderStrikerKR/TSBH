@@ -3,7 +3,7 @@ import { ManagementSearch } from "./ui/ManagementSearch";
 import { EmptyState } from "./ui/PageHeading";
 import { ManagementTable } from "./ui/ManagementTable";
 import { ShippingFeeRanges } from "./ShippingFeeRanges";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { businessCoreCall } from "./tauri-bridge";
 import { confirmAction } from "./dialogs";
 import { registeredProducts, sortProducts } from "./product-models";
@@ -31,22 +31,28 @@ export function ProductFreightPanel({
     rule: ShippingRule | null;
     editableRule: ShippingRule | null;
   };
+  // The native product_freight_view operation only inspects these two
+  // slices. Do not clear valid freight information on unrelated app updates.
+  const freightSource = useMemo(() => ({
+    products: state.products,
+    shipping: state.shipping,
+  }), [state.products, state.shipping]);
   const [nativeView, setNativeView] = useState<{
-    state: State; views: Record<string, ProductFreightView>;
+    source: typeof freightSource; views: Record<string, ProductFreightView>;
   }>();
   useEffect(() => {
     let active = true;
     void businessCoreCall<{ views: Record<string, ProductFreightView> }>(
-      "rules", "apply_shipping_action", { action: "product_freight_view", state },
+      "rules", "apply_shipping_action", { action: "product_freight_view", state: freightSource },
     ).then(({ views }) => {
-      if (active) setNativeView({ state, views });
+      if (active) setNativeView({ source: freightSource, views });
     }).catch((error) => {
       if (active) onNotice("Rust 상품별 운임 조회 실패: " +
         (error instanceof Error ? error.message : String(error)), "error");
     });
     return () => { active = false; };
-  }, [state, onNotice]);
-  const productViews = nativeView?.state === state ? nativeView.views : undefined;
+  }, [freightSource, onNotice]);
+  const productViews = nativeView?.source === freightSource ? nativeView.views : undefined;
   const [search, setSearch] = useState(""),
     [onlyMissing, setOnlyMissing] = useState(false),
     [selected, setSelected] = useState<string[]>([]),
