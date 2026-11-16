@@ -327,6 +327,46 @@ fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
     anchors.iter().enumerate().rev().find(|(_, i)| events[**i].start <= offset)
         .map(|(idx,_)|idx).unwrap_or(0)
 }
+// Recipient identity boundaries are stronger than a raw character offset.
+// A delivery address/contact placed BEFORE the next person's name can belong
+// to that next recipient when the preceding name is in another paragraph.
+// Distances are supporting evidence only: they never create recipients.
+fn recipient_owner_index(anchors: &[usize], events: &[Evidence], evidence_index: usize) -> usize {
+    let candidate=&events[evidence_index];
+    let previous=owner_index(anchors,events,candidate.start);
+    if anchors.len()<2 || !matches!(candidate.kind,"address"|"phone"|"mobile") {
+        return previous;
+    }
+    let Some(&next_anchor_index)=anchors.get(previous+1) else {return previous};
+    let preceding=&events[anchors[previous]];
+    let following=&events[next_anchor_index];
+    if candidate.start<=preceding.start || candidate.start>=following.start {
+        return previous;
+    }
+    // Keep existing ownership inside the preceding named person's paragraph.
+    // This protects multiple phone numbers for the same recipient.
+    if candidate.paragraph==preceding.paragraph || candidate.paragraph!=following.paragraph {
+        return previous;
+    }
+    let next_distance=following.line.saturating_sub(candidate.line);
+    if next_distance>3 {return previous;}
+    let has_nearby_address=events.iter().any(|e|
+        e.kind=="address" && e.paragraph==candidate.paragraph
+            && e.line.abs_diff(candidate.line)<=4
+    );
+    // A phone just before the next name is not sufficient on its own.
+    // A nearby Korean delivery address is independent corroboration.
+    if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
+        return previous;
+    }
+    let preceding_distance=candidate.line.saturating_sub(preceding.line);
+    let previous_score=(if preceding.paragraph==candidate.paragraph {80usize} else {0})
+        + 20usize.saturating_sub(preceding_distance.saturating_mul(5));
+    let following_score=80usize
+        + 20usize.saturating_sub(next_distance.saturating_mul(5))
+        + if has_nearby_address {20} else {0};
+    if following_score >= previous_score+30 {previous+1} else {previous}
+}
 /// Original TypeScript resolvePrice for the recognition Item shape.
 /// The separate pricing migration remains authoritative for business rules.
 fn legacy_recognition_price(v: &Value,client: Option<&Value>) -> Value {
@@ -873,7 +913,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     }
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = owner_index(&anchors,&events,events[index].start);
+        let row_index = recipient_owner_index(&anchors,&events,index);
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -1348,6 +1388,33 @@ mod tests {
         assert_eq!(recipients[1]["mobile"],"010-2345-6789");
         assert!(recipients[0]["address"].as_str().unwrap().contains("월드컵로 20"));
         assert!(recipients[1]["address"].as_str().unwrap().contains("불정로 6"));
+    }
+    #[test]
+    fn address_and_phone_before_next_name_use_new_paragraph_and_proximity(){
+        // A second delivery may list address/phone BEFORE its addressee.
+        // Its own nearby address corroborates the contact; the blank line
+        // rules out simply appending both fields to the previous recipient.
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n\n경기도 성남시 분당구 불정로 6\n010-2345-6789\n박가상";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0]["name"],"김가상");
+        assert_eq!(rows[0]["mobile"],"010-1234-5678");
+        assert!(rows[0]["address"].as_str().unwrap().contains("월드컵로 20"));
+        assert_eq!(rows[1]["name"],"박가상");
+        assert_eq!(rows[1]["mobile"],"010-2345-6789");
+        assert!(rows[1]["address"].as_str().unwrap().contains("불정로 6"));
+    }
+    #[test]
+    fn uncorroborated_contact_before_next_name_does_not_jump_recipient(){
+        // A lone phone between blocks is not enough to infer its owner.
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n\n010-3456-7890\n박가상";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0]["mobile"],"010-1234-5678");
+        assert_eq!(rows[0]["phone"],"010-3456-7890");
+        assert!(rows[1]["mobile"].as_str().unwrap_or("").is_empty());
     }
     #[test]
     fn second_contact_can_still_belong_to_same_recipient(){
