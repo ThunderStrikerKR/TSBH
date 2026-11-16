@@ -176,7 +176,7 @@ export function SourceDocument({
         !(await confirmAction("현재 초안과 분석 결과를 새 원문으로 교체할까요?"))
       )
         return;
-      const next = raw === text ? structuredClone(order) : await nativeReplaceReception(order, raw);
+      let next = raw === text ? structuredClone(order) : await nativeReplaceReception(order, raw);
       next.orderType = orderType;
       let chats: DockWindow[] = [];
       let activeChatHandle: string | undefined;
@@ -205,11 +205,17 @@ export function SourceDocument({
             (c) => c.id === result.clientId && !c.deletedAt && c.active !== false,
           );
           if (matched) {
-            // Commit ONE reception transition with the dealer already set.
-            // Switching dealers after recognition causes repeated Rust
-            // parsing, order previews and visible loading/layout jumps.
-            next.clientId = matched.id;
-            next.clientSnapshot = structuredClone(matched);
+            // Rust still owns dealer change, sender/payment defaults and
+            // freight invalidation. Resolve it BEFORE the one React commit:
+            // paste -> dealer -> analysis must not show three partial drafts.
+            const selected = await businessCoreCall<{ order: Order }>(
+              "rules", "order_edit_rules", {
+                action: "change_order_client", state,
+                order: next, dealerId: matched.id,
+                now: new Date().toISOString(),
+              },
+            );
+            next = selected.order;
           }
         } catch {
           // Auto matching must never block or discard a pasted order.
