@@ -275,6 +275,10 @@ export function HubWorkspace(props: Props) {
         );
     },
   };
+  const pendingWithoutClient = [draft, ...Object.values(edits)]
+    .filter((order) => order.raw.trim() && !order.clientId &&
+      !state.orders.some((saved) => saved.id === order.id))
+    .filter((order, index, all) => all.findIndex((row) => row.id === order.id) === index);
   const receptionOrder =
     receptionId === draft.id
       ? draft
@@ -454,6 +458,13 @@ export function HubWorkspace(props: Props) {
               onNotice={props.onNotice}
               onStageHover={setStageHover}
               stageHover={stageHover}
+              pendingReceptions={pendingWithoutClient}
+              onSelectPending={(id) => {
+                if (id === draft.id || edits[id]) {
+                  commitSelection(undefined);
+                  setReceptionId(id);
+                }
+              }}
             />
           </section>,
         ]}
