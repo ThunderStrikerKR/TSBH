@@ -25,7 +25,9 @@ jobs:
           workspaces: src-tauri -> target
       - name: Install current frontend dependencies
         run: npm install --no-audit --no-fund
-      - name: Launch real DEV_WINDOWS_TAURI.cmd and verify isolated TEST SQLite
+      - name: Install WebView2 inspection client (no mocked browser)
+        run: npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.55.1
+      - name: Run actual DEV Tauri business workflows in Windows WebView2
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/migration32-dev-windows-smoke.ps1
       - name: Preserve Windows development app logs, native window screenshot and TEST DB report
