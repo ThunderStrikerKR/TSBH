@@ -223,6 +223,39 @@ fn add<'a>(result:&mut Vec<Value>,o:&Value,row:Option<&'a Value>,
 }
 pub(super) fn order_issues(o:&Value)->Vec<Value>{
     let mut issues=Vec::new();
+    // Dealer matching reasons are staff-facing INFO/ACTION items in the
+    // existing "확인할 내용" UI. No automatic customer messages are generated.
+    let match_info=field(o,"clientMatch");
+    if match_info.is_object() {
+        let source=str_field(match_info,"source");
+        let matched_id=str_field(match_info,"clientId");
+        let actual_id=str_field(o,"clientId");
+        let detail=str_field(match_info,"detail");
+        if !detail.trim().is_empty() && detail.chars().count()<=500 {
+            let collision=source=="CONFLICT" ||
+                (!matched_id.is_empty() && actual_id!=matched_id);
+            let missing=source=="NONE" && actual_id.is_empty();
+            let title=if collision{"발주처 매칭 충돌 — 거래처를 확인하세요"}
+                else if missing{"거래처 자동 연결 근거가 없습니다"}
+                else{"거래처 연결 근거"};
+            let kind=if collision{"CLIENT_MATCH_CONFLICT"}else{"CLIENT_MATCH_EVIDENCE"};
+            issues.push(json!({
+                "issueId":format!("issue:{}:client-match",str_field(o,"id")),
+                "orderId":field(o,"id"),
+                "groupId":format!("group:{}",str_field(o,"id")),
+                "recipientId":"",
+                "kind":kind,
+                "title":title,
+                "detail":detail,
+                "blockingStage":1,
+                "severity":if collision{"ACTION"}else{"INFO"},
+                "resolution":if collision{"UNRESOLVED"}else{"AUTO_APPLIED"},
+                "resolutionSource":"Rust 거래처 매칭",
+                "updatedAt":field(o,"updatedAt"),
+                "linkKey":"client"
+            }));
+        }
+    }
     if str_field(o,"clientId").is_empty()&&str_field(o,"orderType")!="RETAIL"{
         add(&mut issues,o,None,None,"CLIENT","거래처를 선택하면 단가가 적용됩니다",
             "client",o.get("clientId"),1,None,None);
