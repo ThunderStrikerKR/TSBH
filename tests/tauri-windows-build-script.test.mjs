@@ -51,3 +51,16 @@ test("manual release launcher directly builds and verifies portable ZIP without 
     packer.indexOf("Move-Item -LiteralPath $zipStage -Destination $zip"));
   assert.doesNotMatch(dev,/package-windows-tauri\.ps1|npm run build:windows/);
 });
+
+test("manual release partial promotion restores old ZIP, folder and OCR cache",()=>{
+  const pack=read("scripts/package-windows-tauri.ps1");
+  for(const promoted of ["zipPromoted","portablePromoted","ocrPromoted"]){
+    assert.match(pack,new RegExp("\\$"+promoted+" = \\$true"));
+  }
+  assert.match(pack,/Remove-Item -LiteralPath \$zip -Force/);
+  assert.match(pack,/Move-Item -LiteralPath \$zipBackup -Destination \$zip/);
+  assert.match(pack,/Move-Item -LiteralPath \$portableBackup -Destination \$portable/);
+  assert.match(pack,/Move-Item -LiteralPath \$ocrBackup -Destination \$ocrLive/);
+  const workflow=read(".github/workflows/migration-output.yml");
+  assert.match(workflow,/distribution-script-syntax:[\s\S]*?ParseFile\(/);
+});

@@ -16,6 +16,26 @@ concurrency:
   group: ${{ github.ref_name == 'migration/27-unified-rust' && format('rust-output-gate4-{0}', github.ref) || format('rust-output-migration03-{0}', github.ref) }}
   cancel-in-progress: true
 jobs:
+  distribution-script-syntax:
+    name: Validate PowerShell release script parse and rollback contracts
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse local manual packaging script without running a release
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path (Get-Location).Path "scripts/package-windows-tauri.ps1"),
+            [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "Manual release package script has invalid PowerShell syntax"
+          }
+          Write-Host "PowerShell source contract parse PASS (no EXE was built)."
   original-ts-source-coverage:
     name: Fixed-original TypeScript source coverage (not behavior PASS)
     runs-on: ubuntu-latest

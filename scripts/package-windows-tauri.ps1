@@ -19,6 +19,9 @@ $ocrBackup = Join-Path $repo ("release\ocr-backup-" + $nonce)
 $zipBackup = Join-Path $release ("BANDO-HUB-portable-backup-" + $nonce + ".zip")
 $portableBackup = Join-Path $release ("BANDO-HUB-portable-backup-" + $nonce)
 $published = $false
+$zipPromoted = $false
+$portablePromoted = $false
+$ocrPromoted = $false
 Push-Location $repo
 try {
     foreach ($tool in @("node.exe", "npm.cmd", "cargo.exe")) {
@@ -70,27 +73,41 @@ try {
         Move-Item -LiteralPath $zip -Destination $zipBackup
     }
     Move-Item -LiteralPath $zipStage -Destination $zip
+    $zipPromoted = $true
     if (Test-Path -LiteralPath $portable) {
         Move-Item -LiteralPath $portable -Destination $portableBackup
     }
     Move-Item -LiteralPath $portableStage -Destination $portable
+    $portablePromoted = $true
     if (Test-Path -LiteralPath $ocrStage) {
         if (Test-Path -LiteralPath $ocrLive) {
             Move-Item -LiteralPath $ocrLive -Destination $ocrBackup
         }
         Move-Item -LiteralPath $ocrStage -Destination $ocrLive
+        $ocrPromoted = $true
     }
     $published = $true
     Write-Host "[RELEASE] Verified ZIP ready: $zip"
 } catch {
-    # A failed build never publishes a release ZIP. Restore any renamed ZIP.
-    if ((Test-Path -LiteralPath $zipBackup) -and !(Test-Path -LiteralPath $zip)) {
+    # Roll back every partially promoted output, not merely missing files.
+    # A ZIP that was verified but not fully committed must not replace an
+    # older published distribution after a later promotion failure.
+    if ($zipPromoted -and (Test-Path -LiteralPath $zip)) {
+        Remove-Item -LiteralPath $zip -Force
+    }
+    if (Test-Path -LiteralPath $zipBackup) {
         Move-Item -LiteralPath $zipBackup -Destination $zip
     }
-    if ((Test-Path -LiteralPath $portableBackup) -and !(Test-Path -LiteralPath $portable)) {
+    if ($portablePromoted -and (Test-Path -LiteralPath $portable)) {
+        Remove-Item -LiteralPath $portable -Recurse -Force
+    }
+    if (Test-Path -LiteralPath $portableBackup) {
         Move-Item -LiteralPath $portableBackup -Destination $portable
     }
-    if ((Test-Path -LiteralPath $ocrBackup) -and !(Test-Path -LiteralPath $ocrLive)) {
+    if ($ocrPromoted -and (Test-Path -LiteralPath $ocrLive)) {
+        Remove-Item -LiteralPath $ocrLive -Recurse -Force
+    }
+    if (Test-Path -LiteralPath $ocrBackup) {
         Move-Item -LiteralPath $ocrBackup -Destination $ocrLive
     }
     Write-Error ("Manual release packaging failed: " + $_.Exception.Message)
