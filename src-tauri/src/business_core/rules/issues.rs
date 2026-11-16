@@ -232,13 +232,17 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
         let actual_id=str_field(o,"clientId");
         let detail=str_field(match_info,"detail");
         if !detail.trim().is_empty() && detail.chars().count()<=500 {
-            let collision=["CONFLICT","ERROR"].contains(&source) ||
+            let has_error=source=="ERROR";
+            let collision=source=="CONFLICT" ||
                 (!matched_id.is_empty() && actual_id!=matched_id);
+            let needs_action=collision || has_error;
             let missing=source=="NONE" && actual_id.is_empty();
             let title=if collision{"발주처 매칭 충돌 — 거래처를 확인하세요"}
+                else if has_error{"거래처 자동 매칭 오류 — 직접 확인하세요"}
                 else if missing{"거래처 자동 연결 근거가 없습니다"}
                 else{"거래처 연결 근거"};
-            let kind=if collision{"CLIENT_MATCH_CONFLICT"}else{"CLIENT_MATCH_EVIDENCE"};
+            let kind=if has_error{"CLIENT_MATCH_ERROR"}
+                else if collision{"CLIENT_MATCH_CONFLICT"}else{"CLIENT_MATCH_EVIDENCE"};
             issues.push(json!({
                 "issueId":format!("issue:{}:client-match",str_field(o,"id")),
                 "orderId":field(o,"id"),
