@@ -13,7 +13,7 @@ export async function probeWindowsOcrCancel(page, { appPid, record, snap }) {
       "-NoProfile","-ExecutionPolicy","Bypass",
       "-File",resolve("scripts/migration32-win-ocr-escape.ps1"),
       "-TargetPid",String(appPid),"-Action",action
-    ], {encoding:"utf8",timeout:12000});
+    ], {encoding:"utf8",timeout:12000,windowsHide:true});
     return action==="state" ? JSON.parse(output.trim()) : output.trim();
   };
   const before = nativeWindow();
