@@ -14,6 +14,10 @@ on:
       - scripts/migration31-real-two-orders.mjs
       - scripts/migration32-real-factory-notifications.mjs
       - scripts/migration32-real-ocr-cancel.mjs
+      - src/SourceDocument.tsx
+      - src/orders/useOrderDesk.tsx
+      - src-tauri/src/business_core/recognition/mod.rs
+      - src-tauri/src/business_core/catalog_clients/title_clients.rs
   pull_request:
     branches:
       - main
