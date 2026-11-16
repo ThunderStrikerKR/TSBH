@@ -421,6 +421,19 @@ export function useAppModel() {
     setQuery("");
   };
   const newOrder = async () => {
+    if (!state || !draft) return;
+    // A new reception may coexist with the previous unconfirmed receipt
+    // in HubWorkspace's local draft overlay. Do not force the employee to
+    // discard the first pasted document just to start the second.
+    // Unsaved drafts are NEVER inserted into SQLite by this navigation.
+    if (!state.orders.some((o) => o.id === draft.id) &&
+        !draft.confirmedAt && (draft.raw.trim() || draft.recipients.length)) {
+      const leave = await confirmOrderLeave();
+      if (!leave.proceed) return;
+      setWorkflowSelection(undefined);
+      setDraft(newReception());
+      return;
+    }
     await open();
   };
   const receive = async (entry: InboxEntry) => {
