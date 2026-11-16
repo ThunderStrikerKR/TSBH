@@ -111,7 +111,7 @@ export function HubWorkspace(props: Props) {
   // Keep the last settled Rust board on screen while the newest draft is
   // reconciled. The board is read-only until the newest result is ready.
   // This prevents the queue cards from disappearing/reappearing on paste.
-  const lastVisiblePreview = useRef<{ orderId: string; state: typeof preview }>();
+  const lastVisiblePreview = useRef<{ orderId: string; state: typeof preview } | undefined>(undefined);
   if (previewReady) lastVisiblePreview.current = { orderId: draft.id, state: preview };
   const boardPreview = !previewReady && lastVisiblePreview.current?.orderId === draft.id
     ? lastVisiblePreview.current.state : preview;
