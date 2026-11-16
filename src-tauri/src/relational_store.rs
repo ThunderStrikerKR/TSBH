@@ -527,6 +527,60 @@ mod tests {
         drop(conn);close(&path);
     }
     #[test]
+    fn saves_second_recognized_order_after_historical_global_recipient_id(){
+        let path=temp();
+        let mut conn=super::super::initialize_database(&path).unwrap();
+        let mut state=super::super::get_snapshot(&conn).unwrap();
+        // A previously confirmed order could already own the old parser ID.
+        state["orders"]=json!([{
+            "id":"historical","clientId":"","createdAt":"2026-11-16",
+            "status":"REVIEW","raw":"기존 발주","recipients":[{
+                "id":"recognition:recipient:0","name":"기존 수취인",
+                "items":[{"id":"recognition:item:3:0","name":"709","raw":"709 1개"}]
+            }]
+        }]);
+        let first=super::super::write_snapshot(&mut conn,state,0,false).unwrap();
+        assert_eq!(first["revision"],1);
+        let evidence=json!({"recipients":[{
+            "id":"recognition:recipient:0","name":"새 수취인",
+            "address":"서울","mobile":"010-1111-2222",
+            "sources":[],"items":[{
+                "id":"recognition:item:3:0","name":"709","raw":"709 2개",
+                "sources":[]
+            }]
+        }],"candidates":[]});
+        let newer=super::super::business_core::execute(
+            "rules","merge_reception_analysis",json!({
+                "previous":{"id":"second-order","clientId":"dealer",
+                    "createdAt":"2026-11-16","raw":"새 발주",
+                    "orderType":"AGENCY","recipients":[]},
+                "evidence":evidence,"raw":"새 발주","clientId":"dealer",
+                "at":"2026-11-16"
+            })
+        ).unwrap()["order"].clone();
+        let mut after=first;
+        after["orders"].as_array_mut().unwrap().push(newer);
+        // In production, this exact relational store formerly rejected
+        // '수취인 ID 중복: recognition:recipient:0' at this boundary.
+        let saved=super::super::write_snapshot(&mut conn,after,1,false).unwrap();
+        assert_eq!(saved["revision"],2);
+        assert_eq!(saved["orders"][0]["recipients"][0]["id"],
+            "recognition:recipient:0"); // old history is NEVER rewritten
+        assert_eq!(saved["orders"][1]["recipients"][0]["id"],
+            "second-order:recognition:recipient:0");
+        assert_eq!(saved["orders"][1]["recipients"][0]["items"][0]["id"],
+            "second-order:recognition:item:3:0");
+        verify(&conn).unwrap();
+        drop(conn);
+        let opened=super::super::initialize_database(&path).unwrap();
+        let restored=super::super::get_snapshot(&opened).unwrap();
+        assert_eq!(restored["orders"][0]["recipients"][0]["id"],
+            "recognition:recipient:0");
+        assert_eq!(restored["orders"][1]["recipients"][0]["id"],
+            "second-order:recognition:recipient:0");
+        drop(opened);close(&path);
+    }
+    #[test]
     fn upgrades_legacy_303_site_groups_to_360_units_with_verified_original_backup() {
         let folder=temp().with_extension("dir");
         std::fs::create_dir_all(&folder).unwrap();
