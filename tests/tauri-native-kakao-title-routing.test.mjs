@@ -13,14 +13,14 @@ test("Kakao title/client association is saved by native Rust with one SQLite com
   assert.match(adapter, /"catalog_clients", "remember_title_client"/);
   assert.match(native, /"remembered_title_client" \| "remember_title_client"/);
 });
-test("automatic remembered client lookup and clipboard paste use native read projection", () => {
+test("clipboard paste combines active KakaoTalk HWND with Rust-only automatic dealer matching", () => {
   const source = read("src/SourceDocument.tsx");
   const adapter = read("src/native-title-clients.ts");
-  assert.match(source, /nativeRememberedTitleClient\(state, windows\)/);
-  assert.match(source, /await nativeRememberedTitleClient\(state, chats\)/);
-  assert.match(adapter, /"catalog_clients", "remembered_title_client"/);
+  assert.match(source, /nativeAutoReceptionClient\(/);
+  assert.match(source, /await nativeAutoReceptionClient\(/);
+  assert.match(adapter, /"catalog_clients", "auto_match_reception_client"/);
   assert.doesNotMatch(source, /\brememberedTitleClient\(/);
-  assert.match(source, /autoInput\.current\.state !== state/);
+  assert.match(source, /activeChatHandle = dock\.activeChatHandle/);
   assert.match(source, /latestReception\.current\.order !== order/);
 });
 
