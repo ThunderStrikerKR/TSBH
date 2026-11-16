@@ -37,6 +37,9 @@ $report = @{
   ciOnly=$true; releaseExeBuilt=$false; status="STARTED"
   testDb=$testDb
 }
+$env:BANDO_DEV_GUI_AUDIT = "true"
+$env:VITE_BANDO_NATIVE_AUDIT = "true"
+$env:BANDO_DEV_EVIDENCE = $out
 $cmd = $null
 try {
   $cmd = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c","DEV_WINDOWS_TAURI.cmd") -WorkingDirectory $repo -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
@@ -78,6 +81,11 @@ db.close()
     $desktop = & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo "scripts\stage9-windows-desktop-probe.ps1") -ProcessId $native[0].Id -OutDir $out
     $report.desktop=$desktop | Out-String | ConvertFrom-Json
   } catch { $report.screenshotError=$_.Exception.Message }
+  $env:BANDO_DEV_NATIVE_PID = [string]$native[0].Id
+  Write-Host "BANDO_DEV_BUSINESS_START with real Windows Tauri debug executable"
+  & node scripts/migration32-dev-business-ui.mjs
+  if($LASTEXITCODE -ne 0) { throw "Real DEV GUI business scenario test FAILED. See dev-business-results.json" }
+  $report.businessScenarios="PASS"
   $report.status="PASS"
   Write-Host ("BANDO_DEV_WINDOWS_SMOKE_PASS "+($report | ConvertTo-Json -Depth 8 -Compress))
 } catch {
