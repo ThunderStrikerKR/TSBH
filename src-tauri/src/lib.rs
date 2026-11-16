@@ -7,6 +7,7 @@ mod kakao_dock;
 mod developer_workspace;
 mod startup_recovery;
 mod backup_manager;
+mod notification_store;
 mod relational_store;
 mod sale_unit_migration;
 mod product_name_enrichment;
@@ -251,6 +252,9 @@ fn initialize_database(path: &Path) -> Result<Connection, String> {
         );
         CREATE INDEX IF NOT EXISTS idx_receipt_order ON receipt_archive(order_id);
     "#).map_err(err)?;
+    // Independent notification table: additive, idempotent, and intentionally
+    // does not increment or rewrite the business snapshot revision.
+    notification_store::initialize(&conn)?;
     let exists: Option<i64> = conn.query_row("SELECT 1 FROM app_state WHERE id=1", [], |r| r.get(0)).optional().map_err(err)?;
     if exists.is_none() {
         let seed: Value = serde_json::from_str(include_str!("../resources/state-seed.json")).map_err(err)?;
@@ -1165,6 +1169,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             state_load, state_save, business_core_call, settings_patch, price_set, clipboard_write, clipboard_read,
             ocr::capture_ocr, ocr::cancel_ocr,
+            notification_store::hub_notifications_list,
+            notification_store::hub_notifications_add,
+            notification_store::hub_notifications_mark_read,
+            notification_store::hub_notifications_clear,
             product_open, catalog_report, catalog_approve, receipt_archive, backup_create, backup_list, backup_restore, choose_excel_directory, open_excel_directory, open_daily_excel_directory,
             factory_reply_watch::choose_factory_reply_directory,
             factory_reply_watch::factory_reply_watch_scan,

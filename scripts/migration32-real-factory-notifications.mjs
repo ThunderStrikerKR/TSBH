@@ -75,4 +75,60 @@ export async function probeFactoryReplyNotifications(page,{baseline,record,snap}
   });
   await snap(page,"32-factory-reply-numeric-details");
   await modal.getByRole("button",{name:/닫기/}).first().click();
+
+  if (process.env.BANDO_PERSISTENT_NOTICE_AUDIT === "true") {
+    const names=["sim32-missing-q.xlsx","sim32-numeric-waybills.xlsx"];
+    const initial = await page.evaluate(async () => window.bando.notificationList());
+    const saved = initial.filter((notice) => names.includes(notice.filename));
+    assert.equal(saved.length,2,"Both factory notices must be present in SQLite");
+    // The modal click above marked both notifications read, durably.
+    await page.waitForFunction(async(ids)=>{
+      const rows=await window.bando.notificationList();
+      return ids.every(id=>rows.find(n=>n.id===id)?.read===true);
+    }, saved.map(n=>n.id), {timeout:15000});
+    // Prevent the auto watcher from reimporting the intentionally rejected
+    // spreadsheet when the UI loads again.
+    for (const filename of names) {
+      await fs.rm(join(inbox,filename),{force:true});
+    }
+    const snapshot=await page.evaluate(async()=>window.bando.load());
+    await page.reload({waitUntil:"domcontentloaded"});
+    await open().waitFor({state:"visible",timeout:45000});
+    await page.waitForFunction(async(ids)=>{
+      const rows=await window.bando.notificationList();
+      return ids.every(id=>rows.find(n=>n.id===id)?.read===true);
+    }, saved.map(n=>n.id), {timeout:15000});
+    await open().click();
+    const reloaded=page.getByRole("dialog",{name:"알림"});
+    await reloaded.waitFor({state:"visible"});
+    for (const filename of names) {
+      await reloaded.locator(".notification-center-item").filter({
+        hasText:filename,
+      }).waitFor({state:"visible"});
+    }
+    assert.equal(await reloaded.locator(".notification-center-item.unread")
+      .filter({hasText:"sim32-missing-q.xlsx"}).count(),0);
+    const afterReload=await page.evaluate(async()=>window.bando.load());
+    assert.equal(afterReload.revision,snapshot.revision,
+      "Notification reload/read must not change business revision");
+    record("SIM32_SQLITE_NOTIFICATIONS_SURVIVE_UI_RELOAD",{
+      retained:saved.map(n=>({filename:n.filename,read:true})),
+      businessRevisionUnchanged:true,
+    });
+    await snap(page,"32-sqlite-notification-reopen");
+    await reloaded.getByRole("button",{name:"목록 비우기"}).click();
+    await page.waitForFunction(async()=>
+      (await window.bando.notificationList()).length===0,
+    null,{timeout:15000});
+    await reloaded.getByRole("button",{name:/닫기/}).first().click();
+    await page.reload({waitUntil:"domcontentloaded"});
+    await open().waitFor({state:"visible",timeout:45000});
+    assert.equal((await page.evaluate(async()=>window.bando.notificationList())).length,0,
+      "Notification clear must remain cleared across restart");
+    assert.equal((await page.evaluate(async()=>window.bando.load())).revision,
+      snapshot.revision,"Clearing inbox must not modify orders or business revision");
+    record("SIM32_SQLITE_NOTIFICATIONS_CLEAR_SURVIVES_RELOAD",{
+      remaining:0,businessRevisionUnchanged:true,
+    });
+  }
 }

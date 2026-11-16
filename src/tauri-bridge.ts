@@ -61,6 +61,10 @@ const api: Api = {
   saveOrderHistoryWorkbook: (bytes) => invoke<string | null>("save_order_history_workbook", { bytes }),
   saveClientWorkbook: (bytes) => invoke<string | null>("save_client_workbook", { bytes }),
   saveRegistrationWorkbook: (kind, bytes) => invoke<string | null>("save_registration_workbook", { kind, bytes }),
+  notificationList: () => invoke("hub_notifications_list"),
+  notificationAdd: (notice) => invoke("hub_notifications_add", { notice }),
+  notificationMarkRead: (id) => invoke("hub_notifications_mark_read", { id }),
+  notificationClear: () => invoke("hub_notifications_clear"),
   load: () => invoke<State>("state_load"),
   save: (state) => {
     auditNativeCall("state_save");

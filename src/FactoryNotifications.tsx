@@ -9,6 +9,7 @@ import { won } from "./domain";
 export function FactoryNotifications({
   state,
   notices,
+  storageError,
   onRead,
   onClear,
   onClose,
@@ -17,6 +18,7 @@ export function FactoryNotifications({
 }: {
   state: State;
   notices: HubNotification[];
+  storageError?: string;
   onRead: (id: string) => void;
   onClear: () => void;
   onClose: () => void;
@@ -49,6 +51,7 @@ export function FactoryNotifications({
   return (
     <Modal title="알림" onClose={onClose}>
       {error && <p role="alert" className="form-error">{error}</p>}
+      {storageError && <p role="alert" className="form-error">{storageError}</p>}
       <section className="notification-center" aria-label="알림 목록">
         <header className="notification-center-heading">
           <h3>최근 알림 <small>{notices.filter((entry) => !entry.read).length}건 미확인</small></h3>
