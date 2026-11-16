@@ -219,10 +219,10 @@ fn apply(payload:&Value)->Result<Value,String>{
                     matched_items.insert(original_id.clone());
                     rebind(&mut candidates,"itemId",&provisional,&original_id);
                     *item=merge_item(item,prior_item)?;
-                    // Subsequent Rust reprice_order supplies the fresh quote.
-                    if !str_field(item,"variantId").is_empty(){
-                        set(item,"unitPrice",Value::Null)?;
-                    }
+                    // Keep the fresh recognized quote until the Rust domain
+                    // resolver below recalculates it from the chosen client.
+                    // Clearing it here made every recognized SKU appear unpriced
+                    // when a user selected a dealer after pasting a document.
                 }
                 let item_id=field(item,"id").clone();
                 if let Some(spans)=item.get_mut("sources").and_then(Value::as_array_mut){
@@ -230,6 +230,29 @@ fn apply(payload:&Value)->Result<Value,String>{
                         set(span,"targetId",item_id.clone())?;
                         set(span,"recipientId",json!(old_id))?;
                     }
+                }
+            }
+        }
+    }
+    // Quote every recognized SKU in the same Rust merge that updates client
+    // identity. Avoid the interval where all prices are null and React's
+    // asynchronous passive reprice can be cancelled by a newer draft update.
+    if let Some(state) = payload.get("state") {
+        let client = payload.get("client").unwrap_or(&Value::Null);
+        for recipient in &mut parsed {
+            if let Some(items)=recipient.get_mut("items").and_then(Value::as_array_mut) {
+                for item in items {
+                    let pid=str_field(item,"productId").to_string();
+                    let vid=str_field(item,"variantId").to_string();
+                    let price = if vid.is_empty() || pid.is_empty() { Value::Null }
+                        else {
+                            match rows(field(state,"products")).iter()
+                                .find(|p|str_field(p,"id")==pid) {
+                                Some(product)=>super::pricing::resolve_unit_price(product,&vid,client)?,
+                                None=>Value::Null,
+                            }
+                        };
+                    set(item,"unitPrice",price)?;
                 }
             }
         }
