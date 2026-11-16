@@ -176,4 +176,52 @@ test("actual Rust freight edit -> bank-account copy preview (halt at first failu
   assert.match(pay.text,/시험은행/,"selected bank name must appear");
   assert.match(pay.text,/123-456-789/,"selected account number must appear");
   checkpoint("09_PAYMENT_COPY",{phase:pay.phase,issues:pay.paymentIssues.length,length:pay.text.length});
+  const frozenNotice=native("output","render_payment_notice",{
+    state:stage2,groupId:"sim-group-31"
+  });
+  const stage3=native("rules","apply_workflow_action",{
+    state:stage2,action:"advance_group",groupId:"sim-group-31",
+    noticeId:"sim-notice-31",paymentMessage:frozenNotice.payment,
+    now:clock,actor:"시험 직원",eventId:"sim-stage3-event-31"
+  }).state;
+  assert.equal(stage3.workflow.shipments[0].step,3);
+  assert.equal(stage3.workflow.groups[0].notices.length,1);
+  assert.equal(stage3.workflow.groups[0].notices[0].total,104000);
+  checkpoint("10_BANK_NOTICE_FROZEN",{step:3,notices:1,total:104000});
+  // Employee-only bank reconciliation is not being tested: simulate verified
+  // full deposit using the real audited staff reducers and synthetic amounts.
+  const withPayment=native("rules","apply_workflow_action",{
+    state:stage3,action:"record_payment",groupId:"sim-group-31",
+    paidAmount:104000,paidAt:clock,memo:"시뮬레이션 입금 확인",
+    allocations:[{shipmentId:"sim-shipment-31",amount:104000}],
+    allocationIds:["sim-allocation-31"],paymentId:"sim-payment-31",
+    now:clock,actor:"시험 직원",eventId:"sim-payment-event-31"
+  }).state;
+  const confirmed=native("rules","apply_workflow_action",{
+    state:withPayment,action:"confirm_group_payment",groupId:"sim-group-31",
+    confirmationId:"sim-confirmation-31",now:clock,actor:"시험 직원",
+    eventId:"sim-confirmation-event-31"
+  }).state;
+  assert.equal(confirmed.workflow.shipments[0].step,4);
+  assert.equal(confirmed.workflow.confirmations.length,1);
+  checkpoint("11_STAFF_ASSUMED_PAID",{step:4,paid:104000,confirmed:true});
+  const queued=native("rules","apply_workflow_action",{
+    state:confirmed,action:"process_group",groupId:"sim-group-31",
+    now:clock,actor:"시험 직원",eventId:"sim-queue-event-31"
+  });
+  assert.equal(queued.entries.length,1,"one factory shipment should enter the queue");
+  assert.equal(queued.state.workflow.shipments[0].transferred,true);
+  assert.equal(queued.state.workflow.queue[0].origin,"FACTORY");
+  assert.equal(queued.state.workflow.queue[0].status,"QUEUED");
+  checkpoint("12_FACTORY_QUEUE",{entries:1,status:"QUEUED",origin:"FACTORY"});
+  const prepared=native("output","prepare_factory_export",{
+    state:queued.state,ids:[queued.entries[0].id]
+  });
+  assert.equal(prepared.rows.length,1);
+  const row=prepared.rows[0].values;
+  assert.equal(row.length,16);
+  assert.equal(row[0],"김가상","factory export recipient name");
+  assert.equal(row[7],"010","Logen prepaid freight code");
+  checkpoint("13_FACTORY_EXCEL_ROWS",{rows:prepared.rows.length,
+    recipient:row[0],freightCode:row[7],goods:row[8]});
 });
