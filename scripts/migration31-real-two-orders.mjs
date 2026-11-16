@@ -64,6 +64,8 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
     }
     const raw=[info.name,info.phone,info.address,info.model].join("\n");
     await page.evaluate(text=>window.bando.copy(text),raw);
+    const clipboard=await page.evaluate(()=>window.bando.readClipboard());
+    assert.equal(clipboard,raw,"Native Windows clipboard changed before reception paste");
     await page.getByRole("button",{name:"대리발송",exact:true}).click();
     try {
       await page.waitForFunction(name=>
@@ -77,6 +79,9 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
         pendingButtons:[...document.querySelectorAll(".source-heading button")]
           .map(b=>({label:b.textContent?.trim(),disabled:b.disabled})),
         stateOrderCount:(await window.bando.load()).orders.length,
+        clipboard:(await window.bando.readClipboard()).slice(0,300),
+        inlineStatus:document.querySelector(".source-inline-status")?.textContent?.trim(),
+        modalTitles:[...document.querySelectorAll('[role="dialog"]')].map(e=>e.getAttribute("aria-label")||e.textContent?.slice(0,90)),
       }));
       record("SIM33_PASTE_AFTER_NEW_ORDER_DIAGNOSTIC",diagnostic);
       await snap(page,"33-paste-after-new-order-failure");
