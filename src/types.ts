@@ -586,6 +586,12 @@ export interface OcrCapture {
 }
 
 export interface Api {
+  notificationList: () => Promise<import("./app/notification-center.js").HubNotification[]>;
+  notificationAdd: (notice: import("./app/notification-center.js").HubNotification) =>
+    Promise<import("./app/notification-center.js").HubNotification[]>;
+  notificationMarkRead: (id: string) =>
+    Promise<import("./app/notification-center.js").HubNotification[]>;
+  notificationClear: () => Promise<import("./app/notification-center.js").HubNotification[]>;
   captureOcr?: () => Promise<OcrCapture>;
   cancelOcr?: () => Promise<void>;
   saveProductWorkbook?: (bytes: number[]) => Promise<string | null>;
