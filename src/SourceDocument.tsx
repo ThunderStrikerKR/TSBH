@@ -233,8 +233,12 @@ export function SourceDocument({
           } else {
             // Rust distinguishes a missing match from conflicting strong evidence.
             // A conflict is an ACTION item in the first-stage review.
+            const staleDealer = !!result.clientId;
             next.clientMatch = {
-              source: result.source, clientId: null, detail: result.detail,
+              source: staleDealer ? "ERROR" : result.source, clientId: null,
+              detail: staleDealer
+                ? "자동 연결된 거래처가 현재 거래처 목록에 없습니다. 거래처 정보를 확인하고 직접 선택해 주세요."
+                : result.detail,
             };
           }
         } catch (error) {
