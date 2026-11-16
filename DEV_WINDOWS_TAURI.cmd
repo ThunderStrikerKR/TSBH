@@ -20,9 +20,11 @@ if errorlevel 1 goto missing_rust
 where powershell >nul 2>nul
 if errorlevel 1 goto failed
 
-rem Use hosted Windows runner's PowerShell 7 when running the CI-only
-rem automated GUI audit. Keep the employee's normal Windows PowerShell path.
-if /I "%GITHUB_ACTIONS%"=="true" if /I "%BANDO_DEV_GUI_AUDIT%"=="true" (
+rem Set a single conditional flag. An "if A if B (...) else (...)" chain
+rem skips BOTH branches when A is false, silently exiting on normal Windows.
+set "BANDO_CI_GUI_MODE=0"
+if /I "%GITHUB_ACTIONS%"=="true" if /I "%BANDO_DEV_GUI_AUDIT%"=="true" set "BANDO_CI_GUI_MODE=1"
+if "%BANDO_CI_GUI_MODE%"=="1" (
   pwsh -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-node-deps.ps1"
 ) else (
   powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-node-deps.ps1"
@@ -51,7 +53,7 @@ echo [DEV] Close the app and press Ctrl+C here to stop the dev server.
 echo.
 rem Tauri 2: first "--" separates runner args; second "--" passes
 rem --bando-developer-test directly to the application.
-if /I "%GITHUB_ACTIONS%"=="true" if /I "%BANDO_DEV_GUI_AUDIT%"=="true" (
+if "%BANDO_CI_GUI_MODE%"=="1" (
   echo [DEV] CI-only WebView2 inspection enabled for real business workflow GUI tests.
   call "node_modules\.bin\tauri.cmd" dev --config src-tauri/tauri.ci-cdp.conf.json -- -- --bando-developer-test
 ) else (
