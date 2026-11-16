@@ -43,29 +43,28 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
   for(const [index,info] of cases.entries()){
     if(index) {
       await page.getByRole("button",{name:/새 주문/}).first().click();
-      // Do not paste the second source into the still-mounted first receipt.
+      // New reception must start without an inherited dealer. If a previous
+      // dealer remains selected, this is a real regression, not a reason to
+      // click the Change button and hide it.
       await page.waitForFunction(name=>
         !(document.querySelector(".source-document")?.textContent||"").includes(name),
         cases[0].name,{timeout:20000});
+      assert.equal(await page.locator(".receipt-client").count(),0,
+        "NEW_ORDER_INHERITED_CLIENT before second clipboard paste");
     }
     const raw=[info.name,info.phone,info.address,info.model].join("\n");
     await page.evaluate(text=>window.bando.copy(text),raw);
     await page.getByRole("button",{name:"대리발송",exact:true}).click();
-    // Switching to another pending receipt can preserve/auto-match its dealer.
-    // SourceDocument intentionally shows '변경' instead of '거래처 찾기'
-    // once a dealer is selected. Exercise either actual UI branch.
     await page.waitForFunction(name=>
       (document.querySelector(".source-document")?.textContent||"").includes(name),
       info.name,{timeout:30000});
-    const freshChooser=page.getByRole("button",{name:"거래처 찾기",exact:true});
-    if(await freshChooser.isVisible()) {
-      await freshChooser.click();
-    } else {
-      const change=page.locator(".receipt-client")
-        .getByRole("button",{name:"변경",exact:true});
-      await change.waitFor({state:"visible",timeout:15000});
-      await change.click();
-    }
+    // These receipts have no explicit dealer marker, and no Kakao chat in CI.
+    // Never silently "repair" a leaked dealer by clicking '변경'.
+    const noDealer = page.getByRole("button",{name:"거래처 찾기",exact:true});
+    await noDealer.waitFor({state:"visible",timeout:15000});
+    assert.equal(await page.locator(".receipt-client").count(),0,
+      "UNEXPECTED_AUTO_CLIENT_SELECTION for "+info.name);
+    await noDealer.click();
     const dealer=page.locator(".client-chooser-list .client-result")
       .filter({hasText:"가상대리점"});
     await dealer.waitFor({state:"visible",timeout:25000});
@@ -233,4 +232,153 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
     "SIM31_MULTIPLE separate orders must never share item ID");
   record("SIM31_MULTIPLE_ORDER_SQLITE two GUI confirmations persisted",{verified});
   await snap(page,"09-sim31-two-separate-orders-confirmed");
+}
+
+
+/**
+ * P0/P1: Production Rust matching evidence + GUI client identity + SQLite
+ * snapshots across A -> B -> A. Never mutate the business state via IPC:
+ * only fixture provisioning elsewhere uses native state_save. All customer
+ * choices and order confirmation in this probe occur through actual WebView2.
+ */
+export async function probeCrossDealerOrderIsolation(page,{record,snap}) {
+  assert.equal(process.platform,"win32");
+  assert.equal(process.env.GITHUB_ACTIONS,"true");
+  assert.equal(await page.evaluate(()=>window.bando.workspaceMode()),true);
+  const initial=await page.evaluate(async()=>window.bando.load());
+  assert.equal(initial.orders.length,2,"Expected two original confirmed orders");
+  const scenarios=[
+    {recipient:"정가상",dealerId:"sim31-dealer",dealerName:"가상대리점",
+      origin:"RAW_EXPLICIT",marker:"거래처: 가상대리점",freight:"4000"},
+    {recipient:"이가상",dealerId:"sim32-retail",dealerName:"가상소매점",
+      origin:"RAW_EXPLICIT",marker:"거래처: 가상소매점",freight:"4100"},
+    {recipient:"최가상",dealerId:"sim31-dealer",dealerName:"가상대리점",
+      origin:"NONE",marker:"배송지메모: 가상소매점",freight:"4200"}
+  ];
+  const observed=[];
+  for(const [index,scenario] of scenarios.entries()){
+    const before=await page.evaluate(async()=>{
+      const s=await window.bando.load();
+      return s.orders.map(o=>({id:o.id,clientId:o.clientId,confirmedAt:o.confirmedAt}));
+    });
+    await page.getByRole("button",{name:/새 주문/}).first().click();
+    // Before pasting, no previous order/client may remain active.
+    await page.waitForFunction(()=>
+      !document.querySelector(".source-document")?.textContent?.includes("가상 1개") &&
+      !document.querySelector(".source-document")?.textContent?.includes("709 1개"),
+      null,{timeout:20000});
+    assert.equal(await page.locator(".receipt-client").count(),0,
+      "P1_NEW_ORDER_STALE_DEALER "+scenario.recipient);
+    const chooserBefore=page.getByRole("button",{name:"거래처 찾기",exact:true});
+    // No raw input yet -> chooser is intentionally not visible.
+    assert.equal(await chooserBefore.count(),0,
+      "P1_NEW_ORDER_UNEXPECTED_SOURCE "+scenario.recipient);
+    const raw=[scenario.marker,scenario.recipient,
+      "010-7000-"+String(1000+index),
+      "서울특별시 마포구 월드컵로 "+(30+index),
+      "709 1개"].join("\n");
+    // Read-only Rust oracle establishes WHAT matching evidence exists.
+    // A recipient named after a dealer or a shipping memo does not qualify.
+    const evidence=await page.evaluate(async text=>{
+      const state=await window.bando.load();
+      return window.__TAURI_INTERNALS__.invoke("business_core_call",{
+        domain:"catalog_clients",operation:"auto_match_reception_client",
+        payload:{state,windows:[],raw:text,activeChatHandle:""}
+      });
+    },raw);
+    assert.equal(evidence.source,scenario.origin,
+      "P0_NATIVE_MATCH_PROVENANCE "+scenario.recipient);
+    assert.equal(evidence.clientId,scenario.origin==="NONE"?null:scenario.dealerId,
+      "P0_NATIVE_MATCH_ID "+scenario.recipient);
+    await page.evaluate(text=>window.bando.copy(text),raw);
+    await page.getByRole("button",{name:"대리발송",exact:true}).click();
+    await page.waitForFunction(name=>
+      (document.querySelector(".source-document")?.textContent||"").includes(name),
+      scenario.recipient,{timeout:30000});
+    if(scenario.origin==="NONE"){
+      const choose=page.getByRole("button",{name:"거래처 찾기",exact:true});
+      await choose.waitFor({state:"visible",timeout:20000});
+      assert.equal(await page.locator(".receipt-client").count(),0,
+        "P1_UNEXPECTED_DEALER_AFTER_UNLABELED_PASTE "+scenario.recipient);
+      await choose.click();
+      await page.locator(".client-chooser-list .client-result")
+        .filter({hasText:scenario.dealerName}).click();
+    }else{
+      // Evidence says Rust must auto-match. Manual selection would mask
+      // a broken GUI-to-Rust connection, so it is forbidden in these cases.
+      await page.locator(".receipt-client b")
+        .filter({hasText:scenario.dealerName})
+        .waitFor({state:"visible",timeout:25000});
+    }
+    const shown=await page.locator(".receipt-client b").innerText();
+    assert.equal(shown.trim(),scenario.dealerName,
+      "P0_GUI_CLIENT_NAME "+scenario.recipient);
+    const freight=page.locator('.items-freight-panel .freight-money input[aria-label^="'+scenario.recipient+'"]:not([disabled])').first();
+    await freight.waitFor({state:"visible",timeout:45000});
+    await freight.click();
+    await freight.press("ControlOrMeta+A");
+    await freight.press("Backspace");
+    await page.keyboard.type(scenario.freight,{delay:45});
+    await freight.blur();
+    await page.waitForFunction(async ({prefix,count})=>
+      document.querySelectorAll(".workflow-group").length>=count &&
+      [...document.querySelectorAll(".workflow-group button")].some(b=>
+        b.getAttribute("aria-label")==="배송 건 "+prefix),
+      {prefix:scenario.recipient,count:before.length+1},{timeout:30000});
+    const group=page.locator(".workflow-group").filter({
+      has:page.getByRole("button",{name:"배송 건 "+scenario.recipient})
+    }).first();
+    await group.getByRole("button",{name:"주문 확인 완료",exact:true})
+      .waitFor({state:"visible",timeout:45000});
+    await group.getByRole("button",{name:"주문 확인 완료",exact:true}).click();
+    await group.getByRole("button",{name:"운임 적용",exact:true})
+      .waitFor({state:"visible",timeout:30000});
+    await page.waitForFunction(async target=>
+      (await window.bando.load()).orders.length===target,
+      before.length+1,{timeout:30000});
+    const after=await page.evaluate(async()=>window.bando.load());
+    const created=after.orders.filter(o=>!before.some(b=>b.id===o.id));
+    assert.equal(created.length,1,"P0_EXACTLY_ONE_ORDER_CREATED");
+    const order=created[0];
+    assert.ok(order.id && !before.some(b=>b.id===order.id));
+    assert.equal(order.raw,raw,"P0_SAVED_SOURCE_CHANGED "+scenario.recipient);
+    assert.equal(order.clientId,scenario.dealerId,
+      "P0_SQLITE_CLIENT_ID "+scenario.recipient);
+    assert.equal(order.clientSnapshot?.id,scenario.dealerId,
+      "P0_SQLITE_CLIENT_SNAPSHOT "+scenario.recipient);
+    assert.equal(order.confirmationSnapshot?.client?.id,scenario.dealerId,
+      "P0_SQLITE_CONFIRMATION_CLIENT "+scenario.recipient);
+    assert.ok(order.confirmedAt,"P0_ORDER_NOT_CONFIRMED "+scenario.recipient);
+    for(const old of before){
+      const existing=after.orders.find(o=>o.id===old.id);
+      assert.equal(existing?.clientId,old.clientId,
+        "P0_PREVIOUS_ORDER_CLIENT_MUTATED");
+      assert.equal(existing?.confirmedAt,old.confirmedAt,
+        "P0_PREVIOUS_ORDER_CONFIRMATION_MUTATED");
+    }
+    observed.push({recipient:scenario.recipient,orderId:order.id,
+      clientId:order.clientId,source:evidence.source,
+      recipientId:order.recipients[0]?.id,
+      itemId:order.recipients[0]?.items[0]?.id});
+    record("SIM33_CROSS_DEALER_ORDER_COMMITTED",observed.at(-1));
+  }
+  assert.equal(new Set(observed.map(o=>o.orderId)).size,scenarios.length);
+  assert.equal(new Set(observed.map(o=>o.recipientId)).size,scenarios.length);
+  assert.equal(new Set(observed.map(o=>o.itemId)).size,scenarios.length);
+  await snap(page,"33-cross-dealer-a-b-a-confirmed");
+  await page.reload({waitUntil:"domcontentloaded"});
+  await page.locator("nav[aria-label='업무 메뉴']").waitFor({timeout:60000});
+  const persisted=await page.evaluate(async()=>window.bando.load());
+  assert.equal(persisted.orders.length,initial.orders.length+scenarios.length,
+    "P0_RELOAD_ORDER_COUNT");
+  for(const proof of observed){
+    const order=persisted.orders.find(o=>o.id===proof.orderId);
+    assert.equal(order?.clientId,proof.clientId,"P0_RELOAD_CLIENT_ID "+proof.recipient);
+    assert.equal(order?.clientSnapshot?.id,proof.clientId,
+      "P0_RELOAD_CLIENT_SNAPSHOT "+proof.recipient);
+    assert.equal(order?.confirmationSnapshot?.client?.id,proof.clientId,
+      "P0_RELOAD_CONFIRMATION "+proof.recipient);
+  }
+  record("SIM33_CROSS_DEALER_SQLITE_RELOAD_PASSED",
+    {orderCount:persisted.orders.length,proof:observed});
 }
