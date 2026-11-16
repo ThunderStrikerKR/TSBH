@@ -74,33 +74,6 @@ export function OrderDesk(props: OrderDeskProps) {
   const shownChecks = flowSummaryReady ? staffBlocks
     : lastReadyChecks.current?.orderId === draft.id
       ? lastReadyChecks.current.blocks : staffBlocks;
-  // Line amounts are exclusively calculated by Rust preview_order. Keep the
-  // last authoritative quote visible while unrelated workflow/issue previews
-  // are in flight. A changed product, dealer, quantity or unit price must NOT
-  // reuse that quote. No monetary calculation occurs in React.
-  const linePriceInputKey = JSON.stringify({
-    orderId: draft.id,
-    clientId: draft.clientId,
-    tier: pricingClient.tier,
-    overrides: pricingClient.overrides,
-    rows: draft.recipients.map((r) => [
-      r.id, r.items.map((i) => [
-        i.id, i.productId, i.variantId, i.unitPrice, i.quantity,
-      ]),
-    ]),
-  });
-  const lastNativeLineAmounts = useRef<{
-    key: string;
-    amounts: NonNullable<typeof orderPreview>["lineAmounts"];
-  } | undefined>(undefined);
-  if (orderPreview?.orderId === draft.id) {
-    lastNativeLineAmounts.current = {
-      key: linePriceInputKey, amounts: orderPreview.lineAmounts,
-    };
-  }
-  const visibleLineAmounts = orderPreview?.lineAmounts ??
-    (lastNativeLineAmounts.current?.key === linePriceInputKey
-      ? lastNativeLineAmounts.current.amounts : undefined);
   // Rust previews become briefly pending after each keystroke. Keep the
   // *input element* mounted; the last resolved projection is for display only.
   // The edited amount always comes from the current React draft below, and
@@ -625,12 +598,12 @@ export function OrderDesk(props: OrderDeskProps) {
                                         className="item-row-edit item-amount"
                                         onClick={() => setItemEditing({ rid: r.id, iid: i.id })}
                                       >
-                                        {visibleLineAmounts
-                                          ? won(visibleLineAmounts.find(
-                                              (entry) => entry.recipientId === r.id &&
-                                                entry.itemId === i.id,
-                                            )?.amount ?? null)
-                                          : "계산 중…"}
+                                        {i.unitPrice !== null &&
+                                        i.quantity !== null &&
+                                        i.productId &&
+                                        i.variantId
+                                          ? won(i.unitPrice * i.quantity)
+                                          : "확인 필요"}
                                       </button>
                                     </Linked>
                                   </td>

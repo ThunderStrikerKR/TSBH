@@ -98,3 +98,18 @@ cargo test --manifest-path tests/rust-migration/integration/Cargo.toml
 - 다만 `PACKAGE_WINDOWS_TAURI.cmd`의 누락된 CMD 참조는 **OPEN**,
   테스트에 TODO와 본 누적표로 명시. 기능 복구 없이 배포 경로 완료 판정 금지.
 - 이번 테스트 변경은 동작 코드와 기존 TypeScript oracle을 변경하지 않음.
+
+## R34-009: 가격 표시 임시 보완 기능 제거 및 고정 TypeScript 원본 화면 복원 (2026-11-17)
+
+- 기준: `30a19cd2da7533dd2ed36b807593309bde70a7eb:src/OrderDesk.tsx` 원본.
+  원본은 `unitPrice !== null && quantity !== null && productId && variantId`인 경우
+  `won(unitPrice * quantity)`를 렌더링하고, 그 외에만 `확인 필요`를 보여줌.
+- Rust 단가 업무 판단은 `pricing.rs`, `order_edit.rs` 그대로 유지. React UI의
+  단순 수량 곱셈 표시도 위 고정 원본과 정확히 같도록 복원.
+- 새로 덧대었던 `lastNativeLineAmounts` 캐시, `linePriceInputKey`,
+  `visibleLineAmounts`, `계산 중…`, 행별 가격의 `flowSummaryReady`
+  의존성을 모두 삭제. 정상 단가가 있으면 unrelated preview 응답에 가려지지 않음.
+- `tests/tauri-reception-price-display-stability.test.mjs`의 기존 '캐시가 존재해야 PASS'
+  계약을 없애고 고정 TS 원본 방식의 표시 분기를 검증하도록 교체.
+- **상태: PATCH_COMMITTED.** Rust·프런트엔드 CI와 실 Windows 4.2초 관찰
+  결과는 별도로 확인한 뒤 검증 완료로 갱신할 것.
