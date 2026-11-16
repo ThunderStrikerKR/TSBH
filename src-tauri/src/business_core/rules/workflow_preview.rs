@@ -182,6 +182,35 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
 }
 
 
+/// Read-only line-price projection shared by the full order preview and
+/// the independent instant line quote. The Rust engine is the ONLY place
+/// multiplying the business unit price and quantity.
+fn line_amounts(recipients:&[Value])->Vec<Value>{
+    recipients.iter().flat_map(|recipient| {
+        rows(field(recipient,"items")).iter().map(|item| {
+            let amount=if str_field(item,"productId").is_empty() ||
+                str_field(item,"variantId").is_empty() { None } else {
+                safe(field(item,"unitPrice"))
+                    .zip(field(item,"quantity").as_i64())
+                    .and_then(|(price,qty)|price.checked_mul(qty))
+                    .filter(|value|(-super::MAX_SAFE..=super::MAX_SAFE).contains(value))
+            };
+            json!({"recipientId":field(recipient,"id"),
+                "itemId":field(item,"id"),"amount":amount})
+        })
+    }).collect()
+}
+
+/// The item's Rust-calculated amount must not wait for workflow reconciliation,
+/// shipment totals, customer issue validation or account allocation IPC.
+/// This is a read-only response; there are no TS fallback business calculations.
+pub(super) fn project_order_lines(payload:&Value)->Result<Value,String>{
+    let draft=req(payload,"draft")?;
+    let id=super::required_str(draft,"id")?;
+    Ok(json!({"orderId":id,
+        "lineAmounts":line_amounts(rows(field(draft,"recipients")))}))
+}
+
 /** The order-detail footer includes even transferred shipments, except
  * archived/deleted ones, exactly like workflow.ts::orderGrandTotal.
  * Recipient VAT display is separate from the monetary snapshot.
@@ -204,24 +233,7 @@ pub(super) fn project_order(payload: &Value) -> Result<Value, String> {
         .map(|ship| workflow::shipment_totals(state, str_field(ship, "id")))
         .collect::<Result<Vec<_>, _>>()?;
     let recipients = rows(field(order, "recipients"));
-    let line_amounts = recipients.iter().flat_map(|recipient| {
-        rows(field(recipient, "items")).iter().map(|item| {
-            let amount = if str_field(item, "productId").is_empty()
-                || str_field(item, "variantId").is_empty() {
-                None
-            } else {
-                safe(field(item, "unitPrice"))
-                    .zip(field(item, "quantity").as_i64())
-                    .and_then(|(price, quantity)| price.checked_mul(quantity))
-                    .filter(|value| (-super::MAX_SAFE..=super::MAX_SAFE).contains(value))
-            };
-            json!({
-                "recipientId": field(recipient, "id"),
-                "itemId": field(item, "id"),
-                "amount": amount
-            })
-        })
-    }).collect::<Vec<_>>();
+    let line_amounts = line_amounts(recipients);
     let has_vat = recipients.iter().any(|row| vat_applies(order, row));
     let has_excluded = recipients.iter().any(|row| !vat_applies(order, row));
     Ok(json!({
@@ -236,9 +248,26 @@ pub(super) fn project_order(payload: &Value) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{notice_delta, project};
+    use super::{notice_delta, project, project_order_lines};
     use serde_json::{json, Value};
 
+    #[test]
+    fn independent_native_item_price_is_available_without_shipments_or_workflow(){
+        let order=json!({"id":"o","recipients":[{"id":"r","items":[
+            {"id":"i","productId":"p","variantId":"v","unitPrice":42000,"quantity":2},
+            {"id":"pending","productId":"p","variantId":"v","unitPrice":null,"quantity":2}
+        ]}]});
+        let result=project_order_lines(&json!({"draft":order})).unwrap();
+        assert_eq!(result["orderId"],"o");
+        assert_eq!(result["lineAmounts"][0]["amount"],84000);
+        assert_eq!(result["lineAmounts"][1]["amount"],Value::Null);
+        let invalid=json!({"id":"o","recipients":[{"id":"r","items":[{
+            "id":"i","productId":"p","variantId":"v",
+            "unitPrice":9007199254740991_i64,"quantity":2
+        }]}]});
+        let result=project_order_lines(&json!({"draft":invalid})).unwrap();
+        assert_eq!(result["lineAmounts"][0]["amount"],Value::Null);
+    }
     #[test]
     fn re_notified_amounts_match_original_typescript_arithmetic() {
         // Original UI: current group total - last issued notice.total.

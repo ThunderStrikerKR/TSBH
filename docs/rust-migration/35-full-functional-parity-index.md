@@ -128,3 +128,12 @@
 - Rust `issues.rs`의 기존 `contact_problem`과 `valid_contact`를 그대로 활용하여 `delivery_requirements_with_messages`에서 유효성 및 자세한 설명을 한 번에 반환.
 - React 화면은 Rust 설명문을 표시만 함. 불필요하게 이전 상태에서 빈 오류 문구를 표시하지 않으며, 기존 `delivery_requirements` 응답은 차등 검사 호환성 유지.
 - 전 기능 동등성 PASS 아님. CI / 실제 Windows 결과는 별도 기록.
+
+## 후속 — 실 Windows에서 발견된 품목 금액 로딩 종속 재설계
+
+- [실 Windows 실패 증거](https://github.com/ThunderStrikerKR/TSBH/actions/runs/43966959091): 거래처를 선택한 직후 React 계산을 제거한 화면에서 품목 가격이 계속 `—`로 남아 자동 시나리오 실패. 11월 13일 Rust 전면 이전 원칙은 유지함.
+- 원인: 품목당 금액 `orderPreview.lineAmounts`를 얻으려면 배송 조정·전체 주문 미리보기 완료(`flowReady`)를 기다려야 했음. 단순 품목 값 조회가 전체 Rust workflow IPC에 종속돼 생긴 실제 UX 오류.
+- 수정: Rust `workflow_preview.rs::line_amounts`를 공유 로직으로 추출하고 `preview_order_lines` 읽기 전용 명령 추가. 동일한 Rust 함수가 전체 주문 미리보기 및 독립 품목 금액을 계산함.
+- React `useNativeOrderLineAmounts`는 가격에 영향을 주는 원천 인자만 fingerprint로 관리해, 배송·연락처·원문 변경과 관계없이 이미 계산된 Rust 품목 금액을 표시. 품목값이 변경되면 오래된 값은 즉시 무효화함.
+- React 수량 곱셈을 부활시키지 않음. 전체 주문 총액·배송건수·부가세는 기존 `useNativeOrderPreview`의 Rust 결과 그대로 유지.
+- 원본과 다른 변경은 사용자가 확정한 Rust 업무 분리/비동기 안정화를 위한 신설 실행 경로다. Windows 29시나리오 검증 완료 여부는 해당 커밋 결과까지 별도 확인.

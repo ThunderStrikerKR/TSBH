@@ -55,6 +55,8 @@ export function OrderDesk(props: OrderDeskProps) {
     flowSummaryReady,
     flowSummaryError,
     orderPreview,
+    orderLineAmounts,
+    orderLineError,
     setProductSearch,
     activeGroupId,
     run,
@@ -584,8 +586,8 @@ export function OrderDesk(props: OrderDeskProps) {
                                         className="item-row-edit item-amount"
                                         onClick={() => setItemEditing({ rid: r.id, iid: i.id })}
                                       >
-                                        {orderPreview
-                                          ? won(orderPreview.lineAmounts.find(
+                                        {orderLineAmounts
+                                          ? won(orderLineAmounts.find(
                                               (entry) => entry.recipientId === r.id &&
                                                 entry.itemId === i.id,
                                             )?.amount ?? null)
@@ -697,6 +699,9 @@ export function OrderDesk(props: OrderDeskProps) {
               </div>
               {flowSummaryError && (
                 <p role="alert">주문 미리보기 계산 오류: {flowSummaryError}</p>
+              )}
+              {orderLineError && (
+                <p role="alert">Rust 품목 금액 조회 오류: {orderLineError}</p>
               )}
               <div className="order-grand-total">
                 총 주문 금액{" "}

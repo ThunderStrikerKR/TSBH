@@ -94,6 +94,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "evaluate_workflow" => workflow::evaluate(&payload),
         "preview_workflow" => workflow_preview::project(&payload),
         "preview_order" => workflow_preview::project_order(&payload),
+        "preview_order_lines" => workflow_preview::project_order_lines(&payload),
         "workflow_issues" => Ok(json!({"issues":workflow_issues::workflow_issues(
             req(&payload,"state")?,required_str(&payload,"groupId")?)?})),
         "stage_issues" => Ok(json!({"issues":workflow_issues::stage_issues(

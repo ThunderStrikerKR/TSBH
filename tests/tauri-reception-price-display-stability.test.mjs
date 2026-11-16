@@ -11,11 +11,23 @@ const cell=source.slice(start,end);
 
 test("product-line amounts come from the approved Rust preview, never duplicated in React",()=>{
   assert.ok(start>=0 && end>start,"registered line price button missing");
-  assert.match(cell,/orderPreview\.lineAmounts\.find\(/);
+  assert.match(cell,/orderLineAmounts\.find\(/);
   assert.match(cell,/entry\.recipientId === r\.id/);
   assert.match(cell,/entry\.itemId === i\.id/);
   assert.match(cell,/\? won\([\s\S]*?\?\.amount \?\? null\)\s*:\s*"—"/);
   assert.doesNotMatch(cell,/flowSummaryReady|i\.unitPrice \* i\.quantity|loading/);
+});
+test("separate Rust line quote is not gated by complete workflow reconciliation",()=>{
+  const desk=readFileSync(new URL("../src/orders/useOrderDesk.tsx",import.meta.url),"utf8");
+  const rust=readFileSync(new URL("../src-tauri/src/business_core/rules/workflow_preview.rs",import.meta.url),"utf8");
+  const hook=readFileSync(new URL("../src/orders/useNativeOrderLineAmounts.ts",import.meta.url),"utf8");
+  assert.match(desk,/useNativeOrderLineAmounts\(draft\)/);
+  assert.match(desk,/orderLineAmounts: nativeLines\.lineAmounts/);
+  assert.match(hook,/"rules","preview_order_lines"/);
+  assert.doesNotMatch(hook,/flowReady|nativeBoard|flowSummaryReady/);
+  assert.match(rust,/fn line_amounts\(recipients:&\[Value\]\)/);
+  assert.match(rust,/pub\(super\) fn project_order_lines/);
+  assert.match(rust,/fn independent_native_item_price_is_available_without_shipments_or_workflow/);
 });
 test("eliminate the unnecessary delayed-price loading overlay and React quote cache",()=>{
   for(const obsolete of ["linePriceInputKey","lastNativeLineAmounts","visibleLineAmounts",

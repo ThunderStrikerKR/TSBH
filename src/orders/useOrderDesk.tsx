@@ -13,6 +13,7 @@ import { businessCoreCall } from "../tauri-bridge";
 import { useNativeWorkflowReconcile } from "./useNativeWorkflowReconcile";
 import { useNativeWorkflowBoard } from "./useNativeWorkflowBoard";
 import { useNativeOrderPreview } from "./useNativeOrderPreview";
+import { useNativeOrderLineAmounts } from "./useNativeOrderLineAmounts";
 import { useNativeOrderIssues } from "./useNativeOrderIssues";
 import { assertRustReceptionAnalysis, receptionAnalysisAllowed } from "./rust-reception";
 import { registeredProducts, sortProducts } from "../product-models";
@@ -107,6 +108,9 @@ export function useOrderDesk({
   const flowReady = nativeFlow.ready;
   const nativeBoard = useNativeWorkflowBoard(flowState);
   const nativeOrder = useNativeOrderPreview(flowState, draft, flowReady, state);
+  // Line prices come from native Rust immediately, not after the entire
+  // shipment workflow and issue preview resolves.
+  const nativeLines = useNativeOrderLineAmounts(draft);
   const nativeIssues = useNativeOrderIssues(draft);
   const flowSummaryReady = flowReady && nativeBoard.ready && nativeOrder.ready && nativeIssues.ready;
   const flowGroups = (flowState.workflow?.groups ?? []).filter((g) =>
@@ -767,6 +771,8 @@ export function useOrderDesk({
     flowSummaryReady,
     flowSummaryError: nativeFlow.error || nativeBoard.error || nativeOrder.error || nativeIssues.error,
     orderPreview: nativeOrder.displayResult,
+    orderLineAmounts: nativeLines.lineAmounts,
+    orderLineError: nativeLines.error,
     setProductSearch,
     edit,
     activeGroupId,
