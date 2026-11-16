@@ -19,7 +19,7 @@ test("all floating notice blocks are replaced by a single detailed modal", () =>
   const header=read("src/app/AppHeader.tsx");
   const modal=read("src/FactoryNotifications.tsx");
   const css=read("src/styles/application.css");
-  assert.match(app,/usePersistedNotifications\(\)/);
+  assert.match(app,/usePersistedNotifications\(Boolean\(state && draft\)\)/);
   assert.match(app,/storageError=\{storageError\}/);
   assert.match(app,/onRead=\{\(id\) => \{ void markRead\(id\); \}\}/);
   assert.match(app,/onClear=\{\(\) => \{ void clear\(\); \}\}/);
