@@ -207,7 +207,9 @@ test("OCR, pasted and cleared reception drafts use Rust, never the old TS reduce
   assert.match(component, /action: "replace_reception", order: source/);
   assert.match(component, /const next = await nativeReplaceReception\(order, raw\)/);
   assert.match(component, /await nativeReplaceReception\(order, ""\)/);
-  assert.match(component, /latestReception\.current\.order !== order/);
+  assert.match(component, /latestReception\.current\.order\.id !== order\.id/);
+  assert.match(component, /latestReception\.current\.order\.raw !== order\.raw/);
+  assert.match(component, /latestReception\.current\.text !== text/);
   assert.doesNotMatch(component, /(?:^|[^A-Za-z])replaceReception\(/m);
   assert.match(native, /"replace_reception"=>/);
 });

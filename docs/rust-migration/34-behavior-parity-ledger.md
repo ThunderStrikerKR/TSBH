@@ -87,3 +87,14 @@ cargo test --manifest-path tests/rust-migration/integration/Cargo.toml
   옛 값을 재사용하지 않고 `계산 중…` 표시; React 금액 산식 추가 금지.
 - **이번 표시 교정은 PATCH_COMMITTED / 새 Windows 4.2초 검증 결과 확인 전 PASS 금지.**
 - CI `react-native-reception` 직전에 원본 SHA 고정 seal 테스트를 항상 실행하도록 게이트 추가.
+
+## 기존 프런트엔드 회귀 검사 최신화 (2026-11-17)
+
+- 32차에서 의도적으로 삭제한 `BUILD_WINDOWS_TAURI.cmd` 및 `BUILD_WINDOWS_EXE.cmd`를
+  옛 테스트가 여전히 로드해 발생하던 `ENOENT`는 실제로 남아 있는 수동 GitHub Actions
+  Release+OCR ZIP 경로를 검증하도록 테스트 계약을 수정함. 삭제 파일은 복구하지 않음.
+- 기존 React stale guard의 비교는 현재 `order.id`·`order.raw`·원문 text 비교,
+  `sameValue(previous,sourceDraft)` 의미상 동일성 비교를 실제로 검사하도록 수정.
+- 다만 `PACKAGE_WINDOWS_TAURI.cmd`의 누락된 CMD 참조는 **OPEN**,
+  테스트에 TODO와 본 누적표로 명시. 기능 복구 없이 배포 경로 완료 판정 금지.
+- 이번 테스트 변경은 동작 코드와 기존 TypeScript oracle을 변경하지 않음.

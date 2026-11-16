@@ -27,7 +27,9 @@ test("clipboard paste combines active KakaoTalk HWND with Rust-only automatic de
   assert.match(source, /console\.warn\("거래처 자동 연결을 건너뛰었습니다\."/);
   assert.doesNotMatch(source, /\brememberedTitleClient\(/);
   assert.match(source, /activeChatHandle = dock\.activeChatHandle/);
-  assert.match(source, /latestReception\.current\.order !== order/);
+  assert.match(source, /latestReception\.current\.order\.id !== order\.id/);
+  assert.match(source, /latestReception\.current\.order\.raw !== order\.raw/);
+  assert.match(source, /latestReception\.current\.text !== text/);
 });
 
 test("production routing and original TypeScript differential scenarios remain available", () => {

@@ -1,63 +1,38 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-const source = readFileSync(new URL("../BUILD_WINDOWS_TAURI.cmd", import.meta.url), "utf8");
+import { readFileSync, existsSync } from "node:fs";
+const read = p => readFileSync(new URL("../"+p, import.meta.url),"utf8");
+const exists = p => existsSync(new URL("../"+p, import.meta.url));
+const dev = read("DEV_WINDOWS_TAURI.cmd");
+const verify = read(".github/workflows/verify-tauri.yml");
+const output = read(".github/workflows/migration-output.yml");
+const cache = read("scripts/ensure-node-deps.ps1");
 
-test("Windows build checks both running EXE names before npm or cargo build", () => {
-  const preflight = source.indexOf("call :ensure_bando_closed");
-  const install = source.indexOf('scripts\\ensure-node-deps.ps1');
-  const compile = source.indexOf("call npm run build:windows");
-  assert.ok(preflight >= 0 && preflight < install && install < compile);
-  assert.match(source, /tasklist \/FI "IMAGENAME eq bando_hub\.exe"/);
-  assert.match(source, /tasklist \/FI "IMAGENAME eq bando_hub_tauri\.exe"/);
-  assert.match(source, /:app_running\r?\n[\s\S]*BUILD NOT STARTED/);
-  assert.doesNotMatch(source, /taskkill(?:\.exe)?\s/i);
+test("removed legacy release launchers stay absent",()=>{
+  assert.equal(exists("BUILD_WINDOWS_TAURI.cmd"),false);
+  assert.equal(exists("BUILD_WINDOWS_EXE.cmd"),false);
 });
-
-test("Windows build stages new binary and rechecks before replacing published executable", () => {
-  const stage = source.indexOf('"release\\bando_hub.exe.pending" >nul');
-  const secondGuard = source.indexOf("call :ensure_bando_closed", source.indexOf("call npm run build:windows"));
-  const rename = source.indexOf('move /Y "release\\bando_hub.exe.pending" "release\\bando_hub.exe"');
-  const cleanup = source.indexOf('del /Q "release\\BANDO-HUB-v*.exe"');
-  assert.ok(stage > 0 && secondGuard > stage && rename > secondGuard);
-  assert.ok(cleanup > rename, "Old versions can only be deleted after a successful rename");
-  assert.match(source, /if errorlevel 1 goto copy_failed/);
-  assert.match(source, /:app_running_after_build[\s\S]*Existing release\\bando_hub\.exe was not changed/);
-  assert.match(source, /:copy_failed[\s\S]*Existing release\\bando_hub\.exe was not changed/);
+test("daily developer launcher targets isolated Tauri/Vite TEST workspace without release bundling",()=>{
+  assert.match(dev,/tauri\.cmd" dev -- -- --bando-developer-test/);
+  assert.match(dev,/ensure-node-deps\.ps1/);
+  assert.doesNotMatch(dev,/npm run build:windows|Compress-Archive|package-ocr-runtime\.ps1/);
+  assert.match(dev,/mklink \/J .*release\\ocr/);
 });
-
-test("daily development is a real Tauri/Vite TEST workspace without release EXE or ZIP build", () => {
-  const dev = readFileSync(new URL("../DEV_WINDOWS_TAURI.cmd", import.meta.url), "utf8");
-  assert.match(dev, /tauri\.cmd" dev -- -- --bando-developer-test/);
-  assert.match(dev, /ensure-node-deps\.ps1/);
-  assert.doesNotMatch(dev, /npm run build:windows|Compress-Archive|package-ocr-runtime\.ps1/);
-  assert.match(dev, /mklink \/J .*release\\ocr/);
+test("real Windows release is manual only and stages EXE with offline verified OCR ZIP",()=>{
+  assert.match(verify,/windows-release-build:[\s\S]*?if: github\.event_name == 'workflow_dispatch'/);
+  assert.match(verify,/run: npm run build:windows/);
+  assert.match(verify,/Copy-Item \(Join-Path \$root "bando_hub_tauri\.exe"\) \(Join-Path \$portable "bando_hub\.exe"\)/);
+  assert.match(verify,/Copy-Item "ocr-build-cache" \(Join-Path \$portable "ocr"\) -Recurse/);
+  assert.match(verify,/Validate offline OCR from the extracted ZIP/);
+  assert.match(verify,/Compress-Archive[\s\S]*?BANDO-HUB-portable\.zip/);
+  assert.match(output,/windows-p1p2-real-exe:[\s\S]*?github\.event_name == 'workflow_dispatch'/);
 });
-
-test("only explicit release command builds full OCR/portable ZIP; EXE-only option skips packaging", () => {
-  const exe = readFileSync(new URL("../BUILD_WINDOWS_EXE.cmd", import.meta.url), "utf8");
-  const portable = readFileSync(new URL("../PACKAGE_WINDOWS_TAURI.cmd", import.meta.url), "utf8");
-  assert.match(exe, /BUILD_WINDOWS_TAURI\.cmd" --exe-only/);
-  assert.match(portable, /BUILD_WINDOWS_TAURI\.cmd"/);
-  assert.ok(source.indexOf('if /I "%~1"=="--exe-only" goto exe_only') <
-    source.indexOf("ensure-ocr-package.ps1"));
-  assert.match(source, /:exe_only[\s\S]*EXE ONLY: release\\bando_hub\.exe/);
+test("Node installation skips only unchanged manifest, lockfile and version fingerprints",()=>{
+  assert.match(cache,/Get-BandoSha256/);
+  assert.match(cache,/\[System\.Security\.Cryptography\.SHA256\]/);
+  assert.match(cache,/\.bando-deps-fingerprint\.txt/);
+  assert.match(cache,/Skipping npm installation/);
+  assert.match(cache,/npm\.cmd ci --no-audit --no-fund/);
+  assert.doesNotMatch(dev,/call npm install --no-audit/);
 });
-
-test("npm dependencies are installed once per lockfile or Node toolchain change", () => {
-  const ensure = readFileSync(new URL("../scripts/ensure-node-deps.ps1", import.meta.url), "utf8");
-  assert.match(ensure, /Get-FileHash.*\$lock/);
-  assert.match(ensure, /Get-FileHash.*\$manifest/);
-  assert.match(ensure, /\.bando-deps-fingerprint\.txt/);
-  assert.match(ensure, /Skipping npm installation/);
-  assert.match(ensure, /npm\.cmd ci --no-audit --no-fund/);
-  assert.doesNotMatch(source, /call npm install --no-audit/);
-});
-
-test("expensive Windows release GUI/ZIP checks require explicit GitHub workflow dispatch", () => {
-  const output = readFileSync(new URL("../.github/workflows/migration-output.yml", import.meta.url), "utf8");
-  const verify = readFileSync(new URL("../.github/workflows/verify-tauri.yml", import.meta.url), "utf8");
-  assert.match(output, /windows-p1p2-real-exe:[\s\S]*?if: github\.event_name == 'workflow_dispatch'/);
-  assert.match(verify, /windows-release-build:[\s\S]*?if: github\.event_name == 'workflow_dispatch'/);
-  assert.match(verify, /Windows SQLite persistence and Rust tests/);
-});
+test.todo("PACKAGE_WINDOWS_TAURI.cmd still calls deliberately deleted BUILD_WINDOWS_TAURI.cmd; repair the distribution launcher separately");

@@ -17,7 +17,9 @@ test("OCR result requires user review before replacing a provisional order", () 
   assert.match(source, /confirmAction\("기존 미확정 원문/);
   assert.match(source, /await nativeReplaceReception\(order, raw\)/);
   assert.match(source, /action: "replace_reception"/);
-  assert.match(source, /latestReception\.current\.order !== order/);
+  assert.match(source, /latestReception\.current\.order\.id !== order\.id/);
+  assert.match(source, /latestReception\.current\.order\.raw !== order\.raw/);
+  assert.match(source, /latestReception\.current\.text !== text/);
   assert.match(source, /setOcrResult\(null\)/);
   assert.match(source, /if \(formal\) return/);
   assert.doesNotMatch(ocr, /state_save/);

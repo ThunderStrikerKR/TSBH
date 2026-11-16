@@ -6,7 +6,7 @@ const native = read("src-tauri/src/ocr.rs");
 const runner = read("src-tauri/resources/ocr/recognize.py");
 const bundle = read("scripts/package-ocr-runtime.ps1");
 const provision = read("scripts/prepare-ocr-bundle.py");
-const build = read("BUILD_WINDOWS_TAURI.cmd");
+const build = read(".github/workflows/verify-tauri.yml");
 const ci = read(".github/workflows/verify-tauri.yml");
 const legacy = read("SETUP_OCR_WINDOWS.cmd");
 const portableVerifier = read("scripts/verify-portable-ocr.py");
@@ -47,11 +47,11 @@ test("build creates portable private Python runtime and fetches models", () => {
 });
 
 test("release and CI never publish standalone EXE without OCR", () => {
-  assert.match(build, /ensure-ocr-package\.ps1/);
+  assert.match(build, /windows-release-build:[\s\S]*?if: github\.event_name == 'workflow_dispatch'/);
+  assert.match(build, /npm run build:windows/);
   assert.match(read("scripts/ensure-ocr-package.ps1"), /package-ocr-runtime\.ps1/);
-  assert.match(build, /release\\ocr\.next/);
-  assert.match(build, /release\\ocr/);
-  assert.match(build, /BANDO-HUB-portable\.zip/);
+  assert.match(build, /Copy-Item "ocr-build-cache" \(Join-Path \$portable "ocr"\) -Recurse/);
+  assert.match(build, /Compress-Archive[\s\S]*?BANDO-HUB-portable\.zip/);
   assert.match(ci, /BANDO-HUB-portable\.zip/);
   assert.match(ci, /package-ocr-runtime\.ps1/);
   assert.doesNotMatch(ci, /BANDO-HUB-Tauri-v0\.0\.4-Windows-unsigned-test/);

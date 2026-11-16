@@ -7,7 +7,10 @@ test('Tauri v0.0.4 versions agree', () => {
   assert.equal(JSON.parse(read('package.json')).version,'0.0.4');
   assert.equal(JSON.parse(read('src-tauri/tauri.conf.json')).version,'0.0.4');
   assert.match(read('src-tauri/Cargo.toml'), /^version = "0\.0\.4"$/m);
-  assert.match(read('BUILD_WINDOWS_TAURI.cmd'), /release\\bando_hub\.exe/);
+  // The old local release CMD was intentionally removed. The explicit
+  // release workflow now produces the portable bando_hub.exe instead.
+  assert.match(read('.github/workflows/verify-tauri.yml'),
+    /Copy-Item \(Join-Path \$root "bando_hub_tauri\.exe"\) \(Join-Path \$portable "bando_hub\.exe"\)/);
 });
 test('existing v0.0.1 user profile and product prices stay at same location', () => {
   const cfg = JSON.parse(read('src-tauri/tauri.conf.json'));

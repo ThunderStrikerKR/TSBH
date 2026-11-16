@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const read=(p)=>readFileSync(new URL("../"+p,import.meta.url),"utf8");
 const ci=read(".github/workflows/verify-tauri.yml");
-const cmd=read("BUILD_WINDOWS_TAURI.cmd");
+const dev=read("DEV_WINDOWS_TAURI.cmd");
 const helper=read("scripts/ensure-ocr-package.ps1");
 test("GitHub Windows jobs cache Rust compilation and reuse immutable OCR bundle",()=>{
   assert.ok((ci.match(/Swatinem\/rust-cache@v2/g)||[]).length>=2);
@@ -14,14 +14,13 @@ test("GitHub Windows jobs cache Rust compilation and reuse immutable OCR bundle"
   assert.match(ci,/Copy-Item "ocr-build-cache" \(Join-Path \$portable "ocr"\) -Recurse/);
   assert.match(ci,/Validate offline OCR from the extracted ZIP/);
 });
-test("Local Windows rebuild uses prior verified OCR when fingerprint matches",()=>{
-  assert.match(cmd,/ensure-ocr-package\.ps1/);
+test("retained OCR bundle fingerprint is checked by helper and explicit CI release",()=>{
   assert.match(helper,/Get-FileHash/);
   assert.match(helper,/ocr-build-fingerprint\.txt/);
   assert.match(helper,/Cached verified runtime and models unchanged/);
   assert.match(helper,/package-ocr-runtime\.ps1/);
   assert.match(helper,/verify-packaged-ocr\.ps1/);
-  assert.match(cmd,/if exist "release\\ocr\.next" \(/);
-  assert.match(cmd,/if exist "release\\ocr\.previous" goto previous_leftover/);
-  assert.match(cmd,/ensure_bando_closed/);
+  assert.match(ci,/windows-release-build:[\s\S]*?github\.event_name == 'workflow_dispatch'/);
+  assert.match(ci,/Copy-Item "ocr-build-cache" \(Join-Path \$portable "ocr"\) -Recurse/);
+  assert.doesNotMatch(dev,/package-ocr-runtime\.ps1/);
 });

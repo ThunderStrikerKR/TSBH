@@ -16,7 +16,8 @@ test("React edits only UI fields; order payment/status/freight transitions belon
     assert.doesNotMatch(edit,new RegExp("next\\."+name+"\\s*="),name);
   }
   assert.match(hook,/action: "prepare_order_edit", order: sourceDraft, state: sourceState/);
-  assert.match(hook,/previous === sourceDraft \? native : previous/);
+  assert.match(hook,/sameValue\(previous, sourceDraft\) \? native : previous/);
+  assert.match(hook,/import \{ sameValue \} from "\.\.\/shared\/draft"/);
   assert.match(hook,/draft\.pendingNativeEdit \|\|/);
   assert.match(routing,/"order_edit_rules" => order_edit::execute/);
   assert.match(reducer,/"prepare_order_edit" => prepare_edit\(payload\)/);
