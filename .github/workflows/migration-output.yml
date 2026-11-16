@@ -53,7 +53,9 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
   windows-p1p2-real-exe:
-    if: github.event_name == 'pull_request' || github.ref_name == 'main' || github.ref_name == 'migration/27-unified-rust' || github.ref_name == 'migration/03-integration' || github.ref_name == 'migration/28-ts-runtime-closure' || github.ref_name == 'migration/28-reception-manual-rust' || github.ref_name == 'migration/28-order-edit-rules-rust' || github.ref_name == 'integration/final-rust-migration-20261116'
+    # Heavy Windows Release EXE + real WebView2 integration runs ONLY when manually requested.
+    # PRs still run TypeScript, Rust parity, and native Windows SQLite tests.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 75
     steps:
