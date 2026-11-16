@@ -129,12 +129,32 @@ try {
       let auditRecords = structuredClone(archive);
       const testBackups = new Map();
       let testBackupSequence = 0;
+      // Simulate only Tauri's event transport. The OCR phase comes from the
+      // native stage, never from clicking the capture button.
+      let ocrPhaseCallback;
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener: () => { ocrPhaseCallback = undefined; },
+      };
       const response = (extra = {}) => ({
         active: mode !== "ORIGINAL", mode, ratio: 0.8,
         handle: mode !== "ORIGINAL" ? "123" : undefined, ...extra,
       });
       window.__TAURI_INTERNALS__ = {
+        transformCallback: (callback) => {
+          ocrPhaseCallback = callback;
+          return 1;
+        },
         invoke: async (command, args) => {
+          if (command === "plugin:event|listen") return 1;
+          if (command === "plugin:event|unlisten") {
+            ocrPhaseCallback = undefined;
+            return undefined;
+          }
+          if (command === "cancel_ocr") {
+            window.__cancelOcrForTest = true;
+            window.__resolveOcrForTest?.();
+            return undefined;
+          }
           if (command === "open_export_file") {
             window.__lastOpenedExportId = args.id;
             return undefined;
@@ -349,8 +369,24 @@ try {
           }
           if (command === "receipt_archive") return structuredClone(auditRecords);
           if (command === "capture_ocr") {
+            if (window.__ocrSelectionDelayForTest) {
+              window.__ocrSelectionStartedForTest = true;
+              await new Promise((resolve) => { window.__finishSelectionForTest = resolve; });
+              window.__ocrSelectionDelayForTest = false;
+            }
+            if (window.__cancelOcrForTest) {
+              window.__cancelOcrForTest = false;
+              throw Error("OCR_CANCELLED");
+            }
+            ocrPhaseCallback?.({
+              event: "bando-ocr-phase", id: 1, payload: "recognizing",
+            });
             if (window.__ocrDelayForTest) {
               await new Promise((resolve) => { window.__resolveOcrForTest = resolve; });
+            }
+            if (window.__cancelOcrForTest) {
+              window.__cancelOcrForTest = false;
+              throw Error("OCR_CANCELLED");
             }
             if (window.__ocrFailureForTest) throw Error("OCR 인식 실패 (종료 코드 0xC0000135). 필수 Windows DLL을 찾을 수 없습니다.");
             return {
@@ -394,9 +430,17 @@ try {
   // The OS screenshot and PaddleOCR are native. The browser verifies the
   // actual staff review flow with mocked IPC, including cancel and apply.
   const captureButton = page.getByRole("button", { name: "캡처 범위 지정" });
-  await page.evaluate(() => { window.__ocrDelayForTest = true; });
+  await page.evaluate(() => {
+    window.__ocrSelectionDelayForTest = true;
+    window.__ocrDelayForTest = true;
+  });
   await captureButton.click();
   const ocrProgress = page.getByRole("status", { name: "OCR 진행 상태" });
+  await page.waitForFunction(() => window.__ocrSelectionStartedForTest);
+  if (await ocrProgress.isVisible()) {
+    throw Error("OCR 처리 중 표시가 범위 지정 중에 나타나면 안 됩니다.");
+  }
+  await page.evaluate(() => window.__finishSelectionForTest?.());
   await ocrProgress.waitFor();
   await ocrProgress.getByText("OCR 처리 중…").waitFor();
   if (await captureButton.textContent() !== "캡처 범위 지정") {
