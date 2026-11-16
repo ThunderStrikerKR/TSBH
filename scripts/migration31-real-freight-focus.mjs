@@ -2,6 +2,7 @@
 // Used ONLY with CI's disposable --bando-developer-test SQLite workspace.
 // No mocked browser, business service, React state, or keyboard input.
 import assert from "node:assert/strict";
+import { probeWindowsAccountCopy } from "./migration31-real-account-copy.mjs";
 
 export async function probeWindowsFreightFocus(page,{record,snap}) {
   assert.equal(process.platform,"win32","This is an actual Windows EXE GUI test");
@@ -22,6 +23,23 @@ export async function probeWindowsFreightFocus(page,{record,snap}) {
       address:"서울특별시 종로구 종로 1",phone:"02-123-4567",mobile:"",
       preferredAccountId:account.id};
     const state=structuredClone(before);
+    // Test prices are synthetic: the public retail catalog has null wholesale
+    // for these two models. Never persist fabricated prices to the main DB.
+    const testPrices=new Map([
+      ["BD 709 / 블랙 / 타공 상판",42000],
+      ["BD GT-1 / 길이 14cm / 평평한 벽용",10000],
+    ]);
+    const seen=[];
+    state.products=state.products.map(product=>{
+      const syntheticWholesale=testPrices.get(product.name);
+      if(syntheticWholesale===undefined)return product;
+      seen.push(product.name);
+      return {...product,variants:product.variants.map(variant=>({
+        ...variant,wholesale:syntheticWholesale
+      }))};
+    });
+    if(seen.length!==testPrices.size)
+      throw Error("SIM31 missing product for synthetic wholesale fixture: "+JSON.stringify(seen));
     state.settings.accounts=[...(state.settings.accounts??[]),account];
     state.settings.defaultAccountId=account.id;
     const {state:validated}=await window.__TAURI_INTERNALS__.invoke(
@@ -157,6 +175,8 @@ export async function probeWindowsFreightFocus(page,{record,snap}) {
     result:"PASS_ACTUAL_WINDOWS_WEBVIEW2_KEYBOARD"
   });
   await snap(page,"07-sim31-native-freight-keyboard-focus");
-  return {fixture,steps:["RECEIPT_DEALER_SELECTED","FREIGHT_KEYBOARD_FOCUS_PRESERVED"],
-    tested:true,samples,final};
+  const account=await probeWindowsAccountCopy(page,{record,snap});
+  return {fixture,steps:["RECEIPT_DEALER_SELECTED","FREIGHT_KEYBOARD_FOCUS_PRESERVED",
+    "SECOND_SHIPMENT_FREIGHT","WORKFLOW_STAGE_1_2","BANK_COPY"],
+    tested:true,samples,final,account};
 }
