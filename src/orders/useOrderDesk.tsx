@@ -116,14 +116,6 @@ export function useOrderDesk({
   const flowGroups = (flowState.workflow?.groups ?? []).filter((g) =>
     groupShipments(flowState, g.id).some((s) => s.orderId === draft.id),
   );
-  // 직원 확인 항목은 Rust 주문 검토 결과에서 직접 표시할 수 있다.
-  // 배송·VAT·전체 총액 preview는 이 목록의 로딩 조건이 아니다.
-  const needsWorkflowIssues = flowReady && flowGroups.length > 0;
-  const staffChecksReady = nativeIssues.ready &&
-    (!needsWorkflowIssues || nativeBoard.ready);
-  const staffChecksError = nativeIssues.error ||
-    (needsWorkflowIssues ? nativeBoard.error : "");
-
   const activeGroupId = flowGroups.some((g) => g.id === workflowSelection?.groupId)
     ? workflowSelection!.groupId
     : (
@@ -139,6 +131,14 @@ export function useOrderDesk({
 
   const persisted = persistedOrders ?? state.orders;
   const saved = persisted.some((o) => o.id === draft.id);
+  // An unsaved reception must use its native order issues even when temporary
+  // workflow group projections appear/disappear as Rust reconciliation settles.
+  // Once persisted, stage-specific Rust workflow issues become authoritative.
+  const needsWorkflowIssues = saved && flowReady && flowGroups.length > 0;
+  const staffChecksReady = nativeIssues.ready &&
+    (!needsWorkflowIssues || nativeBoard.ready);
+  const staffChecksError = nativeIssues.error ||
+    (needsWorkflowIssues ? nativeBoard.error : "");
   // The Rust rules engine owns whether an uncommitted order may follow current prices.
   // The signature is only an IPC freshness key; it is not a TS eligibility rule.
   const pricingEligibilityKey = JSON.stringify({

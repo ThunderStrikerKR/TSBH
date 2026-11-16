@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "policy": "AGENTS.md",
   "recordedAt": "2026-11-17",
-  "recordedHead": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc",
+  "recordedHead": "8203e395d3299d5b05b7fc936f6236d223fd7071",
   "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
   "proofLevels": [
     "patch",
@@ -381,6 +381,12 @@
           "description": "실제 사용자 행동 전체 연쇄·비동기 역전·데이터 보존을 이 기능별 기준 시점에서 아직 끝까지 입증하지 못함",
           "status": "OPEN",
           "introducedAt": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc"
+        },
+        {
+          "description": "Windows에서 2026-11-17 `8203e395` 실측: 금액·배송·VAT가 안정적인데 직원 확인 목록이 약 4초 동안 2프레임에서 로딩, 1프레임 조치 0건으로 변했다가 복구. 이전 첫 대응만으로는 미해결.",
+          "status": "OPEN",
+          "introducedAt": "8203e395d3299d5b05b7fc936f6236d223fd7071",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43973304695"
         }
       ],
       "legacyLedgerStatus": "PARTIAL",

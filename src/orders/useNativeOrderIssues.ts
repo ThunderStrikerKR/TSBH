@@ -1,13 +1,15 @@
 /** Authoritative compiled Rust orderIssues projection for staff review.
  * The legacy TS hubMessages/validation functions must not decide live
- * approval state. Discard any response for an older draft fingerprint.
+ * approval state. Discard any response for an older issue-input signature.
+ * Unrelated order finance/metadata changes must not clear displayed issues.
  */
 import { useEffect, useMemo, useState } from "react";
 import { businessCoreCall } from "../tauri-bridge";
+import { nativeOrderIssuesKey } from "./native-order-issues-key";
 import type { Order, ValidationIssue } from "../types";
 
 export function useNativeOrderIssues(draft: Order) {
-  const fingerprint = useMemo(() => JSON.stringify(draft), [draft]);
+  const fingerprint = useMemo(() => nativeOrderIssuesKey(draft), [draft]);
   const [resolved, setResolved] = useState<{
     fingerprint: string;
     issues: ValidationIssue[];

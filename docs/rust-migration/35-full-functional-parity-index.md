@@ -145,3 +145,10 @@
 - 기존 `OrderDesk.tsx`는 Rust 주소·연락처 검사가 아직 끝나지 않아 `delivery.byId`가 비어 있을 때도 `aria-invalid={!undefined}`로 필드를 즉시 오류 처리. 직원이 문자 하나 입력할 때마다 무효 표시가 나타났다 사라질 수 있었음.
 - `delivery.ready`가 false이면 `aria-invalid`를 미지정(`undefined`)하여, 완료된 Rust 결과만 입력 오류로 표시하도록 수정. 이름·주소·휴대폰·전화 4개 필드에 적용.
 - React가 주소/연락처 유효성을 별도로 계산하지 않음. Rust 판정 지연 상태를 오류로 오인하지 않는 표현 전용 수정.
+
+## 2026-11-17 Windows 실패 후 추가 교정
+
+- [실 Windows 43973304695](https://github.com/ThunderStrikerKR/TSBH/actions/runs/43973304695): 금액 22프레임 누락 0이나 '확인할 내용' `aria-busy` 2프레임 및 조치 0건으로 순간 소실. **Windows FAIL이며 이전 수정을 완료로 판정하지 않음.**
+- 원인 후보의 실제 코드 경로: `useNativeOrderIssues`가 주문 JSON 전체를 fingerprint로 사용하여 운임·VAT 등 비관련 변경에도 Rust 검토 요청을 재호출; `useOrderDesk`는 미확정 수신 주문에 일시적 workflow 그룹이 생기면 Rust workflow 이슈로 목록 소스를 전환.
+- 교정: Rust `issues::order_issues`가 실제 읽는 입력만 포함한 `nativeOrderIssuesKey`를 작성해 불필요한 요청 취소·재실행을 방지. 미확정 주문은 Rust `order_issues_with_actions`을 일관된 소스로 쓰고 정식 저장 주문만 workflow stage 이슈로 전환.
+- 이는 Rust가 업무 이슈를 판단한다는 원칙을 유지하는 **입력 신선도·UI 소스 연결 수정**이다. 실제 Windows 반복 검증 완료 전 미해결로 둠.
