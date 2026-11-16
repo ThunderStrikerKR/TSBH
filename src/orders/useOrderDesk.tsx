@@ -106,7 +106,7 @@ export function useOrderDesk({
   const flowState = nativeFlow.state;
   const flowReady = nativeFlow.ready;
   const nativeBoard = useNativeWorkflowBoard(flowState);
-  const nativeOrder = useNativeOrderPreview(flowState, draft, flowReady);
+  const nativeOrder = useNativeOrderPreview(flowState, draft, flowReady, state);
   const nativeIssues = useNativeOrderIssues(draft);
   const flowSummaryReady = flowReady && nativeBoard.ready && nativeOrder.ready && nativeIssues.ready;
   const flowGroups = (flowState.workflow?.groups ?? []).filter((g) =>
@@ -759,7 +759,7 @@ export function useOrderDesk({
     flowReady,
     flowSummaryReady,
     flowSummaryError: nativeFlow.error || nativeBoard.error || nativeOrder.error || nativeIssues.error,
-    orderPreview: nativeOrder.result,
+    orderPreview: nativeOrder.displayResult,
     setProductSearch,
     edit,
     activeGroupId,

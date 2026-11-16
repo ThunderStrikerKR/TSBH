@@ -127,3 +127,20 @@ cargo test --manifest-path tests/rust-migration/integration/Cargo.toml
 - 신규 `tests/tauri-shipping-loading-parity.test.mjs`는 위 로직 회귀를 고정.
 - 실제 가격·운임 규칙은 Rust만 결정. 상태 갱신 트리거 외 계산 규칙은 변경하지 않음.
 - 상태 **PATCH_COMMITTED**. CI / 실제 Windows 사용자 행동 결과는 별도 확인.
+
+## R35-003: 실 Windows 검사로 발견한 배송 건수·부가세 로딩 회귀 교정
+
+- [실패 확인 43954978288](https://github.com/ThunderStrikerKR/TSBH/actions/runs/43954978288):
+  실제 Windows DEV WebView2에서 4.2초 동안 상품 `84,000원`은 유지했으나
+  4개 샘플에서 `택배 2건 → —건 → 2건`, `부가세 별도 → — → 부가세 별도`가 발생.
+- 원인: `useNativeOrderPreview.ts`는 Rust 정산 응답을 `fingerprint`가 일시적으로
+  달라졌다는 이유로 화면에서 삭제. 아직 계산된 값을 드래프트 상태로 옮기지 않았음.
+- 수정: `useNativeOrderPreview`의 **기존 마지막 Rust 결과**에서, 원본 주문의
+  청구 입력(상품/수량/단가/운임/부가세·거래처)과 실제 저장 상태의 관련 원천이
+  그대로인 동안만 읽기 전용 금액·배송건수·부가세 요약을 표시함.
+  금액/운임/부가세/업무 상태가 바뀌면 키를 갱신하여 이전 금액 사용을 금지.
+  Rust가 최신 상태를 확정해야 실제 업무 버튼은 활성화되며 React 계산기 추가 없음.
+- 이전 패치의 서로 다른 UI `lastNativeLineAmounts` 캐시와는 달리,
+  주문에 직접 없는 Rust의 총액/부가세 산출을 잃지 않기 위한 hook 내부의
+  **기존 resolved 상태 재사용**이며 추가 중복 캐시는 만들지 않음.
+- 상태: PATCH_COMMITTED / 새 Windows 테스트·CI 검증 전 완료 판정 금지.

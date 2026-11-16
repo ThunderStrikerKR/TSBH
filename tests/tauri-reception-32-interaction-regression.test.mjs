@@ -61,7 +61,7 @@ test("each workflow receipt uses a separate compact card and a single-line payme
   const css = read("src/styles/workflow.css");
   assert.match(board, /className="flow-summary-compact"/);
   assert.match(board, /배송 \{ss\.length\}건, 입금액 \{won\(nativeGroup\?\.totals\.total \?\? null\)\}/);
-  assert.match(board, /\(\{nativeGroup\?\.vatLabel \?\? "확인 필요"\}\)/);
+  assert.match(board, /\(\{nativeGroup\?\.vatLabel \?\? "—"\}\)/);
   assert.doesNotMatch(board, /총 운임/);
   assert.doesNotMatch(board, /미확정 · 임시/);
   assert.match(css, /\.hub-slot-3 \.workflow-group \{[\s\S]*?border: 1px solid/);

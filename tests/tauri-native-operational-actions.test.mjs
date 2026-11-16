@@ -195,7 +195,8 @@ test("freight managers read tariff rule and current status from native Rust", ()
     assert.doesNotMatch(ui, /\beditableShippingRule\(/);
   }
   assert.match(adapter, /"rules", "shipping_read"/);
-  assert.match(adapter, /snapshot\?\.state === state/);
+  assert.match(adapter, /snapshot\?\.source === source/);
+  assert.match(adapter, /\[state\.products, state\.shipping\]/);
   assert.match(rust, /fn current_combo\(/);
   assert.match(rust, /fn edit_rule\(/);
   assert.match(rules, /"product_freight_view" =>/);

@@ -30,3 +30,20 @@ test("unrelated preview loading cannot fabricate missing VAT or hide available R
   const board=readFileSync(new URL("../src/WorkflowBoard.tsx", import.meta.url),"utf8");
   assert.match(board,/nativeGroup\?\.vatLabel \?\? "—"/);
 });
+
+test("native order footer retains the last settled Rust preview only for unchanged monetary inputs",()=>{
+  const hook=readFileSync(new URL("../src/orders/useNativeOrderPreview.ts",import.meta.url),"utf8");
+  const desk=readFileSync(new URL("../src/orders/useOrderDesk.tsx",import.meta.url),"utf8");
+  assert.match(hook,/displayKey: string/);
+  assert.match(hook,/displayResult: resolved\?\.displayKey === displayKey/);
+  assert.match(hook,/resolved\.result\.orderId === draft\.id/);
+  for(const key of ["orders: sourceState.orders","workflow: sourceState.workflow",
+    "shipping: sourceState.shipping","clients: sourceState.clients",
+    "unitPrice: i.unitPrice","quantity: i.quantity","vatOverride: r.vatOverride",
+    "freightCode: r.freightCode","shippingCharges: r.shippingCharges"]){
+    assert.ok(hook.includes(key),key);
+  }
+  assert.match(desk,/useNativeOrderPreview\(flowState, draft, flowReady, state\)/);
+  assert.match(desk,/orderPreview: nativeOrder\.displayResult/);
+  assert.match(desk,/flowSummaryReady = flowReady && nativeBoard\.ready && nativeOrder\.ready/);
+});
