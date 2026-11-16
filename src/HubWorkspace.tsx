@@ -108,6 +108,13 @@ export function HubWorkspace(props: Props) {
   const nativePreview = useNativeWorkflowReconcile(base, draft.clientId ? [draft] : []);
   const preview = nativePreview.state;
   const previewReady = nativeBase.ready && nativePreview.ready;
+  // Keep the last settled Rust board on screen while the newest draft is
+  // reconciled. The board is read-only until the newest result is ready.
+  // This prevents the queue cards from disappearing/reappearing on paste.
+  const lastVisiblePreview = useRef<{ orderId: string; state: typeof preview }>();
+  if (previewReady) lastVisiblePreview.current = { orderId: draft.id, state: preview };
+  const boardPreview = !previewReady && lastVisiblePreview.current?.orderId === draft.id
+    ? lastVisiblePreview.current.state : preview;
   useEffect(() => {
     // Selection and active shipment identity must never be rewritten from a
     // pending, non-authoritative render of the previous draft.
@@ -415,7 +422,7 @@ export function HubWorkspace(props: Props) {
               </button>
             </header>
             <WorkflowBoard
-              state={preview}
+              state={boardPreview}
               previewReady={previewReady}
               previewError={nativeBase.error || nativePreview.error}
               persistedState={base}
