@@ -713,17 +713,7 @@ try {
         : value;
     current = normalized(current);
     window.__TAURI_INTERNALS__ = {
-      transformCallback: (callback) => {
-        navOcrPhaseCallback = callback;
-        return 1;
-      },
       invoke: async (command, args = {}) => {
-        if (command === "plugin:event|listen") { window.__navOcrCalls.push("listen"); return 1; }
-        if (command === "plugin:event|unlisten") {
-          navOcrPhaseCallback = undefined;
-          return undefined;
-        }
-        if (command === "cancel_ocr") return undefined;
         if (command === "startup_status")
           return { phase: "READY", attempts: 1, isTest: false };
         if (command === "startup_metrics")
@@ -884,7 +874,20 @@ try {
     window.__nextLoadMustFail = false;
     window.__postSaveReadFaultObserved = false;
     window.__TAURI_INTERNALS__ = {
+      transformCallback: (callback) => {
+        navOcrPhaseCallback = callback;
+        return 1;
+      },
       invoke: async (command, args = {}) => {
+        if (command === "plugin:event|listen") {
+          window.__navOcrCalls.push("listen");
+          return 1;
+        }
+        if (command === "plugin:event|unlisten") {
+          navOcrPhaseCallback = undefined;
+          return undefined;
+        }
+        if (command === "cancel_ocr") return undefined;
         if (command === "startup_status")
           return { phase: "READY", attempts: 1, isTest: false };
         if (command === "startup_metrics")
