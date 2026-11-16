@@ -25,7 +25,9 @@ test("unrelated workflow saves preserve another order's unsaved draft", async ()
   assert.deepEqual(retainUnsavedOrderEdits({ ...edits, "order-b": { id:"order-b", raw:"draft B" } }, [
     { id:"order-a", raw:"draft A" }, persisted[1],
   ]), { "order-b": { id:"order-b", raw:"draft B" } });
-  assert.match(source.hub, /retainUnsavedOrderEdits\(previous, next\.orders\)/);
+  assert.match(source.hub, /return retainUnsavedOrderEdits\(remaining, next\.orders\)/);
+  assert.match(source.hub, /newlyConfirmed\.has\(id\)/,
+    "An unconfirmed draft just committed by Rust must not reappear as a stale overlay");
 });
 
 test("brand and alias changes guard item-to-item switching", () => {
