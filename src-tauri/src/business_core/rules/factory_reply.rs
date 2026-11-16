@@ -223,12 +223,8 @@ fn analyze(payload:&Value)->Result<Value,String>{
     for source in rows(payload,"sourceRows"){
         let n=field(source,"row").as_i64().ok_or("공장 회신 Excel 행 번호 오류")?;
         if n<2 {return Err("공장 회신 Excel 행 번호 오류".into())}
-        if field(source,"reservedJ")==true{
-            return Err(format!("{n}행: 표준 양식의 J열은 공백이어야 합니다."))
-        }
-        if field(source,"extraAfterQ")==true{
-            return Err(format!("{n}행: Q열 뒤의 추가 데이터는 허용하지 않습니다."))
-        }
+        // Unrelated J and R+ columns are not shipping fields. Their presence
+        // must not reject an otherwise readable factory reply workbook.
         let name=s(source,"name");
         let address=s(source,"address");
         let phone=s(source,"phone");
@@ -236,15 +232,25 @@ fn analyze(payload:&Value)->Result<Value,String>{
         let raw_freight=s(source,"rawFreight");
         let raw_tracking=s(source,"tracking");
         if [name,address,phone,mobile,raw_freight,raw_tracking].iter().all(|t|t.is_empty()){continue}
-        if field(source,"trackingNumeric")==true{
-            return Err(format!("{n}행: 운송장번호가 숫자로 저장되었습니다. 앞자리 0을 보호하려면 텍스트 셀로 입력하세요."))
-        }
         let tracking=raw_tracking.chars()
             .filter(|c|*c!='-'&&!c.is_whitespace()).collect::<String>();
+        // Excel numeric cells are valid for safe, ordinary integer waybills.
+        // More than 15 significant decimal digits may already have been
+        // rounded by Excel. Such rows require review, not file-wide rejection.
+        let numeric_risk=field(source,"trackingNumeric")==true &&
+            (tracking.len()>15 || !tracking.bytes().all(|b|b.is_ascii_digit()));
+        let source_issue=s(source,"sourceIssue");
+        let tracking_risk=s(source,"trackingRisk");
         let freight=parse_freight(raw_freight);
         let contacts=[phone,mobile].into_iter().filter(|v|!v.is_empty())
             .collect::<Vec<_>>();
-        let issue=if name.is_empty()||address.is_empty()||contacts.is_empty(){
+        let issue=if !source_issue.is_empty(){
+            Some(source_issue)
+        }else if !tracking_risk.is_empty(){
+            Some(tracking_risk)
+        }else if numeric_risk{
+            Some("Q열 숫자형 송장번호가 15자리를 초과하거나 정확한 정수가 아닙니다. 원본 송장번호를 확인하세요.")
+        }else if name.is_empty()||address.is_empty()||contacts.is_empty(){
             Some("수하인 이름, 주소 또는 연락처 누락")
         }else if !valid_tracking(&tracking){
             Some("Q열 운송장번호가 없거나 올바르지 않습니다.")
@@ -439,13 +445,35 @@ mod tests {
         duplicate["sourceRowCount"]=json!(2);
         assert_eq!(analyze(&duplicate).unwrap()["held"],2);
     }
-    #[test] fn conflict_and_numeric_tracking_are_refused(){
+    #[test] fn conflicts_hold_but_safe_numeric_waybills_are_accepted(){
         let mut s=fixture();
         s["workflow"]["shipments"][0]["tracking"]["FACTORY"]=json!("009988776655");
         assert_eq!(analyze(&input(s,"001234567890","4000")).unwrap()["held"],1);
-        let mut req=input(fixture(),"001234567890","4000");
+        let mut req=input(fixture(),"123456789012","4000");
         req["sourceRows"][0]["trackingNumeric"]=json!(true);
-        assert!(analyze(&req).unwrap_err().contains("숫자"));
+        let accepted=analyze(&req).unwrap();
+        assert_eq!(accepted["applied"],1);
+        assert_eq!(accepted["held"],0);
+        req["sourceRows"][0]["tracking"]=json!("1234567890123456");
+        let unsafe_numeric=analyze(&req).unwrap();
+        assert_eq!(unsafe_numeric["applied"],0);
+        assert_eq!(unsafe_numeric["held"],1);
+        assert!(unsafe_numeric["rows"][0]["issue"].as_str().unwrap().contains("15자리"));
+    }
+    #[test] fn unrelated_extra_columns_and_bad_rows_do_not_reject_good_rows(){
+        let mut input=input(fixture(),"123456789012","4000");
+        input["sourceRows"][0]["reservedJ"]=json!(true);
+        input["sourceRows"][0]["extraAfterQ"]=json!(true);
+        assert_eq!(analyze(&input).unwrap()["applied"],1);
+        let mut second=input["sourceRows"][0].clone();
+        second["row"]=json!(3);
+        second["sourceIssue"]=json!("3행 Q열 수식 사용: 송장번호 확인 필요");
+        input["sourceRows"].as_array_mut().unwrap().push(second);
+        input["sourceRowCount"]=json!(2);
+        let preview=analyze(&input).unwrap();
+        assert_eq!(preview["applied"],1);
+        assert_eq!(preview["held"],1);
+        assert!(preview["rows"][1]["issue"].as_str().unwrap().contains("수식"));
     }
     #[test] fn stale_or_tampered_preview_cannot_commit(){
         let s=fixture();
