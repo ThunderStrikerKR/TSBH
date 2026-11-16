@@ -237,7 +237,7 @@ export function SourceDocument({
             next.clientMatch = {
               source: staleDealer ? "ERROR" : result.source, clientId: null,
               detail: staleDealer
-                ? "자동 연결된 거래처가 현재 거래처 목록에 없습니다. 거래처 정보를 확인하고 직접 선택해 주세요."
+                ? "매칭된 거래처를 찾지 못했습니다. 직접 선택하세요."
                 : result.detail,
             };
           }
@@ -248,7 +248,7 @@ export function SourceDocument({
           console.warn("거래처 자동 연결을 건너뛰었습니다.", error);
           next.clientMatch = {
             source: "ERROR", clientId: null,
-            detail: "거래처 자동 매칭 처리 중 오류가 발생했습니다. 카카오톡 대화방을 확인하거나 거래처를 직접 선택해 주세요.",
+            detail: "거래처 자동 매칭에 실패했습니다. 직접 선택하세요.",
           };
         }
       }
