@@ -183,6 +183,25 @@ fn change_client(payload:&Value)->Result<Value,String>{
     let mut changed=before.clone();
     set(&mut changed,"clientId",json!(dealer_id))?;
     set(&mut changed,"clientSnapshot",selected.clone())?;
+    // Persist explanatory provenance with the authoritative Rust client change.
+    // An automatic claim must refer to the very client Rust is selecting.
+    let match_info=field(payload,"matchEvidence");
+    let guidance=if match_info.is_object(){
+        let source=str_field(match_info,"source");
+        let id=str_field(match_info,"clientId");
+        let detail=str_field(match_info,"detail");
+        if !["KAKAO_REMEMBERED","KAKAO_TITLE","RAW_EXPLICIT"].contains(&source)
+            ||id!=dealer_id ||detail.trim().is_empty() ||detail.chars().count()>300 {
+            return Err("거래처 자동 연결 근거가 현재 선택한 거래처와 일치하지 않습니다.".into());
+        }
+        json!({"source":source,"clientId":dealer_id,"detail":detail,
+            "chatTitle":match_info.get("chatTitle").cloned().unwrap_or(Value::Null),
+            "confirmedMatchCount":match_info.get("confirmedMatchCount").cloned().unwrap_or(Value::Null)})
+    }else{
+        json!({"source":"MANUAL","clientId":dealer_id,
+            "detail":format!("직원이 거래처 ‘{}’을 직접 선택했습니다.",str_field(&selected,"name"))})
+    };
+    set(&mut changed,"clientMatch",guidance)?;
     for (key,value) in [("pricesLocked",json!(false)),
         ("notified",json!(false)),("paid",json!(false)),
         ("postpaidApproved",json!(false)),("status",json!("REVIEW")),

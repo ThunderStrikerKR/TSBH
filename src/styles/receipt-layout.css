@@ -293,6 +293,8 @@
 .hub-slot-3 .workflow-group.selected .flow-group-name b {
   color: #60a5fa;
 }
+.hub-live-workspace[data-hover-stage="1"] .hub-slot-1 .source-top .receipt-client,
+.hub-live-workspace[data-hover-stage="1"] .hub-slot-1 .source-top .source-client-actions,
 .hub-live-workspace[data-hover-stage="1"] .hub-slot-2 .review-pane,
 .hub-live-workspace[data-hover-stage="2"] .freight-input-area,
 .hub-live-workspace[data-hover-stage="3"] [data-message-tab="payment"],

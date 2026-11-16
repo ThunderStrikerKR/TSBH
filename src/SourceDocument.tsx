@@ -225,16 +225,31 @@ export function SourceDocument({
               "rules", "order_edit_rules", {
                 action: "change_order_client", state,
                 order: next, dealerId: matched.id,
+                matchEvidence: result,
                 now: new Date().toISOString(),
               },
             );
             next = selected.order;
+          } else {
+            // Rust distinguishes a missing match from conflicting strong evidence.
+            // A conflict is an ACTION item in the first-stage review.
+            const staleDealer = !!result.clientId;
+            next.clientMatch = {
+              source: staleDealer ? "ERROR" : result.source, clientId: null,
+              detail: staleDealer
+                ? "매칭된 거래처를 찾지 못했습니다. 직접 선택하세요."
+                : result.detail,
+            };
           }
         } catch (error) {
           // Auto-matching is optional. Keep the pasted order and let staff
           // select a dealer; a missing/failed suggestion is not a reception
           // error and must not display a blocking red toast.
           console.warn("거래처 자동 연결을 건너뛰었습니다.", error);
+          next.clientMatch = {
+            source: "ERROR", clientId: null,
+            detail: "거래처 자동 매칭에 실패했습니다. 직접 선택하세요.",
+          };
         }
       }
       if (!alive.current || latestReception.current.order !== order ||

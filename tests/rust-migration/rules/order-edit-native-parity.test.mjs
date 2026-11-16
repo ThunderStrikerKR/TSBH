@@ -108,6 +108,15 @@ function legacyChangeDealer(before,st,target){
   changed.shippingVersion=freight.version;
   return changed;
 }
+// Deliberate Rust-only addition: record why a dealer was selected.
+ // Keep the frozen TypeScript business oracle unchanged and compare all
+ // prices, shipment flags, and invoices plus the new audit field.
+function expectedDealerChange(before,st,target){
+  const changed=legacyChangeDealer(before,st,target);
+  changed.clientMatch={source:"MANUAL",clientId:target,
+    detail:"직원이 거래처 ‘"+st.clients.find(c=>c.id===target).name+"’을 직접 선택했습니다."};
+  return changed;
+}
 const cases=[];
 function add(label,operation,st,before,expected,args={}){
   cases.push({label,request:{domain:"rules",operation:"order_edit_rules",
@@ -164,15 +173,15 @@ for(const recalculateShipping of [true,false]){
       });
   }
   add("change dealer freezes old invoice and reprices atomically",
-    "change_order_client",st,before,{order:legacyChangeDealer(before,st,"c2")},
+    "change_order_client",st,before,{order:expectedDealerChange(before,st,"c2")},
     {dealerId:"c2",now});
   const confirmed=clone(before);confirmed.confirmedAt="2026-11-14T00:00:00.000Z";
   add("confirmed dealer change still reprices all configured products",
-    "change_order_client",st,confirmed,{order:legacyChangeDealer(confirmed,st,"c2")},
+    "change_order_client",st,confirmed,{order:expectedDealerChange(confirmed,st,"c2")},
     {dealerId:"c2",now});
   const notLocked=clone(before);notLocked.pricesLocked=false;
   add("change dealer does not freeze a nonlocked invoice",
-    "change_order_client",st,notLocked,{order:legacyChangeDealer(notLocked,st,"c2")},
+    "change_order_client",st,notLocked,{order:expectedDealerChange(notLocked,st,"c2")},
     {dealerId:"c2",now});
 }
 const exec=spawnSync("cargo",["run","--quiet","--manifest-path",manifest,
