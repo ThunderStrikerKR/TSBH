@@ -161,6 +161,11 @@ try {
   assert.equal(pricing.pricingErrors.length,0,
     "Registered retail price was rejected as missing");
   record("REGISTERED_RETAIL_PRICES_APPEAR_IN_GUI",{expectedFirstLine:84000});
+  // A settled Rust staff issue result must not be put back into loading
+  // just because an unrelated totals/transport preview is in flight.
+  await page.waitForFunction(()=>
+    document.querySelector(".staff-checks")?.getAttribute("aria-busy")==="false",
+    null,{timeout:30000});
 
   // End-to-end regression for the reported 2–3 second delayed price loss.
   // Observe the REAL WebView2 DOM throughout the delayed Rust recognition
@@ -174,6 +179,10 @@ try {
       shipmentCount:document.querySelector(".order-grand-total .shipment-count")
         ?.textContent?.trim()??"",
       vatLabel:document.querySelector(".order-grand-total small")
+        ?.textContent?.trim()??"",
+      staffCheckBusy:document.querySelector(".staff-checks")
+        ?.getAttribute("aria-busy")==="true",
+      staffCheckHeader:document.querySelector(".staff-checks h3")
         ?.textContent?.trim()??"",
       priceErrors:[...document.querySelectorAll(".staff-checks,[role=alert]")]
         .map(node=>node.textContent??"")
@@ -193,11 +202,14 @@ try {
     frame.priceErrors.length>0 ||
     !frame.shipmentCount.includes("2") ||
     !frame.vatLabel.includes("부가세 별도"));
+  const staffLost=retentionFrames.filter(frame=>
+    frame.staffCheckBusy || !frame.staffCheckHeader.includes("확인할 내용"));
   record("POST_DEALER_4200MS_PRICE_STABILITY_REAL_WEBVIEW2",{
     frameCount:retentionFrames.length,
     durationMs:retentionFrames.at(-1).tick-retentionFrames[0].tick,
     missingFrames:lost.length,
-    observed:["product unit price","shipment count","VAT label"],
+    staffLoadingFrames:staffLost.length,
+    observed:["product unit price","shipment count","VAT label","Rust staff issue readyness"],
     first:retentionFrames[0],last:retentionFrames.at(-1)
   });
   if(lost.length){
@@ -205,6 +217,11 @@ try {
     throw Error("SIM34_DELAYED_PRICE_LOSS "+JSON.stringify({
       initial:pricing,bad:lost.slice(0,8),last:retentionFrames.at(-1)
     }));
+  }
+  if(staffLost.length){
+    await snap(page,"35-unrelated-preview-staff-issue-reload");
+    throw Error("SIM35_STAFF_CHECKS_RELOADING_UNRELATED_PREVIEW "+
+      JSON.stringify({bad:staffLost.slice(0,8),last:retentionFrames.at(-1)}));
   }
   assert.ok(retentionFrames.length>=10,
     "GUI timer did not observe enough post-selection rendering states");
