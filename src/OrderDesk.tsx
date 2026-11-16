@@ -65,6 +65,31 @@ export function OrderDesk(props: OrderDeskProps) {
     chooseProduct,
     itemEditing,
   } = useOrderDesk(props);
+  // Rust previews become briefly pending after each keystroke. Keep the
+  // *input element* mounted; the last resolved projection is for display only.
+  // The edited amount always comes from the current React draft below, and
+  // final business validation remains in Rust.
+  const lastReadyFreight = useRef<{
+    orderId: string;
+    recipientId: string;
+    shipment: NonNullable<typeof activeShipment>;
+    preview: NonNullable<typeof activeShipmentPreview>;
+    state: typeof flowState;
+  } | null>(null);
+  if (flowSummaryReady && activeShipment && activeShipmentPreview) {
+    lastReadyFreight.current = {
+      orderId: draft.id,
+      recipientId: activeShipment.recipientId,
+      shipment: activeShipment,
+      preview: activeShipmentPreview,
+      state: flowState,
+    };
+  }
+  const freightEditor = lastReadyFreight.current?.orderId === draft.id &&
+    lastReadyFreight.current.recipientId === shownRecipient &&
+    (!props.workflowSelection?.shipmentId ||
+      props.workflowSelection.shipmentId === lastReadyFreight.current.shipment.id)
+      ? lastReadyFreight.current : null;
   const delivery = useNativeDeliveryRequirements(draft.recipients, draft.receptionVersion !== 1);
   const addressRequests = useRef<Record<string, number>>({});
   const addressMounted = useRef(true);
@@ -575,28 +600,33 @@ export function OrderDesk(props: OrderDeskProps) {
                                   </td>
                                 </tr>
                               ))}
-                              {flowSummaryReady && activeShipmentPreview &&
-                                activeShipment?.recipientId === r.id && (
+                              {freightEditor?.recipientId === r.id && (
                                 <WorkflowFreightRows
-                                  state={flowState}
-                                  shipment={activeShipment}
-                                  freightCode={activeShipmentPreview.freightCode}
-                                  displayCharges={activeShipmentPreview.displayCharges}
-                                  freightEditingBlocked={activeShipmentPreview.freightEditingBlocked}
+                                  state={freightEditor.state}
+                                  shipment={freightEditor.shipment}
+                                  freightCode={r.freightCode ?? freightEditor.preview.freightCode}
+                                  displayCharges={{
+                                    ...freightEditor.preview.displayCharges,
+                                    ...r.shippingCharges,
+                                  }}
+                                  freightEditingBlocked={
+                                    freightEditor.preview.freightEditingBlocked || r.freightCode === "020"
+                                  }
                                   activeKey={highlight}
                                   onFreight={(origin, value) =>
                                     recEdit(
                                       r.id,
-                                      (r) => {
-                                        r.shippingCharges = {
-                                          ...activeShipment.charges,
+                                      (row) => {
+                                        row.shippingCharges = {
+                                          ...freightEditor.shipment.charges,
+                                          ...row.shippingCharges,
                                           [origin]: value,
                                         };
                                       },
                                       false,
                                     )
                                   }
-                                  onCode={(v) => recEdit(r.id, (r) => (r.freightCode = v), false)}
+                                  onCode={(v) => recEdit(r.id, (row) => (row.freightCode = v), false)}
                                 />
                               )}
                             </tbody>
