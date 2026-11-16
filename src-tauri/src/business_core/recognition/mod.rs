@@ -1334,6 +1334,49 @@ mod tests {
         assert_eq!(String::from_utf16(&encoded[start..end]).unwrap(),"010-1234-5678");
     }
     #[test]
+    fn nearby_contacts_follow_their_recipient_block_across_blank_lines(){
+        // The second consignee's address and contact are separated from
+        // the first by blank lines. Distance is evidence of grouping, not
+        // evidence that these are two different ordering dealers.
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n\n\n박가상\n경기도 성남시 분당구 불정로 6\n010-2345-6789";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let recipients=result["recipients"].as_array().unwrap();
+        assert_eq!(recipients.len(),2);
+        assert_eq!(recipients[0]["name"],"김가상");
+        assert_eq!(recipients[0]["mobile"],"010-1234-5678");
+        assert_eq!(recipients[1]["name"],"박가상");
+        assert_eq!(recipients[1]["mobile"],"010-2345-6789");
+        assert!(recipients[0]["address"].as_str().unwrap().contains("월드컵로 20"));
+        assert!(recipients[1]["address"].as_str().unwrap().contains("불정로 6"));
+    }
+    #[test]
+    fn second_contact_can_still_belong_to_same_recipient(){
+        // Physical separation alone cannot invent a second recipient.
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n010-3456-7890";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let recipients=result["recipients"].as_array().unwrap();
+        assert_eq!(recipients.len(),1);
+        assert_eq!(recipients[0]["mobile"],"010-1234-5678");
+        assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn province_name_requires_address_boundary_not_merchant_substring(){
+        for merchant in ["서울악기사","대전악기사","경기악기사","전남악기사",
+            "서울특별시악기사","전라남도악기사"] {
+            assert_eq!(address_begin(merchant),None,
+                "A business name cannot be cut into an address fragment: {merchant}");
+        }
+        for full_address in [
+            "서울특별시 마포구 월드컵로 20",
+            "대전광역시 서구 둔산로 100",
+            "경기도 의정부시 시민로 100",
+            "전라남도 순천시 중앙로 40",
+        ] {
+            assert_eq!(address_begin(full_address),Some(0),
+                "Official administrative names and street structure indicate an address: {full_address}");
+        }
+    }
+    #[test]
     fn changed_quantity_rebinds_all_item_sources_to_stable_recipient() {
         let old_raw="GT-1 2개\n김가상\n서울특별시 마포구 월드컵로 20";
         let new_raw="GT-1 3개\n김가상\n서울특별시 마포구 월드컵로 20";
