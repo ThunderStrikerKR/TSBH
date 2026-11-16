@@ -158,6 +158,11 @@ fn capture_blocking(app: tauri::AppHandle) -> Result<OcrCapture, String> {
         }
         std::thread::sleep(Duration::from_millis(200));
     };
+    // Cancellation can race with a worker exiting normally. The employee's
+    // explicit cancel still wins: no review dialog should be opened.
+    if OCR_CANCEL_REQUESTED.load(Ordering::Acquire) {
+        return Err(OCR_CANCELLED.into());
+    }
     let out = String::from_utf8_lossy(&fs::read(&stdout).map_err(|e| e.to_string())?).into_owned();
     // Windows native extensions sometimes crash before Python can write our
     // BANDO_OCR_ERROR marker. Never turn an undecodable stderr into an empty
