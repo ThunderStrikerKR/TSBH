@@ -549,6 +549,16 @@ export function useOrderDesk({
     )?.id ??
     draft.recipients[0]?.id;
   const selectIssue = (block: StaffBlock) => {
+    if (block.kind === "CLIENT_MATCH_EVIDENCE" || block.kind === "CLIENT_MATCH_CONFLICT") {
+      // The first-step signal highlights this exact region on hover.
+      // Clicking an evidence message moves staff to the same dealer control.
+      const control = document.querySelector<HTMLButtonElement>(
+        ".source-top .receipt-client button, .source-top .source-client-actions > button"
+      );
+      control?.scrollIntoView({ block: "center", behavior: "smooth" });
+      control?.focus();
+      return;
+    }
     if (block.kind === "UNASSIGNED_EVIDENCE") {
       onManual?.();
       return;
