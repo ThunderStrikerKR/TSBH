@@ -17,18 +17,37 @@ export async function probeWindowsOcrCancel(page, { appPid, record, snap }) {
     return action==="state" ? JSON.parse(output.trim()) : output.trim();
   };
   const before = nativeWindow();
+  record("SIM32_OCR_WIN_BEFORE",before);
   assert.equal(before.minimized,false,"OCR audit must begin with a visible app");
   const persisted = await page.evaluate(async()=>window.bando.load());
   const currentText = await page.locator(".source-document").innerText();
   const button = page.getByRole("button",{name:"캡처 범위 지정",exact:true});
   await button.click();
-  let during;
+  let during, nativeErrors=[];
   for (let i=0;i<25;i++) {
-    await sleep(180);
-    try { during=nativeWindow(); if(during.minimized)break; } catch{}
+    await sleep(120);
+    try {
+      during=nativeWindow();
+      if(i===0 || during.minimized) record("SIM32_OCR_WIN_POLL",during);
+      if(during.minimized)break;
+    } catch(error) {
+      nativeErrors.push(String(error));
+    }
+  }
+  if(!during?.minimized) {
+    const screen = await page.evaluate(() => ({
+      ocrStatus:document.querySelector(".source-ocr-progress")?.textContent?.trim(),
+      notices:[...document.querySelectorAll(".app-notice,[role=alert]")].map(n=>n.textContent?.trim()?.slice(0,350)),
+      captureButton:[...document.querySelectorAll("button")].filter(b=>b.textContent?.includes("캡처 범위 지정"))
+        .map(b=>({disabled:b.disabled,text:b.textContent})),
+    })).catch(error=>({evaluationError:String(error)}));
+    record("SIM32_OCR_MINIMIZE_FAILURE",{
+      before,during,nativeErrors:nativeErrors.slice(-4),screen
+    });
   }
   assert.ok(during?.minimized,
-    "The real BANDO HUB window must minimize before Windows region selection");
+    "The real BANDO HUB window must minimize before Windows region selection: "+
+    JSON.stringify({before,during,nativeErrors:nativeErrors.slice(-3)}));
   assert.equal(await page.getByRole("status",{name:"OCR 진행 상태"}).count(),0,
     "OCR progress must not appear while the employee is selecting a region");
   const sent = nativeWindow("escape");
