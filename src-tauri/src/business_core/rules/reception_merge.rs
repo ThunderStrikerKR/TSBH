@@ -165,7 +165,8 @@ fn apply(payload:&Value)->Result<Value,String>{
     // Match the original guard against changing final or employee-locked orders.
     if has_value(field(previous,"deletedAt"))||
         has_value(field(previous,"confirmedAt"))||
-        has_value(field(previous,"manualClassification"))||
+        (has_value(field(previous,"manualClassification")) &&
+         field(previous,"analysisRaw").as_str()==Some(raw))||
         field(previous,"pricesLocked")==true||
         str_field(previous,"status")=="EXPORTED" ||
         (field(previous,"analysisRaw").as_str()==Some(raw) &&

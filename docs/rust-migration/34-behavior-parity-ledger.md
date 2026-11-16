@@ -31,7 +31,7 @@
 | R34-002 | 같은 순서에서 운임 및 운임 버전 | 같은 TypeScript Effect 말미 `recommendShipping(next,state)`와 운임 면제 | `rules/reception_merge.rs`에서 `shipping::recommend` | 종전 Rust가 `shippingFee=null`/`shippingVersion=""`을 반환함 | PATCH_COMMITTED (`5cc9d515`), 실제 Windows 미검증 |
 | R34-003 | 합포장 불가(`packable=false`) 물품 2개 운임 | 고정 `src/shipping.ts::shippingBundles` | `rules/shipping.rs::recommend` | 합포장 불가 직원 확인 조건이 Rust 및 이후 TS 사본에서 사라짐 | PATCH_COMMITTED (`5cc9d515`), 실제 차등·Windows 미검증 |
 | R34-004 | Rust 병합 차등 테스트 자체 | 고정 TS 가격+운임 즉시 계산 | `tests/rust-migration/recognition/ts-reception-merge-oracle.ts` | 기존 이름만 원본인 oracle이 Rust의 null/빈 버전을 모방 | PATCH_COMMITTED, 고정 스냅샷·seal 테스트 추가 |
-| R34-005 | 수동 분류 후 원문 수정 | 이전 TS는 원문 동일인 경우에만 수동 분류 재분석 차단 | `src/orders/rust-reception.ts`, `rules/reception_merge.rs` | 수동 분류 존재 자체로 무조건 차단하는 조건 차이 | FOUND_DIFF, 영향 검증 전 무수정 |
+| R34-005 | 수동 분류 후 원문 수정 | 기존 TS는 원문 동일 시에만 재분석 차단 | `src/orders/rust-reception.ts`, `src/orders/useOrderDesk.tsx`, `rules/reception_merge.rs` | 기존 Rust/React가 수동 분류 존재 자체로 차단하는 원본 불일치 | PATCH_COMMITTED / CI·Windows 재검증 필요 |
 | R34-006 | 수량·수취인·운임 수정 중 가격 유지 | 원본 React 가격 Effect 의존성은 상품 마스터·거래처 | 현재 React Effect는 `draft.recipients`도 의존 | 실행 트리거 차이. 중간 단가 덮어쓰기 여부 미재현 | OPEN |
 | R34-007 | 가격 편집·주문 미리보기·저장 지속성 | 고정 TS 입력→주문 변경→저장 흐름 | `PriceCell`, `useNativeOrderPreview`, `reconcile_workflow`, SQLite | 실제 UI 지연 응답 시각·최종 저장 상태 확인 필요 | OPEN |
 | R34-008 | 공장 전달→회신→이력·결산 | 고정 TS 업무 흐름 | Rust `factory_reply`, `workflow`, `output` 및 React | 개별 함수 차등 테스트만으로 전체 사용자 행동 체인 검증 불가 | OPEN |
@@ -54,3 +54,10 @@ cargo test --manifest-path tests/rust-migration/integration/Cargo.toml
 ```
 
 현재 문서 생성 시점은 **전체 CI 성공 또는 실제 Windows GUI PASS를 의미하지 않음**.
+
+## 후속: 수동 분류 재분석 동작 및 실제 Rust 업무 시뮬레이션
+
+- 원본 TS에서 원문이 바뀐 수동 분류 주문 재분석 허용을 Rust와 React guard에 동일 적용.
+- 인식→Rust merge 차등 시나리오에 수동 분류가 있고 원문이 변경된 주문을 추가.
+- `zz-workflow-31-simulation.test.mjs`의 `merge_reception_analysis` 입력에 새 필수 `state`/`client`를 추가함.
+- 통과 판정은 이번 수정이 실제 완료된 CI에서 검증된 후에만 가능.

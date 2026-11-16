@@ -55,7 +55,7 @@ function analyzeAndMerge(raw,id){
   const initial=newReception(dealer.id);
   initial.id="sim-order-31-"+id;
   const merged=native("rules","merge_reception_analysis",{
-    previous:initial,evidence,raw,clientId:dealer.id,at:clock
+    previous:initial,evidence,raw,clientId:dealer.id,state:seed,client:dealer,at:clock
   }).order;
   return {evidence,initial,merged};
 }

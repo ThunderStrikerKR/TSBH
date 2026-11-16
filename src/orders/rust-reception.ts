@@ -70,7 +70,9 @@ export function receptionAnalysisAllowed(
   raw: string,
   clientId: string,
 ): boolean {
-  if (previous.deletedAt || previous.confirmedAt || previous.manualClassification ||
+  // Match the old TypeScript: a manual draft blocks reanalysis only for unchanged text.
+  if (previous.deletedAt || previous.confirmedAt ||
+      (previous.manualClassification && previous.analysisRaw === raw) ||
       previous.pricesLocked || previous.status === "EXPORTED")
     return false;
   return previous.analysisRaw !== raw || previous.analysisClientId !== clientId;

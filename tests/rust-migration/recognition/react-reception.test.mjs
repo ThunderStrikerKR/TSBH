@@ -162,12 +162,24 @@ test("stale or locked native analysis does not overwrite an already reviewed dra
     o=>{o.pricesLocked=true;},
     o=>{o.status="EXPORTED";},
     o=>{o.deletedAt="2026-11-13T00:00:00.000Z";},
-    o=>{o.manualClassification={blocks:[],assignments:{}};},
   ]){
     const before=structuredClone(orderFor(1));
     mutation(before);
     assert.strictEqual(apply(before,1),before,"reviewed draft must not change");
   }
+});
+
+test("manual classification blocks same raw but allows edited raw like original TS",()=>{
+  const prior=apply(orderFor(13),13);
+  prior.manualClassification={blocks:[],assignments:{}};
+  assert.equal(receptionAnalysisAllowed(prior,samples[12].raw,client.id),false);
+  assert.equal(receptionAnalysisAllowed(prior,samples[12].raw,"another-dealer"),false);
+  assert.equal(receptionAnalysisAllowed(prior,samples[12].raw+" ",client.id),true);
+  const next=applyRustReceptionAnalysis(prior,natives.get("13-edited"),{
+    raw:samples[12].raw+" ",state,pricingClient:client,
+    at:"2026-11-13T00:00:02.000Z"
+  });
+  assert.equal(next.analysisRaw,samples[12].raw+" ");
 });
 
 test("corrupt native evidence is rejected instead of silently falling back to TypeScript",()=>{
@@ -235,6 +247,14 @@ test("compiled Rust reception merge exactly matches original TS on all 20 recogn
   samplesToCompare.push({
     label:"employee-confirmed-reanalysis",
     previous:prior,
+    evidence:natives.get("13-edited"),
+    raw:samples[12].raw+" ",
+  });
+  const manualRawChanged=structuredClone(prior);
+  manualRawChanged.manualClassification={blocks:[],assignments:{}};
+  samplesToCompare.push({
+    label:"manual-classified-raw-changed",
+    previous:manualRawChanged,
     evidence:natives.get("13-edited"),
     raw:samples[12].raw+" ",
   });

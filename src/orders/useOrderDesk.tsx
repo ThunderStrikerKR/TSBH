@@ -340,7 +340,7 @@ export function useOrderDesk({
     clientId: draft.clientId,
     source,
     saved,
-    manual: !!draft.manualClassification,
+    manual: !!draft.manualClassification && draft.analysisRaw === source,
     products: state.products,
     aliases: state.aliases,
     clientSignature,
@@ -350,7 +350,7 @@ export function useOrderDesk({
     clientId: draft.clientId,
     source,
     saved,
-    manual: !!draft.manualClassification,
+    manual: !!draft.manualClassification && draft.analysisRaw === source,
     products: state.products,
     aliases: state.aliases,
     clientSignature,
@@ -360,7 +360,7 @@ export function useOrderDesk({
     if (
       viewMode === "details" ||
       saved ||
-      !!draft.manualClassification ||
+      (!!draft.manualClassification && draft.analysisRaw === source) ||
       !receptionAnalysisAllowed(draft, source, pricingClient.id)
     ) return;
     const orderId = draft.id;
