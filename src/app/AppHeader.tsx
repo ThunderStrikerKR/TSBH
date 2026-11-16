@@ -11,6 +11,7 @@ export function AppHeader({
   onWindow,
   onNotifications,
   notificationCount = 0,
+  notificationError = false,
 }: {
   page: PageId;
   dock: DockStatus;
@@ -21,6 +22,7 @@ export function AppHeader({
   onDockStop: () => void;
   onNotifications?: () => void;
   notificationCount?: number;
+  notificationError?: boolean;
   onWindow: (action: "minimize" | "maximize" | "close") => void;
 }) {
   return (
@@ -50,7 +52,9 @@ export function AppHeader({
       <div className="header-actions">
         {onNotifications && (
           <button className="header-notifications-button" onClick={onNotifications}
-            aria-label={notificationCount ? `알림 ${notificationCount}건` : "알림"}>
+            title={notificationError ? "알림 데이터베이스 확인 필요" : "알림"}
+            aria-label={notificationError ? "알림 저장 오류, 확인 필요" :
+              notificationCount ? `알림 ${notificationCount}건` : "알림"}>
             <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16"
               fill="none" stroke="currentColor" strokeWidth="1.8"
               strokeLinecap="round" strokeLinejoin="round">
@@ -58,11 +62,13 @@ export function AppHeader({
               <path d="M10 21h4" />
             </svg>
             <span>알림</span>
-            {notificationCount > 0 && (
-              <small className="header-notifications-count" aria-hidden="true">
-                {notificationCount > 99 ? "99+" : notificationCount}
-              </small>
-            )}
+            {notificationError
+              ? <small className="header-notifications-count" aria-hidden="true">!</small>
+              : notificationCount > 0 && (
+                <small className="header-notifications-count" aria-hidden="true">
+                  {notificationCount > 99 ? "99+" : notificationCount}
+                </small>
+              )}
           </button>
         )}
         {!dock.active ? (
