@@ -20,7 +20,13 @@ if errorlevel 1 goto missing_rust
 where powershell >nul 2>nul
 if errorlevel 1 goto failed
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-node-deps.ps1"
+rem Use hosted Windows runner's PowerShell 7 when running the CI-only
+rem automated GUI audit. Keep the employee's normal Windows PowerShell path.
+if /I "%GITHUB_ACTIONS%"=="true" if /I "%BANDO_DEV_GUI_AUDIT%"=="true" (
+  pwsh -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-node-deps.ps1"
+) else (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-node-deps.ps1"
+)
 if errorlevel 1 goto failed
 
 rem OCR can be tested with the ALREADY PACKAGED runtime; no downloads or
