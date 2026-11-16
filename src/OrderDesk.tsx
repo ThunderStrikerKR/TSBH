@@ -67,7 +67,7 @@ export function OrderDesk(props: OrderDeskProps) {
   } = useOrderDesk(props);
   // Do not clear/recreate the "확인할 내용" list while multiple Rust
   // previews settle after a paste. Old blocks are read-only until current.
-  const lastReadyChecks = useRef<{ orderId: string; blocks: typeof staffBlocks }>();
+  const lastReadyChecks = useRef<{ orderId: string; blocks: typeof staffBlocks } | undefined>(undefined);
   if (flowSummaryReady && !flowSummaryError) {
     lastReadyChecks.current = { orderId: draft.id, blocks: staffBlocks };
   }
