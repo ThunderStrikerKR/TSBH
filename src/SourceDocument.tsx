@@ -225,10 +225,16 @@ export function SourceDocument({
               "rules", "order_edit_rules", {
                 action: "change_order_client", state,
                 order: next, dealerId: matched.id,
+                matchEvidence: result,
                 now: new Date().toISOString(),
               },
             );
             next = selected.order;
+          } else {
+            // No automatic match: display Rust's explanation as an INFO note.
+            next.clientMatch = {
+              source: "NONE", clientId: null, detail: result.detail,
+            };
           }
         } catch (error) {
           // Auto-matching is optional. Keep the pasted order and let staff
