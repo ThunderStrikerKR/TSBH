@@ -3,6 +3,7 @@
   max-height: none;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   display: block;
 }
 .hub-slot-3 .workflow-group {
