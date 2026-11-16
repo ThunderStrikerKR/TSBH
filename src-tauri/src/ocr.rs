@@ -2,8 +2,11 @@
 //! Captures are never saved in the order database or retained after the request.
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::Emitter;
 
 static OCR_RUNNING: AtomicBool = AtomicBool::new(false);
+static OCR_CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
+const OCR_CANCELLED: &str = "OCR_CANCELLED";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,32 +19,46 @@ pub struct OcrCapture {
 
 struct RunningGuard;
 impl Drop for RunningGuard {
-    fn drop(&mut self) { OCR_RUNNING.store(false, Ordering::Release); }
+    fn drop(&mut self) {
+        OCR_CANCEL_REQUESTED.store(false, Ordering::Release);
+        OCR_RUNNING.store(false, Ordering::Release);
+    }
 }
 
 #[tauri::command]
-pub async fn capture_ocr() -> Result<OcrCapture, String> {
+pub async fn capture_ocr(app: tauri::AppHandle, request_id: String) -> Result<OcrCapture, String> {
     if OCR_RUNNING.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
         return Err("이미 OCR 캡처를 진행 중입니다.".into());
     }
+    OCR_CANCEL_REQUESTED.store(false, Ordering::Release);
     let guard = RunningGuard;
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
-        capture_blocking()
+        capture_blocking(&app, &request_id)
     }).await.map_err(|e| format!("OCR 캡처 작업 중단: {e}"))?
 }
 
+#[tauri::command]
+pub fn cancel_ocr() -> bool {
+    if !OCR_RUNNING.load(Ordering::Acquire) { return false; }
+    OCR_CANCEL_REQUESTED.store(true, Ordering::Release);
+    true
+}
+
 #[cfg(not(windows))]
-fn capture_blocking() -> Result<OcrCapture, String> {
+fn capture_blocking(_app: &tauri::AppHandle, _request_id: &str) -> Result<OcrCapture, String> {
     Err("화면 캡처 OCR은 Windows에서만 사용할 수 있습니다.".into())
 }
 
 #[cfg(windows)]
-fn capture_blocking() -> Result<OcrCapture, String> {
+fn capture_blocking(app: &tauri::AppHandle, request_id: &str) -> Result<OcrCapture, String> {
     use base64::Engine;
     use std::{fs, io::Write, process::{Command, Stdio}, time::{Duration, Instant}};
 
     let (width, height, rgba) = screen_snip::snip()?;
+    if OCR_CANCEL_REQUESTED.load(Ordering::Acquire) {
+        return Err(OCR_CANCELLED.into());
+    }
     let count = width.checked_mul(height).and_then(|n| n.checked_mul(4))
         .ok_or("캡처 이미지의 크기를 확인할 수 없습니다.")?;
     if width == 0 || height == 0 || count > 24_000_000 || count != rgba.len() {
@@ -80,15 +97,24 @@ fn capture_blocking() -> Result<OcrCapture, String> {
     use std::os::windows::process::CommandExt;
     command.creation_flags(0x08000000); // no console window
     let mut child = command.spawn().map_err(|e| format!("PaddleOCR 실행 실패: {e}"))?;
+    // Only the actual recognition process owns the OCR progress indicator.
+    let _ = app.emit("bando-ocr-phase", serde_json::json!({
+        "requestId":request_id,"phase":"recognizing"
+    }));
     let started = Instant::now();
     let status = loop {
+        if OCR_CANCEL_REQUESTED.load(Ordering::Acquire) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(OCR_CANCELLED.into());
+        }
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? { break status; }
         if started.elapsed() > Duration::from_secs(180) {
             let _ = child.kill();
             let _ = child.wait();
             return Err("OCR 처리 시간이 초과됐습니다. 한글 모델 설치 여부를 확인하세요.".into());
         }
-        std::thread::sleep(Duration::from_millis(200));
+        std::thread::sleep(Duration::from_millis(100));
     };
     let out = String::from_utf8_lossy(&fs::read(&stdout).map_err(|e| e.to_string())?).into_owned();
     // Windows native extensions sometimes crash before Python can write our
@@ -202,10 +228,13 @@ mod screen_snip {
     unsafe extern "system" {
         fn keybd_event(key: u8, scan: u8, flags: u32, extra: usize);
         fn GetClipboardSequenceNumber() -> u32;
+        fn GetAsyncKeyState(v_key: i32) -> i16;
     }
     const RELEASE: u32 = 2;
     pub(super) fn snip() -> Result<(usize, usize, Vec<u8>), String> {
         let original = unsafe { GetClipboardSequenceNumber() };
+        // Discard any ESC from before opening the Windows snipping overlay.
+        let _ = unsafe { GetAsyncKeyState(0x1B) };
         unsafe {
             keybd_event(0x5B, 0, 0, 0);  // Win
             keybd_event(0x10, 0, 0, 0);  // Shift
@@ -218,6 +247,13 @@ mod screen_snip {
         // same native selection overlay as pressing Windows+Shift+S.
         let started = Instant::now();
         while started.elapsed() < Duration::from_secs(75) {
+            // The Windows overlay owns keyboard focus: a React keydown handler
+            // cannot reliably see ESC, so inspect the native key state here.
+            let esc = unsafe { GetAsyncKeyState(0x1B) } as u16;
+            if super::OCR_CANCEL_REQUESTED.load(Ordering::Acquire) ||
+                (esc & 0x8001) != 0 {
+                return Err(super::OCR_CANCELLED.into());
+            }
             if unsafe { GetClipboardSequenceNumber() } != original {
                 if let Ok(mut clipboard) = arboard::Clipboard::new() {
                     if let Ok(image) = clipboard.get_image() {
@@ -225,7 +261,7 @@ mod screen_snip {
                     }
                 }
             }
-            std::thread::sleep(Duration::from_millis(180));
+            std::thread::sleep(Duration::from_millis(35));
         }
         Err("화면 캡처가 완료되지 않았습니다. 범위를 드래그한 뒤 다시 실행해 주세요.".into())
     }
