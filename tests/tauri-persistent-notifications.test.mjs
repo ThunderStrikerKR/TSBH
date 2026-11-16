@@ -35,7 +35,7 @@ test("native notification operations are typed and serialized across startup rel
   assert.match(hook,/window\.bando!\.notificationAdd\(notice\)/);
   assert.match(hook,/window\.bando!\.notificationMarkRead\(id\)/);
   assert.match(hook,/window\.bando!\.notificationClear\(\)/);
-  assert.match(app,/usePersistedNotifications\(\)/);
+  assert.match(app,/usePersistedNotifications\(Boolean\(state && draft\)\)/);
   assert.match(app,/onNotification=\{addNotification\}/);
   assert.match(app,/storageError=\{storageError\}/);
   assert.match(modal,/storageError && <p role="alert"/);
