@@ -542,6 +542,8 @@ export interface DockStatus {
   active: boolean;
   ratio: number;
   handle?: string;
+  /** Current KakaoTalk conversation HWND selected by the native dock. */
+  activeChatHandle?: string;
   selectionRequired?: boolean;
 }
 export interface StartupStatus {
