@@ -209,7 +209,9 @@ fn phone_regex() -> Regex {
         .expect("phone")
 }
 fn address_begin(line: &str) -> Option<usize> {
-    let prefix = Regex::new(r"^\s*(?:주소|배송지(?:\s*주소)?|배송주소|받는곳|수취인주소)\s*[:：]?\s*")
+    // A bare prefix is not enough: "배송지메모: 상호" is NOT an address.
+    // Require a boundary (colon/space) after the complete address label.
+    let prefix = Regex::new(r"^\s*(?:주소|배송지(?:\s*주소)?|배송주소|받는곳|수취인주소)(?:\s*[:：]\s*|\s+)")
         .expect("address prefix");
     if let Some(m)=prefix.find(line) {
         // parseLegacy.ts detects the province after an optional five-digit
@@ -1425,6 +1427,20 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn shipping_memo_label_must_not_swallow_next_recipient_address(){
+        assert_eq!(address_begin("배송지메모: 가상소매점"),None);
+        assert_eq!(address_begin("배송지메시지: 경기도"),None);
+        assert_eq!(address_begin("배송지: 서울특별시 마포구 월드컵로 32"),
+            Some("배송지: ".len()));
+        let raw="배송지메모: 가상소매점\n최가상\n010-7000-1002\n서울특별시 마포구 월드컵로 32\n709 1개";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),1);
+        assert_eq!(rows[0]["name"],"최가상");
+        assert_eq!(rows[0]["address"],"서울특별시 마포구 월드컵로 32");
+        assert_eq!(rows[0]["mobile"],"010-7000-1002");
     }
     #[test]
     fn province_name_requires_address_boundary_not_merchant_substring(){
