@@ -117,7 +117,7 @@ try {
   # windowControl("maximize") IPC, not a foreign Win32 ShowWindow shortcut.
   $root=[System.Windows.Automation.AutomationElement]::FromHandle(
     $second.MainWindowHandle)
-  $condition=New-Object System.Windows.Automation.PropertyCondition(
+  $condition=[System.Windows.Automation.PropertyCondition]::new(
     [System.Windows.Automation.AutomationElement]::NameProperty,
     "창 최대화 또는 복원")
   $button=$null
