@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 import { chromium } from "playwright";
 import { probeWindowsFreightFocus } from "./migration31-real-freight-focus.mjs";
+import { probeTwoConsecutiveOrders } from "./migration31-real-two-orders.mjs";
 
 if (process.platform !== "win32") throw Error("Native reception audit requires Windows");
 const exe = resolve(process.env.BANDO_NATIVE_EXE || "");
@@ -624,7 +625,13 @@ try{
   record("real Windows EXE Rust order edit, dealer change and freight decisions",
     edits);
 
-
+  // Full operational regression missed by the old one-order smoke: confirm
+  // TWO independent reception orders via real Windows WebView2 controls,
+  // then read back both separately persisted SQLite recipient/item IDs.
+  if (process.env.BANDO_P1P2_AUDIT === "true") {
+    await probeTwoConsecutiveOrders(page,{record,snap});
+    await persist();
+  }
 
   assert.equal(report.issues.length,0,
     "Browser UI errors: "+report.issues.join("\n"));
