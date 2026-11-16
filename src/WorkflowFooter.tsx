@@ -115,14 +115,18 @@ export function WorkflowFooter({
   shipment,
   vatIncluded,
   onVat,
+  unavailable = false,
 }: {
   state: State;
   shipment: WorkflowShipment;
   vatIncluded: boolean;
   groupId: string;
   onVat: (v: boolean | undefined) => void;
+  unavailable?: boolean;
 }) {
-  const disabled = shipment.transferred;
+  // Keep the native preview's last settled checkbox mounted without
+  // permitting a stale VAT decision while the next Rust result is pending.
+  const disabled = shipment.transferred || unavailable;
   return (
     <section className="workflow-footer order-settings" aria-label="발주 설정">
       <div className="shipment-vat">
