@@ -203,7 +203,7 @@ export type OrderType = "AGENCY" | "DEALER" | "RETAIL";
 export interface Order {
   /** Rust-reported dealer matching provenance; advisory only, never a customer-facing message. */
   clientMatch?: {
-    source: "KAKAO_REMEMBERED" | "KAKAO_TITLE" | "RAW_EXPLICIT" | "MANUAL" | "NONE" | "CONFLICT";
+    source: "KAKAO_REMEMBERED" | "KAKAO_TITLE" | "RAW_EXPLICIT" | "MANUAL" | "NONE" | "CONFLICT" | "ERROR";
     clientId: string | null;
     detail: string;
     chatTitle?: string;
