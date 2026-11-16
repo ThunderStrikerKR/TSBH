@@ -60,3 +60,10 @@
 | 거래처별 즉시 가격·운임 머지 | 구버전 복원 `4056ffc0` / `5cc9d515` | 기존 근거 부족으로 사용자 승인 개선 침범 가능 | 우선 현재 데이터 흐름·동작 유지, 실제 편집/결제·운임 입력 훼손 여부는 별도 시나리오로 검증 |
 
 기존 최초 Tauri `30a19cd2`의 shipping·가격 스냅샷은 **역사적 참고**로 보존하되, 현행 동작을 해당 스냅샷과 같게 만드는 CI 검사를 중단한다. 실제 현행 TS→Rust 비교는 마지막 확정된 UI·업무 정책과 동작을 기준으로 한다. 전체 기능 승인·퇴행 검증 완료를 뜻하지 않는다.
+
+## 7. 가격/운임 프리뷰에서 오래된 금액 표시 방지
+
+- `useNativeOrderPreview`의 Rust 결과 표시용 키가 `shippingFee`, `shippingVersion`, `vatAmount`, `vatDefault`, `pricesLocked`, `clientSnapshot`, 계좌/그룹 정보 등을 누락하여 변경된 주문에도 이전 Rust 금액을 노출할 위험을 확인.
+- `native-order-display-key.ts`로 순수 UI freshness 시그니처를 분리하고, 금액·배송분류·단가·부가세 및 수취인 관련 모든 입력을 포함시켰음. 이 로직은 금액을 계산하지 않음.
+- 상태 revision/원문 참고글 변화만으로는 이미 확정된 Rust 견적을 숨기지 않지만, 재계산에 영향을 주는 실제 주문 변경은 즉시 기존 값을 무효화함.
+- `tests/tauri-native-order-display-key.test.mjs`: 실제 계산이 아닌 원천 비교의 양성/음성 변경 검사. 최신 CI·Windows는 커밋별 별도 판정.

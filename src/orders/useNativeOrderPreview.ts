@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { businessCoreCall } from "../tauri-bridge";
+import { nativeOrderDisplayKey } from "./native-order-display-key";
 import type { Order, Price, State } from "../types";
 
 export type NativeOrderPreview = {
@@ -24,34 +25,12 @@ export function useNativeOrderPreview(
     () => JSON.stringify({ state, draft }),
     [state, draft],
   );
-  // Preserve a *Rust-produced* summary only while its financial inputs are
-  // unchanged. Unlike a product-line price, VAT and freight totals cannot be
-  // recomputed from the order object without duplicating Rust rules in React.
-  const displayKey = useMemo(() => JSON.stringify({
-    persisted: {
-      orders: sourceState.orders,
-      workflow: sourceState.workflow,
-      products: sourceState.products,
-      shipping: sourceState.shipping,
-      clients: sourceState.clients,
-      settings: sourceState.settings,
-    },
-    orderId: draft.id,
-    clientId: draft.clientId,
-    orderType: draft.orderType,
-    applyVat: draft.applyVat,
-    recipients: draft.recipients.map(r => ({
-      id: r.id,
-      vatOverride: r.vatOverride,
-      freightCode: r.freightCode,
-      dispatchOrigin: r.dispatchOrigin,
-      shippingCharges: r.shippingCharges,
-      items: r.items.map(i => ({
-        id: i.id, productId: i.productId, variantId: i.variantId,
-        unitPrice: i.unitPrice, quantity: i.quantity, origin: i.origin,
-      })),
-    })),
-  }), [sourceState, draft]);
+  // Retain the last Rust result only for truly identical financial inputs.
+  // This signature does not calculate money or replace the Rust authority.
+  const displayKey = useMemo(
+    () => nativeOrderDisplayKey(sourceState, draft),
+    [sourceState, draft],
+  );
   const current = useRef({ state, draft });
   current.current = { state, draft };
   const [resolved, setResolved] = useState<{
