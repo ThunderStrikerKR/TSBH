@@ -27,11 +27,14 @@ $inputs = @(
     $nodeVersion,
     $npmVersion
 )
-$fingerprint = [Convert]::ToHexString(
-    [System.Security.Cryptography.SHA256]::HashData(
-        [Text.Encoding]::UTF8.GetBytes(($inputs -join "|"))
-    )
-)
+$sha = [System.Security.Cryptography.SHA256]::Create()
+try {
+    $fingerprint = ([BitConverter]::ToString(
+        $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($inputs -join "|")))
+    )).Replace("-", "")
+} finally {
+    $sha.Dispose()
+}
 $complete = (Test-Path -LiteralPath $stamp)
 if ($complete) {
     $complete = ((Get-Content -LiteralPath $stamp -Raw).Trim() -eq $fingerprint)
