@@ -26,7 +26,8 @@ test("quantity and amount columns preserve maximum room for product names", () =
   assert.match(desk, /value=\{i\.quantity \?\? ""\}/);
   assert.match(desk, /orderLineAmounts\.find\(/);
   const rust = read("src-tauri/src/business_core/rules/workflow_preview.rs");
-  assert.match(rust, /price\.checked_mul\(quantity\)/);
+  assert.match(rust, /price\.checked_mul\(qty\)/);
+  assert.match(rust, /fn line_amounts\(recipients:&\[Value\]\)/);
   assert.doesNotMatch(desk, /won\(i\.unitPrice \* i\.quantity\)/);
   assert.doesNotMatch(desk, /max="100"/);
 });
