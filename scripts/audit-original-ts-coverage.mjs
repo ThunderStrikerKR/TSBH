@@ -1,5 +1,7 @@
 // Read-only inventory: original pre-Rust TypeScript vs current source and test oracles.
 // This is coverage metadata, NOT a behavioral-parity assertion.
+// The historical first-commit source is NOT an authoritative modern feature
+// specification. Never auto-revert improvements on the basis of this report.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
@@ -73,7 +75,8 @@ const summary = {
   directMutableTestOracles: refs.filter(r => r.unsealed).length,
   noDirectTSImports: refs.filter(r => r.classification === "NO_DIRECT_TS_IMPORT").length,
   loadingStateCandidates: candidates.length,
-  verdict: "COVERAGE_INVENTORY_ONLY_NOT_FULL_FUNCTIONAL_PARITY",
+  verdict: "HISTORICAL_DIFF_ONLY_NOT_A_CURRENT_FEATURE_CONTRACT",
+  policy: "DIFFERENCE_DOES_NOT_AUTHORIZE_REVERT;CHECK_USER_APPROVED_IMPROVEMENTS",
 };
 const report = {summary, removedFiles, changedFiles, rustFiles, tests: refs, candidates};
 mkdirSync("migration-audit", {recursive: true});
@@ -81,7 +84,9 @@ writeFileSync("migration-audit/original-ts-coverage.json",
   JSON.stringify(report, null, 2) + "\n", "utf8");
 const md = [
   "# Fixed-original TypeScript source-coverage inventory", "",
-  "This is an automated inventory, NOT proof of all TS/Rust behavioral equivalence.",
+  "This is an automated historical inventory, NOT the current approved product specification.", 
+  "Changes since 2026-11-06 are NOT automatically bugs or deletion candidates.",
+  "Preserve subsequent approved improvements; compare intent and workflow before editing.",
   "Frozen pre-migration baseline: " + baseline,
   "Current commit: " + summary.head, "",
   ...Object.entries(summary).map(([key,value]) => "- " + key + ": " + value),
