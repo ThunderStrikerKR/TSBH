@@ -263,10 +263,13 @@ export async function probeCrossDealerOrderIsolation(page,{record,snap}) {
     });
     await page.getByRole("button",{name:/새 주문/}).first().click();
     // Before pasting, no previous order/client may remain active.
-    await page.waitForFunction(()=>
-      !document.querySelector(".source-document")?.textContent?.includes("가상 1개") &&
-      !document.querySelector(".source-document")?.textContent?.includes("709 1개"),
-      null,{timeout:20000});
+    await page.waitForFunction(()=>{
+      const source=document.querySelector(".source-document");
+      const top=document.querySelector(".source-top");
+      // A new receipt has no clipboard text and no assigned client.
+      return source && top && source.textContent.trim()==="" &&
+        !top.querySelector(".receipt-client");
+    },null,{timeout:20000});
     assert.equal(await page.locator(".receipt-client").count(),0,
       "P1_NEW_ORDER_STALE_DEALER "+scenario.recipient);
     const chooserBefore=page.getByRole("button",{name:"거래처 찾기",exact:true});
