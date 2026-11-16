@@ -117,8 +117,10 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
     }));
     assert.equal(pending.saved,0,"Two unconfirmed receipts must not be silently committed");
     assert.equal(pending.cards.length,2,"Both receipts must be displayed simultaneously");
-    assert.ok(pending.cards.every(card=>card.label?.includes("미확정")),
-      "Both cards must clearly identify their unsaved status");
+    assert.ok(pending.cards.every(card=>card.label?.includes("가상대리점")),
+      "Both receipts must retain their own client identity");
+    assert.ok(pending.cards.every(card=>!card.label?.includes("미확정 · 임시")),
+      "Redundant draft status must not consume another header line");
     record("SIM32_TWO_PENDING_ORDERS real WebView2 processing cards",pending);
     await snap(page,"08-sim32-two-unconfirmed-processing-cards");
     // Measure real WebView2 panel height during an actual freight edit.
