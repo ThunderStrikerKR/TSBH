@@ -392,6 +392,8 @@ export function useOrderDesk({
             evidence: result,
             raw: source,
             clientId: pricingClient.id,
+            state,
+            client: liveClient ?? null,
             at: new Date().toISOString(),
           },
         );
