@@ -718,7 +718,7 @@ try {
         return 1;
       },
       invoke: async (command, args = {}) => {
-        if (command === "plugin:event|listen") return 1;
+        if (command === "plugin:event|listen") { window.__navOcrCalls.push("listen"); return 1; }
         if (command === "plugin:event|unlisten") {
           navOcrPhaseCallback = undefined;
           return undefined;
@@ -875,6 +875,7 @@ try {
     let current = structuredClone(initial);
     const saveLog = [];
     window.__navSaved = () => ({ state: structuredClone(current), saves: structuredClone(saveLog) });
+    window.__navOcrCalls=[];
     let navOcrPhaseCallback;
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
       unregisterListener: () => { navOcrPhaseCallback = undefined; },
@@ -1219,6 +1220,7 @@ try {
           return structuredClone(current);
         }
         if (command === "capture_ocr") {
+          window.__navOcrCalls.push("capture");
           navOcrPhaseCallback?.({
             event: "bando-ocr-phase", id: 1, payload: "recognizing",
           });
@@ -1945,7 +1947,19 @@ try {
   await navPage.reload();
   await navPage.getByRole("button",{name:"캡처 범위 지정"}).click();
   const ocr=navPage.getByRole("dialog",{name:"OCR 문자 인식 검토"});
-  await ocr.getByRole("button",{name:"원문 교체"}).click();
+  try {
+    await ocr.getByRole("button",{name:"원문 교체"}).click({timeout:5000});
+  } catch (error) {
+    const diag=await navPage.evaluate(()=>({
+      notices:[...document.querySelectorAll(".source-inline-status,.app-notice,[role=alert]")].map(el=>el.textContent?.trim()?.slice(0,260)),
+      dialogs:[...document.querySelectorAll("dialog")].map(el=>({label:el.getAttribute("aria-label"),text:el.textContent?.slice(0,350)})),
+      ocrPhase:document.querySelector(".source-ocr-progress")?.textContent,
+      captureButton:[...document.querySelectorAll("button")].find(x=>x.textContent?.includes("캡처 범위 지정"))?.outerHTML?.slice(0,400),
+      navOcrCalls:window.__navOcrCalls||[],
+    }));
+    console.error("NAV_OCR_PRECONDITION_DIAGNOSTICS",JSON.stringify(diag));
+    throw error;
+  }
   await navPage.waitForFunction(() => document.querySelector(".source-document")?.textContent?.includes("검증 발주 원문"));
   assert.equal(await navPage.evaluate(() => window.__navNativeOcrReplacements),1,
     "OCR review must use the native replace_reception action, not a TS-only update");
