@@ -4,6 +4,8 @@
 import { matchingRecipient, rebindEvidence } from "../../../src/order-evidence.ts";
 import { addressParts, mergeParsedItem } from "../../../src/parser.ts";
 import { assertRustReceptionAnalysis, receptionAnalysisAllowed, type RustReceptionAnalysis } from "../../../src/orders/rust-reception.ts";
+import { resolvePrice } from "./original-price-20261116.ts";
+import { recommendShipping } from "./original-shipping-20261116.ts";
 import type { Client, Order, State } from "../../../src/types.ts";
 
 /**
@@ -21,7 +23,7 @@ export function applyRustReceptionAnalysis(
     at: string;
   },
 ): Order {
-  const { raw, pricingClient, at } = options;
+  const { raw, state, pricingClient, at } = options;
   assertRustReceptionAnalysis(evidence, raw);
   if (!receptionAnalysisAllowed(previous, raw, pricingClient.id)) return previous;
 
@@ -71,9 +73,10 @@ export function applyRustReceptionAnalysis(
         rebindEvidence(candidates, "itemId", item.id, priorItem.id);
         item.id = priorItem.id;
         Object.assign(item, mergeParsedItem(item, priorItem));
-        // The asynchronous native Rust reprice_order effect is authoritative
-        // for previously recognized and employee-matched catalog items.
-        if (item.variantId) item.unitPrice = null;
+        // Frozen original TS useOrderDesk.tsx at 30a19cd2: calculate immediately.
+        const product = state.products.find((p) => p.id === item.productId);
+        if (product && item.variantId)
+          item.unitPrice = resolvePrice(product, item.variantId, pricingClient);
       }
       // Even newly recognized items must reference the retained recipient,
       // not Rust's provisional recipient ID.
@@ -111,10 +114,10 @@ export function applyRustReceptionAnalysis(
     postpaidApproved: false,
     status: "REVIEW",
   };
-  // The live reception hook resolves freight with Rust calculate_shipping.
-  // Keep an explicit pending marker so Save also awaits native freight.
-  next.shippingFee = null;
+  // Frozen original TS useOrderDesk.tsx at 30a19cd2: freight is atomic.
+  const reco = recommendShipping(next, state);
+  next.shippingFee = pricingClient.shippingFeeExcluded ? 0 : reco.total;
   next.shippingMode = "AUTO";
-  next.shippingVersion = "";
+  next.shippingVersion = reco.version;
   return next;
 }

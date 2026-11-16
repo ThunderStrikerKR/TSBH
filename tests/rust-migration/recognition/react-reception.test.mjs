@@ -246,7 +246,8 @@ test("compiled Rust reception merge exactly matches original TS on all 20 recogn
   });
   const requests=samplesToCompare.map(row=>({
     domain:"rules",operation:"merge_reception_analysis",
-    payload:{previous:row.previous,evidence:row.evidence,raw:row.raw,clientId:client.id,at},
+    payload:{previous:row.previous,evidence:row.evidence,raw:row.raw,
+      clientId:client.id,client,state,at},
   }));
   const result=spawnSync("cargo",["run","--quiet","--manifest-path",cargo,
     "--bin","reception_runner"],{

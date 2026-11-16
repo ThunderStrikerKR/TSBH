@@ -221,6 +221,13 @@ pub(super) fn recommend(order: &Value, state: &Value) -> Result<Value, String> {
                             .is_none_or(|n| n == 0)) {
                             reason = "수량 확인 필요".into(); break;
                         }
+                        // Preserve the frozen TypeScript's legacy non-packable guard.
+                        if field(rule,"packable")==&json!(false) && q > 1 &&
+                            !(flag(rule,"maxConfirmed") &&
+                              field(rule,"maxBundle").as_i64()==Some(1)) {
+                            reason=format!("{group_name} 합포장 불가 / 직원 확인 필요");
+                            break;
+                        }
                         if let Some(per_item) = safe(field(rule,"perItem")) {
                             if let Some(v) = per_item.checked_mul(q).filter(|n| safe(&json!(n)).is_some()) {
                                 charges.push(v);

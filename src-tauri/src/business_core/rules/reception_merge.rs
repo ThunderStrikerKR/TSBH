@@ -272,9 +272,16 @@ fn apply(payload:&Value)->Result<Value,String>{
         ("raw",json!(raw)),("analysisRaw",json!(raw)),("analysisClientId",json!(client_id)),
         ("recipients",json!(parsed)),("pricesLocked",json!(false)),
         ("notified",json!(false)),("paid",json!(false)),("postpaidApproved",json!(false)),
-        ("status",json!("REVIEW")),("shippingFee",Value::Null),
-        ("shippingMode",json!("AUTO")),("shippingVersion",json!(""))
+        ("status",json!("REVIEW")),("shippingMode",json!("AUTO"))
     ]{set(&mut next,key,value)?;}
+    // Match the original TypeScript's atomic post-merge freight calculation.
+    // No transient null/empty-version state may reach React.
+    let freight=super::shipping::recommend(&next,state)?;
+    let fee=if field(client,"shippingFeeExcluded")==&json!(true) {
+        json!(0)
+    } else { field(&freight,"total").clone() };
+    set(&mut next,"shippingFee",fee)?;
+    set(&mut next,"shippingVersion",field(&freight,"version").clone())?;
     Ok(json!({"order":next}))
 }
 pub(super) fn execute(payload:&Value)->Result<Value,String>{apply(payload)}
@@ -366,7 +373,9 @@ mod tests{
         let first=apply(&json!({"previous":{
             "id":"order-c","raw":"김가상 709 2개","orderType":"AGENCY","recipients":[]},
             "evidence":evidence,"raw":"김가상 709 2개",
-            "clientId":"dealer","at":"now"})).unwrap()["order"].clone();
+            "clientId":"dealer","at":"now",
+            "state":{"products":[]},"client":{"id":"dealer","tier":"wholesale"}
+        })).unwrap()["order"].clone();
         let second=apply(&json!({"previous":first,"evidence":evidence,
             "raw":"김가상 709 2개 ","clientId":"dealer","at":"later",
             "state":{"products":[]},"client":{"id":"dealer","tier":"wholesale"}})).unwrap();
