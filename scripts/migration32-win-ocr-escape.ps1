@@ -12,6 +12,11 @@ public static class BandoOcrDesktop {
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    public delegate bool WindowCallback(IntPtr hwnd, IntPtr lparam);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(WindowCallback callback, IntPtr lparam);
+    [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder title, int capacity);
     [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
 }
 '@
@@ -23,13 +28,41 @@ if ($Action -eq "escape") {
   exit 0
 }
 $p = Get-Process -Id $TargetPid -ErrorAction Stop
-$hwnd = $p.MainWindowHandle
-if ($hwnd -eq [IntPtr]::Zero) { throw "Main Tauri window was not found for process $TargetPid" }
-$rect = New-Object BandoOcrDesktop+Rect
-$ok = [BandoOcrDesktop]::GetWindowRect($hwnd, [ref]$rect)
-if (-not $ok) { throw "GetWindowRect failed" }
+$candidates = [System.Collections.Generic.List[object]]::new()
+$callback = [BandoOcrDesktop+WindowCallback]{
+  param([IntPtr]$hwnd, [IntPtr]$unused)
+  [uint32]$pid = 0
+  [void][BandoOcrDesktop]::GetWindowThreadProcessId($hwnd, [ref]$pid)
+  if ($pid -eq $TargetPid) {
+    $title = [System.Text.StringBuilder]::new(512)
+    [void][BandoOcrDesktop]::GetWindowText($hwnd, $title, $title.Capacity)
+    $rect = New-Object BandoOcrDesktop+Rect
+    [void][BandoOcrDesktop]::GetWindowRect($hwnd, [ref]$rect)
+    $candidates.Add(@{
+      handle = [long]$hwnd
+      title = $title.ToString()
+      visible = [BandoOcrDesktop]::IsWindowVisible($hwnd)
+      minimized = [BandoOcrDesktop]::IsIconic($hwnd)
+      maximized = [BandoOcrDesktop]::IsZoomed($hwnd)
+      rect = @($rect.Left,$rect.Top,$rect.Right,$rect.Bottom)
+    })
+  }
+  return $true
+}
+[void][BandoOcrDesktop]::EnumWindows($callback,[IntPtr]::Zero)
+$match = @($candidates | Where-Object { $_.title -match "BANDO|반도" } | Select-Object -First 1)
+if (-not $match) {
+  $match = @($candidates | Where-Object { $_.visible } | Select-Object -First 1)
+}
+if (-not $match) {
+  throw "No Tauri top-level window for PID $TargetPid. Found: $($candidates | ConvertTo-Json -Compress)"
+}
+$selected = $match[0]
 @{
-  minimized = [BandoOcrDesktop]::IsIconic($hwnd)
-  maximized = [BandoOcrDesktop]::IsZoomed($hwnd)
-  rect = @($rect.Left, $rect.Top, $rect.Right, $rect.Bottom)
-} | ConvertTo-Json -Compress
+  minimized = $selected.minimized
+  maximized = $selected.maximized
+  rect = $selected.rect
+  handle = $selected.handle
+  title = $selected.title
+  candidates = @($candidates.ToArray())
+} | ConvertTo-Json -Compress -Depth 6
