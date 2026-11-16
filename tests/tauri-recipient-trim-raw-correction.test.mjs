@@ -10,7 +10,7 @@ const css = load("src/styles/patch-v0808.css");
 test("raw correction is not inserted as an unrequested action in order review", () => {
   assert.doesNotMatch(desk, /WorkingRawDialog|rawCorrectionAllowed|onCorrectRaw|setCorrecting/);
   assert.doesNotMatch(staff, /원문 정정|onCorrectRaw|rawCorrectableIssue/);
-  assert.match(desk, /<StaffChecks\s+blocks=\{staffBlocks\}/);
+  assert.match(desk, /<StaffChecks\s+blocks=\{shownChecks\}/);
   assert.match(guard, /orderIssues\(o\)\.some\([\s\S]*?rawCorrectableIssue\(i.kind\)/);
 });
 test("recipient form remains compact without collapsing its whole panel", () => {
@@ -25,7 +25,7 @@ test("issue descriptions and informational messages are static; explicit buttons
   assert.doesNotMatch(staff, /<button className="issue-heading"/);
   assert.match(staff, /<div className="staff-fact-message">/);
   assert.doesNotMatch(staff, /클릭해 정정/);
-  assert.match(staff, /<button onClick=\{\(\) => onSelect\(b\)\}>입력 위치로 이동<\/button>/);
+  assert.match(staff, /<button disabled=\{unavailable\} onClick=\{\(\) => onSelect\(b\)\}>입력 위치로 이동<\/button>/);
   // A semantic button may also specify type="button" without changing the action.
-  assert.match(staff, /<button(?: type="button")? onClick=\{\(\) => onSelect\(b\)\}>수량 수정<\/button>/);
+  assert.match(staff, /<button type="button" disabled=\{unavailable\} onClick=\{\(\) => onSelect\(b\)\}>수량 수정<\/button>/);
 });

@@ -8,10 +8,10 @@ const read = (path) => readFileSync(fileURLToPath(new URL("../" + path, import.m
 test("missing quantity issue offers an editor and a gated one-item provisional action", () => {
   const component = read("src/StaffChecks.tsx");
   assert.match(component, /b\.kind === "QUANTITY_MISSING" \? \(/);
-  assert.match(component, /onClick=\{\(\) => onSelect\(b\)\}>수량 수정/);
+  assert.match(component, /disabled=\{unavailable\} onClick=\{\(\) => onSelect\(b\)\}>수량 수정/);
   assert.match(component, /1개로 잠정 처리/);
   assert.match(component, /onClick=\{\(\) => onApproveOne\?\.\(b\)\}/);
-  assert.match(component, /disabled=\{approvingQuantity \|\| !onApproveOne \|\| !canApproveOne\?\.\(b\)\}/);
+  assert.match(component, /disabled=\{unavailable \|\| approvingQuantity \|\| !onApproveOne \|\| !canApproveOne\?\.\(b\)\}/);
   assert.match(component, /b\.resolution === "PROVISIONALLY_APPROVED"/);
   assert.match(component, /onClick=\{\(\) => onCancelApproval\?\.\(b\)\}>잠정 승인 취소/);
 });

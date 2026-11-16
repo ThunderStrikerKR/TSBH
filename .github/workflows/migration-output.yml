@@ -208,6 +208,8 @@ jobs:
         run: node --test tests/rust-migration/recognition/react-reception.test.mjs
       - name: Original TS order edit, selected dealer and freight vs native Rust
         run: node --test tests/rust-migration/rules/order-edit-native-parity.test.mjs
+      - name: Parse exact supplied Hongcheon school order via compiled Rust
+        run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml hongcheon_school_reception_keeps_two_phones_and_three_order_quantities -- --nocapture
 
   factory-reply-ts-rust-parity:
     runs-on: ubuntu-latest

@@ -14,11 +14,12 @@ pub struct Candidate {
 #[serde(rename_all="camelCase")]
 pub struct Status {
     active: bool, mode: &'static str, ratio: f64,
-    handle: Option<String>, notice: Option<String>, selection_required: bool,
+    handle: Option<String>, active_chat_handle: Option<String>,
+    notice: Option<String>, selection_required: bool,
 }
 fn inactive() -> Status {
     Status {active:false, mode:"ORIGINAL", ratio:0.8, handle:None,
-        notice:None, selection_required:false}
+        active_chat_handle:None, notice:None, selection_required:false}
 }
 #[derive(Clone, Copy, Deserialize)]
 pub struct Region { x:f64, y:f64, width:f64, height:f64 }
@@ -854,6 +855,7 @@ fn status(inner:&Inner)->Status{
         return Status{active:true,mode:s.mode.name(),
             ratio:native::measured_ratio(&s).unwrap_or(0.8),
             handle:Some(format!("{:016X}",s.hwnd as usize)),
+            active_chat_handle:inner.active_chat.map(|hwnd|format!("{:016X}",hwnd as usize)),
             notice:None,selection_required:false}
     }
     let _=inner;

@@ -65,7 +65,7 @@ export function WorkflowBoard({
   onNotice: NoticeSink;
 }) {
   const [undoDelete, setUndoDelete] = useState<{ gid: string; at: string }>();
-  const native = useNativeWorkflowBoard(state);
+  const native = useNativeWorkflowBoard(state, previewReady);
   const ready = previewReady && native.ready;
   useEffect(() => {
     if (!undoDelete) return;
@@ -178,7 +178,7 @@ export function WorkflowBoard({
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
-    <div ref={boardRef} className="workflow-board" aria-label="진행 중인 배송 묶음">
+    <div ref={boardRef} className="workflow-board" aria-label="진행 중인 배송 묶음" aria-busy={!ready}>
       <div className="workflow-board-heading">
         <b>발주서 묶음</b>
         <small>배송 건별 정보 / 묶음별 진행</small>
@@ -186,7 +186,7 @@ export function WorkflowBoard({
       {(previewError || native.error) && (
         <p role="alert">업무 미리보기 계산 오류: {previewError || native.error}</p>
       )}
-      {!ready && !previewError && !native.error && (
+      {!ready && !groups.length && !previewError && !native.error && (
         <p role="status" className="muted">주문 미리보기 계산 중</p>
       )}
       {!groups.length && (
@@ -292,7 +292,7 @@ export function WorkflowBoard({
             </header>
             {first.order.orderType !== "RETAIL" && (
               <div className="workflow-progress">
-                {ready && nativeGroup && <SignalLights step={step} notice={g.needsNotice} />}
+                {nativeGroup && <SignalLights step={step} notice={g.needsNotice} />}
                 {step === 3 && (
                   <b className="waiting-payment">{won(nativeGroup?.totals.total ?? null)}</b>
                 )}

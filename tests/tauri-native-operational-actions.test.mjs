@@ -119,13 +119,13 @@ test("Kakao title-to-client decisions are Rust-owned in both UI entrypoints", ()
   const native = source("src-tauri/src/business_core/catalog_clients/title_clients.rs");
   assert.match(kakao, /await nativeRememberTitle\(/);
   assert.doesNotMatch(kakao, /rememberTitle\(\s*state/);
-  assert.match(reception, /nativeRememberedTitleClient\(state, windows\)/);
-  assert.match(reception, /await nativeRememberedTitleClient\(state, chats\)/);
+  assert.match(reception, /nativeAutoReceptionClient\(/);
+  assert.match(reception, /await nativeAutoReceptionClient\(/);
   assert.doesNotMatch(reception, /rememberedTitleClient\(state,/);
   assert.match(adapter, /"catalog_clients", "remember_title_client"/);
-  assert.match(adapter, /"catalog_clients", "remembered_title_client"/);
+  assert.match(adapter, /"catalog_clients", "auto_match_reception_client"/);
   assert.match(native, /"remember_title_client"=>remember\(payload\)/);
-  assert.match(reception, /autoInput\.current\.state !== state/);
+  assert.match(reception, /action: "change_order_client"/);
 });
 
 

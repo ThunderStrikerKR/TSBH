@@ -11,7 +11,7 @@ import { ClientPicker, TierBadge } from "./ManagementUI";
 import { confirmAction } from "./dialogs";
 import { businessCoreCall } from "./tauri-bridge";
 import type { NoticeSink } from "./shared/notices";
-import { nativeRememberedTitleClient } from "./native-title-clients";
+import { nativeAutoReceptionClient } from "./native-title-clients";
 import type { Client, DockWindow, OcrCapture, Order, State } from "./types";
 
 export function SourceDocument({
@@ -78,30 +78,6 @@ export function SourceDocument({
     }
   }, [text]);
   const formal = !!order.confirmedAt || state.orders.some((o) => o.id === order.id);
-  const autoAttempt = useRef("");
-  const autoInput = useRef({ state, windows, text, orderId: order.id, dealerId: order.clientId });
-  autoInput.current = { state, windows, text, orderId: order.id, dealerId: order.clientId };
-  useEffect(() => {
-    if (!text.trim() || client || order.clientId || formal || busy) return;
-    let active = true;
-    void nativeRememberedTitleClient(state, windows)
-      .then(async (id) => {
-        if (!active || !alive.current ||
-            autoInput.current.state !== state || autoInput.current.windows !== windows ||
-            autoInput.current.text !== text || autoInput.current.orderId !== order.id ||
-            autoInput.current.dealerId !== order.clientId) return;
-        const matched = state.clients.find((c) => c.id === id && !c.deletedAt && c.active !== false);
-        if (!matched) return;
-        const attempt = JSON.stringify([order.id, text, matched.id]);
-        if (autoAttempt.current === attempt) return;
-        autoAttempt.current = attempt;
-        await onDealer(matched);
-      })
-      .catch((e) => {
-        if (active && alive.current) setError(String(e).replace(/^Error: /, ""));
-      });
-    return () => { active = false; };
-  }, [state, windows, text, client, order.clientId, order.id, formal, busy, onDealer]);
   useEffect(() => {
     if (!text.trim() || client || formal) return;
     let current = true;
@@ -200,29 +176,54 @@ export function SourceDocument({
         !(await confirmAction("현재 초안과 분석 결과를 새 원문으로 교체할까요?"))
       )
         return;
-      const next = raw === text ? structuredClone(order) : await nativeReplaceReception(order, raw);
+      let next = raw === text ? structuredClone(order) : await nativeReplaceReception(order, raw);
       next.orderType = orderType;
       let chats: DockWindow[] = [];
+      let activeChatHandle: string | undefined;
       try {
-        chats = await window.bando!.dockWindows();
+        // A visible chat can differ from the KakaoTalk main window. Use the
+        // dock's active conversation HWND; never pick an arbitrary open chat.
+        const [rows, dock] = await Promise.all([
+          window.bando!.dockWindows(), window.bando!.dockStatus(),
+        ]);
+        chats = rows;
+        activeChatHandle = dock.activeChatHandle;
       } catch {
-        /* Title lookup is optional; manual selection remains available. */
+        // KakaoTalk is optional; labeled sender evidence can still match.
       }
       if (!alive.current || latestReception.current.order !== order ||
           latestReception.current.text !== text) return;
       setWindows(chats);
       if (!order.clientId) {
-        // A failed optional title lookup must not discard a valid pasted order.
         try {
-          const id = await nativeRememberedTitleClient(state, chats);
-          if (!alive.current) return;
-          const matched = state.clients.find((c) => c.id === id && !c.deletedAt && c.active !== false);
+          const result = await nativeAutoReceptionClient(
+            state, chats, raw, activeChatHandle,
+          );
+          if (!alive.current || latestReception.current.order !== order ||
+              latestReception.current.text !== text) return;
+          const matched = state.clients.find(
+            (c) => c.id === result.clientId && !c.deletedAt && c.active !== false,
+          );
           if (matched) {
-            next.clientId = matched.id;
-            next.clientSnapshot = structuredClone(matched);
+            // Rust still owns dealer change, sender/payment defaults and
+            // freight invalidation. Resolve it BEFORE the one React commit:
+            // paste -> dealer -> analysis must not show three partial drafts.
+            const selected = await businessCoreCall<{ order: Order }>(
+              "rules", "order_edit_rules", {
+                action: "change_order_client", state,
+                order: next, dealerId: matched.id,
+                now: new Date().toISOString(),
+              },
+            );
+            next = selected.order;
           }
         } catch (error) {
-          onNotice("카카오톡 거래처 자동 연결을 확인하지 못했습니다. 거래처를 직접 선택해 주세요.", "error");
+          // Never discard the pasted order, but do not conceal a broken
+          // automatic dealer binding from staff.
+          if (alive.current) onNotice(
+            "거래처 자동 연결에 실패했습니다. 거래처를 직접 선택해 주세요. " +
+            String(error).replace(/^Error: /, ""), "error",
+          );
         }
       }
       if (!alive.current || latestReception.current.order !== order ||
