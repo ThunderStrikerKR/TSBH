@@ -169,25 +169,35 @@ try {
     null,{timeout:20000});
   await snap(page,"03-ready-for-two-order-test");
 
-  // SIM34: directly paste a two-recipient shipment into the running
-  // Windows native Tauri GUI. The next recipient's ADDRESS and PHONE
-  // precede their NAME after an empty-line paragraph boundary.
+  // SIM34: use recipient names UNIQUE TO THIS RECEPTION. Earlier pending
+  // drafts stay visible in WorkflowBoard by design, so selecting an old
+  // same-name shipment would test the wrong order.
   const proximityRaw=[
-    "김가상","서울특별시 마포구 월드컵로 20","010-1234-5678","",
-    "경기도 성남시 분당구 불정로 6","010-2345-6789","박가상",
+    "윤가상","서울특별시 마포구 월드컵로 20","010-7777-1111","709 1개","",
+    "경기도 성남시 분당구 불정로 6","010-7777-2222","최가상","GT-1 1개",
   ].join("\n");
   await page.evaluate(text=>window.bando.copy(text),proximityRaw);
   await page.getByRole("button",{name:"대리발송",exact:true}).click();
-  const secondDelivery=page.getByRole("button",{name:"배송 건 박가상"});
+  await page.waitForFunction(()=>
+    (document.querySelector(".source-document")?.textContent||"").includes("최가상"),
+    null,{timeout:30000});
+  // A dealer must be selected before the new unsaved reception is represented
+  // by its own shipping cards. Do not select a previous pending order.
+  await page.getByRole("button",{name:"거래처 찾기",exact:true}).click();
+  await page.locator(".client-chooser-list .client-result")
+    .filter({hasText:"가상대리점"}).click();
+  await page.locator(".receipt-client b").filter({hasText:"가상대리점"})
+    .waitFor({state:"visible",timeout:20000});
+  const firstDelivery=page.getByRole("button",{name:"배송 건 윤가상",exact:true});
+  const secondDelivery=page.getByRole("button",{name:"배송 건 최가상",exact:true});
+  await firstDelivery.waitFor({state:"visible",timeout:30000});
   await secondDelivery.waitFor({state:"visible",timeout:30000});
-  const firstDelivery=page.getByRole("button",{name:"배송 건 김가상"});
-  await firstDelivery.waitFor({state:"visible",timeout:15000});
-  const deliveryFields=async()=>{
-    return page.locator(".recipient-review input").evaluateAll(nodes=>
-      nodes.map(n=>n.value));
-  };
+  const deliveryFields=()=>page.locator(".recipient-review input").evaluateAll(nodes=>
+    nodes.map(n=>n.value));
   await secondDelivery.click();
-  await page.locator(".recipient-review").waitFor({state:"visible",timeout:15000});
+  await page.waitForFunction(()=>
+    [...document.querySelectorAll(".recipient-review input")]
+      .some(input=>input.value==="최가상"),null,{timeout:15000});
   const secondValues=await deliveryFields();
   const proximityDiagnostics=await page.evaluate(async(raw)=>{
     const state=await window.bando.load();
@@ -201,32 +211,37 @@ try {
       visibleButtons:[...document.querySelectorAll('button[aria-label^="배송 건 "]')]
         .map(b=>({label:b.getAttribute("aria-label"),text:b.textContent?.slice(0,100)})),
       reviewText:document.querySelector(".review-pane")?.textContent?.slice(0,700),
+      currentSource:document.querySelector(".source-document")?.textContent?.slice(0,350),
     };
   },proximityRaw);
   record("SIM34_SECOND_RECIPIENT_GUI_AND_RUST_DIAGNOSTIC",{
     secondValues,proximityDiagnostics,
   });
   await snap(page,"34-proximity-second-recipient-before-assertion");
-  assert.ok(secondValues.some(v=>v==="박가상"),"SIM34 second recipient name missing: "+JSON.stringify(secondValues));
-  assert.ok(secondValues.some(v=>v.includes("불정로 6")),"SIM34 second address not attached to 박가상: "+JSON.stringify(secondValues));
-  assert.ok(secondValues.some(v=>v==="010-2345-6789"),"SIM34 second contact not attached to 박가상");
-  await snap(page,"34-proximity-second-recipient-native-gui");
+  assert.ok(proximityDiagnostics.currentSource?.includes("최가상"),
+    "SIM34 clicked a shipment belonging to an old draft");
+  assert.ok(secondValues.some(v=>v==="최가상"),"SIM34 second recipient name missing: "+JSON.stringify(secondValues));
+  assert.ok(secondValues.some(v=>v.includes("불정로 6")),"SIM34 second address not attached to 최가상: "+JSON.stringify(secondValues));
+  assert.ok(secondValues.some(v=>v==="010-7777-2222"),"SIM34 second contact not attached to 최가상");
   await firstDelivery.click();
+  await page.waitForFunction(()=>
+    [...document.querySelectorAll(".recipient-review input")]
+      .some(input=>input.value==="윤가상"),null,{timeout:15000});
   const firstValues=await deliveryFields();
-  assert.ok(firstValues.some(v=>v==="김가상"),"SIM34 first recipient name missing");
-  assert.ok(firstValues.some(v=>v.includes("월드컵로 20")),"SIM34 first address not attached to 김가상");
-  assert.ok(firstValues.some(v=>v==="010-1234-5678"),"SIM34 first contact not attached to 김가상");
+  assert.ok(firstValues.some(v=>v==="윤가상"),"SIM34 first recipient name missing");
+  assert.ok(firstValues.some(v=>v.includes("월드컵로 20")),"SIM34 first address not attached to 윤가상");
+  assert.ok(firstValues.some(v=>v==="010-7777-1111"),"SIM34 first contact not attached to 윤가상");
   record("SIM34_PHYSICAL_PARAGRAPH_PROXIMITY_ACTUAL_WINDOWS_GUI",{
     recipients:2,
-    first:{name:"김가상",address:"월드컵로 20",phone:"010-1234-5678"},
-    second:{name:"박가상",address:"불정로 6",phone:"010-2345-6789"},
+    first:{name:"윤가상",address:"월드컵로 20",phone:"010-7777-1111"},
+    second:{name:"최가상",address:"불정로 6",phone:"010-7777-2222"},
     nativeWebView:true
   });
   await snap(page,"34-proximity-first-recipient-native-gui");
   await page.getByRole("button",{name:/새 주문/}).first().click();
   await page.waitForFunction(()=>
     !!document.querySelector(".source-document") &&
-    !document.querySelector(".source-document").textContent.includes("박가상"),
+    !document.querySelector(".source-document").textContent.includes("최가상"),
     null,{timeout:15000});
 
   // Real GUI: clipboard, dealer choice, freight typing, two drafts, panel
