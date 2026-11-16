@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CorrectionPanel } from "./CorrectionPanel";
 import { ActualFreightField } from "./ActualFreightField";
-import { contactProblem } from "./contact";
 import { useNativeDeliveryRequirements } from "./useNativeDeliveryRequirements";
 import { IssueResolver } from "./IssueResolver";
 import { LinkContext, Linked } from "./LinkedText";
@@ -450,9 +449,9 @@ export function OrderDesk(props: OrderDeskProps) {
                                     }
                                   />
                                   {!delivery.byId[r.id]?.contact &&
-                                    r.mobile && (
+                                    delivery.byId[r.id]?.mobileProblem && (
                                       <small className="form-error">
-                                        {contactProblem(r.mobile, true)}
+                                        {delivery.byId[r.id].mobileProblem}
                                       </small>
                                     )}
                                 </Field>
@@ -479,9 +478,9 @@ export function OrderDesk(props: OrderDeskProps) {
                                     }
                                   />
                                   {!delivery.byId[r.id]?.contact &&
-                                    r.phone && (
+                                    delivery.byId[r.id]?.phoneProblem && (
                                       <small className="form-error">
-                                        {contactProblem(r.phone, false)}
+                                        {delivery.byId[r.id].phoneProblem}
                                       </small>
                                     )}
                                 </Field>

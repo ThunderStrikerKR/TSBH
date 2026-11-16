@@ -121,3 +121,10 @@
 - `order_issues_with_actions`만 버튼용 `canApproveOne` 상태를 추가하고, 기존 `order_issues` 페이로드는 원본과의 차등 검사 호환성을 위해 유지.
 - React는 Rust가 반환한 true/false 및 이미 정한 화면 잠금 상태만 전달. 실제 승인 시 Rust가 같은 조건을 다시 검사.
 - Rust 단위 테스트는 정상 1개 승인과 상품/옵션 누락, 이미 확정된 수량, 수량 연결 불명확 및 복수 후보의 거부를 확인. CI·Windows 결과는 따로 판정.
+
+## 후속 — 주소·전화 오류 안내의 TypeScript 중복 규칙 제거
+
+- `OrderDesk.tsx`에서 TypeScript `contactProblem`으로 연락처 자릿수/형식의 안내문을 재판단하던 경로 제거.
+- Rust `issues.rs`의 기존 `contact_problem`과 `valid_contact`를 그대로 활용하여 `delivery_requirements_with_messages`에서 유효성 및 자세한 설명을 한 번에 반환.
+- React 화면은 Rust 설명문을 표시만 함. 불필요하게 이전 상태에서 빈 오류 문구를 표시하지 않으며, 기존 `delivery_requirements` 응답은 차등 검사 호환성 유지.
+- 전 기능 동등성 PASS 아님. CI / 실제 Windows 결과는 별도 기록.

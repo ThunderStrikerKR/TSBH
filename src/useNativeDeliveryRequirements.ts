@@ -10,13 +10,16 @@ export type NativeDeliveryRequirement = {
   contact: boolean;
   product: boolean;
   quantity: boolean;
+  mobileProblem?: string | null;
+  phoneProblem?: string | null;
 };
 
 export async function evaluateNativeDeliveryRequirements(
   rows: Recipient[], allowLegacyAddressConfirmation: boolean,
 ): Promise<NativeDeliveryRequirement[]> {
   const result = await businessCoreCall<{results: NativeDeliveryRequirement[]}>(
-    "rules", "delivery_requirements", { rows, allowLegacyAddressConfirmation },
+    "rules", "delivery_requirements_with_messages",
+    { rows, allowLegacyAddressConfirmation },
   );
   return result.results;
 }

@@ -128,6 +128,27 @@ pub(super) fn delivery_requirements(payload: &Value) -> Result<Value, String> {
     Ok(json!({"results":results}))
 }
 
+/// UI-facing delivery projection with native contact error descriptions.
+/// The old delivery_requirements operation remains unchanged for parity tests.
+pub(super) fn delivery_requirements_with_messages(payload:&Value)->Result<Value,String> {
+    let mut projection=delivery_requirements(payload)?;
+    let source=rows(req(payload,"rows")?);
+    let entries=projection["results"].as_array_mut()
+        .ok_or("Rust 배송정보 결과 형식을 확인하세요.")?;
+    for (out,row) in entries.iter_mut().zip(source.iter()) {
+        for (column,is_mobile) in [("mobile",true),("phone",false)] {
+            let value=str_field(row,column);
+            let explanation=if value.trim().is_empty() || valid_contact(value) {
+                Value::Null
+            }else{
+                json!(contact_problem(value,is_mobile))
+            };
+            let key=if is_mobile{"mobileProblem"}else{"phoneProblem"};
+            out[key]=explanation;
+        }
+    }
+    Ok(projection)
+}
 fn contact_problem(value:&str,mobile:bool)->String {
     let digits:String=value.chars()
         .filter(|c|!c.is_whitespace()&&!['(',')','.','-'].contains(c)).collect();
@@ -546,5 +567,28 @@ mod quantity_staff_projection_tests {
         // TypeScript-origin differential tests. Only the UI projection adds
         // an actionable flag.
         assert!(order_issues(&good).iter().all(|i|i.get("canApproveOne").is_none()));
+    }
+}
+
+#[cfg(test)]
+mod native_contact_detail_tests {
+    use super::*;
+    #[test] fn invalid_phone_explanation_is_rust_generated_without_changing_base_projection(){
+        let payload=json!({"rows":[{"id":"r","name":"김가상",
+            "phone":"","mobile":"010-123","address":"서울 종로구 10","items":[]}],
+            "allowLegacyAddressConfirmation":false});
+        let base=delivery_requirements(&payload).unwrap();
+        let ui=delivery_requirements_with_messages(&payload).unwrap();
+        assert!(base["results"][0].get("mobileProblem").is_none());
+        assert_eq!(ui["results"][0]["contact"],false);
+        assert_eq!(ui["results"][0]["mobileProblem"],
+            "휴대폰 번호가 6자리입니다. 010으로 시작하는 번호는 숫자 11자리가 필요합니다.");
+        assert!(ui["results"][0]["phoneProblem"].is_null());
+        let valid=json!({"rows":[{"id":"r","phone":"02-1234-5678",
+            "mobile":"010-123","address":"서울 종로구 10","items":[]}],
+            "allowLegacyAddressConfirmation":false});
+        let view=delivery_requirements_with_messages(&valid).unwrap();
+        assert_eq!(view["results"][0]["contact"],true);
+        assert!(view["results"][0]["mobileProblem"].is_string());
     }
 }

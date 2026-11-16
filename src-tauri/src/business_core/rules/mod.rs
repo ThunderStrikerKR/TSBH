@@ -107,6 +107,8 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             "issues": issues::order_issues_with_actions(req(&payload,"order")?)
         })),
         "delivery_requirements" => issues::delivery_requirements(&payload),
+        "delivery_requirements_with_messages" =>
+            issues::delivery_requirements_with_messages(&payload),
         "apply_issue_action" => issues::issue_action(&payload),
         "apply_product_action" => product_confirmation::apply(&payload),
         "record_message_copy" => message_audit::record(&payload),
