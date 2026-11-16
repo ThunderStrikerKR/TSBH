@@ -51,7 +51,21 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
     const raw=[info.name,info.phone,info.address,info.model].join("\n");
     await page.evaluate(text=>window.bando.copy(text),raw);
     await page.getByRole("button",{name:"대리발송",exact:true}).click();
-    await page.getByRole("button",{name:"거래처 찾기"}).click();
+    // Switching to another pending receipt can preserve/auto-match its dealer.
+    // SourceDocument intentionally shows '변경' instead of '거래처 찾기'
+    // once a dealer is selected. Exercise either actual UI branch.
+    await page.waitForFunction(name=>
+      (document.querySelector(".source-document")?.textContent||"").includes(name),
+      info.name,{timeout:30000});
+    const freshChooser=page.getByRole("button",{name:"거래처 찾기",exact:true});
+    if(await freshChooser.isVisible()) {
+      await freshChooser.click();
+    } else {
+      const change=page.locator(".receipt-client")
+        .getByRole("button",{name:"변경",exact:true});
+      await change.waitFor({state:"visible",timeout:15000});
+      await change.click();
+    }
     const dealer=page.locator(".client-chooser-list .client-result")
       .filter({hasText:"가상대리점"});
     await dealer.waitFor({state:"visible",timeout:25000});
