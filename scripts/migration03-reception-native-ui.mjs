@@ -11,6 +11,7 @@ import { chromium } from "playwright";
 import { probeWindowsFreightFocus } from "./migration31-real-freight-focus.mjs";
 import { probeTwoConsecutiveOrders } from "./migration31-real-two-orders.mjs";
 import { probeWindowsOcrCancel } from "./migration32-real-ocr-cancel.mjs";
+import { probeFactoryReplyNotifications } from "./migration32-real-factory-notifications.mjs";
 
 if (process.platform !== "win32") throw Error("Native reception audit requires Windows");
 const exe = resolve(process.env.BANDO_NATIVE_EXE || "");
@@ -244,7 +245,12 @@ try{
     }
   });
 
-  if (process.env.BANDO_OCR_AUDIT === "true") {
+  if (process.env.BANDO_FACTORY_NOTICE_AUDIT === "true") {
+    // Read two generated XLSX files from the isolated developer-test inbox
+    // through the real watcher and inspect the production modal controls.
+    await probeFactoryReplyNotifications(page,{baseline,record,snap});
+    await persist();
+  } else if (process.env.BANDO_OCR_AUDIT === "true") {
     // This CI-only path exercises the real Windows keyboard, Tauri window
     // restore, WebView2 and SQLite without entering unrelated order tests.
     await probeWindowsOcrCancel(page,{appPid:app.pid,record,snap});
