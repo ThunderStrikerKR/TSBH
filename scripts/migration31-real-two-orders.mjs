@@ -46,18 +46,43 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
       // New reception must start without an inherited dealer. If a previous
       // dealer remains selected, this is a real regression, not a reason to
       // click the Change button and hide it.
-      await page.waitForFunction(name=>
-        !(document.querySelector(".source-document")?.textContent||"").includes(name),
-        cases[0].name,{timeout:20000});
+      // A missing/remounting SourceDocument must NEVER satisfy the fresh
+      // draft check (the older "!text.includes(name)" check could pass when
+      // the source element was temporarily absent).
+      await page.waitForFunction(()=>{
+        const source=document.querySelector(".source-document");
+        const top=document.querySelector(".source-top");
+        return !!source && !!top && source.textContent.trim()==="" &&
+          !top.querySelector(".receipt-client");
+      },null,{timeout:20000});
       assert.equal(await page.locator(".receipt-client").count(),0,
         "NEW_ORDER_INHERITED_CLIENT before second clipboard paste");
+      record("SIM33_NEW_RECEPTION_INDEPENDENT_BEFORE_PASTE",{
+        previousRecipient:cases[0].name,nextRecipient:info.name,
+        inheritedDealer:false
+      });
     }
     const raw=[info.name,info.phone,info.address,info.model].join("\n");
     await page.evaluate(text=>window.bando.copy(text),raw);
     await page.getByRole("button",{name:"대리발송",exact:true}).click();
-    await page.waitForFunction(name=>
-      (document.querySelector(".source-document")?.textContent||"").includes(name),
-      info.name,{timeout:30000});
+    try {
+      await page.waitForFunction(name=>
+        (document.querySelector(".source-document")?.textContent||"").includes(name),
+        info.name,{timeout:30000});
+    } catch (error) {
+      const diagnostic=await page.evaluate(async()=>({
+        sourceVisible:!!document.querySelector(".source-document"),
+        sourceText:document.querySelector(".source-document")?.textContent?.slice(0,350),
+        client:document.querySelector(".receipt-client")?.textContent?.trim(),
+        pendingButtons:[...document.querySelectorAll(".source-heading button")]
+          .map(b=>({label:b.textContent?.trim(),disabled:b.disabled})),
+        stateOrderCount:(await window.bando.load()).orders.length,
+      }));
+      record("SIM33_PASTE_AFTER_NEW_ORDER_DIAGNOSTIC",diagnostic);
+      await snap(page,"33-paste-after-new-order-failure");
+      throw Error("NEW_RECEPTION_PASTE_NOT_APPLIED "+JSON.stringify(diagnostic)+
+        " cause="+String(error));
+    }
     // These receipts have no explicit dealer marker, and no Kakao chat in CI.
     // Never silently "repair" a leaked dealer by clicking '변경'.
     const noDealer = page.getByRole("button",{name:"거래처 찾기",exact:true});
@@ -334,8 +359,28 @@ export async function probeCrossDealerOrderIsolation(page,{record,snap}) {
     await group.getByRole("button",{name:"주문 확인 완료",exact:true})
       .waitFor({state:"visible",timeout:45000});
     await group.getByRole("button",{name:"주문 확인 완료",exact:true}).click();
-    await group.getByRole("button",{name:"운임 적용",exact:true})
-      .waitFor({state:"visible",timeout:30000});
+    try {
+      await group.getByRole("button",{name:"운임 적용",exact:true})
+        .waitFor({state:"visible",timeout:30000});
+    } catch (error) {
+      const diagnostic=await page.evaluate(async recipient=>{
+        const state=await window.bando.load();
+        const cards=[...document.querySelectorAll(".workflow-group")].map(card=>({
+          text:card.textContent?.slice(0,750),
+          steps:[...card.querySelectorAll(".workflow-progress button")].map(b=>({
+            label:b.textContent?.trim(),disabled:b.disabled
+          })),
+        }));
+        return {recipient,orders:state.orders.map(o=>({
+          clientId:o.clientId,raw:o.raw?.slice(0,100),confirmed:!!o.confirmedAt
+        })),cards,alerts:[...document.querySelectorAll('[role="alert"],[role="status"]')]
+          .map(el=>el.textContent?.slice(0,350))};
+      },scenario.recipient);
+      record("SIM33_CROSS_DEALER_CONFIRMATION_DIAGNOSTIC",diagnostic);
+      await snap(page,"33-cross-dealer-confirmation-failure");
+      throw Error("CROSS_DEALER_CONFIRMATION_NOT_ADVANCED "+
+        JSON.stringify(diagnostic)+" cause="+String(error));
+    }
     await page.waitForFunction(async target=>
       (await window.bando.load()).orders.length===target,
       before.length+1,{timeout:30000});
