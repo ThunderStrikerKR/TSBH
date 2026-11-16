@@ -211,6 +211,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install TypeScript dependencies
         run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Verify immutable original TypeScript price/shipping oracles
+        run: node --test tests/rust-migration/recognition/original-oracle-seal.test.mjs
       - name: Real native Rust recognition to React draft parity and preservation
         run: node --test tests/rust-migration/recognition/react-reception.test.mjs
       - name: Original TS order edit, selected dealer and freight vs native Rust

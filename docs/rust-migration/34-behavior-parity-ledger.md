@@ -73,3 +73,17 @@ cargo test --manifest-path tests/rust-migration/integration/Cargo.toml
 - 사용자가 의도적으로 삭제한 `BUILD_WINDOWS_TAURI.cmd`는 복구하지 않음.
   남아 있는 `PACKAGE_WINDOWS_TAURI.cmd`가 이 삭제 파일을 호출하는 별도 빌드 경로 결함은
   운임/주문 Rust 이전과 분리해 **OPEN** 상태로 추적.
+
+## 34차 Windows 강화 검사에서 확인된 별도 실제 UI 결함 (2026-11-17)
+
+- 대상 커밋 `50791c31`, [실행 43946579059](https://github.com/ThunderStrikerKR/TSBH/actions/runs/43946579059): **WIN_FAIL**.
+- 실제 TEST SQLite/WebView2에서 가상소매점 확정 후 `84,000원` 정상 표시.
+  4.2초/200ms 샘플 중 **3개 프레임에서 `확인 필요`로 사라졌다 복구**.
+  오류 메시지 `판매가를 등록하세요`는 관찰되지 않아 실제 단가 소실과 다른 UI 표현 결함임.
+- 원인: `src/OrderDesk.tsx`의 금액 표시가 개별 Rust `preview_order` 가격 유효성과 관계없는
+  전체 `flowSummaryReady` (workflow + board + issues 모두 완료) 상태에 결합된 구조.
+- 교정: Rust가 산출한 최신 행별 금액만을 보존하고, 상품·옵션·수량·단가·거래처가
+  동일한 동안 비관련 Rust 응답 대기 시 기존 금액 유지. 금액 입력이 바뀌면
+  옛 값을 재사용하지 않고 `계산 중…` 표시; React 금액 산식 추가 금지.
+- **이번 표시 교정은 PATCH_COMMITTED / 새 Windows 4.2초 검증 결과 확인 전 PASS 금지.**
+- CI `react-native-reception` 직전에 원본 SHA 고정 seal 테스트를 항상 실행하도록 게이트 추가.
