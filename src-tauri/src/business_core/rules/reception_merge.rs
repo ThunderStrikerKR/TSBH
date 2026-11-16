@@ -382,6 +382,53 @@ mod tests{
         assert_eq!(second["order"]["recipients"][0]["items"][0]["id"],
             "order-c:recognition:item:3:0");
     }
+    #[test]
+    fn dealer_selected_after_paste_resolves_all_registered_retail_prices() {
+        // Regression: selecting a dealer after the first recognition
+        // previously reset existing item prices to null.
+        let raw="팔렬고등학교 708-1 30개 BD Conductor 1개 Cart-10 2개";
+        let products=json!([
+            {"id":"p708","variants":[{"id":"v708","retail":74000,"semi":null,"wholesale":null}]},
+            {"id":"pconductor","variants":[{"id":"vc","retail":365000,"semi":null,"wholesale":null}]},
+            {"id":"pcart","variants":[{"id":"vk","retail":590000,"semi":null,"wholesale":null}]}
+        ]);
+        let names=["708-1 30개","BD Conductor 1개","Cart-10 2개"];
+        let pids=["p708","pconductor","pcart"];
+        let vids=["v708","vc","vk"];
+        let prior_items=(0..3).map(|i|json!({
+            "id":format!("old-{i}"),"raw":names[i],
+            "productId":pids[i],"variantId":vids[i],"unitPrice":null,
+            "quantity":[30,1,2][i],"quantityConfirmed":true,"issues":[],"sources":[]
+        })).collect::<Vec<_>>();
+        let parsed_items=(0..3).map(|i|json!({
+            "id":format!("new-{i}"),"raw":names[i],
+            "productId":pids[i],"variantId":vids[i],"unitPrice":null,
+            "quantity":[30,1,2][i],"quantityConfirmed":true,"issues":[],"sources":[]
+        })).collect::<Vec<_>>();
+        let before=json!({"id":"order-hongcheon","clientId":"", "raw":raw,
+            "status":"REVIEW","recipients":[{
+                "id":"prior-r","name":"팔렬고등학교","address":"홍천",
+                "sources":[{"field":"name","text":"팔렬고등학교"}],
+                "items":prior_items
+            }]});
+        let evidence=json!({"recipients":[{
+            "id":"fresh-r","name":"팔렬고등학교","address":"홍천",
+            "sources":[{"field":"name","text":"팔렬고등학교"}],
+            "items":parsed_items
+        }],"candidates":[]});
+        let chosen=json!({"id":"retail-dealer","name":"테스트상사","tier":"retail"});
+        let result=apply(&json!({
+            "previous":before,"evidence":evidence,"raw":raw,
+            "clientId":"retail-dealer","at":"now",
+            "client":chosen,"state":{"products":products}
+        })).unwrap();
+        let rows=result["order"]["recipients"][0]["items"].as_array().unwrap();
+        assert_eq!(rows.len(),3);
+        for (i,price) in [74000,365000,590000].iter().enumerate() {
+            assert_eq!(rows[i]["unitPrice"],json!(price));
+            assert_eq!(rows[i]["id"],json!(format!("old-{i}")));
+        }
+    }
     #[test]fn exported_orders_cannot_be_reprocessed(){
         let previous=json!({"id":"o","status":"EXPORTED","recipients":[]});
         let result=apply(&json!({"previous":previous,"evidence":{"recipients":[],"candidates":[]},
