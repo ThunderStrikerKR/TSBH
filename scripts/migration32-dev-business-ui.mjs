@@ -163,9 +163,11 @@ try {
   record("REGISTERED_RETAIL_PRICES_APPEAR_IN_GUI",{expectedFirstLine:84000});
   // A settled Rust staff issue result must not be put back into loading
   // just because an unrelated totals/transport preview is in flight.
-  await page.waitForFunction(()=>
-    document.querySelector(".staff-checks")?.getAttribute("aria-busy")==="false",
-    null,{timeout:30000});
+  await page.waitForFunction(()=>{
+    const el=document.querySelector(".staff-checks");
+    return el?.getAttribute("aria-busy")==="false" &&
+      el.querySelector("h3")?.textContent?.includes("조치 2건");
+  },null,{timeout:30000});
 
   // End-to-end regression for the reported 2–3 second delayed price loss.
   // Observe the REAL WebView2 DOM throughout the delayed Rust recognition
@@ -184,6 +186,7 @@ try {
         ?.getAttribute("aria-busy")==="true",
       staffCheckHeader:document.querySelector(".staff-checks h3")
         ?.textContent?.trim()??"",
+      staffActions:document.querySelectorAll(".staff-checks .staff-block").length,
       priceErrors:[...document.querySelectorAll(".staff-checks,[role=alert]")]
         .map(node=>node.textContent??"")
         .filter(text=>text.includes("판매가를 등록하세요") ||
@@ -203,7 +206,8 @@ try {
     !frame.shipmentCount.includes("2") ||
     !frame.vatLabel.includes("부가세 별도"));
   const staffLost=retentionFrames.filter(frame=>
-    frame.staffCheckBusy || !frame.staffCheckHeader.includes("확인할 내용"));
+    frame.staffCheckBusy || !frame.staffCheckHeader.includes("확인할 내용") ||
+    frame.staffActions!==2);
   record("POST_DEALER_4200MS_PRICE_STABILITY_REAL_WEBVIEW2",{
     frameCount:retentionFrames.length,
     durationMs:retentionFrames.at(-1).tick-retentionFrames[0].tick,

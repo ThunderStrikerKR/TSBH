@@ -2,6 +2,7 @@ import type { StaffBlock } from "./hub-messages";
 export function StaffChecks({
   blocks,
   loading = false,
+  interactive = true,
   error = "",
   onSelect,
   onApproveOne,
@@ -12,6 +13,8 @@ export function StaffChecks({
 }: {
   blocks: StaffBlock[];
   loading?: boolean;
+  /** A retained Rust projection is read-only until its current inputs settle. */
+  interactive?: boolean;
   error?: string;
   onSelect: (block: StaffBlock) => void;
   onApproveOne?: (block: StaffBlock) => void;
@@ -21,7 +24,7 @@ export function StaffChecks({
   onCandidate?: (b: StaffBlock, value: string) => void;
 }) {
   const visible = blocks;
-  const unavailable = loading || !!error;
+  const unavailable = loading || !!error || !interactive;
   const actions = visible.filter((b) => b.severity !== "INFO"),
     facts = visible.filter((b) => b.severity === "INFO"),
     inherited = facts.filter(

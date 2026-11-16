@@ -54,6 +54,7 @@ export function OrderDesk(props: OrderDeskProps) {
     flowReady,
     flowSummaryReady,
     staffChecksReady,
+    staffChecksActionsReady,
     staffChecksError,
     flowSummaryError,
     orderPreview,
@@ -265,12 +266,13 @@ export function OrderDesk(props: OrderDeskProps) {
                 <StaffChecks
                   blocks={shownChecks}
                   loading={!staffChecksReady}
+                  interactive={staffChecksActionsReady}
                   error={staffChecksError}
                   onSelect={selectIssue}
                   approvingQuantity={approvingQuantity}
-                  canApproveOne={(b) => !exported && b.canApproveOne === true}
+                  canApproveOne={(b) => !exported && staffChecksActionsReady && b.canApproveOne === true}
                   onApproveOne={(b) => {
-                    if (quantityActionInFlight.current || exported ||
+                    if (quantityActionInFlight.current || exported || !staffChecksActionsReady ||
                         b.canApproveOne !== true || !b.itemId || !b.recipientId) return;
                     quantityActionInFlight.current = true;
                     setApprovingQuantity(true);

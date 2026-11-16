@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "policy": "AGENTS.md",
   "recordedAt": "2026-11-17",
-  "recordedHead": "8203e395d3299d5b05b7fc936f6236d223fd7071",
+  "recordedHead": "10aee2d032e673f8b485ea48c589e958bff00d41",
   "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
   "proofLevels": [
     "patch",
@@ -387,6 +387,12 @@
           "status": "OPEN",
           "introducedAt": "8203e395d3299d5b05b7fc936f6236d223fd7071",
           "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43973304695"
+        },
+        {
+          "description": "Windows 43974340647은 22프레임 로딩 0으로 통과했으나 조치 항목이 원래 2건에서 0건으로 변경되어 기존 workflow stage 직원 확인 기능이 퇴행. 표면상 GUI PASS를 기능 보존 PASS로 승격하지 않음.",
+          "status": "OPEN",
+          "introducedAt": "a341ea5be419aea801d12db367c3e90b41ee96f1",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43974340647"
         }
       ],
       "legacyLedgerStatus": "PARTIAL",

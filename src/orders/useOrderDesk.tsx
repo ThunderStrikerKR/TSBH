@@ -19,7 +19,7 @@ import { assertRustReceptionAnalysis, receptionAnalysisAllowed } from "./rust-re
 import { registeredProducts, sortProducts } from "../product-models";
 
 import type { NoticeSink } from "../shared/notices";
-import type { Item, Order, Product, State } from "../types";
+import type { Item, Order, Product, State, ValidationIssue } from "../types";
 import { clone } from "../ui";
 import { groupShipments } from "../workflow";
 type SaveMode = "save" | "notify" | "pay" | "queue" | "wait";
@@ -131,14 +131,9 @@ export function useOrderDesk({
 
   const persisted = persistedOrders ?? state.orders;
   const saved = persisted.some((o) => o.id === draft.id);
-  // An unsaved reception must use its native order issues even when temporary
-  // workflow group projections appear/disappear as Rust reconciliation settles.
-  // Once persisted, stage-specific Rust workflow issues become authoritative.
-  const needsWorkflowIssues = saved && flowReady && flowGroups.length > 0;
-  const staffChecksReady = nativeIssues.ready &&
-    (!needsWorkflowIssues || nativeBoard.ready);
-  const staffChecksError = nativeIssues.error ||
-    (needsWorkflowIssues ? nativeBoard.error : "");
+  // Workflow stage issues remain relevant to unsaved receptions once Rust
+  // has constructed their shipment groups. Never drop their staff actions
+  // back to the narrower order-level issues during preview refreshes.
   // The Rust rules engine owns whether an uncommitted order may follow current prices.
   // The signature is only an IPC freshness key; it is not a TS eligibility rule.
   const pricingEligibilityKey = JSON.stringify({
@@ -517,12 +512,30 @@ export function useOrderDesk({
       }
     });
 
-  const allBlocks =
-    !draft.raw.trim() && !draft.recipients.length
-      ? []
-      : needsWorkflowIssues && nativeBoard.ready
-        ? flowGroups.flatMap((g) => nativeBoard.byId[g.id]?.issues ?? [])
-        : nativeIssues.issues;
+  // Keep the last Rust-produced stage issues for display while a new workflow
+  // preview is in flight. They are only presentation data, NEVER authority
+  // for an action: interaction is disabled until both native reads are fresh.
+  const cachedWorkflowChecks = useRef<{ orderId: string; issues: ValidationIssue[] } | null>(null);
+  const currentWorkflowIssues = flowReady && nativeBoard.ready && flowGroups.length > 0
+    ? flowGroups.flatMap((g) => nativeBoard.byId[g.id]?.issues ?? [])
+    : null;
+  if (currentWorkflowIssues) {
+    cachedWorkflowChecks.current = { orderId: draft.id, issues: currentWorkflowIssues };
+  } else if (flowReady && flowGroups.length === 0 ||
+             !draft.raw.trim() && !draft.recipients.length) {
+    // A completed Rust reconciliation with no groups is a real removal.
+    cachedWorkflowChecks.current = null;
+  }
+  const cachedIssueRows = cachedWorkflowChecks.current?.orderId === draft.id
+    ? cachedWorkflowChecks.current.issues : null;
+  const displayWorkflowIssues = currentWorkflowIssues ?? cachedIssueRows;
+  const allBlocks = !draft.raw.trim() && !draft.recipients.length
+    ? [] : displayWorkflowIssues ?? nativeIssues.issues;
+  const staffChecksReady = displayWorkflowIssues !== null || nativeIssues.ready;
+  const staffChecksActionsReady = nativeIssues.ready &&
+    (currentWorkflowIssues !== null || cachedIssueRows === null);
+  const staffChecksError = nativeIssues.error ||
+    (flowReady && flowGroups.length > 0 ? nativeBoard.error : "") || nativeFlow.error;
   // Rust, not React, supplies which one-item provisional action is allowed.
   // The workflow board may supply the issue label; the live Rust order-issue
   // projection supplies the same issue's authoritative action eligibility.
@@ -778,6 +791,7 @@ export function useOrderDesk({
     flowReady,
     flowSummaryReady,
     staffChecksReady,
+    staffChecksActionsReady,
     staffChecksError,
     flowSummaryError: nativeFlow.error || nativeBoard.error || nativeOrder.error || nativeIssues.error,
     orderPreview: nativeOrder.displayResult,

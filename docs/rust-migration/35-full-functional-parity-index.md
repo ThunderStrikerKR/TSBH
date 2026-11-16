@@ -152,3 +152,9 @@
 - 원인 후보의 실제 코드 경로: `useNativeOrderIssues`가 주문 JSON 전체를 fingerprint로 사용하여 운임·VAT 등 비관련 변경에도 Rust 검토 요청을 재호출; `useOrderDesk`는 미확정 수신 주문에 일시적 workflow 그룹이 생기면 Rust workflow 이슈로 목록 소스를 전환.
 - 교정: Rust `issues::order_issues`가 실제 읽는 입력만 포함한 `nativeOrderIssuesKey`를 작성해 불필요한 요청 취소·재실행을 방지. 미확정 주문은 Rust `order_issues_with_actions`을 일관된 소스로 쓰고 정식 저장 주문만 workflow stage 이슈로 전환.
 - 이는 Rust가 업무 이슈를 판단한다는 원칙을 유지하는 **입력 신선도·UI 소스 연결 수정**이다. 실제 Windows 반복 검증 완료 전 미해결로 둠.
+
+## 2026-11-17 직원 확인 조치 건수 보존 재검증
+
+- `a341ea5b` [Windows 실행 43974340647](https://github.com/ThunderStrikerKR/TSBH/actions/runs/43974340647): 22프레임 동안 가격·배송·VAT 누락 0, 직원 목록 로딩 0, 29시나리오 통과. **그러나 동일 고정 fixture의 기존 workflow stage 조치 2건이 0건으로 변경**되어 사용자 승인 기능 보존을 입증하지 못함. `WIN_PASS`로 승격 금지.
+- Rust 단계별 검토를 미저장 주문에서 제거하면 안 됨. Rust `preview_workflow`의 마지막 결과는 표현용으로 유지하고, 다음 프리뷰 재계산 중에도 수취인의 기존 조치 표시를 안정적으로 유지. **현재 결과가 재확인되기 전에는 버튼만 잠금**.
+- 실 Windows 검사에 고정 샘플의 **조치 2건 보존**, 4초 22프레임 직원 목록/가격·운임·VAT 안정성을 추가. 이번 단계도 새 Windows 검증 완료 전 `OPEN`.
