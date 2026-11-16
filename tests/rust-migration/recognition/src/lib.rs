@@ -444,6 +444,36 @@ mod regressions {
     }
 
     #[test]
+    fn hongcheon_school_reception_keeps_two_phones_and_three_order_quantities(){
+        let raw=r#"안녕하세요 ^^
+
+** 10월 12일(월) 발송부탁드리며 **
+** 연락처 2개 다 넣어주세요^^ **
+
+강원특별자치도 홍천군 내촌면 동창로 207
+팔렬고등학교
+010-9149-2496
+010-3343-4754
+
+연주용보면대 708-1 / 30개
+지휘자보면대 BD CONDUCTOR / 1개
+보면대카트 Cart-10 / 2개"#;
+        let result=recognition::execute("analyze_order",json!({
+            "raw":raw,"state":seed()
+        })).unwrap();
+        let recipients=result["recipients"].as_array().expect("recipient rows");
+        assert_eq!(recipients.len(),1,"School address is one shipment: {result}");
+        let items=recipients.iter().flat_map(|r|
+            r["items"].as_array().into_iter().flatten()).collect::<Vec<_>>();
+        let mut qty=items.iter().filter_map(|item|item["quantity"].as_i64())
+            .collect::<Vec<_>>();
+        qty.sort();
+        assert_eq!(qty,vec![1,2,30],"All three quantities must survive: {result}");
+        let all=result.to_string();
+        assert!(all.contains("010-9149-2496") && all.contains("010-3343-4754"),
+            "Both phone numbers must survive analysis: {result}");
+    }
+    #[test]
     fn a_negative_quantity_never_becomes_approved() {
         let state=json!({"products":[],"aliases":[]});
         let result=recognition::execute("analyze_order",json!({
