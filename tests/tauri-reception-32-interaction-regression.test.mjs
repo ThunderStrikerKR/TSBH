@@ -18,13 +18,14 @@ test("native preview refresh keeps review layout, VAT control and order board st
   assert.match(board, /aria-busy=\{!ready\}/);
 });
 
-test("freight typing stays local and flushes once after pause or before switching shipments", () => {
+test("freight typing stays local until blur, Enter, or shipment switch", () => {
   const rows = read("src/WorkflowFooter.tsx");
   const input = rows.split("function FreightAmountInput(")[1]?.split("type FreightProps = {")[0];
   assert.ok(input);
   assert.match(input, /const \[text, setText\] = useState/);
   assert.match(input, /pending\.current = amount/);
-  assert.match(input, /setTimeout\(flush, 350\)/);
+  assert.doesNotMatch(input, /setTimeout\(flush/);
+  assert.doesNotMatch(input, /timer\.current/);
   assert.match(input, /onBlur=\{flush\}/);
   assert.match(input, /if \(e\.key === "Enter"\)/);
   assert.match(input, /latestCommit\.current\(amount\)/);
