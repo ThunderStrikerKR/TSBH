@@ -256,6 +256,9 @@ export function WorkflowBoard({
               </button>
               <span className="flow-group-name">
                 <b>{first.client.displayName || first.client.name}</b>
+                {first.order.receptionVersion === 1 && !first.order.confirmedAt && (
+                  <small className="workflow-draft-label" title="주문 확인 완료 전에는 DB에 저장되지 않습니다.">미확정 · 임시</small>
+                )}
               </span>
               <button
                 disabled={!ready || (first.order.receptionVersion === 1 && !first.order.confirmedAt)}
