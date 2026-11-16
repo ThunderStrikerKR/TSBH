@@ -108,7 +108,6 @@ export function HubWorkspace(props: Props) {
     const count = Object.values(edits).filter((order) =>
       order.raw.trim() && !state.orders.some((saved) => saved.id === order.id)).length;
     props.onPendingDraftCount?.(count);
-    return () => props.onPendingDraftCount?.(0);
   }, [edits, state.orders, props.onPendingDraftCount]);
   const nativeBase = useNativeWorkflowReconcile(state, independentEdits);
   const base = nativeBase.state;
