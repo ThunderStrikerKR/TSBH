@@ -92,7 +92,7 @@ export function OrderDesk(props: OrderDeskProps) {
   const lastNativeLineAmounts = useRef<{
     key: string;
     amounts: NonNullable<typeof orderPreview>["lineAmounts"];
-  }>();
+  } | undefined>(undefined);
   if (orderPreview?.orderId === draft.id) {
     lastNativeLineAmounts.current = {
       key: linePriceInputKey, amounts: orderPreview.lineAmounts,
