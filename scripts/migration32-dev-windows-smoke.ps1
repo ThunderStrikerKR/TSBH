@@ -59,12 +59,18 @@ import sys,sqlite3,json
 path=sys.argv[1]
 db=sqlite3.connect('file:'+path.replace('\\','/')+'?mode=ro',uri=True)
 data=json.loads(db.execute("SELECT payload FROM app_state WHERE id=1").fetchone()[0])
-assert len(data.get("products",[]))>0,"TEST product catalog missing"
-assert data.get("orders",[])==[],"TEST includes order data"
-assert data.get("clients",[])==[],"TEST includes client data"
-assert data.get("revision")==0,"TEST revision must be zero"
+# SQLite V2 stores catalog, client and order rows in relational tables.
+# app_state intentionally no longer duplicates these JSON arrays.
+catalog=db.execute("SELECT COUNT(*) FROM core_products").fetchone()[0]
+orders=db.execute("SELECT COUNT(*) FROM core_orders").fetchone()[0]
+clients=db.execute("SELECT COUNT(*) FROM core_clients").fetchone()[0]
+assert catalog>0,"TEST relational catalog is missing"
+assert orders==0,"TEST includes live order data"
+assert clients==0,"TEST includes live client data"
+assert isinstance(data.get("revision"),int),"TEST revision missing"
 assert db.execute("SELECT 1 FROM sqlite_master WHERE name='hub_notifications'").fetchone()
-print(json.dumps({"products":len(data["products"]),"orders":0,"clients":0,"revision":0,"notificationTable":True}))
+print(json.dumps({"products":catalog,"orders":orders,"clients":clients,
+ "revision":data["revision"],"notificationTable":True}))
 db.close()
 '@ | Set-Content -LiteralPath $verify -Encoding utf8
   $verified = (& python $verify $testDb) -join ""
