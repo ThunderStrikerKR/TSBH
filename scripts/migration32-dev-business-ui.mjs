@@ -6,7 +6,7 @@ import { chromium } from "playwright";
 import { resolve, join } from "node:path";
 import { promises as fs } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
-import { probeTwoConsecutiveOrders } from "./migration31-real-two-orders.mjs";
+import { probeTwoConsecutiveOrders, probeCrossDealerOrderIsolation } from "./migration31-real-two-orders.mjs";
 import { probeFactoryReplyNotifications } from "./migration32-real-factory-notifications.mjs";
 import { probeWindowsOcrCancel } from "./migration32-real-ocr-cancel.mjs";
 
@@ -157,6 +157,10 @@ try {
   // Real GUI: clipboard, dealer choice, freight typing, two drafts, panel
   // geometry, confirmation actions, SQLite order identities.
   await probeTwoConsecutiveOrders(page,{record,snap},{holdBoth:true});
+  await save();
+  // P0/P1: explicit Rust provenance, A -> B -> A dealer separation,
+  // fresh order state and committed SQLite snapshots across a UI reload.
+  await probeCrossDealerOrderIsolation(page,{record,snap});
   await save();
   // Numeric waybill partial holds + notification pop-up + SQLite read-state
   // persistence on page reload. No user files are read.
