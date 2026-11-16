@@ -60,6 +60,9 @@ jobs:
       - name: Test real app Rust / SQLite persistence on Windows
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib -- --nocapture
   windows-release-build:
+    # Portable EXE/OCR/ZIP packaging is deliberately NOT part of every PR.
+    # Run this workflow manually when testing a distributable candidate.
+    if: github.event_name == 'workflow_dispatch'
     name: Windows Tauri executable compilation
     runs-on: windows-latest
     timeout-minutes: 90
