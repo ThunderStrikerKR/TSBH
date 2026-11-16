@@ -96,3 +96,84 @@ test("actual Rust reception -> missing-field inquiry (halt at first failure)",()
     [1,2],"the original two item quantities must stay attached");
   checkpoint("05_MULTI_RECIPIENT_BOUNDARY",{recipients:2,quantities:[1,2]});
 });
+
+
+test("actual Rust freight edit -> bank-account copy preview (halt at first failure)",()=>{
+  // Continue with an already staff-confirmed order. The wholesale amount is
+  // synthetic: the official seed intentionally does not contain dealer prices.
+  const s=structuredClone(seed);
+  const product=s.products.find(p=>p.code==="BD 709"&&
+    p.variants?.some(v=>v.color==="Black"));
+  assert.ok(product,"original catalog should include black BD 709");
+  const variant=product.variants.find(v=>v.color==="Black");
+  variant.wholesale=50000; // Explicit synthetic fixture, never production price
+  s.clients=[{...dealer,address:"서울 종로구 종로 1",phone:"02-1234-5678"}];
+  s.settings={...s.settings,senderName:"반도스탠드",
+    senderAddress:"서울 종로구 종로 10",senderPhone:"02-1234-5678"};
+  const buyer=s.clients[0];
+  const item={id:"sim-item-31",productId:product.id,variantId:variant.id,
+    name:"BD 709",raw:"BD 709 (블랙) 2개",color:"Black",quantity:2,
+    quantityConfirmed:true,unitPrice:50000,origin:"FACTORY",
+    url:variant.url,issues:[]};
+  const recipient={id:"sim-recipient-31",name:"김가상",
+    address:"서울 종로구 청계천로 1",addressStatus:"COMPLETE",
+    phone:"010-1234-5678",mobile:"",items:[item],note:"",
+    vatDefault:false,shippingCharges:{FACTORY:3000}};
+  const order={id:"sim-confirmed-31",clientId:buyer.id,
+    orderType:"AGENCY",recipients:[recipient],raw:"BD 709 (블랙) 2개",
+    createdAt:clock,updatedAt:clock,confirmedAt:clock,
+    clientSnapshot:buyer,senderSnapshot:buyer,
+    freightCode:"010",shippingFee:3000,applyVat:false,vatAmount:null,
+    pricesLocked:true,status:"STATEMENT"};
+  s.orders=[order];
+  s.workflow={sources:[{id:"sim-source-31",orderId:order.id,dealerId:buyer.id,
+      number:1,raw:order.raw,createdAt:clock}],
+    groups:[{id:"sim-group-31",sourceId:"sim-source-31",dealerId:buyer.id,
+      rootGroupId:"sim-group-31",createdAt:clock,notices:[],needsNotice:false}],
+    shipments:[{id:"sim-shipment-31",sourceId:"sim-source-31",orderId:order.id,
+      recipientId:recipient.id,groupId:"sim-group-31",step:1,
+      completedAt:{"1":clock},charges:{FACTORY:3000},chargeMode:"MANUAL",
+      infoSignature:"sim31-stable",transferred:false}],
+    payments:[],queue:[],events:[],deliveries:[],changeRequests:[],confirmations:[]};
+  s.exports=[];s.queue=[];
+  const freight=native("rules","apply_workflow_action",{
+    state:s,action:"set_shipment_freight",shipmentId:"sim-shipment-31",
+    origin:"FACTORY",value:4000,now:clock,actor:"시험 직원",
+    eventId:"sim-freight-event-31"
+  });
+  const f=freight.state;
+  assert.equal(f.workflow.shipments[0].charges.FACTORY,4000);
+  assert.equal(f.orders[0].recipients[0].shippingCharges.FACTORY,4000);
+  assert.equal(f.workflow.shipments[0].step,1,
+    "freight edit before stage 2 must not need re-approval");
+  checkpoint("06_FREIGHT_EDIT",{before:3000,after:4000,step:1});
+  const stage2=native("rules","apply_workflow_action",{
+    state:f,action:"advance_group",groupId:"sim-group-31",
+    now:clock,actor:"시험 직원",eventId:"sim-stage2-event-31"
+  }).state;
+  assert.equal(stage2.workflow.shipments[0].step,2,
+    "confirmed freight must advance the order to account guidance stage");
+  checkpoint("07_FREIGHT_APPROVAL",{step:2});
+  const amounts=native("rules","calculate_shipment_totals",{
+    state:stage2,shipmentId:"sim-shipment-31"});
+  assert.deepEqual(
+    {subtotal:amounts.subtotal,shipping:amounts.shipping,total:amounts.total},
+    {subtotal:100000,shipping:4000,total:104000},
+    "confirmed quantity 2 and freight 4,000 must produce exact total");
+  checkpoint("08_TOTALS",{subtotal:amounts.subtotal,freight:amounts.shipping,total:amounts.total});
+  const pay=native("output","render_automatic_message",{
+    state:stage2,groupId:"sim-group-31",includeLinks:false,
+    accountWire:stage2.settings.accounts.map(a=>({id:a.id,json:JSON.stringify(a)}))
+  });
+  console.log("SIM31_PAYMENT_TEXT_BEGIN\n"+(pay.text??"")+"\nSIM31_PAYMENT_TEXT_END");
+  assert.equal(pay.phase,"payment",
+    "once order/freight are confirmed the preview must become payment guidance");
+  assert.deepEqual(pay.paymentIssues,[],"payment guidance must not have unresolved financial issues");
+  assert.match(pay.text,/김가상/,"recipient distinguishes the shipment");
+  assert.match(pay.text,/709/,"product distinguishes the item");
+  assert.match(pay.text,/4,000/,"confirmed freight must appear");
+  assert.match(pay.text,/104,000/,"exact payable total must appear");
+  assert.match(pay.text,/시험은행/,"selected bank name must appear");
+  assert.match(pay.text,/123-456-789/,"selected account number must appear");
+  checkpoint("09_PAYMENT_COPY",{phase:pay.phase,issues:pay.paymentIssues.length,length:pay.text.length});
+});
