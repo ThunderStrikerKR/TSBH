@@ -70,6 +70,57 @@ fn rebind(candidates:&mut Value,key:&str,from:&str,to:&str){
         }
     }
 }
+// Recognition IDs are stable inside one parsed document, but NOT across
+// independently received orders. SQLite core_recipients/core_items use a
+// GLOBAL primary key. Materialize per-order identities only at the merge
+// boundary, leaving the recognition evidence snapshot untouched.
+fn scope_recognition_ids(order_id:&str, recipients:&mut [Value],
+    candidates:&mut Value)->Result<(),String>{
+    if order_id.trim().is_empty(){return Err("발주서 ID가 없습니다.".into());}
+    for recipient in recipients {
+        let provisional_rid=str_field(recipient,"id").to_string();
+        let stable_rid=if provisional_rid.starts_with("recognition:recipient:") {
+            format!("{order_id}:{provisional_rid}")
+        } else {provisional_rid.clone()};
+        if stable_rid!=provisional_rid {
+            rebind(candidates,"recipientId",&provisional_rid,&stable_rid);
+            set(recipient,"id",json!(stable_rid))?;
+        }
+        if let Some(sources)=recipient.get_mut("sources").and_then(Value::as_array_mut){
+            for span in sources {
+                if str_field(span,"recipientId")==provisional_rid {
+                    set(span,"recipientId",json!(stable_rid))?;
+                }
+                if str_field(span,"targetId")==provisional_rid {
+                    set(span,"targetId",json!(stable_rid))?;
+                }
+            }
+        }
+        if let Some(items)=recipient.get_mut("items").and_then(Value::as_array_mut){
+            for item in items {
+                let provisional_iid=str_field(item,"id").to_string();
+                let stable_iid=if provisional_iid.starts_with("recognition:item:") {
+                    format!("{order_id}:{provisional_iid}")
+                } else {provisional_iid.clone()};
+                if stable_iid!=provisional_iid {
+                    rebind(candidates,"itemId",&provisional_iid,&stable_iid);
+                    set(item,"id",json!(stable_iid))?;
+                }
+                if let Some(sources)=item.get_mut("sources").and_then(Value::as_array_mut){
+                    for span in sources {
+                        if str_field(span,"recipientId")==provisional_rid {
+                            set(span,"recipientId",json!(stable_rid))?;
+                        }
+                        if str_field(span,"targetId")==provisional_iid {
+                            set(span,"targetId",json!(stable_iid))?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
 fn qty_sources(item:&Value)->Vec<Value>{
     rows(field(item,"sources")).iter().filter(|s|str_field(s,"field")=="quantity")
         .map(|s|field(s,"text").clone()).collect()
@@ -183,6 +234,7 @@ fn apply(payload:&Value)->Result<Value,String>{
             }
         }
     }
+    scope_recognition_ids(required_str(previous,"id")?,&mut parsed,&mut candidates)?;
     if !str_field(previous,"orderType").is_empty(){
         for recipient in &mut parsed {
             if field(recipient,"dispatchOrigin").is_null(){
@@ -241,6 +293,71 @@ mod tests{
         assert_eq!(result["order"]["analysisEvidence"][0]["itemId"],"i-old");
         assert_eq!(result["order"]["analysisSnapshot"]["recipients"][0]["id"],"new");
         assert_eq!(result["order"]["status"],"REVIEW");
+    }
+    #[test]
+    fn distinct_orders_never_share_recipient_or_item_sqlite_identity(){
+        let evidence=json!({"recipients":[{
+            "id":"recognition:recipient:0","name":"김가상","address":"서울",
+            "mobile":"010-1111-2222",
+            "sources":[{"field":"name","text":"김가상","start":0,
+                "recipientId":"recognition:recipient:0",
+                "targetId":"recognition:recipient:0"}],
+            "items":[{"id":"recognition:item:3:0","raw":"709 2개","name":"709",
+                "sources":[{"field":"name","text":"709","start":3,
+                    "recipientId":"recognition:recipient:0",
+                    "targetId":"recognition:item:3:0"}]}]}],
+            "candidates":[{"id":"e1","kind":"name",
+                "recipientId":"recognition:recipient:0",
+                "itemId":"recognition:item:3:0"}]});
+        let received=|id:&str|apply(&json!({
+            "previous":{"id":id,"raw":"김가상 709 2개","orderType":"AGENCY",
+                "recipients":[]},
+            "evidence":evidence,"raw":"김가상 709 2개",
+            "clientId":"dealer","at":"now"
+        })).unwrap()["order"].clone();
+        let a=received("order-one");
+        let b=received("order-two");
+        assert_eq!(a["recipients"][0]["id"],"order-one:recognition:recipient:0");
+        assert_eq!(b["recipients"][0]["id"],"order-two:recognition:recipient:0");
+        assert_ne!(a["recipients"][0]["id"],b["recipients"][0]["id"]);
+        assert_ne!(a["recipients"][0]["items"][0]["id"],
+            b["recipients"][0]["items"][0]["id"]);
+        for order in [&a,&b]{
+            let r=&order["recipients"][0];
+            let item=&r["items"][0];
+            assert_eq!(r["sources"][0]["targetId"],r["id"]);
+            assert_eq!(r["sources"][0]["recipientId"],r["id"]);
+            assert_eq!(item["sources"][0]["targetId"],item["id"]);
+            assert_eq!(item["sources"][0]["recipientId"],r["id"]);
+            assert_eq!(order["analysisEvidence"][0]["recipientId"],r["id"]);
+            assert_eq!(order["analysisEvidence"][0]["itemId"],item["id"]);
+            // Immutable raw recognition snapshot remains an honest audit trace.
+            assert_eq!(order["analysisSnapshot"]["recipients"][0]["id"],
+                "recognition:recipient:0");
+        }
+    }
+    #[test]
+    fn reanalysis_retains_scoped_recipient_and_item_id(){
+        let evidence=json!({"recipients":[{
+            "id":"recognition:recipient:0","name":"김가상","address":"서울",
+            "mobile":"010-1111-2222",
+            "sources":[{"field":"name","text":"김가상","start":0,
+                "recipientId":"recognition:recipient:0",
+                "targetId":"recognition:recipient:0"}],
+            "items":[{"id":"recognition:item:3:0","raw":"709 2개","name":"709",
+                "sources":[{"field":"name","text":"709","start":3,
+                    "recipientId":"recognition:recipient:0",
+                    "targetId":"recognition:item:3:0"}]}]}],"candidates":[]});
+        let first=apply(&json!({"previous":{
+            "id":"order-c","raw":"김가상 709 2개","orderType":"AGENCY","recipients":[]},
+            "evidence":evidence,"raw":"김가상 709 2개",
+            "clientId":"dealer","at":"now"})).unwrap()["order"].clone();
+        let second=apply(&json!({"previous":first,"evidence":evidence,
+            "raw":"김가상 709 2개 ","clientId":"dealer","at":"later"})).unwrap();
+        assert_eq!(second["order"]["recipients"][0]["id"],
+            "order-c:recognition:recipient:0");
+        assert_eq!(second["order"]["recipients"][0]["items"][0]["id"],
+            "order-c:recognition:item:3:0");
     }
     #[test]fn exported_orders_cannot_be_reprocessed(){
         let previous=json!({"id":"o","status":"EXPORTED","recipients":[]});
