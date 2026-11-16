@@ -95,11 +95,13 @@ fn reception_client(payload:&Value)->Result<Value,String>{
                 let id=s(entry,"clientId");
                 if !truthy(entry.get("ambiguous")) && list(state,"clients").iter()
                     .any(|c|eligible_client(c,id,false)){
-                    return Ok(json!({"clientId":id,"source":"KAKAO_REMEMBERED"}));
+                    return Ok(json!({"clientId":id,"source":"KAKAO_REMEMBERED",
+                        "detail":format!("카카오톡 대화창 ‘{}’에 저장된 거래처 연결 기록으로 자동 선택했습니다.",s(chat,"title"))}));
                 }
             }
             if let Some(id)=unique_title_client_id(state,s(chat,"title")){
-                return Ok(json!({"clientId":id,"source":"KAKAO_TITLE"}));
+                return Ok(json!({"clientId":id,"source":"KAKAO_TITLE",
+                    "detail":format!("카카오톡 대화창 제목 ‘{}’이 등록된 거래처 이름 또는 별칭과 일치해 자동 선택했습니다.",s(chat,"title"))}));
             }
         }
     }
@@ -111,10 +113,12 @@ fn reception_client(payload:&Value)->Result<Value,String>{
         if !["거래처","발주처","주문처","주문업체","발신업체",
             "발신자","대리점","업체명","상호"].contains(&label.as_str()){continue;}
         if let Some(id)=unique_client_id(state,value){
-            return Ok(json!({"clientId":id,"source":"RAW_EXPLICIT"}));
+            return Ok(json!({"clientId":id,"source":"RAW_EXPLICIT",
+                "detail":format!("발주서의 ‘{}: {}’ 표기가 등록된 거래처 정보와 일치해 자동 선택했습니다.",label,value.trim())}));
         }
     }
-    Ok(json!({"clientId":null,"source":"NONE"}))
+    Ok(json!({"clientId":null,"source":"NONE",
+        "detail":"카카오톡 대화창과 발주서의 명시적 거래처 정보에서 단일 거래처를 확인하지 못했습니다. 직접 선택해 주세요."}))
 }
 
 fn remember(payload:&Value)->Result<Value,String> {
