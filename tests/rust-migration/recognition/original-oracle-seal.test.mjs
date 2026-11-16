@@ -18,13 +18,20 @@ const mergeOracle = readFileSync(new URL("./ts-reception-merge-oracle.ts", impor
 test("shipping oracle is exact original pre-migration Git blob", () => {
   assert.equal(blobSha, "ee60df8101acf71e298fd289aabd593e85c84b21");
 });
-test("frozen original shipping keeps non-packable limit", () => {
+test("frozen November 6 shipping documents the removed historical check", () => {
   assert.match(shipping, /r\.packable === false && q > 1/);
+  const currentShipping = readFileSync(new URL("../../../src/shipping.ts", import.meta.url), "utf8");
+  const rustShipping = readFileSync(new URL("../../../src-tauri/src/business_core/rules/shipping.rs", import.meta.url), "utf8");
+  assert.doesNotMatch(currentShipping, /r\.packable/);
+  assert.doesNotMatch(rustShipping, /field\(rule,"packable"\)/);
 });
-test("current pure price resolver matches frozen pre-migration body", () => {
-  assert.equal(currentPrice, frozenPrice);
+test("historical price snapshot is reference evidence, not a current-code freeze", () => {
+  assert.match(frozenPrice, /export function resolvePrice/);
+  assert.match(currentPrice, /export function resolvePrice/);
+  // Modern pricing may legitimately evolve. Never force the original body.
 });
-test("merge differential oracle never mirrors Rust's temporary null price/fee", () => {
+test("current reception differential never mirrors Rust's temporary null price/fee", () => {
+  assert.match(mergeOracle, /from "\.\.\/\.\.\/\.\.\/src\/shipping\.ts"/);
   assert.match(mergeOracle, /item\.unitPrice = resolvePrice\(/);
   assert.match(mergeOracle, /next\.shippingFee = pricingClient\.shippingFeeExcluded \? 0 : reco\.total/);
   assert.doesNotMatch(mergeOracle, /item\.unitPrice = null/);

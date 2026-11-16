@@ -221,13 +221,9 @@ pub(super) fn recommend(order: &Value, state: &Value) -> Result<Value, String> {
                             .is_none_or(|n| n == 0)) {
                             reason = "수량 확인 필요".into(); break;
                         }
-                        // Preserve the frozen TypeScript's legacy non-packable guard.
-                        if field(rule,"packable")==&json!(false) && q > 1 &&
-                            !(flag(rule,"maxConfirmed") &&
-                              field(rule,"maxBundle").as_i64()==Some(1)) {
-                            reason=format!("{group_name} 합포장 불가 / 직원 확인 필요");
-                            break;
-                        }
+                        // Since the approved freight-range redesign, maxBundle and
+                        // registered fees are authoritative. Legacy packable flags
+                        // must not override a confirmed rate (Nov 10 change).
                         if let Some(per_item) = safe(field(rule,"perItem")) {
                             if let Some(v) = per_item.checked_mul(q).filter(|n| safe(&json!(n)).is_some()) {
                                 charges.push(v);
@@ -803,6 +799,27 @@ pub(super) fn shipping_action(payload: &Value) -> Result<Value, String> {
 #[cfg(test)]
 mod p1_product_freight_tests {
     use super::*;
+    #[test]
+    fn legacy_packable_false_cannot_block_a_current_confirmed_two_item_rate(){
+        // Nov 10 shipping contract: maxBundle + registered fee is sufficient.
+        let state=json!({
+            "products":[{"id":"p","origin":"FACTORY","shippingGroupId":"g"}],
+            "shipping":{"epoch":1,
+                "groups":[{"id":"g","name":"보면대",
+                    "current":{"version":"v2","packable":false,"maxBundle":3,
+                        "maxConfirmed":true,"perItem":null,"fees":{"2":4000}}}],
+                "combinations":[]}
+        });
+        let order=json!({"recipients":[{"id":"r","name":"직원 확인",
+            "dispatchOrigin":"FACTORY",
+            "items":[{"id":"i","name":"709","productId":"p","variantId":"v",
+                "origin":"FACTORY","quantity":2}]}]});
+        let quote=recommend(&order,&state).unwrap();
+        assert_eq!(quote["total"],json!(4000));
+        assert_eq!(quote["bundles"][0]["recommendation"],json!(4000));
+        assert_eq!(quote["bundles"][0]["source"],json!("GROUP"));
+    }
+
     #[test]
     fn group_reset_keeps_historical_rate_and_unrelated_orders() {
         let state=json!({

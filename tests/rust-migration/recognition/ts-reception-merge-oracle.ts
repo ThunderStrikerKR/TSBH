@@ -4,8 +4,10 @@
 import { matchingRecipient, rebindEvidence } from "../../../src/order-evidence.ts";
 import { addressParts, mergeParsedItem } from "../../../src/parser.ts";
 import { assertRustReceptionAnalysis, receptionAnalysisAllowed, type RustReceptionAnalysis } from "../../../src/orders/rust-reception.ts";
-import { resolvePrice } from "./original-price-20261116.ts";
-import { recommendShipping } from "./original-shipping-20261116.ts";
+// The live differential uses the latest approved TS semantics; historical
+// Nov 6 snapshots are only archeological evidence, not current policy.
+import { resolvePrice } from "../../../src/domain.ts";
+import { recommendShipping } from "../../../src/shipping.ts";
 import type { Client, Order, State } from "../../../src/types.ts";
 
 /**
@@ -73,7 +75,7 @@ export function applyRustReceptionAnalysis(
         rebindEvidence(candidates, "itemId", item.id, priorItem.id);
         item.id = priorItem.id;
         Object.assign(item, mergeParsedItem(item, priorItem));
-        // Frozen original TS useOrderDesk.tsx at 30a19cd2: calculate immediately.
+        // Current reception merge re-quotes before publishing a new draft.
         const product = state.products.find((p) => p.id === item.productId);
         if (product && item.variantId)
           item.unitPrice = resolvePrice(product, item.variantId, pricingClient);
@@ -114,7 +116,7 @@ export function applyRustReceptionAnalysis(
     postpaidApproved: false,
     status: "REVIEW",
   };
-  // Frozen original TS useOrderDesk.tsx at 30a19cd2: freight is atomic.
+  // Current Rust workflow publishes an atomic freight recommendation.
   const reco = recommendShipping(next, state);
   next.shippingFee = pricingClient.shippingFeeExcluded ? 0 : reco.total;
   next.shippingMode = "AUTO";

@@ -2,18 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 
-// Exact original pre-migration rendering contract:
-// src/OrderDesk.tsx at 30a19cd2da7533dd2ed36b807593309bde70a7eb.
+// Approved Nov 13 contract: Rust owns all product line amounts.
+// Nov 17 hook retains last Rust preview across unrelated pending work.
 const source=readFileSync(new URL("../src/OrderDesk.tsx", import.meta.url),"utf8");
 const start=source.indexOf('className="item-row-edit item-amount"');
 const end=source.indexOf("</button>",start);
 const cell=source.slice(start,end);
 
-test("a registered line displays its confirmed Rust unit price immediately, as original TS did",()=>{
+test("product-line amounts come from the approved Rust preview, never duplicated in React",()=>{
   assert.ok(start>=0 && end>start,"registered line price button missing");
-  assert.match(cell,/i\.unitPrice !== null\s*&&\s*i\.quantity !== null\s*&&\s*i\.productId\s*&&\s*i\.variantId/);
-  assert.match(cell,/\? won\(i\.unitPrice \* i\.quantity\)\s*:\s*"확인 필요"/);
-  assert.doesNotMatch(cell,/flowSummaryReady|orderPreview|ready|loading/);
+  assert.match(cell,/orderPreview\.lineAmounts\.find\(/);
+  assert.match(cell,/entry\.recipientId === r\.id/);
+  assert.match(cell,/entry\.itemId === i\.id/);
+  assert.match(cell,/\? won\([\s\S]*?\?\.amount \?\? null\)\s*:\s*"—"/);
+  assert.doesNotMatch(cell,/flowSummaryReady|i\.unitPrice \* i\.quantity|loading/);
 });
 test("eliminate the unnecessary delayed-price loading overlay and React quote cache",()=>{
   for(const obsolete of ["linePriceInputKey","lastNativeLineAmounts","visibleLineAmounts",

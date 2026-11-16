@@ -19,6 +19,9 @@ test("freight editors add intervals on demand, without redundant fields",()=>{
 test("the maximum bundle count is sufficient for packability checks",()=>{
   const source=read("src/shipping.ts");
   assert.doesNotMatch(source,/r\.packable/);
+  const rust=read("src-tauri/src/business_core/rules/shipping.rs");
+  assert.doesNotMatch(rust,/field\(rule,"packable"\)/);
+  assert.match(rust,/legacy_packable_false_cannot_block_a_current_confirmed_two_item_rate/);
   assert.match(source,/r\.maxBundle === 1/);
   assert.match(source,/return !!rule/);
 });
