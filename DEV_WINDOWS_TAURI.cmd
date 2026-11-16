@@ -20,7 +20,13 @@ if errorlevel 1 goto missing_rust
 where powershell >nul 2>nul
 if errorlevel 1 goto failed
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-node-deps.ps1"
+rem Use hosted Windows runner's PowerShell 7 when running the CI-only
+rem automated GUI audit. Keep the employee's normal Windows PowerShell path.
+if /I "%GITHUB_ACTIONS%"=="true" if /I "%BANDO_DEV_GUI_AUDIT%"=="true" (
+  pwsh -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-node-deps.ps1"
+) else (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-node-deps.ps1"
+)
 if errorlevel 1 goto failed
 
 rem OCR can be tested with the ALREADY PACKAGED runtime; no downloads or
@@ -45,7 +51,12 @@ echo [DEV] Close the app and press Ctrl+C here to stop the dev server.
 echo.
 rem Tauri 2: first "--" separates runner args; second "--" passes
 rem --bando-developer-test directly to the application.
-call "node_modules\.bin\tauri.cmd" dev -- -- --bando-developer-test
+if /I "%GITHUB_ACTIONS%"=="true" if /I "%BANDO_DEV_GUI_AUDIT%"=="true" (
+  echo [DEV] CI-only WebView2 inspection enabled for real business workflow GUI tests.
+  call "node_modules\.bin\tauri.cmd" dev --config src-tauri/tauri.ci-cdp.conf.json -- -- --bando-developer-test
+) else (
+  call "node_modules\.bin\tauri.cmd" dev -- -- --bando-developer-test
+)
 if errorlevel 1 goto failed
 exit /b 0
 
@@ -58,5 +69,8 @@ goto failed
 :failed
 echo.
 echo Development launch failed. Inspect the error above.
+rem CI cannot answer "Press any key to continue". Exit with a nonzero status
+rem so the real Windows developer test reports its actual startup failure.
+if /I "%GITHUB_ACTIONS%"=="true" exit /b 1
 pause
 exit /b 1
