@@ -47,7 +47,7 @@ fn remembered(state:&Value,windows:&Value)->Option<String> {
 // qualify for automatic identification from raw text.
 fn client_terms(client:&Value)->Vec<String>{
     ["name","displayName","shortNames","identifiers"].iter()
-        .flat_map(|field| s(client,field).split([',',';','|','\n']))
+        .flat_map(|field| s(client,field).split(|ch| matches!(ch, ',' | ';' | '|' | '\n')))
         .map(str::trim).filter(|term|term.chars().count()>=2)
         .map(key).collect()
 }
@@ -93,7 +93,7 @@ fn reception_client(payload:&Value)->Result<Value,String>{
     // A free-form delivery name/address/phone must never become a dealer ID.
     // Explicit dealer labels alone are safe enough for automatic application.
     for line in s(payload,"raw").lines(){
-        let Some((label,value))=line.split_once([':', '：']) else{continue;};
+        let Some((label,value))=line.split_once(':').or_else(||line.split_once('：')) else{continue;};
         let label=key(label);
         if !["거래처","발주처","주문처","주문업체","발신업체",
             "발신자","대리점","업체명","상호"].contains(&label.as_str()){continue;}
