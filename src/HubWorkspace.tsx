@@ -478,7 +478,7 @@ export function HubWorkspace(props: Props) {
         />
         <OrderDesk
           {...props}
-          key={(detail?.id ?? draft.id) + ":" + (selected?.groupId ?? "empty") + ":" + discardRevision}
+          key={(detail?.id ?? draft.id) + ":details:" + discardRevision}
           state={base}
           persistedOrders={state.orders}
           draft={detail ?? draft}
