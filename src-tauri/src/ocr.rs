@@ -301,9 +301,13 @@ mod screen_snip {
             if OCR_CANCEL_REQUESTED.load(Ordering::Acquire) {
                 return Err(OCR_CANCELLED.into());
             }
-            let escape_pressed = unsafe { (GetAsyncKeyState(0x1B) as u16 & 0x8000) != 0 };
+            // The high bit catches held Escape; the low bit catches a quick
+            // tap between polls (GetAsyncKeyState's since-last-call flag).
+            let escape_state = unsafe { GetAsyncKeyState(0x1B) as u16 };
+            let escape_pressed = escape_state & 0x8000 != 0;
+            let escape_tapped = escape_state & 0x0001 != 0;
             if !escape_pressed { esc_released = true; }
-            if esc_released && escape_pressed {
+            if esc_released && (escape_pressed || escape_tapped) {
                 return Err(OCR_CANCELLED.into());
             }
             if unsafe { GetClipboardSequenceNumber() } != original {
@@ -313,7 +317,7 @@ mod screen_snip {
                     }
                 }
             }
-            std::thread::sleep(Duration::from_millis(180));
+            std::thread::sleep(Duration::from_millis(35));
         }
         Err("화면 캡처가 완료되지 않았습니다. 범위를 드래그한 뒤 다시 실행해 주세요.".into())
     }
