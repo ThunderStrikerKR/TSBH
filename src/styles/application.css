@@ -706,3 +706,90 @@
   background: var(--surface-hover);
   border-color: var(--border-focus);
 }
+
+/* Unified, persistent-in-view notification center. No floating toast blocks. */
+.header-actions .header-notifications-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 66px;
+}
+.header-notifications-button svg { flex: none; }
+.header-notifications-count {
+  display: inline-block;
+  min-width: 16px;
+  padding: 1px 3px;
+  border-radius: 9px;
+  background: #454545;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: center;
+}
+.notification-center { margin: 2px 0 13px; }
+.notification-center-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #454545;
+}
+.notification-center-heading h3 { margin: 0; font-size: 14px; }
+.notification-center-heading small { color: #aaa; margin-left: 8px; font-size: 11px; }
+.notification-center-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(240px, 1.4fr);
+  gap: 10px;
+  margin-top: 8px;
+  min-height: 155px;
+  max-height: 320px;
+}
+.notification-center-list, .notification-center-detail {
+  min-width: 0;
+  overflow-y: auto;
+}
+.notification-center-list {
+  border-right: 1px solid #454545;
+  padding-right: 8px;
+}
+.notification-center-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  margin: 0 0 5px;
+  padding: 9px;
+  border: 1px solid #454545;
+  border-radius: 4px;
+  text-align: left;
+  background: #292929;
+  color: inherit;
+}
+.notification-center-item.unread { border-left: 3px solid #aaa; }
+.notification-center-item[aria-pressed="true"] { background: #393939; border-color: #929292; }
+.notification-center-item strong { font-size: 12px; }
+.notification-center-item small { font-size: 10px; color: #bbb; }
+.notification-center-detail {
+  padding: 7px 9px;
+  background: #262626;
+  border-radius: 4px;
+}
+.notification-center-detail h4 { margin: 0 0 6px; font-size: 13px; }
+.notification-detail-message {
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.notification-detail-issues { padding: 0 0 0 18px; }
+.notification-detail-issues li { margin-bottom: 10px; }
+.notification-detail-issues li span,
+.notification-detail-issues li small { display: block; margin-top: 3px; }
+.notification-center-history-title { margin: 11px 0 6px; font-size: 14px; }
+@media (max-width: 850px) {
+  .notification-center-layout { grid-template-columns: 1fr; max-height: 420px; }
+  .notification-center-list { max-height: 145px; border-right: 0; border-bottom: 1px solid #454545; }
+}
