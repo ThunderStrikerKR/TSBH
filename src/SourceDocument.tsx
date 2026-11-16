@@ -162,7 +162,8 @@ export function SourceDocument({
     setBusy(true);
     try {
       const next = await nativeReplaceReception(order, raw);
-      if (!alive.current || latestReception.current.order !== order ||
+      if (!alive.current || (latestReception.current.order.id !== order.id ||
+              latestReception.current.order.raw !== order.raw) ||
           latestReception.current.text !== text) return;
       onText(raw);
       onOrder(next);
@@ -204,7 +205,8 @@ export function SourceDocument({
       } catch {
         // KakaoTalk is optional; labeled sender evidence can still match.
       }
-      if (!alive.current || latestReception.current.order !== order ||
+      if (!alive.current || (latestReception.current.order.id !== order.id ||
+              latestReception.current.order.raw !== order.raw) ||
           latestReception.current.text !== text) return;
       setWindows(chats);
       if (!order.clientId) {
@@ -212,7 +214,8 @@ export function SourceDocument({
           const result = await nativeAutoReceptionClient(
             state, chats, raw, activeChatHandle,
           );
-          if (!alive.current || latestReception.current.order !== order ||
+          if (!alive.current || (latestReception.current.order.id !== order.id ||
+              latestReception.current.order.raw !== order.raw) ||
               latestReception.current.text !== text) return;
           const matched = state.clients.find(
             (c) => c.id === result.clientId && !c.deletedAt && c.active !== false,
@@ -252,7 +255,8 @@ export function SourceDocument({
           };
         }
       }
-      if (!alive.current || latestReception.current.order !== order ||
+      if (!alive.current || (latestReception.current.order.id !== order.id ||
+              latestReception.current.order.raw !== order.raw) ||
           latestReception.current.text !== text) return;
       setError("");
       onText(raw);
@@ -402,7 +406,8 @@ export function SourceDocument({
                 setBusy(true);
                 try {
                   const cleared = await nativeReplaceReception(order, "");
-                  if (!alive.current || latestReception.current.order !== order ||
+                  if (!alive.current || (latestReception.current.order.id !== order.id ||
+              latestReception.current.order.raw !== order.raw) ||
                       latestReception.current.text !== text) return;
                   onText("");
                   onOrder(cleared);
