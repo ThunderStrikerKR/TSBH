@@ -10,7 +10,7 @@ export async function probeWindowsFreightFocus(page,{record,snap}) {
   // SQLite. All subsequent receipt, dealer selection and freight edits are
   // performed by clicking and typing in the ACTUAL application's WebView2.
   const fixture=await page.evaluate(async()=>{
-    if(!window.bando?.isTestWorkspace || !await window.bando.workspaceMode())
+    if(!window.bando || !await window.bando.workspaceMode())
       throw Error("Not the isolated developer TEST database");
     const before=await window.bando.load();
     if(before.orders?.length)throw Error("Fixture requires empty TEST orders");
