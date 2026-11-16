@@ -44,7 +44,6 @@ export function SourceDocument({
   const [retail, setRetail] = useState(false);
   const [ocrResult, setOcrResult] = useState<OcrCapture | null>(null);
   const [ocrPhase, setOcrPhase] = useState<"idle" | "selecting" | "recognizing">("idle");
-  const ocrBusy = ocrPhase !== "idle";
   const [retailDraft, setRetailDraft] = useState<Order>();
   const settingsLink = useRef(onSettings);
   settingsLink.current = onSettings;
