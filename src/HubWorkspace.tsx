@@ -441,12 +441,16 @@ export function HubWorkspace(props: Props) {
               <button className="primary" onClick={() => {
                 // The current receipt is temporarily retained in the read-only
                 // Rust preview overlay, not persisted to production SQLite.
-                if (!state.orders.some((saved) => saved.id === receptionOrder.id) &&
-                    (receptionOrder.raw.trim() || receptionOrder.recipients.length)) {
+                const draftsToRetain = [draft, receptionOrder].filter((order) =>
+                  !state.orders.some((saved) => saved.id === order.id) &&
+                  (order.raw.trim() || order.recipients.length));
+                if (draftsToRetain.length)
                   setEdits((previous) => ({
-                    ...previous, [receptionOrder.id]: structuredClone(receptionOrder),
+                    ...previous,
+                    ...Object.fromEntries(draftsToRetain.map((order) => [
+                      order.id, structuredClone(order),
+                    ])),
                   }));
-                }
                 props.onNew();
               }}>
                 ＋ 새 주문
