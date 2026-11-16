@@ -53,3 +53,27 @@ test("two unconfirmed receipts are not discarded and are previewed independently
   assert.match(reception, /"persisted_reception_state"/);
   assert.match(reception, /\.retain\(\|o\|!drafts\.contains\(str_field\(o,"id"\)\)\)/);
 });
+
+
+test("each workflow receipt uses a separate compact card and a single-line payment summary", () => {
+  const board = read("src/WorkflowBoard.tsx");
+  const css = read("src/styles/workflow.css");
+  assert.match(board, /className="flow-summary-compact"/);
+  assert.match(board, /배송 \{ss\.length\}건, 입금액 \{won\(nativeGroup\?\.totals\.total \?\? null\)\}/);
+  assert.match(board, /\(\{nativeGroup\?\.vatLabel \?\? "확인 필요"\}\)/);
+  assert.doesNotMatch(board, /총 운임/);
+  assert.doesNotMatch(board, /미확정 · 임시/);
+  assert.match(css, /\.hub-slot-3 \.workflow-group \{[\s\S]*?border: 1px solid/);
+  assert.match(css, /\.flow-summary-compact \{[\s\S]*?white-space: nowrap/);
+});
+
+test("freight-only edits reuse completed native product pricing", () => {
+  const hook = read("src/orders/useOrderDesk.tsx");
+  const effect = hook.split("const pricingInputKey =")[1]?.split("  useEffect(() => {")[0];
+  assert.ok(effect);
+  assert.match(effect, /item\.productId, item\.variantId/);
+  assert.doesNotMatch(effect, /shippingCharges/);
+  assert.match(hook, /lastCompletedPricing\.current\?\.key === pricingInputKey/);
+  assert.match(hook, /lastCompletedPricing\.current\.products === state\.products/);
+  assert.match(hook, /"rules", "reprice_order"/);
+});
