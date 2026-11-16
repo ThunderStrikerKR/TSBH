@@ -298,7 +298,7 @@ mod tests {
         ],"settings":{}});
         // The employee pasted message 3 only. Messages 1 (greeting and
         // dealer identification) and 2 were deliberately NOT copied.
-        let shipment="받으실 분: 김가상\\n상호: 가상악기사\\n팔렬고등학교\\n강원특별자치도 홍천군 내촌면 동창로 207\\n010-9149-2496\\n연주용보면대 708-1 30개";
+        let shipment="받으실 분: 김가상\n상호: 가상악기사\n팔렬고등학교\n강원특별자치도 홍천군 내촌면 동창로 207\n010-9149-2496\n연주용보면대 708-1 30개";
         let windows=json!([{"kind":"CHAT","title":"서울악기","handle":"CHAT_A"}]);
         let matched=reception_client(&json!({"state":state,
             "windows":windows,"activeChatHandle":"CHAT_A","raw":shipment})).unwrap();
@@ -314,7 +314,7 @@ mod tests {
         // Likewise, a pasted greeting alone must not be required:
         // the same verified chat works with only product/shipping lines.
         let product_only=reception_client(&json!({"state":state,
-            "windows":windows,"raw":"708-1 30개\\nBD CONDUCTOR 1개"})).unwrap();
+            "windows":windows,"raw":"708-1 30개\nBD CONDUCTOR 1개"})).unwrap();
         assert_eq!(product_only["clientId"],"dealer");
         // Two simultaneous chats without a verified active HWND: no guessing.
         let multiple=json!([{"kind":"CHAT","title":"서울악기","handle":"A"},
