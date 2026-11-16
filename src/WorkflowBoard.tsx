@@ -186,9 +186,6 @@ export function WorkflowBoard({
       {(previewError || native.error) && (
         <p role="alert">업무 미리보기 계산 오류: {previewError || native.error}</p>
       )}
-      {!ready && !groups.length && !previewError && !native.error && (
-        <p role="status" className="muted">주문 미리보기 계산 중</p>
-      )}
       {!groups.length && (
         <p className="muted">거래처와 발주 원문을 입력하면 수취인별 배송 건이 생성됩니다.</p>
       )}
@@ -357,7 +354,7 @@ export function WorkflowBoard({
               <div className="flow-summary-line">
                 <span>입금 예정 {won(nativeGroup?.totals.total ?? null)}</span>
                 <span>
-                  {nativeGroup?.vatLabel ?? "계산 중"}
+                  {nativeGroup?.vatLabel ?? "확인 필요"}
                 </span>
               </div>
             </div>
