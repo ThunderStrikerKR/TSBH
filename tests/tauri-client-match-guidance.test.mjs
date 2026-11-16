@@ -14,7 +14,7 @@ test("automatic dealer selection stores the Rust match evidence and title count"
   assert.match(editor, /"chatTitle":match_info\.get\("chatTitle"\)/);
   assert.match(editor, /"clientMatch",guidance/);
   assert.match(receipt, /matchEvidence: result/);
-  assert.match(receipt, /source: result\.source/);
+  assert.match(receipt, /source: staleDealer \? "ERROR" : result\.source/);
   assert.doesNotMatch(receipt, /next\.clientId\s*=\s*matched\.id/);
 });
 
