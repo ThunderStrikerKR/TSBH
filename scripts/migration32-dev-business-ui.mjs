@@ -175,7 +175,7 @@ try {
   const proximityRaw=[
     "김가상","서울특별시 마포구 월드컵로 20","010-1234-5678","",
     "경기도 성남시 분당구 불정로 6","010-2345-6789","박가상",
-  ].join("\\n");
+  ].join("\n");
   await page.evaluate(text=>window.bando.copy(text),proximityRaw);
   await page.getByRole("button",{name:"대리발송",exact:true}).click();
   const secondDelivery=page.getByRole("button",{name:"배송 건 박가상"});
