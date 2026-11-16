@@ -41,6 +41,9 @@ jobs:
       - name: Existing frontend regressions
         run: npm test
   windows-native:
+    # verify-tauri's windows-native-sqlite already runs this same full Rust
+    # lib test on every PR. Avoid compiling the identical app twice.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -223,6 +226,9 @@ jobs:
         run: node --test tests/tauri-factory-reply-import.test.mjs tests/tauri-factory-reply-auto.test.mjs
 
   factory-reply-native-windows:
+    # The full Windows lib suite in verify-tauri already includes factory_.
+    # Keep this narrower Windows diagnostic available on manual request.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
