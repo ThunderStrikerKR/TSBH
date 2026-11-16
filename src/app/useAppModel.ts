@@ -20,6 +20,7 @@ export function useAppModel() {
     [settlementDate, setSettlementDate] = useState(() => seoulDate(new Date().toISOString()));
   const hasPendingChanges = useHasPendingChanges();
   const [rawEditDirty, setRawEditDirty] = useState(false);
+  const [pendingDraftCount, setPendingDraftCount] = useState(0);
   const orderLeaveGuard = useRef<(() => Promise<OrderLeaveResult>) | undefined>(undefined);
   const registerOrderLeaveGuard = useCallback((guard?: () => Promise<OrderLeaveResult>) => {
     orderLeaveGuard.current = guard;
@@ -456,6 +457,10 @@ export function useAppModel() {
   };
   const windowAction = async (action: "minimize" | "maximize" | "close") => {
     if (action === "close") {
+      if (pendingDraftCount > 0 && !(await confirmAction(
+        `미확정 접수 ${pendingDraftCount}건이 임시 보관 중입니다. 종료하면 저장되지 않은 주문이 사라집니다. 종료할까요?`,
+        { cancel: "계속 작업", accept: "종료" },
+      ))) return;
       if (tab === "접수") {
         const leave = await confirmOrderLeave();
         if (!leave.proceed) return;
@@ -502,6 +507,7 @@ export function useAppModel() {
     workflowSelection,
     setWorkflowSelection,
     setRawEditDirty,
+    setPendingDraftCount,
     registerOrderLeaveGuard,
     setDraft,
     refresh,
