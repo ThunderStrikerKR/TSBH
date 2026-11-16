@@ -127,8 +127,23 @@ try {
   await page.getByRole("button",{name:"거래처 찾기"}).click();
   await page.locator(".client-chooser-list .client-result")
     .filter({hasText:"가상소매점"}).click();
-  await page.locator(".receipt-client b").filter({hasText:"가상소매점"})
-    .waitFor({state:"visible",timeout:30000});
+  try {
+    await page.locator(".receipt-client b").filter({hasText:"가상소매점"})
+      .waitFor({state:"visible",timeout:30000});
+  } catch(error) {
+    const diagnostics=await page.evaluate(()=>({
+      chooserShown:!!document.querySelector(".client-chooser"),
+      chooserError:document.querySelector(".client-chooser [role=alert]")?.textContent?.trim(),
+      inlineStatus:document.querySelector(".source-inline-status")?.textContent?.trim(),
+      selectedDealer:document.querySelector(".receipt-client")?.textContent?.trim(),
+      originalSource:document.querySelector(".source-document")?.textContent?.slice(0,250),
+      review:document.querySelector(".review-pane")?.textContent?.slice(0,400),
+    }));
+    record("SIM32_DEALER_SELECTION_FAILURE_DIAGNOSTIC",diagnostics);
+    await snap(page,"32-dealer-selection-failure");
+    throw Error("SIM32_DEALER_NOT_SELECTED "+JSON.stringify(diagnostics)+
+      " cause="+String(error));
+  }
   await page.waitForTimeout(950);
   // Capture the actual displayed order line amount after selecting a dealer.
   // The reported bug was all price cells becoming "판매가를 등록하세요".
