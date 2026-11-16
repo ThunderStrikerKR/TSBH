@@ -24,7 +24,8 @@ test("staff review shows both evidence and conflict without a second notificatio
   const desk = read("src/orders/useOrderDesk.tsx");
   assert.match(issues, /CLIENT_MATCH_CONFLICT/);
   assert.match(issues, /CLIENT_MATCH_EVIDENCE/);
-  assert.match(issues, /if collision\{"ACTION"\}else\{"INFO"\}/);
+  assert.match(issues, /if needs_action\{"ACTION"\}else\{"INFO"\}/);
+  assert.match(issues, /CLIENT_MATCH_ERROR/);
   assert.match(checks, /CLIENT_MATCH_EVIDENCE/);
   assert.match(checks, /거래처 확인/);
   assert.match(desk, /\.source-top \.receipt-client button/);
