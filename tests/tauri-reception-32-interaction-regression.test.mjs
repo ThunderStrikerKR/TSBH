@@ -12,7 +12,7 @@ test("native preview refresh keeps review layout, VAT control and order board st
   assert.doesNotMatch(board, /주문 미리보기 계산 중/);
   assert.doesNotMatch(checks, /확인 항목을 계산하고 있습니다/);
   assert.match(desk, /\|\| freightEditor \? \(/);
-  assert.match(desk, /unavailable=\{!flowSummaryReady\}/);
+  assert.match(desk, /unavailable=\{!flowSummaryReady \|\| !activeShipmentPreview/);
   assert.match(footer, /shipment\.transferred \|\| unavailable/);
   assert.match(checks, /const visible = blocks;/);
   assert.match(board, /aria-busy=\{!ready\}/);
