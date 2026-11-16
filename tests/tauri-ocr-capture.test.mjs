@@ -33,12 +33,40 @@ test("Windows local PP-OCRv5 uses new clipboard images only", () => {
 
 test("OCR progress is shown prominently over the source body and never replaces button text", () => {
   const css = read("src/styles/receipt-document.css");
-  assert.match(source, /const \[ocrBusy, setOcrBusy\] = useState\(false\)/);
-  assert.match(source, /setOcrBusy\(true\)/);
-  assert.match(source, /setOcrBusy\(false\)/);
+  assert.match(source, /const \[ocrPhase, setOcrPhase\] = useState/);
+  assert.match(source, /setOcrPhase\("selecting"\)/);
+  assert.match(source, /setOcrPhase\("recognizing"\)/);
+  assert.match(source, /setOcrPhase\("idle"\)/);
+  assert.match(source, /\{ocrPhase === "recognizing" && \(/);
+  assert.doesNotMatch(source, /\{ocrPhase === "selecting" && \([\s\S]*?<strong>OCR 처리 중/);
   assert.match(source, /className="source-ocr-progress"/);
   assert.match(source, /<strong>OCR 처리 중…<\/strong>/);
   assert.match(source, /<button disabled=\{busy\} onClick=\{\(\) => void captureOcr\(\)\}>\s*캡처 범위 지정\s*<\/button>/);
   assert.doesNotMatch(source, /\{busy \? "처리 중…"/);
   assert.match(css, /\.source-pane \.source-ocr-progress\s*\{[\s\S]*?position: absolute/);
+});
+
+test("Esc cancellation is silent, restores BANDO window and never starts PaddleOCR", () => {
+  assert.match(ocr, /GetAsyncKeyState\(0x1B\)/);
+  assert.match(ocr, /if \(esc_released && escape_pressed\)/);
+  assert.match(ocr, /return Err\(OCR_CANCELLED\.into\(\)\)/);
+  assert.match(ocr, /CaptureWindowGuard::minimize\(&app\)/);
+  assert.match(ocr, /impl Drop for CaptureWindowGuard/);
+  assert.match(ocr, /window\.unminimize\(\)/);
+  assert.match(ocr, /window\.set_focus\(\)/);
+  assert.match(ocr, /screen_snip::snip\(\)\?/);
+  assert.match(source, /if \(detail !== "OCR_CANCELLED"\)/);
+  assert.match(source, /stopListening\?\.\(\)/);
+});
+
+test("recognition starts after screenshot selection and its worker is cancellable", () => {
+  assert.match(lib, /ocr::capture_ocr, ocr::cancel_ocr/);
+  assert.match(bridge, /invoke<void>\("cancel_ocr"\)/);
+  assert.match(ocr, /let mut child = command\.spawn\(\)/);
+  assert.match(ocr, /app\.emit\("bando-ocr-phase", "recognizing"\)/);
+  assert.match(ocr, /if OCR_CANCEL_REQUESTED\.load\(Ordering::Acquire\) \{[\s\S]*?child\.kill\(\)/);
+  assert.match(source, /listen<string>\("bando-ocr-phase"/);
+  assert.match(source, /event\.payload === "recognizing"/);
+  assert.match(source, /window\.bando\?\.cancelOcr\?\.\(\)/);
+  assert.match(source, /<strong>OCR 처리 중…<\/strong>/);
 });
