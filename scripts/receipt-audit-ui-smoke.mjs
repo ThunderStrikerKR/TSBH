@@ -713,7 +713,17 @@ try {
         : value;
     current = normalized(current);
     window.__TAURI_INTERNALS__ = {
+      transformCallback: (callback) => {
+        navOcrPhaseCallback = callback;
+        return 1;
+      },
       invoke: async (command, args = {}) => {
+        if (command === "plugin:event|listen") return 1;
+        if (command === "plugin:event|unlisten") {
+          navOcrPhaseCallback = undefined;
+          return undefined;
+        }
+        if (command === "cancel_ocr") return undefined;
         if (command === "startup_status")
           return { phase: "READY", attempts: 1, isTest: false };
         if (command === "startup_metrics")
@@ -865,6 +875,10 @@ try {
     let current = structuredClone(initial);
     const saveLog = [];
     window.__navSaved = () => ({ state: structuredClone(current), saves: structuredClone(saveLog) });
+    let navOcrPhaseCallback;
+    window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+      unregisterListener: () => { navOcrPhaseCallback = undefined; },
+    };
     window.__injectPostSaveReadFailure = false;
     window.__nextLoadMustFail = false;
     window.__postSaveReadFaultObserved = false;
@@ -1204,9 +1218,14 @@ try {
             changes:structuredClone(args.changes)});
           return structuredClone(current);
         }
-        if (command === "capture_ocr") return { text:"검증 발주 원문 709B 2개",
-          imageDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==",
-          width:1,height:1 };
+        if (command === "capture_ocr") {
+          navOcrPhaseCallback?.({
+            event: "bando-ocr-phase", id: 1, payload: "recognizing",
+          });
+          return { text:"검증 발주 원문 709B 2개",
+            imageDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==",
+            width:1,height:1 };
+        }
         if (command === "backup_create") return "C:\\BANDO_CI\\navigation-backup.sqlite";
         if (command === "product_image") return null;
         throw Error("Unexpected navigation-test IPC: " + command);
