@@ -691,24 +691,26 @@ export function OrderDesk(props: OrderDeskProps) {
                       </div>
                     )}
                   </div>
-                  {flowSummaryReady && activeShipmentPreview && activeShipment && activeGroupId ? (
+                  {(flowSummaryReady && activeShipmentPreview && activeShipment && activeGroupId) || freightEditor ? (
                     <WorkflowFooter
                       state={flowState}
-                      shipment={activeShipment}
-                      vatIncluded={activeShipmentPreview.vatIncluded}
-                      groupId={activeGroupId}
-                      onVat={(v) =>
-                        recEdit(activeShipment.recipientId, (r) => (r.vatOverride = v), false)
-                      }
+                      shipment={flowSummaryReady && activeShipment ? activeShipment : freightEditor!.shipment}
+                      vatIncluded={flowSummaryReady && activeShipmentPreview
+                        ? activeShipmentPreview.vatIncluded : freightEditor!.preview.vatIncluded}
+                      groupId={flowSummaryReady && activeGroupId
+                        ? activeGroupId : freightEditor!.shipment.groupId}
+                      unavailable={!flowSummaryReady}
+                      onVat={(v) => {
+                        const recipientId = (flowSummaryReady && activeShipment
+                          ? activeShipment : freightEditor!.shipment).recipientId;
+                        recEdit(recipientId, (row) => (row.vatOverride = v), false);
+                      }}
                     />
                   ) : null}
                 </section>
               </div>
               {flowSummaryError && (
                 <p role="alert">주문 미리보기 계산 오류: {flowSummaryError}</p>
-              )}
-              {!flowReady && !flowSummaryError && (
-                <p role="status" className="muted">주문 금액 및 업무 미리보기 계산 중</p>
               )}
               <div className="order-grand-total">
                 총 주문 금액{" "}
