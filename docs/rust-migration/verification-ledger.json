@@ -1,0 +1,1924 @@
+{
+  "schemaVersion": 1,
+  "policy": "AGENTS.md",
+  "recordedAt": "2026-11-17",
+  "recordedHead": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc",
+  "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
+  "proofLevels": [
+    "patch",
+    "unit",
+    "differential",
+    "action",
+    "ci",
+    "windows"
+  ],
+  "features": [
+    {
+      "id": "F01",
+      "name": "발주서 원문 분석·수량 인식",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "parser.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "recognition/mod.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/SourceDocument.tsx",
+          "src/orders/useOrderDesk.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "발주 원문 붙여넣기·재분석·원문 변경",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F02",
+      "name": "수취인·주소·기관·연락처 귀속",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "order-evidence.ts, parser.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "recognition/model.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/SourceDocument.tsx",
+          "src/orders/useOrderDesk.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "복수 수취인과 주소·두 연락처의 근접 귀속",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F03",
+      "name": "상품·별칭·옵션·대표 모델군",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "matching.ts, model-families.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "recognition, catalog_clients/aliases.rs, model_groups.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/IssueResolver.tsx",
+          "src/OrderDesk.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "별칭·색상·대표 모델·무타공 옵션",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "OPEN",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F04",
+      "name": "재분석 병합·사용자 수정 보존",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "orders/useOrderDesk.tsx",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/reception_merge.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/orders/useOrderDesk.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "붙여넣기 후 수동 수정과 지연된 재분석 병합",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F05",
+      "name": "거래처 자동연결·카카오톡 제목",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "title-clients.ts, SourceDocument.tsx",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "catalog_clients/title_clients.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/SourceDocument.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "카카오톡 창 이름·발주처 자동 매칭 및 수동 확정",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F06",
+      "name": "수동 분류·수량 잠정 승인",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "orders/manual-classification.ts, validation.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/manual_*.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/OrderDesk.tsx",
+          "src/StaffChecks.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "수동 분류·1개 잠정 승인·취소",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [
+        {
+          "description": "실제 사용자 행동 전체 연쇄·비동기 역전·데이터 보존을 이 기능별 기준 시점에서 아직 끝까지 입증하지 못함",
+          "status": "OPEN",
+          "introducedAt": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc"
+        }
+      ],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "COMMITTED",
+          "commit": "9cbca636e2de9d1d235c4c5a49cbd0317c8861de",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/9cbca636e2de9d1d235c4c5a49cbd0317c8861de"
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "PASS_SCOPED",
+          "commit": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43968654003"
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F07",
+      "name": "거래처 등급·예외 가격",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "domain.ts::resolvePrice",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/pricing.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/orders/useOrderDesk.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "거래처 등급 전환 시 가격 재산정·수동 단가 보존",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "FROZEN_PRICE_ORACLE_PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F08",
+      "name": "상품 변경·가격 입력·저장",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "OrderDesk.tsx, domain.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/catalog_item.rs, order_edit.rs, PriceCell",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/OrderItemEditor.tsx",
+          "src/PriceCell.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "상품 선택·수량·가격 입력·저장·재조회",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [
+        {
+          "description": "실제 사용자 행동 전체 연쇄·비동기 역전·데이터 보존을 이 기능별 기준 시점에서 아직 끝까지 입증하지 못함",
+          "status": "OPEN",
+          "introducedAt": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc"
+        }
+      ],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F09",
+      "name": "VAT·총액·배송 건수",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "domain.ts, workflow.ts",
+        "selectedApprovedSha": "0c92413bf3150a8f430e3a389f0cdfbcecdf0f0c",
+        "approvedEvidence": "2026-11-13 Rust 산식 이관",
+        "status": "APPROVED_IMPROVEMENT_REFERENCE"
+      },
+      "rust": {
+        "location": "rules/workflow_preview.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/OrderDesk.tsx",
+          "src/orders/useNativeOrderPreview.ts",
+          "src/orders/useNativeOrderLineAmounts.ts"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "단가×수량·VAT·운임·배송건수의 중간 화면 안정성",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [
+          "84,000원",
+          "배송 2건",
+          "부가세 별도",
+          "4초동안 22회 결과 소실 0"
+        ],
+        "inputOutputEvidence": null,
+        "responseOrders": [
+          "NORMAL_AFTER_DEALER_SELECTION_22_SAMPLES"
+        ]
+      },
+      "discrepancies": [
+        {
+          "description": "실제 사용자 행동 전체 연쇄·비동기 역전·데이터 보존을 이 기능별 기준 시점에서 아직 끝까지 입증하지 못함",
+          "status": "OPEN",
+          "introducedAt": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc"
+        }
+      ],
+      "legacyLedgerStatus": "WINDOWS_22_FRAMES_PASS",
+      "gate": {
+        "patch": {
+          "status": "COMMITTED",
+          "commit": "148f05a1473927f633d14a300a509947f53d2b2e",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/148f05a1473927f633d14a300a509947f53d2b2e"
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "PASS_SCOPED",
+          "commit": "148f05a1473927f633d14a300a509947f53d2b2e",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43968003111"
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F10",
+      "name": "상품/그룹 운임 추천·합포장",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "shipping.ts",
+        "selectedApprovedSha": "33b211287c369fddae266bf3061d353276343456",
+        "approvedEvidence": "2026-11-10 maxBundle·등록 운임 우선",
+        "status": "APPROVED_IMPROVEMENT_REFERENCE"
+      },
+      "rust": {
+        "location": "rules/shipping.rs, shipping_read.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/ShippingManager.tsx",
+          "src/ProductFreightPanel.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "최대 묶음 수량·등록 운임/합포장",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [
+        {
+          "description": "실제 사용자 행동 전체 연쇄·비동기 역전·데이터 보존을 이 기능별 기준 시점에서 아직 끝까지 입증하지 못함",
+          "status": "OPEN",
+          "introducedAt": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc"
+        }
+      ],
+      "legacyLedgerStatus": "FROZEN_SHIPPING_ORACLE_PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F11",
+      "name": "운임 수동 입력·선불/착불",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "shipping.ts, workflow.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "WorkflowFooter, rules/shipping.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/WorkflowFooter.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "선불/착불과 수동 운임 입력·Enter/blur 저장",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [
+        {
+          "description": "실제 사용자 행동 전체 연쇄·비동기 역전·데이터 보존을 이 기능별 기준 시점에서 아직 끝까지 입증하지 못함",
+          "status": "OPEN",
+          "introducedAt": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc"
+        }
+      ],
+      "legacyLedgerStatus": "WINDOWS_CASES_PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F12",
+      "name": "발주 원문·수취인·품목 정정",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "domain.ts, corrections.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/order_edit.rs, raw_corrections.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/CorrectionPanel.tsx",
+          "src/OrderDesk.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "발주 원문·수취인 정정과 이전 청구 금액 스냅샷",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F13",
+      "name": "업무 단계·입금·공장 전달",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "workflow.ts, replies.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/workflow.rs, order_save.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/WorkflowBoard.tsx",
+          "src/WorkflowQueue.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "입금 확인→Excel 전달→회신 완료 단계",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F14",
+      "name": "거래처 자동 안내·입금 복사",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "automatic-message.ts, hub-messages.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "output/automatic_full.rs, automatic_request.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/MessageWorkspace.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "자동 메시지·링크·VAT 포함/별도·입금요청",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "ORACLE_REVIEW_OPEN",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F15",
+      "name": "공장/매장 Excel 출력",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "factory-export.ts, store-export.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "output/export.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/WorkflowQueue.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "공장·매장 Excel 작성·폴더 열기·기록",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "ORACLE_REVIEW_OPEN",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F16",
+      "name": "공장 Excel 회신·송장 매칭",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "factory-replies.ts, workbook code",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/factory_reply.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/FactoryReplyImport.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "공장 회신 Excel→송장번호 매칭·오류 알림",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "ORACLE_REVIEW_OPEN",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F17",
+      "name": "정정·충돌 승인·차액 기록",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "corrections.ts, factory-conflict-review.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/correction_rules.rs, factory_reply.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/CorrectionPanel.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "전달 후 정정·충돌 해결·결산 보정",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F18",
+      "name": "주문·배송·송장 이력",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "app/order-history.ts, workflow.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/history.rs, OrderHistory.tsx",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/app/OrderHistory.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "과거 주문·배송·송장 조회와 데이터 보존",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F19",
+      "name": "일일 결산·미수·실제 입금",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "sales.ts, workflow.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "output/settlement.rs, DailySettlement.tsx",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/app/DailySettlement.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "일일 결산·미수·입금 총계",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F20",
+      "name": "거래처 등록·엑셀 일괄입력",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "domain.ts, client-workbook.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "catalog_clients/registration.rs, client_preview.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [],
+        "entrypointVerified": false,
+        "unresolvedCandidates": [
+          "src/app/ClientManager.tsx"
+        ]
+      },
+      "scenario": {
+        "description": "거래처 생성·단가 등급·엑셀 일괄 등록",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F21",
+      "name": "상품 등록·동기화·가격표",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "product-models.ts, product-registry.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "catalog_clients/editor.rs, product_sync_preview.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [],
+        "entrypointVerified": false,
+        "unresolvedCandidates": [
+          "src/app/ProductManager.tsx"
+        ]
+      },
+      "scenario": {
+        "description": "상품/옵션 등록·동기화·가격 저장",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "ORACLE_REVIEW_OPEN",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F22",
+      "name": "브랜드·카테고리·상품군",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "category-tree.ts, model-families.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "catalog_clients/categories.rs, brands.rs, model_groups.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [],
+        "entrypointVerified": false,
+        "unresolvedCandidates": [
+          "src/app/ProductManager.tsx"
+        ]
+      },
+      "scenario": {
+        "description": "브랜드·카테고리·대표 모델군 변경 저장",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "ORACLE_REVIEW_OPEN",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F23",
+      "name": "과거 단가·기존 주문 스냅샷",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "replies.ts, workflow.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/history.rs, reply_rules.rs, SQLite",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/orders/useOrderDesk.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "과거 단가와 발송 이력의 정정 전후 스냅샷",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F24",
+      "name": "OCR 캡처·취소·교체",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "SourceDocument.tsx",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "src-tauri/src/ocr.rs",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/SourceDocument.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "OCR 캡처·취소·다시 인식",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "WINDOWS_CANCEL_PASS_OTHER_OPEN",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F25",
+      "name": "공장 알림·회신 검토",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "FactoryNotifications.tsx",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "rules/factory_reply.rs, SQLite notifications",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/FactoryNotifications.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "공장 회신 알림·확인·팝업",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "PARTIAL",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F26",
+      "name": "계좌·환경설정·백업·복원",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "SettingsPanel.tsx, app/useAppModel.ts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "Tauri SQLite/settings/backup",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/app/SettingsView.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "계좌 저장·백업·복원·30일 정책",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "OPEN",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F27",
+      "name": "UI 탭·모달·엑셀 폴더·윈도우 배치",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "React UI",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "Tauri Windows IPC",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "src/HubWorkspace.tsx"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "8메뉴·탭·카카오톡 도킹·모달·창 위치",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [],
+      "legacyLedgerStatus": "OPEN",
+      "gate": {
+        "patch": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    },
+    {
+      "id": "F28",
+      "name": "DEV/Release·배포 빌드",
+      "baseline": {
+        "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
+        "historicalSource": "original release scripts",
+        "selectedApprovedSha": null,
+        "approvedEvidence": null,
+        "status": "BASELINE_UNRESOLVED"
+      },
+      "rust": {
+        "location": "DEV_WINDOWS_TAURI.cmd, Actions",
+        "status": "NEEDS_EXECUTION_TRACE"
+      },
+      "react": {
+        "candidatePaths": [
+          "DEV_WINDOWS_TAURI.cmd",
+          "PACKAGE_WINDOWS_TAURI.cmd"
+        ],
+        "entrypointVerified": false,
+        "unresolvedCandidates": []
+      },
+      "scenario": {
+        "description": "DEV 실행·Windows Release EXE+OCR ZIP",
+        "fixture": null,
+        "initialState": null,
+        "intermediateStates": [],
+        "inputOutputEvidence": null,
+        "responseOrders": []
+      },
+      "discrepancies": [
+        {
+          "description": "실제 사용자 행동 전체 연쇄·비동기 역전·데이터 보존을 이 기능별 기준 시점에서 아직 끝까지 입증하지 못함",
+          "status": "OPEN",
+          "introducedAt": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc"
+        },
+        {
+          "description": "실제 최종 Release EXE+오프라인 OCR ZIP 생성·압축해제·재실행 검증 미완료",
+          "status": "OPEN",
+          "introducedAt": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc"
+        }
+      ],
+      "legacyLedgerStatus": "DEV_PASS_RELEASE_OPEN",
+      "gate": {
+        "patch": {
+          "status": "COMMITTED",
+          "commit": "9708f73ba3124b9b28867651061269a765cc90de",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/9708f73ba3124b9b28867651061269a765cc90de"
+        },
+        "unit": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "differential": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "action": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "ci": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        },
+        "windows": {
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
+        }
+      },
+      "overall": "OPEN",
+      "lastReviewedCommit": null
+    }
+  ]
+}

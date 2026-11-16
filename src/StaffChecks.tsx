@@ -143,7 +143,7 @@ export function StaffChecks({
               )}
             </div>
             <div className="issue-actions">
-              <button onClick={() => onSelect(b)}>{b.kind === "CLIENT_MATCH_EVIDENCE" ? "거래처 확인" : "입력 위치로 이동"}</button>
+              <button disabled={unavailable} onClick={() => onSelect(b)}>{b.kind === "CLIENT_MATCH_EVIDENCE" ? "거래처 확인" : "입력 위치로 이동"}</button>
               {b.kind === "QUANTITY_MISSING" && b.resolution === "PROVISIONALLY_APPROVED" && (
                 <button type="button" disabled={unavailable} onClick={() => onCancelApproval?.(b)}>잠정 승인 취소</button>
               )}

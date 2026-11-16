@@ -53,6 +53,8 @@ export function OrderDesk(props: OrderDeskProps) {
     flowState,
     flowReady,
     flowSummaryReady,
+    staffChecksReady,
+    staffChecksError,
     flowSummaryError,
     orderPreview,
     orderLineAmounts,
@@ -69,10 +71,10 @@ export function OrderDesk(props: OrderDeskProps) {
   // Do not clear/recreate the "확인할 내용" list while multiple Rust
   // previews settle after a paste. Old blocks are read-only until current.
   const lastReadyChecks = useRef<{ orderId: string; blocks: typeof staffBlocks } | undefined>(undefined);
-  if (flowSummaryReady && !flowSummaryError) {
+  if (staffChecksReady && !staffChecksError) {
     lastReadyChecks.current = { orderId: draft.id, blocks: staffBlocks };
   }
-  const shownChecks = flowSummaryReady ? staffBlocks
+  const shownChecks = staffChecksReady ? staffBlocks
     : lastReadyChecks.current?.orderId === draft.id
       ? lastReadyChecks.current.blocks : staffBlocks;
   // Rust previews become briefly pending after each keystroke. Keep the
@@ -262,8 +264,8 @@ export function OrderDesk(props: OrderDeskProps) {
               <div className="review-layout">
                 <StaffChecks
                   blocks={shownChecks}
-                  loading={!flowSummaryReady}
-                  error={!flowSummaryReady ? flowSummaryError : ""}
+                  loading={!staffChecksReady}
+                  error={staffChecksError}
                   onSelect={selectIssue}
                   approvingQuantity={approvingQuantity}
                   canApproveOne={(b) => !exported && b.canApproveOne === true}

@@ -1,3 +1,5 @@
+> **현재 개발·검증의 최우선 지침:** [AGENTS.md](AGENTS.md) · [기능별 누적 검증표](docs/rust-migration/verification-ledger.json) · [실제 사용자 행동 E2E 계약](docs/rust-migration/user-action-e2e-contract.md). 아래 오래된 Tauri v0.0.2/v0.0.4 릴리스 안내는 역사적 문서이며 현재 `main` 기능·배포 절차나 Rust 이전 완료 상태를 대표하지 않는다. 최신 합의는 Rust 업무 처리, React UI 전담, 승인 개선 보존, 테스트·CI·Windows 별도 판정이다.
+
 # BANDO HUB Tauri v0.0.4 (상품 관리 이식 1차)
 
 이 버전의 상품 관리 수정/검증 범위는 **`STAGE2_STATUS.md`**를 먼저 읽어주세요.
