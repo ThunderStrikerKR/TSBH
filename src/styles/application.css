@@ -793,3 +793,22 @@
   .notification-center-layout { grid-template-columns: 1fr; max-height: 420px; }
   .notification-center-list { max-height: 145px; border-right: 0; border-bottom: 1px solid #454545; }
 }
+
+/* The work-menu must never overlay the notification and window controls.
+ * Preserve right-side controls even on a narrow Tauri window. */
+.app-header .hub-brand { flex: 0 0 auto; }
+.app-header nav {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.app-header nav::-webkit-scrollbar { display: none; }
+.app-header .header-actions,
+.app-header .window-controls {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+}
