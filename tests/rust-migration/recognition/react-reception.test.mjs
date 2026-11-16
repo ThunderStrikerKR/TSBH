@@ -181,6 +181,39 @@ test("corrupt native evidence is rejected instead of silently falling back to Ty
 });
 
 
+// Storage needs globally unique recipient/item keys across orders. The original
+// TS oracle intentionally kept temporary recognition IDs. Compare every other
+// business field EXACTLY, undoing only this documented storage-key namespace.
+function removeStorageNamespace(order) {
+  const next=structuredClone(order);
+  const prefix=order.id+":";
+  const unscoped=id=>typeof id==="string" &&
+      (id.startsWith(prefix+"recognition:recipient:") ||
+        id.startsWith(prefix+"recognition:item:"))
+    ? id.slice(prefix.length) : id;
+  const relink=source=>{
+    if(typeof source.recipientId==="string")
+      source.recipientId=unscoped(source.recipientId);
+    if(typeof source.targetId==="string")
+      source.targetId=unscoped(source.targetId);
+  };
+  for(const recipient of next.recipients??[]){
+    recipient.id=unscoped(recipient.id);
+    for(const source of recipient.sources??[])relink(source);
+    for(const item of recipient.items??[]){
+      item.id=unscoped(item.id);
+      for(const source of item.sources??[])relink(source);
+    }
+  }
+  for(const candidate of next.analysisEvidence??[]){
+    if(typeof candidate.recipientId==="string")
+      candidate.recipientId=unscoped(candidate.recipientId);
+    if(typeof candidate.itemId==="string")
+      candidate.itemId=unscoped(candidate.itemId);
+  }
+  return next;
+}
+
 test("compiled Rust reception merge exactly matches original TS on all 20 recognitions and employee edits",()=>{
   const at="2026-11-13T00:00:01.000Z";
   const samplesToCompare=inputs.slice(0,20).map(entry=>({
@@ -231,8 +264,8 @@ test("compiled Rust reception merge exactly matches original TS on all 20 recogn
       raw:row.raw,state,pricingClient:client,at,
     });
     const normalized=value=>JSON.parse(JSON.stringify(value));
-    assert.deepEqual(normalized(native.value.order),normalized(original),
-      "Rust and original TS reception merge differ: "+row.label);
+    assert.deepEqual(normalized(removeStorageNamespace(native.value.order)),normalized(original),
+      "Rust and original TS reception merge differ apart from globally unique storage IDs: "+row.label);
   }
 });
 
