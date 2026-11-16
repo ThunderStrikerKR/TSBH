@@ -3,6 +3,7 @@
     "windows": [
       {
         "label": "main",
+        "visible": false,
         "title": "반도허브 BANDO HUB v0.0.4",
         "width": 1520,
         "height": 1000,
