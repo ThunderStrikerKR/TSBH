@@ -40,11 +40,21 @@ test("product-freight display and reset do not compute current rule in TS", () =
 });
 
 test("catalog item construction in item editor and retail intake is native owned", () => {
-  for(const name of ["src/OrderItemEditor.tsx", "src/orders/RetailOrderDialog.tsx"]){
-    const source = read(name);
-    assert.match(source,/"rules", "create_catalog_item"/,name);
-    assert.doesNotMatch(source,/itemFromProduct\(/,name);
-  }
+  const editor = read("src/OrderItemEditor.tsx");
+  const retail = read("src/orders/RetailOrderDialog.tsx");
+  assert.match(editor,/"rules", "create_catalog_item"/);
+  assert.match(retail,/"rules", "apply_retail_action"/);
+  assert.match(retail,/action: "create_retail_item"/);
+  // Retail item construction now *also* obtains the company-client pricing
+  // identity from Rust, instead of constructing it in React and sending it
+  // to the ordinary catalog action.
+  assert.doesNotMatch(retail,/companyClient\(/);
+  const nativeRetail = read("src-tauri/src/business_core/rules/retail_operations.rs");
+  assert.match(nativeRetail,/"create_retail_item"=>/);
+  assert.match(nativeRetail,/super::reconciliation::company_client\(req\(payload,"state"\)\?\)/);
+  assert.match(nativeRetail,/super::catalog_item::make\(&input\)/);
+  for (const source of [editor,retail])
+    assert.doesNotMatch(source,/itemFromProduct\(/);
   const catalog = read("src-tauri/src/business_core/rules/catalog_item.rs");
   assert.match(catalog,/pub\(super\) fn make\(payload:&Value\)/);
 });

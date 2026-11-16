@@ -33,6 +33,7 @@ import { paymentSignature } from "../../../../src/automatic-message.ts";
 import { orderIssues, approveMissingQuantity, pendingIssue } from "../../../../src/validation.ts";
 import { validateReceptionBoundary, newReception, replaceReception, persistedReceptionState } from "../../../../src/orders/reception.ts";
 import { confirmRetail, newRetailOrder } from "../../../../src/orders/retail.ts";
+import { retailIssues } from "../../../../src/orders/retail-validation.ts";
 import { rawCorrectableIssue, rawCorrectionAllowed, correctWorkingRaw } from "../../../../src/working-raw.ts";
 import { receiptOf, correctReceipt } from "../../../../src/receipt.ts";
 import { billingSnapshot, applyReply } from "../../../../src/replies.ts";
@@ -42,9 +43,9 @@ import { validateProvisionalProductNotices } from "../../../../src/provisional-p
 import { validateAutomaticMessageTemplates } from "../../../../src/automatic-message-templates.ts";
 import { addressInfo, addressParts } from "../../../../src/parser.ts";
 import { validDeliveryAddress, deliveryRequirements } from "../../../../src/delivery-requirements.ts";
-import { companyClient, companyParty } from "../../../../src/order-types.ts";
+import { companyClient, companyParty, companySenderMissing } from "../../../../src/order-types.ts";
 import { explicitSender } from "../../../../src/explicit-sender.ts";
-import { initialManual, assignManualBlock, releaseManualBlock, applyManual, setManualValue, type ManualModel } from "../../../../src/orders/manual-classification.ts";
+import { initialManual, assignManualBlock, releaseManualBlock, applyManual, setManualValue, pendingManualQuantity, validManualQuantity, type ManualModel } from "../../../../src/orders/manual-classification.ts";
 import { rememberTitle, rememberedTitleClient } from "../../../../src/title-clients.ts";
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
@@ -2778,6 +2779,57 @@ function retailDraft(){
   delete draft.senderSnapshot;
   return draft;
 }
+// Native retail preflight must use the identical source decisions as final
+// commit, rather than a React-specific validator that can disagree with Rust.
+function retailReadCase(name:string,change:(state:any,draft:any)=>void=()=>{}) {
+  const state:any=copy(baseState);
+  const draft:any=retailDraft();
+  change(state,draft);
+  add("retail native preflight: "+name,"apply_retail_action",{
+    action:"retail_preflight",state,draft
+  },()=>({
+    delivery:draft.recipients.map((row:any)=>({
+      recipientId:row.id,...deliveryRequirements(row,false)
+    })),
+    senderIssues:companySenderMissing(state.settings),
+    issues:retailIssues(draft,state)
+  }));
+}
+retailReadCase("valid original order");
+retailReadCase("missing sender settings",(s)=>{
+  s.settings.senderAddress="";
+  s.settings.senderPhone="";
+  s.settings.senderMobile="";
+});
+retailReadCase("invalid delivery and missing product",(_s,d)=>{
+  d.recipients[0].name="";
+  d.recipients[0].address="상세 주소 없음";
+  d.recipients[0].items[0].quantityConfirmed=false;
+});
+retailReadCase("invalid catalog selection",(s,d)=>{
+  d.recipients[0].items[0].productId="missing-product";
+  s.products[0].deletedAt=actionNow;
+});
+const retailCatalog: any=copy(product);
+retailCatalog.defaultColor="Black";
+const retailCatalogState:any=copy(baseState);
+add("retail native catalog quote: single black option","apply_retail_action",{
+  action:"create_retail_item",state:retailCatalogState,
+  product:retailCatalog,color:"Black",variantId:"v1",
+  quantity:1,newItemId:"retail-native-catalog-item"
+},()=>({item:deterministicIds(["retail-native-catalog-item"],
+  ()=>itemFromProduct(retailCatalog,companyClient(retailCatalogState.settings),
+    "Black",1,"v1"))}));
+const unresolvedRetailCatalog:any=copy(retailCatalog);
+unresolvedRetailCatalog.requiresOption=true;
+add("retail native catalog quote: unresolved sale configuration","apply_retail_action",{
+  action:"create_retail_item",state:retailCatalogState,
+  product:unresolvedRetailCatalog,color:"Black",quantity:1,
+  newItemId:"retail-native-unresolved-item"
+},()=>({item:deterministicIds(["retail-native-unresolved-item"],
+  ()=>itemFromProduct(unresolvedRetailCatalog,companyClient(retailCatalogState.settings),
+    "Black",1))}));
+
 function retailCase(name:string,mutate:(state:any,draft:any)=>void,success:boolean){
   const state:any=copy(baseState);
   const draft:any=retailDraft();
@@ -3719,6 +3771,50 @@ const manualDraft:ManualModel={
  ] as any,
  assignments:{}
 };
+// A live React button and per-item quantity indicator previously ran these
+// TS source predicates. Compare the same TS oracle against Rust's read-only
+// quantity_status response, including a blank row and missing confirmation.
+function manualQuantityCase(name:string,mutate:(model:any)=>void=()=>{}){
+  const model:any=copy(manualDraft);
+  mutate(model);
+  add("manual native quantity status: "+name,"apply_manual_classification",{
+    action:"manual_quantity_status",model
+  },()=>({
+    pending:!!pendingManualQuantity(model),
+    items:model.rows.flatMap((row:any)=>row.items.map((item:any)=>({
+      recipientId:row.id,itemId:item.id,
+      valid:validManualQuantity(item.quantity)&&item.quantityConfirmed!==false
+    })))
+  }));
+}
+manualQuantityCase("empty placeholder row");
+manualQuantityCase("selected name with missing quantity",m=>{
+  m.rows[0].items[0].name="709";
+});
+manualQuantityCase("selected quantity not confirmed",m=>{
+  m.rows[0].items[0].name="709";
+  m.rows[0].items[0].quantity=2;
+});
+manualQuantityCase("confirmed quantity accepted",m=>{
+  m.rows[0].items[0].name="709";
+  m.rows[0].items[0].quantity=2;
+  m.rows[0].items[0].quantityConfirmed=true;
+});
+manualQuantityCase("unsafe quantity rejected",m=>{
+  m.rows[0].items[0].name="709";
+  m.rows[0].items[0].quantity=9007199254740992;
+  m.rows[0].items[0].quantityConfirmed=true;
+});
+manualQuantityCase("confirmed second recipient",m=>{
+  const next=copy(m.rows[0]);
+  next.id="r2";
+  next.items[0].id="mi2";
+  next.items[0].name="709";
+  next.items[0].quantity=3;
+  next.items[0].quantityConfirmed=true;
+  m.rows.push(next);
+});
+
 function manualDraftCase(name:string,action:string,payload:any,baseline:()=>ManualModel){
  add("manual draft: "+name,"apply_manual_classification",{action,...payload},
     ()=>{const model=baseline();return {model,assignmentOrder:Object.keys(model.assignments)};});

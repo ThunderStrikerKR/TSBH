@@ -627,15 +627,9 @@ export function useOrderDesk({
     );
   }
   const chooseProduct = (rid: string, p: Product, iid?: string) => {
-    if (p.variants.length !== 1 || p.requiresOption) {
-      onNotice(p.requiresOption
-        ? "상품 구성이 미확정입니다. 판매 구성을 확인한 뒤 독립 상품으로 등록하세요."
-        : "상품 가격 기록이 정확히 하나가 아닙니다. 상품 데이터를 확인하세요.", "error");
-      return;
-    }
     const orderId = draft.id;
     const itemId = iid;
-    const variantId = p.variants[0].id;
+    const variantId = p.variants[0]?.id;
     void run(async () => {
       const { item: catalogItem } = await businessCoreCall<{ item: Item }>(
         "rules", "create_catalog_item", {
@@ -643,6 +637,15 @@ export function useOrderDesk({
           quantity: null, newItemId: crypto.randomUUID(),
         },
       );
+      // Rust already rejects ambiguous options and products without a
+      // registered independent selling unit. Never preempt that decision
+      // with a different TypeScript variant-count gate.
+      if (!catalogItem.variantId) {
+        onNotice(p.requiresOption
+          ? "상품 구성이 미확정입니다. 판매 구성을 확인한 뒤 독립 상품으로 등록하세요."
+          : "상품 가격 기록이 정확히 하나가 아닙니다. 상품 데이터를 확인하세요.", "error");
+        return;
+      }
       const current = latestRulesInput.current;
       if (current.draft.id !== orderId || current.state !== state ||
           current.rulesClientSignature !== rulesClientSignature ||

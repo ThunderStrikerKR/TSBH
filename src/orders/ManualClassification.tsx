@@ -11,8 +11,6 @@ import { ManualPrompt } from "./ManualPrompt";
 import {
   cellKey,
   manualValue,
-  pendingManualQuantity,
-  validManualQuantity,
   type Cell,
   type ManualModel,
 } from "./manual-classification";
@@ -99,6 +97,44 @@ function ManualClassificationEditor({
   const delivery = useNativeDeliveryRequirements(model.rows, order.receptionVersion !== 1);
   const inspection = useMemo(() => ({ ...order, recipients: model.rows }), [order, model.rows]);
   const nativeOrderIssues = useNativeOrderIssues(inspection);
+  // Rust already owns final apply_manual and the quantity predicate. React
+  // consumes that result without an alternative TS eligibility policy.
+  const quantityFingerprint = useMemo(() => JSON.stringify(
+    model.rows.map((row) => [row.id, row.items.map((item) => [
+      item.id, item.productId, item.name, item.quantity, item.quantityConfirmed,
+    ])]),
+  ), [model.rows]);
+  type NativeQuantityStatus = {
+    pending: boolean;
+    items: { recipientId: string; itemId: string; valid: boolean }[];
+  };
+  const [quantityResult, setQuantityResult] = useState<{
+    fingerprint: string;
+    result: NativeQuantityStatus;
+  }>();
+  const [quantityFailure, setQuantityFailure] = useState<{
+    fingerprint: string;
+    reason: string;
+  }>();
+  useEffect(() => {
+    let active = true;
+    void businessCoreCall<NativeQuantityStatus>("rules", "apply_manual_classification", {
+      action: "manual_quantity_status", model,
+    }).then((result) => {
+      if (!active) return;
+      setQuantityResult({ fingerprint: quantityFingerprint, result });
+      setQuantityFailure(undefined);
+    }).catch((error) => {
+      if (!active) return;
+      setQuantityResult(undefined);
+      setQuantityFailure({ fingerprint: quantityFingerprint, reason: String(error) });
+    });
+    return () => { active = false; };
+  }, [quantityFingerprint]);
+  const quantityReady = quantityResult?.fingerprint === quantityFingerprint;
+  const quantityStatus = quantityReady && quantityResult ? quantityResult.result : undefined;
+  const quantityError = quantityFailure?.fingerprint === quantityFingerprint
+    ? quantityFailure.reason : "";
   const latestInputs = useRef({ order, model });
   latestInputs.current = { order, model };
   const initial = useRef(JSON.stringify(model));
@@ -570,7 +606,10 @@ function ManualClassificationEditor({
             : cell.field === "product"
               ? !item?.productId || !item?.variantId
               : cell.field === "quantity"
-                ? !validManualQuantity(item?.quantity) || item?.quantityConfirmed === false
+                ? !!item && quantityReady &&
+                  quantityStatus?.items.find((entry) =>
+                    entry.recipientId === cell.recipientId &&
+                    entry.itemId === cell.itemId)?.valid === false
                 : false;
     const value =
       cell.field === "product"
@@ -706,8 +745,7 @@ function ManualClassificationEditor({
         manualQuantityPending.current.delete(key);
         const item = updated.rows.find((row) => row.id === cell.recipientId)
           ?.items.find((item) => item.id === cell.itemId);
-        if (!item || !validManualQuantity(item.quantity) ||
-            item.quantityConfirmed !== true) {
+        if (!item) {
           fail("수량을 1 이상의 정수로 입력하세요.", cell);
           return;
         }
@@ -972,15 +1010,22 @@ function ManualClassificationEditor({
             </section>
           </div>
           <footer className="manual-footer">
-            <span>적용 후 확인 {issues.length}개 / 정식 접수는 주문 확인 완료</span>
+            <span>적용 후 확인 {issues.length}개 / 정식 접수는 주문 확인 완료
+              {quantityError && <small role="alert"> / 수량 검증 오류: {quantityError}</small>}
+            </span>
             <button onClick={closeDraft}>닫기</button>
             <button
               className="primary"
               disabled={
                 !delivery.ready || !nativeOrderIssues.ready || nativeDraftBusy || nativeTextBusy ||
-                !!pending || !model.rows.length || uncommitted || !!pendingManualQuantity(model)
+                !!pending || !model.rows.length || uncommitted ||
+                !quantityReady || quantityStatus?.pending === true
               }
               onClick={() => {
+                if (!quantityReady || quantityStatus?.pending === true) {
+                  fail(quantityError || "Rust 수량 승인 조건을 확인한 뒤 적용하세요.");
+                  return;
+                }
                 if (!requireNativeCellsSettled() || Object.keys(entry).length > 0) {
                   if (Object.keys(entry).length > 0)
                     fail("아직 적용되지 않은 수취인 또는 상품 입력이 있습니다. 다시 확인하세요.");

@@ -1,6 +1,5 @@
 import { flushSync } from "react-dom";
 import { HelpTooltip } from "./ui/HelpTooltip";
-import { newRetailOrder } from "./orders/retail";
 import { RetailOrderDialog } from "./orders/RetailOrderDialog";
 import { OcrReviewDialog } from "./OcrReviewDialog";
 import { Modal } from "./ui";
@@ -44,7 +43,7 @@ export function SourceDocument({
   const [retail, setRetail] = useState(false);
   const [ocrResult, setOcrResult] = useState<OcrCapture | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
-  const [retailDraft, setRetailDraft] = useState(newRetailOrder);
+  const [retailDraft, setRetailDraft] = useState<Order>();
   const settingsLink = useRef(onSettings);
   settingsLink.current = onSettings;
   const [dealer, setDealer] = useState(false),
@@ -248,7 +247,7 @@ export function SourceDocument({
           onSave={onSaveState}
           onClose={() => {
             setRetail(false);
-            setRetailDraft(newRetailOrder());
+            setRetailDraft(undefined);
           }}
           onSettings={
             onSettings

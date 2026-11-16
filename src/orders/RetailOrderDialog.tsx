@@ -3,13 +3,17 @@ import { sameValue } from "../shared/draft";
 import { confirmDiscardDraft } from "../shared/editor-flow";
 import { Modal, Field, MoneyInput } from "../ui";
 import { businessCoreCall } from "../tauri-bridge";
-import { companyClient, companySenderMissing } from "../order-types";
-import { deliveryRequirements } from "../delivery-requirements";
 import { contactProblem } from "../contact";
 import { ProductSearchDialog } from "../ProductSearchDialog";
-import { newRetailOrder } from "./retail";
 import { nativeConfirmRetail } from "./native-rules";
-import type { Item, State } from "../types";
+import type { Item, Order, State } from "../types";
+import type { NativeDeliveryRequirement } from "../useNativeDeliveryRequirements";
+
+type RetailPreflight = {
+  delivery: NativeDeliveryRequirement[];
+  senderIssues: string[];
+  issues: string[];
+};
 export function RetailOrderDialog({
   state,
   onSave,
@@ -21,26 +25,99 @@ export function RetailOrderDialog({
   state: State;
   onSave: (s: State) => Promise<void>;
   onClose: () => void;
-  initialOrder?: ReturnType<typeof newRetailOrder>;
-  onDraft?: (o: ReturnType<typeof newRetailOrder>) => void;
+  initialOrder?: Order;
+  onDraft?: (o: Order) => void;
   onSettings?: () => void;
 }) {
-  const [order, setOrder] = useState(() => initialOrder ?? newRetailOrder()),
+  const [order, setOrder] = useState<Order | undefined>(initialOrder),
     [search, setSearch] = useState(false),
     [attempted, setAttempted] = useState(false),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  const initial = useRef(structuredClone(order));
+  const initial = useRef<Order | undefined>(
+    initialOrder ? structuredClone(initialOrder) : undefined,
+  );
+  const [preflight, setPreflight] = useState<{
+    fingerprint: string;
+    result: RetailPreflight;
+  }>();
+  const [preflightFailure, setPreflightFailure] = useState<{
+    fingerprint: string;
+    error: string;
+  }>();
   const addingProduct = useRef(false);
   const alive = useRef(true);
+  const draftIds = useRef({
+    orderId: crypto.randomUUID(),
+    recipientId: crypto.randomUUID(),
+  });
   useEffect(() => {
     alive.current = true;
     return () => { alive.current = false; };
   }, []);
-  const closeDraft = () => void confirmDiscardDraft("직접 입력 주문", !sameValue(order, initial.current), onClose, busy);
-  useEffect(() => onDraft?.(order), [order, onDraft]);
+  useEffect(() => {
+    if (initialOrder) return;
+    let active = true;
+    void businessCoreCall<{ order: Order }>("rules", "apply_retail_action", {
+      action: "new_retail_order",
+      orderId: draftIds.current.orderId,
+      recipientId: draftIds.current.recipientId,
+      now: new Date().toISOString(),
+    }).then(({ order: created }) => {
+      if (!active || !alive.current) return;
+      initial.current = structuredClone(created);
+      setOrder(created);
+    }).catch((cause) => {
+      if (active && alive.current) setError(String(cause));
+    });
+    return () => { active = false; };
+  }, [initialOrder]);
+  useEffect(() => { if (order) onDraft?.(order); }, [order, onDraft]);
+
+  // Current eligibility is projected in Rust from the same source rules that
+  // ultimately approve or reject the retail SQLite transaction. Stale IPC
+  // responses cannot unlock the UI; there is no TS business-rule fallback.
+  const fingerprint = order
+    ? JSON.stringify([order, state.settings, state.products])
+    : "";
+  useEffect(() => {
+    if (!order) return;
+    let active = true;
+    void businessCoreCall<RetailPreflight>("rules", "apply_retail_action", {
+      action: "retail_preflight", state, draft: order,
+    }).then((result) => {
+      if (!active) return;
+      setPreflight({ fingerprint, result });
+      setPreflightFailure(undefined);
+    }).catch((cause) => {
+      if (!active) return;
+      setPreflight(undefined);
+      setPreflightFailure({ fingerprint, error: String(cause) });
+    });
+    return () => { active = false; };
+  }, [fingerprint]);
+  const current = preflight?.fingerprint === fingerprint ? preflight.result : undefined;
+  const nativeError = preflightFailure?.fingerprint === fingerprint
+    ? preflightFailure.error : "";
+  const closeDraft = () => {
+    if (!order) { onClose(); return; }
+    void confirmDiscardDraft(
+      "직접 입력 주문", !sameValue(order, initial.current), onClose, busy,
+    );
+  };
+  if (!order || !order.recipients[0]) {
+    return (
+      <Modal title="직접 입력" busy={busy} onClose={onClose}>
+        <div className="retail-order-dialog">
+          <p role="status">{error || "소매 주문 초안을 준비하고 있습니다."}</p>
+          <button type="button" onClick={onClose}>닫기</button>
+        </div>
+      </Modal>
+    );
+  }
   const row = order.recipients[0],
-    required = deliveryRequirements(row),
+    required = current?.delivery.find((entry) => entry.recipientId === row.id),
+    senderIssues = current?.senderIssues ?? [],
     change = (values: Partial<typeof row>) =>
       setOrder({ ...order, recipients: [{ ...row, ...values }] });
   return (
@@ -52,7 +129,7 @@ export function RetailOrderDialog({
             <h3>배송 정보</h3>
             {(["name", "address", "mobile", "phone", "note"] as const).map((field, index) => {
               const invalid =
-                attempted &&
+                attempted && !!required &&
                 (field === "name"
                   ? !required.name
                   : field === "address"
@@ -199,14 +276,6 @@ export function RetailOrderDialog({
                     +
                   </button>
                 </div>
-                {attempted &&
-                  (!item.quantityConfirmed ||
-                    !Number.isSafeInteger(item.quantity) ||
-                    (item.quantity ?? 0) < 1) && (
-                    <p className="form-error">
-                      수량을 직접 입력하거나 증감하여 1 이상의 정수로 확정하세요.
-                    </p>
-                  )}
                 <button
                   onClick={() => change({ items: row.items.filter((i) => i.id !== item.id) })}
                 >
@@ -214,11 +283,16 @@ export function RetailOrderDialog({
                 </button>
               </article>
             ))}
+            {attempted && row.items.length > 0 && required?.quantity === false && (
+              <p className="form-error">
+                수량을 직접 입력하거나 증감하여 1 이상의 정수로 확정하세요.
+              </p>
+            )}
             <h3>출고 정보</h3>
             <p>송하인: 반도스탠드</p>
-            {companySenderMissing(state.settings).length > 0 && (
+            {senderIssues.length > 0 && (
               <div className="form-error">
-                {companySenderMissing(state.settings).map((text) => (
+                {senderIssues.map((text) => (
                   <p key={text}>{text}</p>
                 ))}
                 {onSettings && <button onClick={() => void confirmDiscardDraft(
@@ -245,7 +319,7 @@ export function RetailOrderDialog({
           </div>
           <footer className="modal-footer">
             <span role="status" className="form-error">
-              {error}
+              {error || (attempted ? nativeError : "")}
             </span>
             <button type="button" disabled={busy} onClick={closeDraft}>닫기</button>
             <button
@@ -279,8 +353,8 @@ export function RetailOrderDialog({
             setBusy(true);
             setError("");
             const selectedVariant = product.variants[0];
-            void businessCoreCall<{ item: Item }>("rules", "create_catalog_item", {
-              product, client: companyClient(state.settings),
+            void businessCoreCall<{ item: Item }>("rules", "apply_retail_action", {
+              action: "create_retail_item", state, product,
               color: selectedVariant?.color,
               variantId: product.variants.length === 1 ? selectedVariant?.id : undefined,
               newItemId: crypto.randomUUID(), quantity: 1,
@@ -294,7 +368,7 @@ export function RetailOrderDialog({
               };
               // Preserve the newest recipient and dispatch-origin edits while
               // the native command was running; never append a stale shipment.
-              setOrder((previous) => ({
+              setOrder((previous) => previous ? ({
                 ...previous,
                 recipients: previous.recipients.map((recipient, index) =>
                   index === 0 ? {
@@ -302,7 +376,7 @@ export function RetailOrderDialog({
                       ...item, origin: recipient.dispatchOrigin ?? "FACTORY",
                     }],
                   } : recipient),
-              }));
+              }) : previous);
               setSearch(false);
             }).catch((cause) => {
               if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
