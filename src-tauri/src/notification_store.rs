@@ -168,7 +168,8 @@ mod tests {
     fn existing_sqlite_upgrades_without_writing_business_snapshot() {
         let folder = std::env::temp_dir()
             .join(format!("bando-notification-test-{}-{}.sqlite", std::process::id(),
-                std::thread::current().name().unwrap_or("upgrade")));
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let _ = std::fs::remove_file(&folder);
         let mut conn = Connection::open(&folder).unwrap();
         conn.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
