@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Origin, Price, State } from "./types";
 import { shipmentContext } from "./workflow";
 import type { WorkflowShipment } from "./workflow-types";
-/** Local numeric editing is cheap; native repricing is not. */
+/** Keep freight typing local; native totals run on blur, Enter or unmount. */
 function FreightAmountInput({ label, value, disabled, onCommit }: {
   label: string; value: Price | undefined; disabled: boolean;
   onCommit: (value: Price) => void;
@@ -11,7 +11,6 @@ function FreightAmountInput({ label, value, disabled, onCommit }: {
     amount === null || amount === undefined ? "" : amount.toLocaleString("ko-KR");
   const [text, setText] = useState(() => format(value));
   const pending = useRef<Price | undefined>(undefined);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const currentValue = useRef(value);
   currentValue.current = value;
   const latestCommit = useRef(onCommit);
@@ -20,15 +19,12 @@ function FreightAmountInput({ label, value, disabled, onCommit }: {
     if (pending.current === undefined) setText(format(value));
   }, [value]);
   const flush = () => {
-    if (timer.current !== undefined) clearTimeout(timer.current);
-    timer.current = undefined;
     const amount = pending.current;
     pending.current = undefined;
     if (amount !== undefined && amount !== currentValue.current)
       latestCommit.current(amount);
   };
   useEffect(() => () => {
-    if (timer.current !== undefined) clearTimeout(timer.current);
     if (pending.current !== undefined && pending.current !== currentValue.current)
       latestCommit.current(pending.current);
     pending.current = undefined;
@@ -51,8 +47,6 @@ function FreightAmountInput({ label, value, disabled, onCommit }: {
         const amount = raw === "" ? null : Number(raw);
         pending.current = amount;
         setText(format(amount));
-        if (timer.current !== undefined) clearTimeout(timer.current);
-        timer.current = setTimeout(flush, 350);
         requestAnimationFrame(() => {
           if (!input.isConnected || document.activeElement !== input) return;
           let at = 0, count = 0;
