@@ -115,6 +115,42 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
       "Both cards must clearly identify their unsaved status");
     record("SIM32_TWO_PENDING_ORDERS real WebView2 processing cards",pending);
     await snap(page,"08-sim32-two-unconfirmed-processing-cards");
+    // Measure real WebView2 panel height during an actual freight edit.
+    // The old status paragraph and conditional VAT footer caused resize pulses.
+    await page.evaluate(() => {
+      const selectors=[".staff-checks",".recipient-body",".review-pane"];
+      window.__sim32Sizes=[];
+      const sample=()=>window.__sim32Sizes.push(Object.fromEntries(selectors.map(selector=>[
+        selector,document.querySelector(selector)?.getBoundingClientRect().height??null
+      ])));
+      const observer=new ResizeObserver(sample);
+      for (const selector of selectors) {
+        const el=document.querySelector(selector);
+        if(el)observer.observe(el);
+      }
+      window.__sim32SizeObserver=observer;
+      sample();
+    });
+    const edit=page.locator(".items-freight-panel .freight-money input:not([disabled])").first();
+    await edit.click();
+    await edit.press("ControlOrMeta+A");
+    await page.keyboard.type("4600",{delay:65});
+    assert.equal((await edit.inputValue()).replaceAll(",",""),"4600");
+    await edit.blur();
+    await page.waitForTimeout(1200);
+    const sizes=await page.evaluate(()=>{
+      window.__sim32SizeObserver?.disconnect();
+      return window.__sim32Sizes??[];
+    });
+    const ranges=Object.fromEntries([".staff-checks",".recipient-body",".review-pane"].map(key=>{
+      const h=sizes.map(row=>row[key]).filter(Number.isFinite);
+      return [key, h.length ? Math.max(...h)-Math.min(...h) : -1];
+    }));
+    assert.ok(Object.values(ranges).every(v=>v>=0&&v<=3),
+      "SIM32_RESIZE_PULSE "+JSON.stringify({ranges,samples:sizes.length}));
+    record("SIM32_WEBVIEW2_PANEL_HEIGHT_STABLE during native freight update",{
+      ranges,samples:sizes.length
+    });
 
     for (const index of [1,0]) {
       const info=cases[index];
