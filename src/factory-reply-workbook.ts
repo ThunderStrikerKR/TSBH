@@ -121,10 +121,11 @@ export async function parseFactoryReplyWorkbook(state: State, file: File):
     throw Error("로젠 회신 양식 불일치: Q열 운송장번호 데이터가 없습니다.");
   }
   const trackingCounts = new Map<string, number>();
-  for (const row of rows) if (row.tracking) {
+  for (const row of rows) if (row.tracking && !row.issue) {
     trackingCounts.set(row.tracking, (trackingCounts.get(row.tracking) ?? 0) + 1);
   }
-  for (const row of rows) if (row.tracking && (trackingCounts.get(row.tracking) ?? 0) > 1) {
+  for (const row of rows) if (row.tracking && !row.issue &&
+    (trackingCounts.get(row.tracking) ?? 0) > 1) {
     row.issue = "같은 회신 파일에 운송장번호가 중복됩니다.";
   }
   const reply: FactoryReply = {
