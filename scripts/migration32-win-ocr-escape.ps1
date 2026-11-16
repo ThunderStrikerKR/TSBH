@@ -31,15 +31,15 @@ $p = Get-Process -Id $TargetPid -ErrorAction Stop
 $candidates = [System.Collections.Generic.List[object]]::new()
 $callback = [BandoOcrDesktop+WindowCallback]{
   param([IntPtr]$hwnd, [IntPtr]$unused)
-  [uint32]$pid = 0
-  [void][BandoOcrDesktop]::GetWindowThreadProcessId($hwnd, [ref]$pid)
-  if ($pid -eq $TargetPid) {
+  [uint32]$windowPid = 0
+  [void][BandoOcrDesktop]::GetWindowThreadProcessId($hwnd, [ref]$windowPid)
+  if ($windowPid -eq $TargetPid) {
     $title = [System.Text.StringBuilder]::new(512)
     [void][BandoOcrDesktop]::GetWindowText($hwnd, $title, $title.Capacity)
     $rect = New-Object BandoOcrDesktop+Rect
     [void][BandoOcrDesktop]::GetWindowRect($hwnd, [ref]$rect)
     $candidates.Add(@{
-      handle = [long]$hwnd
+      handle = $hwnd.ToInt64()
       title = $title.ToString()
       visible = [BandoOcrDesktop]::IsWindowVisible($hwnd)
       minimized = [BandoOcrDesktop]::IsIconic($hwnd)
