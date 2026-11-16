@@ -23,6 +23,21 @@ if errorlevel 1 goto failed
 powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-node-deps.ps1"
 if errorlevel 1 goto failed
 
+rem OCR can be tested with the ALREADY PACKAGED runtime; no downloads or
+rem repackaging on each development launch. A Windows directory junction
+rem allows target\debug\bando_hub_tauri.exe to find its adjacent OCR files.
+if exist "release\ocr\runtime\python.exe" (
+  if not exist "src-tauri\target\debug" mkdir "src-tauri\target\debug"
+  if not exist "src-tauri\target\debug\ocr\runtime\python.exe" (
+    if not exist "src-tauri\target\debug\ocr" (
+      mklink /J "src-tauri\target\debug\ocr" "%CD%\release\ocr" >nul
+      if errorlevel 1 echo [DEV] Could not link existing OCR runtime; OCR capture may be unavailable.
+    )
+  )
+) else (
+  echo [DEV] No existing portable OCR runtime. Text orders work; OCR capture needs release\ocr.
+)
+
 echo.
 echo [DEV] Starting Tauri + Vite in isolated developer TEST mode...
 echo [DEV] React edits update automatically; Rust edits rebuild incrementally.
