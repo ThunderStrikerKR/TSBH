@@ -91,9 +91,9 @@ export async function parseFactoryReplyWorkbook(state: State, file: File):
     const numeric = row.getCell(17).value;
     const numericWaybill = typeof numeric === "number";
     const numberFormat = row.getCell(17).numFmt;
-    const zeroPadding = numericWaybill && /^0{2,}$/.test(numberFormat) &&
+    const zeroPadding = typeof numeric === "number" && /^0{2,}$/.test(numberFormat) &&
       numberFormat.length > String(numeric).length;
-    const numericRisk = numericWaybill && (
+    const numericRisk = typeof numeric === "number" && (
       !Number.isSafeInteger(numeric) || numeric < 0 ||
       String(numeric).length > 15 || zeroPadding
     );
