@@ -1,5 +1,5 @@
 import { DateNavigator } from "./DateNavigator";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { won, internalModel } from "./history-format";
 import type { State } from "../types";
 import { ManagementSearch } from "../ui/ManagementSearch";
@@ -34,6 +34,11 @@ export function OrderHistory({
       }[];
     };
   };
+  // Only business fields used by the Rust history projection affect this query.
+  const historyState = useMemo(() => state, [
+    state.orders, state.clients, state.products, state.productMappings,
+    state.factoryReplies, state.workflow, state.shipping, state.settings,
+  ]);
   const serial = useRef(0);
   const [loaded, setLoaded] = useState<{
     state: State; query: string; date: string; rows: HistoryRow[]
@@ -50,15 +55,15 @@ export function OrderHistory({
       keys: Object.keys(shipment.tracking ?? {}),
     }));
     void businessCoreCall<HistoryRow[]>("rules", "list_order_history_view", {
-      state, query, date, trackingOrder,
+      state: historyState, query, date, trackingOrder,
     }).then((rows) => {
-      if (serial.current === request) setLoaded({ state, query, date, rows });
+      if (serial.current === request) setLoaded({ state: historyState, query, date, rows });
     }).catch((error: unknown) => {
       if (serial.current === request) setFailure(String(error));
     });
     return () => { if (serial.current === request) serial.current++; };
-  }, [state, query, date]);
-  const ready = loaded?.state === state && loaded.query === query &&
+  }, [historyState, query, date]);
+  const ready = loaded?.state === historyState && loaded.query === query &&
     loaded.date === date;
   const rows = ready ? loaded.rows : [];
   return (

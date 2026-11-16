@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { won } from "./history-format";
 import type { NoticeSink } from "../shared/notices";
 import type { State } from "../types";
@@ -20,6 +20,11 @@ export function DailySettlement({
   onDate: (date: string) => void;
   onNotice: NoticeSink;
 }) {
+  // The native settlement reads business records, not other screen updates.
+  const settlementState = useMemo(() => state, [
+    state.orders, state.clients, state.products, state.productMappings,
+    state.factoryReplies, state.workflow, state.shipping, state.settings,
+  ]);
   const requestId = useRef(0);
   const [loaded, setLoaded] = useState<{ state: State; date: string; report: DailySettlementReport } | null>(null);
   const [failure, setFailure] = useState("");
@@ -28,20 +33,20 @@ export function DailySettlement({
     setLoaded(null);
     setFailure("");
     void businessCoreCall<HistoryRow[]>("rules", "list_order_history", {
-      state, query: "", date,
+      state: settlementState, query: "", date,
     }).then((historyRows) => {
       if (requestId.current !== id) return null;
       return businessCoreCall<DailySettlementReport>("output", "prepare_settlement", {
-        state, date, historyRows,
+        state: settlementState, date, historyRows,
       });
     }).then((report) => {
-      if (report && requestId.current === id) setLoaded({ state, date, report });
+      if (report && requestId.current === id) setLoaded({ state: settlementState, date, report });
     }).catch((error: unknown) => {
       if (requestId.current === id) setFailure(String(error));
     });
     return () => { if (requestId.current === id) requestId.current++; };
-  }, [state, date]);
-  const report = loaded?.state === state && loaded.date === date ? loaded.report : null;
+  }, [settlementState, date]);
+  const report = loaded?.state === settlementState && loaded.date === date ? loaded.report : null;
   return (
     <section className="daily-settlement">
       <PageHeading title="일일 결산" />

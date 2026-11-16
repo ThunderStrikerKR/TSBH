@@ -1,7 +1,7 @@
 import { confirmAction } from "./dialogs";
 import { nativeFactoryConflictConfirmation } from "./native-factory-conflict-review";
 import { businessCoreCall } from "./tauri-bridge";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAsyncTask } from "./shared/useAsyncTask";
 import type { NoticeSink } from "./shared/notices";
 import type { State } from "./types";
@@ -18,8 +18,13 @@ export function FactoryReplyHistory({
   onNotice: NoticeSink;
 }) {
   const { busy, run } = useAsyncTask(onNotice);
+  // The native status projection reads factoryReplies only.
+  const reviewSource = useMemo(
+    () => ({ factoryReplies: state.factoryReplies }),
+    [state.factoryReplies],
+  );
   const [nativeReview, setNativeReview] = useState<{
-    state: State;
+    source: typeof reviewSource;
     statuses: Record<string, {
       needsReview: boolean; resolvedRows: {row: number; resolved: boolean}[];
     }>;
@@ -28,18 +33,18 @@ export function FactoryReplyHistory({
     let active = true;
     void businessCoreCall<{ reviews: {
       id: string; needsReview: boolean; resolvedRows: {row: number; resolved: boolean}[];
-    }[] }>("rules", "factory_reply_review_statuses", { state })
+    }[] }>("rules", "factory_reply_review_statuses", { state: reviewSource })
       .then(({ reviews }) => {
         if (active) setNativeReview({
-          state, statuses: Object.fromEntries(reviews.map(r => [r.id, r])),
+          source: reviewSource, statuses: Object.fromEntries(reviews.map(r => [r.id, r])),
         });
       }).catch(e => {
         if (active) onNotice("Rust 공장 회신 이력 조회 실패: " +
           (e instanceof Error ? e.message : String(e)), "error");
       });
     return () => { active = false; };
-  }, [state, onNotice]);
-  const statuses = nativeReview?.state === state ? nativeReview.statuses : undefined;
+  }, [reviewSource, onNotice]);
+  const statuses = nativeReview?.source === reviewSource ? nativeReview.statuses : undefined;
   const records = (state.factoryReplies ?? [])
     .filter((r) => (r.filename + " " + r.businessDate).includes(query))
     .slice().reverse();

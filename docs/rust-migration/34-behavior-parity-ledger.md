@@ -144,3 +144,12 @@ cargo test --manifest-path tests/rust-migration/integration/Cargo.toml
   주문에 직접 없는 Rust의 총액/부가세 산출을 잃지 않기 위한 hook 내부의
   **기존 resolved 상태 재사용**이며 추가 중복 캐시는 만들지 않음.
 - 상태: PATCH_COMMITTED / 새 Windows 테스트·CI 검증 전 완료 판정 금지.
+
+## R35-004: 주문 이력·결산·공장 회신 상태의 불필요한 재조회 방지
+
+- `OrderHistory`/`DailySettlement`는 Rust가 사용하는 주문/고객/상품/운임/설정/워크플로/회신
+  원천이 변경될 때만 결과를 갱신. 관계없는 다른 앱 상태 변경으로 표시된 데이터를 지우지 않음.
+- `factory_reply_review_statuses`는 `factoryReplies`만 읽으므로,
+  `FactoryReplyHistory`/`FactoryNotifications`는 해당 원천만 변경될 때 다시 Rust 호출.
+  기존 '반영 완료'가 다른 업무 갱신 때문에 '확인 중'으로 돌아가던 표시를 방지.
+- 검증 단계 PATCH_COMMITTED / 최신 CI와 Windows 실제 동작 재확인 필요.

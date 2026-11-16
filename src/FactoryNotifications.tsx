@@ -1,7 +1,7 @@
 import { businessCoreCall } from "./tauri-bridge";
 import { nativeFactoryConflictConfirmation } from "./native-factory-conflict-review";
 import { confirmAction } from "./dialogs";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { State } from "./types";
 import type { HubNotification } from "./app/notification-center";
 import { Modal } from "./ui";
@@ -26,28 +26,33 @@ export function FactoryNotifications({
   onRefresh: () => Promise<void>;
 }) {
   const [error, setError] = useState("");
+  // The native status projection reads factoryReplies only.
+  const reviewSource = useMemo(
+    () => ({ factoryReplies: state.factoryReplies }),
+    [state.factoryReplies],
+  );
   const [selectedId, setSelectedId] = useState<string>();
   const selected = notices.find((notice) => notice.id === selectedId);
   const [nativeReview, setNativeReview] = useState<{
-    state: State;
+    source: typeof reviewSource;
     statuses: Record<string, { needsReview: boolean; resolvedRows: { row: number; resolved: boolean }[] }>;
   }>();
   useEffect(() => {
     let active = true;
     void businessCoreCall<{ reviews: { id: string; needsReview: boolean; resolvedRows: { row: number; resolved: boolean }[] }[] }>(
-      "rules", "factory_reply_review_statuses", { state },
+      "rules", "factory_reply_review_statuses", { state: reviewSource },
     ).then(({ reviews }) => {
       if (active) setNativeReview({
-        state, statuses: Object.fromEntries(reviews.map((row) => [row.id, row])),
+        source: reviewSource, statuses: Object.fromEntries(reviews.map((row) => [row.id, row])),
       });
     }).catch((cause) => {
       if (active) setError("Rust 회신 상태 확인 실패: " +
         (cause instanceof Error ? cause.message : String(cause)));
     });
     return () => { active = false; };
-  }, [state]);
+  }, [reviewSource]);
   // Never display an obsolete revision's review result as 'completed'.
-  const statuses = nativeReview?.state === state ? nativeReview.statuses : undefined;
+  const statuses = nativeReview?.source === reviewSource ? nativeReview.statuses : undefined;
   return (
     <Modal title="알림" onClose={onClose}>
       {error && <p role="alert" className="form-error">{error}</p>}
