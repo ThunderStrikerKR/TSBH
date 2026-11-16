@@ -1,0 +1,38 @@
+name: TSBH Windows DEV mode smoke
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - DEV_WINDOWS_TAURI.cmd
+      - scripts/migration32-dev-windows-smoke.ps1
+      - .github/workflows/dev-windows-smoke.yml
+  workflow_dispatch:
+
+jobs:
+  windows-dev-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Install current frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Launch real DEV_WINDOWS_TAURI.cmd and verify isolated TEST SQLite
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/migration32-dev-windows-smoke.ps1
+      - name: Preserve Windows development app logs, native window screenshot and TEST DB report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSBH-DEV-Windows-TEST-evidence
+          path: dev-windows-smoke-evidence/
+          retention-days: 7
+          if-no-files-found: warn
