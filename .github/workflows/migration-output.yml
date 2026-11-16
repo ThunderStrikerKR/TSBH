@@ -103,6 +103,9 @@ jobs:
           BANDO_FACTORY_NOTICE_AUDIT: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/32-factory-reply-validation-notification-center' || github.head_ref == 'fix/32-persistent-notification-sqlite') && 'true' || 'false' }}
           BANDO_PERSISTENT_NOTICE_AUDIT: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/32-persistent-notification-sqlite' && 'true' || 'false' }}
         run: node scripts/migration03-reception-native-ui.mjs
+      - name: Verify last window position, size, and maximized state across real Windows EXE restarts
+        shell: pwsh
+        run: ./scripts/verify-window-placement-win.ps1 -ExePath "src-tauri/target/release/bando_hub.exe"
       - name: Publish exact-HEAD CI-only EXE for isolated client persistence audit
         if: github.event_name == 'pull_request' || github.ref_name == 'main' || github.ref_name == 'integration/final-rust-migration-20261116'
         uses: actions/upload-artifact@v4

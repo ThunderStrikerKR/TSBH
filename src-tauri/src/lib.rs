@@ -21,6 +21,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::{fs, path::{Path, PathBuf}, sync::Mutex};
 use tauri::{Manager, State};
+use tauri_plugin_window_state::StateFlags;
 
 struct Database { connection: Mutex<Connection>, base: PathBuf, is_test: bool }
 
@@ -1137,13 +1138,15 @@ fn start_automatic_backup(app: tauri::AppHandle) {
 }
 
 pub fn run() {
+    // The production app and developer TEST app may run together.
+    // Never let their last window placements overwrite one another.
+    let developer_test = std::env::args().skip(1)
+        .any(|arg| arg == "--bando-developer-test");
     // Acquire before Tauri constructs any window or connects to SQLite.
     // The isolated developer TEST process uses a separate named guard so
     // the production app and its test lab may coexist.
     #[cfg(target_os = "windows")]
-    let instance = match single_instance::acquire(
-        std::env::args().skip(1).any(|arg| arg == "--bando-developer-test")
-    ) {
+    let instance = match single_instance::acquire(developer_test) {
         Ok(single_instance::Acquisition::First(guard)) => guard,
         Ok(single_instance::Acquisition::Existing) => return,
         Err(error) => panic!("반도허브 중복 실행 검사 실패: {error}"),
@@ -1152,6 +1155,25 @@ pub fn run() {
         .manage(kakao_dock::Dock::default())
         .manage(factory_reply_watch::InboxWatch::default())
         .plugin(tauri_plugin_dialog::init())
+        // Restore only the BANDO HUB main window. External KakaoTalk windows
+        // are managed separately by kakao_dock and must never be persisted here.
+        // Tauri tracks the last non-maximized bounds, monitor placement and
+        // maximized state. VISIBLE also shows the initially hidden window only
+        // after restoration, preventing a default-size flash at launch.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_filename(if developer_test {
+                    "window-state-developer.json"
+                } else {
+                    "window-state.json"
+                })
+                .with_filter(|label| label == "main")
+                .with_state_flags(
+                    StateFlags::SIZE | StateFlags::POSITION |
+                    StateFlags::MAXIMIZED | StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         .setup(move |app| {
             #[cfg(target_os = "windows")]
             single_instance::listen(instance, app.handle().clone())
@@ -1159,8 +1181,7 @@ pub fn run() {
             // Keep the native window alive on initialization failures. The
             // managed StartupRecovery owns the diagnosis until a guarded retry
             // successfully registers a Database; no failed database is managed.
-            let is_test = std::env::args().skip(1)
-                .any(|argument| argument == "--bando-developer-test");
+            let is_test = developer_test;
             let startup = startup_recovery::StartupRecovery::new(is_test);
             startup_recovery::initial_open(app.handle(), &startup);
             app.manage(startup);
