@@ -111,10 +111,13 @@ test("actual Rust freight edit -> bank-account copy preview (halt at first failu
   s.settings={...s.settings,senderName:"반도스탠드",
     senderAddress:"서울 종로구 종로 10",senderPhone:"02-1234-5678"};
   const buyer=s.clients[0];
-  const item={id:"sim-item-31",productId:product.id,variantId:variant.id,
-    name:"BD 709",raw:"BD 709 (블랙) 2개",color:"Black",quantity:2,
-    quantityConfirmed:true,unitPrice:50000,origin:"FACTORY",
-    url:variant.url,issues:[]};
+  // Create exactly the catalog item the live React UI receives from Rust.
+  const item=native("rules","create_catalog_item",{
+    product,client:buyer,newItemId:"sim-item-31",variantId:variant.id,
+    color:"Black",quantity:2
+  }).item;
+  Object.assign(item,{raw:"BD 709 (블랙) 2개",quantityConfirmed:true,issues:[]});
+  assert.equal(item.unitPrice,50000,"native dealer quote must use synthetic wholesale price");
   const recipient={id:"sim-recipient-31",name:"김가상",
     address:"서울 종로구 청계천로 1",addressStatus:"COMPLETE",
     phone:"010-1234-5678",mobile:"",items:[item],note:"",
