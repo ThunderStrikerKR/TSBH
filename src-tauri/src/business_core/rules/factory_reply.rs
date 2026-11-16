@@ -231,7 +231,8 @@ fn analyze(payload:&Value)->Result<Value,String>{
         let mobile=s(source,"mobile");
         let raw_freight=s(source,"rawFreight");
         let raw_tracking=s(source,"tracking");
-        if [name,address,phone,mobile,raw_freight,raw_tracking].iter().all(|t|t.is_empty()){continue}
+        if [name,address,phone,mobile,raw_freight,raw_tracking].iter().all(|t|t.is_empty())
+            && s(source,"sourceIssue").is_empty(){continue}
         let tracking=raw_tracking.chars()
             .filter(|c|*c!='-'&&!c.is_whitespace()).collect::<String>();
         // Excel numeric cells are valid for safe, ordinary integer waybills.
@@ -269,11 +270,14 @@ fn analyze(payload:&Value)->Result<Value,String>{
     let mut counts=HashMap::new();
     for row in &parsed {
         let tracking=s(row,"tracking");
-        if !tracking.is_empty(){*counts.entry(tracking.to_string()).or_insert(0usize)+=1;}
+        if !tracking.is_empty() && s(row,"issue").is_empty(){
+            *counts.entry(tracking.to_string()).or_insert(0usize)+=1;
+        }
     }
     for row in &mut parsed {
         let tracking=s(row,"tracking");
-        if !tracking.is_empty() && counts.get(tracking).copied().unwrap_or(0)>1{
+        if s(row,"issue").is_empty() && !tracking.is_empty()
+            && counts.get(tracking).copied().unwrap_or(0)>1{
             row["issue"]=json!("같은 회신 파일에 운송장번호가 중복됩니다.");
         }
     }
