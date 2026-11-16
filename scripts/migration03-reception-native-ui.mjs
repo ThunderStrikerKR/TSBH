@@ -8,6 +8,7 @@ import { dirname, resolve, join, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 import { chromium } from "playwright";
+import { probeWindowsFreightFocus } from "./migration31-real-freight-focus.mjs";
 
 if (process.platform !== "win32") throw Error("Native reception audit requires Windows");
 const exe = resolve(process.env.BANDO_NATIVE_EXE || "");
@@ -462,6 +463,15 @@ try{
   assert.ok(geometry.items.find(x=>x.selector===".source-document"&&!x.missing));
   record("compact WebView2 reception layout",geometry);
   await snap(page,"03-native-reception-compact-1024");
+
+  // Real Windows EXE keyboard interaction, NOT a source inspection or mocked UI.
+  // The test creates only synthetic dealer/account records in disposable TEST
+  // SQLite, then clicks the GUI and types freight character-by-character.
+  if (process.env.BANDO_P1P2_AUDIT === "true") {
+    const freightFocus=await probeWindowsFreightFocus(page,{record,snap});
+    report.diagnostics.freightFocus=freightFocus;
+    await persist();
+  }
 
   // P0 real manual-classification React path. Exercise the installed native
   // EXE WebView2 rather than a mocked businessCoreCall.
