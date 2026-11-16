@@ -189,8 +189,26 @@ try {
   await secondDelivery.click();
   await page.locator(".recipient-review").waitFor({state:"visible",timeout:15000});
   const secondValues=await deliveryFields();
-  assert.ok(secondValues.some(v=>v==="박가상"),"SIM34 second recipient name missing");
-  assert.ok(secondValues.some(v=>v.includes("불정로 6")),"SIM34 second address not attached to 박가상");
+  const proximityDiagnostics=await page.evaluate(async(raw)=>{
+    const state=await window.bando.load();
+    const native=await window.__TAURI_INTERNALS__.invoke("business_core_call",{
+      domain:"recognition",operation:"analyze_order",payload:{raw,state},
+    });
+    return {
+      nativeRecipients:(native.recipients||[]).map(r=>({
+        name:r.name,address:r.address,mobile:r.mobile,phone:r.phone,
+      })),
+      visibleButtons:[...document.querySelectorAll('button[aria-label^="배송 건 "]')]
+        .map(b=>({label:b.getAttribute("aria-label"),text:b.textContent?.slice(0,100)})),
+      reviewText:document.querySelector(".review-pane")?.textContent?.slice(0,700),
+    };
+  },proximityRaw);
+  record("SIM34_SECOND_RECIPIENT_GUI_AND_RUST_DIAGNOSTIC",{
+    secondValues,proximityDiagnostics,
+  });
+  await snap(page,"34-proximity-second-recipient-before-assertion");
+  assert.ok(secondValues.some(v=>v==="박가상"),"SIM34 second recipient name missing: "+JSON.stringify(secondValues));
+  assert.ok(secondValues.some(v=>v.includes("불정로 6")),"SIM34 second address not attached to 박가상: "+JSON.stringify(secondValues));
   assert.ok(secondValues.some(v=>v==="010-2345-6789"),"SIM34 second contact not attached to 박가상");
   await snap(page,"34-proximity-second-recipient-native-gui");
   await firstDelivery.click();
