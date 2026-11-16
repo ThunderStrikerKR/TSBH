@@ -87,6 +87,11 @@ db.close()
     $desktop = & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo "scripts\stage9-windows-desktop-probe.ps1") -ProcessId $native[0].Id -OutDir $out
     $report.desktop=$desktop | Out-String | ConvertFrom-Json
   } catch { $report.screenshotError=$_.Exception.Message }
+  # DEV_WINDOWS_TAURI.cmd intentionally calls npm ci on first launch.
+  # That purges --no-save packages installed before app startup, so install
+  # Playwright only after this native developer process has opened.
+  & npm.cmd install --no-save --no-package-lock --no-audit --no-fund playwright@1.55.1
+  if($LASTEXITCODE -ne 0) { throw "Could not install real WebView2 inspection client after DEV npm ci" }
   $env:BANDO_DEV_NATIVE_PID = [string]$native[0].Id
   Write-Host "BANDO_DEV_BUSINESS_START with real Windows Tauri debug executable"
   & node scripts/migration32-dev-business-ui.mjs
