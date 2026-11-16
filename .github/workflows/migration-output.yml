@@ -16,6 +16,27 @@ concurrency:
   group: ${{ github.ref_name == 'migration/27-unified-rust' && format('rust-output-gate4-{0}', github.ref) || format('rust-output-migration03-{0}', github.ref) }}
   cancel-in-progress: true
 jobs:
+  original-ts-source-coverage:
+    name: Fixed-original TypeScript source coverage (not behavior PASS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inventory original TS blobs and all Rust parity-test oracles
+        run: node scripts/audit-original-ts-coverage.mjs
+      - name: Save comprehensive fixed-baseline audit inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: immutable-original-ts-audit
+          path: migration-audit/
+          retention-days: 14
+          if-no-files-found: warn
   output-rust:
     runs-on: ubuntu-latest
     timeout-minutes: 15
