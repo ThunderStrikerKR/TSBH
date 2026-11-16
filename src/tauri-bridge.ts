@@ -77,7 +77,8 @@ const api: Api = {
     auditNativeCall("clipboard_read");
     return invoke<string>("clipboard_read");
   },
-  captureOcr: () => invoke<OcrCapture>("capture_ocr"),
+  captureOcr: (requestId) => invoke<OcrCapture>("capture_ocr", { requestId }),
+  cancelOcr: () => invoke<boolean>("cancel_ocr"),
   openProduct: (url) => invoke<void>("product_open", { target: url }),
   catalogReport: () => invoke<CatalogReport>("catalog_report"),
   backup: () => invoke<string>("backup_create"),
