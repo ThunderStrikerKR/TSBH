@@ -4,6 +4,8 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static OCR_RUNNING: AtomicBool = AtomicBool::new(false);
+static OCR_CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
+const OCR_CANCELLED: &str = "OCR_CANCELLED";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,32 +18,87 @@ pub struct OcrCapture {
 
 struct RunningGuard;
 impl Drop for RunningGuard {
-    fn drop(&mut self) { OCR_RUNNING.store(false, Ordering::Release); }
+    fn drop(&mut self) {
+        OCR_RUNNING.store(false, Ordering::Release);
+        OCR_CANCEL_REQUESTED.store(false, Ordering::Release);
+    }
 }
 
 #[tauri::command]
-pub async fn capture_ocr() -> Result<OcrCapture, String> {
+pub async fn capture_ocr(app: tauri::AppHandle) -> Result<OcrCapture, String> {
     if OCR_RUNNING.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
         return Err("이미 OCR 캡처를 진행 중입니다.".into());
     }
+    OCR_CANCEL_REQUESTED.store(false, Ordering::Release);
     let guard = RunningGuard;
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
-        capture_blocking()
+        capture_blocking(app)
     }).await.map_err(|e| format!("OCR 캡처 작업 중단: {e}"))?
 }
 
+/// Cancels both the screen-selection wait and an active PaddleOCR process.
+/// No order text is changed by a cancelled request.
+#[tauri::command]
+pub fn cancel_ocr() {
+    if OCR_RUNNING.load(Ordering::Acquire) {
+        OCR_CANCEL_REQUESTED.store(true, Ordering::Release);
+    }
+}
+
 #[cfg(not(windows))]
-fn capture_blocking() -> Result<OcrCapture, String> {
+fn capture_blocking(_app: tauri::AppHandle) -> Result<OcrCapture, String> {
     Err("화면 캡처 OCR은 Windows에서만 사용할 수 있습니다.".into())
 }
 
 #[cfg(windows)]
-fn capture_blocking() -> Result<OcrCapture, String> {
+struct CaptureWindowGuard {
+    app: tauri::AppHandle,
+    was_maximized: bool,
+}
+
+#[cfg(windows)]
+impl CaptureWindowGuard {
+    fn minimize(app: &tauri::AppHandle) -> Result<Self, String> {
+        use tauri::Manager;
+        let window = app.get_webview_window("main")
+            .ok_or("반도허브 메인 창을 찾을 수 없습니다.")?;
+        let was_maximized = window.is_maximized().map_err(|e| e.to_string())?;
+        window.minimize().map_err(|e| format!("화면 캡처를 위한 최소화 실패: {e}"))?;
+        Ok(Self { app: app.clone(), was_maximized })
+    }
+}
+
+#[cfg(windows)]
+impl Drop for CaptureWindowGuard {
+    fn drop(&mut self) {
+        use tauri::Manager;
+        if let Some(window) = self.app.get_webview_window("main") {
+            let _ = window.unminimize();
+            if self.was_maximized && !window.is_maximized().unwrap_or(false) {
+                let _ = window.maximize();
+            }
+            let _ = window.set_focus();
+        }
+    }
+}
+
+#[cfg(windows)]
+fn capture_blocking(app: tauri::AppHandle) -> Result<OcrCapture, String> {
     use base64::Engine;
+    use tauri::Emitter;
     use std::{fs, io::Write, process::{Command, Stdio}, time::{Duration, Instant}};
 
-    let (width, height, rgba) = screen_snip::snip()?;
+    let (width, height, rgba) = {
+        // Scope the window guard to capture only. OCR recognition must start
+        // after the exact previous window geometry has been restored.
+        let _restore = CaptureWindowGuard::minimize(&app)?;
+        std::thread::sleep(Duration::from_millis(250));
+        screen_snip::snip()?
+    };
+    if OCR_CANCEL_REQUESTED.load(Ordering::Acquire) {
+        return Err(OCR_CANCELLED.into());
+    }
     let count = width.checked_mul(height).and_then(|n| n.checked_mul(4))
         .ok_or("캡처 이미지의 크기를 확인할 수 없습니다.")?;
     if width == 0 || height == 0 || count > 24_000_000 || count != rgba.len() {
@@ -79,9 +136,20 @@ fn capture_blocking() -> Result<OcrCapture, String> {
     command.stderr(Stdio::from(fs::File::create(&stderr).map_err(|e| e.to_string())?));
     use std::os::windows::process::CommandExt;
     command.creation_flags(0x08000000); // no console window
+    if OCR_CANCEL_REQUESTED.load(Ordering::Acquire) {
+        return Err(OCR_CANCELLED.into());
+    }
     let mut child = command.spawn().map_err(|e| format!("PaddleOCR 실행 실패: {e}"))?;
+    // The overlay is gone and recognition has truly started. The React UI
+    // must never label the employee's selection step as OCR processing.
+    let _ = app.emit("bando-ocr-phase", "recognizing");
     let started = Instant::now();
     let status = loop {
+        if OCR_CANCEL_REQUESTED.load(Ordering::Acquire) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(OCR_CANCELLED.into());
+        }
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? { break status; }
         if started.elapsed() > Duration::from_secs(180) {
             let _ = child.kill();
@@ -197,11 +265,14 @@ fn bmp_from_rgba(width: usize, height: usize, rgba: &[u8]) -> Result<Vec<u8>, St
 
 #[cfg(windows)]
 mod screen_snip {
+    use super::{OCR_CANCELLED, OCR_CANCEL_REQUESTED};
+    use std::sync::atomic::Ordering;
     use std::time::{Duration, Instant};
     #[link(name = "user32")]
     unsafe extern "system" {
         fn keybd_event(key: u8, scan: u8, flags: u32, extra: usize);
         fn GetClipboardSequenceNumber() -> u32;
+        fn GetAsyncKeyState(key: i32) -> i16;
     }
     const RELEASE: u32 = 2;
     pub(super) fn snip() -> Result<(usize, usize, Vec<u8>), String> {
@@ -217,7 +288,19 @@ mod screen_snip {
         // Never consume a prior clipboard image. The screenshot enters the
         // same native selection overlay as pressing Windows+Shift+S.
         let started = Instant::now();
+        // Check the current ESC key state rather than clipboard timeout.
+        // The 180ms polling loop must release promptly when Snipping Tool
+        // closes on Escape, without displaying an OCR error.
+        let mut esc_released = unsafe { (GetAsyncKeyState(0x1B) as u16 & 0x8000) == 0 };
         while started.elapsed() < Duration::from_secs(75) {
+            if OCR_CANCEL_REQUESTED.load(Ordering::Acquire) {
+                return Err(OCR_CANCELLED.into());
+            }
+            let escape_pressed = unsafe { (GetAsyncKeyState(0x1B) as u16 & 0x8000) != 0 };
+            if !escape_pressed { esc_released = true; }
+            if esc_released && escape_pressed {
+                return Err(OCR_CANCELLED.into());
+            }
             if unsafe { GetClipboardSequenceNumber() } != original {
                 if let Ok(mut clipboard) = arboard::Clipboard::new() {
                     if let Ok(image) = clipboard.get_image() {
