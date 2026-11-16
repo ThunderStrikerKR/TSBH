@@ -8,6 +8,8 @@ on:
     branches:
       - main
     paths:
+      - DEV_WINDOWS_TAURI.cmd
+      - scripts/ensure-node-deps.ps1
       - .github/workflows/dev-windows-smoke.yml
       - scripts/migration32-dev-windows-smoke.ps1
       - scripts/migration32-dev-business-ui.mjs
