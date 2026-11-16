@@ -16,13 +16,18 @@ if errorlevel 1 goto missing_rust
 where powershell >nul 2>nul
 if errorlevel 1 goto failed
 
-echo [2/5] JavaScript dependency install...
-call npm install --no-audit --no-fund
+echo [2/5] Checking cached JavaScript dependencies...
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-node-deps.ps1"
 if errorlevel 1 goto failed
 
 echo [3/5] Tauri standalone build...
 call npm run build:windows
 if errorlevel 1 goto failed
+
+rem Fast native-only check: no OCR downloads, copying or ZIP compression.
+rem The standard no-argument build remains backward compatible and
+rem explicitly produces the COMPLETE portable release package.
+if /I "%~1"=="--exe-only" goto exe_only
 
 echo [4/5] Creating the self-contained OCR folder...
 if not exist "release" mkdir "release"
@@ -67,6 +72,25 @@ echo.
 echo SUCCESS: release\bando_hub.exe + release\ocr
 echo PORTABLE ZIP: release\BANDO-HUB-portable.zip
 echo Python installation on staff computers is NOT required.
+pause
+exit /b 0
+
+
+:exe_only
+echo [4/5] Publishing EXE ONLY (no OCR or portable ZIP)...
+if not exist "src-tauri\target\release\bando_hub_tauri.exe" goto failed
+if not exist "release" mkdir "release"
+if errorlevel 1 goto copy_failed
+copy /Y "src-tauri\target\release\bando_hub_tauri.exe" "release\bando_hub.exe.pending" >nul
+if errorlevel 1 goto copy_failed
+call :ensure_bando_closed
+if errorlevel 1 goto app_running_after_build
+move /Y "release\bando_hub.exe.pending" "release\bando_hub.exe" >nul
+if errorlevel 1 goto copy_failed
+echo.
+echo EXE ONLY: release\bando_hub.exe
+echo Existing OCR folder and portable ZIP were NOT changed.
+echo For distribution, run PACKAGE_WINDOWS_TAURI.cmd.
 pause
 exit /b 0
 
