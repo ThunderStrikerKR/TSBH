@@ -549,7 +549,7 @@ export function useOrderDesk({
     )?.id ??
     draft.recipients[0]?.id;
   const selectIssue = (block: StaffBlock) => {
-    if (block.kind === "CLIENT_MATCH_EVIDENCE" || block.kind === "CLIENT_MATCH_CONFLICT") {
+    if (["CLIENT_MATCH_EVIDENCE", "CLIENT_MATCH_CONFLICT", "CLIENT_MATCH_ERROR"].includes(block.kind ?? "")) {
       // The first-step signal highlights this exact region on hover.
       // Clicking an evidence message moves staff to the same dealer control.
       const control = document.querySelector<HTMLButtonElement>(
