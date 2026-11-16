@@ -16,6 +16,7 @@ export interface WatchedReplyResult {
 export interface AutoReplyOutcome extends WatchedReplyResult {
   invalid: boolean;
   reason?: string;
+  issues?: Array<{ row: number; name: string; issue: string; tracking?: string }>;
 }
 
 /** Tests can inject the unchanged TypeScript oracle. Production defaults
@@ -54,8 +55,11 @@ export async function processWatchedFactoryReply(
     { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
   );
   let next: State;
+  let issues: AutoReplyOutcome["issues"];
   try {
     const preview = await engine.analyze(current, file);
+    issues = preview.rows.filter((r) => !r.applied && !!r.issue)
+      .map((r) => ({ row: r.row, name: r.name, issue: r.issue!, tracking: r.tracking }));
     if (preview.reply.id !== source.id) {
       throw Error("공장 회신 수신 원본 해시와 검토 결과가 일치하지 않습니다.");
     }
@@ -68,5 +72,5 @@ export async function processWatchedFactoryReply(
   const result = await api.factoryReplyWatchCommit(
     source.filename, source.id, next, current.revision ?? 0,
   );
-  return { ...result, invalid: false };
+  return { ...result, invalid: false, issues };
 }
