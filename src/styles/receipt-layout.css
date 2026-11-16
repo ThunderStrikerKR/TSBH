@@ -40,6 +40,7 @@
 }
 .staff-check-scroll {
   overflow: auto;
+  scrollbar-gutter: stable;
   flex: 1;
   min-height: 0;
 }
