@@ -45,7 +45,12 @@ echo [DEV] Close the app and press Ctrl+C here to stop the dev server.
 echo.
 rem Tauri 2: first "--" separates runner args; second "--" passes
 rem --bando-developer-test directly to the application.
-call "node_modules\.bin\tauri.cmd" dev -- -- --bando-developer-test
+if /I "%GITHUB_ACTIONS%"=="true" if /I "%BANDO_DEV_GUI_AUDIT%"=="true" (
+  echo [DEV] CI-only WebView2 inspection enabled for real business workflow GUI tests.
+  call "node_modules\.bin\tauri.cmd" dev --config src-tauri/tauri.ci-cdp.conf.json -- -- --bando-developer-test
+) else (
+  call "node_modules\.bin\tauri.cmd" dev -- -- --bando-developer-test
+)
 if errorlevel 1 goto failed
 exit /b 0
 
