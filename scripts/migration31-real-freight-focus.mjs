@@ -2,6 +2,7 @@
 // Used ONLY with CI's disposable --bando-developer-test SQLite workspace.
 // No mocked browser, business service, React state, or keyboard input.
 import assert from "node:assert/strict";
+import { probeWindowsAccountCopy } from "./migration31-real-account-copy.mjs";
 
 export async function probeWindowsFreightFocus(page,{record,snap}) {
   assert.equal(process.platform,"win32","This is an actual Windows EXE GUI test");
@@ -119,6 +120,8 @@ export async function probeWindowsFreightFocus(page,{record,snap}) {
     result:"PASS_ACTUAL_WINDOWS_WEBVIEW2_KEYBOARD"
   });
   await snap(page,"07-sim31-native-freight-keyboard-focus");
-  return {fixture,steps:["RECEIPT_DEALER_SELECTED","FREIGHT_KEYBOARD_FOCUS_PRESERVED"],
-    tested:true,samples,final};
+  const account=await probeWindowsAccountCopy(page,{record,snap});
+  return {fixture,steps:["RECEIPT_DEALER_SELECTED","FREIGHT_KEYBOARD_FOCUS_PRESERVED",
+    "SECOND_SHIPMENT_FREIGHT","WORKFLOW_STAGE_1_2","BANK_COPY"],
+    tested:true,samples,final,account};
 }
