@@ -1,6 +1,19 @@
 name: TSBH Windows DEV mode smoke
 
 on:
+  # Always run the isolated real Windows Tauri/WebView2 workflow when
+  # the verification definition changes on main; this exercises the latest
+  # merged source instead of an obsolete PR revision.
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/dev-windows-smoke.yml
+      - scripts/migration32-dev-windows-smoke.ps1
+      - scripts/migration32-dev-business-ui.mjs
+      - scripts/migration31-real-two-orders.mjs
+      - scripts/migration32-real-factory-notifications.mjs
+      - scripts/migration32-real-ocr-cancel.mjs
   pull_request:
     branches:
       - main
