@@ -20,10 +20,24 @@ $nodeVersion = (& node --version).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Node.js version check failed" }
 $npmVersion = (& npm.cmd --version).Trim()
 if ($LASTEXITCODE -ne 0) { throw "npm version check failed" }
+# Use .NET hashing instead of Get-FileHash so the dependency check works
+# even when the current PowerShell host does not expose that cmdlet.
+function Get-BandoSha256 {
+    param([string]$Path)
+    $hasher = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        return ([BitConverter]::ToString($hasher.ComputeHash($stream))).Replace("-", "")
+    } finally {
+        $stream.Dispose()
+        $hasher.Dispose()
+    }
+}
+
 $inputs = @(
     "bando-node-deps-v1",
-    (Get-FileHash -LiteralPath $lock -Algorithm SHA256).Hash,
-    (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash,
+    (Get-BandoSha256 -Path $lock),
+    (Get-BandoSha256 -Path $manifest),
     $nodeVersion,
     $npmVersion
 )
