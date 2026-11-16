@@ -78,6 +78,7 @@ const api: Api = {
     return invoke<string>("clipboard_read");
   },
   captureOcr: () => invoke<OcrCapture>("capture_ocr"),
+  cancelOcr: () => invoke<void>("cancel_ocr"),
   openProduct: (url) => invoke<void>("product_open", { target: url }),
   catalogReport: () => invoke<CatalogReport>("catalog_report"),
   backup: () => invoke<string>("backup_create"),

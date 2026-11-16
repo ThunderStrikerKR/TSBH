@@ -4,6 +4,7 @@ import { RetailOrderDialog } from "./orders/RetailOrderDialog";
 import { OcrReviewDialog } from "./OcrReviewDialog";
 import { Modal } from "./ui";
 import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { ClientChooser } from "./ClientChooser";
 import { KakaoClients } from "./KakaoClients";
 import { LinkedText } from "./LinkedText";
@@ -42,7 +43,7 @@ export function SourceDocument({
 }) {
   const [retail, setRetail] = useState(false);
   const [ocrResult, setOcrResult] = useState<OcrCapture | null>(null);
-  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrPhase, setOcrPhase] = useState<"idle" | "selecting" | "recognizing">("idle");
   const [retailDraft, setRetailDraft] = useState<Order>();
   const settingsLink = useRef(onSettings);
   settingsLink.current = onSettings;
@@ -103,11 +104,18 @@ export function SourceDocument({
     if (formal || pending.current) return;
     pending.current = true;
     setBusy(true);
-    setOcrBusy(true);
+    setOcrPhase("selecting");
     setError("");
     setOcrFailure("");
+    let stopListening: (() => void) | undefined;
     try {
       if (!window.bando?.captureOcr) throw Error("이 버전에서는 OCR 화면 캡처를 사용할 수 없습니다.");
+      // Subscribe before invoking Rust. The app is minimized for Windows
+      // capture; only native recognition start makes the OCR progress visible.
+      stopListening = await listen<string>("bando-ocr-phase", (event) => {
+        if (alive.current && event.payload === "recognizing")
+          setOcrPhase("recognizing");
+      });
       const result = await window.bando.captureOcr();
       if (!alive.current) return;
       if (!result.text.trim()) {
@@ -118,15 +126,20 @@ export function SourceDocument({
     } catch (cause) {
       if (alive.current) {
         const detail = String(cause).replace(/^Error: /, "");
-        setError("OCR 처리에 실패했습니다.");
-        setOcrFailure(detail);
-        setShowOcrFailure(true);
+        // Esc in Windows Snipping Tool and the explicit OCR cancel button
+        // are a normal, silent abort. Preserve the current order untouched.
+        if (detail !== "OCR_CANCELLED") {
+          setError("OCR 처리에 실패했습니다.");
+          setOcrFailure(detail);
+          setShowOcrFailure(true);
+        }
       }
     } finally {
+      stopListening?.();
       pending.current = false;
       if (alive.current) {
         setBusy(false);
-        setOcrBusy(false);
+        setOcrPhase("idle");
       }
     }
   };
@@ -340,10 +353,13 @@ export function SourceDocument({
           ])}
           onChange={() => {}}
         />
-        {ocrBusy && (
+        {ocrPhase === "recognizing" && (
           <div className="source-ocr-progress" role="status" aria-live="polite" aria-label="OCR 진행 상태">
             <strong>OCR 처리 중…</strong>
-            <span>화면에서 캡처 범위를 지정하거나 문자 인식이 끝날 때까지 기다려 주세요.</span>
+            <span>선택한 이미지에서 글자를 인식하고 있습니다.</span>
+            <button type="button" onClick={() => void window.bando?.cancelOcr?.()}>
+              취소
+            </button>
           </div>
         )}
       </div>

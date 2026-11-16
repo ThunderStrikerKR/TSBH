@@ -10,6 +10,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { chromium } from "playwright";
 import { probeWindowsFreightFocus } from "./migration31-real-freight-focus.mjs";
 import { probeTwoConsecutiveOrders } from "./migration31-real-two-orders.mjs";
+import { probeWindowsOcrCancel } from "./migration32-real-ocr-cancel.mjs";
 
 if (process.platform !== "win32") throw Error("Native reception audit requires Windows");
 const exe = resolve(process.env.BANDO_NATIVE_EXE || "");
@@ -243,6 +244,12 @@ try{
     }
   });
 
+  if (process.env.BANDO_OCR_AUDIT === "true") {
+    // This CI-only path exercises the real Windows keyboard, Tauri window
+    // restore, WebView2 and SQLite without entering unrelated order tests.
+    await probeWindowsOcrCancel(page,{appPid:app.pid,record,snap});
+    await persist();
+  } else {
   if (process.env.BANDO_P1P2_AUDIT === "true") {
     // This branch builds the *exact HEAD binary* and tests these same Rust
     // commands through its actual Windows WebView2 Tauri IPC, not fake JS.
@@ -640,6 +647,7 @@ try{
     await persist();
   }
 
+  }
   }
   assert.equal(report.issues.length,0,
     "Browser UI errors: "+report.issues.join("\n"));

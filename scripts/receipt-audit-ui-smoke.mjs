@@ -129,12 +129,32 @@ try {
       let auditRecords = structuredClone(archive);
       const testBackups = new Map();
       let testBackupSequence = 0;
+      // Simulate only Tauri's event transport. The OCR phase comes from the
+      // native stage, never from clicking the capture button.
+      let ocrPhaseCallback;
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener: () => { ocrPhaseCallback = undefined; },
+      };
       const response = (extra = {}) => ({
         active: mode !== "ORIGINAL", mode, ratio: 0.8,
         handle: mode !== "ORIGINAL" ? "123" : undefined, ...extra,
       });
       window.__TAURI_INTERNALS__ = {
+        transformCallback: (callback) => {
+          ocrPhaseCallback = callback;
+          return 1;
+        },
         invoke: async (command, args) => {
+          if (command === "plugin:event|listen") return 1;
+          if (command === "plugin:event|unlisten") {
+            ocrPhaseCallback = undefined;
+            return undefined;
+          }
+          if (command === "cancel_ocr") {
+            window.__cancelOcrForTest = true;
+            window.__resolveOcrForTest?.();
+            return undefined;
+          }
           if (command === "open_export_file") {
             window.__lastOpenedExportId = args.id;
             return undefined;
@@ -349,8 +369,24 @@ try {
           }
           if (command === "receipt_archive") return structuredClone(auditRecords);
           if (command === "capture_ocr") {
+            if (window.__ocrSelectionDelayForTest) {
+              window.__ocrSelectionStartedForTest = true;
+              await new Promise((resolve) => { window.__finishSelectionForTest = resolve; });
+              window.__ocrSelectionDelayForTest = false;
+            }
+            if (window.__cancelOcrForTest) {
+              window.__cancelOcrForTest = false;
+              throw Error("OCR_CANCELLED");
+            }
+            ocrPhaseCallback?.({
+              event: "bando-ocr-phase", id: 1, payload: "recognizing",
+            });
             if (window.__ocrDelayForTest) {
               await new Promise((resolve) => { window.__resolveOcrForTest = resolve; });
+            }
+            if (window.__cancelOcrForTest) {
+              window.__cancelOcrForTest = false;
+              throw Error("OCR_CANCELLED");
             }
             if (window.__ocrFailureForTest) throw Error("OCR 인식 실패 (종료 코드 0xC0000135). 필수 Windows DLL을 찾을 수 없습니다.");
             return {
@@ -394,9 +430,17 @@ try {
   // The OS screenshot and PaddleOCR are native. The browser verifies the
   // actual staff review flow with mocked IPC, including cancel and apply.
   const captureButton = page.getByRole("button", { name: "캡처 범위 지정" });
-  await page.evaluate(() => { window.__ocrDelayForTest = true; });
+  await page.evaluate(() => {
+    window.__ocrSelectionDelayForTest = true;
+    window.__ocrDelayForTest = true;
+  });
   await captureButton.click();
   const ocrProgress = page.getByRole("status", { name: "OCR 진행 상태" });
+  await page.waitForFunction(() => window.__ocrSelectionStartedForTest);
+  if (await ocrProgress.isVisible()) {
+    throw Error("OCR 처리 중 표시가 범위 지정 중에 나타나면 안 됩니다.");
+  }
+  await page.evaluate(() => window.__finishSelectionForTest?.());
   await ocrProgress.waitFor();
   await ocrProgress.getByText("OCR 처리 중…").waitFor();
   if (await captureButton.textContent() !== "캡처 범위 지정") {
@@ -425,6 +469,16 @@ try {
     "OCR replacement must invoke Rust apply_reception_action, not a legacy TS mutation");
   await page.waitForFunction(() =>
     document.querySelector(".source-document")?.textContent?.includes("709B 2개"));
+  // Cancelling the recognition subprocess is not an OCR failure and must
+  // return to the unchanged receipt without an error modal.
+  await page.evaluate(() => { window.__ocrDelayForTest = true; });
+  await captureButton.click();
+  await ocrProgress.waitFor();
+  await ocrProgress.getByRole("button", { name: "취소", exact: true }).click();
+  await ocrProgress.waitFor({ state: "detached" });
+  if (await page.getByRole("dialog", { name: "OCR 실행 오류" }).count())
+    throw Error("OCR cancellation is a normal action, not a processing error");
+  await page.evaluate(() => { window.__ocrDelayForTest = false; });
   // At the minimum Windows layout, the three source actions must remain
   // inside the source panel instead of being clipped by the 50:50 split.
   await page.setViewportSize({ width: 1024, height: 700 });
@@ -811,11 +865,29 @@ try {
     let current = structuredClone(initial);
     const saveLog = [];
     window.__navSaved = () => ({ state: structuredClone(current), saves: structuredClone(saveLog) });
+    window.__navOcrCalls=[];
+    let navOcrPhaseCallback;
+    window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+      unregisterListener: () => { navOcrPhaseCallback = undefined; },
+    };
     window.__injectPostSaveReadFailure = false;
     window.__nextLoadMustFail = false;
     window.__postSaveReadFaultObserved = false;
     window.__TAURI_INTERNALS__ = {
+      transformCallback: (callback) => {
+        navOcrPhaseCallback = callback;
+        return 1;
+      },
       invoke: async (command, args = {}) => {
+        if (command === "plugin:event|listen") {
+          window.__navOcrCalls.push("listen");
+          return 1;
+        }
+        if (command === "plugin:event|unlisten") {
+          navOcrPhaseCallback = undefined;
+          return undefined;
+        }
+        if (command === "cancel_ocr") return undefined;
         if (command === "startup_status")
           return { phase: "READY", attempts: 1, isTest: false };
         if (command === "startup_metrics")
@@ -1150,9 +1222,15 @@ try {
             changes:structuredClone(args.changes)});
           return structuredClone(current);
         }
-        if (command === "capture_ocr") return { text:"검증 발주 원문 709B 2개",
-          imageDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==",
-          width:1,height:1 };
+        if (command === "capture_ocr") {
+          window.__navOcrCalls.push("capture");
+          navOcrPhaseCallback?.({
+            event: "bando-ocr-phase", id: 1, payload: "recognizing",
+          });
+          return { text:"검증 발주 원문 709B 2개",
+            imageDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==",
+            width:1,height:1 };
+        }
         if (command === "backup_create") return "C:\\BANDO_CI\\navigation-backup.sqlite";
         if (command === "product_image") return null;
         throw Error("Unexpected navigation-test IPC: " + command);
@@ -1872,7 +1950,19 @@ try {
   await navPage.reload();
   await navPage.getByRole("button",{name:"캡처 범위 지정"}).click();
   const ocr=navPage.getByRole("dialog",{name:"OCR 문자 인식 검토"});
-  await ocr.getByRole("button",{name:"원문 교체"}).click();
+  try {
+    await ocr.getByRole("button",{name:"원문 교체"}).click({timeout:5000});
+  } catch (error) {
+    const diag=await navPage.evaluate(()=>({
+      notices:[...document.querySelectorAll(".source-inline-status,.app-notice,[role=alert]")].map(el=>el.textContent?.trim()?.slice(0,260)),
+      dialogs:[...document.querySelectorAll("dialog")].map(el=>({label:el.getAttribute("aria-label"),text:el.textContent?.slice(0,350)})),
+      ocrPhase:document.querySelector(".source-ocr-progress")?.textContent,
+      captureButton:[...document.querySelectorAll("button")].find(x=>x.textContent?.includes("캡처 범위 지정"))?.outerHTML?.slice(0,400),
+      navOcrCalls:window.__navOcrCalls||[],
+    }));
+    console.error("NAV_OCR_PRECONDITION_DIAGNOSTICS",JSON.stringify(diag));
+    throw error;
+  }
   await navPage.waitForFunction(() => document.querySelector(".source-document")?.textContent?.includes("검증 발주 원문"));
   assert.equal(await navPage.evaluate(() => window.__navNativeOcrReplacements),1,
     "OCR review must use the native replace_reception action, not a TS-only update");
