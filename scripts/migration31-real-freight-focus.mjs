@@ -63,6 +63,25 @@ export async function probeWindowsFreightFocus(page,{record,snap}) {
       JSON.stringify(diag)+"; original error: "+error);
   }
 
+  // Let initial dealer-driven pricing settle before counting incremental calls.
+  await page.waitForTimeout(650);
+  const nativeCallCounts = async () => page.evaluate(() => {
+    const entries = window.__bandoNativeCalls || [];
+    return {
+      recognition: entries.filter(call =>
+        call.command === "business_core_call" &&
+        call.domain === "recognition" && call.operation === "analyze_order").length,
+      pricing: entries.filter(call =>
+        call.command === "business_core_call" &&
+        call.domain === "rules" && call.operation === "reprice_order").length,
+      edit: entries.filter(call =>
+        call.command === "business_core_call" &&
+        call.domain === "rules" && call.operation === "order_edit_rules" &&
+        call.action === "prepare_order_edit").length,
+    };
+  });
+  const beforeFreightCalls = await nativeCallCounts();
+
   const start=await freight.evaluate(el=>{
     window.__sim31FreightNode=el;
     window.__sim31FreightHistory=[];
@@ -114,6 +133,25 @@ export async function probeWindowsFreightFocus(page,{record,snap}) {
     "SIM31_FREIGHT_FAILURE expected typed 4500, saw: "+JSON.stringify(samples));
   assert.equal(final.focused,true,
     "SIM31_FREIGHT_FAILURE input focus lost after render");
+  const afterTypingCalls = await nativeCallCounts();
+  assert.deepEqual(afterTypingCalls,beforeFreightCalls,
+    "SIM32_FREIGHT no Rust calls may be launched while keyboard focus remains");
+  await freight.blur();
+  await page.waitForFunction(base =>
+    (window.__bandoNativeCalls||[]).filter(call =>
+      call.command === "business_core_call" &&
+      call.operation === "order_edit_rules" &&
+      call.action === "prepare_order_edit").length > base,
+    beforeFreightCalls.edit,{timeout:20000});
+  await page.waitForTimeout(450);
+  const afterFreightCalls = await nativeCallCounts();
+  assert.equal(afterFreightCalls.recognition,beforeFreightCalls.recognition,
+    "SIM32_FREIGHT must never trigger new full source recognition");
+  assert.equal(afterFreightCalls.pricing,beforeFreightCalls.pricing,
+    "SIM32_FREIGHT must not rerun product unit repricing after freight commit");
+  record("SIM32_FREIGHT_RUST_CALLS actual EXE edit-only native traffic",{
+    before:beforeFreightCalls,whileTyping:afterTypingCalls,afterBlur:afterFreightCalls
+  });
   record("SIM31_02 actual EXE applied freight typed without cursor loss",{
     start,typed:"4500",final,samples,
     result:"PASS_ACTUAL_WINDOWS_WEBVIEW2_KEYBOARD"

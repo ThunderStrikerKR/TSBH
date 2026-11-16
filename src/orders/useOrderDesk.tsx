@@ -201,9 +201,28 @@ export function useOrderDesk({
     return () => { current = false; };
   }, [draft, state]);
 
+  // Rust pricing depends on product/price-record identity and dealer terms,
+  // not on a recipient's manually typed delivery charge. A freight keystroke
+  // still changes the recipient object, so avoid rerunning reprice_order for
+  // a pricing input that has already settled.
+  const pricingInputKey = JSON.stringify({
+    orderId: draft.id,
+    rows: draft.recipients.map((row) => [
+      row.id, row.items.map((item) => [
+        item.id, item.productId, item.variantId, item.modelProposal?.required,
+      ]),
+    ]),
+    client: liveClient?.id, tier: liveClient?.tier,
+    overrides: liveClient?.overrides,
+  });
+  const lastCompletedPricing = useRef<{
+    key: string; products: typeof state.products;
+  } | undefined>(undefined);
   useEffect(() => {
     const request = ++ruleRequests.current.price;
     if (!liveClient || !passivePricingAllowed || draft.pendingNativeEdit) return;
+    if (lastCompletedPricing.current?.key === pricingInputKey &&
+        lastCompletedPricing.current.products === state.products) return;
     const before = JSON.stringify(draft.recipients);
     const orderId = draft.id;
     void businessCoreCall<{ order: Order; refreshed: boolean }>(
@@ -233,6 +252,9 @@ export function useOrderDesk({
             const old = previous.recipients.find((row) => row.id === r.id);
             if (old) Object.assign(r, clone(old));
           }
+        lastCompletedPricing.current = {
+          key: pricingInputKey, products: state.products,
+        };
         return JSON.stringify(previous.recipients) === JSON.stringify(next.recipients)
           ? previous : next;
       });
@@ -245,7 +267,7 @@ export function useOrderDesk({
   }, [
     draft.id, draft.recipients, state.products, liveClient?.id,
     liveClient?.tier, JSON.stringify(liveClient?.overrides),
-    passivePricingAllowed, draft.pendingNativeEdit,
+    passivePricingAllowed, draft.pendingNativeEdit, pricingInputKey,
   ]);
   useEffect(() => {
     const request = ++ruleRequests.current.shipping;

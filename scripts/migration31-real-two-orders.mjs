@@ -117,8 +117,35 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
     }));
     assert.equal(pending.saved,0,"Two unconfirmed receipts must not be silently committed");
     assert.equal(pending.cards.length,2,"Both receipts must be displayed simultaneously");
-    assert.ok(pending.cards.every(card=>card.label?.includes("미확정")),
-      "Both cards must clearly identify their unsaved status");
+    assert.ok(pending.cards.every(card=>card.label?.includes("가상대리점")),
+      "Both receipts must retain their own client identity");
+    assert.ok(pending.cards.every(card=>!card.label?.includes("미확정 · 임시")),
+      "Redundant draft status must not consume another header line");
+    const compact = await page.evaluate(() =>
+      [...document.querySelectorAll(".workflow-group")].map(group => {
+        const sum = group.querySelector(".flow-fixed-summary");
+        const text = sum?.textContent?.replace(/\s+/g," ").trim() ?? "";
+        const summaryStyle = sum && getComputedStyle(sum);
+        const innerStyle = sum?.firstElementChild &&
+          getComputedStyle(sum.firstElementChild);
+        const style=getComputedStyle(group);
+        return {
+          text,
+          summaryChildren:sum?.children.length ?? 0,
+          whitespace:innerStyle?.whiteSpace,
+          cardBorder:parseFloat(style.borderTopWidth),
+          cardMargin:parseFloat(style.marginBottom),
+        };
+      }));
+    assert.equal(compact.length,2);
+    assert.ok(compact.every(card =>
+      /^배송 \d+건, 입금액 .+ \(부가세 .+\)$/.test(card.text) &&
+      !card.text.includes("총 운임") &&
+      card.summaryChildren===1 &&
+      card.whitespace==="nowrap" &&
+      card.cardBorder>=1 && card.cardMargin>=6),
+      "SIM32_COMPACT_CARD_FORMAT "+JSON.stringify(compact));
+    record("SIM32_COMPACT_WORKFLOW_CARDS actual WebView2 1-line summary and distinct order borders",compact);
     record("SIM32_TWO_PENDING_ORDERS real WebView2 processing cards",pending);
     await snap(page,"08-sim32-two-unconfirmed-processing-cards");
     // Measure real WebView2 panel height during an actual freight edit.
