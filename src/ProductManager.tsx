@@ -10,7 +10,6 @@ import { ClassificationFilters, RegistrySettings } from "./Classification";
 import { confirmAction } from "./dialogs";
 import { uid } from "./domain";
 import { businessCoreCall } from "./tauri-bridge";
-import { PriceCell } from "./PriceCell";
 import {
   colorLabel,
   registeredProducts,
@@ -27,12 +26,22 @@ import { useAsyncTask } from "./shared/useAsyncTask";
 import { sameProductEditor } from "./shared/meaningful-changes";
 import { requestEditorLeave, requestPageLeave, usePageLeaveGuard } from "./shared/page-leave";
 
-import type { Product, State, Variant } from "./types";
+import type { Price, Product, State, Variant } from "./types";
 import { Field, Modal, MoneyInput, clone } from "./ui";
 import { HelpTooltip } from "./ui/HelpTooltip";
 import { EmptyState, PageHeading } from "./ui/PageHeading";
 import { ManagementTable } from "./ui/ManagementTable";
 import { ManagementSearch } from "./ui/ManagementSearch";
+type ProductPriceTier = "wholesale" | "semi" | "retail";
+type PriceBatchDraft = {
+  productId: string;
+  variantId: string;
+  tier: ProductPriceTier;
+  expected: Price;
+  raw: string;
+};
+const priceText = (value: Price) => value === null ? "" : value.toLocaleString("ko-KR");
+
 export function ProductManager({
   state,
   onSave,
@@ -55,28 +64,70 @@ export function ProductManager({
     [adding, setAdding] = useState(false),
     [excelOpen, setExcelOpen] = useState(false),
     [priceMode, setPriceMode] = useState(false),
-    [priceResetEpoch, setPriceResetEpoch] = useState(0),
-    [pendingPriceIds, setPendingPriceIds] = useState<string[]>([]),
+    [priceDrafts, setPriceDrafts] = useState<Record<string, PriceBatchDraft>>({}),
     [detailPriceMode, setDetailPriceMode] = useState(false),
     [categoryPicker, setCategoryPicker] = useState(false);
   const priceWrites = useRef(0);
+  const [batchSaving, setBatchSaving] = useState(false);
   const editDirty = !!edit && !!originalEdit && !sameProductEditor(edit, originalEdit);
-  const hasPendingPrices = pendingPriceIds.length > 0;
-  const markPricePending = useCallback((id: string, pending: boolean) => {
-    setPendingPriceIds((previous) => {
-      const has = previous.includes(id);
-      if (has === pending) return previous;
-      return pending ? [...previous, id] : previous.filter((value) => value !== id);
+  const hasPendingPrices = Object.keys(priceDrafts).length > 0;
+  const cancelPriceDrafts = () => setPriceDrafts({});
+  const editTablePrice = (productId: string, variantId: string, tier: ProductPriceTier,
+    expected: Price, raw: string) => {
+    if (priceWrites.current > 0 || !/^[0-9,]*$/.test(raw) || raw.length > 19) return;
+    const key = productId + ":" + variantId + ":" + tier;
+    setPriceDrafts((previous) => {
+      const updated = { ...previous };
+      if (raw.replaceAll(",", "") === String(expected ?? "")) delete updated[key];
+      else updated[key] = { productId, variantId, tier,
+        expected: previous[key]?.expected ?? expected, raw };
+      return updated;
     });
-  }, []);
+  };
+  const savePriceDrafts = async (): Promise<boolean> => {
+    if (priceWrites.current > 0) return false;
+    const drafts = Object.values(priceDrafts);
+    if (!drafts.length) return true;
+    const changes = [] as Array<{
+      productId: string; variantId: string; tier: ProductPriceTier;
+      price: Price; expected: Price;
+    }>;
+    for (const draft of drafts) {
+      const digits = draft.raw.replaceAll(",", "");
+      if ((draft.raw && !/^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(draft.raw)) ||
+          (digits && (!Number.isSafeInteger(Number(digits)) || Number(digits) < 0))) {
+        onNotice("가격 입력을 확인하세요. 원 단위 정수만 저장할 수 있습니다.", "error");
+        return false;
+      }
+      changes.push({ productId: draft.productId, variantId: draft.variantId,
+        tier: draft.tier, expected: draft.expected,
+        price: digits === "" || Number(digits) === 0 ? null : Number(digits) });
+    }
+    priceWrites.current++;
+    setBatchSaving(true);
+    try {
+      // All expected prices are validated and all changes committed by one
+      // native SQLite transaction. A conflict must retain the whole draft.
+      const committed = await window.bando!.setPrices(changes);
+      await onRefresh(committed);
+      setPriceDrafts({});
+      onNotice(`상품 가격 ${changes.length}건을 일괄 저장했습니다.`, "success");
+      return true;
+    } catch (error) {
+      onNotice("가격 일괄 저장 실패: " +
+        (error instanceof Error ? error.message : String(error)), "error");
+      return false;
+    } finally {
+      priceWrites.current--;
+      setBatchSaving(false);
+    }
+  };
   const checkPriceDrafts = () => {
     if (priceWrites.current > 0) {
       onNotice("가격 저장이 완료된 뒤 다음 작업으로 이동할 수 있습니다.", "error");
       return false;
     }
-    if (!hasPendingPrices) return true;
-    onNotice("저장하지 않은 가격이 있습니다. 해당 가격 셀의 저장 또는 취소 버튼을 먼저 눌러주세요.", "error");
-    return false;
+    return true;
   };
   const [localImage, setLocalImage] = useState<{ id: string; data: string }>();
   useEffect(() => {
@@ -140,8 +191,7 @@ export function ProductManager({
     setOriginalEdit(clone(fresh));
   };
   const save = async (): Promise<boolean> => {
-    // A product-detail save cannot commit edits staged in unrelated table cells.
-    if (!checkPriceDrafts()) return false;
+    if (hasPendingPrices && !(await savePriceDrafts())) return false;
     if (!edit) return true;
     const result = await runSave(async () => {
       // The native reducer owns normalization, legacy modelKey semantics,
@@ -170,8 +220,7 @@ export function ProductManager({
       // Explicitly discard pending price-table edits only after the shared
       // page-leave confirmation, never just because input focus moved.
       setPriceMode(false);
-      setPendingPriceIds([]);
-      setPriceResetEpoch((old) => old + 1);
+      cancelPriceDrafts();
     },
   });
   const closeDetail = async () => {
@@ -203,8 +252,18 @@ export function ProductManager({
     setEdit(clone(p));
     setOriginalEdit(clone(p));
   };
-  const togglePriceMode = () => {
-    if (!priceMode || checkPriceDrafts()) setPriceMode(!priceMode);
+  const togglePriceMode = async () => {
+    if (!priceMode) { setPriceMode(true); return; }
+    if (priceWrites.current > 0) return;
+    if (hasPendingPrices) {
+      const result = await requestEditorLeave({
+        label: "상품 가격", hasChanges: () => hasPendingPrices,
+        save: savePriceDrafts, discard: cancelPriceDrafts,
+        busy: () => priceWrites.current > 0,
+      }, (message) => onNotice(message, "error"));
+      if (!result.proceed) return;
+    }
+    setPriceMode(false);
   };
   const remove = async (p: Product) => {
     if (
@@ -258,7 +317,7 @@ export function ProductManager({
                     title="상품 가격 수정"
                     purpose="등록된 상품의 도매가, 반도매가, 소매가를 확인하거나 변경하는 기능입니다."
                     when="판매 가격이 달라졌거나 잘못 등록한 가격을 고칠 때 사용합니다."
-                    steps={["가격 수정 모드를 켭니다.", "원하는 가격을 입력합니다.", "Enter 또는 가격 셀의 저장 버튼으로 저장합니다.", "다른 칸을 클릭해도 미저장 값은 유지되며, 취소 버튼 또는 Esc로 되돌릴 수 있습니다.", "저장 또는 취소를 마치면 가격 수정 모드를 종료합니다."]}
+                    steps={["가격 수정 모드를 켭니다.", "원하는 상품들의 가격을 모두 수정합니다.", "화면 오른쪽 아래의 저장을 눌러 변경된 가격을 일괄 저장합니다.", "저장하지 않은 채 화면을 이동하면 변경사항 확인창이 표시됩니다."]}
                     result="저장한 가격이 상품 가격표에 반영됩니다."
                     caution="수정 모드를 켜기 전에는 가격을 바꿀 수 없습니다. 가격이 비어 있으면 등록되지 않은 상태입니다."
                   />
@@ -268,7 +327,7 @@ export function ProductManager({
                       <button
                         aria-pressed={priceMode}
                         className={priceMode ? "primary" : ""}
-                        onClick={togglePriceMode}
+                        onClick={() => void togglePriceMode()}
                       >
                         {priceMode ? "가격 수정 모드 종료" : "가격 수정 모드 켜기"}
                       </button>
