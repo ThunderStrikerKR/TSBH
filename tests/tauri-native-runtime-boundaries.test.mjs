@@ -54,7 +54,8 @@ test("factory alerts and corrections never show stale TS-calculated statuses", (
   assert.match(notifications, /"rules", "factory_reply_review_statuses"/);
   assert.match(notifications, /resolvedRows\.find\(/);
   assert.doesNotMatch(notifications, /\breplyNeedsReview\(/);
-  assert.match(notifications, /nativeReview\?\.state === state/);
+  assert.match(notifications, /nativeReview\?\.source === reviewSource/);
+  assert.match(notifications, /\[state\.factoryReplies\]/);
   assert.match(correction, /"output", "render_correction_summaries"/);
   assert.doesNotMatch(correction, /\bcorrectionMessage\(/);
   assert.doesNotMatch(correction, /\bcorrectionStatus\(/);
