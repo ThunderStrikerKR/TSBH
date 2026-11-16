@@ -60,6 +60,19 @@ fn unique_client_id(state:&Value,needle:&str)->Option<String>{
     ).collect::<Vec<_>>();
     if hits.len()==1{Some(s(hits[0],"id").to_owned())} else{None}
 }
+fn unique_title_client_id(state:&Value,title:&str)->Option<String>{
+    let exact=unique_client_id(state,title);
+    if exact.is_some(){return exact;}
+    let title=key(title).replace(' ',"");
+    let hits=list(state,"clients").iter().filter(|c|
+        eligible_client(c,s(c,"id"),false) &&
+        client_terms(c).iter().any(|term|{
+            let term=term.replace(' ',"");
+            term.chars().count()>=3 && title.contains(&term)
+        })
+    ).collect::<Vec<_>>();
+    if hits.len()==1{Some(s(hits[0],"id").to_owned())} else{None}
+}
 fn reception_client(payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("현재 거래처 데이터가 없습니다.")?;
     let windows=payload.get("windows").unwrap_or(&Value::Null);
@@ -85,7 +98,7 @@ fn reception_client(payload:&Value)->Result<Value,String>{
                     return Ok(json!({"clientId":id,"source":"KAKAO_REMEMBERED"}));
                 }
             }
-            if let Some(id)=unique_client_id(state,s(chat,"title")){
+            if let Some(id)=unique_title_client_id(state,s(chat,"title")){
                 return Ok(json!({"clientId":id,"source":"KAKAO_TITLE"}));
             }
         }
@@ -176,6 +189,10 @@ mod tests {
         let selected=json!({"state":state,"windows":windows,"raw":raw,
             "activeChatHandle":"B"});
         assert_eq!(reception_client(&selected).unwrap()["clientId"],"dealer-2");
+        let nicknamed=json!({"state":state,"windows":[
+            {"kind":"CHAT","title":"홍천악기 사장님","handle":"ONE"}
+        ],"raw":raw});
+        assert_eq!(reception_client(&nicknamed).unwrap()["clientId"],"dealer-1");
         let none=json!({"state":state,"windows":[],"raw":raw});
         assert_eq!(reception_client(&none).unwrap()["clientId"],Value::Null);
         let explicit=json!({"state":state,"windows":[],"raw":r#"거래처: 홍천악기
