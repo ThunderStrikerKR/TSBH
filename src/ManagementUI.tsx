@@ -35,31 +35,14 @@ export function ClientPicker({
     [all, setAll] = useState(false),
     [popup, setPopup] = useState(false),
     [dismissed, setDismissed] = useState("");
-  const selectRef = useRef(onSelect);
-  selectRef.current = onSelect;
   const nativeClients = useNativeClients(clients, query, raw);
   const results = query ? nativeClients.results : [];
   const suggested = nativeClients.suggested;
   const key = suggested.map((c) => c.id).sort().join("|");
   useEffect(() => {
-    if (selected) {
-      setPopup(false);
-      return;
-    }
-    if (!key) {
-      setPopup(false);
-      setDismissed("");
-      return;
-    }
-    if (query || all) return;
-    const timer = setTimeout(() => {
-      if (suggested.length === 1) {
-        setPopup(false);
-        selectRef.current(suggested[0]);
-      } else if (key !== dismissed) setPopup(true);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [raw, key, selected?.id, query, all, dismissed]);
+    if (selected || !key) setPopup(false);
+    if (!key) setDismissed("");
+  }, [key, selected?.id]);
   const choose = (c: Client) => {
     onSelect(c);
     setQuery("");
@@ -111,12 +94,12 @@ export function ClientPicker({
           <TierBadge client={selected} />
         </div>
       )}
-      {!selected && suggested.length > 1 && !popup && (
+      {!selected && suggested.length > 0 && !popup && (
         <button className="client-choice-reopen" onClick={() => setPopup(true)}>
-          거래처 후보 {suggested.length}곳 선택
+          거래처 후보 {suggested.length}곳 확인
         </button>
       )}
-      {popup && !selected && suggested.length > 1 && (
+      {popup && !selected && suggested.length > 0 && (
         <Modal
           title="거래처 후보 선택"
           onClose={() => {
