@@ -217,8 +217,13 @@ export function SourceDocument({
             );
             next = selected.order;
           }
-        } catch {
-          // Auto matching must never block or discard a pasted order.
+        } catch (error) {
+          // Never discard the pasted order, but do not conceal a broken
+          // automatic dealer binding from staff.
+          if (alive.current) onNotice(
+            "거래처 자동 연결에 실패했습니다. 거래처를 직접 선택해 주세요. " +
+            String(error).replace(/^Error: /, ""), "error",
+          );
         }
       }
       if (!alive.current || latestReception.current.order !== order ||
