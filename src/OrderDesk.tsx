@@ -65,6 +65,15 @@ export function OrderDesk(props: OrderDeskProps) {
     chooseProduct,
     itemEditing,
   } = useOrderDesk(props);
+  // Do not clear/recreate the "확인할 내용" list while multiple Rust
+  // previews settle after a paste. Old blocks are read-only until current.
+  const lastReadyChecks = useRef<{ orderId: string; blocks: typeof staffBlocks }>();
+  if (flowSummaryReady && !flowSummaryError) {
+    lastReadyChecks.current = { orderId: draft.id, blocks: staffBlocks };
+  }
+  const shownChecks = flowSummaryReady ? staffBlocks
+    : lastReadyChecks.current?.orderId === draft.id
+      ? lastReadyChecks.current.blocks : staffBlocks;
   // Rust previews become briefly pending after each keystroke. Keep the
   // *input element* mounted; the last resolved projection is for display only.
   // The edited amount always comes from the current React draft below, and
@@ -251,8 +260,8 @@ export function OrderDesk(props: OrderDeskProps) {
             <section className="desk-pane review-pane compact-review">
               <div className="review-layout">
                 <StaffChecks
-                  blocks={staffBlocks}
-                  loading={!flowSummaryReady && !flowSummaryError}
+                  blocks={shownChecks}
+                  loading={!flowSummaryReady}
                   error={!flowSummaryReady ? flowSummaryError : ""}
                   onSelect={selectIssue}
                   approvingQuantity={approvingQuantity}
