@@ -1,3 +1,10 @@
+.workflow-draft-label {
+  display: inline-block;
+  margin-left: 6px;
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 400;
+}
 .workflow-unassigned-drafts {
   display: flex;
   flex-direction: column;
