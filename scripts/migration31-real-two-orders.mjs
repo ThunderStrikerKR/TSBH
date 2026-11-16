@@ -3,7 +3,7 @@
 // GitHub Actions disposable developer TEST SQLite only.
 import assert from "node:assert/strict";
 
-export async function probeTwoConsecutiveOrders(page,{record,snap}) {
+export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=false}={}) {
   assert.equal(process.platform,"win32");
   assert.equal(process.env.GITHUB_ACTIONS,"true");
   const prep=await page.evaluate(async()=>{
@@ -59,6 +59,16 @@ export async function probeTwoConsecutiveOrders(page,{record,snap}) {
     await amount.press("Backspace");
     await page.keyboard.type(info.freight,{delay:90});
     assert.equal((await amount.inputValue()).replaceAll(",",""),info.freight);
+    if (holdBoth) {
+      // The local freight editor flushes on blur or a short pause, and Rust
+      // must finish its pending edit before this order is stashed.
+      await amount.blur();
+      await page.waitForTimeout(800);
+      record("SIM32_PENDING_ORDER_TYPED real Windows GUI",{
+        index:index+1,recipient:info.name,freight:info.freight
+      });
+      continue;
+    }
     const group=page.locator(".workflow-group").filter({
       has:page.getByRole("button",{name:"배송 건 "+info.name})
     }).first();
@@ -86,6 +96,43 @@ export async function probeTwoConsecutiveOrders(page,{record,snap}) {
     }
     record("SIM31_MULTIPLE_ORDER_CONFIRMED real Windows GUI",
       {index:index+1,recipient:info.name,freight:info.freight});
+  }
+  if (holdBoth) {
+    await page.waitForFunction(() => document.querySelectorAll(".workflow-group").length===2,
+      null,{timeout:30000});
+    const pending = await page.evaluate(async()=>({
+      cards:[...document.querySelectorAll(".workflow-group")].map(el=>({
+        label:el.querySelector(".flow-group-name")?.textContent?.trim(),
+        height:el.getBoundingClientRect().height,
+      })),
+      saved:(await window.bando.load()).orders.length,
+      review:document.querySelector(".review-layout")?.getBoundingClientRect().height,
+      staff:document.querySelector(".staff-checks")?.getBoundingClientRect().height,
+    }));
+    assert.equal(pending.saved,0,"Two unconfirmed receipts must not be silently committed");
+    assert.equal(pending.cards.length,2,"Both receipts must be displayed simultaneously");
+    assert.ok(pending.cards.every(card=>card.label?.includes("미확정")),
+      "Both cards must clearly identify their unsaved status");
+    record("SIM32_TWO_PENDING_ORDERS real WebView2 processing cards",pending);
+    await snap(page,"08-sim32-two-unconfirmed-processing-cards");
+
+    for (const index of [1,0]) {
+      const info=cases[index];
+      const group=page.locator(".workflow-group").filter({
+        has:page.getByRole("button",{name:"배송 건 "+info.name})
+      }).first();
+      const confirm=group.getByRole("button",{name:"주문 확인 완료",exact:true});
+      await confirm.waitFor({state:"visible",timeout:45000});
+      await confirm.click();
+      await group.getByRole("button",{name:"운임 적용",exact:true})
+        .waitFor({state:"visible",timeout:30000});
+      await page.waitForFunction(async count=>
+        (await window.bando.load()).orders?.length===count,
+        2-index,{timeout:30000});
+      record("SIM32_PENDING_ORDER_CONFIRMED real Windows GUI",{
+        index:index+1,recipient:info.name,
+      });
+    }
   }
   const verified=await page.evaluate(async()=>{
     const saved=await window.bando.load();
