@@ -20,7 +20,11 @@ test("28 function groups are tracked with baseline provenance and separate verif
   for(const f of ledger.features){
     assert.ok(f.name&&f.baseline?.historicalSha&&f.baseline.historicalSource,f.id+" baseline");
     assert.ok(f.rust?.location&&Array.isArray(f.react?.candidatePaths),f.id+" execution");
-    assert.equal(f.react.entrypointVerified,false,f.id+" unproved React entrypoint");
+    assert.equal(typeof f.react.entrypointVerified,"boolean",f.id+" React entrypoint evidence flag");
+    if(f.react.entrypointVerified){
+      assert.ok(f.react.candidatePaths.length>0,f.id+" missing React source path");
+      assert.ok(f.gate.windows?.evidence,f.id+" runtime path needs actual Windows evidence");
+    }
     assert.ok(f.scenario?.description&&Array.isArray(f.scenario.responseOrders),f.id+" user scenario");
     assert.ok(Array.isArray(f.discrepancies),f.id+" discrepancy");
     for(const gate of ledger.proofLevels) {
