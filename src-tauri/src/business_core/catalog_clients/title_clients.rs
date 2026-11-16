@@ -140,7 +140,7 @@ fn reception_client(payload:&Value)->Result<Value,String>{
     }
     if let Some((id,source,title))=chat_match{
         if let Some((other,_,_,_))=raw_hits.iter().find(|(other,_,_,strong)|
-            *strong && *other!=id){
+            *strong && other.as_str()!=id.as_str()){
             let dealer_name=|id:&str|list(state,"clients").iter()
                 .find(|c|s(c,"id")==id).map(|c|s(c,"name").to_owned())
                 .unwrap_or_else(||id.to_owned());
