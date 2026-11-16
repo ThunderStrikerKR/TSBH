@@ -32,7 +32,7 @@ export type NativeGroupPreview = {
 };
 type NativeProjection = { groups: NativeGroupPreview[] };
 
-export function useNativeWorkflowBoard(state: State) {
+export function useNativeWorkflowBoard(state: State, enabled = true) {
   // A semantic key prevents unnecessary IPC when the caller recreates an
   // equivalent JSON object; its value changes for every meaningful edit.
   const fingerprint = useMemo(() => JSON.stringify(state), [state]);
@@ -43,6 +43,7 @@ export function useNativeWorkflowBoard(state: State) {
   }>();
   const [failure, setFailure] = useState<{ fingerprint: string; reason: string }>();
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     void businessCoreCall<NativeProjection>("rules", "preview_workflow", {
       state: latest.current,
@@ -58,16 +59,18 @@ export function useNativeWorkflowBoard(state: State) {
       }
     });
     return () => { cancelled = true; };
-  }, [fingerprint]);
-  const ready = resolved?.fingerprint === fingerprint;
+  }, [fingerprint, enabled]);
+  const ready = enabled && resolved?.fingerprint === fingerprint;
   const byId = useMemo(() => {
-    if (!ready || !resolved) return {} as Record<string, NativeGroupPreview>;
+    // A stale projection is for display only while Rust refreshes. Consumers
+    // must check ready before actions; retaining it keeps card heights stable.
+    if (!resolved) return {} as Record<string, NativeGroupPreview>;
     return Object.fromEntries(resolved.result.groups.map((group) => [group.groupId, group]));
-  }, [ready, resolved]);
+  }, [resolved]);
   return {
     ready,
     byId,
-    pending: !ready && failure?.fingerprint !== fingerprint,
+    pending: enabled && !ready && failure?.fingerprint !== fingerprint,
     error: failure?.fingerprint === fingerprint ? failure.reason : "",
   };
 }
