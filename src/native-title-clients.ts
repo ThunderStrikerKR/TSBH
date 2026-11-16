@@ -20,7 +20,7 @@ export async function nativeAutoReceptionClient(
   windows: DockWindow[],
   raw: string,
   activeChatHandle?: string,
-): Promise<{clientId: string | null; source: "KAKAO_REMEMBERED" | "KAKAO_TITLE" | "RAW_EXPLICIT" | "NONE" | "CONFLICT"; detail: string; chatTitle?: string; confirmedMatchCount?: number}> {
+): Promise<{clientId: string | null; source: "KAKAO_REMEMBERED" | "KAKAO_TITLE" | "RAW_EXPLICIT" | "NONE" | "CONFLICT" | "ERROR"; detail: string; chatTitle?: string; confirmedMatchCount?: number}> {
   return businessCoreCall("catalog_clients", "auto_match_reception_client", {
     state, windows, raw, activeChatHandle: activeChatHandle ?? "",
   });
