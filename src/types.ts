@@ -653,6 +653,13 @@ export interface Api {
   backup: () => Promise<string>;
   backups: () => Promise<string[]>;
   restore: (filename: string) => Promise<void>;
+  setPrices: (changes: Array<{
+    productId: string;
+    variantId: string;
+    tier: "wholesale" | "semi" | "retail";
+    price: Price;
+    expected: Price;
+  }>) => Promise<State>;
   setPrice: (
     productId: string,
     variantId: string,
