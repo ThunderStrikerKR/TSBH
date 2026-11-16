@@ -120,26 +120,26 @@ fn clear(conn: &Connection) -> Result<Vec<Value>, String> {
 
 #[tauri::command]
 pub(super) fn hub_notifications_list(db: State<'_, Database>) -> Result<Vec<Value>, String> {
-    load(&lock_db(&db)?)
+    load(&*lock_db(&db)?)
 }
 
 #[tauri::command]
 pub(super) fn hub_notifications_add(
     db: State<'_, Database>, notice: Value,
 ) -> Result<Vec<Value>, String> {
-    insert(&mut lock_db(&db)?, notice)
+    insert(&mut *lock_db(&db)?, notice)
 }
 
 #[tauri::command]
 pub(super) fn hub_notifications_mark_read(
     db: State<'_, Database>, id: String,
 ) -> Result<Vec<Value>, String> {
-    mark_read(&lock_db(&db)?, &id)
+    mark_read(&*lock_db(&db)?, &id)
 }
 
 #[tauri::command]
 pub(super) fn hub_notifications_clear(db: State<'_, Database>) -> Result<Vec<Value>, String> {
-    clear(&lock_db(&db)?)
+    clear(&*lock_db(&db)?)
 }
 
 #[cfg(test)]
