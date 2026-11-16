@@ -231,9 +231,10 @@ export function SourceDocument({
             );
             next = selected.order;
           } else {
-            // No automatic match: display Rust's explanation as an INFO note.
+            // Rust distinguishes a missing match from conflicting strong evidence.
+            // A conflict is an ACTION item in the first-stage review.
             next.clientMatch = {
-              source: "NONE", clientId: null, detail: result.detail,
+              source: result.source, clientId: null, detail: result.detail,
             };
           }
         } catch (error) {
