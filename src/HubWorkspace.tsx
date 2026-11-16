@@ -17,6 +17,7 @@ import { activeShipments, validSelection } from "./workspace-selection";
 type Props = ComponentProps<typeof OrderDesk> & {
   externalKakao: boolean;
   onNew: () => void;
+  onPendingDraftCount?: (count: number) => void;
   onRememberSelection: (s: WorkflowSelection) => void;
   onResetDock: () => void;
   onRegisterOrderLeaveGuard?: (guard?: () => Promise<{ proceed: boolean; handledDraft: boolean }>) => void;
@@ -103,6 +104,12 @@ export function HubWorkspace(props: Props) {
     () => Object.values(edits).filter((order) => order.id !== draft.id && order.clientId),
     [edits, draft.id],
   );
+  useEffect(() => {
+    const count = Object.values(edits).filter((order) =>
+      order.raw.trim() && !state.orders.some((saved) => saved.id === order.id)).length;
+    props.onPendingDraftCount?.(count);
+    return () => props.onPendingDraftCount?.(0);
+  }, [edits, state.orders, props.onPendingDraftCount]);
   const nativeBase = useNativeWorkflowReconcile(state, independentEdits);
   const base = nativeBase.state;
   const nativePreview = useNativeWorkflowReconcile(base, draft.clientId ? [draft] : []);
