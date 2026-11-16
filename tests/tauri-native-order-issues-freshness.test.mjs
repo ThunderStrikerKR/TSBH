@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {tsImport} from "tsx/esm/api";
+import {readFileSync} from "node:fs";
 const {nativeOrderIssuesKey} = await tsImport("../src/orders/native-order-issues-key.ts",import.meta.url);
 const clone=x=>structuredClone(x);
 const item={
@@ -62,7 +63,7 @@ test("all actual Rust issue and approval inputs still refresh staff issues",()=>
   }
 });
 test("late order-issues results cannot override a newer Rust projection",()=>{
-  const hook=(await import("node:fs")).readFileSync(
+  const hook=readFileSync(
     new URL("../src/orders/useNativeOrderIssues.ts",import.meta.url),"utf8");
   assert.match(hook,/nativeOrderIssuesKey\(draft\)/);
   assert.match(hook,/let cancelled = false/);
