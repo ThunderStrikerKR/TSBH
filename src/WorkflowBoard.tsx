@@ -363,7 +363,7 @@ export function WorkflowBoard({
             )}
             <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
               <span className="flow-summary-compact">
-                배송 {ss.length}건, 입금액 {won(nativeGroup?.totals.total ?? null)} ({nativeGroup?.vatLabel ?? "확인 필요"})
+                배송 {ss.length}건, 입금액 {won(nativeGroup?.totals.total ?? null)} ({nativeGroup?.vatLabel ?? "—"})
               </span>
             </div>
             {(g.needsNotice || ss.some((s) => s.rechecks?.some((c) => !c.resolvedAt))) && (

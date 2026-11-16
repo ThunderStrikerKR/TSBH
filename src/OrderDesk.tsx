@@ -716,16 +716,16 @@ export function OrderDesk(props: OrderDeskProps) {
                 총 주문 금액{" "}
                 <span className="shipment-count">
                   | 택배{" "}
-                  {flowSummaryReady ? orderPreview?.shipmentCount ?? 0 : "—"}
+                  {orderPreview?.shipmentCount ?? "—"}
                   건 |
                 </span>
                 <b>
-                  {flowSummaryReady && orderPreview?.total !== null &&
-                  orderPreview?.total !== undefined ? won(orderPreview.total) : "—"}
+                  {orderPreview?.total !== null && orderPreview?.total !== undefined
+                    ? won(orderPreview.total) : "—"}
                 </b>
                 <small>
                   (
-                  {flowSummaryReady ? orderPreview?.vatLabel ?? "확인 필요" : "확인 필요"}
+                  {orderPreview?.vatLabel ?? "—"}
                   )
                 </small>
               </div>

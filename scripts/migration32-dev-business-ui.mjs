@@ -171,6 +171,10 @@ try {
       tick:Math.round(performance.now()),
       amounts:[...document.querySelectorAll("button.item-amount")]
         .map(node=>node.textContent?.trim()??""),
+      shipmentCount:document.querySelector(".order-grand-total .shipment-count")
+        ?.textContent?.trim()??"",
+      vatLabel:document.querySelector(".order-grand-total small")
+        ?.textContent?.trim()??"",
       priceErrors:[...document.querySelectorAll(".staff-checks,[role=alert]")]
         .map(node=>node.textContent??"")
         .filter(text=>text.includes("판매가를 등록하세요") ||
@@ -185,11 +189,15 @@ try {
     return frames;
   });
   const lost=retentionFrames.filter(frame=>
-    !frame.amounts.some(text=>text.includes("84,000")) || frame.priceErrors.length>0);
+    !frame.amounts.some(text=>text.includes("84,000")) ||
+    frame.priceErrors.length>0 ||
+    !frame.shipmentCount.includes("2") ||
+    !frame.vatLabel.includes("부가세 별도"));
   record("POST_DEALER_4200MS_PRICE_STABILITY_REAL_WEBVIEW2",{
     frameCount:retentionFrames.length,
     durationMs:retentionFrames.at(-1).tick-retentionFrames[0].tick,
     missingFrames:lost.length,
+    observed:["product unit price","shipment count","VAT label"],
     first:retentionFrames[0],last:retentionFrames.at(-1)
   });
   if(lost.length){

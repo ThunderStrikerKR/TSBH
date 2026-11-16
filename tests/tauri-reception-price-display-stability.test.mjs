@@ -19,3 +19,14 @@ test("eliminate the unnecessary delayed-price loading overlay and React quote ca
   for(const obsolete of ["linePriceInputKey","lastNativeLineAmounts","visibleLineAmounts",
     '"계산 중…"']) assert.ok(!source.includes(obsolete),obsolete);
 });
+
+test("unrelated preview loading cannot fabricate missing VAT or hide available Rust order totals",()=>{
+  const footer=source.slice(source.indexOf('className="order-grand-total"'),
+    source.indexOf('portalTargets?.details',source.indexOf('className="order-grand-total"')));
+  assert.match(footer,/orderPreview\?\.shipmentCount \?\? "—"/);
+  assert.match(footer,/orderPreview\?\.total !== null/);
+  assert.match(footer,/orderPreview\?\.vatLabel \?\? "—"/);
+  assert.doesNotMatch(footer,/flowSummaryReady|확인 필요/);
+  const board=readFileSync(new URL("../src/WorkflowBoard.tsx", import.meta.url),"utf8");
+  assert.match(board,/nativeGroup\?\.vatLabel \?\? "—"/);
+});
