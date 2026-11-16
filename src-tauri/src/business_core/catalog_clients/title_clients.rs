@@ -154,7 +154,19 @@ mod tests {
             {"id":"dealer-2","name":"서울악기","active":true},
             {"id":"school","name":"팔렬고등학교","active":true}
         ],"settings":{}});
-        let raw="안녕하세요 ^^\\n\\n** 10월 12일(월) 발송부탁드리며 **\\n** 연락처 2개 다 넣어주세요^^ **\\n\\n강원특별자치도 홍천군 내촌면 동창로 207\\n팔렬고등학교\\n010-9149-2496\\n010-3343-4754\\n\\n연주용보면대 708-1 / 30개\\n지휘자보면대 BD CONDUCTOR / 1개\\n보면대카트 Cart-10 / 2개";
+        let raw=r#"안녕하세요 ^^
+
+** 10월 12일(월) 발송부탁드리며 **
+** 연락처 2개 다 넣어주세요^^ **
+
+강원특별자치도 홍천군 내촌면 동창로 207
+팔렬고등학교
+010-9149-2496
+010-3343-4754
+
+연주용보면대 708-1 / 30개
+지휘자보면대 BD CONDUCTOR / 1개
+보면대카트 Cart-10 / 2개"#;
         let windows=json!([
             {"kind":"CHAT","title":"홍천악기","handle":"A"},
             {"kind":"CHAT","title":"서울악기","handle":"B"}
@@ -166,7 +178,8 @@ mod tests {
         assert_eq!(reception_client(&selected).unwrap()["clientId"],"dealer-2");
         let none=json!({"state":state,"windows":[],"raw":raw});
         assert_eq!(reception_client(&none).unwrap()["clientId"],Value::Null);
-        let explicit=json!({"state":state,"windows":[],"raw":"거래처: 홍천악기\\n팔렬고등학교"});
+        let explicit=json!({"state":state,"windows":[],"raw":r#"거래처: 홍천악기
+팔렬고등학교"#});
         assert_eq!(reception_client(&explicit).unwrap()["clientId"],"dealer-1");
     }
     #[test]
