@@ -63,5 +63,8 @@ goto failed
 :failed
 echo.
 echo Development launch failed. Inspect the error above.
+rem CI cannot answer "Press any key to continue". Exit with a nonzero status
+rem so the real Windows developer test reports its actual startup failure.
+if /I "%GITHUB_ACTIONS%"=="true" exit /b 1
 pause
 exit /b 1
