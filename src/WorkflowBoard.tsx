@@ -185,7 +185,6 @@ export function WorkflowBoard({
     <div ref={boardRef} className="workflow-board" aria-label="진행 중인 배송 묶음" aria-busy={!ready}>
       <div className="workflow-board-heading">
         <b>발주서 묶음</b>
-        <small>배송 건별 정보 / 묶음별 진행</small>
       </div>
       {(previewError || native.error) && (
         <p role="alert">업무 미리보기 계산 오류: {previewError || native.error}</p>
@@ -199,7 +198,7 @@ export function WorkflowBoard({
               key={receipt.id}
               onClick={() => onSelectPending?.(receipt.id)}
             >
-              <b>거래처 미선택 · 미확정 접수</b>
+              <b>거래처 미선택</b>
               <small>{receipt.raw.trim().split(/\r?\n/).find((line) => line.trim())?.slice(0, 60)}</small>
             </button>
           ))}
@@ -256,9 +255,6 @@ export function WorkflowBoard({
               </button>
               <span className="flow-group-name">
                 <b>{first.client.displayName || first.client.name}</b>
-                {first.order.receptionVersion === 1 && !first.order.confirmedAt && (
-                  <small className="workflow-draft-label" title="주문 확인 완료 전에는 DB에 저장되지 않습니다.">미확정 · 임시</small>
-                )}
               </span>
               <button
                 disabled={!ready || (first.order.receptionVersion === 1 && !first.order.confirmedAt)}
@@ -365,20 +361,10 @@ export function WorkflowBoard({
                 </button>
               </div>
             )}
-            <div className="flow-fixed-summary">
-              <div className="flow-summary-line">
-                <span>배송 {ss.length}건</span>
-                <span>
-                  총 운임{" "}
-                  {won(nativeGroup?.totals.shipping ?? null)}
-                </span>
-              </div>
-              <div className="flow-summary-line">
-                <span>입금 예정 {won(nativeGroup?.totals.total ?? null)}</span>
-                <span>
-                  {nativeGroup?.vatLabel ?? "확인 필요"}
-                </span>
-              </div>
+            <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
+              <span className="flow-summary-compact">
+                배송 {ss.length}건, 입금액 {won(nativeGroup?.totals.total ?? null)} ({nativeGroup?.vatLabel ?? "확인 필요"})
+              </span>
             </div>
             {(g.needsNotice || ss.some((s) => s.rechecks?.some((c) => !c.resolvedAt))) && (
               <div className="flow-recheck">
