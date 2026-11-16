@@ -48,7 +48,7 @@ test("OCR progress is shown prominently over the source body and never replaces 
 
 test("Esc cancellation is silent, restores BANDO window and never starts PaddleOCR", () => {
   assert.match(ocr, /GetAsyncKeyState\(0x1B\)/);
-  assert.match(ocr, /if \(esc_released && escape_pressed\)/);
+  assert.match(ocr, /if esc_released && escape_pressed \{/);
   assert.match(ocr, /return Err\(OCR_CANCELLED\.into\(\)\)/);
   assert.match(ocr, /CaptureWindowGuard::minimize\(&app\)/);
   assert.match(ocr, /impl Drop for CaptureWindowGuard/);
