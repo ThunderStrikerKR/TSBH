@@ -474,6 +474,13 @@ try{
     await persist();
   }
 
+  if (process.env.BANDO_32_AUDIT === "true") {
+    // Targeted 32차 Windows GUI gate: keep two unconfirmed receipts in the
+    // processing board, then individually confirm and verify their IDs.
+    // This intentionally runs before the legacy manual-classification smoke.
+    await probeTwoConsecutiveOrders(page,{record,snap},{holdBoth:true});
+    await persist();
+  } else {
   // P0 real manual-classification React path. Exercise the installed native
   // EXE WebView2 rather than a mocked businessCoreCall.
   const originalSnapshot=await page.evaluate(()=>window.bando.load());
@@ -633,6 +640,7 @@ try{
     await persist();
   }
 
+  }
   assert.equal(report.issues.length,0,
     "Browser UI errors: "+report.issues.join("\n"));
   report.status="REAL_NATIVE_RECEPTION_SMOKE_PASSED";

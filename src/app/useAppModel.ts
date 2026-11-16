@@ -20,6 +20,7 @@ export function useAppModel() {
     [settlementDate, setSettlementDate] = useState(() => seoulDate(new Date().toISOString()));
   const hasPendingChanges = useHasPendingChanges();
   const [rawEditDirty, setRawEditDirty] = useState(false);
+  const [pendingDraftCount, setPendingDraftCount] = useState(0);
   const orderLeaveGuard = useRef<(() => Promise<OrderLeaveResult>) | undefined>(undefined);
   const registerOrderLeaveGuard = useCallback((guard?: () => Promise<OrderLeaveResult>) => {
     orderLeaveGuard.current = guard;
@@ -421,6 +422,19 @@ export function useAppModel() {
     setQuery("");
   };
   const newOrder = async () => {
+    if (!state || !draft) return;
+    // A new reception may coexist with the previous unconfirmed receipt
+    // in HubWorkspace's local draft overlay. Do not force the employee to
+    // discard the first pasted document just to start the second.
+    // Unsaved drafts are NEVER inserted into SQLite by this navigation.
+    if (!state.orders.some((o) => o.id === draft.id) &&
+        !draft.confirmedAt && (draft.raw.trim() || draft.recipients.length)) {
+      const leave = await confirmOrderLeave();
+      if (!leave.proceed) return;
+      setWorkflowSelection(undefined);
+      setDraft(newReception());
+      return;
+    }
     await open();
   };
   const receive = async (entry: InboxEntry) => {
@@ -443,6 +457,10 @@ export function useAppModel() {
   };
   const windowAction = async (action: "minimize" | "maximize" | "close") => {
     if (action === "close") {
+      if (pendingDraftCount > 0 && !(await confirmAction(
+        `미확정 접수 ${pendingDraftCount}건이 임시 보관 중입니다. 종료하면 저장되지 않은 주문이 사라집니다. 종료할까요?`,
+        { cancel: "계속 작업", accept: "종료" },
+      ))) return;
       if (tab === "접수") {
         const leave = await confirmOrderLeave();
         if (!leave.proceed) return;
@@ -489,6 +507,7 @@ export function useAppModel() {
     workflowSelection,
     setWorkflowSelection,
     setRawEditDirty,
+    setPendingDraftCount,
     registerOrderLeaveGuard,
     setDraft,
     refresh,

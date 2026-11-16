@@ -169,6 +169,7 @@ export function App() {
                   onNew={() => void model.run(model.newOrder)}
                   onSettings={() => void model.navigate("설정")}
                   onRawEditDirty={model.setRawEditDirty}
+                  onPendingDraftCount={model.setPendingDraftCount}
                   onRememberSelection={model.setWorkflowSelection}
                   onRegisterOrderLeaveGuard={model.registerOrderLeaveGuard}
                   externalKakao={true}

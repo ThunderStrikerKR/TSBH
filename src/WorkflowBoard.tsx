@@ -51,6 +51,8 @@ export function WorkflowBoard({
   onNotice,
   onStageHover,
   stageHover,
+  pendingReceptions = [],
+  onSelectPending,
 }: {
   onStageHover?: (v: { groupId: string; step: number } | undefined) => void;
   stageHover?: { groupId: string; step: number };
@@ -63,6 +65,8 @@ export function WorkflowBoard({
   onSelect: (s: WorkflowSelection) => void;
   onSave: (s: State) => Promise<void>;
   onNotice: NoticeSink;
+  pendingReceptions?: Array<{ id: string; raw: string }>;
+  onSelectPending?: (orderId: string) => void;
 }) {
   const [undoDelete, setUndoDelete] = useState<{ gid: string; at: string }>();
   const native = useNativeWorkflowBoard(state, previewReady);
@@ -186,10 +190,22 @@ export function WorkflowBoard({
       {(previewError || native.error) && (
         <p role="alert">업무 미리보기 계산 오류: {previewError || native.error}</p>
       )}
-      {!ready && !groups.length && !previewError && !native.error && (
-        <p role="status" className="muted">주문 미리보기 계산 중</p>
+      {pendingReceptions.length > 0 && (
+        <div className="workflow-unassigned-drafts" aria-label="거래처 미확정 발주서">
+          {pendingReceptions.map((receipt) => (
+            <button
+              className="workflow-unassigned-draft"
+              type="button"
+              key={receipt.id}
+              onClick={() => onSelectPending?.(receipt.id)}
+            >
+              <b>거래처 미선택 · 미확정 접수</b>
+              <small>{receipt.raw.trim().split(/\r?\n/).find((line) => line.trim())?.slice(0, 60)}</small>
+            </button>
+          ))}
+        </div>
       )}
-      {!groups.length && (
+      {!groups.length && !pendingReceptions.length && (
         <p className="muted">거래처와 발주 원문을 입력하면 수취인별 배송 건이 생성됩니다.</p>
       )}
       {groups.map((g) => {
@@ -240,6 +256,9 @@ export function WorkflowBoard({
               </button>
               <span className="flow-group-name">
                 <b>{first.client.displayName || first.client.name}</b>
+                {first.order.receptionVersion === 1 && !first.order.confirmedAt && (
+                  <small className="workflow-draft-label" title="주문 확인 완료 전에는 DB에 저장되지 않습니다.">미확정 · 임시</small>
+                )}
               </span>
               <button
                 disabled={!ready || (first.order.receptionVersion === 1 && !first.order.confirmedAt)}
@@ -357,7 +376,7 @@ export function WorkflowBoard({
               <div className="flow-summary-line">
                 <span>입금 예정 {won(nativeGroup?.totals.total ?? null)}</span>
                 <span>
-                  {nativeGroup?.vatLabel ?? "계산 중"}
+                  {nativeGroup?.vatLabel ?? "확인 필요"}
                 </span>
               </div>
             </div>

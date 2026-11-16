@@ -17,6 +17,7 @@ import { activeShipments, validSelection } from "./workspace-selection";
 type Props = ComponentProps<typeof OrderDesk> & {
   externalKakao: boolean;
   onNew: () => void;
+  onPendingDraftCount?: (count: number) => void;
   onRememberSelection: (s: WorkflowSelection) => void;
   onResetDock: () => void;
   onRegisterOrderLeaveGuard?: (guard?: () => Promise<{ proceed: boolean; handledDraft: boolean }>) => void;
@@ -103,6 +104,11 @@ export function HubWorkspace(props: Props) {
     () => Object.values(edits).filter((order) => order.id !== draft.id && order.clientId),
     [edits, draft.id],
   );
+  useEffect(() => {
+    const count = Object.values(edits).filter((order) =>
+      order.raw.trim() && !state.orders.some((saved) => saved.id === order.id)).length;
+    props.onPendingDraftCount?.(count);
+  }, [edits, state.orders, props.onPendingDraftCount]);
   const nativeBase = useNativeWorkflowReconcile(state, independentEdits);
   const base = nativeBase.state;
   const nativePreview = useNativeWorkflowReconcile(base, draft.clientId ? [draft] : []);
@@ -113,7 +119,7 @@ export function HubWorkspace(props: Props) {
   // This prevents the queue cards from disappearing/reappearing on paste.
   const lastVisiblePreview = useRef<{ orderId: string; state: typeof preview } | undefined>(undefined);
   if (previewReady) lastVisiblePreview.current = { orderId: draft.id, state: preview };
-  const boardPreview = !previewReady && lastVisiblePreview.current?.orderId === draft.id
+  const boardPreview = !previewReady && lastVisiblePreview.current
     ? lastVisiblePreview.current.state : preview;
   useEffect(() => {
     // Selection and active shipment identity must never be rewritten from a
@@ -157,7 +163,18 @@ export function HubWorkspace(props: Props) {
     if (removedCurrent) deletedSelection.current = selected;
     await props.onWorkflowSave(next);
     // A workflow save for another order must not discard this order's unsaved edits.
-    setEdits((previous) => retainUnsavedOrderEdits(previous, next.orders));
+    setEdits((previous) => {
+      // A draft just confirmed by the Rust workflow is now authoritative
+      // in SQLite. Its earlier, unconfirmed local snapshot must not reappear
+      // as a stale overlay after saving.
+      const newlyConfirmed = new Set(next.orders
+        .filter((row) => row.confirmedAt &&
+          !state.orders.some((saved) => saved.id === row.id))
+        .map((row) => row.id));
+      const remaining = Object.fromEntries(Object.entries(previous)
+        .filter(([id]) => !newlyConfirmed.has(id)));
+      return retainUnsavedOrderEdits(remaining, next.orders);
+    });
     if (removed.length || restored.length) {
       props.onNotice("");
       const target = validSelection(
@@ -264,6 +281,10 @@ export function HubWorkspace(props: Props) {
         );
     },
   };
+  const pendingWithoutClient = [draft, ...Object.values(edits)]
+    .filter((order) => order.raw.trim() && !order.clientId &&
+      !state.orders.some((saved) => saved.id === order.id))
+    .filter((order, index, all) => all.findIndex((row) => row.id === order.id) === index);
   const receptionOrder =
     receptionId === draft.id
       ? draft
@@ -417,7 +438,21 @@ export function HubWorkspace(props: Props) {
               >
                 선택 원문 보기
               </button>
-              <button className="primary" onClick={props.onNew}>
+              <button className="primary" onClick={() => {
+                // The current receipt is temporarily retained in the read-only
+                // Rust preview overlay, not persisted to production SQLite.
+                const draftsToRetain = [draft, receptionOrder].filter((order) =>
+                  !state.orders.some((saved) => saved.id === order.id) &&
+                  (order.raw.trim() || order.recipients.length));
+                if (draftsToRetain.length)
+                  setEdits((previous) => ({
+                    ...previous,
+                    ...Object.fromEntries(draftsToRetain.map((order) => [
+                      order.id, structuredClone(order),
+                    ])),
+                  }));
+                props.onNew();
+              }}>
                 ＋ 새 주문
               </button>
             </header>
@@ -433,6 +468,13 @@ export function HubWorkspace(props: Props) {
               onNotice={props.onNotice}
               onStageHover={setStageHover}
               stageHover={stageHover}
+              pendingReceptions={pendingWithoutClient}
+              onSelectPending={(id) => {
+                if (id === draft.id || edits[id]) {
+                  commitSelection(undefined);
+                  setReceptionId(id);
+                }
+              }}
             />
           </section>,
         ]}
