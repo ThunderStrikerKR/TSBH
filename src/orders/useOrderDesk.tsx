@@ -217,7 +217,7 @@ export function useOrderDesk({
   });
   const lastCompletedPricing = useRef<{
     key: string; products: typeof state.products;
-  }>();
+  } | undefined>(undefined);
   useEffect(() => {
     const request = ++ruleRequests.current.price;
     if (!liveClient || !passivePricingAllowed || draft.pendingNativeEdit) return;
