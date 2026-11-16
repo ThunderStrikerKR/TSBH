@@ -84,9 +84,9 @@ export async function readFactoryReplyCells(file: File): Promise<FactoryReplySou
     const numeric = row.getCell(17).value;
     const trackingNumeric = typeof numeric === "number";
     const qFormat = row.getCell(17).numFmt;
-    const zeroPattern = trackingNumeric && /^0{2,}$/.test(qFormat) &&
+    const zeroPattern = typeof numeric === "number" && /^0{2,}$/.test(qFormat) &&
       qFormat.length > String(numeric).length;
-    const numericRisk = trackingNumeric && (
+    const numericRisk = typeof numeric === "number" && (
       !Number.isSafeInteger(numeric) || numeric < 0 ||
       String(numeric).length > 15 || zeroPattern
     );
