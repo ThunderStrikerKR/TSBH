@@ -153,8 +153,10 @@ fn reception_client(payload:&Value)->Result<Value,String>{
             "chatTitle":title,"confirmedMatchCount":count,
             "detail":format!("카카오톡 창 제목 '{}'를 거래처로 인식했습니다.",title)}));
     }
-    // Never infer a dealer from recipient name, delivery address, or phone.
-    if let Some((id,label,value,_))=raw_hits.first(){
+    // The clipboard may contain only message 3/3: shipment details.
+    // Without a verified Kakao conversation, match only an explicitly
+    // labeled ORDERING business, never a consignee's "상호"/"업체명".
+    if let Some((id,label,value,_))=raw_hits.iter().find(|hit|hit.3){
         return Ok(json!({"clientId":id,"source":"RAW_EXPLICIT",
             "detail":format!("발주서 '{}: {}'를 거래처로 인식했습니다.",label,value)}));
     }
@@ -286,6 +288,43 @@ mod tests {
         assert_eq!(explicit["clientId"],"b");
         let receiver=reception_client(&context("팔렬고등학교\n서울악기 배송지\n708 2개")).unwrap();
         assert_eq!(receiver["clientId"],"a");
+    }
+    #[test]
+    fn multi_message_order_uses_chat_title_even_when_only_shipment_was_pasted(){
+        let state=json!({"clients":[
+            {"id":"dealer","name":"서울악기","active":true},
+            {"id":"school","name":"팔렬고등학교","active":true},
+            {"id":"recipient-store","name":"가상악기사","active":true}
+        ],"settings":{}});
+        // The employee pasted message 3 only. Messages 1 (greeting and
+        // dealer identification) and 2 were deliberately NOT copied.
+        let shipment="받으실 분: 김가상\\n상호: 가상악기사\\n팔렬고등학교\\n강원특별자치도 홍천군 내촌면 동창로 207\\n010-9149-2496\\n연주용보면대 708-1 30개";
+        let windows=json!([{"kind":"CHAT","title":"서울악기","handle":"CHAT_A"}]);
+        let matched=reception_client(&json!({"state":state,
+            "windows":windows,"activeChatHandle":"CHAT_A","raw":shipment})).unwrap();
+        assert_eq!(matched["clientId"],"dealer");
+        assert_eq!(matched["source"],"KAKAO_TITLE");
+        assert_eq!(matched["detail"],"카카오톡 창 제목 '서울악기'를 거래처로 인식했습니다.");
+        // No chat window: the consignee's school/store must NEVER become
+        // the ordering dealer merely because it appears in shipment data.
+        let no_chat=reception_client(&json!({"state":state,
+            "windows":[],"raw":shipment})).unwrap();
+        assert_eq!(no_chat["clientId"],Value::Null);
+        assert_eq!(no_chat["source"],"NONE");
+        // Likewise, a pasted greeting alone must not be required:
+        // the same verified chat works with only product/shipping lines.
+        let product_only=reception_client(&json!({"state":state,
+            "windows":windows,"raw":"708-1 30개\\nBD CONDUCTOR 1개"})).unwrap();
+        assert_eq!(product_only["clientId"],"dealer");
+        // Two simultaneous chats without a verified active HWND: no guessing.
+        let multiple=json!([{"kind":"CHAT","title":"서울악기","handle":"A"},
+            {"kind":"CHAT","title":"가상악기사","handle":"B"}]);
+        let uncertain=reception_client(&json!({"state":state,
+            "windows":multiple,"raw":shipment})).unwrap();
+        assert_eq!(uncertain["clientId"],Value::Null);
+        let active=reception_client(&json!({"state":state,
+            "windows":multiple,"activeChatHandle":"A","raw":shipment})).unwrap();
+        assert_eq!(active["clientId"],"dealer");
     }
     #[test]
     fn unique_active_client_only_and_duplicate_window_requires_employee() {
