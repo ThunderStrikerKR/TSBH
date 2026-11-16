@@ -67,6 +67,7 @@ const api: Api = {
     return invoke<State>("state_save", { state });
   },
   patchSettings: (changes, expected) => invoke<State>("settings_patch", { changes, expected }),
+  setPrices: (changes) => invoke<State>("price_batch_set", { changes }),
   setPrice: (productId, variantId, tier, price, expected) =>
     invoke<State>("price_set", { productId, variantId, tier, price, expected }),
   copy: (text) => {
