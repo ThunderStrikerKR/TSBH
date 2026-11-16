@@ -76,35 +76,41 @@ export async function parseFactoryReplyWorkbook(state: State, file: File):
   const rows: ReplyRow[] = [];
   for (let i = 2; i <= sheet.rowCount; i++) {
     const row = sheet.getRow(i);
-    const reserved = row.getCell(10);
-    cellText(reserved);
-    if (reserved.value != null && reserved.text !== "") {
-      throw Error(i + "행: 표준 양식의 J열은 공백이어야 합니다.");
-    }
-    for (let index = 18; index <= row.cellCount; index++) {
-      const extra = row.getCell(index);
-      cellText(extra);
-      if (extra.value != null && extra.text !== "") {
-        throw Error(i + "행: Q열 뒤의 추가 데이터는 허용하지 않습니다.");
-      }
-    }
     const relevant = [1, 3, 4, 5, 7, 17];
-    const values = relevant.map((column) => cellText(row.getCell(column)));
-    if (values.every((value) => value === "")) continue;
+    const labels = ["A", "C", "D", "E", "G", "Q"];
+    const problems: string[] = [];
+    const values = relevant.map((column, index) => {
+      try { return cellText(row.getCell(column)); }
+      catch (error) {
+        problems.push(`${labels[index]}열 ${error instanceof Error ? error.message : String(error)}`);
+        return "";
+      }
+    });
+    if (values.every((value) => value === "") && !problems.length) continue;
     const [name, address, phone, mobile, rawFreight, tracking] = values;
-    if (typeof row.getCell(17).value === "number") {
-      throw Error(i + "행: 운송장번호가 숫자로 저장되었습니다. 앞자리 0을 보호하려면 텍스트 셀로 입력하세요.");
-    }
+    const numeric = row.getCell(17).value;
+    const numericWaybill = typeof numeric === "number";
+    const numberFormat = row.getCell(17).numFmt;
+    const zeroPadding = numericWaybill && /^0{2,}$/.test(numberFormat) &&
+      numberFormat.length > String(numeric).length;
+    const numericRisk = numericWaybill && (
+      !Number.isSafeInteger(numeric) || numeric < 0 ||
+      String(numeric).length > 15 || zeroPadding
+    );
     const digits = tracking.replace(/[-\s]/g, "");
     const freight = parseFreight(rawFreight);
     const contacts = [phone, mobile].filter(Boolean);
-    const issue = !name || !address || !contacts.length
-      ? "수하인 이름, 주소 또는 연락처 누락"
-      : !/^\d{8,30}$/.test(digits)
-        ? "Q열 운송장번호가 없거나 올바르지 않습니다."
-        : freight === null
-          ? "G열 실제 택배운임은 0 이상의 정수로 입력하세요."
-          : undefined;
+    const issue = problems.length
+      ? `${i}행: ${problems.join("; ")}`
+      : numericRisk
+        ? "Q열 숫자형 운송장번호의 정확성을 보장할 수 없습니다. 15자리 초과·정밀도 또는 앞자리 0 손실 가능성이 있으므로 원본을 확인하세요."
+        : !name || !address || !contacts.length
+          ? "수하인 이름, 주소 또는 연락처 누락"
+          : !/^\d{8,30}$/.test(digits)
+            ? "Q열 운송장번호가 없거나 올바르지 않습니다."
+            : freight === null
+              ? "G열 실제 택배운임은 0 이상의 정수로 입력하세요."
+              : undefined;
     rows.push({
       row: i, name, address, contacts, tracking: digits, actual: freight,
       ...(issue ? { issue } : {}),
