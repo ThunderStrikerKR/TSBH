@@ -17,7 +17,12 @@ on:
       - scripts/migration32-real-factory-notifications.mjs
       - scripts/migration32-real-ocr-cancel.mjs
       - src/SourceDocument.tsx
+      - src/OrderDesk.tsx
+      - src/orders/useNativeOrderPreview.ts
       - src/orders/useOrderDesk.tsx
+      - src-tauri/src/business_core/rules/reception_merge.rs
+      - src-tauri/src/business_core/rules/pricing.rs
+      - src-tauri/src/business_core/rules/shipping.rs
       - src-tauri/src/business_core/recognition/mod.rs
       - src-tauri/src/business_core/catalog_clients/title_clients.rs
   pull_request:
