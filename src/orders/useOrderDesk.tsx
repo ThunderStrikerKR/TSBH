@@ -1,3 +1,4 @@
+import { sameValue } from "../shared/draft";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -177,9 +178,15 @@ export function useOrderDesk({
   const rulesClientSignature = JSON.stringify(liveClient ?? null);
   const latestRulesInput = useRef({ draft, state, rulesClientSignature, saved });
   latestRulesInput.current = { draft, state, rulesClientSignature, saved };
+  // The native workflow preview can return a new JSON object with identical
+  // content while the employee is picking a dealer. Comparing React object
+  // identities here silently rejects a legitimate completed selection.
+  // Preserve the stale-result guard by comparing semantic input values.
   const isCurrentOrderInput = (sourceDraft: Order, sourceState: State): boolean =>
-    latestRulesInput.current.draft === sourceDraft &&
-    latestRulesInput.current.state === sourceState;
+    (latestRulesInput.current.draft === sourceDraft ||
+      sameValue(latestRulesInput.current.draft, sourceDraft)) &&
+    (latestRulesInput.current.state === sourceState ||
+      sameValue(latestRulesInput.current.state, sourceState));
   // Editable text stays responsive in React. A transient intent prevents any
   // save until Rust has decided invoice freeze, notification/payment flags,
   // dispatch origin and freight invalidation for the latest complete draft.
@@ -192,7 +199,7 @@ export function useOrderDesk({
       action: "prepare_order_edit", order: sourceDraft, state: sourceState,
     }).then(({ order: native }) => {
       if (!current || !isCurrentOrderInput(sourceDraft, sourceState)) return;
-      onChange((previous) => previous === sourceDraft ? native : previous);
+      onChange((previous) => sameValue(previous, sourceDraft) ? native : previous);
     }).catch((error) => {
       if (current && isCurrentOrderInput(sourceDraft, sourceState))
         onNotice("Rust 주문 수정 상태 확인 실패 — 저장하지 않았습니다: " +
