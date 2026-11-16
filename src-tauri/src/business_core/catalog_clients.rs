@@ -291,7 +291,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
     if operation == "official_links" { return queries::execute(operation, &payload); }
     let state = payload.get("state").ok_or("현재 상태가 없습니다.")?;
     match operation {
-        "remembered_title_client" | "remember_title_client" => title_clients::execute(operation,&payload),
+        "remembered_title_client" | "remember_title_client" | "auto_match_reception_client" => title_clients::execute(operation,&payload),
         "preview_client_rows" => client_preview::preview(&payload),
         "upsert_product_from_editor" => editor::execute(&payload),
         "save_alias" | "alias_problems" | "alias_problems_one" => aliases::execute(operation,&payload),
@@ -462,6 +462,27 @@ mod tests {
         })).unwrap();
         assert_eq!(result["created"],1);
         assert_eq!(result["next"]["orders"][0]["id"],"old-order");
+    }
+    #[test]
+    fn reception_auto_dealer_is_reachable_through_production_catalog_dispatcher() {
+        let mut s=state();
+        let mut dealer=client();
+        dealer["id"]=json!("dealer-1");
+        dealer["name"]=json!("홍천악기");
+        s["clients"]=json!([dealer]);
+        let result=execute("auto_match_reception_client",json!({
+            "state":s,
+            "windows":[{"kind":"CHAT","handle":"chat-1","title":"홍천악기"}],
+            "activeChatHandle":"chat-1",
+            "raw":"팔렬고등학교\\n010-9149-2496\\n708-1 30개"
+        })).expect("real catalog dispatcher must expose the native auto dealer action");
+        assert_eq!(result["clientId"],"dealer-1");
+        assert_eq!(result["source"],"KAKAO_TITLE");
+        let unknown=execute("auto_match_reception_client",json!({
+            "state":s,"windows":[],"raw":"팔렬고등학교\\n010-9149-2496"
+        })).expect("an unmatched dealer is a normal reception outcome");
+        assert!(unknown["clientId"].is_null());
+        assert_eq!(unknown["source"],"NONE");
     }
     #[test]
     fn untrusted_url_and_negative_prices_are_rejected() {
