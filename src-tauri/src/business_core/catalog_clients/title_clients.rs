@@ -73,17 +73,49 @@ fn unique_title_client_id(state:&Value,title:&str)->Option<String>{
     ).collect::<Vec<_>>();
     if hits.len()==1{Some(s(hits[0],"id").to_owned())} else{None}
 }
+fn confirmed_title_count(state:&Value,title:&str,client_id:&str)->usize{
+    list(state,"orders").iter().filter(|order|{
+        !s(order,"confirmedAt").is_empty() && !truthy(order.get("deletedAt")) &&
+        s(order,"clientId")==client_id &&
+        ["KAKAO_REMEMBERED","KAKAO_TITLE"].contains(
+            &s(order.get("clientMatch").unwrap_or(&Value::Null),"source")) &&
+        key(s(order.get("clientMatch").unwrap_or(&Value::Null),"chatTitle"))==key(title)
+    }).count()
+}
 fn reception_client(payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("현재 거래처 데이터가 없습니다.")?;
     let windows=payload.get("windows").unwrap_or(&Value::Null);
     let chats=rows(windows).iter().filter(|w|s(w,"kind")=="CHAT"
         && !s(w,"title").trim().is_empty()).collect::<Vec<_>>();
     let active=s(payload,"activeChatHandle");
-    // When multiple chats exist, an explicitly active/selected HWND is
-    // mandatory. Never choose a random open KakaoTalk chat.
+    // When several conversations exist, never select one without the active
+    // chat HWND. With one window the name remains strong but still gets an
+    // explicit first-stage verification highlight in the UI.
     let chat=if chats.len()==1{Some(chats[0])}else{
         chats.iter().copied().find(|w|!active.is_empty()&&s(w,"handle")==active)
     };
+    // Keep the original labeled-sender rule. An "상호" label can belong to
+    // the recipient, so only strongly labeled dealer names create a conflict
+    // with a trusted Kakao title.
+    let mut raw_hits=Vec::<(String,String,String,bool)>::new();
+    for line in s(payload,"raw").lines(){
+        let Some((label,value))=line.split_once(':').or_else(||line.split_once('：')) else{continue;};
+        let label=key(label);
+        if !["거래처","발주처","주문처","주문업체","발신업체",
+            "발신자","대리점","업체명","상호"].contains(&label.as_str()){continue;}
+        if let Some(id)=unique_client_id(state,value){
+            let strong=["거래처","발주처","주문처","주문업체","발신업체"]
+                .contains(&label.as_str());
+            raw_hits.push((id,label,value.trim().to_owned(),strong));
+        }
+    }
+    let explicit_ids=raw_hits.iter().filter(|(_,_,_,strong)|*strong)
+        .map(|(id,_,_,_)|id.as_str()).collect::<std::collections::HashSet<_>>();
+    if explicit_ids.len()>1{
+        return Ok(json!({"clientId":null,"source":"CONFLICT",
+            "detail":"발주서에 서로 다른 발주처가 명시되어 있습니다. 발주처를 직접 확인한 뒤 거래처를 선택하세요."}));
+    }
+    let mut chat_match:Option<(String,&str,String)>=None;
     if let Some(chat)=chat{
         let title=key(s(chat,"title"));
         let title_count=chats.iter().filter(|w|key(s(w,"title"))==title).count();
@@ -95,30 +127,41 @@ fn reception_client(payload:&Value)->Result<Value,String>{
                 let id=s(entry,"clientId");
                 if !truthy(entry.get("ambiguous")) && list(state,"clients").iter()
                     .any(|c|eligible_client(c,id,false)){
-                    return Ok(json!({"clientId":id,"source":"KAKAO_REMEMBERED",
-                        "detail":format!("카카오톡 대화창 ‘{}’에 저장된 거래처 연결 기록으로 자동 선택했습니다.",s(chat,"title"))}));
+                    chat_match=Some((id.to_owned(),"KAKAO_REMEMBERED",
+                        s(chat,"title").to_owned()));
                 }
             }
-            if let Some(id)=unique_title_client_id(state,s(chat,"title")){
-                return Ok(json!({"clientId":id,"source":"KAKAO_TITLE",
-                    "detail":format!("카카오톡 대화창 제목 ‘{}’이 등록된 거래처 이름 또는 별칭과 일치해 자동 선택했습니다.",s(chat,"title"))}));
+            if chat_match.is_none(){
+                if let Some(id)=unique_title_client_id(state,s(chat,"title")){
+                    chat_match=Some((id,"KAKAO_TITLE",s(chat,"title").to_owned()));
+                }
             }
         }
     }
-    // A free-form delivery name/address/phone must never become a dealer ID.
-    // Explicit dealer labels alone are safe enough for automatic application.
-    for line in s(payload,"raw").lines(){
-        let Some((label,value))=line.split_once(':').or_else(||line.split_once('：')) else{continue;};
-        let label=key(label);
-        if !["거래처","발주처","주문처","주문업체","발신업체",
-            "발신자","대리점","업체명","상호"].contains(&label.as_str()){continue;}
-        if let Some(id)=unique_client_id(state,value){
-            return Ok(json!({"clientId":id,"source":"RAW_EXPLICIT",
-                "detail":format!("발주서의 ‘{}: {}’ 표기가 등록된 거래처 정보와 일치해 자동 선택했습니다.",label,value.trim())}));
+    if let Some((id,source,title))=chat_match{
+        if let Some((other,_,_,_))=raw_hits.iter().find(|(other,_,_,strong)|
+            *strong && *other!=id){
+            let dealer_name=|id:&str|list(state,"clients").iter()
+                .find(|c|s(c,"id")==id).map(|c|s(c,"name").to_owned())
+                .unwrap_or_else(||id.to_owned());
+            return Ok(json!({"clientId":null,"source":"CONFLICT",
+                "detail":format!("카카오톡 대화창 ‘{}’은 ‘{}’ 거래처로 연결되지만 발주서에는 ‘{}’이 발주처로 명시되어 있습니다. 현재 대화방과 발주처를 확인하고 직접 선택하세요.",
+                    title,dealer_name(&id),dealer_name(other))}));
         }
+        let count=confirmed_title_count(state,&title,&id);
+        let why=if source=="KAKAO_REMEMBERED"{"직원이 저장한 거래처 연결 기록"}
+            else{"등록된 거래처 이름 또는 별칭"};
+        return Ok(json!({"clientId":id,"source":source,
+            "chatTitle":title,"confirmedMatchCount":count,
+            "detail":format!("카카오톡 대화창 ‘{}’이 {}과 일치하여 자동 선택했습니다. 동일 제목으로 확정한 기존 주문 {}건. 주문 확인 단계에서 실제 대화방과 발주처를 확인하세요.",title,why,count)}));
+    }
+    // Never infer a dealer from recipient name, delivery address, or phone.
+    if let Some((id,label,value,_))=raw_hits.first(){
+        return Ok(json!({"clientId":id,"source":"RAW_EXPLICIT",
+            "detail":format!("발주서의 ‘{}: {}’ 표기가 등록된 거래처 정보와 일치해 자동 선택했습니다. 주문 확인 단계에서 발주처를 확인하세요.",label,value)}));
     }
     Ok(json!({"clientId":null,"source":"NONE",
-        "detail":"카카오톡 대화창과 발주서의 명시적 거래처 정보에서 단일 거래처를 확인하지 못했습니다. 직접 선택해 주세요."}))
+        "detail":"현재 카카오톡 대화방 또는 발주서에서 거래처를 확정할 수 없습니다. 다른 대화방이 열려 있거나 닫혀 있지 않은지 확인하고, 거래처를 직접 선택해 주세요."}))
 }
 
 fn remember(payload:&Value)->Result<Value,String> {
