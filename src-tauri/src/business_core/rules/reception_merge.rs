@@ -157,6 +157,11 @@ fn apply(payload:&Value)->Result<Value,String>{
     let raw=required_str(payload,"raw")?;
     let client_id=required_str(payload,"clientId")?;
     let at=required_str(payload,"at")?;
+    let state=req(payload,"state")?;
+    let client=req(payload,"client")?;
+    if str_field(client,"id")!=client_id {
+        return Err("주문 병합의 거래처와 가격 계산 거래처가 일치하지 않습니다.".into());
+    }
     // Match the original guard against changing final or employee-locked orders.
     if has_value(field(previous,"deletedAt"))||
         has_value(field(previous,"confirmedAt"))||
@@ -219,9 +224,17 @@ fn apply(payload:&Value)->Result<Value,String>{
                     matched_items.insert(original_id.clone());
                     rebind(&mut candidates,"itemId",&provisional,&original_id);
                     *item=merge_item(item,prior_item)?;
-                    // Subsequent Rust reprice_order supplies the fresh quote.
-                    if !str_field(item,"variantId").is_empty(){
-                        set(item,"unitPrice",Value::Null)?;
+                    // Match the original TypeScript reception merge: reprice
+                    // this retained item before publishing the merged order.
+                    // Never publish a temporary null quote and depend on a
+                    // later React effect to repair it.
+                    let pid=str_field(item,"productId").to_string();
+                    let vid=str_field(item,"variantId").to_string();
+                    if !vid.is_empty() {
+                        if let Some(product)=super::find_by_id(field(state,"products"),&pid) {
+                            let price=super::pricing::resolve_unit_price(product,&vid,client)?;
+                            set(item,"unitPrice",price)?;
+                        }
                     }
                 }
                 let item_id=field(item,"id").clone();
@@ -284,7 +297,8 @@ mod tests{
                 "sources":[{"field":"quantity","text":"2개"}]}]}],
             "candidates":[{"id":"c1","recipientId":"new","itemId":"i-new"}]});
         let result=apply(&json!({"previous":before,"evidence":evidence,
-            "raw":"김가상 709","clientId":"c1","at":"now"})).unwrap();
+            "raw":"김가상 709","clientId":"c1","at":"now",
+            "state":{"products":[]},"client":{"id":"c1","tier":"wholesale"}})).unwrap();
         let r=&result["order"]["recipients"][0];
         assert_eq!(r["id"],"old");
         assert_eq!(r["name"],"직원확정");
@@ -313,7 +327,8 @@ mod tests{
             "previous":{"id":id,"raw":"김가상 709 2개","orderType":"AGENCY",
                 "recipients":[]},
             "evidence":evidence,"raw":"김가상 709 2개",
-            "clientId":"dealer","at":"now"
+            "clientId":"dealer","at":"now",
+            "state":{"products":[]},"client":{"id":"dealer","tier":"wholesale"}
         })).unwrap()["order"].clone();
         let a=received("order-one");
         let b=received("order-two");
@@ -353,16 +368,66 @@ mod tests{
             "evidence":evidence,"raw":"김가상 709 2개",
             "clientId":"dealer","at":"now"})).unwrap()["order"].clone();
         let second=apply(&json!({"previous":first,"evidence":evidence,
-            "raw":"김가상 709 2개 ","clientId":"dealer","at":"later"})).unwrap();
+            "raw":"김가상 709 2개 ","clientId":"dealer","at":"later",
+            "state":{"products":[]},"client":{"id":"dealer","tier":"wholesale"}})).unwrap();
         assert_eq!(second["order"]["recipients"][0]["id"],
             "order-c:recognition:recipient:0");
         assert_eq!(second["order"]["recipients"][0]["items"][0]["id"],
             "order-c:recognition:item:3:0");
     }
+    #[test]
+    fn reanalysis_requotes_retained_item_before_returning_to_react(){
+        let previous=json!({"id":"o","raw":"김가상 709 2개","orderType":"DEALER",
+            "recipients":[{"id":"r","name":"김가상","address":"서울",
+                "mobile":"","phone":"","sources":[{"field":"name","text":"김가상","start":0}],
+                "items":[{"id":"old-i","raw":"709 2개","productId":"p","variantId":"v",
+                    "unitPrice":3000,"manuallyConfirmed":true,"name":"BD 709",
+                    "quantity":2,"quantityConfirmed":true,"issues":[],
+                    "sources":[{"field":"quantity","text":"2개"}]}]}]});
+        let evidence=json!({"recipients":[{"id":"parsed-r","name":"김가상",
+            "address":"서울","mobile":"","phone":"",
+            "sources":[{"field":"name","text":"김가상","start":0}],
+            "items":[{"id":"parsed-i","raw":"709 2개","productId":"p","variantId":"v",
+                "unitPrice":3000,"quantity":2,"quantityConfirmed":true,"issues":[],
+                "sources":[{"field":"quantity","text":"2개"}]}]}],
+            "candidates":[]});
+        let state=json!({"products":[{"id":"p","variants":[{"id":"v",
+            "wholesale":5000,"semi":7500,"retail":10000}]}]});
+        let client=json!({"id":"dealer","tier":"semi"});
+        let result=apply(&json!({"previous":previous,"evidence":evidence,
+            "raw":"김가상 709 2개","clientId":"dealer","at":"now",
+            "state":state,"client":client})).unwrap();
+        let item=&result["order"]["recipients"][0]["items"][0];
+        assert_eq!(item["id"],"old-i");
+        assert_eq!(item["unitPrice"],7500);
+        assert_eq!(item["quantity"],2);
+    }
+    #[test]
+    fn merged_price_respects_current_dealer_special_override(){
+        let previous=json!({"id":"o","orderType":"DEALER",
+            "recipients":[{"id":"r","name":"김가상","address":"서울",
+                "mobile":"","phone":"","sources":[{"field":"name","text":"김가상","start":0}],
+                "items":[{"id":"old-i","raw":"709 2개","productId":"p","variantId":"v",
+                    "unitPrice":5000,"manuallyConfirmed":true,
+                    "sources":[{"field":"quantity","text":"2개"}]}]}]});
+        let evidence=json!({"recipients":[{"id":"new-r","name":"김가상",
+            "address":"서울","mobile":"","phone":"",
+            "sources":[{"field":"name","text":"김가상","start":0}],
+            "items":[{"id":"new-i","raw":"709 2개","productId":"p","variantId":"v",
+                "unitPrice":5000,"sources":[{"field":"quantity","text":"2개"}]}]}],
+            "candidates":[]});
+        let result=apply(&json!({"previous":previous,"evidence":evidence,
+            "raw":"김가상 709 2개","clientId":"dealer","at":"now",
+            "state":{"products":[{"id":"p","variants":[{"id":"v","wholesale":5000}]}]},
+            "client":{"id":"dealer","tier":"special","overrides":{"v":13500}}
+        })).unwrap();
+        assert_eq!(result["order"]["recipients"][0]["items"][0]["unitPrice"],13500);
+    }
     #[test]fn exported_orders_cannot_be_reprocessed(){
         let previous=json!({"id":"o","status":"EXPORTED","recipients":[]});
         let result=apply(&json!({"previous":previous,"evidence":{"recipients":[],"candidates":[]},
-            "raw":"test","clientId":"c","at":"now"})).unwrap();
+            "raw":"test","clientId":"c","at":"now",
+            "state":{"products":[]},"client":{"id":"c","tier":"wholesale"}})).unwrap();
         assert_eq!(result["order"],previous);
     }
 }
