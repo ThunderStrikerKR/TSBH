@@ -1,10 +1,3 @@
-.workflow-draft-label {
-  display: inline-block;
-  margin-left: 6px;
-  color: #fbbf24;
-  font-size: 12px;
-  font-weight: 400;
-}
 .workflow-unassigned-drafts {
   display: flex;
   flex-direction: column;
@@ -44,6 +37,36 @@
 }
 .hub-slot-3 .workflow-group {
   flex-shrink: 0;
+  margin: 0 0 10px;
+  padding: 6px;
+  border: 1px solid #535353;
+  border-radius: 7px;
+  background: #202020;
+}
+/* One receipt group is one visual card, regardless of shipment count. */
+.hub-slot-3 .workflow-group.selected {
+  border-color: #666;
+  border-left: 2px solid #f59e0b;
+  background: #242424;
+}
+.hub-slot-3 .workflow-group .flow-fixed-summary {
+  display: block;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 3px 4px 5px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  font-variant-numeric: tabular-nums;
+  scrollbar-width: thin;
+}
+.hub-slot-3 .workflow-group .flow-summary-compact {
+  display: block;
+  width: max-content;
+  max-width: none;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.45;
 }
 .hub-slot-3 .workflow-board-heading {
   position: sticky;
@@ -51,10 +74,6 @@
   background: #1c1c1c;
   z-index: 2;
   padding: 5px 0;
-}
-.hub-slot-3 .workflow-group.selected {
-  border-left-color: transparent;
-  background: transparent;
 }
 .hub-slot-3 .workflow-group.selected .flow-group-name b {
   color: inherit;
