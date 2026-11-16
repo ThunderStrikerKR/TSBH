@@ -35,10 +35,11 @@ export function usePersistedNotifications(ready: boolean) {
   }, []);
 
   useEffect(() => {
+    if (!ready) return;
     mounted.current = true;
     void enqueue(() => window.bando!.notificationList());
     return () => { mounted.current = false; };
-  }, [enqueue]);
+  }, [ready, enqueue]);
 
   const add = useCallback((incoming: NewHubNotification) => {
     // The database may have notifications from the previous app run.
