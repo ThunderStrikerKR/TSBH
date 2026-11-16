@@ -699,7 +699,7 @@ export function OrderDesk(props: OrderDeskProps) {
                         ? activeShipmentPreview.vatIncluded : freightEditor!.preview.vatIncluded}
                       groupId={flowSummaryReady && activeGroupId
                         ? activeGroupId : freightEditor!.shipment.groupId}
-                      unavailable={!flowSummaryReady}
+                      unavailable={!flowSummaryReady || !activeShipmentPreview || !activeShipment || !activeGroupId}
                       onVat={(v) => {
                         const recipientId = (flowSummaryReady && activeShipment
                           ? activeShipment : freightEditor!.shipment).recipientId;
