@@ -232,7 +232,7 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
         let actual_id=str_field(o,"clientId");
         let detail=str_field(match_info,"detail");
         if !detail.trim().is_empty() && detail.chars().count()<=500 {
-            let collision=source=="CONFLICT" ||
+            let collision=["CONFLICT","ERROR"].contains(&source) ||
                 (!matched_id.is_empty() && actual_id!=matched_id);
             let missing=source=="NONE" && actual_id.is_empty();
             let title=if collision{"발주처 매칭 충돌 — 거래처를 확인하세요"}
