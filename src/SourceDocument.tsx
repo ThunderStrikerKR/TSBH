@@ -242,6 +242,10 @@ export function SourceDocument({
           // select a dealer; a missing/failed suggestion is not a reception
           // error and must not display a blocking red toast.
           console.warn("거래처 자동 연결을 건너뛰었습니다.", error);
+          next.clientMatch = {
+            source: "ERROR", clientId: null,
+            detail: "거래처 자동 매칭 처리 중 오류가 발생했습니다. 카카오톡 대화방을 확인하거나 거래처를 직접 선택해 주세요.",
+          };
         }
       }
       if (!alive.current || latestReception.current.order !== order ||
