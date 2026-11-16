@@ -37,6 +37,8 @@ export interface FactoryReplySourceRow {
   trackingNumeric: boolean;
   reservedJ: boolean;
   extraAfterQ: boolean;
+  sourceIssue?: string;
+  trackingRisk?: string;
 }
 export interface FactoryReplySource {
   id: string;
@@ -66,21 +68,36 @@ export async function readFactoryReplyCells(file: File): Promise<FactoryReplySou
   const sourceRows: FactoryReplySourceRow[] = [];
   for (let i = 2; i <= sheet.rowCount; i++) {
     const row = sheet.getRow(i);
-    const j = row.getCell(10);
-    cellText(j);
-    const reservedJ = j.value != null && j.text !== "";
-    let extraAfterQ = false;
-    for (let column = 18; column <= row.cellCount; column++) {
-      const cell = row.getCell(column);
-      cellText(cell);
-      if (cell.value != null && cell.text !== "") extraAfterQ = true;
-    }
-    const [name, address, phone, mobile, rawFreight, tracking] =
-      [1, 3, 4, 5, 7, 17].map((column) => cellText(row.getCell(column)));
+    // Only A/C/D/E/G/Q are consumed. Notes in J or columns beyond Q
+    // are not a reason to discard other successfully matched shipments.
+    const columns = [1, 3, 4, 5, 7, 17];
+    const labels = ["A", "C", "D", "E", "G", "Q"];
+    const problems: string[] = [];
+    const values = columns.map((column, index) => {
+      try { return cellText(row.getCell(column)); }
+      catch (error) {
+        problems.push(`${labels[index]}열 ${error instanceof Error ? error.message : String(error)}`);
+        return "";
+      }
+    });
+    const [name, address, phone, mobile, rawFreight, tracking] = values;
+    const numeric = row.getCell(17).value;
+    const trackingNumeric = typeof numeric === "number";
+    const qFormat = row.getCell(17).numFmt;
+    const zeroPattern = typeof numeric === "number" && /^0{2,}$/.test(qFormat) &&
+      qFormat.length > String(numeric).length;
+    const numericRisk = typeof numeric === "number" && (
+      !Number.isSafeInteger(numeric) || numeric < 0 ||
+      String(numeric).length > 15 || zeroPattern
+    );
+    const trackingRisk = numericRisk
+      ? "Q열 숫자형 운송장번호의 정확성을 보장할 수 없습니다. 15자리 초과·정밀도 또는 앞자리 0 손실 가능성이 있으므로 원본을 확인하세요."
+      : undefined;
     sourceRows.push({
       row: i, name, address, phone, mobile, rawFreight, tracking,
-      trackingNumeric: typeof row.getCell(17).value === "number",
-      reservedJ, extraAfterQ,
+      trackingNumeric, reservedJ: false, extraAfterQ: false,
+      ...(problems.length ? { sourceIssue: `${i}행: ${problems.join("; ")}` } : {}),
+      ...(trackingRisk ? { trackingRisk } : {}),
     });
   }
   return { id, filename: file.name, sourceRowCount: sheet.rowCount - 1, sourceRows };

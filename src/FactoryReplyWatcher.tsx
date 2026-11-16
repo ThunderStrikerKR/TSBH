@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { processWatchedFactoryReply } from "./factory-reply-auto";
-import type { NoticeSink } from "./shared/notices";
+import type { NewHubNotification } from "./app/notification-center";
 
 const SCAN_INTERVAL_MS = 5_000;
 
@@ -9,15 +9,15 @@ const SCAN_INTERVAL_MS = 5_000;
  * or another save is in progress, the watcher simply postpones DB commits.
  */
 export function FactoryReplyWatcher({
-  enabled, paused, onRefresh, onNotice,
+  enabled, paused, onRefresh, onNotification,
 }: {
   enabled: boolean;
   paused: boolean;
   onRefresh: () => Promise<void>;
-  onNotice: NoticeSink;
+  onNotification: (notice: NewHubNotification) => void;
 }) {
-  const latest = useRef({ enabled, paused, onRefresh, onNotice });
-  latest.current = { enabled, paused, onRefresh, onNotice };
+  const latest = useRef({ enabled, paused, onRefresh, onNotification });
+  latest.current = { enabled, paused, onRefresh, onNotification };
   const running = useRef(false);
   const lastError = useRef("");
   const rejected = useRef(new Set<string>());
@@ -38,34 +38,36 @@ export function FactoryReplyWatcher({
           if (result.invalid) {
             rejected.current.add(file.id);
             lastError.current = "";
-            latest.current.onNotice(
-              "공장 회신 " + file.filename +
-                ": 표준 Excel 양식과 달라 반려했습니다. DB는 변경하지 않았습니다. " +
+            latest.current.onNotification({
+              source: "공장 회신", tone: "error", filename: file.filename,
+              title: file.filename + " · 회신 확인 필요",
+              detail: "자동 반영하지 않았습니다. DB는 변경하지 않았습니다.\n" +
                 (result.reason ?? "파일 내용을 확인하세요."),
-              "error",
-            );
+            });
             continue;
           }
           if (result.duplicate) continue;
           await latest.current.onRefresh();
           lastError.current = "";
-          latest.current.onNotice(
-            "공장 회신 " + file.filename + ": 자동 반영 " + result.applied +
-              "건, 직원 확인 " + result.held + "건",
-            result.held ? "error" : "success",
-          );
-          if (result.archiveWarning) {
-            latest.current.onNotice(
-              "회신 원본과 DB는 보존했으나 Excel 보관함 사본 생성은 실패했습니다: " +
-                result.archiveWarning, "error",
-            );
-          }
+          latest.current.onNotification({
+            source: "공장 회신",
+            tone: result.held ? "info" : "success",
+            filename: file.filename,
+            title: file.filename + (result.held ? " · 직원 확인 필요" : " · 반영 완료"),
+            detail: "자동 반영 " + result.applied + "건 / 보류 " + result.held + "건" +
+              (result.archiveWarning ? "\n파일 보관 경고: " + result.archiveWarning : ""),
+            issues: result.issues,
+          });
         }
       } catch (error) {
         const message = String(error);
         if (message !== lastError.current) {
           lastError.current = message;
-          latest.current.onNotice("공장 회신 자동 감시: " + message, "error");
+          latest.current.onNotification({
+            source: "공장 회신", tone: "error",
+            title: "공장 회신 자동 감시 확인 필요",
+            detail: message,
+          });
         }
       } finally {
         running.current = false;

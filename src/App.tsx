@@ -2,9 +2,9 @@ import { businessCoreCall } from "./tauri-bridge";
 import type { State } from "./types";
 import { FactoryNotifications } from "./FactoryNotifications";
 import { FactoryReplyWatcher } from "./FactoryReplyWatcher";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { addHubNotification, type HubNotification, type NewHubNotification } from "./app/notification-center";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { AppHeader } from "./app/AppHeader";
-import { AppNotice } from "./app/AppNotice";
 import { StartupRecoveryPanel } from "./app/StartupRecoveryPanel";
 import { DailySettlement } from "./app/DailySettlement";
 import { OrderHistory } from "./app/OrderHistory";
@@ -42,8 +42,26 @@ const WorkflowQueue = lazy(() =>
 );
 export function App() {
   const [notifications, setNotifications] = useState(false);
+  const [inbox, setInbox] = useState<HubNotification[]>([]);
+  const lastNoticeId = useRef<number | undefined>(undefined);
+  const addNotification = useCallback((entry: NewHubNotification) => {
+    setInbox((previous) => addHubNotification(previous, entry));
+  }, []);
   const model = useAppModel(),
     { state, draft, tab } = model;
+  useEffect(() => {
+    const notice = model.notice;
+    if (!notice || lastNoticeId.current === notice.id) return;
+    lastNoticeId.current = notice.id;
+    // System and form messages share one notification center. No short-lived
+    // toast blocks or disappearing errors outside the modal.
+    addNotification({
+      source: "시스템", tone: notice.tone,
+      title: notice.tone === "error" ? "확인 필요" :
+        notice.tone === "success" ? "작업 완료" : "안내",
+      detail: notice.message,
+    });
+  }, [model.notice, addNotification]);
   const [nativeReviewCount, setNativeReviewCount] = useState<{
     state: State; count: number;
   }>();
@@ -91,14 +109,13 @@ export function App() {
           enabled={Boolean(state.settings.factoryReplyDirectory) || Boolean(window.bando?.isTestWorkspace)}
           paused={model.dirty || model.busy}
           onRefresh={model.refresh}
-          onNotice={model.setNotice}
+          onNotification={addNotification}
         />
         <AppHeader
           onNotifications={() => setNotifications(true)}
           notificationCount={
-            nativeReviewCount?.state === state
-              ? nativeReviewCount.count
-              : 0
+            (nativeReviewCount?.state === state ? nativeReviewCount.count : 0) +
+            inbox.filter((entry) => !entry.read).length
           }
           page={tab}
           dock={model.dock}
@@ -120,6 +137,11 @@ export function App() {
         {notifications && (
           <FactoryNotifications
             state={state}
+            notices={inbox}
+            onRead={(id) =>
+              setInbox((previous) => previous.map((entry) =>
+                entry.id === id ? { ...entry, read: true } : entry))}
+            onClear={() => setInbox([])}
             onRefresh={model.refresh}
             onClose={() => setNotifications(false)}
             onOpen={(id) => {
@@ -128,7 +150,6 @@ export function App() {
             }}
           />
         )}
-        <AppNotice notice={model.notice} onDismiss={model.dismissNotice} />
         <HubShell
           ratios={state.settings.panelRatios ?? [20, 30, 30, 20]}
           dock={model.dock}

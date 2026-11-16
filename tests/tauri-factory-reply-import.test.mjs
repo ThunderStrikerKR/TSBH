@@ -160,21 +160,29 @@ test("old DB revisions, duplicate file identity and formula cells are rejected",
   const book = new ExcelJS.Workbook();
   book.addWorksheet("로젠").addRow(headers);
   book.worksheets[0].addRow(goodRow());
-  book.worksheets[0].getCell("Q2").value = { formula: "1+1", result: 2 };
+  book.worksheets[0].addRow(goodRow("009988776655"));
+  book.worksheets[0].getCell("Q3").value = { formula: "1+1", result: 2 };
   const buf = await book.xlsx.writeBuffer();
-  const bad = new File([Buffer.from(buf)], "formula.xlsx");
-  await assert.rejects(() => parseFactoryReplyWorkbook(s,bad), /수식이나 병합/);
+  const mixed = await parseFactoryReplyWorkbook(s,
+    new File([Buffer.from(buf)], "formula.xlsx"));
+  assert.equal(mixed.applied, 1, "Good row still applies when another Q cell has a formula");
+  assert.equal(mixed.held, 1);
+  assert.match(mixed.rows[1].issue, /수식이나 병합/);
 });
 
-test("numeric tracking loses leading-zero guarantee and must be rejected", async () => {
+test("safe numeric tracking is accepted; precision-risk waybills hold only their row", async () => {
   const s=stateFixture();
   const row=goodRow();
   row[16]=12345678901;
-  const file = await workbookFile([row]);
-  await assert.rejects(
-    () => parseFactoryReplyWorkbook(s, file),
-    /텍스트 셀로 입력하세요/,
-  );
+  const safe = await parseFactoryReplyWorkbook(s, await workbookFile([row]));
+  assert.equal(safe.applied,1);
+  assert.equal(safe.rows[0].tracking,"12345678901");
+  const unsafeRow=goodRow();
+  unsafeRow[16]=1234567890123456;
+  const unsafe=await parseFactoryReplyWorkbook(s,await workbookFile([row,unsafeRow]));
+  assert.equal(unsafe.applied,1);
+  assert.equal(unsafe.held,1);
+  assert.match(unsafe.rows[1].issue,/15자리 초과|정밀도/);
 });
 
 test("unrecognized 15-column export without the Q return column is rejected explicitly", async () => {
@@ -253,19 +261,13 @@ test("factory reply headers are informational, including Q1 and extra header col
   assert.equal(preview.rows[0].actual, 4000);
 });
 
-test("filled J data or extra R data still reject the workbook", async () => {
+test("J notes or extra R columns no longer invalidate mapped A/C/D/E/G/Q", async () => {
   const state = stateFixture();
-  const nonblankJ = goodRow();
-  nonblankJ[9] = "임의 데이터";
-  const invalidJ = await workbookFile([nonblankJ]);
-  await assert.rejects(
-    () => parseFactoryReplyWorkbook(state, invalidJ),
-    /J열은 공백/,
-  );
+  const note = goodRow();
+  note[9] = "임의 데이터";
+  const jPreview = await parseFactoryReplyWorkbook(state, await workbookFile([note]));
+  assert.equal(jPreview.applied,1);
   const extraData = [...goodRow(), "추가 데이터"];
-  const invalidData = await workbookFile([extraData]);
-  await assert.rejects(
-    () => parseFactoryReplyWorkbook(state, invalidData),
-    /추가 데이터/,
-  );
+  const rPreview = await parseFactoryReplyWorkbook(state, await workbookFile([extraData]));
+  assert.equal(rPreview.applied,1);
 });
