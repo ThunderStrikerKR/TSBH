@@ -61,3 +61,15 @@ cargo test --manifest-path tests/rust-migration/integration/Cargo.toml
 - 인식→Rust merge 차등 시나리오에 수동 분류가 있고 원문이 변경된 주문을 추가.
 - `zz-workflow-31-simulation.test.mjs`의 `merge_reception_analysis` 입력에 새 필수 `state`/`client`를 추가함.
 - 통과 판정은 이번 수정이 실제 완료된 CI에서 검증된 후에만 가능.
+
+## Windows 사용자 행동 테스트 강화 (2026-11-17)
+
+- `scripts/migration32-dev-business-ui.mjs`: 실제 Windows Tauri DEV + WebView2 + TEST SQLite에서
+  발주 원문 붙여넣기 → 소매 거래처 직접 확정 → 정상 84,000원 표시까지 진행한 다음
+  **4.2초간 200ms 간격으로 가격·오류 목록을 샘플링**해 지연된 Rust 인식/병합으로
+  정상 가격이 사라지거나 직원 확인 오류가 다시 생기면 즉시 실패 처리함.
+- 위 검증은 실제 `DEV_WINDOWS_TAURI.cmd` 스모크 워크플로를 통해 실행되며
+  **CI 결과가 완료되기 전에는 ACTION_PASS / WIN_PASS로 표시하지 않음**.
+- 사용자가 의도적으로 삭제한 `BUILD_WINDOWS_TAURI.cmd`는 복구하지 않음.
+  남아 있는 `PACKAGE_WINDOWS_TAURI.cmd`가 이 삭제 파일을 호출하는 별도 빌드 경로 결함은
+  운임/주문 Rust 이전과 분리해 **OPEN** 상태로 추적.

@@ -162,6 +162,45 @@ try {
     "Registered retail price was rejected as missing");
   record("REGISTERED_RETAIL_PRICES_APPEAR_IN_GUI",{expectedFirstLine:84000});
 
+  // End-to-end regression for the reported 2–3 second delayed price loss.
+  // Observe the REAL WebView2 DOM throughout the delayed Rust recognition
+  // / merge / pricing effects, not just immediately after dealer selection.
+  const retentionFrames=await page.evaluate(async()=>{
+    const frames=[];
+    const capture=()=>({
+      tick:Math.round(performance.now()),
+      amounts:[...document.querySelectorAll("button.item-amount")]
+        .map(node=>node.textContent?.trim()??""),
+      priceErrors:[...document.querySelectorAll(".staff-checks,[role=alert]")]
+        .map(node=>node.textContent??"")
+        .filter(text=>text.includes("판매가를 등록하세요") ||
+          text.includes("가격 정보를 찾을 수"))
+        .map(text=>text.slice(0,250))
+    });
+    capture();
+    const timer=setInterval(()=>{if(frames.length<32)frames.push(capture());},200);
+    await new Promise(resolve=>setTimeout(resolve,4200));
+    clearInterval(timer);
+    frames.push(capture());
+    return frames;
+  });
+  const lost=retentionFrames.filter(frame=>
+    !frame.amounts.some(text=>text.includes("84,000")) || frame.priceErrors.length>0);
+  record("POST_DEALER_4200MS_PRICE_STABILITY_REAL_WEBVIEW2",{
+    frameCount:retentionFrames.length,
+    durationMs:retentionFrames.at(-1).tick-retentionFrames[0].tick,
+    missingFrames:lost.length,
+    first:retentionFrames[0],last:retentionFrames.at(-1)
+  });
+  if(lost.length){
+    await snap(page,"34-delayed-price-loss-diagnostic");
+    throw Error("SIM34_DELAYED_PRICE_LOSS "+JSON.stringify({
+      initial:pricing,bad:lost.slice(0,8),last:retentionFrames.at(-1)
+    }));
+  }
+  assert.ok(retentionFrames.length>=10,
+    "GUI timer did not observe enough post-selection rendering states");
+
   // Start a fresh receipt rather than contaminating the two-order regression.
   await page.getByRole("button",{name:/새 주문/}).first().click();
   await page.waitForFunction(()=>
