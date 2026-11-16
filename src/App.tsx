@@ -2,8 +2,8 @@ import { businessCoreCall } from "./tauri-bridge";
 import type { State } from "./types";
 import { FactoryNotifications } from "./FactoryNotifications";
 import { FactoryReplyWatcher } from "./FactoryReplyWatcher";
-import { addHubNotification, type HubNotification, type NewHubNotification } from "./app/notification-center";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { usePersistedNotifications } from "./app/usePersistedNotifications";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { AppHeader } from "./app/AppHeader";
 import { StartupRecoveryPanel } from "./app/StartupRecoveryPanel";
 import { DailySettlement } from "./app/DailySettlement";
@@ -42,13 +42,12 @@ const WorkflowQueue = lazy(() =>
 );
 export function App() {
   const [notifications, setNotifications] = useState(false);
-  const [inbox, setInbox] = useState<HubNotification[]>([]);
   const lastNoticeId = useRef<number | undefined>(undefined);
-  const addNotification = useCallback((entry: NewHubNotification) => {
-    setInbox((previous) => addHubNotification(previous, entry));
-  }, []);
   const model = useAppModel(),
     { state, draft, tab } = model;
+  // Wait until the Tauri startup registered the managed SQLite connection.
+  const { inbox, storageError, add: addNotification, markRead, clear } =
+    usePersistedNotifications(Boolean(state && draft));
   useEffect(() => {
     const notice = model.notice;
     if (!notice || lastNoticeId.current === notice.id) return;
@@ -117,6 +116,7 @@ export function App() {
             (nativeReviewCount?.state === state ? nativeReviewCount.count : 0) +
             inbox.filter((entry) => !entry.read).length
           }
+          notificationError={Boolean(storageError)}
           page={tab}
           dock={model.dock}
           busy={model.dockBusy}
@@ -138,10 +138,9 @@ export function App() {
           <FactoryNotifications
             state={state}
             notices={inbox}
-            onRead={(id) =>
-              setInbox((previous) => previous.map((entry) =>
-                entry.id === id ? { ...entry, read: true } : entry))}
-            onClear={() => setInbox([])}
+            onRead={(id) => { void markRead(id); }}
+            onClear={() => { void clear(); }}
+            storageError={storageError}
             onRefresh={model.refresh}
             onClose={() => setNotifications(false)}
             onOpen={(id) => {

@@ -864,6 +864,9 @@ try {
   await navPage.addInitScript(({ initial }) => {
     let current = structuredClone(initial);
     const saveLog = [];
+    // An in-browser mock still models the native notification contract.
+    // The actual disk durability gate uses real Tauri / SQLite on Windows.
+    let storedHubNotices = [];
     window.__navSaved = () => ({ state: structuredClone(current), saves: structuredClone(saveLog) });
     window.__navOcrCalls=[];
     let navOcrPhaseCallback;
@@ -888,6 +891,25 @@ try {
           return undefined;
         }
         if (command === "cancel_ocr") return undefined;
+        if (command === "hub_notifications_list")
+          return structuredClone(storedHubNotices);
+        if (command === "hub_notifications_add") {
+          const notice=structuredClone(args.notice);
+          const last=storedHubNotices[0];
+          if (!last || last.title !== notice.title ||
+              last.detail !== notice.detail || last.filename !== notice.filename)
+            storedHubNotices=[notice,...storedHubNotices].slice(0,100);
+          return structuredClone(storedHubNotices);
+        }
+        if (command === "hub_notifications_mark_read") {
+          storedHubNotices=storedHubNotices.map(n=>
+            n.id===args.id ? {...n,read:true} : n);
+          return structuredClone(storedHubNotices);
+        }
+        if (command === "hub_notifications_clear") {
+          storedHubNotices=[];
+          return [];
+        }
         if (command === "startup_status")
           return { phase: "READY", attempts: 1, isTest: false };
         if (command === "startup_metrics")
