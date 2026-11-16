@@ -42,10 +42,12 @@ const WorkflowQueue = lazy(() =>
 );
 export function App() {
   const [notifications, setNotifications] = useState(false);
-  const { inbox, storageError, add: addNotification, markRead, clear } = usePersistedNotifications();
   const lastNoticeId = useRef<number | undefined>(undefined);
   const model = useAppModel(),
     { state, draft, tab } = model;
+  // Wait until the Tauri startup registered the managed SQLite connection.
+  const { inbox, storageError, add: addNotification, markRead, clear } =
+    usePersistedNotifications(Boolean(state && draft));
   useEffect(() => {
     const notice = model.notice;
     if (!notice || lastNoticeId.current === notice.id) return;
