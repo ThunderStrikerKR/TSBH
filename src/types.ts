@@ -586,7 +586,8 @@ export interface OcrCapture {
 }
 
 export interface Api {
-  captureOcr?: () => Promise<OcrCapture>;
+  captureOcr?: (requestId: string) => Promise<OcrCapture>;
+  cancelOcr?: () => Promise<boolean>;
   saveProductWorkbook?: (bytes: number[]) => Promise<string | null>;
   saveProductSyncWorkbook?: (bytes: number[]) => Promise<string | null>;
   saveFactoryWorkbook?: (bytes: number[]) => Promise<string | null>;
