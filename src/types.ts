@@ -201,6 +201,12 @@ export type Status =
   | "EXPORTED";
 export type OrderType = "AGENCY" | "DEALER" | "RETAIL";
 export interface Order {
+  /** Rust-reported dealer matching provenance; advisory only, never a customer-facing message. */
+  clientMatch?: {
+    source: "KAKAO_REMEMBERED" | "KAKAO_TITLE" | "RAW_EXPLICIT" | "MANUAL" | "NONE";
+    clientId: string | null;
+    detail: string;
+  };
   orderType?: OrderType;
   senderSnapshot?: Client;
   analysisEvidence?: import("./order-evidence.js").OrderEvidence[];
