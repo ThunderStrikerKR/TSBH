@@ -8,6 +8,8 @@ if ($env:GITHUB_ACTIONS -ne "true" -or $env:RUNNER_OS -ne "Windows") {
 }
 if (!(Test-Path -LiteralPath $ExePath)) { throw "EXE missing: $ExePath" }
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
@@ -111,17 +113,32 @@ try {
       "saved=$($expected | ConvertTo-Json -Compress) restored=$($restored | ConvertTo-Json -Compress)"
   }
   Write-Host "WINDOW_PLACEMENT_RESTORED: $($restored | ConvertTo-Json -Compress)"
-  if (![BandoWindowPlacementProbe]::ShowWindow($second.MainWindowHandle,3)) {
-    # ShowWindow may return false if it was previously hidden; verify with IsZoomed.
-    if (![BandoWindowPlacementProbe]::IsZoomed($second.MainWindowHandle)) {
-      throw "Could not maximize native main window"
-    }
+  # Maximize through the ACTUAL React titlebar button and Tauri's
+  # windowControl("maximize") IPC, not a foreign Win32 ShowWindow shortcut.
+  $root=[System.Windows.Automation.AutomationElement]::FromHandle(
+    $second.MainWindowHandle)
+  $condition=New-Object System.Windows.Automation.PropertyCondition(
+    [System.Windows.Automation.AutomationElement]::NameProperty,
+    "창 최대화 또는 복원")
+  $button=$null
+  for($i=0;$i -lt 100;$i++){
+    $button=$root.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$condition)
+    if($null -ne $button){break}
+    Start-Sleep -Milliseconds 150
   }
-  Start-Sleep -Milliseconds 600
+  if($null -eq $button) {throw "Actual app maximize button not found in Windows UI Automation"}
+  $invoke=$button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+  $invoke.Invoke()
+  Start-Sleep -Milliseconds 800
   if (![BandoWindowPlacementProbe]::IsZoomed($second.MainWindowHandle)) {
-    throw "Main window did not maximize"
+    throw "Actual application maximize button did not maximize native window"
   }
   Close-Bando $second
+  $storedMax=Get-Content -LiteralPath $stateFile -Raw | ConvertFrom-Json
+  Write-Host "WINDOW_MAXIMIZED_SAVED: $($storedMax.main.maximized)"
+  if (!$storedMax.main.maximized) {
+    throw "Window state file did not retain a maximized window on close"
+  }
   $third=Start-Bando
   if (![BandoWindowPlacementProbe]::IsZoomed($third.MainWindowHandle)) {
     throw "Maximized window was not restored on reopening"
