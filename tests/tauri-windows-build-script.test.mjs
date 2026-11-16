@@ -28,36 +28,36 @@ test("Windows build stages new binary and rechecks before replacing published ex
 
 test("daily development is a real Tauri/Vite TEST workspace without release EXE or ZIP build", () => {
   const dev = readFileSync(new URL("../DEV_WINDOWS_TAURI.cmd", import.meta.url), "utf8");
-  assert.match(dev, /tauri\\.cmd" dev -- -- --bando-developer-test/);
-  assert.match(dev, /ensure-node-deps\\.ps1/);
-  assert.doesNotMatch(dev, /npm run build:windows|Compress-Archive|package-ocr-runtime\\.ps1/);
-  assert.match(dev, /mklink \/J .*release\\\\ocr/);
+  assert.match(dev, /tauri\.cmd" dev -- -- --bando-developer-test/);
+  assert.match(dev, /ensure-node-deps\.ps1/);
+  assert.doesNotMatch(dev, /npm run build:windows|Compress-Archive|package-ocr-runtime\.ps1/);
+  assert.match(dev, /mklink \/J .*release\\ocr/);
 });
 
 test("only explicit release command builds full OCR/portable ZIP; EXE-only option skips packaging", () => {
   const exe = readFileSync(new URL("../BUILD_WINDOWS_EXE.cmd", import.meta.url), "utf8");
   const portable = readFileSync(new URL("../PACKAGE_WINDOWS_TAURI.cmd", import.meta.url), "utf8");
-  assert.match(exe, /BUILD_WINDOWS_TAURI\\.cmd" --exe-only/);
-  assert.match(portable, /BUILD_WINDOWS_TAURI\\.cmd"/);
+  assert.match(exe, /BUILD_WINDOWS_TAURI\.cmd" --exe-only/);
+  assert.match(portable, /BUILD_WINDOWS_TAURI\.cmd"/);
   assert.ok(source.indexOf('if /I "%~1"=="--exe-only" goto exe_only') <
     source.indexOf("ensure-ocr-package.ps1"));
-  assert.match(source, /:exe_only[\\s\\S]*EXE ONLY: release\\\\bando_hub\\.exe/);
+  assert.match(source, /:exe_only[\s\S]*EXE ONLY: release\\bando_hub\.exe/);
 });
 
 test("npm dependencies are installed once per lockfile or Node toolchain change", () => {
   const ensure = readFileSync(new URL("../scripts/ensure-node-deps.ps1", import.meta.url), "utf8");
-  assert.match(ensure, /Get-FileHash.*\\$lock/);
-  assert.match(ensure, /Get-FileHash.*\\$manifest/);
-  assert.match(ensure, /\\.bando-deps-fingerprint\\.txt/);
+  assert.match(ensure, /Get-FileHash.*\$lock/);
+  assert.match(ensure, /Get-FileHash.*\$manifest/);
+  assert.match(ensure, /\.bando-deps-fingerprint\.txt/);
   assert.match(ensure, /Skipping npm installation/);
-  assert.match(ensure, /npm\\.cmd ci --no-audit --no-fund/);
+  assert.match(ensure, /npm\.cmd ci --no-audit --no-fund/);
   assert.doesNotMatch(source, /call npm install --no-audit/);
 });
 
 test("expensive Windows release GUI/ZIP checks require explicit GitHub workflow dispatch", () => {
   const output = readFileSync(new URL("../.github/workflows/migration-output.yml", import.meta.url), "utf8");
   const verify = readFileSync(new URL("../.github/workflows/verify-tauri.yml", import.meta.url), "utf8");
-  assert.match(output, /windows-p1p2-real-exe:[\\s\\S]*?if: github\\.event_name == 'workflow_dispatch'/);
-  assert.match(verify, /windows-release-build:[\\s\\S]*?if: github\\.event_name == 'workflow_dispatch'/);
+  assert.match(output, /windows-p1p2-real-exe:[\s\S]*?if: github\.event_name == 'workflow_dispatch'/);
+  assert.match(verify, /windows-release-build:[\s\S]*?if: github\.event_name == 'workflow_dispatch'/);
   assert.match(verify, /Windows SQLite persistence and Rust tests/);
 });
