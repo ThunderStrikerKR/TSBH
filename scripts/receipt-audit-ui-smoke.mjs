@@ -458,6 +458,16 @@ try {
   await ocrReview.waitFor();
   await ocrReview.getByRole("button", { name: "닫기", exact: true }).click();
   await ocrReview.waitFor({ state: "detached" });
+  // Cancelling the recognition subprocess is not an OCR failure and must
+  // return to the unchanged receipt without an error modal.
+  await page.evaluate(() => { window.__ocrDelayForTest = true; });
+  await captureButton.click();
+  await ocrProgress.waitFor();
+  await ocrProgress.getByRole("button", { name: "취소", exact: true }).click();
+  await ocrProgress.waitFor({ state: "detached" });
+  if (await page.getByRole("dialog", { name: "OCR 실행 오류" }).count())
+    throw Error("OCR cancellation is a normal action, not a processing error");
+  await page.evaluate(() => { window.__ocrDelayForTest = false; });
   await captureButton.click();
   ocrReview = page.getByRole("dialog", { name: "OCR 문자 인식 검토" });
   await ocrReview.waitFor();
