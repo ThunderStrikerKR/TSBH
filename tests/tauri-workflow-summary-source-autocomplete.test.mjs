@@ -3,23 +3,24 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 const read = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 const board = read("src/WorkflowBoard.tsx");
-const css = read("src/styles/patch-v0808.css");
+const css = read("src/styles/workflow.css");
 const source = read("src/SourceDocument.tsx");
 const sourceCss = read("src/styles/receipt-document.css");
 const main = read("src/main.tsx");
 const history = read("src/shared/disable-input-history.ts");
 const manager = read("src/ClientManager.tsx");
 
-test("workflow summary is a compact pair of lines with normalized tax status", () => {
+test("workflow summary uses one line for shipments, deposit and normalized tax status", () => {
   const block = board.slice(board.indexOf('className="flow-fixed-summary"'), board.indexOf('{(g.needsNotice'));
-  assert.equal((block.match(/className="flow-summary-line"/g) || []).length, 2);
-  assert.ok(block.indexOf("배송 {ss.length}건") < block.indexOf("총 운임"));
-  assert.ok(block.indexOf("총 운임") < block.indexOf("입금 예정"));
+  assert.equal((block.match(/className="flow-summary-compact"/g) || []).length, 1);
+  assert.match(block, /배송 \{ss\.length\}건, 입금액 \{won\(nativeGroup\?\.totals\.total \?\? null\)\}/);
   assert.match(block, /nativeGroup\?\.vatLabel/);
+  assert.doesNotMatch(block, /총 운임|입금 예정|미확정 · 임시/);
   const rust = read("src-tauri/src/business_core/rules/workflow_preview.rs");
   for (const label of ["부가세 포함", "부가세 별도", "부가세 포함/별도"]) assert.ok(rust.includes(label));
   assert.doesNotMatch(block, /부가세 적용|부가세 미추가/);
-  assert.match(css, /\.flow-fixed-summary \.flow-summary-line\s*\{[^}]*justify-content: space-between;/);
+  assert.match(css, /\.flow-summary-compact \{[\s\S]*?white-space: nowrap/);
+  assert.match(css, /\.hub-slot-3 \.workflow-group \{[\s\S]*?border: 1px solid/);
 });
 test("source text remains visually bounded before focus, without unnecessary notice", () => {
   assert.doesNotMatch(source, /확정 원문 \/ 주문 변경은/);
