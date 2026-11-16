@@ -1972,7 +1972,11 @@ try {
   assert.ok((await navPage.locator(".source-document").textContent()).includes("검증 발주 원문"));
   await navMenu.getByRole("button",{name:"상품 관리"}).click();
   await leave.getByRole("button",{name:"저장",exact:true}).click();
-  await navPage.getByText(/신규 발주서는 주문 확인 완료 후 저장할 수 있습니다/).waitFor();
+  await navPage.getByRole("button",{name:/^알림(?: \d+건)?$/}).click();
+  const alertCenter=navPage.getByRole("dialog",{name:"알림"});
+  await alertCenter.locator(".notification-center-item").first().click();
+  await alertCenter.getByText(/신규 발주서는 주문 확인 완료 후 저장할 수 있습니다/).waitFor();
+  await alertCenter.getByRole("button",{name:/닫기/}).first().click();
   assert.ok((await navPage.locator(".source-document").textContent()).includes("검증 발주 원문"));
   await navMenu.getByRole("button",{name:"상품 관리"}).click();
   await leave.getByRole("button",{name:"저장 안 함"}).click();
