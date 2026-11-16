@@ -357,7 +357,7 @@ export function ProductManager({
             <section className="card product-prices">
               <div className="management-search-toolbar">
                 <ManagementSearch label="상품 검색" placeholder="모델명 또는 상품명 검색"
-                  value={search} onChange={(value) => { if (checkPriceDrafts()) setSearch(value); }}/>
+                  value={search} onChange={setSearch}/>
               </div>
               <div className="manager-filters">
                 <ClassificationFilters
@@ -365,7 +365,6 @@ export function ProductManager({
                   category={category}
                   brand={brand}
                   onChange={(nextCategory, nextBrand) => {
-                    if (!checkPriceDrafts()) return;
                     setCategory(nextCategory);
                     setBrand(nextBrand);
                   }}
@@ -374,7 +373,7 @@ export function ProductManager({
                   <input
                     type="checkbox"
                     checked={missing}
-                    onChange={(e) => { if (checkPriceDrafts()) setMissing(e.target.checked); }}
+                    onChange={(e) => setMissing(e.target.checked)}
                   />{" "}
                   가격 미등록만
                 </label>
@@ -406,26 +405,40 @@ export function ProductManager({
                                 )}
                             </div>
                           </td>
-                          {(["wholesale", "semi", "retail"] as const).map((tier) => (
-                            <td key={tier}>
-                              <PriceCell
-                                key={v.id + ":" + tier + ":" + priceResetEpoch}
-                                enabled={priceMode}
-                                onPendingChange={(pending) => markPricePending(v.id + ":" + tier, pending)}
-                                value={v[tier]}
-                                label={`${p.name} ${variantLabel(v)} ${{ wholesale: "도매가", semi: "반도매가", retail: "소매가" }[tier]}`}
-                                onSave={async (n, expected) => {
-                                  priceWrites.current++;
-                                  try {
-                                    const committed = await window.bando!.setPrice(p.id, v.id, tier, n, expected);
-                                    await onRefresh(committed);
-                                  } finally {
-                                    priceWrites.current--;
-                                  }
-                                }}
-                              />
-                            </td>
-                          ))}
+                          {(["wholesale", "semi", "retail"] as const).map((tier) => {
+                            const key = p.id + ":" + v.id + ":" + tier;
+                            const changed = priceDrafts[key];
+                            return (
+                              <td key={tier}>
+                                <input
+                                  data-price-cell
+                                  data-price-pending={!!changed}
+                                  className={"price-batch-input" + (changed ? " pending" : "")}
+                                  aria-label={`${p.name} ${variantLabel(v)} ${{
+                                    wholesale: "도매가", semi: "반도매가", retail: "소매가",
+                                  }[tier]}`}
+                                  inputMode="numeric"
+                                  placeholder="미등록"
+                                  readOnly={!priceMode || batchSaving}
+                                  value={changed?.raw ?? priceText(v[tier])}
+                                  onFocus={(event) => {
+                                    if (priceMode && !batchSaving) event.currentTarget.select();
+                                  }}
+                                  onChange={(event) =>
+                                    editTablePrice(p.id, v.id, tier, v[tier], event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault();
+                                      event.currentTarget.blur();
+                                    } else if (event.key === "Escape" && changed) {
+                                      event.preventDefault();
+                                      editTablePrice(p.id, v.id, tier, v[tier], priceText(v[tier]));
+                                    }
+                                  }}
+                                />
+                              </td>
+                            );
+                          })}
                           <td>
                             <button onClick={() => openDetail(p)}>상세 관리</button>
                           </td>
@@ -436,6 +449,20 @@ export function ProductManager({
                 </ManagementTable>
                 {!products.length && <EmptyState compact title={search || missing || category || brand ? "조건에 맞는 상품이 없습니다." : "등록된 상품이 없습니다."} />}
               </div>
+              {priceMode && (
+                <footer className="product-price-batch-footer" aria-label="상품 가격 일괄 편집">
+                  <span className="product-price-batch-count">변경 {Object.keys(priceDrafts).length}건</span>
+                  <div className="product-price-batch-actions">
+                    <button type="button" disabled={batchSaving || !hasPendingPrices}
+                      onClick={cancelPriceDrafts}>취소</button>
+                    <button type="button" className="primary"
+                      disabled={batchSaving || !hasPendingPrices}
+                      onClick={() => void savePriceDrafts()}>
+                      {batchSaving ? "저장 중" : "저장"}
+                    </button>
+                  </div>
+                </footer>
+              )}
             </section>
           </>
         )}
