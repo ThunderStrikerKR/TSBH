@@ -41,7 +41,13 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
       phone:"010-2345-6789",freight:"3500"}
   ];
   for(const [index,info] of cases.entries()){
-    if(index)await page.getByRole("button",{name:/새 주문/}).first().click();
+    if(index) {
+      await page.getByRole("button",{name:/새 주문/}).first().click();
+      // Do not paste the second source into the still-mounted first receipt.
+      await page.waitForFunction(name=>
+        !(document.querySelector(".source-document")?.textContent||"").includes(name),
+        cases[0].name,{timeout:20000});
+    }
     const raw=[info.name,info.phone,info.address,info.model].join("\n");
     await page.evaluate(text=>window.bando.copy(text),raw);
     await page.getByRole("button",{name:"대리발송",exact:true}).click();
