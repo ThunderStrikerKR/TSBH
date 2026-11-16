@@ -218,12 +218,10 @@ export function SourceDocument({
             next = selected.order;
           }
         } catch (error) {
-          // Never discard the pasted order, but do not conceal a broken
-          // automatic dealer binding from staff.
-          if (alive.current) onNotice(
-            "거래처 자동 연결에 실패했습니다. 거래처를 직접 선택해 주세요. " +
-            String(error).replace(/^Error: /, ""), "error",
-          );
+          // Auto-matching is optional. Keep the pasted order and let staff
+          // select a dealer; a missing/failed suggestion is not a reception
+          // error and must not display a blocking red toast.
+          console.warn("거래처 자동 연결을 건너뛰었습니다.", error);
         }
       }
       if (!alive.current || latestReception.current.order !== order ||
