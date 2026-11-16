@@ -101,7 +101,7 @@ export function StaffChecks({
                 <button disabled={unavailable} onClick={() => onSelect(b)}>
                   {b.kind === "UNASSIGNED_EVIDENCE"
                     ? "수동 분류에서 확인"
-                    : ["CLIENT_MATCH_EVIDENCE", "CLIENT_MATCH_CONFLICT"].includes(b.kind ?? "")
+                    : ["CLIENT_MATCH_EVIDENCE", "CLIENT_MATCH_CONFLICT", "CLIENT_MATCH_ERROR"].includes(b.kind ?? "")
                     ? "거래처 확인"
                     : [
                           "MODEL",
