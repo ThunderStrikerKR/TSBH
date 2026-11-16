@@ -169,6 +169,48 @@ try {
     null,{timeout:20000});
   await snap(page,"03-ready-for-two-order-test");
 
+  // SIM34: directly paste a two-recipient shipment into the running
+  // Windows native Tauri GUI. The next recipient's ADDRESS and PHONE
+  // precede their NAME after an empty-line paragraph boundary.
+  const proximityRaw=[
+    "김가상","서울특별시 마포구 월드컵로 20","010-1234-5678","",
+    "경기도 성남시 분당구 불정로 6","010-2345-6789","박가상",
+  ].join("\\n");
+  await page.evaluate(text=>window.bando.copy(text),proximityRaw);
+  await page.getByRole("button",{name:"대리발송",exact:true}).click();
+  const secondDelivery=page.getByRole("button",{name:"배송 건 박가상"});
+  await secondDelivery.waitFor({state:"visible",timeout:30000});
+  const firstDelivery=page.getByRole("button",{name:"배송 건 김가상"});
+  await firstDelivery.waitFor({state:"visible",timeout:15000});
+  const deliveryFields=async()=>{
+    return page.locator(".recipient-review input").evaluateAll(nodes=>
+      nodes.map(n=>n.value));
+  };
+  await secondDelivery.click();
+  await page.locator(".recipient-review").waitFor({state:"visible",timeout:15000});
+  const secondValues=await deliveryFields();
+  assert.ok(secondValues.some(v=>v==="박가상"),"SIM34 second recipient name missing");
+  assert.ok(secondValues.some(v=>v.includes("불정로 6")),"SIM34 second address not attached to 박가상");
+  assert.ok(secondValues.some(v=>v==="010-2345-6789"),"SIM34 second contact not attached to 박가상");
+  await snap(page,"34-proximity-second-recipient-native-gui");
+  await firstDelivery.click();
+  const firstValues=await deliveryFields();
+  assert.ok(firstValues.some(v=>v==="김가상"),"SIM34 first recipient name missing");
+  assert.ok(firstValues.some(v=>v.includes("월드컵로 20")),"SIM34 first address not attached to 김가상");
+  assert.ok(firstValues.some(v=>v==="010-1234-5678"),"SIM34 first contact not attached to 김가상");
+  record("SIM34_PHYSICAL_PARAGRAPH_PROXIMITY_ACTUAL_WINDOWS_GUI",{
+    recipients:2,
+    first:{name:"김가상",address:"월드컵로 20",phone:"010-1234-5678"},
+    second:{name:"박가상",address:"불정로 6",phone:"010-2345-6789"},
+    nativeWebView:true
+  });
+  await snap(page,"34-proximity-first-recipient-native-gui");
+  await page.getByRole("button",{name:/새 주문/}).first().click();
+  await page.waitForFunction(()=>
+    !!document.querySelector(".source-document") &&
+    !document.querySelector(".source-document").textContent.includes("박가상"),
+    null,{timeout:15000});
+
   // Real GUI: clipboard, dealer choice, freight typing, two drafts, panel
   // geometry, confirmation actions, SQLite order identities.
   await probeTwoConsecutiveOrders(page,{record,snap},{holdBoth:true});
