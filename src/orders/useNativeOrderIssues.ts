@@ -19,7 +19,7 @@ export function useNativeOrderIssues(draft: Order) {
   useEffect(() => {
     let cancelled = false;
     void businessCoreCall<{ issues: ValidationIssue[] }>(
-      "rules", "order_issues", { order: draft },
+      "rules", "order_issues_with_actions", { order: draft },
     ).then(({ issues }) => {
       if (!cancelled) {
         setResolved({ fingerprint, issues });

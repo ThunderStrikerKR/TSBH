@@ -265,23 +265,10 @@ export function OrderDesk(props: OrderDeskProps) {
                   error={!flowSummaryReady ? flowSummaryError : ""}
                   onSelect={selectIssue}
                   approvingQuantity={approvingQuantity}
-                  canApproveOne={(b) => {
-                    if (exported || !b.recipientId || !b.itemId) return false;
-                    const item = draft.recipients.find((r) => r.id === b.recipientId)
-                      ?.items.find((i) => i.id === b.itemId);
-                    return !!item && !!item.productId && !!item.variantId &&
-                      item.quantityConfirmed === false &&
-                      item.match?.kind !== "QUANTITY" &&
-                      !item.issues.some((issue) => /여러|불명확/.test(issue));
-                  }}
+                  canApproveOne={(b) => !exported && b.canApproveOne === true}
                   onApproveOne={(b) => {
-                    if (quantityActionInFlight.current || exported || !b.itemId || !b.recipientId)
-                      return;
-                    const row = draft.recipients.find((r) => r.id === b.recipientId);
-                    const item = row?.items.find((i) => i.id === b.itemId);
-                    if (!item || !item.productId || !item.variantId ||
-                        item.quantityConfirmed !== false || item.match?.kind === "QUANTITY" ||
-                        item.issues.some((issue) => /여러|불명확/.test(issue))) return;
+                    if (quantityActionInFlight.current || exported ||
+                        b.canApproveOne !== true || !b.itemId || !b.recipientId) return;
                     quantityActionInFlight.current = true;
                     setApprovingQuantity(true);
                     void run(async () => {

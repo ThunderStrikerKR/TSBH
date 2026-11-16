@@ -113,3 +113,11 @@
 - 기존 로컬 수동 실행 진입점 `PACKAGE_WINDOWS_TAURI.cmd`에서 직접 `scripts/package-windows-tauri.ps1`를 실행하도록 교정. DEV Windows 실행과 분리.
 - 신규 스크립트는 노드 의존성 핑거프린트 확인 → 실제 Tauri release EXE 빌드 → 변경된 OCR 런타임만 준비 → ZIP 임시 생성 → 한국어 설치 경로로 압축 해제 및 PaddleOCR 실추론 검증 → 정상일 때만 기존 배포 ZIP 교체 순으로 실행.
 - CI 구조 테스트는 `test.todo`에서 실제 계약 검사로 승격. Windows 실제 Release+OCR 전체 설치/배포 검증은 **별도 수동 workflow 검증 전 OPEN**.
+
+## 후속 — 1개 잠정 수량 승인 버튼의 TypeScript 업무 판단 제거
+
+- `OrderDesk.tsx`에서 수동으로 상품/옵션/수량 후보 문구를 해석해 `1개로 잠정 처리` 가능 여부를 결정한 코드를 제거.
+- Rust `issues.rs::can_approve_missing_quantity`를 **실제 `apply_issue_action`과 UI 자격 평가의 단일 근거**로 통합.
+- `order_issues_with_actions`만 버튼용 `canApproveOne` 상태를 추가하고, 기존 `order_issues` 페이로드는 원본과의 차등 검사 호환성을 위해 유지.
+- React는 Rust가 반환한 true/false 및 이미 정한 화면 잠금 상태만 전달. 실제 승인 시 Rust가 같은 조건을 다시 검사.
+- Rust 단위 테스트는 정상 1개 승인과 상품/옵션 누락, 이미 확정된 수량, 수량 연결 불명확 및 복수 후보의 거부를 확인. CI·Windows 결과는 따로 판정.

@@ -103,6 +103,9 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             req(&payload, "state")?, required_str(&payload, "orderId")?,
         ),
         "order_issues" => Ok(json!({"issues": issues::order_issues(req(&payload,"order")?)})),
+        "order_issues_with_actions" => Ok(json!({
+            "issues": issues::order_issues_with_actions(req(&payload,"order")?)
+        })),
         "delivery_requirements" => issues::delivery_requirements(&payload),
         "apply_issue_action" => issues::issue_action(&payload),
         "apply_product_action" => product_confirmation::apply(&payload),

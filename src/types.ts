@@ -713,6 +713,8 @@ export interface IssueDecision {
   evidence: string;
 }
 export interface ValidationIssue {
+  /** Read-only permission from Rust's staff action projection, not React logic. */
+  canApproveOne?: boolean;
   evidence?: string;
   issueId: string;
   orderId: string;

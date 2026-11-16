@@ -511,6 +511,12 @@ export function useOrderDesk({
       : flowGroups.length
         ? flowGroups.flatMap((g) => nativeBoard.byId[g.id]?.issues ?? [])
         : nativeIssues.issues;
+  // Rust, not React, supplies which one-item provisional action is allowed.
+  // The workflow board may supply the issue label; the live Rust order-issue
+  // projection supplies the same issue's authoritative action eligibility.
+  const approvalFlags = new Map(nativeIssues.issues.map(
+    (issue) => [issue.issueId, issue.canApproveOne === true],
+  ));
   const staffBlocks: StaffBlock[] = allBlocks
     .filter((b, i, a) => a.findIndex((x) => x.issueId === b.issueId) === i)
     .map((b) => {
@@ -518,6 +524,7 @@ export function useOrderDesk({
         item = r?.items.find((i) => i.id === b.itemId);
       return {
         ...b,
+        canApproveOne: nativeIssues.ready && approvalFlags.get(b.issueId) === true,
         detail:
           b.detail +
           (b.kind === "APPLIED" ? " × " + item?.quantity : "") +

@@ -62,6 +62,16 @@ fn internal_model(name:&str)->String {
     }
     text.to_string()
 }
+// One Rust eligibility predicate is used both to enable the staff button
+// and to authorize the final action. The React view must not duplicate it.
+fn can_approve_missing_quantity(item:&Value)->bool {
+    !str_field(item,"productId").is_empty() &&
+    !str_field(item,"variantId").is_empty() &&
+    field(item,"quantityConfirmed").as_bool()==Some(false) &&
+    str_field(field(item,"match"),"kind")!="QUANTITY" &&
+    !rows(field(item,"issues")).iter().any(|v|v.as_str().is_some_and(|s|
+        s.contains("여러")||s.contains("불명확")))
+}
 fn valid_contact(value:&str)->bool {
     let digits:String=value.chars()
         .filter(|c|!c.is_whitespace()&&!['(',')','.','-'].contains(c)).collect();
@@ -391,6 +401,23 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
     }
     issues
 }
+/// Staff-facing extension of the unchanged order_issues differential oracle.
+ /// The final approval action uses the SAME predicate, never a React copy.
+pub(super) fn order_issues_with_actions(order:&Value)->Vec<Value>{
+    let mut issues=order_issues(order);
+    for issue in &mut issues {
+        if str_field(issue,"kind")!="QUANTITY_MISSING" {continue}
+        let rid=str_field(issue,"recipientId");
+        let iid=str_field(issue,"itemId");
+        let eligible=rows(field(order,"recipients")).iter()
+            .find(|row|str_field(row,"id")==rid)
+            .and_then(|row|rows(field(row,"items")).iter()
+                .find(|item|str_field(item,"id")==iid))
+            .is_some_and(can_approve_missing_quantity);
+        issue["canApproveOne"]=json!(eligible);
+    }
+    issues
+}
 pub(super) fn synchronize(order:&mut Value)->Result<(),String>{
     let issues=order_issues(order);
     let old=field(order,"issueResolutions").as_object()
@@ -440,15 +467,8 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
                 .position(|row|str_field(row,"id")==rid);
             let ii=ri.and_then(|ri|rows(field(&order["recipients"][ri],"items"))
                 .iter().position(|i|str_field(i,"id")==iid));
-            let bad=ri.zip(ii).is_none_or(|(ri,ii)|{
-                let i=&order["recipients"][ri]["items"][ii];
-                str_field(i,"productId").is_empty() ||
-                str_field(i,"variantId").is_empty() ||
-                field(i,"quantityConfirmed").as_bool()!=Some(false) ||
-                str_field(field(i,"match"),"kind")=="QUANTITY" ||
-                rows(field(i,"issues")).iter().any(|v|v.as_str().is_some_and(|s|
-                    s.contains("여러")||s.contains("불명확")))
-            });
+            let bad=ri.zip(ii).is_none_or(|(ri,ii)|
+                !can_approve_missing_quantity(&order["recipients"][ri]["items"][ii]));
             if bad{return Err("수량 미기재로 확인된 실제 상품만 1개 잠정 처리할 수 있습니다.".into());}
             let ri=ri.unwrap();
             let ii=ii.unwrap();
@@ -480,5 +500,51 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
             Ok(json!({"order":order}))
         }
         _=>Err(format!("지원하지 않는 주문 이슈 action: {action}"))
+    }
+}
+
+#[cfg(test)]
+mod quantity_staff_projection_tests {
+    use super::*;
+    fn order(item:Value)->Value{
+        json!({"id":"order-1","clientId":"dealer","recipients":[{
+            "id":"r","name":"김가상","address":"서울 종로구 10",
+            "phone":"010-1111-2222","mobile":"","items":[item]}]})
+    }
+    fn item()->Value{
+        json!({"id":"i","productId":"p","variantId":"v",
+            "name":"BD 709","quantity":null,"quantityConfirmed":false,
+            "issues":[],"match":{"kind":"EXACT"}})
+    }
+    fn eligible_flag(o:&Value)->Option<bool> {
+        order_issues_with_actions(o).iter()
+            .find(|i|str_field(i,"kind")=="QUANTITY_MISSING")
+            .and_then(|i|field(i,"canApproveOne").as_bool())
+    }
+    #[test] fn staff_button_follows_exact_same_rust_guard_as_actual_action() {
+        let good=order(item());
+        assert_eq!(eligible_flag(&good),Some(true));
+        let args=|o|json!({"action":"approve_missing_quantity","order":o,
+            "recipientId":"r","itemId":"i","now":"2026-11-17T09:00:00Z","actor":"직원"});
+        let applied=issue_action(&args(good.clone())).unwrap();
+        assert_eq!(applied["order"]["recipients"][0]["items"][0]["quantity"],1);
+        for mutate in [
+            (|i:&mut Value|i["productId"]=json!("")) as fn(&mut Value),
+            |i:&mut Value|i["variantId"]=json!(""),
+            |i:&mut Value|i["quantityConfirmed"]=json!(true),
+            |i:&mut Value|i["match"]=json!({"kind":"QUANTITY"}),
+            |i:&mut Value|i["issues"]=json!(["여러 수량 후보"]),
+            |i:&mut Value|i["issues"]=json!(["수량이 불명확"]),
+        ]{
+            let mut blocked=item();
+            mutate(&mut blocked);
+            let rejected=order(blocked);
+            assert_ne!(eligible_flag(&rejected),Some(true));
+            assert!(issue_action(&args(rejected)).is_err());
+        }
+        // Retain the old issue payload for compatibility with existing
+        // TypeScript-origin differential tests. Only the UI projection adds
+        // an actionable flag.
+        assert!(order_issues(&good).iter().all(|i|i.get("canApproveOne").is_none()));
     }
 }
