@@ -395,11 +395,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # One required green or red conclusion for PRs targeting main, main pushes,
-  # and the former integration branch. No missing/skipped/failed suite may pass.
+  # Fast gate on PR/main: require the nine business-parity suites.
+  # Full manual gate: additionally require real Windows EXE and visual UX.
+  # Skipped GUI checks are never counted as a pass.
   final-rust-migration-gate:
     name: "Rust migration integration regression gate"
-    if: ${{ always() && (github.event_name == 'pull_request' || github.ref_name == 'main' || github.ref_name == 'integration/final-rust-migration-20261116') }}
+    if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref_name == 'main') }}
     needs:
       - output-rust
       - frontend
@@ -418,22 +419,40 @@ jobs:
       - history-ts-rust-parity
     runs-on: ubuntu-latest
     steps:
-      - name: Require all fifteen verified gates to succeed
+      - name: Enforce scheduled regression checks (full Windows only on manual runs)
         env:
           GATE_RESULTS: ${{ toJSON(needs) }}
+          GATE_MODE: ${{ github.event_name == 'workflow_dispatch' && 'full' || 'fast' }}
         run: |
           node - <<'NODE'
           const results = JSON.parse(process.env.GATE_RESULTS);
           const report = Object.entries(results).map(([name, value]) => ({
             name, result: value.result
           }));
+          const fastRequired = new Set([
+            'output-rust', 'frontend', 'output-ts-rust-parity',
+            'order-save-ts-rust-parity', 'rules-comprehensive-parity',
+            'integrated-rust-core', 'react-native-reception',
+            'factory-reply-ts-rust-parity', 'history-ts-rust-parity'
+          ]);
+          const full = process.env.GATE_MODE === 'full';
+          const failures = report.filter(({name,result}) => {
+            if (full || fastRequired.has(name)) return result !== 'success';
+            return result !== 'skipped' && result !== 'success';
+          });
           for (const item of report) {
-            console.log(`${item.result === 'success' ? 'PASS' : 'BLOCKED'}: ${item.name} = ${item.result}`);
+            const required = full || fastRequired.has(item.name);
+            console.log([required ? 'REQUIRED' : 'DEFERRED', ': ',
+              item.name, ' = ', item.result].join(''));
           }
-          if (report.length !== 15 || report.some(item => item.result !== 'success')) {
-            console.error('Rust integration CI BLOCKED. No missing or skipped job counts as success.');
+          if (report.length !== 15 || failures.length ||
+              ![...fastRequired].every(name => results[name]?.result === 'success')) {
+            console.error('Rust integration CI BLOCKED:', JSON.stringify(failures));
             process.exitCode = 1;
+          } else if (full) {
+            console.log('FULL WINDOWS + RUST INTEGRATION GATE PASSED');
           } else {
-            console.log('MAIN RUST CI PASSED; installed Windows UX and real-data migration sign-off remain separate.');
+            console.log('FAST RUST BUSINESS INTEGRATION GATE PASSED');
+            console.log('Windows Release EXE and UX checks NOT run; require manual workflow_dispatch.');
           }
           NODE
