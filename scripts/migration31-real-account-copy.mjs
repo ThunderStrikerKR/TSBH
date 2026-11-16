@@ -9,7 +9,8 @@ export async function probeWindowsAccountCopy(page,{record,snap}) {
   const second=page.getByRole("button",{name:"배송 건 박가상"});
   await second.waitFor({state:"visible",timeout:30000});
   await second.click();
-  const money=page.locator(".items-freight-panel .freight-money input:not([disabled])").first();
+  await page.waitForFunction(()=>document.querySelector(".workflow-shipment.chosen")?.getAttribute("aria-label")==="배송 건 박가상",null,{timeout:30000});
+  const money=page.locator('.items-freight-panel .freight-money input[aria-label^="박가상"]:not([disabled])').first();
   await money.waitFor({state:"visible",timeout:30000});
   await money.click();
   await money.press("ControlOrMeta+A");
@@ -25,7 +26,8 @@ export async function probeWindowsAccountCopy(page,{record,snap}) {
   // Switching between two shipments must preserve the first manual edit.
   const first=page.getByRole("button",{name:"배송 건 김가상"});
   await first.click();
-  const firstField=page.locator(".items-freight-panel .freight-money input:not([disabled])").first();
+  await page.waitForFunction(()=>document.querySelector(".workflow-shipment.chosen")?.getAttribute("aria-label")==="배송 건 김가상",null,{timeout:30000});
+  const firstField=page.locator('.items-freight-panel .freight-money input[aria-label^="김가상"]:not([disabled])').first();
   await firstField.waitFor({state:"visible",timeout:30000});
   await page.waitForTimeout(600);
   const firstValue=await firstField.inputValue();
@@ -86,6 +88,7 @@ export async function probeWindowsAccountCopy(page,{record,snap}) {
     "SIM31_07 bank number missing from copy preview");
   assert.ok(await copy.isEnabled(),"SIM31_07 bank copy button disabled");
   await copy.click();
+  await page.waitForTimeout(450);
   const clipboard=await page.evaluate(()=>window.bando.readClipboard());
   assert.ok(clipboard.includes(accountMarker),
     "SIM31_07 copy to real Windows clipboard omitted bank account");
