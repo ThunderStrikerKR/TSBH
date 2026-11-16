@@ -41,6 +41,69 @@ fn remembered(state:&Value,windows:&Value)->Option<String> {
         Some(id.to_owned())
     }else{None}
 }
+// The dealer is NOT the recipient. For example, a school name and two
+// recipient phone numbers in an order are delivery details, not evidence that
+// the school placed the order. Only explicitly marked sender/dealer fields
+// qualify for automatic identification from raw text.
+fn client_terms(client:&Value)->Vec<String>{
+    ["name","displayName","shortNames","identifiers"].iter()
+        .flat_map(|field| s(client,field).split([',',';','|','\n']))
+        .map(str::trim).filter(|term|term.chars().count()>=2)
+        .map(key).collect()
+}
+fn unique_client_id(state:&Value,needle:&str)->Option<String>{
+    let needle=key(needle);
+    if needle.is_empty(){return None;}
+    let hits=list(state,"clients").iter().filter(|c|
+        eligible_client(c,s(c,"id"),false) &&
+        client_terms(c).iter().any(|term| term==&needle)
+    ).collect::<Vec<_>>();
+    if hits.len()==1{Some(s(hits[0],"id").to_owned())} else{None}
+}
+fn reception_client(payload:&Value)->Result<Value,String>{
+    let state=payload.get("state").ok_or("현재 거래처 데이터가 없습니다.")?;
+    let windows=payload.get("windows").unwrap_or(&Value::Null);
+    let chats=rows(windows).iter().filter(|w|s(w,"kind")=="CHAT"
+        && !s(w,"title").trim().is_empty()).collect::<Vec<_>>();
+    let active=s(payload,"activeChatHandle");
+    // When multiple chats exist, an explicitly active/selected HWND is
+    // mandatory. Never choose a random open KakaoTalk chat.
+    let chat=if chats.len()==1{Some(chats[0])}else{
+        chats.iter().copied().find(|w|!active.is_empty()&&s(w,"handle")==active)
+    };
+    if let Some(chat)=chat{
+        let title=key(s(chat,"title"));
+        let title_count=chats.iter().filter(|w|key(s(w,"title"))==title).count();
+        if title_count==1{
+            let stored=state.get("settings")
+                .and_then(|v|v.get("kakaoTitleMappings"))
+                .and_then(|v|v.get(&title));
+            if let Some(entry)=stored{
+                let id=s(entry,"clientId");
+                if !truthy(entry.get("ambiguous")) && list(state,"clients").iter()
+                    .any(|c|eligible_client(c,id,false)){
+                    return Ok(json!({"clientId":id,"source":"KAKAO_REMEMBERED"}));
+                }
+            }
+            if let Some(id)=unique_client_id(state,s(chat,"title")){
+                return Ok(json!({"clientId":id,"source":"KAKAO_TITLE"}));
+            }
+        }
+    }
+    // A free-form delivery name/address/phone must never become a dealer ID.
+    // Explicit dealer labels alone are safe enough for automatic application.
+    for line in s(payload,"raw").lines(){
+        let Some((label,value))=line.split_once([':', '：']) else{continue;};
+        let label=key(label);
+        if !["거래처","발주처","주문처","주문업체","발신업체",
+            "발신자","대리점","업체명","상호"].contains(&label.as_str()){continue;}
+        if let Some(id)=unique_client_id(state,value){
+            return Ok(json!({"clientId":id,"source":"RAW_EXPLICIT"}));
+        }
+    }
+    Ok(json!({"clientId":null,"source":"NONE"}))
+}
+
 fn remember(payload:&Value)->Result<Value,String> {
     let state=payload.get("state").ok_or("현재 거래처 데이터가 없습니다.")?;
     let windows=payload.get("windows").ok_or("카카오톡 창 목록이 없습니다.")?;
@@ -76,6 +139,7 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
             Ok(json!({"clientId":remembered(state,windows)}))
         }
         "remember_title_client"=>remember(payload),
+        "auto_match_reception_client"=>reception_client(payload),
         _=>Err(format!("지원하지 않는 카카오 거래처 연결 업무: {operation}"))
     }
 }
@@ -83,6 +147,42 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reception_auto_match_prefers_current_kakao_chat_and_never_guesses_recipient_school(){
+        let state=json!({"clients":[
+            {"id":"dealer-1","name":"홍천악기","active":true},
+            {"id":"dealer-2","name":"서울악기","active":true},
+            {"id":"school","name":"팔렬고등학교","active":true}
+        ],"settings":{}});
+        let raw="안녕하세요 ^^\\n\\n** 10월 12일(월) 발송부탁드리며 **\\n** 연락처 2개 다 넣어주세요^^ **\\n\\n강원특별자치도 홍천군 내촌면 동창로 207\\n팔렬고등학교\\n010-9149-2496\\n010-3343-4754\\n\\n연주용보면대 708-1 / 30개\\n지휘자보면대 BD CONDUCTOR / 1개\\n보면대카트 Cart-10 / 2개";
+        let windows=json!([
+            {"kind":"CHAT","title":"홍천악기","handle":"A"},
+            {"kind":"CHAT","title":"서울악기","handle":"B"}
+        ]);
+        let base=json!({"state":state,"windows":windows,"raw":raw});
+        assert_eq!(reception_client(&base).unwrap()["clientId"],Value::Null);
+        let selected=json!({"state":state,"windows":windows,"raw":raw,
+            "activeChatHandle":"B"});
+        assert_eq!(reception_client(&selected).unwrap()["clientId"],"dealer-2");
+        let none=json!({"state":state,"windows":[],"raw":raw});
+        assert_eq!(reception_client(&none).unwrap()["clientId"],Value::Null);
+        let explicit=json!({"state":state,"windows":[],"raw":"거래처: 홍천악기\\n팔렬고등학교"});
+        assert_eq!(reception_client(&explicit).unwrap()["clientId"],"dealer-1");
+    }
+    #[test]
+    fn reception_auto_match_respects_remembered_mapping_and_ambiguous_titles(){
+        let state=json!({"clients":[{"id":"d","name":"동진악기","active":true}],
+            "settings":{"kakaoTitleMappings":{
+                "동진 악기사장님":{"clientId":"d","ambiguous":false}}}});
+        let selected=json!({"state":state,"windows":[
+            {"kind":"CHAT","title":"동진 악기사장님","handle":"1"}]});
+        assert_eq!(reception_client(&selected).unwrap()["clientId"],"d");
+        let duplicated=json!({"state":state,"windows":[
+            {"kind":"CHAT","title":"동진 악기사장님","handle":"1"},
+            {"kind":"CHAT","title":"동진 악기사장님","handle":"2"}],
+            "activeChatHandle":"2"});
+        assert_eq!(reception_client(&duplicated).unwrap()["clientId"],Value::Null);
+    }
     #[test]
     fn unique_active_client_only_and_duplicate_window_requires_employee() {
         let state=json!({"clients":[{"id":"c1","name":"악기사","active":true}],
