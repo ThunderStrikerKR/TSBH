@@ -9,7 +9,7 @@ import { addHubNotification, type HubNotification, type NewHubNotification } fro
  * overwriting a newer read/add result in React. No business State revision is
  * touched by notification read/clear.
  */
-export function usePersistedNotifications() {
+export function usePersistedNotifications(ready: boolean) {
   const [inbox, setInbox] = useState<HubNotification[]>([]);
   const [storageError, setStorageError] = useState("");
   const chain = useRef<Promise<void>>(Promise.resolve());
