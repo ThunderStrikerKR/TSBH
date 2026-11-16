@@ -8,7 +8,7 @@ test("quantity provisional approval eligibility is native, not re-evaluated in R
   const desk=get("src/orders/useOrderDesk.tsx");
   const router=get("src-tauri/src/business_core/rules/mod.rs");
   const rust=get("src-tauri/src/business_core/rules/issues.rs");
-  assert.match(view,/canApproveOne=\{\(b\) => !exported && b\.canApproveOne === true\}/);
+  assert.match(view,/canApproveOne=\{\(b\) => !exported && staffChecksActionsReady && b\.canApproveOne === true\}/);
   assert.doesNotMatch(view,/!item\.issues\.some\(|item\.match\?\.kind !== "QUANTITY"/);
   assert.match(hook,/"rules", "order_issues_with_actions"/);
   assert.match(desk,/approvalFlags\.get\(b\.issueId\) === true/);

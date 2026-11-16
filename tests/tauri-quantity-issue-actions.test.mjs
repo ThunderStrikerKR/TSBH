@@ -21,7 +21,7 @@ test("one-item approval executes the production Rust issue reducer with actor an
   const native = read("src/orders/native-rules.ts");
   assert.match(desk, /onApproveOne=\{\(b\) => \{/);
   assert.match(desk, /b\.canApproveOne !== true/);
-  assert.match(desk, /canApproveOne=\{\(b\) => !exported && b\.canApproveOne === true\}/);
+  assert.match(desk, /canApproveOne=\{\(b\) => !exported && staffChecksActionsReady && b\.canApproveOne === true\}/);
   assert.doesNotMatch(desk, /item\.match\?\.kind === "QUANTITY"/);
   const rust = read("src-tauri/src/business_core/rules/issues.rs");
   assert.match(rust, /fn can_approve_missing_quantity\(item:&Value\)->bool/);
