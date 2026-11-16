@@ -109,8 +109,8 @@ fn reception_client(payload:&Value)->Result<Value,String>{
             raw_hits.push((id,label,value.trim().to_owned(),strong));
         }
     }
-    let explicit_ids=raw_hits.iter().filter(|(_,_,_,strong)|*strong)
-        .map(|(id,_,_,_)|id.as_str()).collect::<std::collections::HashSet<_>>();
+    let explicit_ids=raw_hits.iter().filter(|hit|hit.3)
+        .map(|hit|hit.0.as_str()).collect::<std::collections::HashSet<_>>();
     if explicit_ids.len()>1{
         return Ok(json!({"clientId":null,"source":"CONFLICT",
             "detail":"발주서에 서로 다른 발주처가 명시되어 있습니다. 발주처를 직접 확인한 뒤 거래처를 선택하세요."}));
@@ -139,8 +139,8 @@ fn reception_client(payload:&Value)->Result<Value,String>{
         }
     }
     if let Some((id,source,title))=chat_match{
-        if let Some((other,_,_,_))=raw_hits.iter().find(|(other,_,_,strong)|
-            *strong && other.as_str()!=id.as_str()){
+        if let Some((other,_,_,_))=raw_hits.iter().find(|hit|
+            hit.3 && hit.0.as_str()!=id.as_str()){
             let dealer_name=|id:&str|list(state,"clients").iter()
                 .find(|c|s(c,"id")==id).map(|c|s(c,"name").to_owned())
                 .unwrap_or_else(||id.to_owned());
@@ -259,6 +259,35 @@ mod tests {
             {"kind":"CHAT","title":"동진 악기사장님","handle":"2"}],
             "activeChatHandle":"2"});
         assert_eq!(reception_client(&duplicated).unwrap()["clientId"],Value::Null);
+    }
+    #[test]
+    fn matching_guidance_conflict_and_confirmed_title_history(){
+        let state=json!({"clients":[
+            {"id":"a","name":"홍천악기","active":true},
+            {"id":"b","name":"서울악기","active":true}
+        ],"orders":[
+            {"id":"old","clientId":"a","confirmedAt":"2026-11-14T09:00:00Z",
+                "clientMatch":{"source":"KAKAO_REMEMBERED","chatTitle":"홍천악기"}},
+            {"id":"pending","clientId":"a",
+                "clientMatch":{"source":"KAKAO_REMEMBERED","chatTitle":"홍천악기"}}
+        ],"settings":{}});
+        let windows=json!([{"kind":"CHAT","title":"홍천악기","handle":"A"}]);
+        let context=|raw:&str|json!({"state":state,"windows":windows,"raw":raw});
+        let same=reception_client(&context("발주처: 홍천악기\n팔렬고등학교 708 2개")).unwrap();
+        assert_eq!(same["clientId"],"a");
+        assert_eq!(same["source"],"KAKAO_TITLE");
+        assert_eq!(same["confirmedMatchCount"],1);
+        assert!(same["detail"].as_str().unwrap().contains("기존 주문 1건"));
+        let conflicting=reception_client(&context("발주처: 서울악기\n708 2개")).unwrap();
+        assert_eq!(conflicting["source"],"CONFLICT");
+        assert_eq!(conflicting["clientId"],Value::Null);
+        assert!(conflicting["detail"].as_str().unwrap().contains("서울악기"));
+        let explicit=reception_client(&json!({"state":state,"windows":[],
+            "raw":"발주처: 서울악기\n708 2개"})).unwrap();
+        assert_eq!(explicit["source"],"RAW_EXPLICIT");
+        assert_eq!(explicit["clientId"],"b");
+        let receiver=reception_client(&context("팔렬고등학교\n서울악기 배송지\n708 2개")).unwrap();
+        assert_eq!(receiver["clientId"],"a");
     }
     #[test]
     fn unique_active_client_only_and_duplicate_window_requires_employee() {
