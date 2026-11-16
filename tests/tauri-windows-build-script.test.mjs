@@ -35,4 +35,19 @@ test("Node installation skips only unchanged manifest, lockfile and version fing
   assert.match(cache,/npm\.cmd ci --no-audit --no-fund/);
   assert.doesNotMatch(dev,/call npm install --no-audit/);
 });
-test.todo("PACKAGE_WINDOWS_TAURI.cmd still calls deliberately deleted BUILD_WINDOWS_TAURI.cmd; repair the distribution launcher separately");
+test("manual release launcher directly builds and verifies portable ZIP without old CMD",()=>{
+  const launcher=read("PACKAGE_WINDOWS_TAURI.cmd");
+  const packer=read("scripts/package-windows-tauri.ps1");
+  assert.doesNotMatch(launcher,/BUILD_WINDOWS_TAURI\.cmd|BUILD_WINDOWS_EXE\.cmd/);
+  assert.match(launcher,/package-windows-tauri\.ps1/);
+  assert.match(packer,/ensure-node-deps\.ps1/);
+  assert.match(packer,/npm\.cmd run build:windows/);
+  assert.match(packer,/ensure-ocr-package\.ps1/);
+  assert.match(packer,/Compress-Archive/);
+  assert.match(packer,/Expand-Archive/);
+  assert.match(packer,/verify-packaged-ocr\.ps1/);
+  assert.match(packer,/반도허브-배포검증/);
+  assert.ok(packer.indexOf("verify-packaged-ocr.ps1") <
+    packer.indexOf("Move-Item -LiteralPath $zipStage -Destination $zip"));
+  assert.doesNotMatch(dev,/package-windows-tauri\.ps1|npm run build:windows/);
+});

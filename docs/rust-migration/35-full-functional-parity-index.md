@@ -106,3 +106,10 @@
 - **확인된 실제 역행:** `98e97d5a`에서 React에 `unitPrice * quantity`를 다시 도입. 11월 13일 `0c92413b`에서 금액 결정 책임을 Rust `preview_order`로 이전한 뒤였음. 원래의 Rust `lineAmounts` 표시 경로를 복원하면서 전체 업무 로딩 의존은 제외함.
 - 이전 `original-oracle-seal.test.mjs`의 현재 가격 함수와 최초 Tauri 코드 동일성 강제를 해제. 11월 6일 blob SHA를 보존해 역사적 자료임을 기록하는 테스트로 변경.
 - 기존 수취인 자동병합·거래처 단가 즉시 재계산의 최신 개선 호환성은 별도 테스트 결과까지 `OPEN`으로 유지.
+
+## 후속 — 사용자가 삭제한 Windows 빌드 CMD에 남아 있던 배포 연결 복구
+
+- `PACKAGE_WINDOWS_TAURI.cmd`는 이미 삭제된 `BUILD_WINDOWS_TAURI.cmd`를 호출하여 아무 배포 파일도 만들지 못하는 상태였음. 사용자가 의도한 삭제 파일은 **복구하지 않음**.
+- 기존 로컬 수동 실행 진입점 `PACKAGE_WINDOWS_TAURI.cmd`에서 직접 `scripts/package-windows-tauri.ps1`를 실행하도록 교정. DEV Windows 실행과 분리.
+- 신규 스크립트는 노드 의존성 핑거프린트 확인 → 실제 Tauri release EXE 빌드 → 변경된 OCR 런타임만 준비 → ZIP 임시 생성 → 한국어 설치 경로로 압축 해제 및 PaddleOCR 실추론 검증 → 정상일 때만 기존 배포 ZIP 교체 순으로 실행.
+- CI 구조 테스트는 `test.todo`에서 실제 계약 검사로 승격. Windows 실제 Release+OCR 전체 설치/배포 검증은 **별도 수동 workflow 검증 전 OPEN**.
