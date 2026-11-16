@@ -63,6 +63,21 @@ export async function probeWindowsFreightFocus(page,{record,snap}) {
       JSON.stringify(diag)+"; original error: "+error);
   }
 
+  // Let initial dealer-driven pricing settle before counting incremental calls.
+  await page.waitForTimeout(650);
+  const nativeCallCounts = async () => page.evaluate(() => {
+    const entries = window.__bandoNativeCalls || [];
+    return {
+      recognition: entries.filter(call =>
+        call.command === "business_core_call" &&
+        call.domain === "recognition" && call.operation === "analyze_order").length,
+      pricing: entries.filter(call =>
+        call.command === "business_core_call" &&
+        call.domain === "rules" && call.operation === "reprice_order").length,
+    };
+  });
+  const beforeFreightCalls = await nativeCallCounts();
+
   const start=await freight.evaluate(el=>{
     window.__sim31FreightNode=el;
     window.__sim31FreightHistory=[];
@@ -114,6 +129,14 @@ export async function probeWindowsFreightFocus(page,{record,snap}) {
     "SIM31_FREIGHT_FAILURE expected typed 4500, saw: "+JSON.stringify(samples));
   assert.equal(final.focused,true,
     "SIM31_FREIGHT_FAILURE input focus lost after render");
+  const afterFreightCalls = await nativeCallCounts();
+  assert.equal(afterFreightCalls.recognition,beforeFreightCalls.recognition,
+    "SIM32_FREIGHT must never trigger new full source recognition");
+  assert.equal(afterFreightCalls.pricing,beforeFreightCalls.pricing,
+    "SIM32_FREIGHT must not repeat product unit repricing per typed digit");
+  record("SIM32_FREIGHT_RUST_CALLS actual EXE unchanged full recognition and SKU repricing",{
+    before:beforeFreightCalls,after:afterFreightCalls
+  });
   record("SIM31_02 actual EXE applied freight typed without cursor loss",{
     start,typed:"4500",final,samples,
     result:"PASS_ACTUAL_WINDOWS_WEBVIEW2_KEYBOARD"
