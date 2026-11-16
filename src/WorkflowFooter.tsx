@@ -1,6 +1,79 @@
+import { useEffect, useRef, useState } from "react";
 import type { Origin, Price, State } from "./types";
 import { shipmentContext } from "./workflow";
 import type { WorkflowShipment } from "./workflow-types";
+/** Local numeric editing is cheap; native repricing is not. */
+function FreightAmountInput({ label, value, disabled, onCommit }: {
+  label: string; value: Price | undefined; disabled: boolean;
+  onCommit: (value: Price) => void;
+}) {
+  const format = (amount: Price | undefined) =>
+    amount === null || amount === undefined ? "" : amount.toLocaleString("ko-KR");
+  const [text, setText] = useState(() => format(value));
+  const pending = useRef<Price | undefined>(undefined);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const currentValue = useRef(value);
+  currentValue.current = value;
+  const latestCommit = useRef(onCommit);
+  latestCommit.current = onCommit;
+  useEffect(() => {
+    if (pending.current === undefined) setText(format(value));
+  }, [value]);
+  const flush = () => {
+    if (timer.current !== undefined) clearTimeout(timer.current);
+    timer.current = undefined;
+    const amount = pending.current;
+    pending.current = undefined;
+    if (amount !== undefined && amount !== currentValue.current)
+      latestCommit.current(amount);
+  };
+  useEffect(() => () => {
+    if (timer.current !== undefined) clearTimeout(timer.current);
+    if (pending.current !== undefined && pending.current !== currentValue.current)
+      latestCommit.current(pending.current);
+    pending.current = undefined;
+  }, []);
+  return (
+    <input
+      aria-label={label}
+      inputMode="numeric"
+      disabled={disabled}
+      value={text}
+      placeholder="—"
+      onChange={(e) => {
+        const input = e.currentTarget;
+        const raw = input.value.replaceAll(",", "");
+        if (!/^\d*$/.test(raw) || (raw !== "" && !Number.isSafeInteger(Number(raw))))
+          return;
+        const digitsBefore = input.value
+          .slice(0, input.selectionStart ?? input.value.length)
+          .replace(/\D/g, "").length;
+        const amount = raw === "" ? null : Number(raw);
+        pending.current = amount;
+        setText(format(amount));
+        if (timer.current !== undefined) clearTimeout(timer.current);
+        timer.current = setTimeout(flush, 350);
+        requestAnimationFrame(() => {
+          if (!input.isConnected || document.activeElement !== input) return;
+          let at = 0, count = 0;
+          while (at < input.value.length && count < digitsBefore) {
+            if (/\d/.test(input.value[at])) count++;
+            at++;
+          }
+          input.setSelectionRange(at, at);
+        });
+      }}
+      onBlur={flush}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          flush();
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 type FreightProps = {
   state: State;
   shipment: WorkflowShipment;
@@ -49,34 +122,11 @@ export function WorkflowFreightRows({
                 </b>
                 <div className="freight-amount-code">
                   <div className="freight-money">
-                  <input
-                    aria-label={`${recipient.name} ${origin === "FACTORY" ? "공장" : "매장"} 적용 운임`}
-                    inputMode="numeric"
+                  <FreightAmountInput
+                    label={`${recipient.name} ${origin === "FACTORY" ? "공장" : "매장"} 적용 운임`}
                     disabled={disabled || freightEditingBlocked}
-                    value={
-                      value === null || value === undefined ? "" : value.toLocaleString("ko-KR")
-                    }
-                    placeholder="—"
-                    onChange={(e) => {
-                      const input = e.currentTarget,
-                        raw = input.value.replaceAll(",", "");
-                      if (!/^\d*$/.test(raw) || (raw !== "" && !Number.isSafeInteger(Number(raw))))
-                        return;
-                      const digitsBefore = input.value
-                        .slice(0, input.selectionStart ?? input.value.length)
-                        .replace(/\D/g, "").length;
-                      onFreight(origin, raw === "" ? null : Number(raw));
-                      requestAnimationFrame(() => {
-                        if (!input.isConnected || document.activeElement !== input) return;
-                        let at = 0,
-                          count = 0;
-                        while (at < input.value.length && count < digitsBefore) {
-                          if (/\d/.test(input.value[at])) count++;
-                          at++;
-                        }
-                        input.setSelectionRange(at, at);
-                      });
-                    }}
+                    value={value}
+                    onCommit={(amount) => onFreight(origin, amount)}
                   />
                     <span>원</span>
                   </div>
