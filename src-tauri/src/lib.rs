@@ -575,6 +575,104 @@ fn price_set(db: State<'_, Database>, product_id: String, variant_id: String, ti
     write_snapshot(&mut conn, state, revision, true)
 }
 
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
+struct PriceBatchChange {
+    product_id: String,
+    variant_id: String,
+    tier: String,
+    price: Option<i64>,
+    expected: Option<i64>,
+}
+
+/// Validate every edit before mutating any field. A stale cell aborts the
+/// entire batch; only a successful set may be persisted in one SQLite tx.
+fn apply_price_batch(state: &mut Value, changes: &[PriceBatchChange]) -> Result<(), String> {
+    use std::collections::HashSet;
+    if changes.is_empty() || changes.len() > 10_000 {
+        return Err("가격 변경 건수를 확인하세요.".into());
+    }
+    let products = state["products"].as_array().ok_or("상품 데이터 형식 오류")?;
+    let mut unique = HashSet::new();
+    for change in changes {
+        if !["wholesale", "semi", "retail"].contains(&change.tier.as_str()) {
+            return Err("가격 등급 오류".into());
+        }
+        if change.price.is_some_and(|n| n < 0 || n > 9_007_199_254_740_991) {
+            return Err("가격은 0 이상 안전한 정수여야 합니다.".into());
+        }
+        if !unique.insert((&change.product_id, &change.variant_id, &change.tier)) {
+            return Err("같은 가격이 중복으로 수정되었습니다.".into());
+        }
+        let product = products.iter()
+            .find(|p| p["id"].as_str() == Some(&change.product_id))
+            .ok_or("가격 수정 대상 상품을 찾을 수 없습니다.")?;
+        let variant = product["variants"].as_array()
+            .and_then(|rows| rows.iter().find(|v| v["id"].as_str() == Some(&change.variant_id)))
+            .ok_or("가격 수정 대상 옵션을 찾을 수 없습니다.")?;
+        if variant[change.tier.as_str()].as_i64() != change.expected {
+            return Err("다른 작업에서 상품 가격이 변경되었습니다. 화면을 갱신한 뒤 확인하세요.".into());
+        }
+    }
+    let products = state["products"].as_array_mut().ok_or("상품 데이터 형식 오류")?;
+    for change in changes {
+        let product = products.iter_mut()
+            .find(|p| p["id"].as_str() == Some(&change.product_id))
+            .ok_or("가격 수정 대상 상품을 찾을 수 없습니다.")?;
+        let variant = product["variants"].as_array_mut()
+            .and_then(|rows| rows.iter_mut().find(|v| v["id"].as_str() == Some(&change.variant_id)))
+            .ok_or("가격 수정 대상 옵션을 찾을 수 없습니다.")?;
+        variant[change.tier.as_str()] = json!(change.price);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn price_batch_set(db: State<'_, Database>, changes: Vec<PriceBatchChange>) -> Result<Value, String> {
+    let mut conn = lock_db(&db)?;
+    let mut state = get_snapshot(&conn)?;
+    let revision = state["revision"].as_u64().unwrap_or(0);
+    apply_price_batch(&mut state, &changes)?;
+    write_snapshot(&mut conn, state, revision, true)
+}
+
+#[cfg(test)]
+mod price_batch_tests {
+    use super::*;
+    #[test]
+    fn validates_all_cells_before_any_partial_mutation() {
+        let mut state = json!({"products":[
+            {"id":"a","variants":[{"id":"v1","wholesale":4000,"semi":6000,"retail":9000}]},
+            {"id":"b","variants":[{"id":"v2","wholesale":12000,"semi":16000,"retail":23000}]}
+        ]});
+        let before = state.clone();
+        let edits = vec![
+            PriceBatchChange {product_id:"a".into(),variant_id:"v1".into(),
+                tier:"wholesale".into(),price:Some(5000),expected:Some(4000)},
+            PriceBatchChange {product_id:"b".into(),variant_id:"v2".into(),
+                tier:"retail".into(),price:Some(25000),expected:Some(1)}
+        ];
+        assert!(apply_price_batch(&mut state, &edits).is_err());
+        assert_eq!(state, before);
+        let corrected = vec![PriceBatchChange {expected:Some(23000), ..edits[1].clone()}];
+        let mut valid = vec![edits[0].clone()];
+        valid.extend(corrected);
+        apply_price_batch(&mut state, &valid).unwrap();
+        assert_eq!(state["products"][0]["variants"][0]["wholesale"], 5000);
+        assert_eq!(state["products"][1]["variants"][0]["retail"], 25000);
+    }
+    #[test]
+    fn duplicate_cell_is_rejected() {
+        let mut state = json!({"products":[{"id":"a","variants":[{"id":"v","wholesale":4000}]}]});
+        let value = PriceBatchChange {product_id:"a".into(),variant_id:"v".into(),
+            tier:"wholesale".into(),price:Some(5000),expected:Some(4000)};
+        assert!(apply_price_batch(&mut state, &[value.clone(),value]).is_err());
+        assert_eq!(state["products"][0]["variants"][0]["wholesale"], 4000);
+    }
+}
+
 #[tauri::command]
 fn clipboard_write(text: String) -> Result<(), String> {
     if text.chars().count() > 100000 { return Err("복사할 문장이 너무 깁니다.".into()); }
@@ -1163,7 +1261,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            state_load, state_save, business_core_call, settings_patch, price_set, clipboard_write, clipboard_read,
+            state_load, state_save, business_core_call, settings_patch, price_set, price_batch_set, clipboard_write, clipboard_read,
             ocr::capture_ocr,
             product_open, catalog_report, catalog_approve, receipt_archive, backup_create, backup_list, backup_restore, choose_excel_directory, open_excel_directory, open_daily_excel_directory,
             factory_reply_watch::choose_factory_reply_directory,
