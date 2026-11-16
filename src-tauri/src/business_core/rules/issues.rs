@@ -252,8 +252,8 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
                 "title":title,
                 "detail":detail,
                 "blockingStage":1,
-                "severity":if collision{"ACTION"}else{"INFO"},
-                "resolution":if collision{"UNRESOLVED"}else{"AUTO_APPLIED"},
+                "severity":if needs_action{"ACTION"}else{"INFO"},
+                "resolution":if needs_action{"UNRESOLVED"}else{"AUTO_APPLIED"},
                 "resolutionSource":"Rust 거래처 매칭",
                 "updatedAt":field(o,"updatedAt"),
                 "linkKey":"client"
