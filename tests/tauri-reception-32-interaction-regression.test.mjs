@@ -38,7 +38,11 @@ test("two unconfirmed receipts are not discarded and are previewed independently
   const hub = read("src/HubWorkspace.tsx");
   const native = read("src/orders/useNativeWorkflowReconcile.ts");
   assert.match(app, /const newOrder = async \(\) => \{[\s\S]*?draft\.raw\.trim\(\)[\s\S]*?setDraft\(newReception\(\)\)/);
-  assert.match(hub, /onClick=\{\(\) => \{[\s\S]*?setEdits\(\(previous\) => \(\{[\s\S]*?\[receptionOrder\.id\]: structuredClone\(receptionOrder\)/);
+  assert.match(hub, /const draftsToRetain = \[draft, receptionOrder\]/);
+  assert.match(hub, /Object\.fromEntries\(draftsToRetain\.map/);
+  assert.match(hub, /pendingReceptions=\{pendingWithoutClient\}/);
+  assert.match(hub, /onSelectPending=\{\(id\) => \{/);
+  assert.match(app, /pendingDraftCount > 0 && !\(await confirmAction/);
   assert.match(hub, /Object\.values\(edits\)\.filter\(\(order\) => order\.id !== draft\.id && order\.clientId\)/);
   assert.match(hub, /useNativeWorkflowReconcile\(state, independentEdits\)/);
   assert.match(hub, /useNativeWorkflowReconcile\(base, draft\.clientId \? \[draft\] : \[\]\)/);
