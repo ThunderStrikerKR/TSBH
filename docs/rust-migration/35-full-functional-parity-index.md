@@ -158,3 +158,10 @@
 - `a341ea5b` [Windows 실행 43974340647](https://github.com/ThunderStrikerKR/TSBH/actions/runs/43974340647): 22프레임 동안 가격·배송·VAT 누락 0, 직원 목록 로딩 0, 29시나리오 통과. **그러나 동일 고정 fixture의 기존 workflow stage 조치 2건이 0건으로 변경**되어 사용자 승인 기능 보존을 입증하지 못함. `WIN_PASS`로 승격 금지.
 - Rust 단계별 검토를 미저장 주문에서 제거하면 안 됨. Rust `preview_workflow`의 마지막 결과는 표현용으로 유지하고, 다음 프리뷰 재계산 중에도 수취인의 기존 조치 표시를 안정적으로 유지. **현재 결과가 재확인되기 전에는 버튼만 잠금**.
 - 실 Windows 검사에 고정 샘플의 **조치 2건 보존**, 4초 22프레임 직원 목록/가격·운임·VAT 안정성을 추가. 이번 단계도 새 Windows 검증 완료 전 `OPEN`.
+
+## 2026-11-17 직원 확인 목록 화면 재로딩 교정 — 재검증 결과
+
+- **업무 소스 보존:** `c58572b1`에서 일시적 Rust workflow 재계산 동안 마지막 native stage 검토 항목을 읽기 전용으로 유지하며, 응답 확정 전 버튼은 비활성화. 기존 Rust workflow 조치 2건을 유지한다.
+- **단위/차등/CI:** 관련 검증 포함 `679604db`, [통합 CI PASS](https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975873175); 완료된 항목 범위 밖 전 기능은 포함하지 않는다.
+- **실 Windows Tauri/WebView2:** `c58572b1`, [실제 업무 시뮬레이션 PASS](https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975775738). 29개 시나리오, 스크린샷 12장. 거래처 선택 후 22프레임/3994ms 중 **가격(84,000원), 배송건수(2), VAT(별도) 누락 0; 직원 목록 로딩 0; 기존 조치 2건/안내 1건 유지**.
+- 앞선 `8203e395` (직원 목록 2프레임 재로딩) 및 `a341ea5b` (조치 2건→0건 축소)는 원인·실패 증거로 유지하고, 재현 fixture 관련 부분만 `RESOLVED`로 전환. **전체 Rust 이전 완료 아님**: 나머지 비동기 응답 역전, 저장/재조회, 공장 Excel 및 배포 Release는 `OPEN`.

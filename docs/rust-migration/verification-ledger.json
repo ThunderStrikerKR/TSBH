@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "policy": "AGENTS.md",
   "recordedAt": "2026-11-17",
-  "recordedHead": "10aee2d032e673f8b485ea48c589e958bff00d41",
+  "recordedHead": "679604dbdb1b10796731057e03142f8b823b5066",
   "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
   "proofLevels": [
     "patch",
@@ -357,24 +357,32 @@
         "status": "BASELINE_UNRESOLVED"
       },
       "rust": {
-        "location": "rules/manual_*.rs",
+        "location": "rules/manual_*.rs; src-tauri/src/business_core/rules/issues.rs::order_issues_with_actions; src-tauri/src/business_core/rules/workflow_preview.rs::project",
         "status": "NEEDS_EXECUTION_TRACE"
       },
       "react": {
         "candidatePaths": [
           "src/OrderDesk.tsx",
-          "src/StaffChecks.tsx"
+          "src/StaffChecks.tsx",
+          "src/orders/useNativeOrderIssues.ts",
+          "src/orders/useOrderDesk.tsx"
         ],
-        "entrypointVerified": false,
+        "entrypointVerified": true,
         "unresolvedCandidates": []
       },
       "scenario": {
         "description": "수동 분류·1개 잠정 승인·취소",
         "fixture": null,
         "initialState": null,
-        "intermediateStates": [],
-        "inputOutputEvidence": null,
-        "responseOrders": []
+        "intermediateStates": [
+          "실 Windows 22프레임 3994ms, 직원 확인 조치 2건 + 안내 1건 유지",
+          "직원 확인 로딩 재발 0프레임, 금액 84,000원·배송 2건·부가세 별도",
+          "React stale Rust stage projection 표시 중 버튼 동작 비활성화"
+        ],
+        "inputOutputEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975775738",
+        "responseOrders": [
+          "NORMAL_DEALER_SELECTION_22_FRAMES"
+        ]
       },
       "discrepancies": [
         {
@@ -384,52 +392,62 @@
         },
         {
           "description": "Windows에서 2026-11-17 `8203e395` 실측: 금액·배송·VAT가 안정적인데 직원 확인 목록이 약 4초 동안 2프레임에서 로딩, 1프레임 조치 0건으로 변했다가 복구. 이전 첫 대응만으로는 미해결.",
-          "status": "OPEN",
+          "status": "RESOLVED",
           "introducedAt": "8203e395d3299d5b05b7fc936f6236d223fd7071",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43973304695"
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43973304695",
+          "resolution": {
+            "patchCommit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d",
+            "windowsEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975775738",
+            "explanation": "Rust workflow-stage 조치 2건을 보존하면서 22프레임 동안 로딩 0회로 확인; 수동 분류 전체 E2E 검증은 별도 OPEN"
+          }
         },
         {
           "description": "Windows 43974340647은 22프레임 로딩 0으로 통과했으나 조치 항목이 원래 2건에서 0건으로 변경되어 기존 workflow stage 직원 확인 기능이 퇴행. 표면상 GUI PASS를 기능 보존 PASS로 승격하지 않음.",
-          "status": "OPEN",
+          "status": "RESOLVED",
           "introducedAt": "a341ea5be419aea801d12db367c3e90b41ee96f1",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43974340647"
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43974340647",
+          "resolution": {
+            "patchCommit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d",
+            "windowsEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975775738",
+            "explanation": "Rust workflow-stage 조치 2건을 보존하면서 22프레임 동안 로딩 0회로 확인; 수동 분류 전체 E2E 검증은 별도 OPEN"
+          }
         }
       ],
       "legacyLedgerStatus": "PARTIAL",
       "gate": {
         "patch": {
           "status": "COMMITTED",
-          "commit": "9cbca636e2de9d1d235c4c5a49cbd0317c8861de",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/9cbca636e2de9d1d235c4c5a49cbd0317c8861de"
+          "commit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/c58572b1b2e0ab91cb09ea546164bd963bd6a76d"
         },
         "unit": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "679604dbdb1b10796731057e03142f8b823b5066",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975873175"
         },
         "differential": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "679604dbdb1b10796731057e03142f8b823b5066",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975873175"
         },
         "action": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975775738"
         },
         "ci": {
           "status": "PASS_SCOPED",
-          "commit": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43968654003"
+          "commit": "679604dbdb1b10796731057e03142f8b823b5066",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975873175"
         },
         "windows": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975775738"
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d"
     },
     {
       "id": "F07",
@@ -598,12 +616,10 @@
         "fixture": null,
         "initialState": null,
         "intermediateStates": [
-          "84,000원",
-          "배송 2건",
-          "부가세 별도",
-          "4초동안 22회 결과 소실 0"
+          "22프레임, 3994ms, 상품 금액 84,000원·배송 건수 2·VAT 별도 누락 0",
+          "직원 확인 조치 2건과 안내 1건 유지"
         ],
-        "inputOutputEvidence": null,
+        "inputOutputEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975775738",
         "responseOrders": [
           "NORMAL_AFTER_DEALER_SELECTION_22_SAMPLES"
         ]
@@ -638,18 +654,18 @@
           "evidence": null
         },
         "ci": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "679604dbdb1b10796731057e03142f8b823b5066",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975873175"
         },
         "windows": {
           "status": "PASS_SCOPED",
-          "commit": "148f05a1473927f633d14a300a509947f53d2b2e",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43968003111"
+          "commit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975775738"
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d"
     },
     {
       "id": "F10",
@@ -1804,7 +1820,10 @@
       },
       "react": {
         "candidatePaths": [
-          "src/HubWorkspace.tsx"
+          "src/HubWorkspace.tsx",
+          "src/OrderDesk.tsx",
+          "src/StaffChecks.tsx",
+          "src/orders/useOrderDesk.tsx"
         ],
         "entrypointVerified": false,
         "unresolvedCandidates": []
@@ -1813,8 +1832,10 @@
         "description": "8메뉴·탭·카카오톡 도킹·모달·창 위치",
         "fixture": null,
         "initialState": null,
-        "intermediateStates": [],
-        "inputOutputEvidence": null,
+        "intermediateStates": [
+          "직원 확인 패널 로딩 중 화면/조치 수 유지 22프레임; 다른 탭·모달은 미검증"
+        ],
+        "inputOutputEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975775738",
         "responseOrders": []
       },
       "discrepancies": [],
@@ -1846,13 +1867,13 @@
           "evidence": null
         },
         "windows": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/43975775738"
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d"
     },
     {
       "id": "F28",
