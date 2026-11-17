@@ -1253,15 +1253,23 @@ pub fn run() {
                     let ready_window = window.clone();
                     let app = window.app_handle().clone();
                     std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(650));
-                        if std::env::var_os("GITHUB_ACTIONS").is_some() {
-                            eprintln!("BANDO_WINDOW_RESTORE_DISPATCH after_show_ms=650");
-                        }
-                        if let Err(error) = app.run_on_main_thread(move || {
-                            #[cfg(target_os = "windows")]
-                            native_maximized_restore::ensure_native_maximized(&ready_window);
-                        }) {
-                            eprintln!("BANDO post-show maximize scheduling failed: {error}");
+                        // The native HWND may enter Win32 maximized state and
+                        // subsequently lose it while the WebView initializes.
+                        // The second bounded check repairs that late transition.
+                        // Never run this loop unless persisted maximized=true.
+                        for (pass, delay_ms) in [(1, 650u64), (2, 1750u64)] {
+                            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                            if std::env::var_os("GITHUB_ACTIONS").is_some() {
+                                eprintln!("BANDO_WINDOW_RESTORE_DISPATCH pass={pass}");
+                            }
+                            let candidate = ready_window.clone();
+                            if let Err(error) = app.run_on_main_thread(move || {
+                                #[cfg(target_os = "windows")]
+                                native_maximized_restore::ensure_native_maximized(&candidate);
+                            }) {
+                                eprintln!("BANDO post-show maximize scheduling failed: {error}");
+                                break;
+                            }
                         }
                     });
                 })
