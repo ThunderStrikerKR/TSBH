@@ -130,7 +130,7 @@
             "patchCommit": "5b442716fa0e4c8111dd01813b0525b1c700a864",
             "tests": "Rust 신규 5개: 내용/공백/연속 빈 줄 분리, 스페이스·탭 및 CRLF, 복수 수취인 주소·연락처 귀속, 단일 수취인 두 연락처, 기존 수취인의 첫 배송정보가 뒤 이름으로 넘어가지 않도록 보수적 보호",
             "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44155297357",
-            "remaining": "신규 5개 테스트 포함 Rust output 93 PASS + integration 110 PASS. 최신 전체 CI/Windows 실화면 결과 확인 필요. TS↔Rust 승인 최신 정책의 차등 검증, 실제 직원 행동 시퀀스와 확률·거래처 학습 미구현."
+            "remaining": "Rust output 93/93, integration 110/110, main CI 전체 성공. 기존 TS와 개선 정책 차등 비교·React 직원 행동 연속 흐름·Windows WebView2 검증은 미완료. 거래처별 확률/누적 학습 및 학습 롤백은 미구현."
           }
         }
       ],
@@ -157,9 +157,9 @@
           "evidence": null
         },
         "ci": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "5b442716fa0e4c8111dd01813b0525b1c700a864",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44155297357"
         },
         "windows": {
           "status": "NOT_VERIFIED",
