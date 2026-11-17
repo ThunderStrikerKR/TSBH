@@ -152,6 +152,10 @@ try {
   $maximized=Get-Content -LiteralPath $testStateFile -Raw | ConvertFrom-Json
   if (!$maximized.main.maximized) { throw "DEV state did not save maximized=true" }
   $third=Start-Again
+  # Wait for the post-show maximization queued on the native event loop.
+  for($i=0;$i -lt 30 -and ![BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle);$i++) {
+    Start-Sleep -Milliseconds 100
+  }
   if (![BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle)) {
     $rect=Get-WindowRect $third
     Write-Host "DEV_WINDOW_MAXIMIZED_FAILURE_DIAGNOSTIC: saved=true rect=$($rect | ConvertTo-Json -Compress)"

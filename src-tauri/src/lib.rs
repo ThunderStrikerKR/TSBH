@@ -1174,18 +1174,40 @@ pub fn run() {
                 )
                 .build(),
         )
-        // window-state restores MAXIMIZED before showing the initially
-        // hidden main window. On Windows, showing a hidden maximized HWND
-        // can revert it to normal placement. Reapply maximization only after
-        // the primary plugin has restored the bounds and shown the window.
+        // The window-state plugin restores SIZE/POSITION and shows the hidden
+        // main HWND. On Windows, show() may undo an early maximize. Retrying
+        // restore_state() synchronously in another window-ready callback races
+        // with that show. Defer one maximize to the native event-loop queue.
         .plugin(
             tauri::plugin::Builder::new("bando-maximize-after-window-state")
-                .on_window_ready(|window| {
-                    if cfg!(target_os = "windows") && window.label() == "main" {
-                        use tauri_plugin_window_state::WindowExt;
-                        if let Err(error) = window.restore_state(StateFlags::MAXIMIZED) {
-                            eprintln!("BANDO maximized restore retry failed: {error}");
+                .on_window_ready(move |window| {
+                    if !cfg!(target_os = "windows") || window.label() != "main" {
+                        return;
+                    }
+                    // Use the persisted decision, not transient HWND state
+                    // or a cache modified by the move/resize events at launch.
+                    let filename = if developer_test {
+                        "window-state-developer.json"
+                    } else {
+                        "window-state.json"
+                    };
+                    let restore_maximized = window.app_handle().path().app_config_dir()
+                        .ok()
+                        .and_then(|directory| fs::read(directory.join(filename)).ok())
+                        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                        .and_then(|saved| saved.get("main")?
+                            .get("maximized")?.as_bool())
+                        .unwrap_or(false);
+                    if !restore_maximized {
+                        return;
+                    }
+                    let ready_window = window.clone();
+                    if let Err(error) = window.app_handle().run_on_main_thread(move || {
+                        if let Err(error) = ready_window.maximize() {
+                            eprintln!("BANDO post-show maximize failed: {error}");
                         }
+                    }) {
+                        eprintln!("BANDO post-show maximize scheduling failed: {error}");
                     }
                 })
                 .build(),

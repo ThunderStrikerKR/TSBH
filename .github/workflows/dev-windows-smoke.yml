@@ -31,6 +31,8 @@ on:
       - src/OrderDesk.tsx
       - src/orders/useNativeOrderPreview.ts
       - src/orders/useOrderDesk.tsx
+      - src-tauri/src/lib.rs
+      - tests/tauri-window-placement.test.mjs
       - src-tauri/src/business_core/rules/reception_merge.rs
       - src-tauri/src/business_core/rules/pricing.rs
       - src-tauri/src/business_core/rules/shipping.rs
