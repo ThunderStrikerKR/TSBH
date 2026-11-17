@@ -37,7 +37,7 @@ mod native_maximized_restore {
         fn IsZoomed(hwnd: *mut c_void) -> i32;
     }
 
-    pub fn ensure_native_maximized(window: &tauri::WebviewWindow) {
+    pub fn ensure_native_maximized(window: &tauri::Window) {
         let hwnd = match window.hwnd() {
             Ok(hwnd) => hwnd.0 as *mut c_void,
             Err(error) => {
