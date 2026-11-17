@@ -66,7 +66,8 @@ test("each workflow receipt uses a separate compact card and a single-line payme
   assert.match(board, /배송 \{ss\.length\}건/);
   assert.match(board, /className="flow-summary-payment"/);
   assert.match(board, /nativeGroup\?\.shipments\.filter\(\(shipment\) => shipment\.vatIncluded\)\.length/);
-  assert.match(board, /mixedVat \? `포함\$\{vatIncludedCount\}·별도\$\{vatExcludedCount\}` : "부가세 포함"/);
+  assert.match(board, /mixedVat[\s\S]*?포함\$\{vatIncludedCount\}·별도\$\{vatExcludedCount\}/);
+  assert.match(board, /vatIncludedCount > 0 \? "부가세 포함" : "부가세 별도"/);
   assert.doesNotMatch(board, /입금액 \{won\(/);
   assert.doesNotMatch(board, /총 운임/);
   assert.doesNotMatch(board, /미확정 · 임시/);
