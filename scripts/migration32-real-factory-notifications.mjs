@@ -1,5 +1,6 @@
 // Real Windows CI-only Tauri/WebView2 notification and XLSX ingestion audit.
 // Creates files only in the disposable developer-test workspace.
+// Reused by the focused "factory" Windows GUI run on its own fresh TEST SQLite.
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
