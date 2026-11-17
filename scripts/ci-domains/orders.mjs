@@ -137,17 +137,28 @@ export async function run(page,{record,snap,paste,chooseDealer}){
   const leaveText=await leaveModal.textContent();
   assert.match(leaveText??"",/미완성 발주서 [1-9]\d*건/);
   assert.match(leaveText??"",/주문 확인 완료 전에는 주문 내역에 저장되지 않으며/);
+  // One choice covers both retained dealer-assigned drafts and the single
+  // unassigned draft. A "save" label here would promise forbidden SQLite work.
+  const count=Number(leaveText?.match(/미완성 발주서 (\d+)건/)?.[1]);
+  assert.equal(count,4,"Every one of the four unfinished receptions must be counted");
+  assert.equal(await leaveModal.getByRole("button",{name:"저장",exact:true}).count(),0);
   await leaveModal.getByRole("button",{name:"임시 보관하고 이동"}).click();
   await page.getByRole("button",{name:"주문 내역",exact:true})
     .waitFor({state:"attached"});
+  await page.waitForFunction(()=>
+    document.querySelector('nav button[aria-current="page"]')?.textContent?.trim()==="주문 내역",
+    null,{timeout:30000});
   await page.getByRole("button",{name:"접수",exact:true}).click();
   await page.locator(".workflow-unassigned-draft")
     .filter({hasText:"박가상"}).waitFor({state:"visible",timeout:30000});
   assert.equal((await page.evaluate(async()=>window.bando.load())).orders.length,0);
-  record("ORDERS_NAVIGATE_KEEP_ALL_TEMPORARY",{count:"multiple",persisted:0});
+  record("ORDERS_NAVIGATE_KEEP_ALL_TEMPORARY",{count,persisted:0});
   await page.getByRole("button",{name:"주문 내역",exact:true}).click();
   await leaveModal.waitFor({state:"visible",timeout:30000});
   await leaveModal.getByRole("button",{name:"모두 버리고 이동"}).click();
+  await page.waitForFunction(()=>
+    document.querySelector('nav button[aria-current="page"]')?.textContent?.trim()==="주문 내역",
+    null,{timeout:30000});
   await page.getByRole("button",{name:"접수",exact:true}).click();
   await page.waitForFunction(()=>
     !document.querySelector(".workflow-unassigned-draft") &&
