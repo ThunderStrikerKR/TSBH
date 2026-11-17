@@ -25,7 +25,10 @@ fn product_codes(product:&Value)->Vec<String>{
     // P00000XX is a shopping-mall ID, not the manufacturer's model.
     if !code.starts_with('P') || code.len() < 8 {raw.push(code);}
     let mut seen=HashSet::new();
-    raw.into_iter().map(compact_code)
+    raw.into_iter().filter(|s| {
+        let compact=s.chars().filter(|c|c.is_ascii_alphanumeric()).collect::<String>();
+        !Regex::new(r"(?i)^P[0-9A-Z]{6,}$").unwrap().is_match(&compact)
+    }).map(compact_code)
         .filter(|s|s.len()>=2&&s.len()<=32&&seen.insert(s.clone())).collect()
 }
 fn input_codes(raw:&str)->Vec<String>{
@@ -232,6 +235,11 @@ mod tests {
             "Independent Z-4 surface sizes must all remain selectable: {z4:?}");
         assert!(candidates(&state,"가방 1EA","").is_empty(),
             "Generic accessory term alone cannot guess a particular SKU");
+        let speaker_bag=candidates(&state,"스피커 스탠드 가방 2EA","");
+        assert_eq!(speaker_bag.first().map(String::as_str),Some("bando-site-315"),
+            "Two independent product-use cues should find the speaker case: {speaker_bag:?}");
+        assert!(!candidates(&state,"반도 705 보면대 1EA","").is_empty(),
+            "A numeric three-digit model must remain searchable");
     }
     #[test]
     fn history_only_comes_from_confirmed_client_selected_evidence(){
