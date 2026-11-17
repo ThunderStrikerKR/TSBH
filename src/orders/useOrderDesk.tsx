@@ -16,7 +16,7 @@ import { useNativeOrderPreview } from "./useNativeOrderPreview";
 import { useNativeOrderLineAmounts } from "./useNativeOrderLineAmounts";
 import { useNativeOrderIssues } from "./useNativeOrderIssues";
 import { assertRustReceptionAnalysis, receptionAnalysisAllowed } from "./rust-reception";
-import { registeredProducts, sortProducts } from "../product-models";
+import { sortedRegisteredProductView } from "./registered-product-view";
 
 import type { NoticeSink } from "../shared/notices";
 import type { Item, Order, Product, State, ValidationIssue } from "../types";
@@ -110,7 +110,7 @@ export function useOrderDesk({
     liveClient = state.clients.find((c) => c.id === draft.clientId && !c.deletedAt) ?? client,
     pricingClient = liveClient ?? unassignedClient;
   const products = useMemo(
-    () => sortProducts(registeredProducts(state.products)),
+    () => sortedRegisteredProductView(state.products),
     [state.products],
   );
   // Live order-detail reconciliation is a read-only Rust computation.
