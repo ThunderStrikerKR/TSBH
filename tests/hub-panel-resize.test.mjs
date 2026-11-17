@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { tsImport } from "tsx/esm/api";
 
 const read = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
-const { defaultPanels, panelMinimumWidths, resizePanelRatios } =
+const { defaultPanels, panelMinimumWidths, resizePanelRatios, validPanels } =
   await tsImport("../src/HubPanels.tsx", import.meta.url);
 
 const toPixels = (ratios, totalWidth) =>
@@ -73,4 +73,34 @@ test("legacy equal workflow columns migrate to the compact 22 percent default", 
   assert.match(source, /defaultPanels = \[20, 29, 29, 22\]/);
   assert.match(source, /const oldDefault = 80 \/ 3/);
   assert.match(source, /panelMinimumWidths = \[200, 250, 250, 420\]/);
+});
+
+test("1920px workspace spans all available width using raw fr weights, not fractions smaller than one", () => {
+  const panels = read("src/HubPanels.tsx");
+  const outer = read("src/HubShell.tsx");
+  const shell = read("src/styles/shell.css");
+  const receipt = read("src/styles/receipt-layout.css");
+  const app = read("src/App.tsx");
+  // Fractions below 1fr plus a fixed 420px minimum can leave unused space.
+  // Raw 29fr/29fr/22fr weights distribute all available horizontal room.
+  assert.ok(panels.includes("minmax(" + "$" + "{minima[i]}px," + "$" + "{currentRatios[i]}fr)"));
+  assert.doesNotMatch(panels, /currentRatios\[i\]\s*\/\s*total/);
+  assert.match(panels, /width: "100%",\s*gridTemplateColumns/);
+  assert.match(shell, /\.hub-shell-scroll\s*\{[\s\S]*?width: 100%;/);
+  assert.match(shell, /\.hub-shell\s*\{[\s\S]*?width: 100%;/);
+  assert.match(shell, /\.hub-workspace-scroll\s*\{[\s\S]*?width: 100%;/);
+  assert.match(shell, /\.hub-panels\s*\{[\s\S]*?width: 100%;/);
+  assert.match(shell, /\.hub-desk-host\s*\{[\s\S]*?width: 100%;/);
+  assert.match(receipt, /\.hub-live-workspace\s*\{[\s\S]*?width: 100%;/);
+  assert.match(outer, /mainMinimum = \(panelMinimumWidths\[1\] \+ panelMinimumWidths\[2\] \+ panelMinimumWidths\[3\] \+ 12\) \* viewportScale/);
+  assert.match(app, /ratios=\{state\.settings\.panelRatios \?\? defaultPanels\}/);
+  assert.match(app, /panelRatios: defaultPanels/);
+});
+
+test("both historic preset layouts normalize to 20:29:29:22 while custom sizes persist", () => {
+  assert.deepEqual(defaultPanels, [20, 29, 29, 22]);
+  assert.deepEqual(validPanels([20, 80/3, 80/3, 80/3]), defaultPanels);
+  assert.deepEqual(validPanels([20, 30, 30, 20]), defaultPanels);
+  assert.deepEqual(validPanels([20, 25, 35, 20]), [20, 25, 35, 20]);
+  assert.deepEqual(validPanels(defaultPanels), defaultPanels);
 });
