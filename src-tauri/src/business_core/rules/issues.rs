@@ -99,6 +99,48 @@ pub(super) fn valid_address(value:&str)->bool {
     }
     false
 }
+/// Multiple evidence spans can describe ONE address (province/city, road,
+/// building/floor). The recognizer already joins these spans in row.address;
+/// do not ask the user to choose one fragment and thereby erase the rest.
+///
+/// Be conservative: an edited/non-matching address, two complete addresses,
+/// or multiple region/district introductions remain genuine ambiguities.
+fn address_candidates_form_one_location(row:&Value,candidates:&[Value])->bool {
+    let address=str_field(row,"address");
+    if str_field(row,"addressStatus")=="INCOMPLETE" || !valid_address(address) {
+        return false;
+    }
+    let parts:Vec<&str>=candidates.iter()
+        .map(|candidate|str_field(candidate,"value").trim())
+        .filter(|value|!value.is_empty()).collect();
+    if parts.len()<2 {return false;}
+    let normalized=|s:&str|s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized(&parts.join(" "))!=normalized(address){return false;}
+    if parts.iter().filter(|value|valid_address(value)).count()>1{return false;}
+
+    // Two different administrative starts or two districts are not one
+    // unambiguous destination, even if an over-eager parser concatenated them.
+    const PROVINCES:&[&str]=&[
+        "서울","서울특별시","부산","부산광역시","대구","대구광역시",
+        "인천","인천광역시","광주","광주광역시","대전","대전광역시",
+        "울산","울산광역시","세종","세종특별자치시","경기","경기도",
+        "강원","강원도","강원특별자치도","충북","충청북도",
+        "충남","충청남도","전북","전라북도","전북특별자치도",
+        "전남","전라남도","경북","경상북도","경남","경상남도",
+        "제주","제주도","제주특별자치도",
+    ];
+    let region_starts=parts.iter().filter(|segment|
+        segment.split_whitespace().next().is_some_and(|word|PROVINCES.contains(&word))
+    ).count();
+    if region_starts>1{return false;}
+    let words=address.split_whitespace();
+    let districts=words.clone().filter(|word|
+        word.chars().count()>1 && word.ends_with('구')).count();
+    let cities=words.filter(|word|
+        word.chars().count()>1 && word.ends_with('시')).count();
+    districts<=1 && cities<=1
+}
+
 /// Exact recipient-delivery eligibility from src/delivery-requirements.ts.
 /// This read-only projection is authoritative in the manual and order screens.
 pub(super) fn delivery_requirements(payload: &Value) -> Result<Value, String> {
@@ -352,7 +394,9 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
                 .collect::<HashSet<_>>();
             let confirmed=rows(field(row,"confirmedFields")).iter()
                 .any(|v|v.as_str()==Some(field_name));
-            if unique.len()>1&&!confirmed{
+            let already_one_address=field_name=="address" &&
+                address_candidates_form_one_location(row,&candidates);
+            if unique.len()>1 && !confirmed && !already_one_address {
                 let evidence=json!(candidates);
                 let title=format!("{} 후보 선택 필요",match field_name {
                     "name"=>"수취인명","address"=>"주소",_=>"연락처"
@@ -610,6 +654,70 @@ mod manual_dealer_selection_review_tests {
         assert!(conflicting.iter().any(|issue|
             str_field(issue,"kind")=="CLIENT_MATCH_CONFLICT" &&
             str_field(issue,"severity")=="ACTION"));
+    }
+}
+
+#[cfg(test)]
+mod address_fragment_review_tests {
+    use super::*;
+
+    fn order(address:&str,segments:&[&str])->Value {
+        let candidates=segments.iter().enumerate().map(|(i,s)|json!({
+            "id":format!("address:{i}"),"field":"address",
+            "value":s,"label":s,"start":i*20,"end":i*20+s.len()
+        })).collect::<Vec<_>>();
+        json!({
+            "id":"address-case","clientId":"dealer","receptionVersion":1,
+            "recipients":[{
+                "id":"receiver","name":"이유준",
+                "address":address,"addressStatus":"COMPLETE",
+                "mobile":"010-2308-9794","items":[],
+                "candidates":candidates
+            }]
+        })
+    }
+
+    fn has_address_choice(o:&Value)->bool {
+        order_issues(o).iter().any(|issue|
+            str_field(issue,"kind")=="CANDIDATE_address")
+    }
+
+    #[test]
+    fn multiline_province_road_and_floor_are_one_complete_address() {
+        let o=order(
+            "경상남도 창원시 진해구 안청남로 40 커피빈스 1층",
+            &["경상남도 창원시","진해구 안청남로 40","커피빈스 1층"]
+        );
+        let row=&o["recipients"][0];
+        assert!(valid_address(str_field(row,"address")));
+        assert!(address_candidates_form_one_location(row,rows(field(row,"candidates")).as_slice()));
+        assert!(!has_address_choice(&o),"Do not replace a full address with a fragment");
+        assert!(!order_issues(&o).iter().any(|issue|
+            str_field(issue,"kind")=="ADDRESS"),"The full address needs no repair");
+    }
+
+    #[test]
+    fn two_independent_complete_addresses_still_require_review() {
+        let o=order(
+            "경상남도 창원시 진해구 안청남로 40 서울특별시 마포구 월드컵로 20",
+            &["경상남도 창원시 진해구 안청남로 40","서울특별시 마포구 월드컵로 20"]
+        );
+        assert!(has_address_choice(&o),"Two real destinations must not be auto-approved");
+    }
+
+    #[test]
+    fn conflicting_administrative_fragments_are_not_auto_approved() {
+        let o=order(
+            "경상남도 창원시 진해구 안청남로 40 마산합포구",
+            &["경상남도 창원시","진해구 안청남로 40","마산합포구"]
+        );
+        assert!(has_address_choice(&o),"Two different districts require review");
+        let altered=order(
+            "경상남도 창원시 진해구 안청남로 44 커피빈스 1층",
+            &["경상남도 창원시","진해구 안청남로 40","커피빈스 1층"]
+        );
+        assert!(has_address_choice(&altered),
+            "A manually changed address must not be mistaken for an identical composite");
     }
 }
 
