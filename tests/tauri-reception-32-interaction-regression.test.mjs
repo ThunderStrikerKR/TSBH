@@ -151,3 +151,20 @@ test("dealer-unassigned receptions share the normal workflow group list and orde
   assert.doesNotMatch(board, /workflow-unassigned-draft|거래처 미선택/);
   assert.doesNotMatch(css, /workflow-unassigned-draft/);
 });
+
+test("stage signal lights live beside the dealer name without widening the one-touch action row", () => {
+  const board = read("src/WorkflowBoard.tsx");
+  const css = read("src/styles/workflow.css");
+  const group = board.slice(board.indexOf("const g = entry.group;"));
+  const header = group.slice(group.indexOf("<header>"), group.indexOf("</header>"));
+  const progress = group.slice(
+    group.indexOf('<div className="workflow-progress">'),
+    group.indexOf('<div className="flow-fixed-summary"'),
+  );
+  assert.match(header, /<span className="flow-group-name">[\s\S]*?<\/span>\s*\{first\.order\.orderType !== "RETAIL" && nativeGroup && \(\s*<SignalLights step=\{step\} notice=\{g\.needsNotice\} \/>/);
+  assert.doesNotMatch(progress, /<SignalLights/);
+  assert.match(progress, /className="primary"/);
+  assert.match(progress, /className="workflow-undo"/);
+  assert.match(css, /\.flow-heading-toggle > \.workflow-signals\s*\{[\s\S]*?flex: 0 0 auto;[\s\S]*?margin-left: 6px;/);
+  assert.match(css, /\.workflow-progress > \.primary\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?width: max-content;[\s\S]*?max-width: 190px;/);
+});
