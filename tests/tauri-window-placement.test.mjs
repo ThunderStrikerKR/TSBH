@@ -18,7 +18,7 @@ test("native window state plugin restores main window bounds and maximization", 
   assert.match(source, /\.get\("maximized"\)\?\.as_bool\(\)/);
   assert.match(source, /run_on_main_thread\(move \|\|/);
   assert.match(source, /std::thread::spawn\(move \|\|/);
-  assert.match(source, /\\[\\(1, 650u64\\), \\(2, 1750u64\\)\\]/);
+  assert.match(source, /\[\(1, 650u64\), \(2, 1750u64\)\]/);
   assert.match(source, /SetWindowPlacement\(hwnd, &placement\)/);
   assert.match(source, /std::thread::sleep\(std::time::Duration::from_millis\(delay_ms\)\)/);
   assert.doesNotMatch(source, /ready_window\.maximize\(\)/);
