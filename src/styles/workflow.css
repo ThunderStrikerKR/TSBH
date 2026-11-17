@@ -20,12 +20,32 @@
   border-left: 2px solid #f59e0b;
   background: #242424;
 }
+/* Two fixed rows: dealer + stage indicators + management / stage controls + totals.
+   Never move the primary action when the stage or payment amount changes. */
+.hub-slot-3 .workflow-group .workflow-action-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin: 5px 0 2px;
+}
+.hub-slot-3 .workflow-group .workflow-action-line > .workflow-progress {
+  flex: 0 0 189px;
+  width: 189px;
+  min-width: 189px;
+  margin: 0;
+  gap: 5px;
+}
+.hub-slot-3 .workflow-group .workflow-action-line > .flow-fixed-summary {
+  flex: 1 1 0;
+  min-width: 0;
+}
 .hub-slot-3 .workflow-group .flow-fixed-summary {
   display: block;
   height: auto;
   min-height: 0;
   max-height: none;
-  padding: 3px 4px 5px;
+  padding: 2px 0;
   overflow-x: auto;
   overflow-y: hidden;
   font-variant-numeric: tabular-nums;
@@ -82,9 +102,7 @@
   margin-right: 6px;
 }
 .hub-slot-3 .workflow-group .flow-group-name {
-  /* Ten full-width Korean glyphs at the established 14px label font,
-     plus 3px padding on either side. Short names keep this same width,
-     so the four signal lights never slide sideways. */
+  /* Ten full-width Korean glyphs; reserve a fixed slot so the dots do not move. */
   flex: 0 0 146px;
   width: 146px;
   min-width: 0;
@@ -93,10 +111,10 @@
   white-space: nowrap;
 }
 .hub-slot-3 .workflow-group .flow-heading-toggle > .workflow-signals {
-  flex: 0 0 90px;
-  width: 90px;
-  gap: 6px;
-  margin-left: 6px;
+  flex: 0 0 82px;
+  width: 82px;
+  gap: 3px;
+  margin-left: 4px;
   justify-content: flex-start;
 }
 .hub-slot-3 .workflow-group .workflow-signals .signal {
@@ -105,9 +123,10 @@
   height: 18px;
 }
 .app-v03 .hub-slot-3 .workflow-progress > .primary {
-  flex: 0 1 auto;
-  width: max-content;
-  max-width: 190px;
+  flex: 0 0 154px;
+  width: 154px;
+  min-width: 154px;
+  max-width: 154px;
   white-space: nowrap;
 }
 .hub-slot-3 .flow-draft-status {
