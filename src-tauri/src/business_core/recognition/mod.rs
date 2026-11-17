@@ -1822,6 +1822,24 @@ mod tests {
         assert!(out["recipients"][0]["address"].as_str().unwrap().contains("문화로 120"));
     }
     #[test]
+    fn soundpro_bd_lp_wa_a_type_order_diagnostic() {
+        // Faithful order format; use a fictional two-syllable name and
+        // fictional mobile to avoid disclosing a customer in public CI.
+        let raw="안녕하세요 ! 사운드프로 발주드립니다.\n\n모델명 : BD-LP-WA A타입 수량 : 1ea\n\n성함 : 가상\n번호 : 010-1234-5678\n주소 : 서울특별시 도봉구 도봉로133길 50 (쌍문동, 가상교회) 가상교회 사무실 앞";
+        let state=serde_json::from_str::<Value>(include_str!(
+            "../../../resources/state-seed.json"
+        )).expect("catalog");
+        let standalone=execute("match_products",json!({
+            "text":"모델명 : BD-LP-WA A타입 수량 : 1ea","state":state
+        })).expect("product matcher");
+        let analyzed=execute("analyze_order",json!({
+            "raw":raw,"state":state
+        })).expect("document analyzer");
+        println!("SOUNDPRO_LP_WA_MATCH {}",standalone);
+        println!("SOUNDPRO_LP_WA_ANALYSIS {}",analyzed);
+        assert!(analyzed["recipients"].is_array());
+    }
+    #[test]
     fn one_line_team_name_zip_and_phone_diagnostic() {
         // Same format as user-submitted example, with synthetic name and
         // telephone. No identifying individual is written into public CI.
