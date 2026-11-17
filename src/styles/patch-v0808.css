@@ -44,7 +44,8 @@
   font-size: 13px;
 }
 .hub-panels > .hub-split {
-  cursor: default;
+  cursor: col-resize;
+  touch-action: none;
 }
 .review-layout {
   /* The recipient panel keeps its allotted space even before parsing finds any recipients.
