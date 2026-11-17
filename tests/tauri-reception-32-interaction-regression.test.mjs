@@ -165,7 +165,9 @@ test("stage signal lights live beside the dealer name without widening the one-t
   assert.doesNotMatch(progress, /<SignalLights/);
   assert.match(progress, /className="primary"/);
   assert.match(progress, /className="workflow-undo"/);
-  assert.match(css, /\.workflow-group \.flow-group-name\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?min-width: 0;/);
+  assert.match(css, /\.workflow-group \.flow-group-name\s*\{[\s\S]*?flex: 0 0 146px;[\s\S]*?width: 146px;/);
+  assert.match(css, /\.workflow-group > header\s*\{[\s\S]*?flex-wrap: nowrap;/);
+  assert.match(css, /\.workflow-group \.workflow-signals \.signal\s*\{[\s\S]*?width: 16px;[\s\S]*?height: 16px;/);
   assert.match(css, /\.flow-heading-toggle > \.workflow-signals\s*\{[\s\S]*?flex: 0 0 auto;[\s\S]*?margin-left: 6px;/);
   assert.match(css, /\.workflow-progress > \.primary\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?width: max-content;[\s\S]*?max-width: 190px;/);
 });
