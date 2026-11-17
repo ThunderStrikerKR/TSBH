@@ -219,7 +219,7 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
         .unwrap_or_else(||json!(match status {
             "AUTO_APPLIED"=>"코어","PROVISIONALLY_APPROVED"=>item
                 .map(|i|str_field(field(i,"quantityApproval"),"actor"))
-                .filter(|v|!v.is_empty()).unwrap_or("직원"),_=>"미확인"
+                .filter(|v|!v.is_empty()).unwrap_or("사용자"),_=>"미확인"
         }));
     let updated_at=decision.and_then(|d|d.get("updatedAt")).filter(|v|!v.is_null())
         .or_else(||item.and_then(|i|field(i,"quantityApproval").get("at"))
@@ -257,7 +257,10 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
     // Dealer matching reasons are staff-facing INFO/ACTION items in the
     // existing "확인할 내용" UI. No automatic customer messages are generated.
     let match_info=field(o,"clientMatch");
-    if match_info.is_object() {
+    // A user explicitly choosing the dealer is already an acknowledged decision.
+    // Keep its MANUAL provenance in the saved order without showing a redundant
+    // CLIENT_MATCH_EVIDENCE item in the review panel.
+    if match_info.is_object() && str_field(match_info,"source")!="MANUAL" {
         let source=str_field(match_info,"source");
         let matched_id=str_field(match_info,"clientId");
         let actual_id=str_field(o,"clientId");
@@ -466,7 +469,7 @@ pub(super) fn synchronize(order:&mut Value)->Result<(),String>{
                 .contains(&str_field(prior,"resolution")){
             let mut updated=prior.clone();
             set(&mut updated,"resolution",json!("RESOLVED"))?;
-            set(&mut updated,"resolutionSource",json!("직원 수정 또는 현재 원문 반영"))?;
+            set(&mut updated,"resolutionSource",json!("사용자 수정 또는 현재 원문 반영"))?;
             set(&mut updated,"updatedAt",field(order,"updatedAt").clone())?;
             next.insert(id.clone(),updated);
         }
@@ -521,6 +524,47 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
             Ok(json!({"order":order}))
         }
         _=>Err(format!("지원하지 않는 주문 이슈 action: {action}"))
+    }
+}
+
+#[cfg(test)]
+mod manual_dealer_selection_review_tests {
+    use super::*;
+
+    #[test]
+    fn manually_selected_dealer_never_emits_a_redundant_review_notice() {
+        let order=json!({
+            "id":"order-1","clientId":"dealer-1","recipients":[],
+            "clientMatch":{"source":"MANUAL","clientId":"dealer-1",
+                "detail":"사용자가 거래처 ‘테스트 상사’를 직접 선택했습니다."}
+        });
+        let issues=order_issues(&order);
+        assert!(issues.iter().all(|issue|
+            !str_field(issue,"kind").starts_with("CLIENT_MATCH_")),
+            "Direct user selection is an accepted decision, not an alert");
+    }
+
+    #[test]
+    fn automatic_match_provenance_and_conflict_still_appear() {
+        let auto=json!({
+            "id":"order-1","clientId":"dealer-1","recipients":[],
+            "clientMatch":{"source":"RAW_EXPLICIT","clientId":"dealer-1",
+                "detail":"발주서에 거래처명이 명시되었습니다."}
+        });
+        let evidence=order_issues(&auto);
+        assert!(evidence.iter().any(|issue|
+            str_field(issue,"kind")=="CLIENT_MATCH_EVIDENCE" &&
+            str_field(issue,"severity")=="INFO"));
+
+        let conflict=json!({
+            "id":"order-1","clientId":"dealer-1","recipients":[],
+            "clientMatch":{"source":"CONFLICT","clientId":"dealer-2",
+                "detail":"서로 다른 거래처 근거가 충돌합니다."}
+        });
+        let conflicting=order_issues(&conflict);
+        assert!(conflicting.iter().any(|issue|
+            str_field(issue,"kind")=="CLIENT_MATCH_CONFLICT" &&
+            str_field(issue,"severity")=="ACTION"));
     }
 }
 

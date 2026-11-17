@@ -228,7 +228,7 @@ export function WorkflowQueue({
                                 disabled={busy}
                                 onClick={() =>
                                   void run(async () => {
-                                    if (!(await confirmAction("이 발송 파일을 실제 공장에 전달했나요? 직원 확인 후에만 전달 완료로 표시합니다."))) return;
+                                    if (!(await confirmAction("이 발송 파일을 실제 공장에 전달했나요? 실제 전달 여부를 직접 확인한 후에만 전달 완료로 표시합니다."))) return;
                                     await onSave(await nativeApplyCorrectionAction(state, "mark_factory_delivered", { shipmentId: q!.shipmentId }));
                                   })
                                 }

@@ -129,7 +129,7 @@ export function FactoryNotifications({
                 {statuses?.[record.id]?.needsReview === false
                   ? "반영 완료"
                   : statuses?.[record.id]?.needsReview === true
-                    ? record.status === "PARTIAL" ? "일부 반영" : "직원 확인 필요"
+                    ? record.status === "PARTIAL" ? "일부 반영" : "확인 필요"
                     : "확인 중"}
               </h3>
               <small>
@@ -151,7 +151,7 @@ export function FactoryNotifications({
                     {row.row}행 / {row.name} / {" "}
                     {row.applied
                       ? `${row.tracking} / 실제 운임 ${won(row.actual)}`
-                      : row.issue || "직원 확인 필요"}
+                      : row.issue || "확인 필요"}
                   </p>
                   {!row.applied &&
                     row.shipmentId &&

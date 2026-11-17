@@ -484,10 +484,10 @@ export function ProductManager({
                 </div>
               </div>
               <div className="product-detail-wide-fields">
-                <Field label="상품명" help={{ purpose: "매장 직원과 공장 직원이 같은 상품을 정확히 구별할 수 있도록 이름을 정합니다.", steps: ["상품의 모델명과 판매 구성의 차이를 알 수 있도록 입력합니다.", "가방 포함 또는 미포함, 바퀴 포함 여부, 크기 등 주문에 중요한 차이를 빠뜨리지 않습니다.", "상품 정보를 저장합니다."], result: "입력한 상품명이 주문 확인과 발송 업무에 사용됩니다.", caution: "판매 구성이 다르면 옵션 하나로 합치지 않고 각각 별도 상품으로 등록합니다." }}>
+                <Field label="상품명" help={{ purpose: "매장과 공장에서 같은 상품을 정확히 구별할 수 있도록 이름을 정합니다.", steps: ["상품의 모델명과 판매 구성의 차이를 알 수 있도록 입력합니다.", "가방 포함 또는 미포함, 바퀴 포함 여부, 크기 등 주문에 중요한 차이를 빠뜨리지 않습니다.", "상품 정보를 저장합니다."], result: "입력한 상품명이 주문 확인과 발송 업무에 사용됩니다.", caution: "판매 구성이 다르면 옵션 하나로 합치지 않고 각각 별도 상품으로 등록합니다." }}>
                   <input value={edit.name} onChange={(event) => setEdit({ ...edit, name: event.target.value })} />
                 </Field>
-                <Field label="상품설명" help={{ purpose: "매장 직원이 상품 특징을 기억하거나 상품을 구별할 때 참고할 내용을 남깁니다.", steps: ["직원에게 필요한 상품 특징이나 참고사항을 입력합니다.", "변경사항을 저장합니다."], result: "매장 상품 관리에서 상품 정보를 확인할 때 참고할 수 있습니다.", caution: "주문서와 공장에 전달해야 할 구성 정보는 상품설명이 아니라 상품명에 적습니다." }}>
+                <Field label="상품설명" help={{ purpose: "사용자가 상품 특징을 기억하거나 상품을 구별할 때 참고할 내용을 남깁니다.", steps: ["사용자에게 필요한 상품 특징이나 참고사항을 입력합니다.", "변경사항을 저장합니다."], result: "매장 상품 관리에서 상품 정보를 확인할 때 참고할 수 있습니다.", caution: "주문서와 공장에 전달해야 할 구성 정보는 상품설명이 아니라 상품명에 적습니다." }}>
                   <input value={edit.subtitle ?? ""} onChange={(event) => setEdit({ ...edit, subtitle: event.target.value })} />
                 </Field>
                 <div className="field">

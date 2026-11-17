@@ -183,7 +183,7 @@ fn change_client(payload:&Value)->Result<Value,String>{
     let mut changed=before.clone();
     set(&mut changed,"clientId",json!(dealer_id))?;
     set(&mut changed,"clientSnapshot",selected.clone())?;
-    // Persist explanatory provenance with the authoritative Rust client change.
+    // Preserve dealer-change provenance for audit, not as an extra review task.
     // An automatic claim must refer to the very client Rust is selecting.
     let match_info=field(payload,"matchEvidence");
     let guidance=if match_info.is_object(){
@@ -199,7 +199,7 @@ fn change_client(payload:&Value)->Result<Value,String>{
             "confirmedMatchCount":match_info.get("confirmedMatchCount").cloned().unwrap_or(Value::Null)})
     }else{
         json!({"source":"MANUAL","clientId":dealer_id,
-            "detail":format!("직원이 거래처 ‘{}’을 직접 선택했습니다.",str_field(&selected,"name"))})
+            "detail":format!("사용자가 거래처 ‘{}’를 직접 선택했습니다.",str_field(&selected,"name"))})
     };
     set(&mut changed,"clientMatch",guidance)?;
     for (key,value) in [("pricesLocked",json!(false)),

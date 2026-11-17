@@ -39,3 +39,14 @@ test("stage-one signal hover highlights dealer identity alongside order review",
   assert.match(board, /onMouseEnter/);
   assert.match(board, /onStageHover/);
 });
+
+test("user-selected dealer is retained only as provenance, not a review item", () => {
+  const editor = read("src-tauri/src/business_core/rules/order_edit.rs");
+  const issues = read("src-tauri/src/business_core/rules/issues.rs");
+  assert.match(editor, /"source":"MANUAL"/);
+  assert.match(editor, /사용자가 거래처/);
+  assert.doesNotMatch(editor, /직원이 거래처/);
+  assert.match(issues, /str_field\(match_info,"source"\)!="MANUAL"/);
+  assert.match(issues, /manually_selected_dealer_never_emits_a_redundant_review_notice/);
+  assert.match(issues, /automatic_match_provenance_and_conflict_still_appear/);
+});

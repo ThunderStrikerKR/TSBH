@@ -422,7 +422,7 @@ export function ShippingManager({
                   <b>{changes.length}개 상품</b>의 배송 그룹을 변경합니다.
                 </>
               ) : (
-                "등록된 상품을 임의로 분류하지 않습니다. 직원이 확인한 그룹을 지정해 주세요."
+                "등록된 상품을 임의로 분류하지 않습니다. 사용자가 확인한 그룹을 지정해 주세요."
               )}
             </span>
             <div>
@@ -505,7 +505,7 @@ export function ShippingManager({
                 <th>배송 그룹</th>
                 <th>최대 묶음 수량</th>
                 <th>운임 등록 상태</th>
-                <th>직원 참고 메모</th>
+                <th>사용자 참고 메모</th>
                 <th>최근 수정</th>
                 <th>관리</th>
               </tr>
@@ -610,7 +610,7 @@ export function ShippingManager({
                         {new Date(c.at).toLocaleString("ko-KR")}
                         {c.verifiedAt
                           ? ` / 실배송 검증 ${c.sampleCount ?? 1}회`
-                          : " / 직원 등록 기준"}
+                          : " / 사용자 등록 기준"}
                       </small>
                     </td>
                     <td>{won(c.charge)}</td>
@@ -758,9 +758,9 @@ export function ShippingManager({
           <ShippingFeeRanges key={editing.id} rule={editing.rule}
             onChange={(rule) => setEditing({ ...editing, rule })} />
           <label>
-            직원 참고 메모
+            사용자 참고 메모
             <input
-              placeholder="포장할 때 직원이 참고할 사항 (선택)"
+              placeholder="포장할 때 참고할 사항 (선택)"
               value={editing.rule.notes}
               onChange={(e) =>
                 setEditing({

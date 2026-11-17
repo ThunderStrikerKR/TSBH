@@ -94,7 +94,7 @@ export function StaffChecks({
                     disabled={unavailable || approvingQuantity || !onApproveOne || !canApproveOne?.(b)}
                     title={!canApproveOne?.(b)
                       ? "상품이 정확히 연결된 수량 미기재 건에만 1개 잠정 처리를 사용할 수 있습니다."
-                      : "직원 판단으로 1개를 잠정 적용합니다. 고객에게 보내는 안내문에 1개 발송 예정 문구가 포함됩니다."}
+                      : "사용자 판단으로 1개를 잠정 적용합니다. 고객에게 보내는 안내문에 1개 발송 예정 문구가 포함됩니다."}
                     onClick={() => onApproveOne?.(b)}
                   >
                     {approvingQuantity ? "처리 중" : "1개로 잠정 처리"}

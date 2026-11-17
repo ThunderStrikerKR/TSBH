@@ -586,7 +586,7 @@ export function useOrderDesk({
     const issueId = b.issueId;
     void businessCoreCall<{ order: Order }>("rules", "apply_issue_action", {
       action: "pending_issue", order: sourceDraft, issueId,
-      actor: state.settings.operatorName || "직원", now: new Date().toISOString(),
+      actor: state.settings.operatorName || "사용자", now: new Date().toISOString(),
     }).then(({ order: next }) => {
       if (latestRulesInput.current.draft !== sourceDraft) return;
       onChange((previous) => {

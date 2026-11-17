@@ -81,7 +81,7 @@ export async function nativeApplyWorkflowAction(
   const prepared = action === "mark_store_sent"
     ? state : await nativeReconcileWorkflow(state);
   const now = new Date().toISOString();
-  const actor = state.settings.operatorName?.trim() || "직원(이름 미설정)";
+  const actor = state.settings.operatorName?.trim() || "사용자(이름 미설정)";
   // Audit IDs are preallocated on the caller side. Only IDs of actually
   // emitted records are used; never leave a partially changed SQLite state.
   const auditEventIds = Array.from({ length: 2048 }, () => crypto.randomUUID());

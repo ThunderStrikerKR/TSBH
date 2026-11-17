@@ -282,7 +282,7 @@ export function OrderDesk(props: OrderDeskProps) {
                       try {
                         const approved = await nativeApproveMissingQuantity(
                           draft, b.recipientId, b.itemId!,
-                          state.settings.operatorName?.trim() || "직원",
+                          state.settings.operatorName?.trim() || "사용자",
                         );
                         if (!isCurrentOrderInput(draft, state))
                           throw Error("주문 정보가 변경되었습니다. 수량 확인을 다시 진행하세요.");
