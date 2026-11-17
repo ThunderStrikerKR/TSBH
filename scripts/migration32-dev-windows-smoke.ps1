@@ -97,6 +97,16 @@ db.close()
   & node scripts/migration32-dev-business-ui.mjs
   if($LASTEXITCODE -ne 0) { throw "Real DEV GUI business scenario test FAILED. See dev-business-results.json" }
   $report.businessScenarios="PASS"
+  # The CI cleanup force-kills the launcher tree. To test saved geometry
+  # properly, gracefully close the real DEV window and relaunch that EXE twice.
+  $debugExe=Join-Path $repo "src-tauri\target\debug\bando_hub_tauri.exe"
+  & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File (
+    Join-Path $repo "scripts\verify-dev-window-placement-win.ps1"
+  ) -ExePath $debugExe -ExistingProcessId $native[0].Id
+  if($LASTEXITCODE -ne 0) {
+    throw "DEV window geometry/maximized restore across real EXE restarts failed"
+  }
+  $report.devWindowPlacement="PASS"
   $report.status="PASS"
   Write-Host ("BANDO_DEV_WINDOWS_SMOKE_PASS "+($report | ConvertTo-Json -Depth 8 -Compress))
 } catch {
