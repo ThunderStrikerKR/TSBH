@@ -133,3 +133,21 @@ test("photograph-only unfinished orders are retained and counted as unsaved", ()
   assert.match(hub,/order\.photos\?\.length/);
   assert.match(hub,/lastVisiblePreview\.current = undefined/);
 });
+
+test("dealer-unassigned receptions share the normal workflow group list and order", () => {
+  const board = read("src/WorkflowBoard.tsx");
+  const css = read("src/styles/workflow.css");
+  assert.match(board, /const entries = \[/);
+  assert.match(board, /\.\.\.groups\.map\(\(group\) => \(\{ kind: "group"/);
+  assert.match(board, /\.\.\.pendingReceptions\.map\(\(receipt\) => \(\{/);
+  assert.match(board, /\]\.sort\(\(a, b\) => b\.createdAt\.localeCompare\(a\.createdAt\)\)/);
+  assert.match(board, /entries\.map\(\(entry\) => \{/);
+  assert.match(board, /if \(entry\.kind === "pending"\)/);
+  assert.match(board, /<article className=\{"workflow-group"/);
+  assert.match(board, /<span className="flow-group-name"><b>미확인 거래처<\/b><\/span>/);
+  assert.match(board, /pendingSelected && manuallyClosedGroup !== pendingKey/);
+  assert.match(board, /onSelectPending\?\.\(receipt\.id\)/);
+  assert.match(board, /receipt\.recipients\.map\(\(recipient\) =>/);
+  assert.doesNotMatch(board, /workflow-unassigned-draft|거래처 미선택/);
+  assert.doesNotMatch(css, /workflow-unassigned-draft/);
+});
