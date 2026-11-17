@@ -26,7 +26,7 @@ test("native window state plugin restores main window bounds and maximization", 
   assert.match(source, /mod native_maximized_restore/);
   assert.match(source, /IsZoomed\(hwnd\)/);
   assert.match(source, /ShowWindow\(hwnd, 3\)/);
-  assert.match(source, /ensure_native_maximized\(&ready_window\)/);
+  assert.match(source, /ensure_native_maximized\(&candidate\)/);
   assert.doesNotMatch(source, /window\.restore_state\(StateFlags::MAXIMIZED\)/);
   for (const flag of ["SIZE", "POSITION", "MAXIMIZED", "VISIBLE"]) {
     assert.match(source, new RegExp("StateFlags::" + flag));
