@@ -690,7 +690,7 @@ mod address_fragment_review_tests {
         );
         let row=&o["recipients"][0];
         assert!(valid_address(str_field(row,"address")));
-        assert!(address_candidates_form_one_location(row,rows(field(row,"candidates")).as_slice()));
+        assert!(address_candidates_form_one_location(row,rows(field(row,"candidates"))));
         assert!(!has_address_choice(&o),"Do not replace a full address with a fragment");
         assert!(!order_issues(&o).iter().any(|issue|
             str_field(issue,"kind")=="ADDRESS"),"The full address needs no repair");
