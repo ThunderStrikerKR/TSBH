@@ -883,18 +883,6 @@ body,
   border-bottom: 1px solid #404040;
   padding: 8px;
 }
-.workflow-board-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  align-items: center;
-  font-size: 14px;
-  margin: 0 2px 7px;
-}
-.workflow-board-heading small {
-  font-size: 12px;
-  color: #aaa;
-}
 .workflow-group {
   border: 1px solid #444;
   border-radius: 6px;
@@ -1188,9 +1176,6 @@ body,
   }
   .workflow-footer {
     max-height: 42%;
-  }
-  .workflow-board-heading small {
-    display: none;
   }
   .workflow-shipment small {
     display: none;
