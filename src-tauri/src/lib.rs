@@ -1174,6 +1174,22 @@ pub fn run() {
                 )
                 .build(),
         )
+        // window-state restores MAXIMIZED before showing the initially
+        // hidden main window. On Windows, showing a hidden maximized HWND
+        // can revert it to normal placement. Reapply maximization only after
+        // the primary plugin has restored the bounds and shown the window.
+        .plugin(
+            tauri::plugin::Builder::new("bando-maximize-after-window-state")
+                .on_window_ready(|window| {
+                    if cfg!(target_os = "windows") && window.label() == "main" {
+                        use tauri_plugin_window_state::WindowExt;
+                        if let Err(error) = window.restore_state(StateFlags::MAXIMIZED) {
+                            eprintln!("BANDO maximized restore retry failed: {error}");
+                        }
+                    }
+                })
+                .build(),
+        )
         .setup(move |app| {
             #[cfg(target_os = "windows")]
             single_instance::listen(instance, app.handle().clone())

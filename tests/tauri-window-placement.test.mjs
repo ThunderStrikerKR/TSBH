@@ -11,6 +11,9 @@ test("native window state plugin restores main window bounds and maximization", 
   assert.match(cargo, /^tauri-plugin-window-state\s*=\s*"2"/m);
   assert.match(source, /tauri_plugin_window_state::Builder::default\(\)/);
   assert.match(source, /\.with_filter\(\|label\| label == "main"\)/);
+  assert.match(source, /bando-maximize-after-window-state/);
+  assert.match(source, /on_window_ready\(\|window\|/);
+  assert.match(source, /window\.restore_state\(StateFlags::MAXIMIZED\)/);
   for (const flag of ["SIZE", "POSITION", "MAXIMIZED", "VISIBLE"]) {
     assert.match(source, new RegExp("StateFlags::" + flag));
   }

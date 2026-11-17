@@ -153,6 +153,8 @@ try {
   if (!$maximized.main.maximized) { throw "DEV state did not save maximized=true" }
   $third=Start-Again
   if (![BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle)) {
+    $rect=Get-WindowRect $third
+    Write-Host "DEV_WINDOW_MAXIMIZED_FAILURE_DIAGNOSTIC: saved=true rect=$($rect | ConvertTo-Json -Compress)"
     throw "DEV maximized window did not restore after restart"
   }
   Write-Host "DEV_WINDOW_MAXIMIZED_RESTORED: true"
