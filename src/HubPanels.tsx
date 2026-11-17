@@ -14,11 +14,15 @@ export function validPanels(value: unknown): number[] {
       value.length !== 4 ||
       !value.every((n) => typeof n === "number" && Number.isFinite(n) && n > 0))
     return defaultPanels;
-  // A legacy default used one Kakao ratio and three identical work columns.
-  // Preserve user-customized ratios; migrate only this untouched preset.
+  // The two previously shipped presets must use the shared default layout.
+  // Preserve all other user-customized ratios.
   const oldDefault = 80 / 3;
-  if (Math.abs(value[0] - 20) < 0.01 &&
-      value.slice(1).every((n) => Math.abs(n - oldDefault) < 0.01))
+  const legacyDefaults = [
+    [20, oldDefault, oldDefault, oldDefault],
+    [20, 30, 30, 20],
+  ];
+  if (legacyDefaults.some((preset) =>
+      preset.every((n, i) => Math.abs(value[i] - n) < 0.01)))
     return defaultPanels;
   return value;
 }
