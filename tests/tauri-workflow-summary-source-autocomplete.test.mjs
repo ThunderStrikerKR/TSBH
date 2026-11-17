@@ -11,7 +11,8 @@ const history = read("src/shared/disable-input-history.ts");
 const manager = read("src/ClientManager.tsx");
 
 test("workflow summary uses one line for shipments, deposit and normalized tax status", () => {
-  const block = board.slice(board.indexOf('className="flow-fixed-summary"'), board.indexOf('{(g.needsNotice'));
+  const groupCard = board.slice(board.indexOf('const g = entry.group;'));
+  const block = groupCard.slice(groupCard.indexOf('className="flow-fixed-summary"'), groupCard.indexOf('{(g.needsNotice'));
   assert.equal((block.match(/className="flow-summary-compact"/g) || []).length, 1);
   assert.match(block, /배송 \{ss\.length\}건/);
   assert.match(block, /className="flow-summary-payment"/);
