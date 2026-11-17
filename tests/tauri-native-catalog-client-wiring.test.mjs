@@ -105,7 +105,9 @@ test("live catalog search, native model guidance and official link browsing have
   assert.match(search,/"search_products"/);
   assert.match(item,/"search_products"/);
   assert.match(issue,/"suggest_group_representative"/);
-  assert.match(issue,/"representative_products"/);
+  assert.match(issue,/"resolution_product_candidates"/);
+  assert.doesNotMatch(issue,/state, "representative_products"/);
+  assert.match(source,/"resolution_product_candidates"/);
   assert.doesNotMatch(issue,/suggestGroupRepresentative\(state,/);
   assert.doesNotMatch(issue,/representativeProducts\(state,/);
   assert.match(clients,/useNativeClients\(/);
