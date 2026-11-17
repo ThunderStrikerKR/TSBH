@@ -7,7 +7,7 @@ import { won } from "./domain";
 import { nativeApplyWorkflowAction, nativeChangeGroup } from "./orders/native-rules";
 import { internalModel } from "./matching";
 import type { NoticeSink } from "./shared/notices";
-import type { State } from "./types";
+import type { Order, State } from "./types";
 import { Field, Modal } from "./ui";
 
 import {
@@ -67,7 +67,7 @@ export function WorkflowBoard({
   onSelect: (s: WorkflowSelection) => void;
   onSave: (s: State) => Promise<void>;
   onNotice: NoticeSink;
-  pendingReceptions?: Array<{ id: string; raw: string }>;
+  pendingReceptions?: Array<Pick<Order, "id" | "raw" | "recipients" | "createdAt">>;
   selectedPendingOrderId?: string;
   onSelectPending?: (orderId: string) => void;
 }) {
@@ -187,6 +187,14 @@ export function WorkflowBoard({
       return ss.length && ss.some((s) => !s.transferred);
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // A dealer-unassigned reception is a normal list entry, not a separate
+  // alert-style card. It has no priced workflow group until a dealer is selected.
+  const entries = [
+    ...groups.map((group) => ({ kind: "group" as const, createdAt: group.createdAt, group })),
+    ...pendingReceptions.map((receipt) => ({
+      kind: "pending" as const, createdAt: receipt.createdAt, receipt,
+    })),
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
     <div ref={boardRef} className="workflow-board" aria-label="진행 중인 배송 묶음" aria-busy={!ready}>
       <div className="workflow-board-heading">
@@ -195,27 +203,77 @@ export function WorkflowBoard({
       {(previewError || native.error) && (
         <p role="alert">업무 미리보기 계산 오류: {previewError || native.error}</p>
       )}
-      {pendingReceptions.length > 0 && (
-        <div className="workflow-unassigned-drafts" aria-label="거래처 미확정 발주서">
-          {pendingReceptions.map((receipt) => (
-            <button
-              className={"workflow-unassigned-draft" +
-                (selectedPendingOrderId === receipt.id ? " selected" : "")}
-              aria-pressed={selectedPendingOrderId === receipt.id}
-              type="button"
-              key={receipt.id}
-              onClick={() => onSelectPending?.(receipt.id)}
-            >
-              <b>거래처 미선택 <span className="flow-draft-status" title="확인 전 임시 보관 중이며, 앱 종료 시 사라집니다.">미확정</span></b>
-              <small>{receipt.raw.trim().split(/\r?\n/).find((line) => line.trim())?.slice(0, 60) || "사진 발주서"}</small>
-            </button>
-          ))}
-        </div>
-      )}
-      {!groups.length && !pendingReceptions.length && (
+      {!entries.length && (
         <p className="muted">거래처와 발주 원문을 입력하면 수취인별 배송 건이 생성됩니다.</p>
       )}
-      {groups.map((g) => {
+      {entries.map((entry) => {
+        if (entry.kind === "pending") {
+          const receipt = entry.receipt;
+          const pendingSelected = selectedPendingOrderId === receipt.id;
+          const pendingKey = "pending:" + receipt.id;
+          const open = pendingSelected && manuallyClosedGroup !== pendingKey;
+          return (
+            <article className={"workflow-group" + (pendingSelected ? " selected" : "")}
+              key={receipt.id} data-pending-order-id={receipt.id}>
+              <header>
+                <button type="button" className="flow-heading-toggle"
+                  aria-label={"미확인 거래처" + (open ? " 묶음 접기" : " 묶음 펼치기")}
+                  aria-expanded={open}
+                  onClick={() => {
+                    if (pendingSelected) {
+                      setManuallyClosedGroup(open ? pendingKey : undefined);
+                    } else {
+                      setManuallyClosedGroup(undefined);
+                      onSelectPending?.(receipt.id);
+                    }
+                  }}>
+                  <span className="flow-toggle-icon" aria-hidden="true">{open ? "▾" : "▸"}</span>
+                  <span className="flow-group-name"><b>미확인 거래처</b></span>
+                  <span className="flow-draft-status"
+                    title="확인 전 임시 보관 중이며, 앱 종료 시 사라집니다.">미확정</span>
+                </button>
+              </header>
+              <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
+                <div className="flow-summary-compact">
+                  <span>배송 {receipt.recipients.length}건</span>
+                  <span className="flow-summary-payment">금액 미확정</span>
+                </div>
+              </div>
+              {open && (
+                <div className="workflow-shipment-list">
+                  <div className="workflow-list-head">
+                    <span>수취인</span><span>상품</span><span>운임</span>
+                  </div>
+                  {receipt.recipients.length ? receipt.recipients.map((recipient) => (
+                    <button type="button" className="workflow-shipment"
+                      key={recipient.id} onClick={() => onSelectPending?.(receipt.id)}>
+                      <span className="shipment-recipient" title={recipient.name}>
+                        {recipient.name || "수취인 확인"}
+                      </span>
+                      <span className="shipment-products">
+                        {recipient.items.map((item) => (
+                          <span className="product-chip" key={item.id} title={item.name}>
+                            {internalModel(item.name)} × {item.quantity ?? "?"}
+                          </span>
+                        ))}
+                      </span>
+                      <span className="shipment-freight">—</span>
+                    </button>
+                  )) : (
+                    <div className="workflow-shipment">
+                      <span className="shipment-recipient">수취인 확인</span>
+                      <span className="shipment-products">
+                        {receipt.raw.trim().split(/\r?\n/).find((line) => line.trim())?.slice(0, 60) || "사진 발주서"}
+                      </span>
+                      <span className="shipment-freight">—</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </article>
+          );
+        }
+        const g = entry.group;
         const nativeGroup = native.byId[g.id];
         const ss = groupShipments(state, g.id),
           step = nativeGroup?.step ?? 0,
