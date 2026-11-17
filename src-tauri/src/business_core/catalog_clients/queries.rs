@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 use regex::Regex;
 use url::Url;
 use super::{field,items};
+mod resolution_suggestions;
 
 fn active(p:&Value)->bool{
     p.get("active")!=Some(&Value::Bool(false)) &&
@@ -349,6 +350,8 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
         }
         "representative_products"=>json!(representative_products(state,
             field(payload,"text"),field(payload,"clientId"))),
+        "resolution_product_candidates"=>json!(resolution_suggestions::candidates(
+            state,field(payload,"text"),field(payload,"clientId"))),
         "suggest_group_representative"=>suggest_group(state,items(payload,"candidateIds")),
         "official_links"=>official_links(payload.get("report").unwrap_or(&Value::Null)),
         _=>return Err(format!("지원하지 않는 조회 업무입니다: {operation}")),
