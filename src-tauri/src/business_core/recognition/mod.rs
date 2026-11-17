@@ -1625,6 +1625,25 @@ mod tests {
             "the native engine must return a reviewable analysis");
     }
     #[test]
+    fn narrative_conductor_order_with_repeated_recipient_label_diagnostic() {
+        // Structure-preserving synthetic stand-in for a real staff sample:
+        // no actual individual's name or phone is committed to public CI.
+        let raw="안녕하세요? 주문드립니다.\nBANDO STAND 반도 보면대 지휘용 악보 스탠드\n\n받으시는 분\n김가상\n\n받으시는 분\n010-1234-5678\n\n배송지 주소\n50034 경상남도 함양군 함양읍 함양여중길 18-9 (함양여자중학교)\n\n오늘 발송 가능한가요? 발송하시고 송장번호 부탁드립니다.";
+        let state=serde_json::from_str::<Value>(include_str!(
+            "../../../resources/state-seed.json"
+        )).expect("production catalog seed");
+        let match_result=execute("match_products",json!({
+            "text":"BANDO STAND 반도 보면대 지휘용 악보 스탠드",
+            "state":state
+        })).expect("Rust standalone product matching");
+        let result=execute("analyze_order",json!({
+            "raw":raw,"state":state
+        })).expect("Rust actual document analysis");
+        println!("NARRATIVE_CONDUCTOR_MATCH {}",match_result);
+        println!("NARRATIVE_CONDUCTOR_ANALYSIS {}",result);
+        assert!(result["recipients"].is_array());
+    }
+    #[test]
     fn manual_confirmations_survive_identical_order() {
         let analysis=execute("analyze_order",json!({"raw":"709 2개\n김가상\n서울특별시 마포구 월드컵로 20","state":state()})).unwrap();
         let mut order=json!({"raw":"709 2개\n김가상\n서울특별시 마포구 월드컵로 20",
