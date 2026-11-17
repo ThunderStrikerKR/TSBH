@@ -81,6 +81,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.hub-slot-3 .workflow-group .flow-heading-toggle > .workflow-signals {
+  flex: 0 0 auto;
+  margin-left: 6px;
+}
+.app-v03 .hub-slot-3 .workflow-progress > .primary {
+  flex: 0 1 auto;
+  width: max-content;
+  max-width: 190px;
+  white-space: nowrap;
+}
 .hub-slot-3 .flow-draft-status {
   flex: 0 0 auto;
   margin-left: 6px;
