@@ -269,3 +269,15 @@ test("product visual extension must not capture independently linked recipient n
   assert.equal(spans.find((s) => s.field === "product")?.text, "709");
   assert.equal(spans.find((s) => s.field === "name")?.text, "김가상");
 });
+
+test("neutral source highlights are filled chips and grey recipient context stays within its real field grid", () => {
+  const css = read("src/styles/receipt-document.css");
+  const source = css.split("/* Classified source spans")[1]?.split("/* Keep the contextual grey signal")[0] ?? "";
+  const group = css.split("/* Keep the contextual grey signal")[1]?.split("/* Highlight the actual input's inner box")[0] ?? "";
+  assert.match(source, /\.linked-token\s*\{[\s\S]*?background: #424242;[\s\S]*?border: 0;[\s\S]*?border-radius: 4px;[\s\S]*?padding: 1px 3px;/);
+  assert.match(source, /-webkit-box-decoration-break: clone;/);
+  assert.doesNotMatch(source, /border: 2px solid|border-color:/);
+  assert.match(group, /\.recipient-review\.linked-group-context\s*\{\s*background: transparent;\s*outline: none;\s*box-shadow: none;/);
+  assert.match(group, /\.recipient-review\.linked-group-context > \.recipient-fields\s*\{\s*background: rgba\(128, 128, 128, 0\.08\);\s*box-shadow: inset 3px 0 0 #777;/);
+  assert.doesNotMatch(group, /outline-offset: -2px|outline: 1px solid/);
+});
