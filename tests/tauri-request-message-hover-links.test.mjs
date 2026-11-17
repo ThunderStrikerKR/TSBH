@@ -207,7 +207,7 @@ test("source chips have no permanent border; selected fields use four-sided blue
   const details = css.split("/* Highlight the actual input's inner box")[1] ?? "";
   assert.ok(source, "source highlight contract missing");
   assert.match(source, /\.linked-token\s*\{[\s\S]*?border: 0;/);
-  assert.match(source, /\.linked-token\.linked-active\s*\{[\s\S]*?background: #17436d !important;[\s\S]*?box-shadow: inset 0 0 0 1px #75b5ff !important;/);
+  assert.match(source, /\.linked-token\.linked-active\s*\{[\s\S]*?background: #17436d !important;[\s\S]*?box-shadow: inset 0 0 0 2px #75b5ff !important;/);
   assert.doesNotMatch(source, /border: 2px solid|border-color:|box-shadow: inset 0 -2px/);
   assert.match(details, /\.linked-field\.linked-active\s*\{[\s\S]*?outline: none !important;/);
   assert.match(details, /\.linked-field\.linked-active \.field :is\(input, select, textarea\)\s*\{[\s\S]*?background: #17436d !important;[\s\S]*?color: #eaf4ff !important;[\s\S]*?box-shadow: inset 0 0 0 2px #75b5ff !important;/);
