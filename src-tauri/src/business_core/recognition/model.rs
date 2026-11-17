@@ -661,3 +661,51 @@ pub(crate) fn decision_json(decision: &Decision) -> Value {
         "evidence":decision.span.map(|(start,end)| json!({"start":start,"end":end}))
     })
 }
+
+#[cfg(test)]
+mod option_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn type_evidence_cannot_bridge_model_code_boundary() {
+        for (input,type_key,other) in [
+            ("BD-LP-WA A타입","a타입","b타입"),
+            ("BD-LP-WA B타입","b타입","a타입"),
+            ("BD-LP-WA A 타입","a타입","b타입"),
+            ("BD-LP-WA B 타입","b타입","a타입"),
+            ("BD-LP-WA 타입A","a타입","b타입"),
+            ("BD-LP-WA 타입B","b타입","a타입"),
+            ("BD-LP-WA 타입: B","b타입","a타입"),
+        ] {
+            let result=qualifiers(input);
+            assert!(result.contains(type_key),"type missing: {input}");
+            assert!(!result.contains(other),"false type created: {input}");
+        }
+        // With no separator, an A suffix in the model code must not be
+        // converted into an option token at the start of the next word.
+        let compact=qualifiers("BD-LP-WA타입B");
+        assert!(!compact.contains("a타입"));
+        assert!(!compact.contains("b타입"));
+        assert_eq!(qualifiers("709 무타공").contains("비타공상판"),true);
+    }
+
+    #[test]
+    fn b_type_is_not_black_but_true_color_abbreviations_remain_valid() {
+        let state:Value=serde_json::from_str(include_str!(
+            "../../../resources/state-seed.json"
+        )).expect("catalog");
+        let ps=products(&state);
+        for input in ["BD-LP-WA B타입","BD-LP-WA B 타입",
+            "BD-LP-WA B형","BD-LP-WA B Type",
+            "709B타입","709 B 타입"] {
+            assert!(code_color_hint(input,&ps).is_none(),
+                "type designation cannot become a color code: {input}");
+        }
+        for input in ["709 B","709BK","BD-LP-WA BK"] {
+            assert_eq!(
+                code_color_hint(input,&ps).map(|(_,color,_)|color),
+                Some("Black".to_owned()),"real color code must work: {input}"
+            );
+        }
+    }
+}
