@@ -1822,6 +1822,55 @@ mod tests {
         assert!(out["recipients"][0]["address"].as_str().unwrap().contains("문화로 120"));
     }
     #[test]
+    fn lp_wa_type_choice_is_semantic_not_catalog_order() {
+        let state=serde_json::from_str::<Value>(include_str!(
+            "../../../resources/state-seed.json"
+        )).expect("catalog");
+        let variants=[
+            ("BD-LP-WA A타입",Some("bando-site-202")),
+            ("BD-LP-WA B타입",Some("bando-site-355")),
+            ("BD LP-WA A 타입",Some("bando-site-202")),
+            ("BD LP-WA B 타입",Some("bando-site-355")),
+            ("모델명 : BD-LP-WA A타입 수량 : 1ea",Some("bando-site-202")),
+            ("모델명 : BD-LP-WA B타입 수량 : 1ea",Some("bando-site-355")),
+            ("BD-LP-WA",None),
+            ("BD-LP-WA A타입 B타입",None),
+            ("BD-LP-WA 타입A",None),
+            ("BD-LP-WA 타입B",None),
+            ("BD-LP-WA A형",None),
+            ("BD-LP-WB A타입",Some("bando-site-201")),
+            ("BD-LP-WB B타입",Some("bando-site-356")),
+        ];
+        let mut reversed=state.clone();
+        reversed["products"].as_array_mut().unwrap().reverse();
+        for (order,catalog) in [("default",&state),("reversed",&reversed)] {
+            for (raw,expected) in variants {
+                let parsed=execute("match_products",json!({
+                    "text":raw,"state":catalog
+                })).expect("native Rust matcher");
+                println!("LP_WA_AB_DIFFERENTIAL {order} {raw} {}",
+                    parsed["productId"]);
+                assert_eq!(parsed["productId"].as_str(),expected,
+                    "model-specific option must not depend on SKU order: {order}, {raw}");
+                if expected.is_some() {
+                    assert_eq!(parsed["match"]["kind"],"NAME");
+                    assert!(parsed["variantId"].as_str().is_some());
+                }
+            }
+        }
+        // Even if the A product is missing from the catalog, "A타입"
+        // must not silently become the B product under the same model.
+        let mut missing_a=state.clone();
+        missing_a["products"].as_array_mut().unwrap().retain(|p|
+            p["id"]!="bando-site-202"
+        );
+        let parsed=execute("match_products",json!({
+            "text":"BD-LP-WA A타입","state":missing_a
+        })).unwrap();
+        assert!(parsed["productId"].is_null(),
+            "missing requested A-type must not silently fall back to B");
+    }
+    #[test]
     fn soundpro_bd_lp_wa_a_type_order_diagnostic() {
         // Faithful order format; use a fictional two-syllable name and
         // fictional mobile to avoid disclosing a customer in public CI.
