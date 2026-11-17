@@ -204,11 +204,23 @@ export function HubWorkspace(props: Props) {
   useEffect(() => {
     if (selected) props.onRememberSelection(selected);
   }, [selected, props.onRememberSelection]);
-  const detail = selected
-    ? selected.orderId === draft.id
+  // A stage-button hover previews its OWN shipment, never the previously
+  // selected order. This is read-only navigation: persistent selection and
+  // unsaved edit ownership stay untouched until the card is clicked.
+  const hoverShipment = stageHover && previewReady
+    ? activeShipments(preview).find((shipment) => shipment.groupId === stageHover.groupId)
+    : undefined;
+  const hoverSelection: WorkflowSelection | undefined = hoverShipment ? {
+    orderId: hoverShipment.orderId,
+    groupId: hoverShipment.groupId,
+    shipmentId: hoverShipment.id,
+  } : undefined;
+  const visibleSelection = hoverSelection ?? selected;
+  const detail = visibleSelection
+    ? visibleSelection.orderId === draft.id
       ? draft
-      : (edits[selected.orderId] ??
-        state.orders.find((o) => o.id === selected.orderId && !o.deletedAt))
+      : (edits[visibleSelection.orderId] ??
+        state.orders.find((o) => o.id === visibleSelection.orderId && !o.deletedAt))
     : undefined;
   const onSave = async (next: typeof state) => {
     const removed =
@@ -390,11 +402,12 @@ export function HubWorkspace(props: Props) {
     recipientId: linkedRecipient?.recipient.id,
     setActive: setActiveLive,
   }), [active, linkedRecipient?.recipient.id, setActiveLive]);
+  const visibleReceptionId = hoverSelection?.orderId ?? receptionId;
   const receptionOrder =
-    receptionId === draft.id
+    visibleReceptionId === draft.id
       ? draft
-      : (edits[receptionId] ??
-        state.orders.find((o) => o.id === receptionId && !o.deletedAt) ??
+      : (edits[visibleReceptionId] ??
+        state.orders.find((o) => o.id === visibleReceptionId && !o.deletedAt) ??
         draft);
   useEffect(() => setManual(false), [receptionOrder.id, receptionOrder.raw]);
   const changeReception: Props["onChange"] = (value) => {
@@ -422,13 +435,32 @@ export function HubWorkspace(props: Props) {
   const messageReady = messageOrder.id === draft.id
     ? previewReady : nativeBase.ready && nativeMessage.ready;
   const messageGroup =
-      selected?.orderId === messageOrder.id &&
-      selected?.groupId &&
-      groupShipments(messageState, selected.groupId).length > 0
-        ? selected.groupId
+      visibleSelection?.orderId === messageOrder.id &&
+      visibleSelection?.groupId &&
+      groupShipments(messageState, visibleSelection.groupId).length > 0
+        ? visibleSelection.groupId
         : messageState.workflow?.groups.find((g) =>
             groupShipments(messageState, g.id).some((s) => s.orderId === messageOrder.id),
           )?.id;
+  // Highlight must reveal the actual content, not just light the section.
+  // Run after the hovered order's source/detail portals have rendered.
+  useEffect(() => {
+    if (!hoverSelection || !stageHover) return;
+    const timer = setTimeout(() => {
+      const target = (
+        stageHover.step === 1
+          ? ".hub-slot-2 .recipient-review"
+          : stageHover.step === 2
+            ? ".hub-slot-2 .freight-input-area"
+            : stageHover.step === 3
+              ? ".hub-slot-1 .payment-message, .hub-slot-1 .message-account"
+              : ".hub-slot-2 .workflow-balance"
+      );
+      document.querySelector<HTMLElement>(target)
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [hoverSelection?.shipmentId, stageHover?.step, messageReady]);
   // A parent repaint must not recreate event props for either live OrderDesk.
   // Each wrapper executes the newest order and Rust workflow handlers.
   const saveWorkflowLive = useEventCallback(onSave);
@@ -456,7 +488,7 @@ export function HubWorkspace(props: Props) {
     <div
       className="hub-live-workspace"
       data-hover-stage={stageHover?.step}
-      data-hover-selected={stageHover?.groupId === selected?.groupId ? "true" : "false"}
+      data-hover-selected={stageHover?.groupId === visibleSelection?.groupId ? "true" : "false"}
     >
       <HubPanels
         externalKakao={props.externalKakao}
@@ -639,7 +671,7 @@ export function HubWorkspace(props: Props) {
           onManual={openManual}
           portalTargets={detailTargets}
           linkController={linkController}
-          workflowSelection={selected}
+          workflowSelection={visibleSelection}
           onSelectWorkflow={setSelectedLive}
           onChange={changeDetailLive}
           onWorkflowSave={saveWorkflowLive}
