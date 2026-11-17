@@ -58,7 +58,7 @@ export function HubWorkspace(props: Props) {
       if (
         next.orderId !== draft.id &&
         receptionId === draft.id &&
-        draft.raw.trim() &&
+        (draft.raw.trim() || draft.photos?.length) &&
         !state.orders.some((o) => o.id === draft.id)
       )
         setEdits((old) => ({ ...old, [draft.id]: structuredClone(draft) }));
@@ -116,7 +116,7 @@ export function HubWorkspace(props: Props) {
     const unsaved = (order: Order) =>
       !order.confirmedAt &&
       !state.orders.some((saved) => saved.id === order.id) &&
-      Boolean(order.raw.trim() || order.clientId || order.recipients.length);
+      Boolean(order.raw.trim() || order.clientId || order.recipients.length || order.photos?.length);
     for (const order of Object.values(edits))
       if (unsaved(order)) byId.set(order.id, order);
     if (unsaved(draft)) byId.set(draft.id, draft);
@@ -309,6 +309,8 @@ export function HubWorkspace(props: Props) {
     if (temporaryChoice) {
       const ids = new Set(temporaryReceipts.map((order) => order.id));
       if (temporaryChoice === "discard") {
+        // Never briefly show a stale shipment preview after explicit discard.
+        lastVisiblePreview.current = undefined;
         setEdits((previous) =>
           Object.fromEntries(Object.entries(previous).filter(([id]) => !ids.has(id))));
         if (ids.has(draft.id)) {
@@ -569,7 +571,7 @@ export function HubWorkspace(props: Props) {
                 // Rust preview overlay, not persisted to production SQLite.
                 const draftsToRetain = [draft, receptionOrder].filter((order) =>
                   !state.orders.some((saved) => saved.id === order.id) &&
-                  (order.raw.trim() || order.recipients.length));
+                  (order.raw.trim() || order.clientId || order.recipients.length || order.photos?.length));
                 if (draftsToRetain.length)
                   setEdits((previous) => ({
                     ...previous,

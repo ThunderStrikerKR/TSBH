@@ -207,7 +207,7 @@ export function WorkflowBoard({
               onClick={() => onSelectPending?.(receipt.id)}
             >
               <b>거래처 미선택 <span className="flow-draft-status">미확정</span></b>
-              <small>{receipt.raw.trim().split(/\r?\n/).find((line) => line.trim())?.slice(0, 60)}</small>
+              <small>{receipt.raw.trim().split(/\r?\n/).find((line) => line.trim())?.slice(0, 60) || "사진 발주서"}</small>
             </button>
           ))}
         </div>

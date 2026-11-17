@@ -224,7 +224,7 @@ export function useAppModel() {
     (!!draft &&
       (state?.orders.some((o) => o.id === draft.id)
         ? JSON.stringify(draft) !== JSON.stringify(state.orders.find((o) => o.id === draft.id))
-        : !!(draft.raw || draft.clientId || draft.recipients.length)));
+        : !!(draft.raw || draft.clientId || draft.recipients.length || draft.photos?.length)));
   const latestSaveInputs = useRef({ state, draft });
   latestSaveInputs.current = { state, draft };
   const saveOrder = async (mode: "save" | "notify" | "pay" | "queue" | "wait") => {
@@ -449,7 +449,7 @@ export function useAppModel() {
     // discard the first pasted document just to start the second.
     // Unsaved drafts are NEVER inserted into SQLite by this navigation.
     if (!state.orders.some((o) => o.id === draft.id) &&
-        !draft.confirmedAt && (draft.raw.trim() || draft.clientId || draft.recipients.length)) {
+        !draft.confirmedAt && (draft.raw.trim() || draft.clientId || draft.recipients.length || draft.photos?.length)) {
       const leave = await confirmOrderLeave();
       if (!leave.proceed) return;
       setWorkflowSelection(undefined);

@@ -98,6 +98,36 @@ export async function run(page,{record,snap,paste,chooseDealer}){
   record("ORDERS_REMAINING_UNASSIGNED_AFTER_FIRST_ASSIGNED",{
     recipient:"박가상",remainsWithoutDealer:true
   });
+  // The whole TITLE CELL (not the group body or management controls) is
+  // the accessible accordion target. Only one selected group can expand.
+  const headingButtons=page.locator(".workflow-group .flow-heading-toggle");
+  assert.ok((await headingButtons.count()) >= 2);
+  await headingButtons.first().click();
+  await page.waitForFunction(()=>
+    [...document.querySelectorAll(".workflow-group .flow-heading-toggle")]
+      .filter(el=>el.getAttribute("aria-expanded")==="true").length===1 &&
+    document.querySelectorAll(".workflow-group .workflow-shipment-list").length===1,
+    null,{timeout:30000});
+  await headingButtons.nth(1).click();
+  await page.waitForFunction(()=>
+    [...document.querySelectorAll(".workflow-group .flow-heading-toggle")]
+      .filter(el=>el.getAttribute("aria-expanded")==="true").length===1 &&
+    document.querySelectorAll(".workflow-group .workflow-shipment-list").length===1 &&
+    [...document.querySelectorAll(".workflow-group .flow-heading-toggle")][1]
+      ?.getAttribute("aria-expanded")==="true",
+    null,{timeout:30000});
+  await headingButtons.nth(1).click();
+  await page.waitForFunction(()=>
+    [...document.querySelectorAll(".workflow-group .flow-heading-toggle")]
+      .every(el=>el.getAttribute("aria-expanded")==="false"),
+    null,{timeout:30000});
+  record("ORDERS_SINGLE_OPEN_TITLE_CELL_ACCORDION",{groupBodyNotClickable:true,maxOpen:1});
+  // Return to the unfinished receipt before exercising the tab-leave policy.
+  await page.locator(".workflow-unassigned-draft")
+    .filter({hasText:"박가상"}).click();
+  await page.waitForFunction(()=>
+    (document.querySelector(".source-document")?.textContent??"").includes("박가상"),
+    null,{timeout:30000});
   assert.equal((await page.evaluate(async()=>window.bando.load())).orders.length,0,
     "Switching unsaved receipts must not write new orders to SQLite");
   await snap(page,"orders-unassigned-selection");

@@ -123,3 +123,11 @@ test("navigation counts every unconfirmed receipt, never attempts to save it as 
   assert.match(model, /confirmOrderLeave\("close"\)/);
   assert.match(model, /임시 보관하고 이동/);
 });
+
+test("photograph-only unfinished orders are retained and counted as unsaved", () => {
+  const app = read("src/app/useAppModel.ts");
+  const hub = read("src/HubWorkspace.tsx");
+  assert.match(app,/draft\.photos\?\.length/);
+  assert.match(hub,/order\.photos\?\.length/);
+  assert.match(hub,/lastVisiblePreview\.current = undefined/);
+});
