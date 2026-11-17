@@ -62,5 +62,6 @@ test("manual release partial promotion restores old ZIP, folder and OCR cache",(
   assert.match(pack,/Move-Item -LiteralPath \$portableBackup -Destination \$portable/);
   assert.match(pack,/Move-Item -LiteralPath \$ocrBackup -Destination \$ocrLive/);
   const workflow=read(".github/workflows/migration-output.yml");
-  assert.match(workflow,/distribution-script-syntax:[\s\S]*?ParseFile\(/);
+  assert.match(workflow,/frontend:[\s\S]*?ParseFile\(/);
+  assert.doesNotMatch(workflow,/^  distribution-script-syntax:$/m);
 });
