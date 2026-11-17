@@ -1795,8 +1795,7 @@ mod tests {
     fn address_headings_cannot_become_whole_recipient_names() {
         let state=state();
         for header in ["배송지 주소","배송지","배송주소","받는곳",
-            "받는곳 :","수취인주소","주소:","배송지 주소:","주소",
-            "배송메모 :","연락처 :"] {
+            "받는곳 :","수취인주소","주소:","배송지 주소:","주소"] {
             let raw=format!(
                 "709 1개\\n{header} 경기도 가평군 가평읍 문화로 120 010-1234-5678"
             );
@@ -1808,6 +1807,10 @@ mod tests {
             assert_eq!(rows[0]["name"],"","address header cannot be a person: {header}");
             assert!(rows[0]["address"].as_str().unwrap_or("").contains("문화로 120"));
         }
+        // A memo/contact label isn't an address line; verify the name
+        // safeguard directly without requiring address extraction.
+        assert_eq!(composite_name_before_address("배송메모 :"),None);
+        assert_eq!(composite_name_before_address("연락처 :"),None);
     }
     #[test]
     fn lone_parenthesized_recipient_still_uses_existing_name_rule() {
