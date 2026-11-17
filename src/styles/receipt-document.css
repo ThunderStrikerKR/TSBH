@@ -339,3 +339,52 @@
   min-height: 22px;
   pointer-events: none;
 }
+
+/* Recognition evidence has three distinct states:
+   neutral grey = classified source, muted border = recipient context,
+   blue = ONE exact linked field. No layout-affecting border changes on hover. */
+.hub-panels .source-pane.received-source .source-document .linked-token {
+  background: #393939;
+  border: 2px solid #626262;
+  border-radius: 3px;
+  color: inherit;
+  box-shadow: none;
+  outline: none;
+  box-decoration-break: clone;
+}
+.hub-panels .source-pane.received-source .source-document
+  .linked-token.linked-recipient-context:not(.linked-active) {
+  background: #444;
+  border-color: #848484;
+}
+.hub-panels .source-pane.received-source .source-document .linked-token.linked-active {
+  background: #17436d !important;
+  border-color: #75b5ff !important;
+  color: #eaf4ff !important;
+  outline: 1px solid #75b5ff !important;
+  outline-offset: 0;
+  box-shadow: none !important;
+}
+.hub-panels .review-pane .recipient-review.linked-group-context {
+  background: rgba(128, 128, 128, 0.08);
+  outline: 1px solid #686868;
+  outline-offset: -2px;
+  box-shadow: inset 3px 0 0 #858585;
+  border-radius: 5px;
+}
+.hub-panels .review-pane .recipient-review .linked-field.linked-active {
+  background: transparent !important;
+  color: inherit !important;
+  outline: 2px solid #75b5ff !important;
+  outline-offset: 0;
+  box-shadow: none !important;
+}
+.hub-panels .review-pane .recipient-review .linked-field.linked-active input {
+  color: inherit !important;
+}
+.source-link-legend {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #aeb0b2;
+  margin-right: auto;
+}
