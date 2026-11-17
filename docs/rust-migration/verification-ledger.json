@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "policy": "AGENTS.md",
   "recordedAt": "2026-11-18",
-  "recordedHead": "5b442716fa0e4c8111dd01813b0525b1c700a864",
+  "recordedHead": "6ff8df949643eb364ba915bf81b498a9ff14f899",
   "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
   "proofLevels": [
     "patch",
@@ -43,18 +43,30 @@
         "inputOutputEvidence": null,
         "responseOrders": []
       },
-      "discrepancies": [],
+      "discrepancies": [
+        {
+          "description": "실제 원문 BANDO STAND 반도 보면대 지휘용 악보 스탠드에서 지휘용 악보 스탠드를 유일 등록 BD Conductor / 지휘자 보면대로 매칭하지 못하고 CATEGORY 로만 반환. 모델명·동일 표기 alias 중심 분석이라 의미가 같은 직무 기반 상품 표현 누락.",
+          "status": "PATCHED_SCOPED",
+          "introducedAt": "72c012c2ed866d43ab729ae5aed2a55174d887f2",
+          "resolution": {
+            "patchCommit": "94561346a22cecce2771c7e3977ced47af4f59b7",
+            "tests": "semantic_conductor_uses_registered_single_sku_only: 확정 단일 SKU, competing explicit code, 타 카테고리, 복수 독립 지휘자 상품 안전 미확정; narrative_conductor_order_with_repeated_recipient_label_diagnostic: 실제 제품명·동일 문단/줄 구조를 합성 개인정보로 전수 검증",
+            "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44163861050",
+            "remaining": "동의어 전체 사전과 확률 학습은 별도 미구현. 전체 F01 이전 원본 대비 실행 경로 검증은 OPEN."
+          }
+        }
+      ],
       "legacyLedgerStatus": "PARTIAL",
       "gate": {
         "patch": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "COMMITTED",
+          "commit": "94561346a22cecce2771c7e3977ced47af4f59b7",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/94561346a22cecce2771c7e3977ced47af4f59b7"
         },
         "unit": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "6ff8df949643eb364ba915bf81b498a9ff14f899",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44163861050"
         },
         "differential": {
           "status": "NOT_VERIFIED",
@@ -67,9 +79,9 @@
           "evidence": null
         },
         "ci": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "6ff8df949643eb364ba915bf81b498a9ff14f899",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44163861050"
         },
         "windows": {
           "status": "NOT_VERIFIED",
@@ -78,7 +90,7 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "6ff8df949643eb364ba915bf81b498a9ff14f899"
     },
     {
       "id": "F02",
@@ -132,19 +144,30 @@
             "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44155297357",
             "remaining": "Rust output 93/93, integration 110/110, main CI 전체 성공. 기존 TS와 개선 정책 차등 비교·React 직원 행동 연속 흐름·Windows WebView2 검증은 미완료. 거래처별 확률/누적 학습 및 학습 롤백은 미구현."
           }
+        },
+        {
+          "description": "배송지 주소 표제어가 배송지 + 주소로 분해되며 단독 주소 후보 '주소'가 발생, 완성된 주소 앞에 결합되는 실운영 인식 오류.",
+          "status": "PATCHED_SCOPED",
+          "introducedAt": "72c012c2ed866d43ab729ae5aed2a55174d887f2",
+          "resolution": {
+            "patchCommit": "6ff8df949643eb364ba915bf81b498a9ff14f899",
+            "tests": "address_heading_is_not_a_shipping_address_candidate, narrative_conductor_order_with_repeated_recipient_label_diagnostic: 단독 주소 제목 제외·우편번호와 행정구역을 포함한 실제 주소 보존·단일 주소 후보·수취인/연락처/수량 유지",
+            "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44163861050",
+            "remaining": "별도 화면에서 해당 전문 붙여넣기→확정 사용자 동작은 미검증; 과거 주소조각 로직 전수 검증 미완료."
+          }
         }
       ],
       "legacyLedgerStatus": "PARTIAL",
       "gate": {
         "patch": {
           "status": "COMMITTED",
-          "commit": "5b442716fa0e4c8111dd01813b0525b1c700a864",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/5b442716fa0e4c8111dd01813b0525b1c700a864"
+          "commit": "6ff8df949643eb364ba915bf81b498a9ff14f899",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/6ff8df949643eb364ba915bf81b498a9ff14f899"
         },
         "unit": {
           "status": "PASS_SCOPED",
-          "commit": "5b442716fa0e4c8111dd01813b0525b1c700a864",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44155297357"
+          "commit": "6ff8df949643eb364ba915bf81b498a9ff14f899",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44163861050"
         },
         "differential": {
           "status": "NOT_VERIFIED",
@@ -158,8 +181,8 @@
         },
         "ci": {
           "status": "PASS_SCOPED",
-          "commit": "5b442716fa0e4c8111dd01813b0525b1c700a864",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44155297357"
+          "commit": "6ff8df949643eb364ba915bf81b498a9ff14f899",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44163861050"
         },
         "windows": {
           "status": "NOT_VERIFIED",
@@ -168,7 +191,7 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "5b442716fa0e4c8111dd01813b0525b1c700a864"
+      "lastReviewedCommit": "6ff8df949643eb364ba915bf81b498a9ff14f899"
     },
     {
       "id": "F03",
