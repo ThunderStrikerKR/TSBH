@@ -382,9 +382,3 @@
 .hub-panels .review-pane .recipient-review .linked-field.linked-active input {
   color: inherit !important;
 }
-.source-link-legend {
-  font-size: 12px;
-  line-height: 1.4;
-  color: #aeb0b2;
-  margin-right: auto;
-}
