@@ -56,7 +56,12 @@ function Close-Gracefully([System.Diagnostics.Process]$process) {
   if (![BandoDevWindowProbe]::PostMessage($process.MainWindowHandle,
       [uint32]0x0010,[UIntPtr]::Zero,[IntPtr]::Zero)) { throw "WM_CLOSE failed" }
   if (!$process.WaitForExit(20000)) { throw "Native app ignored graceful close" }
-  if ($process.ExitCode -ne 0) { throw "Native DEV exit code: $($process.ExitCode)" }
+  # Get-Process attaches to the existing Tauri child; its ExitCode can be null.
+  # WaitForExit above proves shutdown; check a numerical code only if exposed.
+  $exitCode=$process.ExitCode
+  if ($null -ne $exitCode -and [int]$exitCode -ne 0) {
+    throw "Native DEV exit code: $exitCode"
+  }
   for($i=0;$i -lt 50 -and !(Test-Path -LiteralPath $testStateFile);$i++) {
     Start-Sleep -Milliseconds 100
   }
