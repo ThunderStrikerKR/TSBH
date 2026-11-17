@@ -171,6 +171,24 @@ try {
   const idleMark = await markPerf();
   await sleep(1200);
   await endPerf("IDLE_1200MS",idleMark);
+
+  // Q1 React optimization: opening/closing App's notification center changes
+  // App-only UI state, not the order. Measure that exact parent repaint rather
+  // than attributing first-load native effects to a receipt workflow.
+  await sleep(600);
+  const appOnlyMark = await markPerf();
+  await page.locator(".header-notifications-button").click();
+  const notificationModal = page.getByRole("dialog",{name:"알림"});
+  await notificationModal.waitFor({state:"visible",timeout:15000});
+  await notificationModal.getByRole("button",{name:/닫기/}).click();
+  await notificationModal.waitFor({state:"hidden",timeout:15000});
+  const notificationRenders = await endPerf("APP_ONLY_NOTIFICATION_TOGGLE",appOnlyMark);
+  record("APP_ONLY_NOTIFICATION_WORKSPACE_RENDER",{
+    workspace:notificationRenders.rendersByComponent.HubWorkspace ?? 0,
+    receipt:notificationRenders.rendersByComponent["OrderDesk:reception"] ?? 0,
+    details:notificationRenders.rendersByComponent["OrderDesk:details"] ?? 0,
+    workflow:notificationRenders.rendersByComponent.WorkflowBoard ?? 0,
+  });
   const pasteMark = await markPerf();
 
   const raw=["김가상","010-1234-5678","경기도 의정부시 시민로 100","709 2개",
