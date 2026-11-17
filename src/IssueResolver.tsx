@@ -37,10 +37,11 @@ export function IssueResolver({
     [confirmed, setConfirmed] = useState(false),
     [busy, setBusy] = useState(false),
     [useRepresentativeModel, setUseRepresentativeModel] = useState(false);
-  // The Rust engines decide historical suggestions and the representative.
-  // The React screen only presents returned products for explicit staff choice.
-  const { products: historicalCandidates, error: recommendationError } = useNativeProductIds(
-    state, "representative_products", {
+  // Rust ranks registered models across all categories using code spelling,
+  // product type, and confirmed same-client selection history. This UI only
+  // presents candidates: no fuzzy suggestion ever auto-selects a SKU.
+  const { products: rankedCandidates, error: recommendationError } = useNativeProductIds(
+    state, "resolution_product_candidates", {
       text: item.raw, clientId: order.clientId,
     }, [item.raw, order.clientId],
   );
@@ -58,7 +59,7 @@ export function IssueResolver({
               p.catalog !== "DEMO" &&
               !p.variants.some((v) => v.source === "DEMO"),
           ),
-        ...historicalCandidates,
+        ...rankedCandidates,
       ]
         .filter((p) => p.catalog !== "DEMO" && !p.variants.some((v) => v.source === "DEMO"))
         .map((p) => [p.id, p]),
