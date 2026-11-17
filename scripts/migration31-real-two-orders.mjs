@@ -1,3 +1,26 @@
+// An unselected order group owns no rendered shipment buttons until its
+// clickable TITLE CELL is expanded. Tests must follow the real user flow
+// rather than searching for hidden shipment children.
+export async function selectGroupForRecipient(page, recipient) {
+  const groups=page.locator(".workflow-group");
+  const labelled="배송 건 "+recipient;
+  for(let i=0;i<await groups.count();i++){
+    const group=groups.nth(i);
+    const button=group.getByRole("button",{name:labelled,exact:true});
+    if(await button.count())return group;
+    const title=group.locator(".flow-heading-toggle");
+    if(await title.getAttribute("aria-expanded")!=="true"){
+      await title.click();
+      await page.waitForFunction(index=>
+        document.querySelectorAll(".workflow-group .flow-heading-toggle")[index]
+          ?.getAttribute("aria-expanded")==="true",
+        i,{timeout:20000});
+    }
+    if(await button.count())return group;
+  }
+  throw Error("Unable to open an order group for recipient: "+recipient);
+}
+
 // Real Windows Tauri EXE + WebView2 test: confirm TWO independent orders.
 // Synthetic dealer/account are provisioned by the preceding smoke test.
 // GitHub Actions disposable developer TEST SQLite only.
@@ -118,9 +141,7 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
       });
       continue;
     }
-    const group=page.locator(".workflow-group").filter({
-      has:page.getByRole("button",{name:"배송 건 "+info.name})
-    }).first();
+    const group=await selectGroupForRecipient(page,info.name);
     const confirm=group.getByRole("button",{name:"주문 확인 완료",exact:true});
     await confirm.waitFor({state:"visible",timeout:45000});
     await confirm.click();
@@ -234,9 +255,7 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
 
     for (const index of [1,0]) {
       const info=cases[index];
-      const group=page.locator(".workflow-group").filter({
-        has:page.getByRole("button",{name:"배송 건 "+info.name})
-      }).first();
+      const group=await selectGroupForRecipient(page,info.name);
       const confirm=group.getByRole("button",{name:"주문 확인 완료",exact:true});
       await confirm.waitFor({state:"visible",timeout:45000});
       await confirm.click();
@@ -357,14 +376,10 @@ export async function probeCrossDealerOrderIsolation(page,{record,snap}) {
     await freight.press("Backspace");
     await page.keyboard.type(scenario.freight,{delay:45});
     await freight.blur();
-    await page.waitForFunction(async ({prefix,count})=>
-      document.querySelectorAll(".workflow-group").length>=count &&
-      [...document.querySelectorAll(".workflow-group button")].some(b=>
-        b.getAttribute("aria-label")==="배송 건 "+prefix),
-      {prefix:scenario.recipient,count:before.length+1},{timeout:30000});
-    const group=page.locator(".workflow-group").filter({
-      has:page.getByRole("button",{name:"배송 건 "+scenario.recipient})
-    }).first();
+    await page.waitForFunction(count=>
+      document.querySelectorAll(".workflow-group").length>=count,
+      before.length+1,{timeout:30000});
+    const group=await selectGroupForRecipient(page,scenario.recipient);
     await group.getByRole("button",{name:"주문 확인 완료",exact:true})
       .waitFor({state:"visible",timeout:45000});
     await group.getByRole("button",{name:"주문 확인 완료",exact:true}).click();

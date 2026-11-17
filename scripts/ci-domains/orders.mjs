@@ -1,3 +1,4 @@
+import { selectGroupForRecipient } from "../migration31-real-two-orders.mjs";
 // Real Windows WebView2 business-domain regression; the entrypoint seeds an isolated TEST SQLite.
 import assert from "node:assert/strict";
 
@@ -7,8 +8,7 @@ export async function run(page,{record,snap,paste,chooseDealer}){
   await paste(page,"김가상","709 1개","가상대리점");
   await page.locator(".receipt-client b").filter({hasText:"가상대리점"})
     .waitFor({state:"visible",timeout:30000});
-  await page.getByRole("button",{name:"배송 건 김가상"})
-    .waitFor({state:"visible",timeout:30000});
+  await selectGroupForRecipient(page,"김가상");
   const initial=await page.evaluate(async()=>({
     dealer:document.querySelector(".receipt-client b")?.textContent?.trim(),
     queued:document.querySelectorAll(".workflow-group").length,
@@ -62,10 +62,10 @@ export async function run(page,{record,snap,paste,chooseDealer}){
   // Explicit dealer assignment to a retained receipt must keep that order
   // selected when its first Rust shipment is created.
   await chooseDealer(page,"가상소매점");
-  await page.waitForFunction(name=>
-    !![...document.querySelectorAll(".workflow-shipment")]
-      .find(el=>el.getAttribute("aria-label")==="배송 건 "+name),
-    "정가상",{timeout:30000});
+  await page.waitForFunction(()=>
+    document.querySelectorAll(".workflow-group").length>=3,
+    null,{timeout:30000});
+  await selectGroupForRecipient(page,"정가상");
   await page.waitForTimeout(900);
   const assigned=await page.evaluate(()=>({
     raw:document.querySelector(".source-document")?.textContent??"",

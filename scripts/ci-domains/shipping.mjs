@@ -1,3 +1,4 @@
+import { selectGroupForRecipient } from "../migration31-real-two-orders.mjs";
 // Real Windows WebView2 business-domain regression; the entrypoint seeds an isolated TEST SQLite.
 import assert from "node:assert/strict";
 
@@ -12,9 +13,7 @@ export async function run(page,{record,snap,paste,chooseDealer}){
     [...document.querySelectorAll(".flow-fixed-summary")]
       .some(e=>e.textContent?.includes("88,500")),null,{timeout:30000});
   assert.equal((await money.inputValue()).replaceAll(",",""),"4500");
-  const group=page.locator(".workflow-group").filter({
-    has:page.getByRole("button",{name:"배송 건 김가상"})
-  }).first();
+  const group=await selectGroupForRecipient(page,"김가상");
   await group.getByRole("button",{name:"주문 확인 완료",exact:true}).click();
   await page.waitForFunction(async()=>(await window.bando.load()).orders.length===1,
     null,{timeout:30000});
