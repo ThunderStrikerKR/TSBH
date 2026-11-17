@@ -8,8 +8,8 @@
 }
 .hub-slot-3 .workflow-group {
   flex-shrink: 0;
-  margin: 0 0 10px;
-  padding: 6px;
+  margin: 0 0 8px;
+  padding: 8px 9px;
   border: 1px solid #535353;
   border-radius: 7px;
   background: #202020;
@@ -30,9 +30,9 @@
   margin: 5px 0 2px;
 }
 .hub-slot-3 .workflow-group .workflow-action-line > .workflow-progress {
-  flex: 0 0 189px;
-  width: 189px;
-  min-width: 189px;
+  flex: 0 0 177px;
+  width: 177px;
+  min-width: 177px;
   margin: 0;
   gap: 5px;
 }
@@ -46,26 +46,32 @@
   min-height: 0;
   max-height: none;
   padding: 2px 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   font-variant-numeric: tabular-nums;
-  scrollbar-width: thin;
 }
 .hub-slot-3 .workflow-group .flow-summary-compact {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
+  gap: 4px;
   width: 100%;
   min-width: 0;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.45;
 }
 .hub-slot-3 .workflow-group .flow-summary-payment {
   margin-left: auto;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 12px;
+}
+.hub-slot-3 .workflow-group .flow-summary-vat {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: #b9d7f6;
+  white-space: nowrap;
 }
 .hub-slot-3 .workflow-group > header {
   display: flex;
@@ -76,6 +82,21 @@
 .hub-slot-3 .workflow-group > header > button:not(.flow-heading-toggle) {
   flex: 0 0 auto;
   white-space: nowrap;
+  min-height: 32px;
+  height: 32px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.hub-slot-3 .workflow-group > header > button.trash-button {
+  flex: 0 0 32px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 !important;
+  display: grid;
+  place-items: center;
 }
 .hub-slot-3 .workflow-group .flow-heading-toggle {
   display: flex;
@@ -83,7 +104,7 @@
   justify-content: flex-start;
   flex: 1 1 auto;
   min-width: 0;
-  padding: 4px 3px;
+  padding: 4px 2px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -102,13 +123,18 @@
   margin-right: 6px;
 }
 .hub-slot-3 .workflow-group .flow-group-name {
-  /* Ten full-width Korean glyphs; reserve a fixed slot so the dots do not move. */
-  flex: 0 0 146px;
-  width: 146px;
+  /* Reserve ten 16px Korean glyphs so status lights never drift. */
+  flex: 0 0 162px;
+  width: 162px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.hub-slot-3 .workflow-group .flow-group-name b {
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.25;
 }
 .hub-slot-3 .workflow-group .flow-heading-toggle > .workflow-signals {
   flex: 0 0 82px;
@@ -123,10 +149,10 @@
   height: 18px;
 }
 .app-v03 .hub-slot-3 .workflow-progress > .primary {
-  flex: 0 0 154px;
-  width: 154px;
-  min-width: 154px;
-  max-width: 154px;
+  flex: 0 0 140px;
+  width: 140px;
+  min-width: 140px;
+  max-width: 140px;
   white-space: nowrap;
 }
 .hub-slot-3 .flow-draft-status {
