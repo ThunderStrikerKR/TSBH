@@ -41,6 +41,9 @@ export function useAppModel() {
     phase: "OPENING", attempts: 1, isTest: false,
   });
   const [startupBusy, setStartupBusy] = useState(false);
+  // React DEV StrictMode replays mount effects; both setups must await the
+  // same read-only startup status rather than issuing duplicate native IPC.
+  const initialStartupStatus = useRef<Promise<StartupStatus> | undefined>(undefined);
   const { run } = useAsyncTask(setNotice);
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +59,7 @@ export function useAppModel() {
       }
       try {
         const status: StartupStatus = api.startupStatus
-          ? await api.startupStatus()
+          ? await (initialStartupStatus.current ??= api.startupStatus())
           : { phase: "READY", attempts: 1, isTest: !!api.isTestWorkspace };
         if (cancelled) return;
         auditStateTransition("useAppModel","startup-status",{ready:status.phase==="READY"});
