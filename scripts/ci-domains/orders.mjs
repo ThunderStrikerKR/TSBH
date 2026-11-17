@@ -8,6 +8,12 @@ export async function run(page,{record,snap,paste,chooseDealer}){
   await paste(page,"김가상","709 1개","가상대리점");
   await page.locator(".receipt-client b").filter({hasText:"가상대리점"})
     .waitFor({state:"visible",timeout:30000});
+  // Receipt/dealer UI can settle before its asynchronous Rust workflow
+  // projection creates the first shipment card. Wait for the real group.
+  await page.locator(".workflow-group").first()
+    .waitFor({state:"visible",timeout:30000});
+  await page.locator(".workflow-group .flow-heading-toggle").first()
+    .waitFor({state:"visible",timeout:30000});
   await selectGroupForRecipient(page,"김가상");
   const initial=await page.evaluate(async()=>({
     dealer:document.querySelector(".receipt-client b")?.textContent?.trim(),
