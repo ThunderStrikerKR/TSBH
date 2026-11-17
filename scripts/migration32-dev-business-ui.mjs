@@ -218,6 +218,41 @@ try {
     }))};
   });
   record("PERF_INITIAL_BOOT_REACT_NATIVE_CHAIN",boot);
+  // Same-runner, same JS realm comparison: avoid attributing volatile CI CPU
+  // throughput to React optimization. Use the real 360-item TEST catalog.
+  const directCosts = await page.evaluate(async () => {
+    const {registeredProducts,sortProducts}=await import("/src/product-models.ts");
+    const {sortedRegisteredProductView}=await import("/src/orders/registered-product-view.ts");
+    const state=await window.bando.load();
+    const products=state.products;
+    const once=fn=>{const start=performance.now();let last;
+      for(let i=0;i<80;i++)last=fn();
+      return {ms:Math.round((performance.now()-start)*100)/100, output:last};
+    };
+    // Warm up both paths before timing, then alternate order and use medians.
+    for(let i=0;i<4;i++) {
+      sortProducts(registeredProducts(products));
+      sortedRegisteredProductView(products);
+    }
+    const direct=[],cached=[],hash=[];
+    for(let batch=0;batch<5;batch++) {
+      const a=once(()=>sortProducts(registeredProducts(products)));
+      const b=once(()=>sortedRegisteredProductView(products));
+      const c=once(()=>JSON.stringify({input:state,drafts:[]}));
+      if(a.output.length!==b.output.length ||
+          a.output.some((row,index)=>row.id!==b.output[index].id))
+        throw Error("Sorting cache changed displayed products");
+      direct.push(a.ms); cached.push(b.ms); hash.push(c.ms);
+    }
+    const median=items=>[...items].sort((a,b)=>a-b)[2];
+    return {products:products.length,iterationsPerBatch:80,batches:5,
+      sortEveryTimeMedianMs:median(direct),
+      sharedSortMedianMs:median(cached),
+      fullStateFingerprintMedianMs:median(hash),
+      outputParity:true,
+    };
+  });
+  record("PERF_SAME_RUNNER_PRODUCT_VIEW_AND_HASH",directCosts);
   await page.getByRole("button",{name:"접수",exact:true}).click();
   const idleMark = await markPerf();
   await sleep(1200);
