@@ -1236,19 +1236,23 @@ pub fn run() {
                     if !restore_maximized {
                         return;
                     }
+                    // Window-ready and the first native ShowWindow happen in
+                    // different event-loop turns. Queuing an immediate
+                    // run_on_main_thread still happens too early and later
+                    // ShowWindow can reset the Win32 SW_MAXIMIZE flag.
+                    // Apply it after the initial show has completed, without
+                    // delaying the UI thread or touching persisted geometry.
                     let ready_window = window.clone();
-                    if let Err(error) = window.app_handle().run_on_main_thread(move || {
-                        if let Err(error) = ready_window.maximize() {
-                            eprintln!("BANDO post-show maximize failed: {error}");
+                    let app = window.app_handle().clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(650));
+                        if let Err(error) = app.run_on_main_thread(move || {
+                            #[cfg(target_os = "windows")]
+                            native_maximized_restore::ensure_native_maximized(&ready_window);
+                        }) {
+                            eprintln!("BANDO post-show maximize scheduling failed: {error}");
                         }
-                        // Tauri may reproduce the maximized rectangle without
-                        // setting Win32's maximized window state. The real
-                        // HWND must also satisfy IsZoomed on the next launch.
-                        #[cfg(target_os = "windows")]
-                        native_maximized_restore::ensure_native_maximized(&ready_window);
-                    }) {
-                        eprintln!("BANDO post-show maximize scheduling failed: {error}");
-                    }
+                    });
                 })
                 .build(),
         )

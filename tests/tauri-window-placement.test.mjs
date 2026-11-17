@@ -17,7 +17,9 @@ test("native window state plugin restores main window bounds and maximization", 
   assert.match(source, /saved\.get\("main"\)\?/);
   assert.match(source, /\.get\("maximized"\)\?\.as_bool\(\)/);
   assert.match(source, /run_on_main_thread\(move \|\|/);
-  assert.match(source, /ready_window\.maximize\(\)/);
+  assert.match(source, /std::thread::spawn\(move \|\|/);
+  assert.match(source, /std::thread::sleep\(std::time::Duration::from_millis\(650\)\)/);
+  assert.doesNotMatch(source, /ready_window\.maximize\(\)/);
   // A frameless WebView can occupy a maximized rectangle without the
   // native SW_MAXIMIZE status. The real HWND must pass IsZoomed on restart.
   assert.match(source, /mod native_maximized_restore/);
