@@ -10,8 +10,10 @@ import { auditStateTransition } from "../perf-audit";
 
 export function useNativeWorkflowReconcile(input: State, drafts: Order[], enabled = true) {
   const fingerprint = useMemo(
-    () => JSON.stringify({ input, drafts }),
-    [input, drafts],
+    // No reducer is invoked when disabled or when no overlay exists.
+    // Avoid serializing the entire catalog/workflow in both live order panes.
+    () => !enabled || drafts.length === 0 ? "" : JSON.stringify({ input, drafts }),
+    [input, drafts, enabled],
   );
   const latest = useRef({ input, drafts });
   latest.current = { input, drafts };

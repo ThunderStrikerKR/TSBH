@@ -23,8 +23,10 @@ export function useNativeOrderPreview(
   sourceState: State = state,
 ) {
   const fingerprint = useMemo(
-    () => JSON.stringify({ state, draft }),
-    [state, draft],
+    // Awaiting the Rust workflow cannot trigger a financial preview request.
+    // Preserve displayKey below for last-confirmed value while loading.
+    () => enabled ? JSON.stringify({ state, draft }) : "",
+    [state, draft, enabled],
   );
   // Retain the last Rust result only for truly identical financial inputs.
   // This signature does not calculate money or replace the Rust authority.

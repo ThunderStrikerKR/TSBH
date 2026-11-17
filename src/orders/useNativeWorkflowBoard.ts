@@ -36,7 +36,10 @@ type NativeProjection = { groups: NativeGroupPreview[] };
 export function useNativeWorkflowBoard(state: State, enabled = true) {
   // A semantic key prevents unnecessary IPC when the caller recreates an
   // equivalent JSON object; its value changes for every meaningful edit.
-  const fingerprint = useMemo(() => JSON.stringify(state), [state]);
+  const fingerprint = useMemo(
+    () => enabled ? JSON.stringify(state) : "",
+    [state, enabled],
+  );
   const latest = useRef(state);
   latest.current = state;
   const [resolved, setResolved] = useState<{
