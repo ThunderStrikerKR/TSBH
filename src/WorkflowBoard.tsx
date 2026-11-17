@@ -197,9 +197,6 @@ export function WorkflowBoard({
   ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
     <div ref={boardRef} className="workflow-board" aria-label="진행 중인 배송 묶음" aria-busy={!ready}>
-      <div className="workflow-board-heading">
-        <b>발주서 묶음</b>
-      </div>
       {(previewError || native.error) && (
         <p role="alert">업무 미리보기 계산 오류: {previewError || native.error}</p>
       )}
