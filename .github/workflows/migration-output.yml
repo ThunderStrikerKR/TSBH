@@ -36,26 +36,114 @@ concurrency:
   group: ${{ github.ref_name == 'migration/27-unified-rust' && format('rust-output-gate4-{0}', github.ref) || format('rust-output-migration03-{0}', github.ref) }}
   cancel-in-progress: true
 jobs:
-  distribution-script-syntax:
-    name: Validate PowerShell release script parse and rollback contracts
-    runs-on: windows-latest
-    timeout-minutes: 5
+  rust-core-batch:
+    name: Native Rust output and integrated dispatcher (shared target)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.cargo-target
     steps:
       - uses: actions/checkout@v4
-      - name: Parse local manual packaging script without running a release
-        shell: pwsh
-        run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path (Get-Location).Path "scripts/package-windows-tauri.ps1"),
-            [ref]$tokens, [ref]$errors
-          ) | Out-Null
-          if ($errors.Count -ne 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            throw "Manual release package script has invalid PowerShell syntax"
-          }
-          Write-Host "PowerShell source contract parse PASS (no EXE was built)."
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-rust-core-batch-v1-${{ hashFiles('tests/rust-migration/**/Cargo.lock', 'src-tauri/Cargo.lock') }}
+      - name: Compile and run independent Rust output tests
+        run: cargo test --manifest-path tests/rust-migration/output/Cargo.toml
+      - name: Execute actual three-domain Rust dispatcher tests
+        run: cargo test --manifest-path tests/rust-migration/integration/Cargo.toml -- --nocapture
+
+  rules-parity-batch:
+    name: Order, pricing, shipping and settlement TS-to-Rust parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.cargo-target
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-rust-rules-batch-v1-${{ hashFiles('tests/rust-migration/**/Cargo.lock', 'src-tauri/Cargo.lock') }}
+      - name: Install locked TypeScript oracle dependencies once
+        run: npm ci --no-audit --no-fund --ignore-scripts
+      - name: Verify actual native save-order state transitions against TypeScript
+        run: node --test tests/rust-migration/rules/order-save-parity.test.mjs
+      - name: Compare native group shipping rates with original TypeScript
+        run: node --test tests/rust-migration/rules/shipping-rate-parity.test.mjs
+      - name: Compare live native staff review with original TypeScript order issues
+        run: node --test tests/rust-migration/rules/preview-issues-parity.test.mjs
+      - name: Compare full latest TypeScript rules against actual compiled Rust
+        run: npx tsx tests/rust-migration/rules/parity/compare.mts
+      - name: Compare original TS order history and settlement to compiled Rust
+        run: node --test tests/rust-migration/rules/history-parity.test.mjs
+
+  output-reception-factory-parity-batch:
+    name: Output, recognition, client and factory TS-to-Rust parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.cargo-target
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-rust-output-reception-factory-batch-v1-${{ hashFiles('tests/rust-migration/**/Cargo.lock', 'src-tauri/Cargo.lock') }}
+      - name: Install locked TypeScript oracle dependencies once
+        run: npm ci --no-audit --no-fund --ignore-scripts
+      - name: Compare TypeScript oracle with real Rust engine
+        run: node --test tests/rust-migration/output/parity.test.mjs
+      - name: Compare real customer-facing payment text with Rust
+        run: node --test tests/rust-migration/output/payment-parity.test.mjs
+      - name: Compare original automatic inquiry phase with Rust
+        run: node --test tests/rust-migration/output/automatic-request-parity.test.mjs
+      - name: Compare full automatic messages and legacy payment copy signatures
+        run: node --test tests/rust-migration/output/full-automatic-parity.test.mjs
+      - name: Compare customer-visible correction text
+        run: node --test tests/rust-migration/output/correction-parity.test.mjs
+      - name: Compare Kakao title-client mapping
+        run: node --test tests/rust-migration/catalog-clients/title-clients-parity.test.mjs
+      - name: Compare commit-time billing snapshots
+        run: node --test tests/rust-migration/rules/billing-commit-parity.test.mjs
+      - name: Compare manually classified orders
+        run: node --test tests/rust-migration/rules/manual-apply-parity.test.mjs
+      - name: Compare factory review projection
+        run: node --test tests/rust-migration/output/factory-review-parity.test.mjs
+      - name: Compare Rust freight-read projection
+        run: node --test tests/rust-migration/rules/shipping-read-parity.test.mjs
+      - name: Compare existing TypeScript price and freight with staged Rust rules
+        run: node --test tests/rust-migration/rules/parity.test.mjs
+      - name: Verify immutable original TypeScript price/shipping oracles
+        run: node --test tests/rust-migration/recognition/original-oracle-seal.test.mjs
+      - name: Real native Rust recognition to React draft parity and preservation
+        run: node --test tests/rust-migration/recognition/react-reception.test.mjs
+      - name: Original TS order edit, selected dealer and freight vs native Rust
+        run: node --test tests/rust-migration/rules/order-edit-native-parity.test.mjs
+      - name: Parse exact supplied Hongcheon school order via compiled Rust
+        run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml hongcheon_school_reception_keeps_two_phones_and_three_order_quantities -- --nocapture
+      - name: Compare original Excel parser and matching to compiled Rust
+        run: node --test tests/rust-migration/factory-reply/parity.test.mjs
+      - name: Verify existing manual and automatic Logen XLSX scenarios
+        run: node --test tests/tauri-factory-reply-import.test.mjs tests/tauri-factory-reply-auto.test.mjs
+
   original-ts-source-coverage:
     name: Fixed-original TypeScript source coverage (not behavior PASS)
     runs-on: ubuntu-latest
@@ -77,14 +165,6 @@ jobs:
           path: migration-audit/
           retention-days: 14
           if-no-files-found: warn
-  output-rust:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Compile and run independent Rust output tests
-        run: cargo test --manifest-path tests/rust-migration/output/Cargo.toml
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -93,8 +173,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - name: Install existing dependencies
-        run: npm install --no-audit --no-fund --ignore-scripts
+        run: npm ci --no-audit --no-fund --ignore-scripts
+      - name: Parse local manual packaging script without running a release
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path (Get-Location).Path "scripts/package-windows-tauri.ps1"),
+            [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "Manual release package script has invalid PowerShell syntax"
+          }
+          Write-Host "PowerShell source contract parse PASS (no EXE was built)."
       - name: Verify TypeScript and production bundle
         run: npm run build
       - name: Inspect frontend source maps and residual business-core markers
@@ -186,117 +281,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  output-ts-rust-parity:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install TypeScript oracle dependencies
-        run: npm install --no-audit --no-fund --ignore-scripts
-      - name: Compare TypeScript oracle with real Rust engine
-        run: node --test tests/rust-migration/output/parity.test.mjs
-      - name: Compare real customer-facing payment text with Rust
-        run: node --test tests/rust-migration/output/payment-parity.test.mjs
-      - name: Compare original automatic inquiry phase with Rust
-        run: node --test tests/rust-migration/output/automatic-request-parity.test.mjs
-      - name: Compare full automatic messages and legacy payment copy signatures
-        run: node --test tests/rust-migration/output/full-automatic-parity.test.mjs
-      - name: Compare customer-visible correction text
-        run: node --test tests/rust-migration/output/correction-parity.test.mjs
-      - name: Compare Kakao title-client mapping
-        run: node --test tests/rust-migration/catalog-clients/title-clients-parity.test.mjs
-      - name: Compare commit-time billing snapshots
-        run: node --test tests/rust-migration/rules/billing-commit-parity.test.mjs
-      - name: Compare manually classified orders
-        run: node --test tests/rust-migration/rules/manual-apply-parity.test.mjs
-      - name: Compare factory review projection
-        run: node --test tests/rust-migration/output/factory-review-parity.test.mjs
-      - name: Compare Rust freight-read projection
-        run: node --test tests/rust-migration/rules/shipping-read-parity.test.mjs
-      - name: Compare existing TypeScript price and freight with staged Rust rules
-        run: node --test tests/rust-migration/rules/parity.test.mjs
-
-  order-save-ts-rust-parity:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install original TypeScript oracle
-        run: npm install --no-audit --no-fund --ignore-scripts
-      - name: Verify actual native save-order state transitions against TypeScript
-        run: node --test tests/rust-migration/rules/order-save-parity.test.mjs
-      - name: Compare native group shipping rates with original TypeScript
-        run: node --test tests/rust-migration/rules/shipping-rate-parity.test.mjs
-      - name: Compare live native staff review with original TypeScript order issues
-        run: node --test tests/rust-migration/rules/preview-issues-parity.test.mjs
-
-  rules-comprehensive-parity:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install TypeScript oracle dependencies
-        run: npm install --no-audit --no-fund --ignore-scripts
-      - name: Compare full latest TypeScript rules against actual compiled Rust
-        run: npx tsx tests/rust-migration/rules/parity/compare.mts
-
-  integrated-rust-core:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Execute actual three-domain Rust dispatcher tests
-        run: cargo test --manifest-path tests/rust-migration/integration/Cargo.toml -- --nocapture
-
-  react-native-reception:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install TypeScript dependencies
-        run: npm install --no-audit --no-fund --ignore-scripts
-      - name: Verify immutable original TypeScript price/shipping oracles
-        run: node --test tests/rust-migration/recognition/original-oracle-seal.test.mjs
-      - name: Real native Rust recognition to React draft parity and preservation
-        run: node --test tests/rust-migration/recognition/react-reception.test.mjs
-      - name: Original TS order edit, selected dealer and freight vs native Rust
-        run: node --test tests/rust-migration/rules/order-edit-native-parity.test.mjs
-      - name: Parse exact supplied Hongcheon school order via compiled Rust
-        run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml hongcheon_school_reception_keeps_two_phones_and_three_order_quantities -- --nocapture
-
-  factory-reply-ts-rust-parity:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install original TypeScript oracle dependencies
-        run: npm install --no-audit --no-fund --ignore-scripts
-      - name: Compare original Excel parser and matching to compiled Rust
-        run: node --test tests/rust-migration/factory-reply/parity.test.mjs
-      - name: Verify existing manual and automatic Logen XLSX scenarios
-        run: node --test tests/tauri-factory-reply-import.test.mjs tests/tauri-factory-reply-auto.test.mjs
-
   factory-reply-native-windows:
     # The full Windows lib suite in verify-tauri already includes factory_.
     # Keep this narrower Windows diagnostic available on manual request.
@@ -312,23 +296,6 @@ jobs:
       - name: Exercise factory reply parser, automatic SQLite commit and conflict approval on Windows
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib factory_ -- --test-threads=1
 
-  history-ts-rust-parity:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install original TypeScript history oracle
-        run: npm install --no-audit --no-fund --ignore-scripts
-      - name: Compare original TS order history and settlement to compiled Rust
-        run: node --test tests/rust-migration/rules/history-parity.test.mjs
-
-  # Run the existing real Windows UIA flow on the *same compiled EXE*, on a
-  # separate disposable Windows runner. This cannot accidentally read or write
-  # a developer's production SQLite database.
   windows-client-registration-persistence:
     name: Real Windows client registration, SQLite save and EXE relaunch
     if: github.event_name == 'pull_request' || github.ref_name == 'main' || github.ref_name == 'integration/final-rust-migration-20261116'
@@ -474,21 +441,16 @@ jobs:
     name: "Rust migration integration regression gate"
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref_name == 'main') }}
     needs:
-      - output-rust
+      - rust-core-batch
+      - rules-parity-batch
+      - output-reception-factory-parity-batch
       - frontend
       - windows-native
       - windows-p1p2-real-exe
       - windows-client-registration-persistence
       - windows-all-menus-dialogs
       - windows-populated-tables
-      - output-ts-rust-parity
-      - order-save-ts-rust-parity
-      - rules-comprehensive-parity
-      - integrated-rust-core
-      - react-native-reception
-      - factory-reply-ts-rust-parity
       - factory-reply-native-windows
-      - history-ts-rust-parity
     runs-on: ubuntu-latest
     steps:
       - name: Enforce scheduled regression checks (full Windows only on manual runs)
@@ -502,10 +464,8 @@ jobs:
             name, result: value.result
           }));
           const fastRequired = new Set([
-            'output-rust', 'frontend', 'output-ts-rust-parity',
-            'order-save-ts-rust-parity', 'rules-comprehensive-parity',
-            'integrated-rust-core', 'react-native-reception',
-            'factory-reply-ts-rust-parity', 'history-ts-rust-parity'
+            'rust-core-batch', 'frontend', 'rules-parity-batch',
+            'output-reception-factory-parity-batch'
           ]);
           const full = process.env.GATE_MODE === 'full';
           const failures = report.filter(({name,result}) => {
@@ -517,7 +477,7 @@ jobs:
             console.log([required ? 'REQUIRED' : 'DEFERRED', ': ',
               item.name, ' = ', item.result].join(''));
           }
-          if (report.length !== 15 || failures.length ||
+          if (report.length !== 10 || failures.length ||
               ![...fastRequired].every(name => results[name]?.result === 'success')) {
             console.error('Rust integration CI BLOCKED:', JSON.stringify(failures));
             process.exitCode = 1;
