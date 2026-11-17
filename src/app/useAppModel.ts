@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { confirmAction, askSaveChanges } from "../dialogs";
 import { businessCoreCall } from "../tauri-bridge";
+import { auditStateTransition } from "../perf-audit";
 import { newReception } from "../orders/reception";
 import { sameValue } from "../shared/draft";
 import { useHasPendingChanges } from "../shared/pending-changes";
@@ -44,6 +45,7 @@ export function useAppModel() {
   useEffect(() => {
     let cancelled = false;
     const launch = async () => {
+      auditStateTransition("useAppModel","startup-effect");
       const api = window.bando;
       if (!api) {
         if (!cancelled) setStartup({
@@ -57,14 +59,17 @@ export function useAppModel() {
           ? await api.startupStatus()
           : { phase: "READY", attempts: 1, isTest: !!api.isTestWorkspace };
         if (cancelled) return;
+        auditStateTransition("useAppModel","startup-status",{ready:status.phase==="READY"});
         setStartup(status);
         if (status.phase !== "READY") return;
         const loaded = await api.load();
         if (cancelled) return;
+        auditStateTransition("useAppModel","state-loaded",{clients:loaded.clients.length,products:loaded.products.length});
         setState(loaded);
+        auditStateTransition("useAppModel","draft-created");
         setDraft(newReception());
         void api.dockStatus().then((value) => {
-          if (!cancelled) setDock(value);
+          if (!cancelled) { auditStateTransition("useAppModel","dock-loaded"); setDock(value); }
         }).catch((error) => {
           if (!cancelled) setNotice(String(error), "error");
         });

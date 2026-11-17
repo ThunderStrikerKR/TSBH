@@ -58,16 +58,22 @@ try {
   await page.addInitScript(() => {
     window.__bandoNativeCalls = [];
     window.__bandoRenderTrace = [];
+    window.__bandoProfilerTrace = [];
+    window.__bandoStateTrace = [];
   });
   const markPerf = async () => page.evaluate(() => ({
     ipc: window.__bandoNativeCalls?.length ?? 0,
     renders: window.__bandoRenderTrace?.length ?? 0,
+    profiles: window.__bandoProfilerTrace?.length ?? 0,
+    stateEvents: window.__bandoStateTrace?.length ?? 0,
     at: performance.now(),
   }));
   const endPerf = async (name, marker) => {
-    const summary = await page.evaluate(({ipc,renders,at}) => {
+    const summary = await page.evaluate(({ipc,renders,profiles,stateEvents,at}) => {
       const calls = (window.__bandoNativeCalls ?? []).slice(ipc);
       const components = (window.__bandoRenderTrace ?? []).slice(renders);
+      const commits = (window.__bandoProfilerTrace ?? []).slice(profiles);
+      const transitions = (window.__bandoStateTrace ?? []).slice(stateEvents);
       const byOperation = {}, byComponent = {}, repeated = new Map();
       const readOps = new Set([
         "reconcile_workflow", "preview_workflow", "preview_order",
@@ -90,6 +96,24 @@ try {
       const repeats = [...repeated.values()].filter(x=>x.count>1)
         .map(x=>({operation:x.operation,repeatCalls:x.count-1,readOnly:x.readOnly}))
         .sort((a,b)=>b.repeatCalls-a.repeatCalls);
+      const profilerByComponent={};
+      for(const commit of commits) {
+        const row=profilerByComponent[commit.id]??={commits:0,actualMs:0,peakMs:0,baseMs:0};
+        row.commits++;
+        row.actualMs+=commit.actualDuration;
+        row.peakMs=Math.max(row.peakMs,commit.actualDuration);
+        row.baseMs+=commit.baseDuration;
+      }
+      for(const row of Object.values(profilerByComponent)){
+        row.actualMs=Math.round(row.actualMs*100)/100;
+        row.peakMs=Math.round(row.peakMs*100)/100;
+        row.baseMs=Math.round(row.baseMs*100)/100;
+      }
+      const transitionCounts={};
+      for(const item of transitions){
+        const key=item.source+"."+item.phase+(item.info?.operation?"."+item.info.operation:"");
+        transitionCounts[key]=(transitionCounts[key]??0)+1;
+      }
       return {
         durationMs: Math.round(performance.now()-at),
         capturedIpcCalls: calls.length,
@@ -100,6 +124,16 @@ try {
         repeatedOperations: repeats.slice(0,18),
         measuredRenderInvocations: components.length,
         rendersByComponent: byComponent,
+        profilerByComponent,
+        transitionCounts,
+        slowestCommits: commits.slice().sort((a,b)=>b.actualDuration-a.actualDuration)
+          .slice(0,12).map(p=>({
+            id:p.id,phase:p.phase,ms:Math.round(p.actualDuration*100)/100,
+            at:Math.round(p.commitTime),
+          })),
+        firstTransitions:transitions.slice(0,60).map(x=>({
+          at:Math.round(x.at),source:x.source,phase:x.phase,info:x.info,
+        })),
       };
     }, marker);
     record("PERF_REAL_WINDOWS_" + name, summary);
@@ -167,6 +201,23 @@ try {
   record("SYNTHETIC_TEST_DEALERS_AND_REGISTERED_PRICES",seed);
   await page.reload({waitUntil:"domcontentloaded"});
   await page.locator("nav[aria-label='업무 메뉴']").waitFor({timeout:60000});
+  const boot = await page.evaluate(() => {
+    const commits=window.__bandoProfilerTrace??[], events=window.__bandoStateTrace??[];
+    const byComponent={};
+    for(const p of commits){
+      const row=byComponent[p.id]??={commits:0,actualMs:0,peakMs:0};
+      row.commits++;row.actualMs+=p.actualDuration;
+      row.peakMs=Math.max(row.peakMs,p.actualDuration);
+    }
+    for(const row of Object.values(byComponent)){
+      row.actualMs=Math.round(row.actualMs*100)/100;
+      row.peakMs=Math.round(row.peakMs*100)/100;
+    }
+    return {byComponent,eventCount:events.length,events:events.slice(0,140).map(x=>({
+      at:Math.round(x.at),source:x.source,phase:x.phase,info:x.info,
+    }))};
+  });
+  record("PERF_INITIAL_BOOT_REACT_NATIVE_CHAIN",boot);
   await page.getByRole("button",{name:"접수",exact:true}).click();
   const idleMark = await markPerf();
   await sleep(1200);

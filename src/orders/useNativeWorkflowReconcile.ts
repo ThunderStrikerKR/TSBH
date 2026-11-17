@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Order, State } from "../types";
 import { businessCoreCall } from "../tauri-bridge";
+import { auditStateTransition } from "../perf-audit";
 
 export function useNativeWorkflowReconcile(input: State, drafts: Order[], enabled = true) {
   const fingerprint = useMemo(
@@ -22,6 +23,7 @@ export function useNativeWorkflowReconcile(input: State, drafts: Order[], enable
     if (!enabled || !latest.current.drafts.length) return;
     let cancelled = false;
     const request = latest.current;
+    auditStateTransition("useNativeWorkflowReconcile","request",{drafts:request.drafts.length});
     void (async () => {
       let value = request.input;
       for (const draft of request.drafts) {
@@ -45,6 +47,7 @@ export function useNativeWorkflowReconcile(input: State, drafts: Order[], enable
         value = result.state;
       }
       if (!cancelled) {
+        auditStateTransition("useNativeWorkflowReconcile","resolved",{drafts:request.drafts.length});
         setResolved({ fingerprint, value });
         setFailure(undefined);
       }

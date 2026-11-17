@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { useEventCallback } from "./shared/useEventCallback";
-import { auditReactRender } from "./perf-audit";
+import { auditReactRender, auditStateTransition } from "./perf-audit";
+import { AuditProfiler } from "./perf-audit-profiler";
 import { createPortal, flushSync } from "react-dom";
 import { HubPanels, defaultPanels } from "./HubPanels";
 import { askSaveChanges } from "./dialogs";
@@ -50,6 +51,7 @@ export function HubWorkspace(props: Props) {
     [edits, setEdits] = useState<Record<string, Order>>({}),
     [active, setActive] = useState(""),
     [stageHover, setStageHover] = useState<{ groupId: string; step: number }>();
+  useEffect(() => { auditStateTransition("HubWorkspace","portal-ready",{source:!!source,messages:!!messages,details:!!details}); },[source,messages,details]);
   const applySelection = (next: WorkflowSelection | undefined) => {
     if (next) {
       setReceptionId(next.orderId);
@@ -504,7 +506,7 @@ export function HubWorkspace(props: Props) {
                 ＋ 새 주문
               </button>
             </header>
-            <WorkflowBoard
+            <AuditProfiler id="WorkflowBoard"><WorkflowBoard
               state={boardPreview}
               previewReady={previewReady}
               previewError={nativeBase.error || nativePreview.error}
@@ -518,14 +520,14 @@ export function HubWorkspace(props: Props) {
               stageHover={stageHover}
               pendingReceptions={pendingWithoutClient}
               onSelectPending={selectPendingLive}
-            />
+            /></AuditProfiler>
           </section>,
         ]}
       </HubPanels>
       {messages &&
         createPortal(
           <LinkContext.Provider value={linkController}>
-            <MessageWorkspace
+            <AuditProfiler id="MessageWorkspace"><MessageWorkspace
               state={messageState}
               order={messageOrder}
               gid={messageReady ? messageGroup : undefined}
@@ -533,12 +535,12 @@ export function HubWorkspace(props: Props) {
               onSave={saveWorkflowLive}
               onSelect={selectMessageLive}
               onNotice={props.onNotice}
-            />
+            /></AuditProfiler>
           </LinkContext.Provider>,
           messages,
         )}
       <div className="hub-order-engine">
-        <MemoOrderDesk
+        <AuditProfiler id="OrderDesk:reception"><MemoOrderDesk
           {...props}
           key={receptionOrder.id + ":reception:" + discardRevision}
           state={base}
@@ -551,8 +553,8 @@ export function HubWorkspace(props: Props) {
           portalTargets={receptionTargets}
           linkController={linkController}
           onWorkflowSave={saveWorkflowLive}
-        />
-        <MemoOrderDesk
+        /></AuditProfiler>
+        <AuditProfiler id="OrderDesk:details"><MemoOrderDesk
           {...props}
           key={(detail?.id ?? draft.id) + ":details:" + discardRevision}
           state={base}
@@ -569,7 +571,7 @@ export function HubWorkspace(props: Props) {
           onChange={changeDetailLive}
           onWorkflowSave={saveWorkflowLive}
           onSave={saveDetailLive}
-        />
+        /></AuditProfiler>
       </div>
       {manual && (
         <Suspense fallback={null}>

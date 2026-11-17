@@ -3,6 +3,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { coalescePureNativeRead } from "./shared/native-read-coalescing";
+import { auditStateTransition } from "./perf-audit";
 
 /** CI-only native call audit. Vite drops this instrumentation from release builds. */
 function auditNativeCall(
@@ -43,7 +44,18 @@ export function businessCoreCall<T>(
       action: payload && typeof payload === "object" && "action" in payload
         ? (payload as { action?: unknown }).action : undefined,
     });
-    return invoke<T>("business_core_call", { domain, operation, payload });
+    const started = performance.now();
+    auditStateTransition("Rust IPC","request",{operation});
+    return invoke<T>("business_core_call", { domain, operation, payload }).then(
+      (value) => {
+        auditStateTransition("Rust IPC","resolved",{operation,durationMs:Math.round(performance.now()-started)});
+        return value;
+      },
+      (error) => {
+        auditStateTransition("Rust IPC","rejected",{operation,durationMs:Math.round(performance.now()-started)});
+        throw error;
+      },
+    );
   });
 }
 
@@ -81,7 +93,13 @@ const api: Api = {
   notificationAdd: (notice) => invoke("hub_notifications_add", { notice }),
   notificationMarkRead: (id) => invoke("hub_notifications_mark_read", { id }),
   notificationClear: () => invoke("hub_notifications_clear"),
-  load: () => invoke<State>("state_load"),
+  load: () => {
+    auditStateTransition("Rust IPC","state-load-request");
+    return invoke<State>("state_load").then((value) => {
+      auditStateTransition("Rust IPC","state-load-resolved",{revision:value.revision??0});
+      return value;
+    });
+  },
   save: (state) => {
     auditNativeCall("state_save");
     return invoke<State>("state_save", { state });
@@ -118,7 +136,7 @@ const api: Api = {
     if (hasUnsavedChanges && !window.confirm("저장하지 않은 변경사항이 있습니다. 종료할까요?")) return;
     await appWindow().close();
   },
-  dockStatus: () => invoke("dock_status_native"),
+  dockStatus: () => invoke("dock_status_native").then((value) => { auditStateTransition("Rust IPC","dock-resolved"); return value; }),
   dockCycle: () => invoke("dock_cycle_native"),
   dockMode: (mode) => invoke("dock_mode_native", { mode }),
   dockStart: (handle, ratio) => invoke("dock_start_native", { handle, ratio }),
@@ -126,7 +144,7 @@ const api: Api = {
   dockSelect: (handle) => invoke("dock_select_native", { handle }),
   dockWindows: () => invoke("dock_windows_native"),
   dockRegion: (region) => invoke("dock_region_native", { region }),
-  startupStatus: () => invoke("startup_status"),
+  startupStatus: () => invoke("startup_status").then((value) => { auditStateTransition("Rust IPC","startup-status-resolved"); return value; }),
   startupMetrics: () => invoke("startup_metrics"),
   retryStartup: () => invoke("retry_startup"),
   receiptArchive: () => invoke<{ id: string; orderId: string; record: Record<string, unknown> }[]>("receipt_archive"),

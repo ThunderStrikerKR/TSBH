@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { businessCoreCall } from "../tauri-bridge";
+import { auditStateTransition } from "../perf-audit";
 import type { Origin, Price, State, ValidationIssue } from "../types";
 
 export type NativeShipmentPreview = {
@@ -45,10 +46,12 @@ export function useNativeWorkflowBoard(state: State, enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    auditStateTransition("useNativeWorkflowBoard","request");
     void businessCoreCall<NativeProjection>("rules", "preview_workflow", {
       state: latest.current,
     }).then((result) => {
       if (!cancelled) {
+        auditStateTransition("useNativeWorkflowBoard","resolved");
         setResolved({ fingerprint, result });
         setFailure(undefined);
       }

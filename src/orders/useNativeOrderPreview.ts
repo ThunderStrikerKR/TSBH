@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { businessCoreCall } from "../tauri-bridge";
+import { auditStateTransition } from "../perf-audit";
 import { nativeOrderDisplayKey } from "./native-order-display-key";
 import type { Order, Price, State } from "../types";
 
@@ -46,6 +47,7 @@ export function useNativeOrderPreview(
     if (!enabled) return;
     let cancelled = false;
     const payload = current.current;
+    auditStateTransition("useNativeOrderPreview","request");
     void businessCoreCall<NativeOrderPreview>(
       "rules", "preview_order", {
         state: payload.state,
@@ -54,6 +56,7 @@ export function useNativeOrderPreview(
       },
     ).then((result) => {
       if (!cancelled) {
+        auditStateTransition("useNativeOrderPreview","resolved");
         setResolved({ fingerprint, displayKey, result });
         setFailure(undefined);
       }

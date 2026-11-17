@@ -21,6 +21,9 @@ on:
       - src/app/useAppModel.ts
       - src/shared/useEventCallback.ts
       - src/HubWorkspace.tsx
+      - src/main.tsx
+      - src/perf-audit.ts
+      - src/perf-audit-profiler.tsx
       - src/tauri-bridge.ts
       - src/shared/native-read-coalescing.ts
       - src/orders/useNativeWorkflowReconcile.ts

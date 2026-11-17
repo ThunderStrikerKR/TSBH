@@ -5,6 +5,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { businessCoreCall } from "../tauri-bridge";
+import { auditStateTransition } from "../perf-audit";
 import { nativeOrderIssuesKey } from "./native-order-issues-key";
 import type { Order, ValidationIssue } from "../types";
 
@@ -20,10 +21,12 @@ export function useNativeOrderIssues(draft: Order) {
   }>();
   useEffect(() => {
     let cancelled = false;
+    auditStateTransition("useNativeOrderIssues","request");
     void businessCoreCall<{ issues: ValidationIssue[] }>(
       "rules", "order_issues_with_actions", { order: draft },
     ).then(({ issues }) => {
       if (!cancelled) {
+        auditStateTransition("useNativeOrderIssues","resolved");
         setResolved({ fingerprint, issues });
         setFailure(undefined);
       }
