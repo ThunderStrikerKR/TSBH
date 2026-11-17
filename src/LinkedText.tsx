@@ -127,6 +127,25 @@ export function messageSpans(text: string, order: Order, phase: "request" | "pay
   );
 }
 
+/** Visual-only projection of native source evidence; never edits ownership. */
+export function sourceDocumentSpans(text: string, order: Pick<Order, "recipients">): SourceSpan[] {
+  return order.recipients.flatMap((recipient) => [
+    ...(recipient.sources ?? []),
+    ...recipient.items.flatMap((item) => item.sources ?? []),
+  ]).map((span) => {
+    if (span.field !== "note" || span.start < 0 || span.start > text.length ||
+        span.end < span.start || span.end > text.length) return span;
+    const lineStart = text.lastIndexOf("\n", span.start - 1) + 1;
+    const prefix = text.slice(lineStart, span.start);
+    // A bare memo heading and its classified value are one visual target.
+    if (!/^\s*\(?(?:배송\s*)?(?:메세지|메시지|요청(?:사항)?|메모)(?:\s*[:：]\s*|\s+)$/u.test(prefix))
+      return span;
+    const offset = prefix.search(/\S/u);
+    const start = offset < 0 ? lineStart : lineStart + offset;
+    return { ...span, start, text: text.slice(start, span.end) };
+  });
+}
+
 export function LinkedText({
   text,
   spans,
@@ -179,6 +198,10 @@ export function LinkedText({
       setEditing(true);
     }
   }, [editingRequested, readOnly]);
+  // One selected field is blue; other spans from its recipient stay contextual.
+  const activeRecipientId = spans.find(
+    (span) => span.targetId + ":" + span.field === c.active,
+  )?.recipientId ?? c.recipientId;
   let cursor = 0;
   const content: ReactNode[] = [];
   for (const [index, s] of [...spans]
@@ -193,10 +216,9 @@ export function LinkedText({
         tabIndex={0}
         data-link-key={key}
         className={
-          "linked-token " +
-          (c.active === key || (s.recipientId && s.recipientId === c.recipientId)
-            ? "linked-active"
-            : "")
+          "linked-token" +
+          (s.recipientId && s.recipientId === activeRecipientId ? " linked-recipient-context" : "") +
+          (c.active === key ? " linked-active" : "")
         }
         onMouseEnter={() => c.setActive(key)}
         onMouseLeave={(e) => {
