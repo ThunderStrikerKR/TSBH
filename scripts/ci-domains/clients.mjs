@@ -53,6 +53,36 @@ export async function run(page,{record,snap,paste,chooseDealer}){
     dealer:afterManual.dealer,
     hasRedundantEvidence:false,
   });
+
+  // A genuine no-match reception has one required action, not both an
+  // orange missing-dealer card and a blue "no automatic basis" notice.
+  await page.getByRole("button",{name:/새 주문/}).first().click();
+  await paste(page,"미선택가상","709 1개");
+  await page.getByRole("button",{name:"거래처 찾기",exact:true})
+    .waitFor({state:"visible",timeout:30000});
+  await page.waitForFunction(()=>{
+    const pane=document.querySelector(".staff-checks");
+    if(!pane||pane.getAttribute("aria-busy")==="true")return false;
+    return [...pane.querySelectorAll(".staff-block .issue-heading b")]
+      .some(el=>el.textContent?.includes("거래처를 선택하면 단가가 적용됩니다"));
+  },null,{timeout:30000});
+  await page.waitForTimeout(1100);
+  const missingDealer=await page.evaluate(()=>{
+    const pane=document.querySelector(".staff-checks");
+    const all=[...(pane?.querySelectorAll(".staff-block, .staff-fact")??[])];
+    const relevant=all.filter(el=>/거래처를 선택하면 단가가 적용됩니다|거래처 자동 연결 근거가 없습니다|거래처를 찾지 못했습니다|거래처 자동 매칭 오류/.test(el.textContent??""));
+    const primary=relevant.find(el=>el.classList.contains("staff-block"));
+    return {
+      count:relevant.length,
+      titles:relevant.map(el=>el.querySelector("b")?.textContent?.trim()??""),
+      duplicateSmall:!!primary?.querySelector(".issue-heading small")?.textContent?.includes("거래처를 선택하면 단가가 적용됩니다"),
+      dealer:document.querySelector(".receipt-client b")?.textContent?.trim()??null,
+    };
+  });
+  assert.equal(missingDealer.count,1,"No-match must not add a second blue dealer notice");
+  assert.equal(missingDealer.dealer,null,"No dealer should be silently assigned");
+  assert.equal(missingDealer.duplicateSmall,false,"Do not repeat the issue title as its detail");
+  record("CLIENTS_UNMATCHED_DEALER_SINGLE_ACTION",missingDealer);
   await snap(page,"clients");
 }
 

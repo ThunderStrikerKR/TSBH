@@ -46,7 +46,17 @@ test("user-selected dealer is retained only as provenance, not a review item", (
   assert.match(editor, /"source":"MANUAL"/);
   assert.match(editor, /사용자가 거래처/);
   assert.doesNotMatch(editor, /직원이 거래처/);
-  assert.match(issues, /str_field\(match_info,"source"\)!="MANUAL"/);
+  assert.match(issues, /source!="MANUAL" && source!="NONE"/);
   assert.match(issues, /manually_selected_dealer_never_emits_a_redundant_review_notice/);
   assert.match(issues, /automatic_match_provenance_and_conflict_still_appear/);
+});
+
+test("unmatched dealer generates one required action, not a second blue notice", () => {
+  const issues=read("src-tauri/src/business_core/rules/issues.rs");
+  const checks=read("src/StaffChecks.tsx");
+  assert.match(issues,/no_match_and_no_dealer_has_only_one_actionable_dealer_card/);
+  assert.match(issues,/explicit_auto_match_error_is_one_action_not_two/);
+  assert.match(issues,/!dealer_match_action/);
+  assert.doesNotMatch(issues,/거래처 자동 연결 근거가 없습니다/);
+  assert.match(checks,/b\.detail && b\.detail !== b\.title/);
 });

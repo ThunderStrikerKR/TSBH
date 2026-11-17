@@ -254,14 +254,13 @@ fn add<'a>(result:&mut Vec<Value>,o:&Value,row:Option<&'a Value>,
 }
 pub(super) fn order_issues(o:&Value)->Vec<Value>{
     let mut issues=Vec::new();
-    // Dealer matching reasons are staff-facing INFO/ACTION items in the
-    // existing "확인할 내용" UI. No automatic customer messages are generated.
+    // The review is action-oriented: neither manual selection nor a missing
+    // auto-match ("NONE") warrants an extra provenance card. A missing dealer
+    // already has the single actionable CLIENT issue below. Keep the evidence
+    // in the order, and retain real matching conflicts/errors as actionable.
     let match_info=field(o,"clientMatch");
-    // A user explicitly choosing the dealer is already an acknowledged decision.
-    // Keep its MANUAL provenance in the saved order without showing a redundant
-    // CLIENT_MATCH_EVIDENCE item in the review panel.
-    if match_info.is_object() && str_field(match_info,"source")!="MANUAL" {
-        let source=str_field(match_info,"source");
+    let source=str_field(match_info,"source");
+    if match_info.is_object() && source!="MANUAL" && source!="NONE" {
         let matched_id=str_field(match_info,"clientId");
         let actual_id=str_field(o,"clientId");
         let detail=str_field(match_info,"detail");
@@ -270,10 +269,8 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
             let collision=source=="CONFLICT" ||
                 (!matched_id.is_empty() && actual_id!=matched_id);
             let needs_action=collision || has_error;
-            let missing=source=="NONE" && actual_id.is_empty();
             let title=if collision{"발주처 매칭 충돌 — 거래처를 확인하세요"}
                 else if has_error{"거래처 자동 매칭 오류 — 직접 확인하세요"}
-                else if missing{"거래처 자동 연결 근거가 없습니다"}
                 else{"거래처 연결 근거"};
             let kind=if has_error{"CLIENT_MATCH_ERROR"}
                 else if collision{"CLIENT_MATCH_CONFLICT"}else{"CLIENT_MATCH_EVIDENCE"};
@@ -294,7 +291,14 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
             }));
         }
     }
-    if str_field(o,"clientId").is_empty()&&str_field(o,"orderType")!="RETAIL"{
+    // One user action should be represented by one actionable card. When a
+    // detailed automatic-match conflict/error already asks for dealer review,
+    // do not also add the generic missing-dealer action.
+    let dealer_match_action=issues.iter().any(|issue|
+        ["CLIENT_MATCH_ERROR","CLIENT_MATCH_CONFLICT"].contains(
+            &str_field(issue,"kind").as_str()));
+    if str_field(o,"clientId").is_empty() &&
+       str_field(o,"orderType")!="RETAIL" && !dealer_match_action {
         add(&mut issues,o,None,None,"CLIENT","거래처를 선택하면 단가가 적용됩니다",
             "client",o.get("clientId"),1,None,None);
     }
@@ -542,6 +546,47 @@ mod manual_dealer_selection_review_tests {
         assert!(issues.iter().all(|issue|
             !str_field(issue,"kind").starts_with("CLIENT_MATCH_")),
             "Direct user selection is an accepted decision, not an alert");
+    }
+
+    #[test]
+    fn no_match_and_no_dealer_has_only_one_actionable_dealer_card() {
+        let order=json!({
+            "id":"order-2","clientId":"","orderType":"AGENCY","recipients":[],
+            "clientMatch":{"source":"NONE","clientId":null,
+                "detail":"거래처를 찾지 못했습니다. 직접 선택하세요."}
+        });
+        let issues=order_issues(&order);
+        let dealers:Vec<_>=issues.iter().filter(|issue|{
+            let kind=str_field(issue,"kind");
+            kind=="CLIENT" || kind.starts_with("CLIENT_MATCH_")
+        }).collect();
+        assert_eq!(dealers.len(),1,"Missing auto-match is not a second notice");
+        assert_eq!(dealers[0]["kind"],"CLIENT");
+        assert_eq!(dealers[0]["severity"],"ACTION");
+        assert!(!issues.iter().any(|issue|
+            str_field(issue,"title")=="거래처 자동 연결 근거가 없습니다"));
+    }
+
+    #[test]
+    fn explicit_auto_match_error_is_one_action_not_two() {
+        for (source, expected) in [
+            ("ERROR","CLIENT_MATCH_ERROR"),
+            ("CONFLICT","CLIENT_MATCH_CONFLICT"),
+        ] {
+            let order=json!({
+                "id":"order-3","clientId":"","orderType":"AGENCY","recipients":[],
+                "clientMatch":{"source":source,"clientId":"dealer-unknown",
+                    "detail":"자동 거래처 연결을 확인해야 합니다."}
+            });
+            let issues=order_issues(&order);
+            let dealers:Vec<_>=issues.iter().filter(|issue|{
+                let kind=str_field(issue,"kind");
+                kind=="CLIENT" || kind.starts_with("CLIENT_MATCH_")
+            }).collect();
+            assert_eq!(dealers.len(),1,"{source}: only one dealer-related action");
+            assert_eq!(dealers[0]["kind"],expected);
+            assert_eq!(dealers[0]["severity"],"ACTION");
+        }
     }
 
     #[test]

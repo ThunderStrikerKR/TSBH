@@ -68,9 +68,11 @@ export function StaffChecks({
           >
             <div className="issue-heading">
               <b>{b.title}</b>
-              <small className={b.kind === "UNASSIGNED_EVIDENCE" ? "unassigned-evidence-detail" : undefined}>
-                {b.detail}
-              </small>
+              {b.detail && b.detail !== b.title && (
+                <small className={b.kind === "UNASSIGNED_EVIDENCE" ? "unassigned-evidence-detail" : undefined}>
+                  {b.detail}
+                </small>
+              )}
             </div>
             {b.kind === "UNASSIGNED_EVIDENCE" && (
               <small className="unassigned-evidence-hint">
@@ -140,7 +142,7 @@ export function StaffChecks({
               <b>{b.kind === "QUANTITY_MISSING" && b.resolution === "PROVISIONALLY_APPROVED"
                 ? "수량 1개 잠정 처리됨"
                 : b.title}</b>
-              <small>{b.detail}</small>
+              {b.detail && b.detail !== b.title && <small>{b.detail}</small>}
               {b.kind === "QUANTITY_MISSING" && b.resolution === "PROVISIONALLY_APPROVED" && (
                 <small>1개 발송 예정 안내가 복사용 메시지에 포함됩니다. 실제 수량이 확인되면 수량을 수정하세요.</small>
               )}
