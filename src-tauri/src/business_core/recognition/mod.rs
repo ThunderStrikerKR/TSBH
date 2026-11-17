@@ -280,13 +280,13 @@ fn address_begin(line: &str) -> Option<usize> {
 // Only activate when a parenthesized Korean name CLOSES the prefix and
 // there is a nontrivial organization/department descriptor before it.
 fn composite_name_before_address(prefix: &str) -> Option<(usize,usize)> {
-    let before_zip=Regex::new(r"\\s+\\(?\\d{5}\\)?\\s*$").expect("postal suffix");
+    let before_zip=Regex::new(r"\s+\(?\d{5}\)?\s*$").expect("postal suffix");
     let without_zip=before_zip.find(prefix)
         .map_or(prefix, |m| &prefix[..m.start()]);
     let trim_start=without_zip.len()-without_zip.trim_start().len();
     let candidate=without_zip.trim();
     if candidate.is_empty() || candidate.len()>160 {return None;}
-    let person=Regex::new(r"\\(([가-힣]{2,5})\\)$").expect("contact in parentheses");
+    let person=Regex::new(r"\(([가-힣]{2,5})\)$").expect("contact in parentheses");
     let m=person.find(candidate)?;
     let head=candidate[..m.start()].trim();
     // No broad guess for a lone "(김가상)" or "받는분 (김가상)".
@@ -294,7 +294,7 @@ fn composite_name_before_address(prefix: &str) -> Option<(usize,usize)> {
     let descriptor=head.split('(').next().unwrap_or("").trim();
     if descriptor.chars().filter(|ch| ('가'..='힣').contains(ch)).count()<3
         || descriptor.chars().any(|ch|ch.is_ascii_digit())
-        || Regex::new(r"(?i)(?:\\d+\\s*(?:개|대|EA|PCS)|(?:BD\\s*)?\\d{3})")
+        || Regex::new(r"(?i)(?:\d+\s*(?:개|대|EA|PCS)|(?:BD\s*)?\d{3})")
             .expect("no product descriptor").is_match(descriptor)
     {return None;}
     Some((trim_start,trim_start+candidate.len()))
