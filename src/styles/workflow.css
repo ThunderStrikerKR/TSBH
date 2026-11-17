@@ -93,16 +93,16 @@
   white-space: nowrap;
 }
 .hub-slot-3 .workflow-group .flow-heading-toggle > .workflow-signals {
-  flex: 0 0 82px;
-  width: 82px;
+  flex: 0 0 90px;
+  width: 90px;
   gap: 6px;
   margin-left: 6px;
   justify-content: flex-start;
 }
 .hub-slot-3 .workflow-group .workflow-signals .signal {
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
 }
 .app-v03 .hub-slot-3 .workflow-progress > .primary {
   flex: 0 1 auto;
