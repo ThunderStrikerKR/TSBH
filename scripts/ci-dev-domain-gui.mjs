@@ -200,7 +200,7 @@ try{
         signal:AbortSignal.timeout(700)});
       if(r.ok){
         const tabs=await r.json();
-        available=tabs.some(t=>t.type==="page"&&/127\\.0\\.0\\.1:5173|localhost:5173|tauri/i.test(t.url||""))
+        available=tabs.some(t=>t.type==="page"&&/127\.0\.0\.1:5173|localhost:5173|tauri/i.test(t.url||""))
           || tabs.some(t=>t.type==="page");
         if(available)break;
       }
@@ -210,7 +210,7 @@ try{
   assert.ok(available,"Actual Windows WebView2 CDP endpoint did not open");
   browser=await chromium.connectOverCDP("http://127.0.0.1:19651",{timeout:20000});
   const context=browser.contexts()[0];
-  const page=context?.pages().find(p=>/127\\.0\\.0\\.1:5173|localhost:5173|tauri/i.test(p.url()))??context?.pages()[0];
+  const page=context?.pages().find(p=>/127\.0\.0\.1:5173|localhost:5173|tauri/i.test(p.url()))??context?.pages()[0];
   assert.ok(page,"Actual native WebView2 page is missing");
   page.setDefaultTimeout(30000);
   page.on("pageerror",e=>results.failures.push(String(e)));
