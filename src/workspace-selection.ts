@@ -30,3 +30,19 @@ export function onlyDeletedGroups(state: State, orderId: string) {
     ) ?? [];
   return groups.length > 0 && groups.every((g) => !!g.deletedAt);
 }
+
+/** Resolve the hovered action's own order without changing the committed
+ * selection. For multi-recipient groups keep the currently selected recipient
+ * if it belongs to that group; otherwise use its first active shipment. */
+export function hoveredWorkflowSelection(
+  state: State,
+  groupId: string | undefined,
+  selected?: WorkflowSelection,
+): WorkflowSelection | undefined {
+  if (!groupId) return undefined;
+  const shipments = activeShipments(state).filter((ship) => ship.groupId === groupId);
+  const ship = shipments.find((s) => s.id === selected?.shipmentId) ?? shipments[0];
+  return ship
+    ? { orderId: ship.orderId, groupId: ship.groupId, shipmentId: ship.id }
+    : undefined;
+}
