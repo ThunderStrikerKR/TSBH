@@ -12,3 +12,16 @@ test("no-recipient instructions use the same empty-state base class as other scr
   assert.match(read("src/OrderDesk.tsx"),/className="empty detail-empty">발주 원문을 입력하거나 배송 건을 선택하세요/);
   assert.match(read("src/styles/receipt-layout.css"),/\.receipt-panel-content > \.detail-empty/);
 });
+
+test("1080p narrow order panes keep the request-message label on one line without changing typography", () => {
+  const css = read("src/styles/receipt-document.css");
+  const layout = read("src/styles/receipt-layout.css");
+  const narrow = read("src/styles/workflow-states.css");
+  const desk = read("src/OrderDesk.tsx");
+  assert.match(desk, /<Field label="요청 메시지">/);
+  assert.match(layout, /\.compact-review \.recipient-fields \.field\s*\{/);
+  assert.match(narrow, /@container \(max-width:420px\)/);
+  assert.match(css, /\.hub-panels \.compact-review \.recipient-fields > \.linked-field > \.field\s*\{\s*grid-template-columns: 84px minmax\(0, 1fr\);/);
+  assert.match(css, /\.hub-panels \.compact-review \.recipient-fields > \.linked-field > \.field > \.field-label\s*\{\s*white-space: nowrap;/);
+  assert.match(css, /\.hub-panels \.compact-review \.recipient-fields > \.linked-field\s*\{\s*min-width: 0;\s*width: 100%;/);
+});
