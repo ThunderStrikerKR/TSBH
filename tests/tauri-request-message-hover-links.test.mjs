@@ -183,31 +183,34 @@ test("a recognized empty shipping memo label remains a hover target without inve
   assert.equal(result[0].field, "note");
 });
 
-test("actual order desk links shipping memo and visual rules distinguish exact fields from shipment context", () => {
+test("order desk links shipping memo without a duplicate header name or grey detail overlay", () => {
   const desk = read("src/OrderDesk.tsx");
   const source = read("src/SourceDocument.tsx");
   const linked = read("src/LinkedText.tsx");
   const css = read("src/styles/receipt-document.css");
   assert.match(desk, /<Linked linkKey=\{r\.id \+ ":note"\}>/);
-  assert.match(desk, /linked-group-context/);
+  assert.match(desk, /<h2>수취인별 주문 정보<\/h2>/);
+  assert.doesNotMatch(desk, /<b>\{draft\.recipients\.find\(\(r\) => r\.id === shownRecipient\)\?\.name\}<\/b>/);
+  assert.match(desk, /<Field label="이름">/);
+  assert.doesNotMatch(desk, /linked-group-context/);
   assert.match(source, /spans=\{sourceDocumentSpans\(order\.analysisRaw \?\? order\.raw, order\)\}/);
   assert.match(linked, /c\.active === key \? " linked-active" : ""/);
   assert.match(linked, /linked-recipient-context/);
   assert.match(css, /\.linked-token\.linked-recipient-context:not\(\.linked-active\)/);
   assert.match(css, /\.linked-token\.linked-active/);
-  assert.match(css, /\.recipient-review\.linked-group-context/);
+  assert.doesNotMatch(css, /\.recipient-review\.linked-group-context/);
 });
 
-test("source evidence uses fill without permanent borders; detail highlights stay inside actual controls", () => {
+test("source chips have no permanent border; selected fields use four-sided blue fill and stroke", () => {
   const css = read("src/styles/receipt-document.css");
-  const source = css.split("/* Classified source spans")[1]?.split(".hub-panels .review-pane .recipient-review.linked-group-context")[0];
+  const source = css.split("/* Classified source spans")[1]?.split("/* Recipient ownership is already represented")[0] ?? "";
   const details = css.split("/* Highlight the actual input's inner box")[1] ?? "";
   assert.ok(source, "source highlight contract missing");
   assert.match(source, /\.linked-token\s*\{[\s\S]*?border: 0;/);
-  assert.match(source, /\.linked-token\.linked-active\s*\{[\s\S]*?box-shadow: inset 0 -2px 0 #75b5ff/);
-  assert.doesNotMatch(source, /border: 2px solid|border-color:/);
+  assert.match(source, /\.linked-token\.linked-active\s*\{[\s\S]*?background: #17436d !important;[\s\S]*?box-shadow: inset 0 0 0 1px #75b5ff !important;/);
+  assert.doesNotMatch(source, /border: 2px solid|border-color:|box-shadow: inset 0 -2px/);
   assert.match(details, /\.linked-field\.linked-active\s*\{[\s\S]*?outline: none !important;/);
-  assert.match(details, /\.linked-field\.linked-active \.field :is\(input, select, textarea\)\s*\{[\s\S]*?box-shadow: inset 0 0 0 2px #75b5ff/);
+  assert.match(details, /\.linked-field\.linked-active \.field :is\(input, select, textarea\)\s*\{[\s\S]*?background: #17436d !important;[\s\S]*?color: #eaf4ff !important;[\s\S]*?box-shadow: inset 0 0 0 2px #75b5ff !important;/);
   assert.doesNotMatch(details, /outline: 2px solid #75b5ff/);
 });
 
@@ -270,14 +273,12 @@ test("product visual extension must not capture independently linked recipient n
   assert.equal(spans.find((s) => s.field === "name")?.text, "김가상");
 });
 
-test("neutral source highlights are filled chips and grey recipient context stays within its real field grid", () => {
+test("neutral source highlights remain filled chips without grey detail-card overlays", () => {
   const css = read("src/styles/receipt-document.css");
-  const source = css.split("/* Classified source spans")[1]?.split("/* Keep the contextual grey signal")[0] ?? "";
-  const group = css.split("/* Keep the contextual grey signal")[1]?.split("/* Highlight the actual input's inner box")[0] ?? "";
+  const source = css.split("/* Classified source spans")[1]?.split("/* Recipient ownership is already represented")[0] ?? "";
   assert.match(source, /\.linked-token\s*\{[\s\S]*?background: #424242;[\s\S]*?border: 0;[\s\S]*?border-radius: 4px;[\s\S]*?padding: 1px 3px;/);
   assert.match(source, /-webkit-box-decoration-break: clone;/);
   assert.doesNotMatch(source, /border: 2px solid|border-color:/);
-  assert.match(group, /\.recipient-review\.linked-group-context\s*\{\s*background: transparent;\s*outline: none;\s*box-shadow: none;/);
-  assert.match(group, /\.recipient-review\.linked-group-context > \.recipient-fields\s*\{\s*background: rgba\(128, 128, 128, 0\.08\);\s*box-shadow: inset 3px 0 0 #777;/);
-  assert.doesNotMatch(group, /outline-offset: -2px|outline: 1px solid/);
+  assert.doesNotMatch(css, /\.recipient-review\.linked-group-context/);
+  assert.doesNotMatch(css, /box-shadow: inset 3px 0 0 #777/);
 });
