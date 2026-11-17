@@ -19,9 +19,9 @@ export async function run(page,{record,snap,paste,chooseDealer}){
   assert.equal(initial.stored,0);
   record("ORDERS_INITIAL_ASSIGNED_DRAFT_IN_BOARD",initial);
 
-  // Regression for a real report: the board has completed shipments from
-  // prior orders and two unsaved unassigned receipts. Clicking either receipt
-  // must not silently select the first shipment and its existing dealer.
+  // Regression: a prior dealer-assigned draft still has a valid shipment
+  // on the board. Two new unassigned receipts must not inherit that dealer
+  // when the user explicitly clicks their own pending cards.
   for (const recipient of ["정가상", "박가상"]) {
     await page.getByRole("button",{name:/새 주문/}).first().click();
     await paste(page,recipient,"709 1개");

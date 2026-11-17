@@ -17,7 +17,11 @@ test("each domain has an independent real Tauri Windows GUI entry",()=>{
   assert.match(source,/chromium\.connectOverCDP/);
   assert.ok(source.includes("127\\.0\\.0\\.1:5173"));
   assert.match(source,/tabs\.some\(t=>t\.type==="page"\)/);
-  assert.match(read("scripts/ci-domains/orders.mjs"),/probeTwoConsecutiveOrders/);
+  const orders=read("scripts/ci-domains/orders.mjs");
+  assert.match(orders,/ORDERS_UNASSIGNED_EXPLICIT_SELECTION_RETAINED/);
+  assert.match(orders,/ORDERS_RETAINED_UNASSIGNED_ASSIGNMENT/);
+  // The full suite still tests durable multi-order confirmations separately.
+  assert.match(read("scripts/migration32-dev-business-ui.mjs"),/probeTwoConsecutiveOrders/);
   assert.match(read("scripts/ci-domains/factory.mjs"),/probeFactoryReplyNotifications/);
   assert.match(source,/BANDO_DEV_DOMAIN_PASS/);
   assert.match(source,/import\("\.\/ci-domains\/"/);
