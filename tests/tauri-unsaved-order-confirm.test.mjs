@@ -41,5 +41,6 @@ test("unconditional order save is removed, workflow one-touch progression remain
   assert.doesNotMatch(footer, /주문 저장/);
   assert.doesNotMatch(order, /onSave=\{\(\) => void run\(\(\) => onWorkflowSave\(flowState\)\)\}/);
   assert.match(order, /<WorkflowFooter/);
-  assert.match(app, /onWorkflowSave=\{model\.onWorkflowSave\}/);
+  assert.match(app, /const workspaceWorkflowSave = useEventCallback\(model\.onWorkflowSave\)/);
+  assert.match(app, /onWorkflowSave=\{workspaceWorkflowSave\}/);
 });
