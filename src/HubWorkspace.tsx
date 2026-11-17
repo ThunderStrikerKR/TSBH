@@ -538,7 +538,6 @@ export function HubWorkspace(props: Props) {
           messages,
         )}
       <div className="hub-order-engine">
-        {source && messages && (
         <MemoOrderDesk
           {...props}
           key={receptionOrder.id + ":reception:" + discardRevision}
@@ -553,8 +552,6 @@ export function HubWorkspace(props: Props) {
           linkController={linkController}
           onWorkflowSave={saveWorkflowLive}
         />
-        )}
-        {details && (
         <MemoOrderDesk
           {...props}
           key={(detail?.id ?? draft.id) + ":details:" + discardRevision}
@@ -573,7 +570,6 @@ export function HubWorkspace(props: Props) {
           onWorkflowSave={saveWorkflowLive}
           onSave={saveDetailLive}
         />
-        )}
       </div>
       {manual && (
         <Suspense fallback={null}>
