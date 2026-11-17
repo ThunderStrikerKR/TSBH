@@ -1282,13 +1282,10 @@ pub fn run() {
                     let ready_window = window.clone();
                     let app = window.app_handle().clone();
                     std::thread::spawn(move || {
-                        // On WebView2/frameless Windows the Win32 zoom bit can
-                        // revert after the first successful maximize. Reconcile
-                        // only during initial window creation, not as a permanent
-                        // watchdog (normal user restore must remain possible).
-                        // Each check is a no-op when already maximized.
-                        for pass in 1..=24u64 {
-                            let delay_ms = 250u64;
+                        // The plugin already restores saved MAXIMIZED on
+                        // window-ready. Reconcile only twice after initial
+                        // show; do not keep overriding a user's normal restore.
+                        for (pass, delay_ms) in [(1, 650u64), (2, 1750u64)] {
                             std::thread::sleep(std::time::Duration::from_millis(delay_ms));
                             if std::env::var_os("GITHUB_ACTIONS").is_some() {
                                 eprintln!("BANDO_WINDOW_RESTORE_DISPATCH pass={pass}");

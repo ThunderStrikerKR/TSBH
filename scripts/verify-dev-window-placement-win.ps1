@@ -39,6 +39,29 @@ public static class BandoDevWindowProbe {
   public static extern bool GetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT p);
   [DllImport("user32.dll", SetLastError=true, EntryPoint="GetWindowLongPtrW")]
   public static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int nIndex);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+  public static extern int GetWindowTextW(IntPtr hwnd, System.Text.StringBuilder text, int max);
+  [DllImport("user32.dll", SetLastError=true)]
+  public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+  public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr param);
+  [DllImport("user32.dll", SetLastError=true)]
+  public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr param);
+  public static IntPtr FindBandoMainWindow(uint ownerPid) {
+    IntPtr result=IntPtr.Zero;
+    EnumWindows((hwnd,param) => {
+      uint pid;
+      GetWindowThreadProcessId(hwnd, out pid);
+      if(pid!=ownerPid)return true;
+      var text=new System.Text.StringBuilder(256);
+      GetWindowTextW(hwnd,text,text.Capacity);
+      if(text.ToString().StartsWith("반도허브 BANDO HUB",StringComparison.Ordinal)) {
+        result=hwnd;
+        return false;
+      }
+      return true;
+    },IntPtr.Zero);
+    return result;
+  }
 }
 '@
 $appRoot=Join-Path $env:APPDATA "com.bandostand.bandohub.tauri"
@@ -52,13 +75,20 @@ $vite=$null
 $script:restartSequence=0
 $script:lastRestartError=$null
 
+function Get-MainHwnd([System.Diagnostics.Process]$process) {
+  $process.Refresh()
+  if($process.HasExited){ throw "Native Tauri process exited" }
+  $hwnd=[BandoDevWindowProbe]::FindBandoMainWindow([uint32]$process.Id)
+  if($hwnd -eq [IntPtr]::Zero){
+    throw "No titled BANDO HUB main HWND owned by process $($process.Id)"
+  }
+  return $hwnd
+}
 function Get-WindowRect([System.Diagnostics.Process]$process) {
   $process.Refresh()
-  if ($process.HasExited -or $process.MainWindowHandle -eq [IntPtr]::Zero) {
-    throw "Native DEV HWND disappeared"
-  }
+  $hwnd=Get-MainHwnd $process
   $rect=New-Object BandoDevWindowProbe+RECT
-  if (![BandoDevWindowProbe]::GetWindowRect($process.MainWindowHandle,[ref]$rect)) {
+  if (![BandoDevWindowProbe]::GetWindowRect($hwnd,[ref]$rect)) {
     throw "GetWindowRect failed"
   }
   return @{x=$rect.Left; y=$rect.Top;
@@ -67,7 +97,7 @@ function Get-WindowRect([System.Diagnostics.Process]$process) {
 function Close-Gracefully([System.Diagnostics.Process]$process) {
   $process.Refresh()
   if ($process.HasExited) { throw "Native process exited before WM_CLOSE" }
-  if (![BandoDevWindowProbe]::PostMessage($process.MainWindowHandle,
+  if (![BandoDevWindowProbe]::PostMessage((Get-MainHwnd $process),
       [uint32]0x0010,[UIntPtr]::Zero,[IntPtr]::Zero)) { throw "WM_CLOSE failed" }
   if (!$process.WaitForExit(20000)) { throw "Native app ignored graceful close" }
   # Get-Process attaches to the existing Tauri child; its ExitCode can be null.
@@ -116,7 +146,7 @@ function Start-Again {
     Start-Sleep -Milliseconds 250
     $process.Refresh()
     if ($process.HasExited) { throw "Restarted DEV exe exited: $($process.ExitCode)" }
-    if ($process.MainWindowHandle -ne [IntPtr]::Zero) {
+    if ([BandoDevWindowProbe]::FindBandoMainWindow([uint32]$process.Id) -ne [IntPtr]::Zero) {
       Start-Sleep -Milliseconds 900
       return $process
     }
@@ -133,9 +163,9 @@ try {
   $x=$screen.Left+[Math]::Max(0,[Math]::Min(87,$screen.Width-$width))
   $y=$screen.Top+[Math]::Max(0,[Math]::Min(63,$screen.Height-$height))
   # Force restore first so a previous maximized window does not mask SetWindowPos.
-  [BandoDevWindowProbe]::ShowWindow($first.MainWindowHandle,9) | Out-Null
+  [BandoDevWindowProbe]::ShowWindow((Get-MainHwnd $first),9) | Out-Null
   Start-Sleep -Milliseconds 250
-  if (![BandoDevWindowProbe]::SetWindowPos($first.MainWindowHandle,
+  if (![BandoDevWindowProbe]::SetWindowPos((Get-MainHwnd $first),
       [IntPtr]::Zero,$x,$y,$width,$height,[uint32]0x0014)) {
     throw "Cannot position the original DEV native window"
   }
@@ -159,9 +189,9 @@ try {
   Write-Host "DEV_WINDOW_RECT_RESTORED: $($restored | ConvertTo-Json -Compress)"
   # Native maximize exercises the plugin's maximized state even if DEV
   # WebView2 is still loading; Release titlebar click is separately audited.
-  [BandoDevWindowProbe]::ShowWindow($second.MainWindowHandle,3) | Out-Null
+  [BandoDevWindowProbe]::ShowWindow((Get-MainHwnd $second),3) | Out-Null
   Start-Sleep -Milliseconds 850
-  if (![BandoDevWindowProbe]::IsZoomed($second.MainWindowHandle)) {
+  if (![BandoDevWindowProbe]::IsZoomed((Get-MainHwnd $second))) {
     throw "Native DEV window failed to maximize"
   }
   Close-Gracefully $second
@@ -172,20 +202,20 @@ try {
   # Check final stable Win32 zoom after the startup reconciliation period.
   $zoomTimeline=New-Object 'System.Collections.Generic.List[bool]'
   for($i=0;$i -lt 70;$i++) {
-    $zoomTimeline.Add([BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle))
+    $zoomTimeline.Add([BandoDevWindowProbe]::IsZoomed((Get-MainHwnd $third)))
     Start-Sleep -Milliseconds 100
   }
   Write-Host "DEV_WINDOW_ZOOM_TIMELINE: samples=$($zoomTimeline.Count) first=$($zoomTimeline[0]) last=$($zoomTimeline[$zoomTimeline.Count-1]) falseCount=$(($zoomTimeline | Where-Object { !$_ }).Count)"
   $placement=New-Object BandoDevWindowProbe+WINDOWPLACEMENT
   $placement.length=[System.Runtime.InteropServices.Marshal]::SizeOf([type][BandoDevWindowProbe+WINDOWPLACEMENT])
-  $placementOk=[BandoDevWindowProbe]::GetWindowPlacement($third.MainWindowHandle,[ref]$placement)
-  $style=[BandoDevWindowProbe]::GetWindowLongPtr($third.MainWindowHandle,-16).ToInt64()
+  $placementOk=[BandoDevWindowProbe]::GetWindowPlacement((Get-MainHwnd $third),[ref]$placement)
+  $style=[BandoDevWindowProbe]::GetWindowLongPtr((Get-MainHwnd $third),-16).ToInt64()
   $win32MaxStyle=($style -band 0x01000000) -ne 0
-  Write-Host "DEV_WINDOW_WIN32_PLACEMENT: ok=$placementOk cmd=$($placement.showCmd) styleMax=$win32MaxStyle style=$style hwnd=$($third.MainWindowHandle)"
+  Write-Host "DEV_WINDOW_WIN32_PLACEMENT: ok=$placementOk cmd=$($placement.showCmd) styleMax=$win32MaxStyle style=$style hwnd=$((Get-MainHwnd $third))"
 
-  if (![BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle)) {
+  if (![BandoDevWindowProbe]::IsZoomed((Get-MainHwnd $third))) {
     $rect=Get-WindowRect $third
-    Write-Host "DEV_WINDOW_MAXIMIZED_FAILURE_DIAGNOSTIC: saved=true rect=$($rect | ConvertTo-Json -Compress) hwnd=$($third.MainWindowHandle)"
+    Write-Host "DEV_WINDOW_MAXIMIZED_FAILURE_DIAGNOSTIC: saved=true rect=$($rect | ConvertTo-Json -Compress) hwnd=$((Get-MainHwnd $third))"
     if($script:lastRestartError -and (Test-Path -LiteralPath $script:lastRestartError)) {
       Get-Content -LiteralPath $script:lastRestartError -ErrorAction SilentlyContinue |
         Where-Object { $_ -match "BANDO_WINDOW_RESTORE|BANDO native maximize" } |
@@ -193,9 +223,9 @@ try {
     }
     # Distinguish an incorrectly invoked native restore from a HWND
     # incapable of entering Win32 zoom state.
-    [BandoDevWindowProbe]::ShowWindow($third.MainWindowHandle,3) | Out-Null
+    [BandoDevWindowProbe]::ShowWindow((Get-MainHwnd $third),3) | Out-Null
     Start-Sleep -Milliseconds 200
-    $manualZoom=[BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle)
+    $manualZoom=[BandoDevWindowProbe]::IsZoomed((Get-MainHwnd $third))
     Write-Host "DEV_WINDOW_MANUAL_NATIVE_MAXIMIZE: $manualZoom"
     throw "DEV maximized window did not restore after restart"
   }

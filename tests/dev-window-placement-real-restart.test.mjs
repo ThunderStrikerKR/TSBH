@@ -15,6 +15,11 @@ test("DEV CI tests actual native window state across three EXE launches",()=>{
  assert.match(native,/Close-Gracefully \$second/);
  assert.match(native,/\$third=Start-Again/);
  assert.match(native,/IsZoomed/);
+ assert.match(native,/FindBandoMainWindow/);
+ assert.match(native,/GetWindowThreadProcessId/);
+ assert.match(native,/DEV_WINDOW_WIN32_PLACEMENT/);
+ assert.match(native,/DEV_WINDOW_ZOOM_TIMELINE/);
+ assert.doesNotMatch(native,/\.MainWindowHandle/);
  assert.match(native,/window-state-developer\.json/);
  assert.match(native,/window-state\.json/);
  assert.match(native,/DEV_WINDOW_RESTART_PASS/);
