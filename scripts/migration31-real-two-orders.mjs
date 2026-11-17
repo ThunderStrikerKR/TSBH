@@ -175,6 +175,9 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
         return {
           text,
           summaryChildren:sum?.children.length ?? 0,
+          rightAligned:!!sum && !!sum.querySelector(".flow-summary-payment") &&
+            Math.abs(sum.querySelector(".flow-summary-payment").getBoundingClientRect().right -
+              sum.getBoundingClientRect().right) <= 8,
           whitespace:innerStyle?.whiteSpace,
           cardBorder:parseFloat(style.borderTopWidth),
           cardMargin:parseFloat(style.marginBottom),
@@ -182,10 +185,11 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
       }));
     assert.equal(compact.length,2);
     assert.ok(compact.every(card =>
-      /^배송 \d+건, 입금액 .+ \(부가세 .+\)$/.test(card.text) &&
-      !card.text.includes("총 운임") &&
+      /^배송 \d+건(?:\s*\(부가세 포함\)\s*)?[\d,]+원$/.test(card.text) &&
+      !card.text.includes("입금액") && !card.text.includes("부가세 별도") &&
       card.summaryChildren===1 &&
       card.whitespace==="nowrap" &&
+      card.rightAligned &&
       card.cardBorder>=1 && card.cardMargin>=6),
       "SIM32_COMPACT_CARD_FORMAT "+JSON.stringify(compact));
     record("SIM32_COMPACT_WORKFLOW_CARDS actual WebView2 1-line summary and distinct order borders",compact);

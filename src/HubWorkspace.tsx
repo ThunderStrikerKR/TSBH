@@ -260,17 +260,55 @@ export function HubWorkspace(props: Props) {
     }
   };
   leaveGuardRef.current = async (intent = "switch") => {
-    let handledTemporary = false;
-    if (temporaryReceipts.length && intent === "navigate") {
-      // One decision covers ALL unfinished receipts, not only the last
-      // AppModel draft. No incomplete order is silently written to SQLite.
+    const orderId = selected?.orderId ?? receptionId;
+    const persisted = state.orders.find((order) => order.id === orderId);
+    const pending = orderId === draft.id ? draft : edits[orderId];
+    const savedOrderDirty = Boolean(
+      persisted && pending && JSON.stringify(pending) !== JSON.stringify(persisted),
+    );
+
+    // Obtain both decisions before changing any stored or temporary draft.
+    // Cancelling either dialog must never partially discard work.
+    let savedChoice: "save" | "discard" | undefined;
+    if (savedOrderDirty) {
+      const choice = await askSaveChanges(
+        "수정한 주문 정보가 저장되지 않았습니다. 저장하고 이동할까요?",
+      );
+      if (choice === "cancel") return { proceed: false, handledDraft: false };
+      savedChoice = choice;
+    }
+    let temporaryChoice: "save" | "discard" | undefined;
+    if (intent === "navigate" && temporaryReceipts.length) {
       const choice = await askSaveChanges(
         `미완성 발주서 ${temporaryReceipts.length}건이 임시 보관 중입니다. 주문 확인 완료 전에는 주문 내역에 저장되지 않으며, 프로그램을 종료하면 사라집니다. 어떻게 할까요?`,
         { save: "임시 보관하고 이동", discard: "모두 버리고 이동", cancel: "취소" },
       );
       if (choice === "cancel") return { proceed: false, handledDraft: false };
+      temporaryChoice = choice;
+    }
+
+    if (savedChoice === "save") {
+      try {
+        await onSave(await nativeReconcileWorkflow(state, pending!));
+      } catch (error) {
+        props.onNotice(error instanceof Error ? error.message : String(error), "error");
+        return { proceed: false, handledDraft: false };
+      }
+    } else if (savedChoice === "discard") {
+      if (orderId === draft.id) props.onChange(structuredClone(persisted!));
+      setEdits((previous) => {
+        if (!(orderId in previous)) return previous;
+        const next = { ...previous };
+        delete next[orderId];
+        return next;
+      });
+      setDiscardRevision((value) => value + 1);
+    }
+
+    let handledTemporary = false;
+    if (temporaryChoice) {
       const ids = new Set(temporaryReceipts.map((order) => order.id));
-      if (choice === "discard") {
+      if (temporaryChoice === "discard") {
         setEdits((previous) =>
           Object.fromEntries(Object.entries(previous).filter(([id]) => !ids.has(id))));
         if (ids.has(draft.id)) {
@@ -286,42 +324,17 @@ export function HubWorkspace(props: Props) {
         setEdits((previous) => ({ ...previous, [draft.id]: structuredClone(draft) }));
       }
       handledTemporary = true;
-    } else if (temporaryReceipts.length && intent === "close") {
-      // useAppModel already showed a single explicit close/loss warning for
-      // the complete unfinished count. Never offer fake temporary saving
-      // just before closing and destroying the in-memory drafts.
+    } else if (intent === "close" && temporaryReceipts.length) {
+      // AppModel already warned about all temporary drafts before closing.
       handledTemporary = true;
     } else if (intent === "switch" && temporaryReceipts.some((order) => order.id === draft.id)) {
       setEdits((previous) => ({ ...previous, [draft.id]: structuredClone(draft) }));
       handledTemporary = true;
     }
-    const orderId = selected?.orderId ?? receptionId;
-    const persisted = state.orders.find((order) => order.id === orderId);
-    const pending = orderId === draft.id ? draft : edits[orderId];
-    if (!persisted || !pending || JSON.stringify(pending) === JSON.stringify(persisted))
-      return { proceed: true, handledDraft: handledTemporary };
-    const choice = await askSaveChanges(
-      "수정한 주문 정보가 저장되지 않았습니다. 저장하고 이동할까요?",
-    );
-    if (choice === "cancel") return { proceed: false, handledDraft: false };
-    if (choice === "save") {
-      try {
-        await onSave(await nativeReconcileWorkflow(state, pending));
-      } catch (error) {
-        props.onNotice(error instanceof Error ? error.message : String(error), "error");
-        return { proceed: false, handledDraft: false };
-      }
-    } else {
-      if (orderId === draft.id) props.onChange(structuredClone(persisted));
-      setEdits((previous) => {
-        if (!(orderId in previous)) return previous;
-        const next = { ...previous };
-        delete next[orderId];
-        return next;
-      });
-      setDiscardRevision((value) => value + 1);
-    }
-    return { proceed: true, handledDraft: handledTemporary || orderId === draft.id };
+    return {
+      proceed: true,
+      handledDraft: handledTemporary || (savedOrderDirty && orderId === draft.id),
+    };
   };
   useEffect(() => {
     props.onRegisterOrderLeaveGuard?.((intent) => leaveGuardRef.current(intent));

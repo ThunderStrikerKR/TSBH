@@ -13,8 +13,11 @@ const manager = read("src/ClientManager.tsx");
 test("workflow summary uses one line for shipments, deposit and normalized tax status", () => {
   const block = board.slice(board.indexOf('className="flow-fixed-summary"'), board.indexOf('{(g.needsNotice'));
   assert.equal((block.match(/className="flow-summary-compact"/g) || []).length, 1);
-  assert.match(block, /배송 \{ss\.length\}건, 입금액 \{won\(nativeGroup\?\.totals\.total \?\? null\)\}/);
-  assert.match(block, /nativeGroup\?\.vatLabel/);
+  assert.match(block, /배송 \{ss\.length\}건/);
+  assert.match(block, /className="flow-summary-payment"/);
+  assert.match(block, /nativeGroup\?\.vatLabel === "부가세 포함"/);
+  assert.match(block, /won\(nativeGroup\?\.totals\.total \?\? null\)/);
+  assert.doesNotMatch(block, /입금액 |\(부가세 별도\)/);
   assert.doesNotMatch(block, /총 운임|입금 예정|미확정 · 임시/);
   const rust = read("src-tauri/src/business_core/rules/workflow_preview.rs");
   for (const label of ["부가세 포함", "부가세 별도", "부가세 포함/별도"]) assert.ok(rust.includes(label));
