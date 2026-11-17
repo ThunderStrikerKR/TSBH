@@ -1,6 +1,6 @@
 import { nativePaymentWasCopied } from "./native-automatic-message";
 import { useNativeWorkflowBoard } from "./orders/useNativeWorkflowBoard";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { auditReactRender } from "./perf-audit";
 import { confirmAction } from "./dialogs";
 import { won } from "./domain";
@@ -597,3 +597,6 @@ function GroupManagement({
     </Modal>
   );
 }
+
+/** Shallow props equality is safe because HubWorkspace passes stable event wrappers. */
+export const MemoWorkflowBoard = memo(WorkflowBoard);

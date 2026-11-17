@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { auditReactRender } from "./perf-audit";
 
 import { nativeAutomaticMessage, nativeDecorateCopyText, type NativeAutomaticMessage } from "./native-automatic-message";
@@ -156,3 +156,6 @@ export function MessageWorkspace({
     </aside>
   );
 }
+
+/** Shallow props equality is safe because HubWorkspace passes stable event wrappers. */
+export const MemoMessageWorkspace = memo(MessageWorkspace);

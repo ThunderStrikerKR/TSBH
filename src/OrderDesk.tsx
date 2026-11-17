@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { auditReactRender } from "./perf-audit";
 import { CorrectionPanel } from "./CorrectionPanel";
 import { ActualFreightField } from "./ActualFreightField";
@@ -800,3 +800,6 @@ export function OrderDesk(props: OrderDeskProps) {
     </LinkContext.Provider>
   );
 }
+
+/** Shallow props equality is safe because HubWorkspace passes stable event wrappers. */
+export const MemoOrderDesk = memo(OrderDesk);

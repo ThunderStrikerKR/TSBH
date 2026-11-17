@@ -1,13 +1,14 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { useEventCallback } from "./shared/useEventCallback";
 import { auditReactRender } from "./perf-audit";
 import { createPortal, flushSync } from "react-dom";
 import { HubPanels, defaultPanels } from "./HubPanels";
 import { askSaveChanges } from "./dialogs";
 import { requestPageLeave } from "./shared/page-leave";
 import { LinkContext } from "./LinkedText";
-import { MessageWorkspace } from "./MessageWorkspace";
-import { OrderDesk } from "./OrderDesk";
-import { WorkflowBoard, type WorkflowSelection } from "./WorkflowBoard";
+import { MemoMessageWorkspace as MessageWorkspace } from "./MessageWorkspace";
+import { OrderDesk, MemoOrderDesk } from "./OrderDesk";
+import { MemoWorkflowBoard as WorkflowBoard, type WorkflowSelection } from "./WorkflowBoard";
 import { newReception } from "./orders/reception";
 import { nativeReconcileWorkflow } from "./orders/native-rules";
 import { useNativeWorkflowReconcile } from "./orders/useNativeWorkflowReconcile";
@@ -125,11 +126,17 @@ export function HubWorkspace(props: Props) {
   const previewReady = nativeBase.ready && nativePreview.ready;
   // Share one live Rust projection only for exact draft and state identity.
   // Independent persisted/detail orders still own their own reconciliation.
-  const sharedCurrentDraftFlow = draft.clientId
-    ? { input: base, draft, value: nativePreview }
-    : receptionId === draft.id
-      ? { input: base, draft, value: unassignedDraftPreview }
-      : undefined;
+  const sharedCurrentDraftFlow = useMemo(() => {
+    const projected = draft.clientId ? nativePreview :
+      receptionId === draft.id ? unassignedDraftPreview : undefined;
+    return projected ? { input: base, draft, value: {
+      state: projected.state, ready: projected.ready, error: projected.error,
+    } } : undefined;
+  }, [
+    base, draft, receptionId, nativePreview.state, nativePreview.ready,
+    nativePreview.error, unassignedDraftPreview.state,
+    unassignedDraftPreview.ready, unassignedDraftPreview.error,
+  ]);
   // Keep the last settled Rust board on screen while the newest draft is
   // reconciled. The board is read-only until the newest result is ready.
   // This prevents the queue cards from disappearing/reappearing on paste.
@@ -270,37 +277,39 @@ export function HubWorkspace(props: Props) {
       ({ recipient: r }) =>
         active.startsWith(r.id + ":") || r.items.some((i) => active.startsWith(i.id + ":")),
     );
-  const linkController = {
+  const setSelectedLive = useEventCallback(setSelected);
+  const setActiveLive = useEventCallback((key: string) => {
+    setActive(key);
+    if (!key) return;
+    const target = activeShipments(preview).find((ship) =>
+      preview.orders.find((order) => order.id === ship.orderId)
+        ?.recipients.some((recipient) =>
+          recipient.id === ship.recipientId &&
+          (key.startsWith(recipient.id + ":") ||
+            recipient.items.some((item) => key.startsWith(item.id + ":"))),
+        ),
+    );
+    if (target)
+      setSelectedLive((previous) =>
+        previous?.shipmentId === target.id ? previous : {
+          orderId: target.orderId,
+          groupId: target.groupId,
+          shipmentId: target.id,
+        },
+      );
+  });
+  const linkController = useMemo(() => ({
     active,
     recipientId: linkedRecipient?.recipient.id,
-    setActive: (key: string) => {
-      setActive(key);
-      if (!key) return;
-      const target = activeShipments(preview).find((s) =>
-        preview.orders
-          .find((o) => o.id === s.orderId)
-          ?.recipients.some(
-            (r) =>
-              r.id === s.recipientId &&
-              (key.startsWith(r.id + ":") || r.items.some((i) => key.startsWith(i.id + ":"))),
-          ),
-      );
-      if (target)
-        setSelected((previous) =>
-          previous?.shipmentId === target.id
-            ? previous
-            : {
-                orderId: target.orderId,
-                groupId: target.groupId,
-                shipmentId: target.id,
-              },
-        );
-    },
-  };
-  const pendingWithoutClient = [draft, ...Object.values(edits)]
-    .filter((order) => order.raw.trim() && !order.clientId &&
-      !state.orders.some((saved) => saved.id === order.id))
-    .filter((order, index, all) => all.findIndex((row) => row.id === order.id) === index);
+    setActive: setActiveLive,
+  }), [active, linkedRecipient?.recipient.id, setActiveLive]);
+  const pendingWithoutClient = useMemo(() =>
+    [draft, ...Object.values(edits)]
+      .filter((order) => order.raw.trim() && !order.clientId &&
+        !state.orders.some((saved) => saved.id === order.id))
+      .filter((order, index, all) => all.findIndex((row) => row.id === order.id) === index),
+    [draft, edits, state.orders],
+  );
   const receptionOrder =
     receptionId === draft.id
       ? draft
@@ -340,6 +349,29 @@ export function HubWorkspace(props: Props) {
         : messageState.workflow?.groups.find((g) =>
             groupShipments(messageState, g.id).some((s) => s.orderId === messageOrder.id),
           )?.id;
+  // A parent repaint must not recreate event props for either live OrderDesk.
+  // Each wrapper executes the newest order and Rust workflow handlers.
+  const saveWorkflowLive = useEventCallback(onSave);
+  const changeReceptionLive = useEventCallback(changeReception);
+  const changeDetailLive = useEventCallback(changeDetail);
+  const saveDetailLive = useEventCallback(async () =>
+    onSave(await nativeReconcileWorkflow(base, detail ?? draft)),
+  );
+  const selectMessageLive = useEventCallback((id: string) => {
+    const shipment = messageState.workflow?.shipments.find((entry) => entry.id === id);
+    if (shipment) setSelectedLive({
+      orderId: shipment.orderId, groupId: shipment.groupId, shipmentId: shipment.id,
+    });
+  });
+  const selectPendingLive = useEventCallback((id: string) => {
+    if (id === draft.id || edits[id]) {
+      commitSelection(undefined);
+      setReceptionId(id);
+    }
+  });
+  const openManual = useCallback(() => setManual(true), []);
+  const receptionTargets = useMemo(() => ({ source, messages }), [source, messages]);
+  const detailTargets = useMemo(() => ({ details }), [details]);
   return (
     <div
       className="hub-live-workspace"
@@ -479,18 +511,13 @@ export function HubWorkspace(props: Props) {
               persistedState={base}
               selection={selected}
               activeKey={active}
-              onSelect={setSelected}
-              onSave={onSave}
+              onSelect={setSelectedLive}
+              onSave={saveWorkflowLive}
               onNotice={props.onNotice}
               onStageHover={setStageHover}
               stageHover={stageHover}
               pendingReceptions={pendingWithoutClient}
-              onSelectPending={(id) => {
-                if (id === draft.id || edits[id]) {
-                  commitSelection(undefined);
-                  setReceptionId(id);
-                }
-              }}
+              onSelectPending={selectPendingLive}
             />
           </section>,
         ]}
@@ -502,40 +529,30 @@ export function HubWorkspace(props: Props) {
               state={messageState}
               order={messageOrder}
               gid={messageReady ? messageGroup : undefined}
-              onOrder={(o) => {
-                changeReception(o);
-              }}
-              onSave={onSave}
-              onSelect={(id) => {
-                const s = messageState.workflow?.shipments.find((s) => s.id === id);
-                if (s)
-                  setSelected({
-                    orderId: s.orderId,
-                    groupId: s.groupId,
-                    shipmentId: s.id,
-                  });
-              }}
+              onOrder={changeReceptionLive}
+              onSave={saveWorkflowLive}
+              onSelect={selectMessageLive}
               onNotice={props.onNotice}
             />
           </LinkContext.Provider>,
           messages,
         )}
       <div className="hub-order-engine">
-        <OrderDesk
+        <MemoOrderDesk
           {...props}
           key={receptionOrder.id + ":reception:" + discardRevision}
           state={base}
           persistedOrders={state.orders}
           draft={receptionOrder}
           sharedNativeFlow={receptionOrder === draft ? sharedCurrentDraftFlow : undefined}
-          onChange={changeReception}
+          onChange={changeReceptionLive}
           viewMode="reception"
-          onManual={() => setManual(true)}
-          portalTargets={{ source, messages }}
+          onManual={openManual}
+          portalTargets={receptionTargets}
           linkController={linkController}
-          onWorkflowSave={onSave}
+          onWorkflowSave={saveWorkflowLive}
         />
-        <OrderDesk
+        <MemoOrderDesk
           {...props}
           key={(detail?.id ?? draft.id) + ":details:" + discardRevision}
           state={base}
@@ -544,14 +561,14 @@ export function HubWorkspace(props: Props) {
           sharedNativeFlow={(detail ?? draft) === draft ? sharedCurrentDraftFlow : undefined}
           suppressPassiveOrderEffects={receptionOrder === draft && (detail ?? draft) === draft}
           viewMode="details"
-          onManual={() => setManual(true)}
-          portalTargets={{ details }}
+          onManual={openManual}
+          portalTargets={detailTargets}
           linkController={linkController}
           workflowSelection={selected}
-          onSelectWorkflow={setSelected}
-          onChange={changeDetail}
-          onWorkflowSave={onSave}
-          onSave={async () => onSave(await nativeReconcileWorkflow(base, detail ?? draft))}
+          onSelectWorkflow={setSelectedLive}
+          onChange={changeDetailLive}
+          onWorkflowSave={saveWorkflowLive}
+          onSave={saveDetailLive}
         />
       </div>
       {manual && (
