@@ -114,13 +114,22 @@ export function HubWorkspace(props: Props) {
   const nativeBase = useNativeWorkflowReconcile(state, independentEdits);
   const base = nativeBase.state;
   const nativePreview = useNativeWorkflowReconcile(base, draft.clientId ? [draft] : []);
+  // The board intentionally excludes dealer-unassigned drafts, but both live
+  // OrderDesk panes still need the same Rust draft projection. Compute it once
+  // without publishing it to the workflow board or persisted SQLite state.
+  const unassignedDraftPreview = useNativeWorkflowReconcile(
+    base,
+    !draft.clientId && receptionId === draft.id ? [draft] : [],
+  );
   const preview = nativePreview.state;
   const previewReady = nativeBase.ready && nativePreview.ready;
-  // Share one live Rust projection only when both panes use the same draft
-  // identity and the exact same base state. Independent orders are unaffected.
+  // Share one live Rust projection only for exact draft and state identity.
+  // Independent persisted/detail orders still own their own reconciliation.
   const sharedCurrentDraftFlow = draft.clientId
     ? { input: base, draft, value: nativePreview }
-    : undefined;
+    : receptionId === draft.id
+      ? { input: base, draft, value: unassignedDraftPreview }
+      : undefined;
   // Keep the last settled Rust board on screen while the newest draft is
   // reconciled. The board is read-only until the newest result is ready.
   // This prevents the queue cards from disappearing/reappearing on paste.

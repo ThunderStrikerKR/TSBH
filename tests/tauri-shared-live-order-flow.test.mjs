@@ -8,11 +8,14 @@ test("both panes reuse only the exact matching parent Rust preview", () => {
   const order = read("src/orders/useOrderDesk.tsx");
   const reconcile = read("src/orders/useNativeWorkflowReconcile.ts");
   assert.match(hub, /sharedCurrentDraftFlow = draft\.clientId[\s\S]*?input: base, draft, value: nativePreview/);
+  assert.match(hub, /unassignedDraftPreview = useNativeWorkflowReconcile\([\s\S]*?!draft\.clientId && receptionId === draft\.id \? \[draft\] : \[\]/);
+  assert.match(hub, /receptionId === draft\.id[\s\S]*?input: base, draft, value: unassignedDraftPreview/);
   assert.match(hub, /sharedNativeFlow=\{receptionOrder === draft \? sharedCurrentDraftFlow : undefined\}/);
   assert.match(hub, /sharedNativeFlow=\{\(detail \?\? draft\) === draft \? sharedCurrentDraftFlow : undefined\}/);
   assert.match(order, /sharedNativeFlow\?\.input === state && sharedNativeFlow\.draft === draft/);
   assert.match(order, /useNativeWorkflowReconcile\(state, overlay, !upstreamFlow\)/);
   assert.match(reconcile, /if \(!enabled \|\| !latest\.current\.drafts\.length\) return/);
+  assert.match(reconcile, /state: enabled && ready && drafts\.length \? resolved!\.value : input/);
 });
 test("passive price, freight, and prepare edits have exactly one active pane owner", () => {
   const hub=read("src/HubWorkspace.tsx");
