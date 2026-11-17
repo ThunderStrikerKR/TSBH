@@ -1179,7 +1179,7 @@ pub fn run() {
         // restore_state() synchronously in another window-ready callback races
         // with that show. Defer one maximize to the native event-loop queue.
         .plugin(
-            tauri::plugin::Builder::new("bando-maximize-after-window-state")
+            tauri::plugin::Builder::<_, ()>::new("bando-maximize-after-window-state")
                 .on_window_ready(move |window| {
                     if !cfg!(target_os = "windows") || window.label() != "main" {
                         return;

@@ -48,6 +48,15 @@ try {
   for($i=0;$i -lt 1200;$i++) {
     Start-Sleep -Milliseconds 900
     if($cmd.HasExited) { throw "DEV launcher exited with $($cmd.ExitCode). See dev-stderr.txt" }
+    # tauri dev can keep its Vite child alive after a Rust compiler failure.
+    # Fail on the real compiler diagnostic instead of waiting ~18 minutes for
+    # a TEST SQLite / native HWND that cannot exist.
+    if (($i % 3) -eq 0 -and (Test-Path -LiteralPath $stderr)) {
+      $lastErrors=(Get-Content -LiteralPath $stderr -Tail 50 -ErrorAction SilentlyContinue) -join "`n"
+      if ($lastErrors -match 'could not compile|beforeDevCommand.*terminated with a non-zero status') {
+        throw "DEV native Rust build failed: $lastErrors"
+      }
+    }
     $native = @(Get-Process -Name "bando_hub_tauri" -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$repo*" } | Select-Object -First 1)
     if((Test-Path $testDb) -and $native.Count -gt 0) { $ready=$true; break }
   }
