@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { useEventCallback } from "./shared/useEventCallback";
 import { auditReactRender } from "./perf-audit";
 import { createPortal, flushSync } from "react-dom";
@@ -592,3 +592,6 @@ export function HubWorkspace(props: Props) {
     </div>
   );
 }
+
+/** Skip App-only repaints while workspace props are unchanged. */
+export const MemoHubWorkspace = memo(HubWorkspace);

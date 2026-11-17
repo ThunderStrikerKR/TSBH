@@ -1,5 +1,5 @@
 import { businessCoreCall } from "./tauri-bridge";
-import type { State } from "./types";
+import type { Order, State } from "./types";
 import { FactoryNotifications } from "./FactoryNotifications";
 import { FactoryReplyWatcher } from "./FactoryReplyWatcher";
 import { usePersistedNotifications } from "./app/usePersistedNotifications";
@@ -11,7 +11,8 @@ import { OrderHistory } from "./app/OrderHistory";
 import { useAppModel } from "./app/useAppModel";
 import { HubShell } from "./HubShell";
 import { KakaoDockPicker } from "./KakaoDockPicker";
-import { HubWorkspace } from "./HubWorkspace";
+import { MemoHubWorkspace as HubWorkspace } from "./HubWorkspace";
+import { useEventCallback } from "./shared/useEventCallback";
 import { NoticeContext } from "./shared/NoticeContext";
 import { EmptyState } from "./ui/PageHeading";
 import { ScreenBoundary } from "./ui/ScreenBoundary";
@@ -40,11 +41,25 @@ const WorkflowQueue = lazy(() =>
     default: module.WorkflowQueue,
   })),
 );
+const noopDockReset = () => {};
 export function App() {
   const [notifications, setNotifications] = useState(false);
   const lastNoticeId = useRef<number | undefined>(undefined);
   const model = useAppModel(),
     { state, draft, tab } = model;
+  // Dock/notification repaints must not recreate handlers for live orders.
+  const workspaceNew = useEventCallback(() => { void model.run(model.newOrder); });
+  const workspaceSettings = useEventCallback(() => { void model.navigate("설정"); });
+  const workspaceProducts = useEventCallback(() => { void model.navigate("상품"); });
+  const workspaceSelect = useEventCallback(model.onSelectWorkflow);
+  const workspaceWorkflowSave = useEventCallback(model.onWorkflowSave);
+  const workspaceSave = useEventCallback(model.saveOrder);
+  const workspaceCommit = useEventCallback(model.commit);
+  const workspaceChange = useEventCallback((
+    value: Order | ((previous: Order) => Order),
+  ) => model.setDraft((previous) =>
+    previous ? (typeof value === "function" ? value(previous) : value) : previous,
+  ));
   // Wait until the Tauri startup registered the managed SQLite connection.
   const { inbox, storageError, add: addNotification, markRead, clear } =
     usePersistedNotifications(Boolean(state && draft));
@@ -186,28 +201,24 @@ export function App() {
             <div className="hub-desk-host" hidden={tab !== "접수"}>
               <ScreenBoundary onRetry={model.refresh} onError={model.setNotice}>
                 <HubWorkspace
-                  onNew={() => void model.run(model.newOrder)}
-                  onSettings={() => void model.navigate("설정")}
+                  onNew={workspaceNew}
+                  onSettings={workspaceSettings}
                   onRawEditDirty={model.setRawEditDirty}
                   onPendingDraftCount={model.setPendingDraftCount}
                   onRememberSelection={model.setWorkflowSelection}
                   onRegisterOrderLeaveGuard={model.registerOrderLeaveGuard}
                   externalKakao={true}
-                  onResetDock={() => {}}
+                  onResetDock={noopDockReset}
                   workflowSelection={model.workflowSelection}
-                  onSelectWorkflow={model.onSelectWorkflow}
-                  onWorkflowSave={model.onWorkflowSave}
+                  onSelectWorkflow={workspaceSelect}
+                  onWorkflowSave={workspaceWorkflowSave}
                   state={state}
                   draft={draft}
-                  onChange={(value) =>
-                    model.setDraft((previous) =>
-                      previous ? (typeof value === "function" ? value(previous) : value) : previous,
-                    )
-                  }
-                  onSave={model.saveOrder}
-                  onSaveState={model.commit}
+                  onChange={workspaceChange}
+                  onSave={workspaceSave}
+                  onSaveState={workspaceCommit}
                   onNotice={model.setNotice}
-                  onManageProducts={() => model.navigate("상품")}
+                  onManageProducts={workspaceProducts}
                 />
               </ScreenBoundary>
             </div>
