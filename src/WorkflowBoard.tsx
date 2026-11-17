@@ -386,11 +386,9 @@ export function WorkflowBoard({
                 </svg>
               </button>
             </header>
-            {first.order.orderType !== "RETAIL" && (
-              <div className="workflow-progress">
-                {step === 3 && (
-                  <b className="waiting-payment">{won(nativeGroup?.totals.total ?? null)}</b>
-                )}
+            <div className="workflow-action-line">
+              {first.order.orderType !== "RETAIL" && (
+                <div className="workflow-progress">
                 <button
                   className="primary"
                   disabled={!ready || busy || remaining > 0 || ss.some((s) => s.transferred)}
@@ -439,9 +437,9 @@ export function WorkflowBoard({
                 >
                   ↶
                 </button>
-              </div>
-            )}
-            <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
+                </div>
+              )}
+              <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
               <div className="flow-summary-compact">
                 <span>배송 {ss.length}건</span>
                 <span className="flow-summary-payment">
@@ -449,6 +447,7 @@ export function WorkflowBoard({
                   {won(nativeGroup?.totals.total ?? null)}
                 </span>
               </div>
+            </div>
             </div>
             {(g.needsNotice || ss.some((s) => s.rechecks?.some((c) => !c.resolvedAt))) && (
               <div className="flow-recheck">
