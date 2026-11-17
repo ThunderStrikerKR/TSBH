@@ -296,7 +296,7 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
     // do not also add the generic missing-dealer action.
     let dealer_match_action=issues.iter().any(|issue|
         ["CLIENT_MATCH_ERROR","CLIENT_MATCH_CONFLICT"].contains(
-            &str_field(issue,"kind").as_str()));
+            &str_field(issue,"kind")));
     if str_field(o,"clientId").is_empty() &&
        str_field(o,"orderType")!="RETAIL" && !dealer_match_action {
         add(&mut issues,o,None,None,"CLIENT","거래처를 선택하면 단가가 적용됩니다",
