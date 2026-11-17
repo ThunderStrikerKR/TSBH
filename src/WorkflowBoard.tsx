@@ -291,6 +291,15 @@ export function WorkflowBoard({
                   "계좌 안내 완료",
                   first.client.payment === "POSTPAID" ? "후불 출고 승인" : "입금 확인 완료",
                 ][step];
+        // The Rust preview already decides VAT per shipment. Present mixed
+        // groups with actual included/excluded counts, not the ambiguous
+        // native shorthand "부가세 포함/별도".
+        const vatIncludedCount = nativeGroup?.shipments.filter((shipment) => shipment.vatIncluded).length ?? 0;
+        const vatExcludedCount = nativeGroup ? nativeGroup.shipments.length - vatIncludedCount : 0;
+        const mixedVat = vatIncludedCount > 0 && vatExcludedCount > 0;
+        const vatDescription = mixedVat
+          ? `부가세 포함 ${vatIncludedCount}건 · 부가세 별도 ${vatExcludedCount}건`
+          : vatIncludedCount > 0 ? "부가세 포함" : "부가세 별도";
         const remaining = Math.max(
             0,
             Math.ceil(((stageDeadlines[g.id] ?? 0) - Math.max(clock, Date.now())) / 1000),
@@ -442,8 +451,14 @@ export function WorkflowBoard({
               <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
               <div className="flow-summary-compact">
                 <span>배송 {ss.length}건</span>
-                <span className="flow-summary-payment">
-                  {nativeGroup?.vatLabel === "부가세 포함" && <span>(부가세 포함) </span>}
+                {nativeGroup && vatIncludedCount > 0 && (
+                  <span className="flow-summary-vat" title={vatDescription}
+                    aria-label={vatDescription}>
+                    {mixedVat ? `포함${vatIncludedCount}·별도${vatExcludedCount}` : "부가세 포함"}
+                  </span>
+                )}
+                <span className="flow-summary-payment"
+                  title={nativeGroup ? vatDescription : "부가세 계산 확인 중"}>
                   {won(nativeGroup?.totals.total ?? null)}
                 </span>
               </div>
