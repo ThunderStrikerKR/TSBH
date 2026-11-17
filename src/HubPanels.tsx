@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useViewportScale } from "./shared/useViewportScale";
 
-export const defaultPanels = [20, 80 / 3, 80 / 3, 80 / 3];
+// Shift space from the compact order queue to the source and recipient desk.
+// Old untouched equal-column installations are mapped to this distribution.
+export const defaultPanels = [20, 29, 29, 22];
 const SPLIT_WIDTH = 6;
-// The order list must retain a single-line header with a ten-character dealer
-// name, four stage indicators, the manage button and the delete button.
-export const panelMinimumWidths = [200, 250, 250, 440];
+// A ten-character 16px dealer title, four 18px stage lights and management
+// buttons must fit on one row. Resizing cannot push controls to a new line.
+export const panelMinimumWidths = [200, 250, 250, 420];
 
 export function validPanels(value: unknown): number[] {
-  return Array.isArray(value) &&
-    value.length === 4 &&
-    value.every((n) => typeof n === "number" && Number.isFinite(n) && n > 0)
-    ? value
-    : defaultPanels;
+  if (!Array.isArray(value) ||
+      value.length !== 4 ||
+      !value.every((n) => typeof n === "number" && Number.isFinite(n) && n > 0))
+    return defaultPanels;
+  // A legacy default used one Kakao ratio and three identical work columns.
+  // Preserve user-customized ratios; migrate only this untouched preset.
+  const oldDefault = 80 / 3;
+  if (Math.abs(value[0] - 20) < 0.01 &&
+      value.slice(1).every((n) => Math.abs(n - oldDefault) < 0.01))
+    return defaultPanels;
+  return value;
 }
 
 /** Translate physical splitter movement into persistent four-panel ratios.
