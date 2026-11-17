@@ -12,6 +12,8 @@ test("each domain has an independent real Tauri Windows GUI entry",()=>{
   assert.match(source,/initial\.orders\.length\|\|initial\.clients\.length/);
   assert.match(source,/await api\.workspaceMode\(\)/);
   assert.match(source,/chromium\.connectOverCDP/);
+  assert.match(source,/127\\\\\.0\\\\\.0\\\\\.1:5173/);
+  assert.match(source,/tabs\.some\(t=>t\.type==="page"\)/);
   assert.match(source,/probeTwoConsecutiveOrders/);
   assert.match(source,/probeFactoryReplyNotifications/);
   assert.match(source,/BANDO_DEV_DOMAIN_PASS/);
