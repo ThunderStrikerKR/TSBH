@@ -363,7 +363,7 @@
   color: #eaf4ff !important;
   outline: none !important;
   /* Selection uses four-sided inner stroke, never a lone underline. */
-  box-shadow: inset 0 0 0 1px #75b5ff !important;
+  box-shadow: inset 0 0 0 2px #75b5ff !important;
 }
 .hub-panels .source-pane.received-source .source-document .linked-token:focus-visible {
   outline: 1px solid #75b5ff !important;
