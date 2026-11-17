@@ -60,7 +60,7 @@ export function businessCoreCall<T>(
 }
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Api, State, CatalogReport, OcrCapture, OfficialLink, ImportPreview } from "./types";
+import type { Api, State, CatalogReport, OcrCapture, OfficialLink, ImportPreview, DockStatus, StartupStatus } from "./types";
 import productImages from "./tauri-product-images.json";
 
 
@@ -136,7 +136,7 @@ const api: Api = {
     if (hasUnsavedChanges && !window.confirm("저장하지 않은 변경사항이 있습니다. 종료할까요?")) return;
     await appWindow().close();
   },
-  dockStatus: () => invoke("dock_status_native").then((value) => { auditStateTransition("Rust IPC","dock-resolved"); return value; }),
+  dockStatus: () => invoke<DockStatus>("dock_status_native").then((value) => { auditStateTransition("Rust IPC","dock-resolved"); return value; }),
   dockCycle: () => invoke("dock_cycle_native"),
   dockMode: (mode) => invoke("dock_mode_native", { mode }),
   dockStart: (handle, ratio) => invoke("dock_start_native", { handle, ratio }),
@@ -144,7 +144,7 @@ const api: Api = {
   dockSelect: (handle) => invoke("dock_select_native", { handle }),
   dockWindows: () => invoke("dock_windows_native"),
   dockRegion: (region) => invoke("dock_region_native", { region }),
-  startupStatus: () => invoke("startup_status").then((value) => { auditStateTransition("Rust IPC","startup-status-resolved"); return value; }),
+  startupStatus: () => invoke<StartupStatus>("startup_status").then((value) => { auditStateTransition("Rust IPC","startup-status-resolved"); return value; }),
   startupMetrics: () => invoke("startup_metrics"),
   retryStartup: () => invoke("retry_startup"),
   receiptArchive: () => invoke<{ id: string; orderId: string; record: Record<string, unknown> }[]>("receipt_archive"),
