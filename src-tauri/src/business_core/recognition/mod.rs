@@ -1016,6 +1016,15 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         if is_money_or_header(line.text) { continue; }
         if product_hits.iter().any(|h| h.line == line.number) { continue; }
         for q in quantity::extract(line.text) {
+            // An independently scanned quantity must not reuse characters
+            // already owned by a recognized address/name/contact/memo span.
+            // Preserve separately positioned quantities in mixed-field rows.
+            let start=line.start+q.start;
+            let end=line.start+q.end;
+            let overlaps_field=events.iter().any(|e|
+                matches!(e.kind,"address"|"name"|"phone"|"mobile"|"note")
+                    && e.start < end && start < e.end);
+            if overlaps_field { continue; }
             add_match(&mut events,line,q.start,q.end,"quantity",q.value.to_string(),
                 "독립 수량 원문; 상품 연결은 별도 판정");
         }
@@ -1502,6 +1511,35 @@ mod tests {
         let end=contact["end"].as_u64().unwrap() as usize;
         let encoded:Vec<u16>=raw.encode_utf16().collect();
         assert_eq!(String::from_utf16(&encoded[start..end]).unwrap(),"010-1234-5678");
+    }
+    #[test]
+    fn address_place_name_cannot_be_reused_as_nine_item_quantity() {
+        // Fictional recipient names/phones; retain the reported street and
+        // apartment-name shape that previously produced "구대" => 9 stands.
+        let raw="안녕하세요 직발 요청드립니다\n\n김가상\n010-1234-5678\n전라남도 순천시 가곡길 39 (가곡동) 가상교회\nBD 709 (블랙) 4개\n메모 문 앞에 놓아주세요\n\n표가상\n010-2345-6789\n전라남도 순천시 팔마1길 25 (연향동, 연향3지구대주피오레) 101동 1003호\n반도 뮤직트레이 그레이 1개\n메모 문 앞에 놓아주세요";
+        let output=execute("analyze_order",json!({"raw":raw,"state":state()}))
+            .expect("the real Rust recognition engine must analyze this reception");
+        let quantities=output["candidates"].as_array().unwrap().iter()
+            .filter(|candidate|candidate["kind"]=="quantity")
+            .collect::<Vec<_>>();
+        assert_eq!(quantities.len(),2,"Only the two explicit product quantities are evidence: {output}");
+        assert!(quantities.iter().any(|q|q["value"]=="4"));
+        assert!(quantities.iter().any(|q|q["value"]=="1"));
+        assert!(!quantities.iter().any(|q|q["value"]=="9"));
+        let addresses=output["candidates"].as_array().unwrap().iter()
+            .filter(|candidate|candidate["kind"]=="address")
+            .collect::<Vec<_>>();
+        assert!(addresses.iter().any(|a|a["text"].as_str().unwrap_or("")
+            .contains("연향3지구대주피오레")),"The entire apartment name remains address evidence");
+    }
+    #[test]
+    fn overlapping_address_cannot_emit_independent_quantity_evidence() {
+        // Boundary-aware numeric extraction also must not reuse an address
+        // span when an address legitimately contains a stand-like number.
+        let raw="김가상\n서울특별시 마포구 월드컵로 20 한개";
+        let output=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        assert!(output["candidates"].as_array().unwrap().iter().all(|c|
+            c["kind"]!="quantity"),"Quantity spans already owned by an address must be excluded: {output}");
     }
     #[test]
     fn nearby_contacts_follow_their_recipient_block_across_blank_lines(){
