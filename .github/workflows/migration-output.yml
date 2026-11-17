@@ -138,7 +138,6 @@ jobs:
             tests/rust-migration/recognition -> ../../../.cargo-target
             tests/rust-migration/rules -> ../../../.cargo-target
             tests/rust-migration/catalog-clients -> ../../../.cargo-target
-            tests/rust-migration/factory-reply -> ../../../.cargo-target
       - name: Install locked TypeScript oracle dependencies once
         run: npm ci --no-audit --no-fund --ignore-scripts
       - name: Compare TypeScript oracle with real Rust engine
