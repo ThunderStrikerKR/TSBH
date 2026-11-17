@@ -444,6 +444,16 @@ export function useAppModel() {
   };
   const newOrder = async () => {
     if (!state || !draft) return;
+    // A second press on an already empty new-reception draft is a no-op.
+    // Reopening through open() previously allowed a stale shipment selection
+    // from the existing order list to regain focus.
+    if (draft.receptionVersion === 1 &&
+        !state.orders.some((row) => row.id === draft.id) &&
+        !draft.raw.trim() && !draft.clientId &&
+        !draft.recipients.length && !draft.photos?.length) {
+      setWorkflowSelection(undefined);
+      return;
+    }
     // A new reception may coexist with the previous unconfirmed receipt
     // in HubWorkspace's local draft overlay. Do not force the employee to
     // discard the first pasted document just to start the second.
