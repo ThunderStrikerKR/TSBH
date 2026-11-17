@@ -715,7 +715,9 @@ export function OrderDesk(props: OrderDeskProps) {
                 </b>
                 <small>
                   (
-                  {orderPreview?.vatLabel ?? "—"}
+                  {orderPreview?.vatLabel === "부가세 포함/별도"
+                    ? "부가세 혼합 · 배송별 확인"
+                    : (orderPreview?.vatLabel ?? "—")}
                   )
                 </small>
               </div>
