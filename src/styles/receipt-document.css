@@ -340,13 +340,12 @@
   pointer-events: none;
 }
 
-/* Recognition evidence has three distinct states:
-   neutral grey = classified source, muted border = recipient context,
-   blue = ONE exact linked field. No layout-affecting border changes on hover. */
+/* Classified source spans have a quiet fill, never permanent boxes.
+   Only the exact selected field gains blue; recipient context stays subtle. */
 .hub-panels .source-pane.received-source .source-document .linked-token {
-  background: #393939;
-  border: 2px solid #626262;
-  border-radius: 3px;
+  background: #343434;
+  border: 0;
+  border-radius: 2px;
   color: inherit;
   box-shadow: none;
   outline: none;
@@ -354,16 +353,18 @@
 }
 .hub-panels .source-pane.received-source .source-document
   .linked-token.linked-recipient-context:not(.linked-active) {
-  background: #444;
-  border-color: #848484;
+  background: #414141;
 }
 .hub-panels .source-pane.received-source .source-document .linked-token.linked-active {
   background: #17436d !important;
-  border-color: #75b5ff !important;
+  border: 0 !important;
   color: #eaf4ff !important;
+  outline: none !important;
+  box-shadow: inset 0 -2px 0 #75b5ff !important;
+}
+.hub-panels .source-pane.received-source .source-document .linked-token:focus-visible {
   outline: 1px solid #75b5ff !important;
-  outline-offset: 0;
-  box-shadow: none !important;
+  outline-offset: 1px;
 }
 .hub-panels .review-pane .recipient-review.linked-group-context {
   background: rgba(128, 128, 128, 0.08);
@@ -372,13 +373,16 @@
   box-shadow: inset 3px 0 0 #858585;
   border-radius: 5px;
 }
+/* Highlight the actual input's inner box, not the layout wrapper around
+   both its label and control. No border/outline changes affect grid sizing. */
 .hub-panels .review-pane .recipient-review .linked-field.linked-active {
   background: transparent !important;
   color: inherit !important;
-  outline: 2px solid #75b5ff !important;
-  outline-offset: 0;
+  outline: none !important;
   box-shadow: none !important;
 }
-.hub-panels .review-pane .recipient-review .linked-field.linked-active input {
+.hub-panels .review-pane .recipient-review .linked-field.linked-active .field :is(input, select, textarea) {
   color: inherit !important;
+  outline: none !important;
+  box-shadow: inset 0 0 0 2px #75b5ff !important;
 }
