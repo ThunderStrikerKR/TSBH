@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { useEventCallback } from "./shared/useEventCallback";
 import { auditReactRender, auditStateTransition } from "./perf-audit";
 import { AuditProfiler } from "./perf-audit-profiler";
@@ -40,9 +40,17 @@ export function HubWorkspace(props: Props) {
   );
   const { state, draft } = props;
   const [receptionId, setReceptionId] = useState(draft.id);
-  useEffect(() => {
+  // A new draft must replace the old order before the next screen paints.
+  // Never let a late Rust preview or remembered workflow selection replace
+  // the newly blank reception with the first persisted shipment.
+  useLayoutEffect(() => {
     setReceptionId(draft.id);
-    if (!state.orders.some((o) => o.id === draft.id)) commitSelection(undefined);
+    setStageHover(undefined);
+    setActive("");
+    if (!state.orders.some((order) => order.id === draft.id)) {
+      commitSelection(undefined);
+      lastVisiblePreview.current = undefined;
+    }
   }, [draft.id]);
   const [source, setSource] = useState<HTMLElement | null>(null),
     [messages, setMessages] = useState<HTMLElement | null>(null),
