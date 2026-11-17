@@ -205,7 +205,8 @@ try {
     $zoomTimeline.Add([BandoDevWindowProbe]::IsZoomed((Get-MainHwnd $third)))
     Start-Sleep -Milliseconds 100
   }
-  Write-Host "DEV_WINDOW_ZOOM_TIMELINE: samples=$($zoomTimeline.Count) first=$($zoomTimeline[0]) last=$($zoomTimeline[$zoomTimeline.Count-1]) falseCount=$(($zoomTimeline | Where-Object { !$_ }).Count)"
+  $falseCount=@($zoomTimeline | Where-Object { -not $_ }).Count
+  Write-Host "DEV_WINDOW_ZOOM_TIMELINE: samples=$($zoomTimeline.Count) first=$($zoomTimeline[0]) last=$($zoomTimeline[$zoomTimeline.Count-1]) falseCount=$falseCount"
   $placement=New-Object BandoDevWindowProbe+WINDOWPLACEMENT
   $placement.length=[System.Runtime.InteropServices.Marshal]::SizeOf([type][BandoDevWindowProbe+WINDOWPLACEMENT])
   $placementOk=[BandoDevWindowProbe]::GetWindowPlacement((Get-MainHwnd $third),[ref]$placement)
