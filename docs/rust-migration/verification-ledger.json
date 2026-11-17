@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "policy": "AGENTS.md",
   "recordedAt": "2026-11-18",
-  "recordedHead": "7b5c0752d52fbc4aec7bccb98a0c89e749ea96b3",
+  "recordedHead": "5b442716fa0e4c8111dd01813b0525b1c700a864",
   "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
   "proofLevels": [
     "patch",
@@ -127,10 +127,10 @@
           "status": "OPEN",
           "introducedAt": "92cc88689fff209bcd42a3de44111a4c9fda69d7",
           "resolution": {
-            "patchCommit": "7b5c0752d52fbc4aec7bccb98a0c89e749ea96b3",
-            "tests": "Rust 4 신규 테스트: 빈/내용/연속 빈 줄, 공백·탭 구분, 다중 수취인 주소·연락처 귀속, 단일 수취인 두 연락처 보존, CRLF",
-            "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44154632318",
-            "remaining": "신규 4개 테스트 포함 Rust output 92 PASS + integration 109 PASS, main CI PASS. 기존 TS와 개선 정책의 범위별 차등 비교, 실제 React 원문 입력·수정·확정, Windows WebView2는 미검증. 거래처별 확률 학습·학습 저장/롤백은 미구현."
+            "patchCommit": "5b442716fa0e4c8111dd01813b0525b1c700a864",
+            "tests": "Rust 신규 5개: 내용/공백/연속 빈 줄 분리, 스페이스·탭 및 CRLF, 복수 수취인 주소·연락처 귀속, 단일 수취인 두 연락처, 기존 수취인의 첫 배송정보가 뒤 이름으로 넘어가지 않도록 보수적 보호",
+            "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44155297357",
+            "remaining": "신규 5개 테스트 포함 Rust output 93 PASS + integration 110 PASS. 최신 전체 CI/Windows 실화면 결과 확인 필요. TS↔Rust 승인 최신 정책의 차등 검증, 실제 직원 행동 시퀀스와 확률·거래처 학습 미구현."
           }
         }
       ],
@@ -138,13 +138,13 @@
       "gate": {
         "patch": {
           "status": "COMMITTED",
-          "commit": "7b5c0752d52fbc4aec7bccb98a0c89e749ea96b3",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/7b5c0752d52fbc4aec7bccb98a0c89e749ea96b3"
+          "commit": "5b442716fa0e4c8111dd01813b0525b1c700a864",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/5b442716fa0e4c8111dd01813b0525b1c700a864"
         },
         "unit": {
           "status": "PASS_SCOPED",
-          "commit": "7b5c0752d52fbc4aec7bccb98a0c89e749ea96b3",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44154632318"
+          "commit": "5b442716fa0e4c8111dd01813b0525b1c700a864",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44155297357"
         },
         "differential": {
           "status": "NOT_VERIFIED",
@@ -157,9 +157,9 @@
           "evidence": null
         },
         "ci": {
-          "status": "PASS_SCOPED",
-          "commit": "7b5c0752d52fbc4aec7bccb98a0c89e749ea96b3",
-          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44154632318"
+          "status": "NOT_VERIFIED",
+          "commit": null,
+          "evidence": null
         },
         "windows": {
           "status": "NOT_VERIFIED",
@@ -168,7 +168,7 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "7b5c0752d52fbc4aec7bccb98a0c89e749ea96b3"
+      "lastReviewedCommit": "5b442716fa0e4c8111dd01813b0525b1c700a864"
     },
     {
       "id": "F03",
