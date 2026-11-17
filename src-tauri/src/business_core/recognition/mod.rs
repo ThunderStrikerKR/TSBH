@@ -193,16 +193,48 @@ fn physical_lines(raw: &str) -> Vec<Line<'_>> {
     let mut paragraph = 0;
     let mut line_number = 0;
     let mut previous = 0;
+    // Whitespace-only lines are blank separators, not discarded evidence.
+    let mut skipped_blank = false;
     regex.find_iter(raw).filter_map(|m| {
         let gap = &raw[previous..m.start()];
-        line_number += gap.chars().filter(|c| *c == '\n').count();
-        if gap.chars().filter(|c| *c == '\n').count() > 1 { paragraph += 1; }
+        let newlines = gap.bytes().filter(|b| *b == b'\n').count();
+        line_number += newlines;
         previous = m.end();
-        if m.as_str().trim().is_empty() { return None; }
-        let value = Line { text: m.as_str(), start: m.start(), number: line_number,
-            paragraph };
-        Some(value)
+        if m.as_str().trim().is_empty() {
+            skipped_blank = true;
+            return None;
+        }
+        if newlines > 1 || (skipped_blank && newlines > 0) { paragraph += 1; }
+        skipped_blank = false;
+        Some(Line { text: m.as_str(), start: m.start(), number: line_number,
+            paragraph })
     }).collect()
+}
+
+// Source geometry stays independent of source-value interpretation. Preserve
+// source spans and distinguish textual distance from empty-line separators.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct InterveningLines {
+    content_lines: usize,
+    blank_lines: usize,
+    max_consecutive_blank_lines: usize,
+}
+fn intervening_lines(raw: &str, earlier: usize, later: usize) -> InterveningLines {
+    let mut result = InterveningLines::default();
+    if later <= earlier + 1 { return result; }
+    let mut current_blank_run = 0usize;
+    for line in raw.split('\n').skip(earlier + 1).take(later - earlier - 1) {
+        if line.trim().is_empty() {
+            result.blank_lines += 1;
+            current_blank_run += 1;
+            result.max_consecutive_blank_lines =
+                result.max_consecutive_blank_lines.max(current_blank_run);
+        } else {
+            result.content_lines += 1;
+            current_blank_run = 0;
+        }
+    }
+    result
 }
 fn phone_regex() -> Regex {
     Regex::new(r"(?i)(0(?:50\d|1[016789]|2|[3-6]\d|70|80))[\s().-]*(\d{3,4})[\s().-]*(\d{4})")
@@ -333,7 +365,9 @@ fn owner_index(anchors: &[usize], events: &[Evidence], offset: usize) -> usize {
 // A delivery address/contact placed BEFORE the next person's name can belong
 // to that next recipient when the preceding name is in another paragraph.
 // Distances are supporting evidence only: they never create recipients.
-fn recipient_owner_index(anchors: &[usize], events: &[Evidence], evidence_index: usize) -> usize {
+fn recipient_owner_index(
+    anchors: &[usize], events: &[Evidence], evidence_index: usize, raw: &str
+) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
     if anchors.len()<2 || !matches!(candidate.kind,"address"|"phone"|"mobile") {
@@ -350,6 +384,11 @@ fn recipient_owner_index(anchors: &[usize], events: &[Evidence], evidence_index:
     if candidate.paragraph==preceding.paragraph || candidate.paragraph!=following.paragraph {
         return previous;
     }
+    // A separating line containing only spaces/tabs counts as a block
+    // boundary too. This is a conservative overlay on the existing gates.
+    let previous_gap=intervening_lines(raw,preceding.line,candidate.line);
+    let following_gap=intervening_lines(raw,candidate.line,following.line);
+    if following_gap.blank_lines>0 {return previous;}
     let next_distance=following.line.saturating_sub(candidate.line);
     if next_distance>3 {return previous;}
     let has_nearby_address=events.iter().any(|e|
@@ -364,9 +403,13 @@ fn recipient_owner_index(anchors: &[usize], events: &[Evidence], evidence_index:
     let preceding_distance=candidate.line.saturating_sub(preceding.line);
     let previous_score=(if preceding.paragraph==candidate.paragraph {80usize} else {0})
         + 20usize.saturating_sub(preceding_distance.saturating_mul(5));
-    let following_score=80usize
+    // Blank-line and content-line evidence are distinct. Their bounded
+    // adjustment must not override paragraph identity or address support.
+    let following_score=(80usize
         + 20usize.saturating_sub(next_distance.saturating_mul(5))
-        + if has_nearby_address {20} else {0};
+        + if has_nearby_address {20} else {0}
+        + previous_gap.blank_lines.min(2)*5)
+        .saturating_sub(following_gap.content_lines.min(2)*5);
     if following_score >= previous_score+30 {previous+1} else {previous}
 }
 /// Original TypeScript resolvePrice for the recognition Item shape.
@@ -915,7 +958,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     }
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(&anchors,&events,index);
+        let row_index = recipient_owner_index(&anchors,&events,index,raw);
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -1427,6 +1470,55 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn content_blank_and_whitespace_only_lines_are_distinct_evidence() {
+        let raw="김가상\n배송 전 연락\n  \n\t\n010-1234-5678";
+        assert_eq!(intervening_lines(raw,0,4),InterveningLines {
+            content_lines:1,blank_lines:2,max_consecutive_blank_lines:2,
+        });
+        let crlf="김가상\r\n  \r\n서울특별시 마포구 월드컵로 20";
+        assert_eq!(intervening_lines(crlf,0,2),InterveningLines {
+            content_lines:0,blank_lines:1,max_consecutive_blank_lines:1,
+        });
+        let content=physical_lines("김가상\n배송 전 연락\n010-1234-5678");
+        assert_eq!(content.len(),3);
+        assert_eq!(content[0].paragraph,content[2].paragraph,
+            "ordinary content must not invent a block boundary");
+    }
+    #[test]
+    fn whitespace_only_delimiter_keeps_address_and_phone_with_next_recipient() {
+        let raw="김가상\n서울특별시 마포구 월드컵로 20\n010-1234-5678\n  \t\n경기도 성남시 분당구 불정로 6\n010-2345-6789\n박가상";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0]["name"],"김가상");
+        assert_eq!(rows[0]["mobile"],"010-1234-5678");
+        assert!(rows[0]["address"].as_str().unwrap().contains("월드컵로 20"));
+        assert_eq!(rows[1]["name"],"박가상");
+        assert_eq!(rows[1]["mobile"],"010-2345-6789");
+        assert!(rows[1]["address"].as_str().unwrap().contains("불정로 6"));
+        assert!(!rows[0]["address"].as_str().unwrap().contains("불정로 6"));
+    }
+    #[test]
+    fn whitespace_only_lines_do_not_create_recipients_without_name_evidence() {
+        let raw="김가상\n \t\n서울특별시 마포구 월드컵로 20\n\t\n010-1234-5678\n010-2345-6789";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),1);
+        assert_eq!(rows[0]["name"],"김가상");
+        assert_eq!(rows[0]["mobile"],"010-1234-5678");
+        assert_eq!(rows[0]["phone"],"010-2345-6789");
+        assert!(rows[0]["address"].as_str().unwrap().contains("월드컵로 20"));
+    }
+    #[test]
+    fn crlf_whitespace_block_boundary_keeps_phone_ownership() {
+        let raw="김가상\r\n서울특별시 마포구 월드컵로 20\r\n010-1234-5678\r\n  \t\r\n경기도 성남시 분당구 불정로 6\r\n010-2345-6789\r\n박가상";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0]["mobile"],"010-1234-5678");
+        assert_eq!(rows[1]["mobile"],"010-2345-6789");
     }
     #[test]
     fn shipping_memo_label_must_not_swallow_next_recipient_address(){
