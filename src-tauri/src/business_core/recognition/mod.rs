@@ -249,9 +249,19 @@ fn address_begin(line: &str) -> Option<usize> {
         // parseLegacy.ts detects the province after an optional five-digit
         // postal marker. An address label must not turn (11806) into the
         // beginning of the actual shipping address/source span.
-        let marker=Regex::new(r"^\(\d{5}\)\s*").expect("postal marker");
+        let marker=Regex::new(r"^\(?\d{5}\)?\s*").expect("postal marker");
         let skipped=marker.find(&line[m.end()..]).map_or(0,|v|v.end());
-        return Some(m.end()+skipped);
+        let begin=m.end()+skipped;
+        // An address HEADING must not be promoted to an address value.
+        // "배송지 주소" matches "배송지 " + "주소" in the old prefix
+        // regexp; accepting that remainder then polluted an otherwise
+        // complete real address and made an extra address candidate.
+        // Keep actual partial address lines (and original source offsets).
+        let value=line[begin..].trim();
+        if value.is_empty() || matches!(value,
+            "주소"|"배송지"|"배송주소"|"배송지 주소"|"수취인주소"|"받는곳"
+        ) { return None; }
+        return Some(begin);
     }
     let address = Regex::new(concat!(
         r"(?:서울(?:특별시)?|부산(?:광역시)?|대구(?:광역시)?|인천(?:광역시)?|광주(?:광역시)?|",
@@ -1561,6 +1571,61 @@ mod tests {
         assert_eq!(rows[0]["mobile"],"010-7000-1002");
     }
     #[test]
+    fn address_heading_is_not_a_shipping_address_candidate() {
+        for title in ["배송지 주소","배송지:","주소","주소:","배송주소","받는곳",
+            "수취인주소","배송지 주소:"] {
+            assert_eq!(address_begin(title),None,
+                "{title}: an empty field label is not an address");
+        }
+        assert_eq!(address_begin("배송지: 경상남도 함양군 함양읍 함양여중길 18-9"),
+            Some("배송지: ".len()));
+        assert_eq!(address_begin("배송지 주소: 경상남도 함양군 함양읍 함양여중길 18-9"),
+            Some("배송지 주소: ".len()));
+        assert_eq!(address_begin("주소: (50034) 경상남도 함양군 함양읍 함양여중길 18-9"),
+            Some("주소: (50034) ".len()));
+        assert_eq!(address_begin("주소: 50034 경상남도 함양군 함양읍 함양여중길 18-9"),
+            Some("주소: 50034 ".len()));
+    }
+    #[test]
+    fn semantic_conductor_uses_registered_single_sku_only() {
+        let state=serde_json::from_str::<Value>(include_str!(
+            "../../../resources/state-seed.json"
+        )).expect("catalog");
+        let matched=execute("match_products",json!({
+            "text":"BANDO STAND 반도 보면대 지휘용 악보 스탠드",
+            "state":state
+        })).unwrap();
+        assert_eq!(matched["productId"],"bando-site-63");
+        assert_eq!(matched["variantId"],"bando-63-single");
+        assert_eq!(matched["match"]["kind"],"SEMANTIC_NAME");
+        // Explicit codes win, including unknown codes; avoid inventing a
+        // conductor SKU from an unrelated model's semantic description.
+        for raw in ["Z-1 지휘용 악보 스탠드","709 지휘용 악보 스탠드",
+            "지휘용 마이크 스탠드"] {
+            let matched=execute("match_products",json!({
+                "text":raw,"state":state
+            })).unwrap();
+            assert_ne!(matched["productId"],"bando-site-63",
+                "explicit or non-score-stand evidence must not be hijacked: {raw}");
+        }
+        // A future catalog containing several independent conductor
+        // models must leave the exact SKU ambiguous.
+        let mut duplicate_state=state.clone();
+        let products=duplicate_state["products"].as_array_mut().unwrap();
+        let mut competitor=products.iter().find(|p|
+            p["id"]=="bando-site-63").unwrap().clone();
+        competitor["id"]=json!("independent-conductor");
+        competitor["code"]=json!("BD DIRECTOR");
+        competitor["name"]=json!("BD Director / 지휘자 보면대");
+        competitor["modelCodes"]=json!(["BD Director"]);
+        products.push(competitor);
+        let ambiguous=execute("match_products",json!({
+            "text":"지휘용 악보 스탠드","state":duplicate_state
+        })).unwrap();
+        assert!(ambiguous["productId"].is_null());
+        assert_eq!(ambiguous["match"]["kind"],"CATEGORY");
+    }
+    #[test]
     fn province_name_requires_address_boundary_not_merchant_substring(){
         for merchant in ["서울악기사","대전악기사","경기악기사","전남악기사",
             "서울특별시악기사","전라남도악기사"] {
@@ -1641,7 +1706,23 @@ mod tests {
         })).expect("Rust actual document analysis");
         println!("NARRATIVE_CONDUCTOR_MATCH {}",match_result);
         println!("NARRATIVE_CONDUCTOR_ANALYSIS {}",result);
-        assert!(result["recipients"].is_array());
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),1);
+        let row=&rows[0];
+        assert_eq!(row["name"],"김가상");
+        assert_eq!(row["mobile"],"010-1234-5678");
+        assert_eq!(row["address"],
+            "경상남도 함양군 함양읍 함양여중길 18-9 (함양여자중학교)");
+        assert_eq!(row["addressStatus"],"COMPLETE");
+        assert_eq!(row["candidates"].as_array().unwrap().iter()
+            .filter(|c|c["field"]=="address").count(),1);
+        let item=&row["items"][0];
+        assert_eq!(item["productId"],"bando-site-63");
+        assert_eq!(item["variantId"],"bando-63-single");
+        assert_eq!(item["match"]["kind"],"SEMANTIC_NAME");
+        assert!(item["quantity"].is_null());
+        assert_eq!(item["quantityConfirmed"],false);
+        assert!(result["unassigned"].as_array().unwrap().is_empty());
     }
     #[test]
     fn manual_confirmations_survive_identical_order() {
