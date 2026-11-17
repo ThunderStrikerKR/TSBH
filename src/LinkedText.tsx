@@ -236,6 +236,11 @@ export function LinkedText({
   return (
     <div ref={wrapper} className={"linked-text-editor" + (directEdit ? " direct-edit" : "")}>
       <div className="text-edit-tools">
+        {readOnly && label === "주문 원문" && !editing && (
+          <span className="source-link-legend">
+            회색: 분류된 원문 · 파랑: 선택한 정보
+          </span>
+        )}
         {!readOnly && (directEdit ? editing : true) && (
           <button
             className="text-button"
