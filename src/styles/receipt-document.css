@@ -390,6 +390,22 @@
 .hub-panels .review-pane .recipient-review .linked-field.linked-active .field :is(input, textarea)::placeholder {
   color: #b5d2f3;
 }
+/* Item, quantity and amount are the same linked-field state as recipient
+   inputs. The legacy global .linked-active white halo must never show here.
+   Color and four-sided outline match the source-document selection exactly. */
+.app-v03 .hub-panels .items-freight-panel .compact-items .linked-field.linked-active {
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit !important;
+}
+.app-v03 .hub-panels .items-freight-panel .compact-items .linked-field.linked-active > :is(button, input, select, textarea) {
+  background: #17436d !important;
+  color: #eaf4ff !important;
+  outline: none !important;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 2px #75b5ff !important;
+}
 /* The 40px label column from the narrow-pane container rule is too small
    for '요청 메시지'. Keep the UI font unchanged and reserve label width
    only on full-width recipient rows, leaving phone pairs compact. */
