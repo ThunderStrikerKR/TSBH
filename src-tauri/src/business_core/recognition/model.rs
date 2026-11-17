@@ -88,6 +88,23 @@ fn is_boundary(text: &str, begin: usize, end: usize) -> bool {
     !text[..begin].chars().next_back().map_or(false, disallow)
         && !text[end..].chars().next().map_or(false, disallow)
 }
+// A color-code abbreviation must end at the same word/punctuation
+// boundary accepted by the original TypeScript recognizer. A letter in
+// "B타입"/"B 타입"/"B형"/"B Type" is an option designation, NOT Black.
+// These checks apply only to model-attached color suffixes; they preserve
+// standalone registered product codes and explicit color words.
+fn color_suffix_boundary(text: &str, begin: usize, end: usize) -> bool {
+    if !is_boundary(text, begin, end) { return false; }
+    let rest=&text[end..];
+    if !rest.chars().next().map_or(true,|c|
+        c.is_whitespace() || ",.!*×".contains(c))
+    { return false; }
+    let after=rest.trim_start();
+    if after.starts_with("타입") || after.starts_with('형')
+        || after.get(..4).map_or(false,|part|part.eq_ignore_ascii_case("type"))
+    {return false;}
+    true
+}
 fn spell(term: &str, is_model: bool) -> String {
     let bare = if is_model {
         static BD_PREFIX:OnceLock<Regex>=OnceLock::new();
@@ -184,7 +201,7 @@ fn code_color_hint(text: &str, ps: &[&Value]) -> Option<(String,String,String)> 
     )).expect("model color suffix");
     for c in number_suffix.captures_iter(text) {
         let m=c.get(0)?;
-        if !is_boundary(text,m.start(),m.end()) {continue;}
+        if !color_suffix_boundary(text,m.start(),m.end()) {continue;}
         let color=c.get(2).or_else(||c.get(3))?.as_str();
         return Some((c[1].to_owned(),norm_color(color),m.as_str().to_owned()));
     }
@@ -209,7 +226,7 @@ fn code_color_hint(text: &str, ps: &[&Value]) -> Option<(String,String,String)> 
                 let m=c.get(0)?;
                 if m.start()!=0 {continue;}
                 let end=end+m.end();
-                if !is_boundary(text,begin,end) {continue;}
+                if !color_suffix_boundary(text,begin,end) {continue;}
                 let color=c.get(1).or_else(||c.get(2))?.as_str();
                 return Some((model.clone(),norm_color(color),
                     text[begin..end].to_owned()));
