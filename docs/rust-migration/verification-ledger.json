@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "policy": "AGENTS.md",
-  "recordedAt": "2026-11-17",
-  "recordedHead": "679604dbdb1b10796731057e03142f8b823b5066",
+  "recordedAt": "2026-11-18",
+  "recordedHead": "aa576964c359ca00fdb2ce020e6eee560980df30",
   "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
   "proofLevels": [
     "patch",
@@ -110,18 +110,30 @@
         "inputOutputEvidence": null,
         "responseOrders": []
       },
-      "discrepancies": [],
+      "discrepancies": [
+        {
+          "description": "원문 \"경상남도 창원시 / 진해구 안청남로 40 / 커피빈스 1층\"이 하나의 유효한 주소로 결합돼 있는데도, Rust의 확인 항목 생성기가 개별 주소 근거 3개를 서로 경쟁하는 후보로 판단해 CANDIDATE_address 조치를 표시한 오류. 주소 조각 중 하나만 선택하면 이미 완성된 주소가 훼손될 수 있음.",
+          "status": "OPEN",
+          "introducedAt": "bc0cd06449a9887cfa2d9c42708f6613b675fe31",
+          "resolution": {
+            "patchCommit": "c6c79ac6c51aa08f6c3fe7a9efb186deeb1b0306",
+            "tests": "address_fragment_review_tests: 완성된 단일 주소는 경고 없이 유지, 별개 완성 주소·서로 다른 행정구역·원본과 불일치한 값은 확인",
+            "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44139296803",
+            "remaining": "실제 Windows WebView2 화면에서 같은 원문 붙여넣기 후 주소 경고가 사라졌는지 아직 미검증. 해당 좁은 시나리오만 패치·UNIT·CI 검증; 전체 F02 종료 판정은 보류."
+          }
+        }
+      ],
       "legacyLedgerStatus": "PARTIAL",
       "gate": {
         "patch": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "COMMITTED",
+          "commit": "c6c79ac6c51aa08f6c3fe7a9efb186deeb1b0306",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/c6c79ac6c51aa08f6c3fe7a9efb186deeb1b0306"
         },
         "unit": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "aa576964c359ca00fdb2ce020e6eee560980df30",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44139296803"
         },
         "differential": {
           "status": "NOT_VERIFIED",
@@ -134,9 +146,9 @@
           "evidence": null
         },
         "ci": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "PASS_SCOPED",
+          "commit": "aa576964c359ca00fdb2ce020e6eee560980df30",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44139296803"
         },
         "windows": {
           "status": "NOT_VERIFIED",
@@ -145,7 +157,7 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "aa576964c359ca00fdb2ce020e6eee560980df30"
     },
     {
       "id": "F03",
