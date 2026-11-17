@@ -72,7 +72,7 @@ test("late order-issues results cannot override a newer Rust projection",()=>{
 });
 
 test("complete multi-line Korean address does not become a choice of fragments",()=>{
-  const rust=read("src-tauri/src/business_core/rules/issues.rs");
+  const rust=readFileSync(new URL("../src-tauri/src/business_core/rules/issues.rs",import.meta.url),"utf8");
   assert.match(rust,/fn address_candidates_form_one_location/);
   assert.match(rust,/field_name=="address" &&\s*address_candidates_form_one_location\(row,&candidates\)/);
   assert.match(rust,/multiline_province_road_and_floor_are_one_complete_address/);
