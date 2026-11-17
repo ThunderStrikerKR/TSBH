@@ -282,3 +282,24 @@ test("neutral source highlights remain filled chips without grey detail-card ove
   assert.doesNotMatch(css, /\.recipient-review\.linked-group-context/);
   assert.doesNotMatch(css, /box-shadow: inset 3px 0 0 #777/);
 });
+
+test("product and price buttons plus quantity input share the blue selection fill and outline", () => {
+  const css = read("src/styles/receipt-document.css");
+  const desk = read("src/OrderDesk.tsx");
+  const activeItem = css.split("/* Item, quantity and amount are the same linked-field state")[1] ?? "";
+  assert.match(desk, /<Linked linkKey=\{i\.id \+ ":product"\}>/);
+  assert.match(desk, /<Linked linkKey=\{i\.id \+ ":quantity"\}>/);
+  assert.match(desk, /<Linked linkKey=\{i\.id \+ ":price"\}>/);
+  assert.match(activeItem, /\.linked-field\.linked-active\s*\{[\s\S]*?outline: none !important;[\s\S]*?box-shadow: none !important;/);
+  assert.match(activeItem, /\.linked-field\.linked-active > :is\(button, input, select, textarea\)\s*\{[\s\S]*?background: #17436d !important;[\s\S]*?color: #eaf4ff !important;[\s\S]*?box-shadow: inset 0 0 0 2px #75b5ff !important;/);
+});
+
+test("quantity values align to the right without changing quantity stepper controls", () => {
+  const css = read("src/styles/patch-v0808.css");
+  const detail = read("src/OrderDesk.tsx");
+  const manual = read("src/orders/ManualClassification.tsx");
+  assert.match(detail, /type="number"[\s\S]*?aria-label=\{"수량 " \+ i\.name\}/);
+  assert.match(manual, /inputMode=\{cell\.field === "quantity" \? "numeric" : undefined\}/);
+  assert.match(css, /\.items-freight-panel \.compact-items input\[type="number"\]\s*\{[\s\S]*?text-align: right;/);
+  assert.match(css, /\.app-v03 \.quantity-stepper input,[\s\S]*?\.app-v03 \.manual-count input\[type="number"\],[\s\S]*?text-align: right;/);
+});
