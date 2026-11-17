@@ -10,6 +10,7 @@ import { DailySettlement } from "./app/DailySettlement";
 import { OrderHistory } from "./app/OrderHistory";
 import { useAppModel } from "./app/useAppModel";
 import { HubShell } from "./HubShell";
+import { defaultPanels } from "./HubPanels";
 import { KakaoDockPicker } from "./KakaoDockPicker";
 import { MemoHubWorkspace as HubWorkspace } from "./HubWorkspace";
 import { useEventCallback } from "./shared/useEventCallback";
@@ -165,7 +166,7 @@ export function App() {
           />
         )}
         <HubShell
-          ratios={state.settings.panelRatios ?? [20, 30, 30, 20]}
+          ratios={state.settings.panelRatios ?? defaultPanels}
           dock={model.dock}
           busy={model.dockBusy}
           onConnect={() => void model.run(model.docking)}
@@ -183,7 +184,7 @@ export function App() {
                 ...state,
                 settings: {
                   ...state.settings,
-                  panelRatios: [20, 30, 30, 20],
+                  panelRatios: defaultPanels,
                   receptionVerticalRatio: 0.5,
                 },
               }),
