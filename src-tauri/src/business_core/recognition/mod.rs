@@ -307,10 +307,12 @@ fn composite_name_before_address(prefix: &str) -> Option<(usize,usize)> {
     // A heading is not a receiver name, even when followed by a complete
     // same-line address. This protects "배송지 주소 경기도 ..." from creating
     // a fake recipient while retaining arbitrary real name composition.
-    if matches!(candidate.trim(),
+    let heading=candidate.trim().trim_end_matches([':', '：']).trim();
+    if matches!(heading,
         "주소"|"배송지"|"배송지 주소"|"배송주소"|"받는곳"|
         "수취인주소"|"수취인 주소"|"배송 주소"|"배송지주소"|
-        "배송지 주소:"|"주소:"|"받는곳:"
+        "배송메모"|"배송 요청"|"배송 요청사항"|"메모"|"비고"|
+        "연락처"|"전화번호"
     ) {return None;}
     // Refuse a product/quantity, note label, address header or multiple
     // potential recipients. Ambiguous layouts remain reviewable instead of
@@ -1793,7 +1795,8 @@ mod tests {
     fn address_headings_cannot_become_whole_recipient_names() {
         let state=state();
         for header in ["배송지 주소","배송지","배송주소","받는곳",
-            "수취인주소","주소:","배송지 주소:","주소"] {
+            "받는곳 :","수취인주소","주소:","배송지 주소:","주소",
+            "배송메모 :","연락처 :"] {
             let raw=format!(
                 "709 1개\\n{header} 경기도 가평군 가평읍 문화로 120 010-1234-5678"
             );
