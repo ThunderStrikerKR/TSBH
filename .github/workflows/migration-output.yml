@@ -4,9 +4,29 @@ on:
     branches:
       # main is the only normal integration target; old migration branches are archived.
       - main
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'DEV_WINDOWS_TAURI.cmd'
+      - '.github/workflows/migration-output.yml'
   pull_request:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'DEV_WINDOWS_TAURI.cmd'
+      - '.github/workflows/migration-output.yml'
   workflow_dispatch:
 permissions:
   contents: read
