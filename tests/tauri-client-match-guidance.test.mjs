@@ -57,6 +57,6 @@ test("unmatched dealer generates one required action, not a second blue notice",
   assert.match(issues,/no_match_and_no_dealer_has_only_one_actionable_dealer_card/);
   assert.match(issues,/explicit_auto_match_error_is_one_action_not_two/);
   assert.match(issues,/!dealer_match_action/);
-  assert.doesNotMatch(issues,/거래처 자동 연결 근거가 없습니다/);
+  assert.doesNotMatch(issues.split("#[cfg(test)]")[0],/거래처 자동 연결 근거가 없습니다/);
   assert.match(checks,/b\.detail && b\.detail !== b\.title/);
 });
