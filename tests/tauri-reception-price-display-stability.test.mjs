@@ -42,7 +42,8 @@ test("unrelated preview loading cannot fabricate missing VAT or hide available R
   assert.match(footer,/orderPreview\?\.vatLabel \?\? "—"/);
   assert.doesNotMatch(footer,/flowSummaryReady|확인 필요/);
   const board=readFileSync(new URL("../src/WorkflowBoard.tsx", import.meta.url),"utf8");
-  assert.match(board,/nativeGroup\?\.vatLabel === "부가세 포함"/);
+  assert.match(board,/nativeGroup\?\.shipments\.filter\(\(shipment\) => shipment\.vatIncluded\)\.length/);
+  assert.match(board,/vatExcludedCount/);
   assert.match(board,/className="flow-summary-payment"/);
   assert.doesNotMatch(board,/\(부가세 별도\)/);
 });
