@@ -61,7 +61,7 @@ export function useNativeWorkflowReconcile(input: State, drafts: Order[], enable
   return {
     // A still-pending projection never falls back to the old synchronous TS
     // workflow engine. Its current input may be shown read-only while busy.
-    state: ready && drafts.length ? resolved!.value : input,
+    state: enabled && ready && drafts.length ? resolved!.value : input,
     ready,
     error: enabled && failure?.fingerprint === fingerprint ? failure.reason : "",
   };
