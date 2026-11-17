@@ -1,6 +1,7 @@
 import { nativePaymentWasCopied } from "./native-automatic-message";
 import { useNativeWorkflowBoard } from "./orders/useNativeWorkflowBoard";
 import { useEffect, useRef, useState } from "react";
+import { auditReactRender } from "./perf-audit";
 import { confirmAction } from "./dialogs";
 import { won } from "./domain";
 import { nativeApplyWorkflowAction, nativeChangeGroup } from "./orders/native-rules";
@@ -68,6 +69,7 @@ export function WorkflowBoard({
   pendingReceptions?: Array<{ id: string; raw: string }>;
   onSelectPending?: (orderId: string) => void;
 }) {
+  auditReactRender("WorkflowBoard");
   const [undoDelete, setUndoDelete] = useState<{ gid: string; at: string }>();
   const native = useNativeWorkflowBoard(state, previewReady);
   const ready = previewReady && native.ready;

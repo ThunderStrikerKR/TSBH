@@ -6,17 +6,27 @@ import { invoke } from "@tauri-apps/api/core";
 /** CI-only native call audit. Vite drops this instrumentation from release builds. */
 function auditNativeCall(
   command: string,
-  meta: { domain?: string; operation?: string; action?: unknown } = {},
+  meta: { domain?: string; operation?: string; action?: unknown; inputKey?: string } = {},
 ): void {
   if (import.meta.env.VITE_BANDO_NATIVE_AUDIT !== "true" || typeof window === "undefined") return;
   const trace = (window as Window & {
     __bandoNativeCalls?: Array<{
-      command: string; domain?: string; operation?: string; action?: unknown;
+      command: string; domain?: string; operation?: string; action?: unknown; inputKey?: string;
     }>;
   }).__bandoNativeCalls;
   if (Array.isArray(trace)) trace.push({ command, ...meta });
 }
 
+/** CI-only input signature. Preview event IDs/timestamps are excluded because
+ * they are not meaningful read-only workflow inputs. Release excludes it. */
+function auditNativeInputKey(operation: string, payload: unknown): string | undefined {
+  if (import.meta.env.VITE_BANDO_NATIVE_AUDIT !== "true") return;
+  try {
+    const input = payload as { state?: unknown; draft?: unknown } | null;
+    return JSON.stringify(operation === "reconcile_workflow" && input
+      ? { state: input.state, draft: input.draft } : payload);
+  } catch { return "<unserializable>"; }
+}
 /** Shared Tauri IPC entry point; domain operations remain checked by Rust. */
 export function businessCoreCall<T>(
   domain: "recognition" | "rules" | "output" | "catalog_clients",
@@ -24,7 +34,7 @@ export function businessCoreCall<T>(
   payload: unknown,
 ): Promise<T> {
   auditNativeCall("business_core_call", {
-    domain, operation,
+    domain, operation, inputKey: auditNativeInputKey(operation, payload),
     action: payload && typeof payload === "object" && "action" in payload
       ? (payload as { action?: unknown }).action : undefined,
   });

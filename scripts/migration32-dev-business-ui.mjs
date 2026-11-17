@@ -54,6 +54,57 @@ try {
   const page=context?.pages().find(p=>/localhost|tauri/i.test(p.url()))??context?.pages()[0];
   assert.ok(page,"Could not access native WebView2 page");
   page.setDefaultTimeout(30000);
+  // Traces are initialized on the synthetic WebView2 reload after CI fixture seeding.
+  await page.addInitScript(() => {
+    window.__bandoNativeCalls = [];
+    window.__bandoRenderTrace = [];
+  });
+  const markPerf = async () => page.evaluate(() => ({
+    ipc: window.__bandoNativeCalls?.length ?? 0,
+    renders: window.__bandoRenderTrace?.length ?? 0,
+    at: performance.now(),
+  }));
+  const endPerf = async (name, marker) => {
+    const summary = await page.evaluate(({ipc,renders,at}) => {
+      const calls = (window.__bandoNativeCalls ?? []).slice(ipc);
+      const components = (window.__bandoRenderTrace ?? []).slice(renders);
+      const byOperation = {}, byComponent = {}, repeated = new Map();
+      const readOps = new Set([
+        "reconcile_workflow", "preview_workflow", "preview_order",
+        "preview_order_lines", "order_issues_with_actions",
+        "should_refresh_pricing", "shipping_read",
+        "delivery_requirements_with_messages", "factory_reply_review_statuses",
+      ]);
+      for (const call of calls) {
+        const op = call.domain && call.operation
+          ? call.domain + "." + call.operation : call.command;
+        byOperation[op] = (byOperation[op] ?? 0) + 1;
+        if (call.inputKey === undefined || !call.operation) continue;
+        const key = JSON.stringify([call.domain,call.operation,call.action ?? null,call.inputKey]);
+        const prev = repeated.get(key);
+        if (prev) prev.count++;
+        else repeated.set(key,{operation:op,count:1,readOnly:readOps.has(call.operation)});
+      }
+      for (const name of components) byComponent[name] = (byComponent[name] ?? 0) + 1;
+      const repeats = [...repeated.values()].filter(x=>x.count>1)
+        .map(x=>({operation:x.operation,repeatCalls:x.count-1,readOnly:x.readOnly}))
+        .sort((a,b)=>b.repeatCalls-a.repeatCalls);
+      return {
+        durationMs: Math.round(performance.now()-at),
+        capturedIpcCalls: calls.length,
+        businessCoreIpcCalls: calls.filter(x=>x.command==="business_core_call").length,
+        callsByOperation: Object.fromEntries(Object.entries(byOperation).sort((a,b)=>b[1]-a[1])),
+        repeatedSameInputCalls: repeats.reduce((n,x)=>n+x.repeatCalls,0),
+        readOnlyRepeatCandidates: repeats.filter(x=>x.readOnly).reduce((n,x)=>n+x.repeatCalls,0),
+        repeatedOperations: repeats.slice(0,18),
+        measuredRenderInvocations: components.length,
+        rendersByComponent: byComponent,
+      };
+    }, marker);
+    record("PERF_REAL_WINDOWS_" + name, summary);
+    await save();
+    return summary;
+  };
   page.on("pageerror",e=>results.failures.push("js-pageerror: "+e.message));
   page.on("console",m=>{if(m.type()==="error") results.failures.push("console: "+m.text());});
   await page.locator("nav[aria-label='업무 메뉴']").waitFor({timeout:90000});
@@ -116,6 +167,10 @@ try {
   await page.reload({waitUntil:"domcontentloaded"});
   await page.locator("nav[aria-label='업무 메뉴']").waitFor({timeout:60000});
   await page.getByRole("button",{name:"접수",exact:true}).click();
+  const idleMark = await markPerf();
+  await sleep(1200);
+  await endPerf("IDLE_1200MS",idleMark);
+  const pasteMark = await markPerf();
 
   const raw=["김가상","010-1234-5678","경기도 의정부시 시민로 100","709 2개",
     "박가상","010-2345-6789","서울특별시 마포구 월드컵로 20","GT-1 1개"].join("\n");
@@ -124,6 +179,9 @@ try {
   await page.waitForFunction(()=>document.querySelector(".review-pane")?.textContent?.includes("김가상"),
     null,{timeout:30000});
   record("RECOGNIZED_TWO_RECIPIENT_SOURCE",{rawLength:raw.length});
+  await sleep(650);
+  await endPerf("PASTE_TWO_RECIPIENTS",pasteMark);
+  const dealerMark = await markPerf();
   await page.getByRole("button",{name:"거래처 찾기"}).click();
   await page.locator(".client-chooser-list .client-result")
     .filter({hasText:"가상소매점"}).click();
@@ -169,6 +227,8 @@ try {
       el.querySelector("h3")?.textContent?.includes("조치 2건");
   },null,{timeout:30000});
 
+  await endPerf("SELECT_RETAIL_DEALER",dealerMark);
+  const settledMark = await markPerf();
   // End-to-end regression for the reported 2–3 second delayed price loss.
   // Observe the REAL WebView2 DOM throughout the delayed Rust recognition
   // / merge / pricing effects, not just immediately after dealer selection.
@@ -200,6 +260,7 @@ try {
     frames.push(capture());
     return frames;
   });
+  await endPerf("SETTLED_4200MS",settledMark);
   const lost=retentionFrames.filter(frame=>
     !frame.amounts.some(text=>text.includes("84,000")) ||
     frame.priceErrors.length>0 ||

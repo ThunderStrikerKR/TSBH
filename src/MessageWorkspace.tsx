@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { auditReactRender } from "./perf-audit";
 
 import { nativeAutomaticMessage, nativeDecorateCopyText, type NativeAutomaticMessage } from "./native-automatic-message";
 import { nativeRecordMessageCopy } from "./native-message-audit";
@@ -20,6 +21,7 @@ export function MessageWorkspace({
   onSelect: (id: string) => void;
   onNotice: NoticeSink;
 }) {
+  auditReactRender("MessageWorkspace");
   const [busy, setBusy] = useState(false),
     [status, setStatus] = useState(""),
     [includeLinks, setIncludeLinks] = useState(false),

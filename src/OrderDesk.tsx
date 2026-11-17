@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { auditReactRender } from "./perf-audit";
 import { CorrectionPanel } from "./CorrectionPanel";
 import { ActualFreightField } from "./ActualFreightField";
 import { useNativeDeliveryRequirements } from "./useNativeDeliveryRequirements";
@@ -18,6 +19,7 @@ import { businessCoreCall } from "./tauri-bridge";
 import type { Order } from "./types";
 import { Field, clone } from "./ui";
 export function OrderDesk(props: OrderDeskProps) {
+  auditReactRender("OrderDesk:" + props.viewMode);
   const [changeRequest, setChangeRequest] = useState<string>();
   const [approvingQuantity, setApprovingQuantity] = useState(false);
   const quantityActionInFlight = useRef(false);

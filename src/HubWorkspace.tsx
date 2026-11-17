@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { auditReactRender } from "./perf-audit";
 import { createPortal, flushSync } from "react-dom";
 import { HubPanels, defaultPanels } from "./HubPanels";
 import { askSaveChanges } from "./dialogs";
@@ -28,6 +29,7 @@ const ManualClassification = lazy(() =>
   })),
 );
 export function HubWorkspace(props: Props) {
+  auditReactRender("HubWorkspace");
   const [manual, setManual] = useState(false);
   const [discardRevision, setDiscardRevision] = useState(0);
   const deletedSelection = useRef<WorkflowSelection | undefined>(undefined);
