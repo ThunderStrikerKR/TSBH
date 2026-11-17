@@ -197,3 +197,16 @@ test("actual order desk links shipping memo and visual rules distinguish exact f
   assert.match(css, /\.linked-token\.linked-active/);
   assert.match(css, /\.recipient-review\.linked-group-context/);
 });
+
+test("source evidence uses fill without permanent borders; detail highlights stay inside actual controls", () => {
+  const css = read("src/styles/receipt-document.css");
+  const source = css.split("/* Classified source spans")[1]?.split(".hub-panels .review-pane .recipient-review.linked-group-context")[0];
+  const details = css.split("/* Highlight the actual input's inner box")[1] ?? "";
+  assert.ok(source, "source highlight contract missing");
+  assert.match(source, /\.linked-token\s*\{[\s\S]*?border: 0;/);
+  assert.match(source, /\.linked-token\.linked-active\s*\{[\s\S]*?box-shadow: inset 0 -2px 0 #75b5ff/);
+  assert.doesNotMatch(source, /border: 2px solid|border-color:/);
+  assert.match(details, /\.linked-field\.linked-active\s*\{[\s\S]*?outline: none !important;/);
+  assert.match(details, /\.linked-field\.linked-active \.field :is\(input, select, textarea\)\s*\{[\s\S]*?box-shadow: inset 0 0 0 2px #75b5ff/);
+  assert.doesNotMatch(details, /outline: 2px solid #75b5ff/);
+});
