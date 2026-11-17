@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { DOMAIN_SCOPES, selectWindowsScope } from "../scripts/classify-dev-windows-smoke.mjs";
 const read=p=>readFileSync(new URL("../"+p,import.meta.url),"utf8");
 
@@ -33,7 +34,7 @@ test("domain runs never masquerade as full GUI or window restart checks",()=>{
 test("all five independently owned domain modules parse as Node ESM without running Windows",()=>{
   for(const domain of DOMAIN_SCOPES){
     const path=new URL("../scripts/ci-domains/"+domain+".mjs",import.meta.url);
-    const checked=spawnSync(process.execPath,["--check",path.pathname],{encoding:"utf8"});
+    const checked=spawnSync(process.execPath,["--check",fileURLToPath(path)],{encoding:"utf8"});
     assert.equal(checked.status,0,domain+" syntax failed: "+checked.stderr);
   }
 });
