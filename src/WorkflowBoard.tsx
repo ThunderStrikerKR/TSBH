@@ -107,7 +107,7 @@ export function WorkflowBoard({
     if (!ready) return;
     const step = native.byId[id]?.step;
     if (step === undefined) return;
-    onStageHover?.(step < 4 ? { groupId: id, step: step + 1 } : undefined);
+    onStageHover?.({ groupId: id, step: Math.min(step + 1, 4) });
   }, [ready, native.byId, onStageHover]);
   const [manuallyClosedGroup, setManuallyClosedGroup] = useState<string>(),
     [busy, setBusy] = useState(false),
@@ -401,7 +401,7 @@ export function WorkflowBoard({
                   aria-label={buttonLabel}
                   onMouseEnter={() => {
                     hoveredGroup.current = g.id;
-                    onStageHover?.(step < 4 ? { groupId: g.id, step: step + 1 } : undefined);
+                    onStageHover?.({ groupId: g.id, step: Math.min(step + 1, 4) });
                   }}
                   onMouseLeave={() => {
                     hoveredGroup.current = undefined;
