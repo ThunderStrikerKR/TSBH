@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { validPanels } from "./HubPanels";
+import { panelMinimumWidths, validPanels } from "./HubPanels";
 import type { DockStatus } from "./types";
 import { useViewportScale } from "./shared/useViewportScale";
 export function HubShell({
@@ -22,7 +22,9 @@ export function HubShell({
 }) {
   const viewportScale = useViewportScale(),
     kakaoMinimum = 392 * viewportScale,
-    mainMinimum = 832 * viewportScale;
+    // The nested three-column reception grid needs its own three minima
+    // plus two 6px splitters. Keep the outer grid in sync with that width.
+    mainMinimum = (panelMinimumWidths[1] + panelMinimumWidths[2] + panelMinimumWidths[3] + 12) * viewportScale;
   const [live, setLive] = useState<number[]>(),
     region = useRef<HTMLDivElement>(null),
     drag = useRef<{ x: number; width: number; r: number[] } | undefined>(undefined),
