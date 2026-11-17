@@ -27,6 +27,32 @@ export async function run(page,{record,snap,paste,chooseDealer}){
   assert.equal(actual.clients,2);
   assert.equal(actual.orders,0);
   record("CLIENTS_RUST_EXPLICIT_AUTO_MATCH",actual);
+  // Direct selection is already an explicit user decision. A manual
+  // "CLIENT_MATCH_EVIDENCE" INFO card must not ask for another confirmation.
+  await page.locator(".receipt-client").getByRole("button",{name:"변경",exact:true}).click();
+  await page.locator(".client-chooser-list .client-result")
+    .filter({hasText:"가상소매점"}).click();
+  await page.locator(".receipt-client b").filter({hasText:"가상소매점"})
+    .waitFor({state:"visible",timeout:30000});
+  await page.waitForFunction(()=>
+    document.querySelector(".staff-checks")?.getAttribute("aria-busy")==="false",
+    null,{timeout:30000});
+  // Observe past the asynchronous Rust review refresh; do not assert only
+  // against a temporary loading/empty review panel.
+  await page.waitForTimeout(1400);
+  const afterManual=await page.evaluate(()=>({
+    dealer:document.querySelector(".receipt-client b")?.textContent?.trim(),
+    review:document.querySelector(".staff-checks")?.textContent??"",
+  }));
+  assert.equal(afterManual.dealer,"가상소매점");
+  assert.ok(!afterManual.review.includes("거래처 연결 근거"),
+    "An accepted manual dealer choice must not generate another review notice");
+  assert.ok(!afterManual.review.includes("사용자가 거래처"),
+    "Manual provenance is retained internally, not shown as a review card");
+  record("CLIENTS_MANUAL_SELECTION_SILENT",{
+    dealer:afterManual.dealer,
+    hasRedundantEvidence:false,
+  });
   await snap(page,"clients");
 }
 
