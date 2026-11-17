@@ -362,7 +362,6 @@ export function OrderDesk(props: OrderDeskProps) {
                 <div className="recipient-body">
                   <header className="recipient-section-heading">
                     <h2>수취인별 주문 정보</h2>
-                    <b>{draft.recipients.find((r) => r.id === shownRecipient)?.name}</b>
                     {exported &&
                       activeShipment &&
                       state.workflow?.queue.some(
