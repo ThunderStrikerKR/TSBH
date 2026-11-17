@@ -38,7 +38,8 @@ export function resizePanelRatios(
   const minRight = minima[right];
   const leftWidth = Math.max(minLeft,
     Math.min(pairWidth - minRight, measuredWidths[splitIndex] + deltaPx));
-  if (leftWidth < minLeft || pairWidth - leftWidth < minRight) return current;
+  if (leftWidth < minLeft || pairWidth - leftWidth < minRight ||
+      Math.abs(leftWidth - measuredWidths[splitIndex]) < 0.5) return current;
   const nextWidths = [...measuredWidths];
   nextWidths[splitIndex] = leftWidth;
   nextWidths[splitIndex + 1] = pairWidth - leftWidth;
