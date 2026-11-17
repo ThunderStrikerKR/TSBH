@@ -7,16 +7,18 @@ const read=p=>readFileSync(new URL("../"+p,import.meta.url),"utf8");
 test("each domain has an independent real Tauri Windows GUI entry",()=>{
   const source=read("scripts/ci-dev-domain-gui.mjs");
   for(const domain of DOMAIN_SCOPES){
-    assert.match(source,new RegExp("async function "+domain+"\\(page\\)"));
+    const module=read("scripts/ci-domains/"+domain+".mjs");
+    assert.match(module,/export async function run\(page,\{record,snap,paste,chooseDealer\}\)/);
   }
   assert.match(source,/initial\.orders\.length\|\|initial\.clients\.length/);
   assert.match(source,/await api\.workspaceMode\(\)/);
   assert.match(source,/chromium\.connectOverCDP/);
   assert.ok(source.includes("127\\.0\\.0\\.1:5173"));
   assert.match(source,/tabs\.some\(t=>t\.type==="page"\)/);
-  assert.match(source,/probeTwoConsecutiveOrders/);
-  assert.match(source,/probeFactoryReplyNotifications/);
+  assert.match(read("scripts/ci-domains/orders.mjs"),/probeTwoConsecutiveOrders/);
+  assert.match(read("scripts/ci-domains/factory.mjs"),/probeFactoryReplyNotifications/);
   assert.match(source,/BANDO_DEV_DOMAIN_PASS/);
+  assert.match(source,/import\("\.\/ci-domains\/"/);
 });
 test("domain runs never masquerade as full GUI or window restart checks",()=>{
   const runner=read("scripts/migration32-dev-windows-smoke.ps1");

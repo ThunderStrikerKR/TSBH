@@ -22,6 +22,11 @@ on:
       - scripts/verify-dev-window-placement-win.ps1
       - scripts/migration32-dev-business-ui.mjs
       - scripts/ci-dev-domain-gui.mjs
+      - scripts/ci-domains/orders.mjs
+      - scripts/ci-domains/pricing.mjs
+      - scripts/ci-domains/shipping.mjs
+      - scripts/ci-domains/clients.mjs
+      - scripts/ci-domains/factory.mjs
       - scripts/migration31-real-two-orders.mjs
       - scripts/migration32-real-factory-notifications.mjs
       - scripts/migration32-real-ocr-cancel.mjs

@@ -24,3 +24,8 @@
 - factory: 로젠 XLSX 오류·운송장 15자리 초과 검증·SQLite 알림 영속성
 
 기본 full은 기존 GUI 37개와 창 재실행 검증을 모두 보존한다. 공통 Rust/React 변경 및 범위가 불분명한 변경은 반드시 full을 실행한다. 파일 소유권이 단독으로 확정된 공장 회신 fixture 스크립트만 자동 factory로 분류한다.
+
+### 36차 후속: 도메인별 테스트 스크립트 독립 소유
+- `scripts/ci-domains/orders.mjs`, `pricing.mjs`, `shipping.mjs`, `clients.mjs`, `factory.mjs` 각각 실제 화면 조작과 SQLite 검증을 가진다.
+- 각 도메인 스크립트만 수정한 커밋은 해당 Windows GUI 검증만 자동 선택한다. **Rust/React 업무 로직, 공통 GUI 런처, 두 도메인 이상 수정**은 여전히 전체 37건으로 확인한다.
+- `migration-output.yml`의 세 Rust 배치 작업은 `Swatinem/rust-cache@v2`로 공통 Cargo 대상 경로의 컴파일된 의존성을 캐시한다. 범위별 컴파일 및 테스트 명령 자체는 유지한다.

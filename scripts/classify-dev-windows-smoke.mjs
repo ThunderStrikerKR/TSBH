@@ -19,6 +19,11 @@ const TEST_FILES = new Set([
 ]);
 const FOCUSED_PROBES = new Map([
   ["scripts/migration32-real-factory-notifications.mjs","factory"],
+  ["scripts/ci-domains/orders.mjs","orders"],
+  ["scripts/ci-domains/pricing.mjs","pricing"],
+  ["scripts/ci-domains/shipping.mjs","shipping"],
+  ["scripts/ci-domains/clients.mjs","clients"],
+  ["scripts/ci-domains/factory.mjs","factory"],
 ]);
 export const DOMAIN_SCOPES=["orders","pricing","shipping","clients","factory"];
 const LIB = "src-tauri/src/lib.rs";

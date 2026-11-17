@@ -47,3 +47,14 @@ test("single factory CI probe routes to isolated real Windows factory scenario",
   assert.equal(selectWindowsScope(["scripts/migration32-real-factory-notifications.mjs"],null,null),"factory");
   assert.equal(selectWindowsScope(["scripts/migration32-real-factory-notifications.mjs","src/OrderDesk.tsx"],null,null),"full");
 });
+
+test("one domain-owned Windows probe change runs only that real GUI domain", () => {
+  for (const domain of ["orders","pricing","shipping","clients","factory"]) {
+    const file="scripts/ci-domains/"+domain+".mjs";
+    assert.equal(selectWindowsScope([file],null,null),domain);
+    assert.equal(selectWindowsScope([file,"tests/ci-dev-domain-gui-contract.test.mjs"],null,null),domain);
+    assert.equal(selectWindowsScope([file,"src/OrderDesk.tsx"],null,null),"full");
+  }
+  assert.equal(selectWindowsScope(["scripts/ci-domains/orders.mjs","scripts/ci-domains/pricing.mjs"],null,null),"full");
+  assert.equal(selectWindowsScope(["scripts/ci-dev-domain-gui.mjs"],null,null),"full");
+});

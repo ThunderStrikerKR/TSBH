@@ -69,12 +69,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
+      # Preserve compiled Rust dependencies in the actual shared Cargo target.
+      # The previous registry-only cache still recompiled dependencies each run.
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-rust-core-batch-v1-${{ hashFiles('tests/rust-migration/**/Cargo.lock', 'src-tauri/Cargo.lock') }}
+          shared-key: bando-rust-core-parity
+          workspaces: |
+            tests/rust-migration/output -> ../../../.cargo-target
+            tests/rust-migration/integration -> ../../../.cargo-target
       - name: Compile and run independent Rust output tests
         run: cargo test --manifest-path tests/rust-migration/output/Cargo.toml
       - name: Execute actual three-domain Rust dispatcher tests
@@ -93,12 +95,13 @@ jobs:
           node-version: '22'
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
+      # Preserve compiled Rust dependencies in the actual shared Cargo target.
+      # The previous registry-only cache still recompiled dependencies each run.
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-rust-rules-batch-v1-${{ hashFiles('tests/rust-migration/**/Cargo.lock', 'src-tauri/Cargo.lock') }}
+          shared-key: bando-rust-rules-parity
+          workspaces: |
+            tests/rust-migration/rules -> ../../../.cargo-target
       - name: Install locked TypeScript oracle dependencies once
         run: npm ci --no-audit --no-fund --ignore-scripts
       - name: Verify actual native save-order state transitions against TypeScript
@@ -125,12 +128,17 @@ jobs:
           node-version: '22'
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
+      # Preserve compiled Rust dependencies in the actual shared Cargo target.
+      # The previous registry-only cache still recompiled dependencies each run.
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-rust-output-reception-factory-batch-v1-${{ hashFiles('tests/rust-migration/**/Cargo.lock', 'src-tauri/Cargo.lock') }}
+          shared-key: bando-rust-output-factory-parity
+          workspaces: |
+            tests/rust-migration/output -> ../../../.cargo-target
+            tests/rust-migration/recognition -> ../../../.cargo-target
+            tests/rust-migration/rules -> ../../../.cargo-target
+            tests/rust-migration/catalog-clients -> ../../../.cargo-target
+            tests/rust-migration/factory-reply -> ../../../.cargo-target
       - name: Install locked TypeScript oracle dependencies once
         run: npm ci --no-audit --no-fund --ignore-scripts
       - name: Compare TypeScript oracle with real Rust engine

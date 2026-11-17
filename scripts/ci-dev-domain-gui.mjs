@@ -5,8 +5,6 @@ import { chromium } from "playwright";
 import { resolve, join } from "node:path";
 import { promises as fs } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
-import { probeTwoConsecutiveOrders } from "./migration31-real-two-orders.mjs";
-import { probeFactoryReplyNotifications } from "./migration32-real-factory-notifications.mjs";
 
 const DOMAINS=["orders","pricing","shipping","clients","factory"];
 const domain=process.argv[2];
@@ -94,102 +92,7 @@ async function chooseDealer(page,name="가상소매점"){
     .waitFor({state:"visible",timeout:30000});
 }
 
-async function orders(page){
-  await probeTwoConsecutiveOrders(page,{record,snap},{holdBoth:false});
-  const stored=await page.evaluate(async()=>
-    (await window.bando.load()).orders.map(o=>({id:o.id,confirmed:!!o.confirmedAt})));
-  assert.equal(stored.length,2);
-  assert.ok(stored.every(o=>o.confirmed));
-  record("ORDERS_TWO_SQLITE_CONFIRMATIONS",{orders:stored});
-}
-
-async function pricing(page){
-  await paste(page,"김가상");
-  await chooseDealer(page);
-  await page.waitForFunction(()=>[...document.querySelectorAll("button.item-amount")]
-    .some(e=>e.textContent?.includes("84,000")),null,{timeout:30000});
-  await sleep(4200);
-  const actual=await page.evaluate(async()=>({
-    amounts:[...document.querySelectorAll("button.item-amount")].map(e=>e.textContent?.trim()),
-    orders:(await window.bando.load()).orders.length
-  }));
-  assert.ok(actual.amounts.some(x=>x?.includes("84,000")),"Retail price not retained");
-  assert.equal(actual.orders,0,"Price preview unexpectedly saved an order");
-  record("PRICING_RUST_LINE_STABLE",actual);
-  await snap(page,"price");
-}
-
-async function shipping(page){
-  await paste(page,"김가상");
-  await chooseDealer(page);
-  const money=page.locator('.items-freight-panel .freight-money input[aria-label^="김가상"]:not([disabled])').first();
-  await money.waitFor({state:"visible",timeout:45000});
-  await money.click();await money.press("ControlOrMeta+A");await money.press("Backspace");
-  await page.keyboard.type("4500",{delay:70});await money.blur();
-  await page.waitForFunction(()=>
-    [...document.querySelectorAll(".flow-fixed-summary")]
-      .some(e=>e.textContent?.includes("88,500")),null,{timeout:30000});
-  assert.equal((await money.inputValue()).replaceAll(",",""),"4500");
-  const group=page.locator(".workflow-group").filter({
-    has:page.getByRole("button",{name:"배송 건 김가상"})
-  }).first();
-  await group.getByRole("button",{name:"주문 확인 완료",exact:true}).click();
-  await page.waitForFunction(async()=>(await window.bando.load()).orders.length===1,
-    null,{timeout:30000});
-  const stored=await page.evaluate(async()=>{
-    const state=await window.bando.load();
-    return {count:state.orders.length,confirmed:!!state.orders[0]?.confirmedAt,
-      raw:state.orders[0]?.raw};
-  });
-  assert.equal(stored.count,1);
-  assert.ok(stored.confirmed);
-  record("SHIPPING_4500_RUST_TOTAL_AND_SQLITE_CONFIRM",stored);
-  await snap(page,"shipping");
-}
-
-async function clients(page){
-  const raw=[
-    "거래처: 가상대리점","정가상","010-1234-5678",
-    "경기도 의정부시 시민로 100","709 1개"
-  ].join("\n");
-  const evidence=await page.evaluate(async text=>{
-    const state=await window.bando.load();
-    return window.__TAURI_INTERNALS__.invoke("business_core_call",{
-      domain:"catalog_clients",operation:"auto_match_reception_client",
-      payload:{state,windows:[],raw:text,activeChatHandle:""}
-    });
-  },raw);
-  assert.equal(evidence.source,"RAW_EXPLICIT");
-  assert.equal(evidence.clientId,"sim31-dealer");
-  await paste(page,"정가상","709 1개","가상대리점");
-  await page.locator(".receipt-client b").filter({hasText:"가상대리점"})
-    .waitFor({state:"visible",timeout:30000});
-  const actual=await page.evaluate(async()=>{
-    const state=await window.bando.load();
-    return {chosen:document.querySelector(".receipt-client b")?.textContent?.trim(),
-      clients:state.clients.length,orders:state.orders.length};
-  });
-  assert.equal(actual.chosen,"가상대리점");
-  assert.equal(actual.clients,2);
-  assert.equal(actual.orders,0);
-  record("CLIENTS_RUST_EXPLICIT_AUTO_MATCH",actual);
-  await snap(page,"clients");
-}
-
-async function factory(page){
-  process.env.BANDO_PERSISTENT_NOTICE_AUDIT="true";
-  const baseline=resolve(process.env.APPDATA||"",
-    "com.bandostand.bandohub.tauri","bando-hub-v001.sqlite");
-  await probeFactoryReplyNotifications(page,{baseline,record,snap});
-  const final=await page.evaluate(async()=>{
-    const state=await window.bando.load();
-    return {orders:state.orders.length,
-      notices:(await window.bando.notificationList()).length};
-  });
-  assert.equal(final.orders,0);
-  assert.equal(final.notices,0);
-  record("FACTORY_INDEPENDENT_SQLITE_ROUNDTRIP",final);
-}
+// Every domain lives in a separate module and always receives a new TEST DB.
 
 let browser;
 try{
@@ -216,7 +119,9 @@ try{
   page.on("pageerror",e=>results.failures.push(String(e)));
   await page.locator("nav[aria-label='업무 메뉴']").waitFor({timeout:90000});
   await setupFixture(page);
-  await ({orders,pricing,shipping,clients,factory})[domain](page);
+  const { run } = await import("./ci-domains/" + domain + ".mjs");
+  assert.equal(typeof run,"function","Domain module lacks a real GUI probe");
+  await run(page,{record,snap,paste,chooseDealer});
   if(results.failures.length)throw Error("Unexpected JS errors: "+JSON.stringify(results.failures));
   results.status="PASS";
   console.log("BANDO_DEV_DOMAIN_PASS",JSON.stringify({
