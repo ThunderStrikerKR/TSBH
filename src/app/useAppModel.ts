@@ -139,7 +139,9 @@ export function useAppModel() {
       () =>
         void window
           .bando!.dockStatus()
-          .then(setDock)
+          .then((next) => setDock((previous) =>
+            JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
+          ))
           .catch((e) => setNotice(String(e), "error")),
       300,
     );

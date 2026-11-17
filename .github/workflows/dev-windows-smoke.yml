@@ -18,6 +18,7 @@ on:
       - scripts/migration32-real-ocr-cancel.mjs
       - src/SourceDocument.tsx
       - src/App.tsx
+      - src/app/useAppModel.ts
       - src/shared/useEventCallback.ts
       - src/HubWorkspace.tsx
       - src/tauri-bridge.ts
