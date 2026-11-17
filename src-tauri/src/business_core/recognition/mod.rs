@@ -1691,6 +1691,19 @@ mod tests {
             "the native engine must return a reviewable analysis");
     }
     #[test]
+    fn one_line_team_name_zip_and_phone_diagnostic() {
+        // Same format as user-submitted example, with synthetic name and
+        // telephone. No identifying individual is written into public CI.
+        let raw="반도 Bando 409 건반 스탠드 1개\n청소년활동팀(1층)(김가상)   (12416) 경기도 가평군 가평읍 문화로 120 (가평읍, 가상 청소년 문화의 집) 1층   010-1234-5678";
+        let state=serde_json::from_str::<Value>(include_str!(
+            "../../../resources/state-seed.json"
+        )).expect("catalog");
+        let result=execute("analyze_order",json!({"raw":raw,"state":state}))
+            .expect("production Rust recognition");
+        println!("ONE_LINE_TEAM_ZIP_DIAGNOSTIC {}",result);
+        assert!(result["recipients"].is_array(),"production result");
+    }
+    #[test]
     fn narrative_conductor_order_with_repeated_recipient_label_diagnostic() {
         // Structure-preserving synthetic stand-in for a real staff sample:
         // no actual individual's name or phone is committed to public CI.
