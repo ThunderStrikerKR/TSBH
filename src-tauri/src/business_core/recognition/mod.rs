@@ -384,6 +384,17 @@ fn recipient_owner_index(
     if candidate.paragraph==preceding.paragraph || candidate.paragraph!=following.paragraph {
         return previous;
     }
+    // The prior named recipient must already have independent delivery
+    // evidence before its blank-line boundary. Otherwise an address after
+    // that blank line may still be the FIRST recipient's own address, not
+    // an address preceding the next recipient's name. Prefer preserving
+    // ownership over an unsupported automatic handoff.
+    let previous_has_delivery=events.iter().any(|e|
+        e.start>preceding.start && e.start<candidate.start
+            && e.paragraph==preceding.paragraph
+            && matches!(e.kind,"address"|"phone"|"mobile")
+    );
+    if !previous_has_delivery {return previous;}
     // A separating line containing only spaces/tabs counts as a block
     // boundary too. This is a conservative overlay on the existing gates.
     let previous_gap=intervening_lines(raw,preceding.line,candidate.line);
@@ -1510,6 +1521,21 @@ mod tests {
         assert_eq!(rows[0]["mobile"],"010-1234-5678");
         assert_eq!(rows[0]["phone"],"010-2345-6789");
         assert!(rows[0]["address"].as_str().unwrap().contains("월드컵로 20"));
+    }
+    #[test]
+    fn blank_after_first_name_must_not_steal_its_delivery_for_next_name() {
+        // No independent delivery evidence for the first name exists before
+        // this blank: proximity to the later name cannot prove ownership.
+        for blank in ["\n\n","\n  \t\n"] {
+            let raw=format!("김가상{blank}서울특별시 마포구 월드컵로 20\n010-1234-5678\n박가상");
+            let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+            let rows=result["recipients"].as_array().unwrap();
+            assert_eq!(rows.len(),2);
+            assert_eq!(rows[0]["mobile"],"010-1234-5678");
+            assert!(rows[0]["address"].as_str().unwrap().contains("월드컵로 20"));
+            assert!(rows[1]["mobile"].as_str().unwrap_or("").is_empty());
+            assert!(rows[1]["address"].as_str().unwrap_or("").is_empty());
+        }
     }
     #[test]
     fn crlf_whitespace_block_boundary_keeps_phone_ownership() {
