@@ -70,6 +70,25 @@ export async function run(page,{record,snap,paste,chooseDealer}){
   record("ORDERS_RETAINED_UNASSIGNED_ASSIGNMENT",{
     recipient:"미선택가상갑",dealer:assigned.dealer,pending:assigned.pending
   });
+  // The remaining unassigned receipt must still be selectable even AFTER
+  // the first pending receipt has gained its own valid shipment/group.
+  await page.locator(".workflow-unassigned-draft")
+    .filter({hasText:"미선택가상을"}).click();
+  await page.waitForFunction(()=>
+    (document.querySelector(".source-document")?.textContent??"").includes("미선택가상을") &&
+    !document.querySelector(".receipt-client"),null,{timeout:30000});
+  await page.waitForTimeout(1200);
+  const remaining=await page.evaluate(()=>({
+    raw:document.querySelector(".source-document")?.textContent??"",
+    dealer:document.querySelector(".receipt-client b")?.textContent?.trim()??null,
+    pending:document.querySelectorAll(".workflow-unassigned-draft").length
+  }));
+  assert.ok(remaining.raw.includes("미선택가상을") && remaining.dealer===null,
+    "P0_REMAINING_UNASSIGNED_RECEPTION_FORCED_TO_PREVIOUS_CLIENT "+JSON.stringify(remaining));
+  assert.equal(remaining.pending,1);
+  record("ORDERS_REMAINING_UNASSIGNED_AFTER_FIRST_ASSIGNED",{
+    recipient:"미선택가상을",remainsWithoutDealer:true
+  });
   assert.equal((await page.evaluate(async()=>window.bando.load())).orders.length,2,
     "Switching unsaved receipts must not write new orders to SQLite");
   await snap(page,"orders-unassigned-selection");
