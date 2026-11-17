@@ -89,7 +89,6 @@ export function HubPanels({
   const root = useRef<HTMLDivElement>(null);
   const drag = useRef<SplitDrag | null>(null);
   const currentRatios = validPanels(previewRatios ?? ratios);
-  const total = shown.reduce((sum, index) => sum + currentRatios[index], 0);
   const minWidth = shown.reduce((sum, index) => sum + minima[index], 0) +
     (shown.length - 1) * SPLIT_WIDTH;
 
@@ -121,9 +120,13 @@ export function HubPanels({
         className="hub-panels"
         style={{
           minWidth,
+          // Fr tracks need the original 20/29/29/22 weights, NOT 0.2/0.29...
+          // fractions. Fractional fr values below one can leave unused space
+          // when minmax minimums clamp a track (especially the 420px queue).
+          width: "100%",
           gridTemplateColumns: shown
             .flatMap((i, index) => [
-              `minmax(${minima[i]}px,${currentRatios[i] / total}fr)`,
+              `minmax(${minima[i]}px,${currentRatios[i]}fr)`,
               ...(index < shown.length - 1 ? [`${SPLIT_WIDTH}px`] : []),
             ])
             .join(" "),
