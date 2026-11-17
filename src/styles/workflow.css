@@ -50,7 +50,12 @@
 .hub-slot-3 .workflow-group > header {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 5px;
+}
+.hub-slot-3 .workflow-group > header > button:not(.flow-heading-toggle) {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .hub-slot-3 .workflow-group .flow-heading-toggle {
   display: flex;
@@ -77,15 +82,27 @@
   margin-right: 6px;
 }
 .hub-slot-3 .workflow-group .flow-group-name {
-  flex: 0 1 auto;
+  /* Ten full-width Korean glyphs at the established 14px label font,
+     plus 3px padding on either side. Short names keep this same width,
+     so the four signal lights never slide sideways. */
+  flex: 0 0 146px;
+  width: 146px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .hub-slot-3 .workflow-group .flow-heading-toggle > .workflow-signals {
-  flex: 0 0 auto;
+  flex: 0 0 82px;
+  width: 82px;
+  gap: 6px;
   margin-left: 6px;
+  justify-content: flex-start;
+}
+.hub-slot-3 .workflow-group .workflow-signals .signal {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
 }
 .app-v03 .hub-slot-3 .workflow-progress > .primary {
   flex: 0 1 auto;
