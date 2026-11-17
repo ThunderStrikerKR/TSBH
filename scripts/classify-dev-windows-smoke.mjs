@@ -9,12 +9,18 @@ const WINDOW_FILES = new Set([
   "tests/tauri-window-placement.test.mjs",
   "tests/dev-window-placement-real-restart.test.mjs",
   "tests/ci-windows-smoke-routing.test.mjs",
+  "tests/ci-dev-domain-gui-contract.test.mjs",
 ]);
 const TEST_FILES = new Set([
   "tests/tauri-window-placement.test.mjs",
   "tests/dev-window-placement-real-restart.test.mjs",
   "tests/ci-windows-smoke-routing.test.mjs",
+  "tests/ci-dev-domain-gui-contract.test.mjs",
 ]);
+const FOCUSED_PROBES = new Map([
+  ["scripts/migration32-real-factory-notifications.mjs","factory"],
+]);
+export const DOMAIN_SCOPES=["orders","pricing","shipping","clients","factory"];
 const LIB = "src-tauri/src/lib.rs";
 const BLOCKS = [
   ["// The window-state plugin can restore", "struct Database {"],
@@ -42,7 +48,14 @@ export function stripWindowSections(input) {
 export function selectWindowsScope(paths, previousLib, currentLib) {
   if (!Array.isArray(paths) || paths.length === 0) return "full";
   let testOnly = true;
+  let focused = null;
   for (const path of paths) {
+    if (FOCUSED_PROBES.has(path)) {
+      if (focused && focused !== FOCUSED_PROBES.get(path)) return "full";
+      focused = FOCUSED_PROBES.get(path);
+      testOnly = false;
+      continue;
+    }
     if (path === LIB) {
       testOnly = false;
       const before = stripWindowSections(previousLib);
@@ -54,7 +67,8 @@ export function selectWindowsScope(paths, previousLib, currentLib) {
       testOnly = false;
     }
   }
-  return testOnly ? "fast" : "window";
+  return focused ? (paths.every(p=>FOCUSED_PROBES.has(p) || TEST_FILES.has(p)) ? focused : "full")
+    : testOnly ? "fast" : "window";
 }
 
 function git(...args) {
@@ -66,7 +80,7 @@ function main() {
   let scope = "full";
   let paths = [];
   if (override) {
-    if (!["full", "window"].includes(override)) throw new Error("Invalid scope override");
+    if (!["full", "window", ...DOMAIN_SCOPES].includes(override)) throw new Error("Invalid scope override");
     scope = override;
   } else {
     const head = process.env.CI_HEAD_SHA || "HEAD";

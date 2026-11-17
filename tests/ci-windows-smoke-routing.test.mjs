@@ -42,3 +42,8 @@ test("unknown, structural and empty changes require full", () => {
   assert.equal(selectWindowsScope(["src-tauri/src/business_core/rules/pricing.rs"], null, null), "full");
   assert.equal(selectWindowsScope([".github/workflows/dev-windows-smoke.yml"], null, null), "full");
 });
+
+test("single factory CI probe routes to isolated real Windows factory scenario", () => {
+  assert.equal(selectWindowsScope(["scripts/migration32-real-factory-notifications.mjs"],null,null),"factory");
+  assert.equal(selectWindowsScope(["scripts/migration32-real-factory-notifications.mjs","src/OrderDesk.tsx"],null,null),"full");
+});

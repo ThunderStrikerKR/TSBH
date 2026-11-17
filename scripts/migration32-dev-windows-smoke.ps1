@@ -1,6 +1,6 @@
 param(
   [string]$OutDir = "dev-windows-smoke-evidence",
-  [ValidateSet("full","window")][string]$Scope = "full"
+  [ValidateSet("full","window","orders","pricing","shipping","clients","factory")][string]$Scope = "full"
 )
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -100,7 +100,7 @@ db.close()
     $desktop = & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo "scripts\stage9-windows-desktop-probe.ps1") -ProcessId $native[0].Id -OutDir $out
     $report.desktop=$desktop | Out-String | ConvertFrom-Json
   } catch { $report.screenshotError=$_.Exception.Message }
-  if ($Scope -eq "full") {
+  if ($Scope -ne "window") {
     # DEV_WINDOWS_TAURI.cmd intentionally calls npm ci on first launch.
     # That purges --no-save packages installed before app startup, so install
     # Playwright only after this native developer process has opened.
@@ -108,23 +108,30 @@ db.close()
     if($LASTEXITCODE -ne 0) { throw "Could not install real WebView2 inspection client after DEV npm ci" }
     $env:BANDO_DEV_NATIVE_PID = [string]$native[0].Id
     Write-Host "BANDO_DEV_BUSINESS_START with real Windows Tauri debug executable"
-    & node scripts/migration32-dev-business-ui.mjs
-    if($LASTEXITCODE -ne 0) { throw "Real DEV GUI business scenario test FAILED. See dev-business-results.json" }
-    $report.businessScenarios="PASS"
+    if ($Scope -eq "full") {
+      & node scripts/migration32-dev-business-ui.mjs
+    } else {
+      & node scripts/ci-dev-domain-gui.mjs $Scope
+    }
+    if($LASTEXITCODE -ne 0) { throw "Real DEV GUI scenario $Scope failed. See evidence JSON" }
+    $report.businessScenarios=if ($Scope -eq "full") {"PASS_FULL"} else {"PASS_ISOLATED_$Scope"}
   } else {
     $report.businessScenarios="SKIPPED_WINDOW_SCOPE"
     Write-Host "BANDO_DEV_BUSINESS_SKIPPED: native-window-only scope"
   }
-  # The CI cleanup force-kills the launcher tree. To test saved geometry
-  # properly, gracefully close the real DEV window and relaunch that EXE twice.
-  $debugExe=Join-Path $repo "src-tauri\target\debug\bando_hub_tauri.exe"
-  & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File (
-    Join-Path $repo "scripts\verify-dev-window-placement-win.ps1"
-  ) -ExePath $debugExe -ExistingProcessId $native[0].Id
-  if($LASTEXITCODE -ne 0) {
-    throw "DEV window geometry/maximized restore across real EXE restarts failed"
+  if ($Scope -eq "full" -or $Scope -eq "window") {
+    # Standalone domain tests do not inherit prior restart state.
+    $debugExe=Join-Path $repo "src-tauri\target\debug\bando_hub_tauri.exe"
+    & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File (
+      Join-Path $repo "scripts\verify-dev-window-placement-win.ps1"
+    ) -ExePath $debugExe -ExistingProcessId $native[0].Id
+    if($LASTEXITCODE -ne 0) {
+      throw "DEV window geometry/maximized restore across real EXE restarts failed"
+    }
+    $report.devWindowPlacement="PASS"
+  } else {
+    $report.devWindowPlacement="NOT_RUN_DOMAIN_SCOPE"
   }
-  $report.devWindowPlacement="PASS"
   $report.status="PASS"
   Write-Host ("BANDO_DEV_WINDOWS_SMOKE_PASS "+($report | ConvertTo-Json -Depth 8 -Compress))
 } catch {
