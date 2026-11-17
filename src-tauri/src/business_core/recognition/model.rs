@@ -310,13 +310,18 @@ fn qualifiers(text: &str) -> HashSet<String> {
     }).collect();
     // Evaluate type tokens against ORIGINAL boundaries, then normalize both
     // "A 타입" and "타입 A" to the registered name's "a타입".
-    let type_re=Regex::new(r"(?i)([ab])\s*타입|타입\s*[:：]?\s*([ab])")
-        .expect("type expression");
-    for c in type_re.captures_iter(text) {
-        let Some(span)=c.get(0) else {continue};
-        if !is_boundary(text,span.start(),span.end()) {continue;}
-        if let Some(letter)=c.get(1).or_else(||c.get(2)) {
-            found.insert(format!("{}타입",letter.as_str().to_ascii_lowercase()));
+    // Run opposing orders separately: in "...LP-WA 타입B", the regex
+    // "A 타입" can overlap the real "타입B" while starting *inside* the
+    // registered model code. A single alternation would consume that span
+    // before the boundary rejection and hide the valid second candidate.
+    for expression in [r"(?i)([ab])\s*타입",r"(?i)타입\s*[:：]?\s*([ab])"] {
+        let type_re=Regex::new(expression).expect("type expression");
+        for c in type_re.captures_iter(text) {
+            let Some(span)=c.get(0) else {continue};
+            if !is_boundary(text,span.start(),span.end()) {continue;}
+            if let Some(letter)=c.get(1) {
+                found.insert(format!("{}타입",letter.as_str().to_ascii_lowercase()));
+            }
         }
     }
     found
