@@ -5,7 +5,7 @@ export const defaultPanels = [20, 80 / 3, 80 / 3, 80 / 3];
 const SPLIT_WIDTH = 6;
 // The order list must retain a single-line header with a ten-character dealer
 // name, four stage indicators, the manage button and the delete button.
-export const panelMinimumWidths = [200, 250, 250, 425];
+export const panelMinimumWidths = [200, 250, 250, 440];
 
 export function validPanels(value: unknown): number[] {
   return Array.isArray(value) &&
