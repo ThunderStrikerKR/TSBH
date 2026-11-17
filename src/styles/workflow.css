@@ -77,6 +77,8 @@
   margin-right: 6px;
 }
 .hub-slot-3 .workflow-group .flow-group-name {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
