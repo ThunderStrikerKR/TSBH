@@ -46,12 +46,17 @@ mod native_maximized_restore {
             }
         };
         unsafe {
-            if IsZoomed(hwnd) == 0 {
+            let before = IsZoomed(hwnd) != 0;
+            if !before {
                 // SW_SHOWMAXIMIZED. Do not interpret ShowWindow's return value
                 // as success: it describes the previous window visibility.
                 ShowWindow(hwnd, 3);
             }
-            if IsZoomed(hwnd) == 0 {
+            let after = IsZoomed(hwnd) != 0;
+            if std::env::var_os("GITHUB_ACTIONS").is_some() {
+                eprintln!("BANDO_WINDOW_RESTORE_NATIVE hwnd={hwnd:p} before={before} after={after}");
+            }
+            if !after {
                 eprintln!("BANDO native maximize did not reach IsZoomed=true");
             }
         }
@@ -1233,6 +1238,9 @@ pub fn run() {
                         .and_then(|saved| saved.get("main")?
                             .get("maximized")?.as_bool())
                         .unwrap_or(false);
+                    if std::env::var_os("GITHUB_ACTIONS").is_some() {
+                        eprintln!("BANDO_WINDOW_RESTORE_SAVED maximize={restore_maximized} filename={filename}");
+                    }
                     if !restore_maximized {
                         return;
                     }
@@ -1246,6 +1254,9 @@ pub fn run() {
                     let app = window.app_handle().clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_millis(650));
+                        if std::env::var_os("GITHUB_ACTIONS").is_some() {
+                            eprintln!("BANDO_WINDOW_RESTORE_DISPATCH after_show_ms=650");
+                        }
                         if let Err(error) = app.run_on_main_thread(move || {
                             #[cfg(target_os = "windows")]
                             native_maximized_restore::ensure_native_maximized(&ready_window);

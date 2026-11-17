@@ -37,6 +37,8 @@ $productionBefore=if(Test-Path -LiteralPath $productionStateFile){
 } else { $null }
 $instances=New-Object 'System.Collections.Generic.List[System.Diagnostics.Process]'
 $vite=$null
+$script:restartSequence=0
+$script:lastRestartError=$null
 
 function Get-WindowRect([System.Diagnostics.Process]$process) {
   $process.Refresh()
@@ -94,7 +96,9 @@ function Ensure-Vite {
 }
 function Start-Again {
   Ensure-Vite
-  $process=Start-Process -FilePath $ExePath -ArgumentList "--bando-developer-test" -PassThru
+  $script:restartSequence++
+  $script:lastRestartError=Join-Path $env:RUNNER_TEMP ("bando-dev-restart-" + $script:restartSequence + ".stderr.txt")
+  $process=Start-Process -FilePath $ExePath -ArgumentList "--bando-developer-test" -PassThru -RedirectStandardError $script:lastRestartError
   $instances.Add($process)
   for($i=0;$i -lt 160;$i++) {
     Start-Sleep -Milliseconds 250
@@ -158,7 +162,18 @@ try {
   }
   if (![BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle)) {
     $rect=Get-WindowRect $third
-    Write-Host "DEV_WINDOW_MAXIMIZED_FAILURE_DIAGNOSTIC: saved=true rect=$($rect | ConvertTo-Json -Compress)"
+    Write-Host "DEV_WINDOW_MAXIMIZED_FAILURE_DIAGNOSTIC: saved=true rect=$($rect | ConvertTo-Json -Compress) hwnd=$($third.MainWindowHandle)"
+    if($script:lastRestartError -and (Test-Path -LiteralPath $script:lastRestartError)) {
+      Get-Content -LiteralPath $script:lastRestartError -ErrorAction SilentlyContinue |
+        Where-Object { $_ -match "BANDO_WINDOW_RESTORE|BANDO native maximize" } |
+        Select-Object -Last 20 | ForEach-Object { Write-Host "DEV_WINDOW_NATIVE_TRACE: $_" }
+    }
+    # Distinguish an incorrectly invoked native restore from a HWND
+    # incapable of entering Win32 zoom state.
+    [BandoDevWindowProbe]::ShowWindow($third.MainWindowHandle,3) | Out-Null
+    Start-Sleep -Milliseconds 200
+    $manualZoom=[BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle)
+    Write-Host "DEV_WINDOW_MANUAL_NATIVE_MAXIMIZE: $manualZoom"
     throw "DEV maximized window did not restore after restart"
   }
   Write-Host "DEV_WINDOW_MAXIMIZED_RESTORED: true"
