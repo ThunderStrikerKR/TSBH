@@ -1671,9 +1671,10 @@ mod tests {
 
     #[test]
     fn percussion_center_z1_actual_raw_diagnostic() {
-        // Exact user-supplied text, compiled through the actual native engine.
+        // Exact SKU and document structure with synthetic recipient and
+        // phone. Never commit a real customer's contact to public test code.
         // Diagnostics intentionally do not change SKU catalog or matching.
-        let raw="■퍼커션센터 발주서■\nㅇ품목\nZ-1(건반 스탠드) * 1EA\n\nㅇ수령정보\n서울 송파구 석촌호수로 162 강남중앙교회\n정우영 목사\n010-6487-7021";
+        let raw="■퍼커션센터 발주서■\nㅇ품목\nZ-1(건반 스탠드) * 1EA\n\nㅇ수령정보\n서울 송파구 석촌호수로 162 가상교회\n김가상 목사\n010-1234-5678";
         let catalog=serde_json::from_str::<Value>(include_str!(
             "../../../resources/state-seed.json"
         )).expect("360 SKU seed");
