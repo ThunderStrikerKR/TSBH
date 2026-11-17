@@ -63,7 +63,7 @@ test("single-line dealer name and fixed stage lights are enforced before allowin
   const css = read("src/styles/workflow.css");
   assert.match(css, /\.workflow-group > header\s*\{[\s\S]*?flex-wrap: nowrap;/);
   assert.match(css, /\.workflow-group \.flow-group-name\s*\{[\s\S]*?flex: 0 0 162px;[\s\S]*?width: 162px;/);
-  assert.match(css, /\.flow-heading-toggle > \.workflow-signals\s*\{[\s\S]*?flex: 0 0 90px;[\s\S]*?width: 90px;/);
+  assert.match(css, /\.flow-heading-toggle > \.workflow-signals\s*\{[\s\S]*?flex: 0 0 82px;[\s\S]*?width: 82px;/);
   assert.match(css, /\.workflow-group \.workflow-signals \.signal\s*\{[\s\S]*?width: 18px;[\s\S]*?height: 18px;/);
   assert.match(css, /\.workflow-group > header > button:not\(\.flow-heading-toggle\)\s*\{[\s\S]*?flex: 0 0 auto;/);
 });
