@@ -114,6 +114,15 @@ export function HubWorkspace(props: Props) {
       order.raw.trim() && !state.orders.some((saved) => saved.id === order.id)).length;
     props.onPendingDraftCount?.(count);
   }, [edits, state.orders, props.onPendingDraftCount]);
+  // Pending user-owned receipts need their own explicit selection. A Rust
+  // shipment-only selection cannot stand in for an unassigned receipt.
+  const pendingWithoutClient = useMemo(() =>
+    [draft, ...Object.values(edits)]
+      .filter((order) => order.raw.trim() && !order.clientId &&
+        !state.orders.some((saved) => saved.id === order.id))
+      .filter((order, index, all) => all.findIndex((row) => row.id === order.id) === index),
+    [draft, edits, state.orders],
+  );
   const nativeBase = useNativeWorkflowReconcile(state, independentEdits);
   const base = nativeBase.state;
   const nativePreview = useNativeWorkflowReconcile(base, draft.clientId ? [draft] : []);
@@ -150,7 +159,25 @@ export function HubWorkspace(props: Props) {
     // Selection and active shipment identity must never be rewritten from a
     // pending, non-authoritative render of the previous draft.
     if (!previewReady) return;
+    // Clicking a "거래처 미선택" card is an explicit choice of a reception
+    // with NO shipment. The generic validSelection() fallback to shipments[0]
+    // must never overwrite that receipt with an unrelated dealer/order.
+    if (pendingWithoutClient.some((order) => order.id === receptionId)) {
+      if (selected) commitSelection(undefined);
+      return;
+    }
     const fresh = receptionId === draft.id && !state.orders.some((o) => o.id === draft.id);
+    // When a previously unassigned, locally retained receipt gets a dealer,
+    // prefer that receipt's new Rust shipment rather than an old first card.
+    const selectedReceptionShipment = receptionId !== draft.id && edits[receptionId]?.clientId
+      ? activeShipments(preview).find((shipment) => shipment.orderId === receptionId)
+      : undefined;
+    const preferredSelection = selected ??
+      (selectedReceptionShipment ? {
+        orderId: selectedReceptionShipment.orderId,
+        groupId: selectedReceptionShipment.groupId,
+        shipmentId: selectedReceptionShipment.id,
+      } : undefined);
     const next = fresh
       ? draft.recipients.length
         ? validSelection(
@@ -160,12 +187,12 @@ export function HubWorkspace(props: Props) {
               : { orderId: draft.id, groupId: "group:" + draft.id },
           )
         : undefined
-      : validSelection(preview, selected);
+      : validSelection(preview, preferredSelection);
     if (JSON.stringify(next) !== JSON.stringify(selected)) {
       commitSelection(next);
       if (next) setReceptionId(next.orderId);
     }
-  }, [selected, preview, receptionId, draft, previewReady]);
+  }, [selected, preview, receptionId, draft, edits, pendingWithoutClient, previewReady]);
   useEffect(() => {
     if (selected) props.onRememberSelection(selected);
   }, [selected, props.onRememberSelection]);
@@ -305,13 +332,6 @@ export function HubWorkspace(props: Props) {
     recipientId: linkedRecipient?.recipient.id,
     setActive: setActiveLive,
   }), [active, linkedRecipient?.recipient.id, setActiveLive]);
-  const pendingWithoutClient = useMemo(() =>
-    [draft, ...Object.values(edits)]
-      .filter((order) => order.raw.trim() && !order.clientId &&
-        !state.orders.some((saved) => saved.id === order.id))
-      .filter((order, index, all) => all.findIndex((row) => row.id === order.id) === index),
-    [draft, edits, state.orders],
-  );
   const receptionOrder =
     receptionId === draft.id
       ? draft

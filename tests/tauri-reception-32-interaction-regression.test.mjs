@@ -81,3 +81,16 @@ test("freight-only edits reuse completed native product pricing", () => {
   assert.match(hook, /lastCompletedPricing\.current\.products === state\.products/);
   assert.match(hook, /"rules", "reprice_order"/);
 });
+
+test("explicit unassigned receipt selection is never replaced by the first shipment", () => {
+  const hub = read("src/HubWorkspace.tsx");
+  const selectionEffect = hub.split("  // Selection and active shipment identity")[1]?.split("  useEffect(() => {\n    if (selected) props.onRememberSelection")[0] ?? "";
+  assert.match(selectionEffect, /pendingWithoutClient\.some\(\(order\) => order\.id === receptionId\)/,
+    "An explicitly clicked dealer-unassigned receipt must be protected before shipment fallback");
+  assert.match(selectionEffect, /if \(selected\) commitSelection\(undefined\);\s*return;/);
+  assert.match(selectionEffect, /selectedReceptionShipment = receptionId !== draft\.id/);
+  assert.match(selectionEffect, /activeShipments\(preview\)\.find\(\(shipment\) => shipment\.orderId === receptionId\)/);
+  assert.match(selectionEffect, /validSelection\(preview, preferredSelection\)/);
+  assert.match(hub, /const selectPendingLive = useEventCallback\(\(id: string\) => \{/);
+  assert.match(hub, /commitSelection\(undefined\);\s*setReceptionId\(id\)/);
+});
