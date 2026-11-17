@@ -23,6 +23,41 @@ use std::{fs, path::{Path, PathBuf}, sync::Mutex};
 use tauri::{Manager, State};
 use tauri_plugin_window_state::StateFlags;
 
+// The window-state plugin can restore the geometry of a maximized,
+ // undecorated HWND while Win32 still considers it normal (IsZoomed == 0).
+ // Apply the actual native maximize command once the window has been shown.
+ // Only the BANDO main window with persisted maximized=true reaches this path.
+#[cfg(target_os = "windows")]
+mod native_maximized_restore {
+    use std::ffi::c_void;
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn ShowWindow(hwnd: *mut c_void, command: i32) -> i32;
+        fn IsZoomed(hwnd: *mut c_void) -> i32;
+    }
+
+    pub fn ensure_native_maximized(window: &tauri::WebviewWindow) {
+        let hwnd = match window.hwnd() {
+            Ok(hwnd) => hwnd.0 as *mut c_void,
+            Err(error) => {
+                eprintln!("BANDO native maximize HWND unavailable: {error}");
+                return;
+            }
+        };
+        unsafe {
+            if IsZoomed(hwnd) == 0 {
+                // SW_SHOWMAXIMIZED. Do not interpret ShowWindow's return value
+                // as success: it describes the previous window visibility.
+                ShowWindow(hwnd, 3);
+            }
+            if IsZoomed(hwnd) == 0 {
+                eprintln!("BANDO native maximize did not reach IsZoomed=true");
+            }
+        }
+    }
+}
+
 struct Database { connection: Mutex<Connection>, base: PathBuf, is_test: bool }
 
 fn err<E: std::fmt::Display>(e: E) -> String { e.to_string() }
@@ -1206,6 +1241,11 @@ pub fn run() {
                         if let Err(error) = ready_window.maximize() {
                             eprintln!("BANDO post-show maximize failed: {error}");
                         }
+                        // Tauri may reproduce the maximized rectangle without
+                        // setting Win32's maximized window state. The real
+                        // HWND must also satisfy IsZoomed on the next launch.
+                        #[cfg(target_os = "windows")]
+                        native_maximized_restore::ensure_native_maximized(&ready_window);
                     }) {
                         eprintln!("BANDO post-show maximize scheduling failed: {error}");
                     }
