@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 use regex::Regex;
 use url::Url;
 use super::{field,items};
+#[path = "queries/resolution_suggestions.rs"]
 mod resolution_suggestions;
 
 fn active(p:&Value)->bool{
