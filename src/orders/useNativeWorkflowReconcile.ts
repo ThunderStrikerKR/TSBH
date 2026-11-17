@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Order, State } from "../types";
 import { businessCoreCall } from "../tauri-bridge";
 
-export function useNativeWorkflowReconcile(input: State, drafts: Order[]) {
+export function useNativeWorkflowReconcile(input: State, drafts: Order[], enabled = true) {
   const fingerprint = useMemo(
     () => JSON.stringify({ input, drafts }),
     [input, drafts],
@@ -19,7 +19,7 @@ export function useNativeWorkflowReconcile(input: State, drafts: Order[]) {
   useEffect(() => {
     // The unchanged persisted state is the exact result when there are no
     // draft overlays. Avoid an IPC request and any temporary event IDs.
-    if (!latest.current.drafts.length) return;
+    if (!enabled || !latest.current.drafts.length) return;
     let cancelled = false;
     const request = latest.current;
     void (async () => {
@@ -55,14 +55,14 @@ export function useNativeWorkflowReconcile(input: State, drafts: Order[]) {
       }
     });
     return () => { cancelled = true; };
-  }, [fingerprint]);
+  }, [fingerprint, enabled]);
 
-  const ready = drafts.length === 0 || resolved?.fingerprint === fingerprint;
+  const ready = !enabled || drafts.length === 0 || resolved?.fingerprint === fingerprint;
   return {
     // A still-pending projection never falls back to the old synchronous TS
     // workflow engine. Its current input may be shown read-only while busy.
     state: ready && drafts.length ? resolved!.value : input,
     ready,
-    error: failure?.fingerprint === fingerprint ? failure.reason : "",
+    error: enabled && failure?.fingerprint === fingerprint ? failure.reason : "",
   };
 }

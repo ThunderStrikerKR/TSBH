@@ -17,6 +17,10 @@ on:
       - scripts/migration32-real-factory-notifications.mjs
       - scripts/migration32-real-ocr-cancel.mjs
       - src/SourceDocument.tsx
+      - src/HubWorkspace.tsx
+      - src/tauri-bridge.ts
+      - src/shared/native-read-coalescing.ts
+      - src/orders/useNativeWorkflowReconcile.ts
       - src/OrderDesk.tsx
       - src/orders/useNativeOrderPreview.ts
       - src/orders/useOrderDesk.tsx

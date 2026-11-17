@@ -116,6 +116,11 @@ export function HubWorkspace(props: Props) {
   const nativePreview = useNativeWorkflowReconcile(base, draft.clientId ? [draft] : []);
   const preview = nativePreview.state;
   const previewReady = nativeBase.ready && nativePreview.ready;
+  // Share one live Rust projection only when both panes use the same draft
+  // identity and the exact same base state. Independent orders are unaffected.
+  const sharedCurrentDraftFlow = draft.clientId
+    ? { input: base, draft, value: nativePreview }
+    : undefined;
   // Keep the last settled Rust board on screen while the newest draft is
   // reconciled. The board is read-only until the newest result is ready.
   // This prevents the queue cards from disappearing/reappearing on paste.
@@ -513,6 +518,7 @@ export function HubWorkspace(props: Props) {
           state={base}
           persistedOrders={state.orders}
           draft={receptionOrder}
+          sharedNativeFlow={receptionOrder === draft ? sharedCurrentDraftFlow : undefined}
           onChange={changeReception}
           viewMode="reception"
           onManual={() => setManual(true)}
@@ -526,6 +532,8 @@ export function HubWorkspace(props: Props) {
           state={base}
           persistedOrders={state.orders}
           draft={detail ?? draft}
+          sharedNativeFlow={(detail ?? draft) === draft ? sharedCurrentDraftFlow : undefined}
+          suppressPassiveOrderEffects={receptionOrder === draft && (detail ?? draft) === draft}
           viewMode="details"
           onManual={() => setManual(true)}
           portalTargets={{ details }}

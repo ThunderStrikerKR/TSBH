@@ -71,6 +71,7 @@ try {
       const byOperation = {}, byComponent = {}, repeated = new Map();
       const readOps = new Set([
         "reconcile_workflow", "preview_workflow", "preview_order",
+        "client_candidates",
         "preview_order_lines", "order_issues_with_actions",
         "should_refresh_pricing", "shipping_read",
         "delivery_requirements_with_messages", "factory_reply_review_statuses",

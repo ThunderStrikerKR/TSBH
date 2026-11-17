@@ -31,6 +31,17 @@ export type OrderDeskProps = {
     details?: HTMLElement | null;
   };
   viewMode?: "all" | "reception" | "details";
+  // Same draft is already reconciled by HubWorkspace. Reuse that exact Rust
+  // projection rather than dispatching an identical second/third IPC.
+  sharedNativeFlow?: {
+    input: State;
+    draft: Order;
+    value: ReturnType<typeof useNativeWorkflowReconcile>;
+  };
+  // The reception panel owns passive Rust price/shipping reconciliation when
+  // both panes point to the exact same draft. Detail edits still flow through
+  // onChange and are processed by the mounted reception panel.
+  suppressPassiveOrderEffects?: boolean;
   linkController?: {
     active: string;
     recipientId?: string;
@@ -71,6 +82,8 @@ export function useOrderDesk({
   portalTargets,
   viewMode = "all",
   linkController,
+  sharedNativeFlow,
+  suppressPassiveOrderEffects = false,
 }: OrderDeskProps) {
   const [resolving, setResolving] = useState<{
     rid: string;
@@ -103,7 +116,10 @@ export function useOrderDesk({
   // Live order-detail reconciliation is a read-only Rust computation.
   // In-flight calculations never fall back to the old TS workflow engine.
   const overlay = useMemo(() => [draft], [draft]);
-  const nativeFlow = useNativeWorkflowReconcile(state, overlay);
+  const upstreamFlow = sharedNativeFlow?.input === state && sharedNativeFlow.draft === draft
+    ? sharedNativeFlow.value : undefined;
+  const ownFlow = useNativeWorkflowReconcile(state, overlay, !upstreamFlow);
+  const nativeFlow = upstreamFlow ?? ownFlow;
   const flowState = nativeFlow.state;
   const flowReady = nativeFlow.ready;
   const nativeBoard = useNativeWorkflowBoard(flowState);
@@ -198,7 +214,7 @@ export function useOrderDesk({
   // save until Rust has decided invoice freeze, notification/payment flags,
   // dispatch origin and freight invalidation for the latest complete draft.
   useEffect(() => {
-    if (!draft.pendingNativeEdit) return;
+    if (suppressPassiveOrderEffects || !draft.pendingNativeEdit) return;
     const sourceDraft = draft;
     const sourceState = state;
     let current = true;
@@ -213,7 +229,7 @@ export function useOrderDesk({
           (error instanceof Error ? error.message : String(error)), "error");
     });
     return () => { current = false; };
-  }, [draft, state]);
+  }, [draft, state, suppressPassiveOrderEffects]);
 
   // Rust pricing depends on product/price-record identity and dealer terms,
   // not on a recipient's manually typed delivery charge. A freight keystroke
@@ -234,7 +250,7 @@ export function useOrderDesk({
   } | undefined>(undefined);
   useEffect(() => {
     const request = ++ruleRequests.current.price;
-    if (!liveClient || !passivePricingAllowed || draft.pendingNativeEdit) return;
+    if (suppressPassiveOrderEffects || !liveClient || !passivePricingAllowed || draft.pendingNativeEdit) return;
     if (lastCompletedPricing.current?.key === pricingInputKey &&
         lastCompletedPricing.current.products === state.products) return;
     const before = JSON.stringify(draft.recipients);
@@ -282,13 +298,15 @@ export function useOrderDesk({
     draft.id, draft.recipients, state.products, liveClient?.id,
     liveClient?.tier, JSON.stringify(liveClient?.overrides),
     passivePricingAllowed, draft.pendingNativeEdit, pricingInputKey,
+    suppressPassiveOrderEffects,
   ]);
   useEffect(() => {
     const request = ++ruleRequests.current.shipping;
     // Existing completed orders are not repriced passively. The empty version
     // marker is set only by an explicit employee edit requiring new freight.
     const shippingPending = draft.shippingVersion === "" && draft.shippingFee === null;
-    if ((!passivePricingAllowed && !shippingPending) ||
+    if (suppressPassiveOrderEffects ||
+        (!passivePricingAllowed && !shippingPending) ||
         draft.pendingNativeEdit ||
         draft.shippingMode === "MANUAL" || draft.pricesLocked ||
         draft.deletedAt || exported ||
@@ -333,7 +351,7 @@ export function useOrderDesk({
     draft.id, draft.recipients, draft.shippingMode, draft.shippingFee,
     draft.shippingVersion, draft.pricesLocked, draft.deletedAt,
     state.shipping, state.products, liveClient?.shippingFeeExcluded,
-    passivePricingAllowed, exported,
+    passivePricingAllowed, exported, suppressPassiveOrderEffects,
   ]);
   // Every native response is associated with a specific draft, raw text,
   // client and catalog revision. A completed previous request must never
