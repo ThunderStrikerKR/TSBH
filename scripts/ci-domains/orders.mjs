@@ -1,14 +1,23 @@
 // Real Windows WebView2 business-domain regression; the entrypoint seeds an isolated TEST SQLite.
 import assert from "node:assert/strict";
-import { probeTwoConsecutiveOrders } from "../migration31-real-two-orders.mjs";
 
+// This isolated suite tests draft switching directly. Durable confirmations
+// and factory/price stages are verified by the separate full workflow suite.
 export async function run(page,{record,snap,paste,chooseDealer}){
-  await probeTwoConsecutiveOrders(page,{record,snap},{holdBoth:false});
-  const stored=await page.evaluate(async()=>
-    (await window.bando.load()).orders.map(o=>({id:o.id,confirmed:!!o.confirmedAt})));
-  assert.equal(stored.length,2);
-  assert.ok(stored.every(o=>o.confirmed));
-  record("ORDERS_TWO_SQLITE_CONFIRMATIONS",{orders:stored});
+  await paste(page,"기존가상수취인","709 1개","가상대리점");
+  await page.locator(".receipt-client b").filter({hasText:"가상대리점"})
+    .waitFor({state:"visible",timeout:30000});
+  await page.getByRole("button",{name:"배송 건 기존가상수취인"})
+    .waitFor({state:"visible",timeout:30000});
+  const initial=await page.evaluate(async()=>({
+    dealer:document.querySelector(".receipt-client b")?.textContent?.trim(),
+    queued:document.querySelectorAll(".workflow-group").length,
+    stored:(await window.bando.load()).orders.length,
+  }));
+  assert.equal(initial.dealer,"가상대리점");
+  assert.ok(initial.queued>=1);
+  assert.equal(initial.stored,0);
+  record("ORDERS_INITIAL_ASSIGNED_DRAFT_IN_BOARD",initial);
 
   // Regression for a real report: the board has completed shipments from
   // prior orders and two unsaved unassigned receipts. Clicking either receipt
@@ -89,7 +98,7 @@ export async function run(page,{record,snap,paste,chooseDealer}){
   record("ORDERS_REMAINING_UNASSIGNED_AFTER_FIRST_ASSIGNED",{
     recipient:"미선택가상을",remainsWithoutDealer:true
   });
-  assert.equal((await page.evaluate(async()=>window.bando.load())).orders.length,2,
+  assert.equal((await page.evaluate(async()=>window.bando.load())).orders.length,0,
     "Switching unsaved receipts must not write new orders to SQLite");
   await snap(page,"orders-unassigned-selection");
 }
