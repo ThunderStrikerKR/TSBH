@@ -71,12 +71,6 @@ export function OrderDesk(props: OrderDeskProps) {
     chooseProduct,
     itemEditing,
   } = useOrderDesk(props);
-  // Shipment context is a subtle block indicator; only the exact linked
-  // field gets the separate blue field highlight.
-  const linkedRecipientId = draft.recipients.find((recipient) =>
-    highlight.startsWith(recipient.id + ":") ||
-    recipient.items.some((item) => highlight.startsWith(item.id + ":")),
-  )?.id ?? linkController?.recipientId;
   // Do not clear/recreate the "확인할 내용" list while multiple Rust
   // previews settle after a paste. Old blocks are read-only until current.
   const lastReadyChecks = useRef<{ orderId: string; blocks: typeof staffBlocks } | undefined>(undefined);
@@ -388,12 +382,7 @@ export function OrderDesk(props: OrderDeskProps) {
                     {draft.recipients
                       .filter((r) => r.id === shownRecipient)
                       .map((r) => (
-                        <article
-                           className={"recipient-review" + (
-                             highlight && linkedRecipientId === r.id ? " linked-group-context" : ""
-                           )}
-                           key={r.id}
-                         >
+                        <article className="recipient-review" key={r.id}>
                           <div className="recipient-fields">
                             <Linked linkKey={r.id + ":name"}>
                               <Field label="이름">
