@@ -451,10 +451,12 @@ export function WorkflowBoard({
               <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
               <div className="flow-summary-compact">
                 <span>배송 {ss.length}건</span>
-                {nativeGroup && vatIncludedCount > 0 && (
+                {nativeGroup && (
                   <span className="flow-summary-vat" title={vatDescription}
                     aria-label={vatDescription}>
-                    {mixedVat ? `포함${vatIncludedCount}·별도${vatExcludedCount}` : "부가세 포함"}
+                    {mixedVat
+                      ? `포함${vatIncludedCount}·별도${vatExcludedCount}`
+                      : vatIncludedCount > 0 ? "부가세 포함" : "부가세 별도"}
                   </span>
                 )}
                 <span className="flow-summary-payment"
