@@ -18,7 +18,7 @@
 ## 실제 Windows Tauri DEV 자동화 결과
 
 - Windows CI: https://github.com/ThunderStrikerKR/TSBH/actions/runs/44095388492 — **PASS**
-- 전체 Rust/프런트엔드 CI: https://github.com/ThunderStrikerKR/TSBH/actions/runs/44095388577 — **PASS**
+- 전체 Rust/프런트엔드 CI: https://github.com/ThunderStrikerKR/TSBH/actions/runs/44096817851 — **PASS** (테스트 정규식 수정 후 전체 CI)
 - GUI 업무 검사: **37건 PASS**, 스크린샷 **12개**
 - 정상 창 크기·위치 복원: `DEV_WINDOW_RECT_RESTORED` = x=0, y=20, width=1024, height=700
 - 저장 후 실제 EXE 종료·재시작·확대 후 종료·다시 시작하는 총 **3회 실행** 순환
@@ -31,3 +31,9 @@
 ## 판정
 
 **DEV 최대화/창 크기·위치 복원: PASS**. 이전 오류에는 잘못된 HWND를 선택한 검사 방식이 관여했다. Release 빌드 또는 다중 모니터 환경까지 검증 완료로 확대하지 않는다.
+
+## CI 회귀 테스트 수정
+
+- `25e8afe5`: 구 버전 고정 정규식의 이중 백슬래시 오류를 정상 이스케이프로 정정. 검증 대상 Rust 코드와 실제 Windows GUI 동작에는 영향이 없다.
+- https://github.com/ThunderStrikerKR/TSBH/actions/runs/44096817851 — 전체 CI PASS.
+- 실제 Windows 3회 재실행 GUI PASS 코드는 `2b8e517c`; 그 뒤 변경은 보고서와 테스트 정규식뿐이다.
