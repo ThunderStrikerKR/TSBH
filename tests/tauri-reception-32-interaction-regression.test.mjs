@@ -181,7 +181,7 @@ test("compact workflow cards retain two rows, consistent action geometry and una
   assert.match(css, /\.workflow-action-line > \.workflow-progress\s*\{[\s\S]*?flex: 0 0 177px;[\s\S]*?width: 177px;/);
   assert.match(css, /\.workflow-progress > \.primary\s*\{[\s\S]*?flex: 0 0 140px;[\s\S]*?width: 140px;/);
   assert.match(css, /\.workflow-group \.flow-group-name b\s*\{[\s\S]*?font-size: 16px;/);
-  assert.match(css, /\.workflow-group > header > button\.trash-button\s*\{[\s\S]*?height: 32px;/);
+  assert.match(css, /\.workflow-group > header > button\.trash-button\s*\{[\s\S]*?height: 34px;/);
   assert.match(board, /const mixedVat = vatIncludedCount > 0 && vatExcludedCount > 0/);
   assert.match(board, /부가세 포함 \$\{vatIncludedCount\}건 · 부가세 별도 \$\{vatExcludedCount\}건/);
   assert.doesNotMatch(board, /nativeGroup\?\.vatLabel === "부가세 포함"/);
