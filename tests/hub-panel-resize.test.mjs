@@ -25,16 +25,16 @@ test("all panel ratios are used and drag actions persist through HubWorkspace se
   assert.match(panels, /onReset\(\)/);
 });
 
-test("drag changes adjacent panels only, retaining the 440px single-row workflow minimum", () => {
+test("drag changes adjacent panels only, retaining the 420px single-row workflow minimum", () => {
   const minimum = panelMinimumWidths;
-  assert.deepEqual(minimum, [200, 250, 250, 440]);
+  assert.deepEqual(minimum, [200, 250, 250, 420]);
   const widths = [260, 340, 350, 460];
   const result = resizePanelRatios(defaultPanels, [0,1,2,3], widths, 2, 100, minimum);
   const pixels = toPixels(result, widths.reduce((a,b) => a+b,0));
   assert.ok(Math.abs(pixels[0] - 260) < 0.001);
   assert.ok(Math.abs(pixels[1] - 340) < 0.001);
-  assert.ok(Math.abs(pixels[2] - 370) < 0.001);
-  assert.ok(Math.abs(pixels[3] - 440) < 0.001);
+  assert.ok(Math.abs(pixels[2] - 390) < 0.001);
+  assert.ok(Math.abs(pixels[3] - 420) < 0.001);
   assert.ok(Math.abs(result.reduce((sum, n) => sum + n, 0) - 100) < 0.001);
   assert.deepEqual(resizePanelRatios(defaultPanels, [0,1,2,3], widths, 2, 0, minimum),
     defaultPanels, "no movement must not modify persisted layout");
@@ -62,8 +62,15 @@ test("external Kakao mode retains the hidden panel ratio after resizing", () => 
 test("single-line dealer name and fixed stage lights are enforced before allowing right-panel narrowing", () => {
   const css = read("src/styles/workflow.css");
   assert.match(css, /\.workflow-group > header\s*\{[\s\S]*?flex-wrap: nowrap;/);
-  assert.match(css, /\.workflow-group \.flow-group-name\s*\{[\s\S]*?flex: 0 0 146px;[\s\S]*?width: 146px;/);
+  assert.match(css, /\.workflow-group \.flow-group-name\s*\{[\s\S]*?flex: 0 0 162px;[\s\S]*?width: 162px;/);
   assert.match(css, /\.flow-heading-toggle > \.workflow-signals\s*\{[\s\S]*?flex: 0 0 90px;[\s\S]*?width: 90px;/);
   assert.match(css, /\.workflow-group \.workflow-signals \.signal\s*\{[\s\S]*?width: 18px;[\s\S]*?height: 18px;/);
   assert.match(css, /\.workflow-group > header > button:not\(\.flow-heading-toggle\)\s*\{[\s\S]*?flex: 0 0 auto;/);
+});
+
+test("legacy equal workflow columns migrate to the compact 22 percent default", () => {
+  const source = read("src/HubPanels.tsx");
+  assert.match(source, /defaultPanels = \[20, 29, 29, 22\]/);
+  assert.match(source, /const oldDefault = 80 \/ 3/);
+  assert.match(source, /panelMinimumWidths = \[200, 250, 250, 420\]/);
 });
