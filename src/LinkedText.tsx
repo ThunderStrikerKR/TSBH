@@ -127,12 +127,64 @@ export function messageSpans(text: string, order: Order, phase: "request" | "pay
   );
 }
 
+/**
+ * Display the whole product expression that Rust already assigned to Item.raw.
+ * Its narrow model-code span remains the business evidence; this is only a
+ * visual projection of the same item, stopping BEFORE its quantity.
+ * No catalog matching, option inference, or recipient ownership occurs here.
+ */
+function productExpressionSpan(
+  text: string,
+  raw: string,
+  sources: SourceSpan[],
+  otherFields: SourceSpan[],
+): SourceSpan | undefined {
+  const model = sources.find((source) => source.field === "product");
+  if (!model || !raw.trim() || text.slice(model.start, model.end) !== model.text) return undefined;
+  const lineStart = text.lastIndexOf("\n", Math.max(0, model.start - 1)) + 1;
+  const lineBreak = text.indexOf("\n", model.end);
+  const lineEnd = lineBreak < 0 ? text.length : lineBreak;
+  let found = text.indexOf(raw, lineStart);
+  while (found >= 0 && found <= model.start && found + raw.length <= lineEnd) {
+    if (model.end <= found + raw.length) break;
+    found = text.indexOf(raw, found + 1);
+  }
+  if (found < 0 || found > model.start || model.end > found + raw.length ||
+      found + raw.length > lineEnd) return undefined;
+  const quantity = sources.find((source) =>
+    source.field === "quantity" && source.start >= model.end &&
+    source.start < found + raw.length);
+  // Do not silently turn an unassigned/ambiguous quantity into a product cue.
+  if (!quantity && /(?:\d+|한|두|세|네)\s*(?:개|대|ea|pcs)/i.test(raw))
+    return undefined;
+  let start = found;
+  let end = quantity ? quantity.start : found + raw.length;
+  while (start < end && /\s/u.test(text[start])) start++;
+  while (end > start && /\s/u.test(text[end - 1])) end--;
+  if (start > model.start || end < model.end) return undefined;
+  if (otherFields.some((span) =>
+    span.start < end && start < span.end)) return undefined;
+  if (start === model.start && end === model.end) return undefined;
+  return { ...model, start, end, text: text.slice(start, end) };
+}
+
 /** Visual-only projection of native source evidence; never edits ownership. */
 export function sourceDocumentSpans(text: string, order: Pick<Order, "recipients">): SourceSpan[] {
-  return order.recipients.flatMap((recipient) => [
-    ...(recipient.sources ?? []),
-    ...recipient.items.flatMap((item) => item.sources ?? []),
-  ]).map((span) => {
+  return order.recipients.flatMap((recipient) => {
+    const recipientSources = recipient.sources ?? [];
+    const items = recipient.items.flatMap((item) => {
+      const sources = item.sources ?? [];
+      const unrelated = [
+        ...recipientSources,
+        ...recipient.items.filter((other) => other !== item)
+          .flatMap((other) => other.sources ?? []),
+      ];
+      const expanded = productExpressionSpan(text, item.raw, sources, unrelated);
+      return sources.map((span) => span.field === "product" && expanded
+        ? expanded : span);
+    });
+    return [...recipientSources, ...items];
+  }).map((span) => {
     if (span.field !== "note" || span.start < 0 || span.start > text.length ||
         span.end < span.start || span.end > text.length) return span;
     const lineStart = text.lastIndexOf("\n", span.start - 1) + 1;
