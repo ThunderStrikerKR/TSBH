@@ -9,3 +9,7 @@
 - 원래 24개 독립 테스트 명령을 모두 유지했는지 tests/ci-parity-batching-contract.test.mjs가 확인한다.
 - final-rust-migration-gate는 새로운 10개 needs 결과를 검사한다. 일반 main/PR에는 네 가지 컴파일·비교 job 전부 성공이 필수이고, 수동 full에는 기존 Windows native/Release/WebView2 관련 지연 실행 게이트까지 성공해야 한다.
 - 공유로 인해 개별 job의 실행 시간이 길어질 수 있다. 개선 판정은 전체 runner 분과 wall clock 실행 시간을 실제 Actions 기록과 비교해야 한다.
+
+### CI trigger ownership
+
+Standalone Windows DEV GUI/Win32 test harness edits do not trigger unrelated full Rust parity CI; the Windows DEV smoke remains responsible for their checks. App source, production behavior and parity-test edits continue to trigger full Rust verification. Changes to the Rust CI workflow itself trigger its complete gate.
