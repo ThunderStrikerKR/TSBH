@@ -560,12 +560,6 @@ export function HubWorkspace(props: Props) {
           <section className="desk-pane hub-management">
             <header className="pane-heading">
               <h2>처리 중인 주문</h2>
-              <button
-                disabled={!selected}
-                onClick={() => selected && props.onSelectWorkflow(selected)}
-              >
-                선택 원문 보기
-              </button>
               <button className="primary" onClick={() => {
                 // The current receipt is temporarily retained in the read-only
                 // Rust preview overlay, not persisted to production SQLite.
