@@ -330,6 +330,9 @@ export function WorkflowBoard({
                 <span className="flow-group-name">
                   <b>{first.client.displayName || first.client.name}</b>
                 </span>
+                {first.order.orderType !== "RETAIL" && nativeGroup && (
+                  <SignalLights step={step} notice={g.needsNotice} />
+                )}
                 {first.order.receptionVersion === 1 && !first.order.confirmedAt && (
                   <span className="flow-draft-status" title="확인 전 임시 보관 중이며, 앱 종료 시 사라집니다.">미확정</span>
                 )}
@@ -385,7 +388,6 @@ export function WorkflowBoard({
             </header>
             {first.order.orderType !== "RETAIL" && (
               <div className="workflow-progress">
-                {nativeGroup && <SignalLights step={step} notice={g.needsNotice} />}
                 {step === 3 && (
                   <b className="waiting-payment">{won(nativeGroup?.totals.total ?? null)}</b>
                 )}
