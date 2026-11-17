@@ -210,3 +210,62 @@ test("source evidence uses fill without permanent borders; detail highlights sta
   assert.match(details, /\.linked-field\.linked-active \.field :is\(input, select, textarea\)\s*\{[\s\S]*?box-shadow: inset 0 0 0 2px #75b5ff/);
   assert.doesNotMatch(details, /outline: 2px solid #75b5ff/);
 });
+
+test("native item product expressions include 민판 and parenthesized color, but not quantity", async () => {
+  const { sourceDocumentSpans } = await tsImport("../src/LinkedText.tsx", import.meta.url);
+  const examples = [
+    { raw: "709민판 2개", model: "709", product: "709민판", quantity: "2개" },
+    { raw: "709(블랙) 4개", model: "709", product: "709(블랙)", quantity: "4개" },
+    { raw: "반도 뮤직트레이 (그레이) 1개", model: "뮤직트레이",
+      product: "반도 뮤직트레이 (그레이)", quantity: "1개" },
+    { raw: "709민판", model: "709", product: "709민판", quantity: null },
+  ];
+  const text = examples.map((e) => e.raw).join("\n");
+  const recipients = examples.map((e, index) => {
+    const start = text.split("\n").slice(0, index).join("\n").length + (index ? 1 : 0);
+    const modelStart = start + e.raw.indexOf(e.model);
+    const qtyStart = e.quantity ? start + e.raw.lastIndexOf(e.quantity) : -1;
+    const id = "r" + index;
+    const itemId = "i" + index;
+    return { id, name: "", address: "", items: [{
+      id: itemId, raw: e.raw, sources: [
+        { start: modelStart, end: modelStart + e.model.length,
+          text: e.model, field: "product", targetId: itemId, recipientId: id },
+        ...(e.quantity ? [{ start: qtyStart, end: qtyStart + e.quantity.length,
+          text: e.quantity, field: "quantity", targetId: itemId, recipientId: id }] : []),
+      ],
+    }], sources: [] };
+  });
+  const spans = sourceDocumentSpans(text, { recipients });
+  for (const [index, e] of examples.entries()) {
+    const itemId = "i" + index;
+    const product = spans.find((s) => s.targetId === itemId && s.field === "product");
+    assert.ok(product, "product evidence exists");
+    assert.equal(text.slice(product.start, product.end), e.product);
+    assert.equal(product.text, e.product);
+    assert.equal(product.recipientId, "r" + index);
+    const qty = spans.find((s) => s.targetId === itemId && s.field === "quantity");
+    if (e.quantity) {
+      assert.ok(qty, "separate quantity evidence remains available");
+      assert.equal(text.slice(qty.start, qty.end), e.quantity);
+      assert.ok(product.end < qty.start, "product cue must not steal quantity");
+    } else assert.equal(qty, undefined);
+  }
+});
+
+test("product visual extension must not capture independently linked recipient names", async () => {
+  const { sourceDocumentSpans } = await tsImport("../src/LinkedText.tsx", import.meta.url);
+  const text = "709민판 김가상";
+  const spans = sourceDocumentSpans(text, { recipients: [{
+    id: "r1", sources: [
+      { start: text.indexOf("김가상"), end: text.length, text: "김가상",
+        targetId: "r1", recipientId: "r1", field: "name" },
+    ], items: [{
+      id: "i1", raw: text, sources: [
+        { start: 0, end: 3, text: "709", targetId: "i1", recipientId: "r1", field: "product" },
+      ],
+    }],
+  }] });
+  assert.equal(spans.find((s) => s.field === "product")?.text, "709");
+  assert.equal(spans.find((s) => s.field === "name")?.text, "김가상");
+});
