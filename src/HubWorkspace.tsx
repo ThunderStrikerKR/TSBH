@@ -23,7 +23,7 @@ type Props = ComponentProps<typeof OrderDesk> & {
   onPendingDraftCount?: (count: number) => void;
   onRememberSelection: (s: WorkflowSelection) => void;
   onResetDock: () => void;
-  onRegisterOrderLeaveGuard?: (guard?: () => Promise<{ proceed: boolean; handledDraft: boolean }>) => void;
+  onRegisterOrderLeaveGuard?: (guard?: (intent?: "switch" | "navigate" | "close") => Promise<{ proceed: boolean; handledDraft: boolean }>) => void;
 };
 const ManualClassification = lazy(() =>
   import("./orders/ManualClassification").then((module) => ({
@@ -35,7 +35,7 @@ export function HubWorkspace(props: Props) {
   const [manual, setManual] = useState(false);
   const [discardRevision, setDiscardRevision] = useState(0);
   const deletedSelection = useRef<WorkflowSelection | undefined>(undefined);
-  const leaveGuardRef = useRef<() => Promise<{ proceed: boolean; handledDraft: boolean }>>(
+  const leaveGuardRef = useRef<(intent?: "switch" | "navigate" | "close") => Promise<{ proceed: boolean; handledDraft: boolean }>>(
     async () => ({ proceed: true, handledDraft: false }),
   );
   const { state, draft } = props;
@@ -109,19 +109,27 @@ export function HubWorkspace(props: Props) {
     () => Object.values(edits).filter((order) => order.id !== draft.id && order.clientId),
     [edits, draft.id],
   );
+  // "새 주문" retains unfinished receipts only in React memory. The current
+  // draft AND every retained local draft share the same loss/leave policy.
+  const temporaryReceipts = useMemo(() => {
+    const byId = new Map<string, Order>();
+    const unsaved = (order: Order) =>
+      !order.confirmedAt &&
+      !state.orders.some((saved) => saved.id === order.id) &&
+      Boolean(order.raw.trim() || order.clientId || order.recipients.length);
+    for (const order of Object.values(edits))
+      if (unsaved(order)) byId.set(order.id, order);
+    if (unsaved(draft)) byId.set(draft.id, draft);
+    return [...byId.values()];
+  }, [draft, edits, state.orders]);
   useEffect(() => {
-    const count = Object.values(edits).filter((order) =>
-      order.raw.trim() && !state.orders.some((saved) => saved.id === order.id)).length;
-    props.onPendingDraftCount?.(count);
-  }, [edits, state.orders, props.onPendingDraftCount]);
-  // Pending user-owned receipts need their own explicit selection. A Rust
-  // shipment-only selection cannot stand in for an unassigned receipt.
+    props.onPendingDraftCount?.(temporaryReceipts.length);
+  }, [temporaryReceipts.length, props.onPendingDraftCount]);
+  // An explicitly selected unassigned receipt must never fall back to a
+  // shipment that belongs to an unrelated dealer.
   const pendingWithoutClient = useMemo(() =>
-    [draft, ...Object.values(edits)]
-      .filter((order) => order.raw.trim() && !order.clientId &&
-        !state.orders.some((saved) => saved.id === order.id))
-      .filter((order, index, all) => all.findIndex((row) => row.id === order.id) === index),
-    [draft, edits, state.orders],
+    temporaryReceipts.filter((order) => !order.clientId),
+    [temporaryReceipts],
   );
   const nativeBase = useNativeWorkflowReconcile(state, independentEdits);
   const base = nativeBase.state;
@@ -251,12 +259,47 @@ export function HubWorkspace(props: Props) {
       }
     }
   };
-  leaveGuardRef.current = async () => {
+  leaveGuardRef.current = async (intent = "switch") => {
+    let handledTemporary = false;
+    if (temporaryReceipts.length && intent === "navigate") {
+      // One decision covers ALL unfinished receipts, not only the last
+      // AppModel draft. No incomplete order is silently written to SQLite.
+      const choice = await askSaveChanges(
+        `미완성 발주서 ${temporaryReceipts.length}건이 임시 보관 중입니다. 주문 확인 완료 전에는 주문 내역에 저장되지 않으며, 프로그램을 종료하면 사라집니다. 어떻게 할까요?`,
+        { save: "임시 보관하고 이동", discard: "모두 버리고 이동", cancel: "취소" },
+      );
+      if (choice === "cancel") return { proceed: false, handledDraft: false };
+      const ids = new Set(temporaryReceipts.map((order) => order.id));
+      if (choice === "discard") {
+        setEdits((previous) =>
+          Object.fromEntries(Object.entries(previous).filter(([id]) => !ids.has(id))));
+        if (ids.has(draft.id)) {
+          const next = newReception();
+          props.onChange(next);
+          setReceptionId(next.id);
+        } else if (ids.has(receptionId)) {
+          setReceptionId(draft.id);
+        }
+        commitSelection(undefined);
+        setDiscardRevision((value) => value + 1);
+      } else if (ids.has(draft.id)) {
+        setEdits((previous) => ({ ...previous, [draft.id]: structuredClone(draft) }));
+      }
+      handledTemporary = true;
+    } else if (temporaryReceipts.length && intent === "close") {
+      // useAppModel already showed a single explicit close/loss warning for
+      // the complete unfinished count. Never offer fake temporary saving
+      // just before closing and destroying the in-memory drafts.
+      handledTemporary = true;
+    } else if (intent === "switch" && temporaryReceipts.some((order) => order.id === draft.id)) {
+      setEdits((previous) => ({ ...previous, [draft.id]: structuredClone(draft) }));
+      handledTemporary = true;
+    }
     const orderId = selected?.orderId ?? receptionId;
     const persisted = state.orders.find((order) => order.id === orderId);
     const pending = orderId === draft.id ? draft : edits[orderId];
     if (!persisted || !pending || JSON.stringify(pending) === JSON.stringify(persisted))
-      return { proceed: true, handledDraft: false };
+      return { proceed: true, handledDraft: handledTemporary };
     const choice = await askSaveChanges(
       "수정한 주문 정보가 저장되지 않았습니다. 저장하고 이동할까요?",
     );
@@ -278,10 +321,10 @@ export function HubWorkspace(props: Props) {
       });
       setDiscardRevision((value) => value + 1);
     }
-    return { proceed: true, handledDraft: orderId === draft.id };
+    return { proceed: true, handledDraft: handledTemporary || orderId === draft.id };
   };
   useEffect(() => {
-    props.onRegisterOrderLeaveGuard?.(() => leaveGuardRef.current());
+    props.onRegisterOrderLeaveGuard?.((intent) => leaveGuardRef.current(intent));
     return () => props.onRegisterOrderLeaveGuard?.(undefined);
   }, [props.onRegisterOrderLeaveGuard]);
   const changeDetail: Props["onChange"] = (value) => {
@@ -539,6 +582,7 @@ export function HubWorkspace(props: Props) {
               onStageHover={setStageHover}
               stageHover={stageHover}
               pendingReceptions={pendingWithoutClient}
+              selectedPendingOrderId={!selected ? receptionId : undefined}
               onSelectPending={selectPendingLive}
             /></AuditProfiler>
           </section>,

@@ -61,12 +61,64 @@
   scrollbar-width: thin;
 }
 .hub-slot-3 .workflow-group .flow-summary-compact {
-  display: block;
-  width: max-content;
-  max-width: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
   white-space: nowrap;
   font-size: 12px;
   line-height: 1.45;
+}
+.hub-slot-3 .workflow-group .flow-summary-payment {
+  margin-left: auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.hub-slot-3 .workflow-group > header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.hub-slot-3 .workflow-group .flow-heading-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 3px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.hub-slot-3 .workflow-group .flow-heading-toggle:hover {
+  background: #333;
+}
+.hub-slot-3 .workflow-group .flow-heading-toggle:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: -2px;
+}
+.hub-slot-3 .workflow-group .flow-toggle-icon {
+  flex: 0 0 auto;
+  margin-right: 6px;
+}
+.hub-slot-3 .workflow-group .flow-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hub-slot-3 .flow-draft-status {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  font-size: 10px;
+  color: #f8bc5c;
+}
+.workflow-unassigned-draft.selected {
+  background: #34302a;
+  border-color: #f59e0b;
 }
 .hub-slot-3 .workflow-board-heading {
   position: sticky;

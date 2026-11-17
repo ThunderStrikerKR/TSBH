@@ -84,7 +84,10 @@ export function promptText(message: string, initial = "") {
  * Closing the dialog or pressing Escape always keeps the user on the editor.
  */
 export type SaveChangesChoice = "save" | "discard" | "cancel";
-export function askSaveChanges(message = "변경사항이 저장되지 않았습니다. 어떻게 할까요?"): Promise<SaveChangesChoice> {
+export function askSaveChanges(
+  message = "변경사항이 저장되지 않았습니다. 어떻게 할까요?",
+  labels?: { save?: string; discard?: string; cancel?: string },
+): Promise<SaveChangesChoice> {
   if (pending) return Promise.resolve("cancel");
   pending = true;
   const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -102,9 +105,9 @@ export function askSaveChanges(message = "변경사항이 저장되지 않았습
   const discard = document.createElement("button");
   const save = document.createElement("button");
   cancel.type = discard.type = save.type = "button";
-  cancel.textContent = "취소";
-  discard.textContent = "저장 안 함";
-  save.textContent = "저장";
+  cancel.textContent = labels?.cancel ?? "취소";
+  discard.textContent = labels?.discard ?? "저장 안 함";
+  save.textContent = labels?.save ?? "저장";
   save.className = "primary";
   actions.append(cancel, discard, save);
   form.append(heading, description, actions);

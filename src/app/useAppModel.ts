@@ -15,6 +15,7 @@ import { onlyDeletedGroups } from "../workspace-selection";
 import type { PageId } from "./navigation";
 import { seoulDate } from "./seoul-date";
 export type OrderLeaveResult = { proceed: boolean; handledDraft: boolean };
+export type OrderLeaveIntent = "switch" | "navigate" | "close";
 export function useAppModel() {
   const { notice, notify: setNotice, dismiss: dismissNotice } = useNotice();
   const [historyDate, setHistoryDate] = useState(() => seoulDate(new Date().toISOString())),
@@ -22,12 +23,12 @@ export function useAppModel() {
   const hasPendingChanges = useHasPendingChanges();
   const [rawEditDirty, setRawEditDirty] = useState(false);
   const [pendingDraftCount, setPendingDraftCount] = useState(0);
-  const orderLeaveGuard = useRef<(() => Promise<OrderLeaveResult>) | undefined>(undefined);
-  const registerOrderLeaveGuard = useCallback((guard?: () => Promise<OrderLeaveResult>) => {
+  const orderLeaveGuard = useRef<((intent?: OrderLeaveIntent) => Promise<OrderLeaveResult>) | undefined>(undefined);
+  const registerOrderLeaveGuard = useCallback((guard?: (intent?: OrderLeaveIntent) => Promise<OrderLeaveResult>) => {
     orderLeaveGuard.current = guard;
   }, []);
-  const confirmOrderLeave = async (): Promise<OrderLeaveResult> =>
-    orderLeaveGuard.current ? orderLeaveGuard.current() : { proceed: true, handledDraft: false };
+  const confirmOrderLeave = async (intent: OrderLeaveIntent = "switch"): Promise<OrderLeaveResult> =>
+    orderLeaveGuard.current ? orderLeaveGuard.current(intent) : { proceed: true, handledDraft: false };
   const [state, setState] = useState<State>(),
     [draft, setDraft] = useState<Order>(),
     [tab, setTab] = useState<PageId>("접수"),
@@ -273,13 +274,24 @@ export function useAppModel() {
   // A new reception cannot be saved until the employee confirms the order.
   const confirmReceptionDraftLeave = async (): Promise<boolean> => {
     if (!draft || !dirty) return true;
+    const persisted = state?.orders.find((order) => order.id === draft.id);
+    // Fallback when no workspace leave guard is registered: an unconfirmed
+    // reception cannot be saved to SQLite. Offer retention, not fake saving.
+    if (!persisted && !draft.confirmedAt) {
+      const choice = await askSaveChanges(
+        "이 발주서는 주문 확인 완료 전이므로 정식 저장되지 않습니다. 임시 보관하고 이동할까요?",
+        { save: "임시 보관하고 이동", discard: "버리고 이동" },
+      );
+      if (choice === "cancel") return false;
+      if (choice === "discard") {
+        setDraft(newReception());
+        setRawEditDirty(false);
+      }
+      return true;
+    }
     const choice = await askSaveChanges("접수 화면에 저장하지 않은 변경사항이 있습니다. 어떻게 할까요?");
     if (choice === "cancel") return false;
     if (choice === "save") {
-      if (!state?.orders.some((order) => order.id === draft.id)) {
-        setNotice("신규 발주서는 주문 확인 완료 후 저장할 수 있습니다. 확인을 마치거나 저장 안 함을 선택하세요.", "error");
-        return false;
-      }
       try {
         await saveOrder("save");
       } catch (error) {
@@ -287,7 +299,6 @@ export function useAppModel() {
         return false;
       }
     } else {
-      const persisted = state?.orders.find((order) => order.id === draft.id);
       setDraft(persisted ? clone(persisted) : newReception());
       setRawEditDirty(false);
     }
@@ -413,7 +424,7 @@ export function useAppModel() {
   const navigate = async (page: PageId) => {
     if (page === tab) return;
     if (tab === "접수") {
-      const leave = await confirmOrderLeave();
+      const leave = await confirmOrderLeave("navigate");
       if (!leave.proceed) return;
       if (hasPendingChanges && !leave.handledDraft) {
         setNotice("저장하지 않은 편집창이 있습니다. 편집창에서 저장하거나 취소한 뒤 이동하세요.", "error");
@@ -438,7 +449,7 @@ export function useAppModel() {
     // discard the first pasted document just to start the second.
     // Unsaved drafts are NEVER inserted into SQLite by this navigation.
     if (!state.orders.some((o) => o.id === draft.id) &&
-        !draft.confirmedAt && (draft.raw.trim() || draft.recipients.length)) {
+        !draft.confirmedAt && (draft.raw.trim() || draft.clientId || draft.recipients.length)) {
       const leave = await confirmOrderLeave();
       if (!leave.proceed) return;
       setWorkflowSelection(undefined);
@@ -472,7 +483,7 @@ export function useAppModel() {
         { cancel: "계속 작업", accept: "종료" },
       ))) return;
       if (tab === "접수") {
-        const leave = await confirmOrderLeave();
+        const leave = await confirmOrderLeave("close");
         if (!leave.proceed) return;
         return window.bando!.requestClose(dirty && !leave.handledDraft);
       }

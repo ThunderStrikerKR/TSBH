@@ -53,6 +53,7 @@ export function WorkflowBoard({
   onStageHover,
   stageHover,
   pendingReceptions = [],
+  selectedPendingOrderId,
   onSelectPending,
 }: {
   onStageHover?: (v: { groupId: string; step: number } | undefined) => void;
@@ -67,12 +68,15 @@ export function WorkflowBoard({
   onSave: (s: State) => Promise<void>;
   onNotice: NoticeSink;
   pendingReceptions?: Array<{ id: string; raw: string }>;
+  selectedPendingOrderId?: string;
   onSelectPending?: (orderId: string) => void;
 }) {
   auditReactRender("WorkflowBoard");
   const [undoDelete, setUndoDelete] = useState<{ gid: string; at: string }>();
   const native = useNativeWorkflowBoard(state, previewReady);
   const ready = previewReady && native.ready;
+  // A newly selected group opens automatically; all other groups are closed.
+  useEffect(() => setManuallyClosedGroup(undefined), [selection?.groupId]);
   useEffect(() => {
     if (!undoDelete) return;
     const end = (e: Event) => {
@@ -105,7 +109,7 @@ export function WorkflowBoard({
     if (step === undefined) return;
     onStageHover?.(step < 4 ? { groupId: id, step: step + 1 } : undefined);
   }, [ready, native.byId, onStageHover]);
-  const [collapsed, setCollapsed] = useState<string[]>([]),
+  const [manuallyClosedGroup, setManuallyClosedGroup] = useState<string>(),
     [busy, setBusy] = useState(false),
     [manage, setManage] = useState<string>();
   const actionState = (groupId: string) =>
@@ -195,12 +199,14 @@ export function WorkflowBoard({
         <div className="workflow-unassigned-drafts" aria-label="거래처 미확정 발주서">
           {pendingReceptions.map((receipt) => (
             <button
-              className="workflow-unassigned-draft"
+              className={"workflow-unassigned-draft" +
+                (selectedPendingOrderId === receipt.id ? " selected" : "")}
+              aria-pressed={selectedPendingOrderId === receipt.id}
               type="button"
               key={receipt.id}
               onClick={() => onSelectPending?.(receipt.id)}
             >
-              <b>거래처 미선택</b>
+              <b>거래처 미선택 <span className="flow-draft-status">미확정</span></b>
               <small>{receipt.raw.trim().split(/\r?\n/).find((line) => line.trim())?.slice(0, 60)}</small>
             </button>
           ))}
@@ -214,8 +220,8 @@ export function WorkflowBoard({
         const ss = groupShipments(state, g.id),
           step = nativeGroup?.step ?? 0,
           first = shipmentContext(state, ss[0]),
-          open = !collapsed.includes(g.id),
-          selected = selection?.groupId === g.id;
+          selected = selection?.groupId === g.id,
+          open = selected && manuallyClosedGroup !== g.id;
         const label =
           g.needsNotice && step >= 2
             ? "계좌 재안내 완료"
@@ -246,18 +252,30 @@ export function WorkflowBoard({
           >
             <header>
               <button
-                className="flow-toggle"
-                aria-label={open ? "묶음 접기" : "묶음 펼치기"}
+                className="flow-heading-toggle"
+                aria-label={(first.client.displayName || first.client.name) + (open ? " 묶음 접기" : " 묶음 펼치기")}
                 aria-expanded={open}
-                onClick={() =>
-                  setCollapsed(open ? [...collapsed, g.id] : collapsed.filter((id) => id !== g.id))
-                }
+                onClick={() => {
+                  if (selected) {
+                    setManuallyClosedGroup(open ? g.id : undefined);
+                  } else {
+                    setManuallyClosedGroup(undefined);
+                    onSelect({
+                      orderId: ss[0].orderId,
+                      groupId: g.id,
+                      shipmentId: ss[0].id,
+                    });
+                  }
+                }}
               >
-                {open ? "▾" : "▸"}
+                <span className="flow-toggle-icon" aria-hidden="true">{open ? "▾" : "▸"}</span>
+                <span className="flow-group-name">
+                  <b>{first.client.displayName || first.client.name}</b>
+                </span>
+                {first.order.receptionVersion === 1 && !first.order.confirmedAt && (
+                  <span className="flow-draft-status">미확정</span>
+                )}
               </button>
-              <span className="flow-group-name">
-                <b>{first.client.displayName || first.client.name}</b>
-              </span>
               <button
                 disabled={!ready || (first.order.receptionVersion === 1 && !first.order.confirmedAt)}
                 onClick={() => setManage(g.id)}
@@ -364,9 +382,13 @@ export function WorkflowBoard({
               </div>
             )}
             <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
-              <span className="flow-summary-compact">
-                배송 {ss.length}건, 입금액 {won(nativeGroup?.totals.total ?? null)} ({nativeGroup?.vatLabel ?? "—"})
-              </span>
+              <div className="flow-summary-compact">
+                <span>배송 {ss.length}건</span>
+                <span className="flow-summary-payment">
+                  {nativeGroup?.vatLabel === "부가세 포함" && <span>(부가세 포함) </span>}
+                  {won(nativeGroup?.totals.total ?? null)}
+                </span>
+              </div>
             </div>
             {(g.needsNotice || ss.some((s) => s.rechecks?.some((c) => !c.resolvedAt))) && (
               <div className="flow-recheck">

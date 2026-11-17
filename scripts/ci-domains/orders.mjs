@@ -101,5 +101,28 @@ export async function run(page,{record,snap,paste,chooseDealer}){
   assert.equal((await page.evaluate(async()=>window.bando.load())).orders.length,0,
     "Switching unsaved receipts must not write new orders to SQLite");
   await snap(page,"orders-unassigned-selection");
+  await page.getByRole("button",{name:"주문 내역",exact:true}).click();
+  const leaveModal=page.getByRole("dialog",{name:"변경사항 저장"});
+  await leaveModal.waitFor({state:"visible",timeout:30000});
+  const leaveText=await leaveModal.textContent();
+  assert.match(leaveText??"",/미완성 발주서 [1-9]\d*건/);
+  assert.match(leaveText??"",/주문 확인 완료 전에는 주문 내역에 저장되지 않으며/);
+  await leaveModal.getByRole("button",{name:"임시 보관하고 이동"}).click();
+  await page.getByRole("button",{name:"주문 내역",exact:true})
+    .waitFor({state:"attached"});
+  await page.getByRole("button",{name:"접수",exact:true}).click();
+  await page.locator(".workflow-unassigned-draft")
+    .filter({hasText:"박가상"}).waitFor({state:"visible",timeout:30000});
+  assert.equal((await page.evaluate(async()=>window.bando.load())).orders.length,0);
+  record("ORDERS_NAVIGATE_KEEP_ALL_TEMPORARY",{count:"multiple",persisted:0});
+  await page.getByRole("button",{name:"주문 내역",exact:true}).click();
+  await leaveModal.waitFor({state:"visible",timeout:30000});
+  await leaveModal.getByRole("button",{name:"모두 버리고 이동"}).click();
+  await page.getByRole("button",{name:"접수",exact:true}).click();
+  await page.waitForFunction(()=>
+    !document.querySelector(".workflow-unassigned-draft") &&
+    !document.querySelector(".workflow-group"),null,{timeout:30000});
+  assert.equal((await page.evaluate(async()=>window.bando.load())).orders.length,0);
+  record("ORDERS_NAVIGATE_DISCARD_ALL_TEMPORARY",{remaining:0,persisted:0});
 }
 

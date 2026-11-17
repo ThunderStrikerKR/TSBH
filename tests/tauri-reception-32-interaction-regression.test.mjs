@@ -63,12 +63,15 @@ test("each workflow receipt uses a separate compact card and a single-line payme
   const board = read("src/WorkflowBoard.tsx");
   const css = read("src/styles/workflow.css");
   assert.match(board, /className="flow-summary-compact"/);
-  assert.match(board, /배송 \{ss\.length\}건, 입금액 \{won\(nativeGroup\?\.totals\.total \?\? null\)\}/);
-  assert.match(board, /\(\{nativeGroup\?\.vatLabel \?\? "—"\}\)/);
+  assert.match(board, /배송 \{ss\.length\}건/);
+  assert.match(board, /className="flow-summary-payment"/);
+  assert.match(board, /nativeGroup\?\.vatLabel === "부가세 포함"/);
+  assert.doesNotMatch(board, /입금액 \{won\(/);
   assert.doesNotMatch(board, /총 운임/);
   assert.doesNotMatch(board, /미확정 · 임시/);
   assert.match(css, /\.hub-slot-3 \.workflow-group \{[\s\S]*?border: 1px solid/);
-  assert.match(css, /\.flow-summary-compact \{[\s\S]*?white-space: nowrap/);
+  assert.match(css, /\.flow-summary-compact \{[\s\S]*?justify-content: space-between/);
+  assert.match(css, /\.flow-summary-payment \{[\s\S]*?text-align: right/);
 });
 
 test("freight-only edits reuse completed native product pricing", () => {
@@ -93,4 +96,30 @@ test("explicit unassigned receipt selection is never replaced by the first shipm
   assert.match(selectionEffect, /validSelection\(preview, preferredSelection\)/);
   assert.match(hub, /const selectPendingLive = useEventCallback\(\(id: string\) => \{/);
   assert.match(hub, /commitSelection\(undefined\);\s*setReceptionId\(id\)/);
+});
+
+test("the title row selects and expands only one group while unfinished drafts stay explicit", () => {
+  const board = read("src/WorkflowBoard.tsx");
+  const css = read("src/styles/workflow.css");
+  assert.match(board, /open = selected && manuallyClosedGroup !== g\.id/);
+  assert.match(board, /useEffect\(\(\) => setManuallyClosedGroup\(undefined\), \[selection\?\.groupId\]\)/);
+  assert.match(board, /className="flow-heading-toggle"/);
+  assert.match(board, /setManuallyClosedGroup\(open \? g\.id : undefined\)/);
+  assert.match(board, /onSelect\(\{\s*orderId: ss\[0\]\.orderId,\s*groupId: g\.id/);
+  assert.match(board, /selectedPendingOrderId === receipt\.id/);
+  assert.match(css, /\.flow-heading-toggle \{[\s\S]*?flex: 1 1 auto/);
+});
+test("navigation counts every unconfirmed receipt, never attempts to save it as confirmed", () => {
+  const model = read("src/app/useAppModel.ts");
+  const hub = read("src/HubWorkspace.tsx");
+  assert.match(hub, /const temporaryReceipts = useMemo/);
+  assert.match(hub, /for \(const order of Object\.values\(edits\)\)/);
+  assert.match(hub, /if \(unsaved\(draft\)\) byId\.set\(draft\.id, draft\)/);
+  assert.match(hub, /intent === "navigate"/);
+  assert.match(hub, /임시 보관하고 이동/);
+  assert.match(hub, /모두 버리고 이동/);
+  assert.match(hub, /setEdits\(\(previous\) =>\s*Object\.fromEntries/);
+  assert.match(model, /confirmOrderLeave\("navigate"\)/);
+  assert.match(model, /confirmOrderLeave\("close"\)/);
+  assert.match(model, /임시 보관하고 이동/);
 });
