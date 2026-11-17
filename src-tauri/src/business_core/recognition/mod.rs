@@ -1516,9 +1516,11 @@ mod tests {
     fn address_place_name_cannot_be_reused_as_nine_item_quantity() {
         // Fictional recipient names/phones; retain the reported street and
         // apartment-name shape that previously produced "구대" => 9 stands.
-        let raw="안녕하세요 직발 요청드립니다\n\n김가상\n010-1234-5678\n전라남도 순천시 가곡길 39 (가곡동) 가상교회\nBD 709 (블랙) 4개\n메모 문 앞에 놓아주세요\n\n표가상\n010-2345-6789\n전라남도 순천시 팔마1길 25 (연향동, 연향3지구대주피오레) 101동 1003호\n반도 뮤직트레이 그레이 1개\n메모 문 앞에 놓아주세요";
+        let raw="안녕하세요 직발 요청드립니다\n\n김가상\n010-1234-5678\n전남광주통합특별시 순천시 가곡길 39 (가곡동) 순천염광교회\nBD 709 (블랙) 4개\n메모 문 앞에 놓아주세요\n\n박가상\n010-2345-6789\n전라남도 순천시 팔마1길 25 (연향동, 연향3지구대주피오레) 101동 1003호\n반도 뮤직트레이 그레이 1개\n메모 문 앞에 놓아주세요";
         let output=execute("analyze_order",json!({"raw":raw,"state":state()}))
             .expect("the real Rust recognition engine must analyze this reception");
+        let recipients=output["recipients"].as_array().unwrap();
+        assert_eq!(recipients.len(),2,"The two customers must remain two recipients: {output}");
         let quantities=output["candidates"].as_array().unwrap().iter()
             .filter(|candidate|candidate["kind"]=="quantity")
             .collect::<Vec<_>>();
