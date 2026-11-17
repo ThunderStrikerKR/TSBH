@@ -113,3 +113,87 @@ test("real React request preview starts as hoverable linked text after async dat
   assert.match(shown, /data-link-key="r1:phone"[^>]*linked-active/);
   assert.match(shown, /data-link-key="i1:quantity"/);
 });
+
+test("classified source spans remain grey until exact-field selection, with separate recipient context", async () => {
+  const React = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { LinkedText, LinkContext, sourceDocumentSpans } = await tsImport(
+    "../src/LinkedText.tsx", import.meta.url,
+  );
+  const text = "709 1개\n김가상\n배송메모: 문 앞\n\n이민수\n배송메모: 경비실";
+  const note1 = text.indexOf("문 앞");
+  const note2 = text.indexOf("경비실");
+  const name1 = text.indexOf("김가상");
+  const name2 = text.indexOf("이민수");
+  const order = { recipients: [
+    { id: "r1", name: "김가상", note: "문 앞", items: [], sources: [
+      { start: name1, end: name1 + 3, text: "김가상", field: "name", targetId: "r1", recipientId: "r1" },
+      { start: note1, end: note1 + 3, text: "문 앞", field: "note", targetId: "r1", recipientId: "r1" },
+    ] },
+    { id: "r2", name: "이민수", note: "경비실", items: [], sources: [
+      { start: name2, end: name2 + 3, text: "이민수", field: "name", targetId: "r2", recipientId: "r2" },
+      { start: note2, end: note2 + 3, text: "경비실", field: "note", targetId: "r2", recipientId: "r2" },
+    ] },
+  ] };
+  const spans = sourceDocumentSpans(text, order);
+  assert.equal(spans.length, 4);
+  assert.equal(text.slice(spans[1].start, spans[1].end), "배송메모: 문 앞");
+  assert.equal(text.slice(spans[3].start, spans[3].end), "배송메모: 경비실");
+  assert.equal(spans[1].field, "note");
+  assert.equal(spans[1].targetId + ":" + spans[1].field, "r1:note");
+
+  const render = (active, recipientId = "r1") => renderToStaticMarkup(
+    React.createElement(LinkContext.Provider, {
+      value: { active, recipientId, setActive: () => {} },
+    }, React.createElement(LinkedText, {
+      text, spans, label: "주문 원문", readOnly: true, onChange: () => {},
+    })),
+  );
+  const tag = (markup, key) => {
+    const match = markup.match(new RegExp('<span[^>]*data-link-key="' + key + '"[^>]*>'));
+    assert.ok(match, "missing linked token: " + key);
+    return match[0];
+  };
+  const idle = render("");
+  assert.doesNotMatch(tag(idle, "r1:note"), /linked-active/);
+  assert.match(tag(idle, "r1:note"), /linked-recipient-context/);
+  assert.doesNotMatch(tag(idle, "r2:note"), /linked-recipient-context/);
+  assert.match(idle, /회색: 분류된 원문/);
+
+  const active = render("r1:note");
+  assert.match(tag(active, "r1:note"), /linked-active/);
+  assert.doesNotMatch(tag(active, "r1:name"), /linked-active/);
+  assert.doesNotMatch(tag(active, "r2:note"), /linked-active/);
+  assert.match(tag(active, "r1:name"), /linked-recipient-context/);
+  assert.match(tag(active, "r2:note"), /linked-token/);
+  assert.equal((active.match(/linked-active/g) ?? []).length, 1);
+});
+
+test("a recognized empty shipping memo label remains a hover target without inventing content", async () => {
+  const { sourceDocumentSpans } = await tsImport("../src/LinkedText.tsx", import.meta.url);
+  const text = "김가상\n배송메모 :\n";
+  const at = text.indexOf("배송메모") + "배송메모 :".length;
+  const result = sourceDocumentSpans(text, { recipients: [{
+    id: "r1", items: [], sources: [
+      { start: at, end: at, text: "", field: "note", recipientId: "r1", targetId: "r1" },
+    ],
+  }] });
+  assert.equal(result.length, 1);
+  assert.equal(text.slice(result[0].start, result[0].end), "배송메모 :");
+  assert.equal(result[0].field, "note");
+});
+
+test("actual order desk links shipping memo and visual rules distinguish exact fields from shipment context", () => {
+  const desk = read("src/OrderDesk.tsx");
+  const source = read("src/SourceDocument.tsx");
+  const linked = read("src/LinkedText.tsx");
+  const css = read("src/styles/receipt-document.css");
+  assert.match(desk, /<Linked linkKey=\{r\.id \+ ":note"\}>/);
+  assert.match(desk, /linked-group-context/);
+  assert.match(source, /spans=\{sourceDocumentSpans\(order\.analysisRaw \?\? order\.raw, order\)\}/);
+  assert.match(linked, /c\.active === key \? " linked-active" : ""/);
+  assert.match(linked, /linked-recipient-context/);
+  assert.match(css, /\.linked-token\.linked-recipient-context:not\(\.linked-active\)/);
+  assert.match(css, /\.linked-token\.linked-active/);
+  assert.match(css, /\.recipient-review\.linked-group-context/);
+});
