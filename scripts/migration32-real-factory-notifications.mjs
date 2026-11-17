@@ -26,6 +26,10 @@ export async function probeFactoryReplyNotifications(page,{baseline,record,snap}
   assert.equal(process.platform,"win32");
   assert.equal(process.env.GITHUB_ACTIONS,"true");
   const before=await page.evaluate(()=>window.bando.load());
+  if (process.argv[2]==="factory") {
+    assert.equal(before.orders.length,0,"Standalone factory probe must begin without prior orders");
+    assert.equal(before.clients.length,2,"Standalone factory fixture must load only two synthetic clients");
+  }
   const inbox=join(dirname(baseline),"developer-test","Excel","공장 회신 수신");
   await fs.mkdir(inbox,{recursive:true});
   const open=()=>page.getByRole("button",{name:/^알림(?: \d+건)?$/});
