@@ -390,89 +390,86 @@ export function useOrderDesk({
     ) return;
     const orderId = draft.id;
     const clientId = draft.clientId;
-    const timer = setTimeout(() => {
-      const pending: Promise<unknown> = source.trim()
-        ? businessCoreCall<unknown>("recognition", "analyze_order", {
-            raw: source,
-            client: liveClient ?? null,
-            state: {
-              ...state,
-              products: state.products.filter(
-                (p) => p.catalog !== "DEMO" && !p.variants.some((v) => v.source === "DEMO"),
-              ),
-            },
-          })
-        : Promise.resolve({ recipients: [], candidates: [], unassigned: [] });
-      void pending.then(async (result) => {
-        const latest = latestReceptionInput.current;
-        if (
-          request !== recognitionRequest.current ||
-          latest.orderId !== orderId ||
-          latest.clientId !== clientId ||
-          latest.source !== source ||
-          latest.saved || latest.manual ||
-          latest.products !== state.products ||
-          latest.aliases !== state.aliases ||
-          latest.clientSignature !== clientSignature
-        ) return;
-        assertRustReceptionAnalysis(result, source);
-        // Rust owns stable recipient/item identity, confirmed-field retention,
-        // evidence rebinding and order state reset. No legacy TS merge is run.
-        const { order: merged } = await businessCoreCall<{ order: Order }>(
-          "rules", "merge_reception_analysis", {
-            previous: draft,
-            evidence: result,
-            raw: source,
-            clientId: pricingClient.id,
-            state,
-            client: pricingClient,
-            at: new Date().toISOString(),
+    const pending: Promise<unknown> = source.trim()
+      ? businessCoreCall<unknown>("recognition", "analyze_order", {
+          raw: source,
+          client: liveClient ?? null,
+          state: {
+            ...state,
+            products: state.products.filter(
+              (p) => p.catalog !== "DEMO" && !p.variants.some((v) => v.source === "DEMO"),
+            ),
           },
-        );
-        const settled = latestReceptionInput.current;
+        })
+      : Promise.resolve({ recipients: [], candidates: [], unassigned: [] });
+    void pending.then(async (result) => {
+      const latest = latestReceptionInput.current;
+      if (
+        request !== recognitionRequest.current ||
+        latest.orderId !== orderId ||
+        latest.clientId !== clientId ||
+        latest.source !== source ||
+        latest.saved || latest.manual ||
+        latest.products !== state.products ||
+        latest.aliases !== state.aliases ||
+        latest.clientSignature !== clientSignature
+      ) return;
+      assertRustReceptionAnalysis(result, source);
+      // Rust owns stable recipient/item identity, confirmed-field retention,
+      // evidence rebinding and order state reset. No legacy TS merge is run.
+      const { order: merged } = await businessCoreCall<{ order: Order }>(
+        "rules", "merge_reception_analysis", {
+          previous: draft,
+          evidence: result,
+          raw: source,
+          clientId: pricingClient.id,
+          state,
+          client: pricingClient,
+          at: new Date().toISOString(),
+        },
+      );
+      const settled = latestReceptionInput.current;
+      if (
+        request !== recognitionRequest.current ||
+        settled.orderId !== orderId ||
+        settled.clientId !== clientId ||
+        settled.source !== source ||
+        settled.saved || settled.manual ||
+        settled.products !== state.products ||
+        settled.aliases !== state.aliases ||
+        settled.clientSignature !== clientSignature
+      ) return;
+      onChange((previous) => {
+        const active = latestReceptionInput.current;
         if (
           request !== recognitionRequest.current ||
-          settled.orderId !== orderId ||
-          settled.clientId !== clientId ||
-          settled.source !== source ||
-          settled.saved || settled.manual ||
-          settled.products !== state.products ||
-          settled.aliases !== state.aliases ||
-          settled.clientSignature !== clientSignature
-        ) return;
-        onChange((previous) => {
-          const active = latestReceptionInput.current;
-          if (
-            request !== recognitionRequest.current ||
-            active.orderId !== orderId ||
-            active.clientId !== clientId ||
-            active.source !== source ||
-            active.saved || active.manual ||
-            active.products !== state.products ||
-            active.aliases !== state.aliases ||
-            active.clientSignature !== clientSignature ||
-            previous !== draft ||
-            previous.id !== orderId ||
-            previous.clientId !== clientId ||
-            !receptionAnalysisAllowed(previous, source, pricingClient.id)
-          ) return previous;
-          return merged;
-        });
-      }).catch((error: unknown) => {
-        const latest = latestReceptionInput.current;
-        if (
-          request !== recognitionRequest.current ||
-          latest.orderId !== orderId ||
-          latest.clientId !== clientId ||
-          latest.source !== source ||
-          latest.saved || latest.manual
-        ) return;
-        onNotice("Rust 발주서 자동 분석 실패: " +
-          (error instanceof Error ? error.message : String(error)), "error");
+          active.orderId !== orderId ||
+          active.clientId !== clientId ||
+          active.source !== source ||
+          active.saved || active.manual ||
+          active.products !== state.products ||
+          active.aliases !== state.aliases ||
+          active.clientSignature !== clientSignature ||
+          previous !== draft ||
+          previous.id !== orderId ||
+          previous.clientId !== clientId ||
+          !receptionAnalysisAllowed(previous, source, pricingClient.id)
+        ) return previous;
+        return merged;
       });
-    }, 350);
+    }).catch((error: unknown) => {
+      const latest = latestReceptionInput.current;
+      if (
+        request !== recognitionRequest.current ||
+        latest.orderId !== orderId ||
+        latest.clientId !== clientId ||
+        latest.source !== source ||
+        latest.saved || latest.manual
+      ) return;
+      onNotice("Rust 발주서 자동 분석 실패: " +
+        (error instanceof Error ? error.message : String(error)), "error");
+    });
     return () => {
-      clearTimeout(timer);
       if (recognitionRequest.current === request) recognitionRequest.current++;
     };
   }, [
