@@ -42,7 +42,10 @@ test("two unconfirmed receipts are not discarded and are previewed independently
   assert.match(hub, /const draftsToRetain = \[draft, receptionOrder\]/);
   assert.match(hub, /Object\.fromEntries\(draftsToRetain\.map/);
   assert.match(hub, /pendingReceptions=\{pendingWithoutClient\}/);
-  assert.match(hub, /onSelectPending=\{\(id\) => \{/);
+  assert.match(hub, /onSelectPending=\{selectPendingLive\}/);
+  assert.match(hub, /const selectPendingLive = useEventCallback\(\(id: string\) => \{/);
+  assert.match(hub, /if \(id === draft\.id \|\| edits\[id\]\) \{/);
+  assert.match(hub, /commitSelection\(undefined\);\s*setReceptionId\(id\)/);
   assert.match(app, /pendingDraftCount > 0 && !\(await confirmAction/);
   assert.match(hub, /Object\.values\(edits\)\.filter\(\(order\) => order\.id !== draft\.id && order\.clientId\)/);
   assert.match(hub, /useNativeWorkflowReconcile\(state, independentEdits\)/);
