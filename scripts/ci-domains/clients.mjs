@@ -80,6 +80,8 @@ export async function run(page,{record,snap,paste,chooseDealer}){
     };
   });
   assert.equal(missingDealer.count,1,"No-match must not add a second blue dealer notice");
+  assert.deepEqual(missingDealer.titles,["거래처를 선택하면 단가가 적용됩니다"],
+    "Only the actionable missing-dealer card should remain");
   assert.equal(missingDealer.dealer,null,"No dealer should be silently assigned");
   assert.equal(missingDealer.duplicateSmall,false,"Do not repeat the issue title as its detail");
   record("CLIENTS_UNMATCHED_DEALER_SINGLE_ACTION",missingDealer);
