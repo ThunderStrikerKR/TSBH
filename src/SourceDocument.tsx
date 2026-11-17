@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ClientChooser } from "./ClientChooser";
 import { KakaoClients } from "./KakaoClients";
-import { LinkedText } from "./LinkedText";
+import { LinkedText, sourceDocumentSpans } from "./LinkedText";
 import { ClientPicker, TierBadge } from "./ManagementUI";
 import { confirmAction } from "./dialogs";
 import { businessCoreCall } from "./tauri-bridge";
@@ -372,10 +372,7 @@ export function SourceDocument({
           readOnly
           label="주문 원문"
           text={order.analysisRaw ?? order.raw}
-          spans={order.recipients.flatMap((r) => [
-            ...(r.sources ?? []),
-            ...r.items.flatMap((i) => i.sources ?? []),
-          ])}
+          spans={sourceDocumentSpans(order.analysisRaw ?? order.raw, order)}
           onChange={() => {}}
         />
         {ocrPhase === "recognizing" && (
