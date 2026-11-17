@@ -295,16 +295,31 @@ fn filter_business_candidates<'a>(
 }
 
 fn qualifiers(text: &str) -> HashSet<String> {
+    // Most historical qualifiers intentionally tolerate whitespace. Do NOT
+    // concatenate whitespace for A/B type: "...LP-WA 타입B" would fabricate
+    // "A타입" across the model-code boundary and select the WRONG SKU.
     let input: String = text.to_lowercase().chars().filter(|c| !c.is_whitespace()).collect();
     static QUALIFIERS:OnceLock<Regex>=OnceLock::new();
     let re=QUALIFIERS.get_or_init(||Regex::new(
-        r"(?:가방|바퀴)(?:미포함|포함|미장착|장착)|[ab]타입|민판|무타공상판|무타공|비타공상판|타공상판|\d+(?:\.\d+)?cm"
+        r"(?:가방|바퀴)(?:미포함|포함|미장착|장착)|민판|무타공상판|무타공|비타공상판|타공상판|\d+(?:\.\d+)?cm"
     ).expect("static regex"));
-    re.find_iter(&input).map(|m| {
+    let mut found: HashSet<String> = re.find_iter(&input).map(|m| {
         let t = m.as_str();
         if t == "민판" || t.starts_with("무타공") { "비타공상판".to_owned() }
         else { t.to_owned() }
-    }).collect()
+    }).collect();
+    // Evaluate type tokens against ORIGINAL boundaries, then normalize both
+    // "A 타입" and "타입 A" to the registered name's "a타입".
+    let type_re=Regex::new(r"(?i)([ab])\s*타입|타입\s*[:：]?\s*([ab])")
+        .expect("type expression");
+    for c in type_re.captures_iter(text) {
+        let Some(span)=c.get(0) else {continue};
+        if !is_boundary(text,span.start(),span.end()) {continue;}
+        if let Some(letter)=c.get(1).or_else(||c.get(2)) {
+            found.insert(format!("{}타입",letter.as_str().to_ascii_lowercase()));
+        }
+    }
+    found
 }
 fn qualifies(p: &Value, proof: &HashSet<String>, verified: &HashSet<String>) -> bool {
     let mut named = qualifiers(str_field(p, "name"));
