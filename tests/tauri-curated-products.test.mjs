@@ -65,7 +65,7 @@ test("No employee-facing automatic cleanup or SKU splitting entry point remains"
   assert.doesNotMatch(management, /판매 옵션 추가|SkuSplitPanel|manualOptionEditor/);
   assert.doesNotMatch(item, /label="옵션"|\.variants\.map/);
   assert.match(management, /<Field label="상품설명" help=\{\{/);
-  assert.match(management, /매장 직원이 상품 특징을 기억/);
+  assert.match(management, /사용자가 상품 특징을 기억/);
 });
 
 test("Order line names use the entire independently registered product name", async () => {

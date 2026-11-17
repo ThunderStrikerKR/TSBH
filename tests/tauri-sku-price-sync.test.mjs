@@ -143,7 +143,7 @@ test("Independent product editor does not show legacy multi-option UI", () => {
   assert.match(editor, /상품은 한 가지 판매 구성으로만 등록할 수 있습니다/);
   assert.match(editor, /items\(&p,"variants"\)\.len\(\)!=1/);
   assert.match(admin, /<Field label="상품명" help=\{\{/);
-  assert.match(admin, /매장 직원과 공장 직원이 같은 상품을 정확히 구별/);
+  assert.match(admin, /매장과 공장에서 같은 상품을 정확히 구별/);
   assert.match(admin, /<Field label="상품설명" help=\{\{/);
   assert.match(admin, /edit\.priceHistory\?\.slice\(\)\.reverse\(\)/);
 });
