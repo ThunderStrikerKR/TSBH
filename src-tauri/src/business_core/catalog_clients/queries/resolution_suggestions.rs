@@ -211,7 +211,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     fn seed()->Value {
-        serde_json::from_str(include_str!("../../../../../resources/state-seed.json")).unwrap()
+        serde_json::from_str(include_str!("../../../../resources/state-seed.json")).unwrap()
     }
     #[test]
     fn ssb_abbreviation_suggests_registered_speaker_case_first(){
