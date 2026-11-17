@@ -2,6 +2,7 @@
  * Planned mobile networking remains explicitly unavailable offline.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { coalescePureNativeRead } from "./shared/native-read-coalescing";
 
 /** CI-only native call audit. Vite drops this instrumentation from release builds. */
 function auditNativeCall(
@@ -33,12 +34,17 @@ export function businessCoreCall<T>(
   operation: string,
   payload: unknown,
 ): Promise<T> {
-  auditNativeCall("business_core_call", {
-    domain, operation, inputKey: auditNativeInputKey(operation, payload),
-    action: payload && typeof payload === "object" && "action" in payload
-      ? (payload as { action?: unknown }).action : undefined,
+  // Run the native command only once for equal, short-lived, pure read
+  // projections. Every caller still receives the Rust result; no TS business
+  // decision, response fallback, or mutation command is cached.
+  return coalescePureNativeRead(domain, operation, payload, () => {
+    auditNativeCall("business_core_call", {
+      domain, operation, inputKey: auditNativeInputKey(operation, payload),
+      action: payload && typeof payload === "object" && "action" in payload
+        ? (payload as { action?: unknown }).action : undefined,
+    });
+    return invoke<T>("business_core_call", { domain, operation, payload });
   });
-  return invoke<T>("business_core_call", { domain, operation, payload });
 }
 
 import { getCurrentWindow } from "@tauri-apps/api/window";

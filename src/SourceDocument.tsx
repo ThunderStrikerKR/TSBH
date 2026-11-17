@@ -3,7 +3,7 @@ import { HelpTooltip } from "./ui/HelpTooltip";
 import { RetailOrderDialog } from "./orders/RetailOrderDialog";
 import { OcrReviewDialog } from "./OcrReviewDialog";
 import { Modal } from "./ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ClientChooser } from "./ClientChooser";
 import { KakaoClients } from "./KakaoClients";
@@ -79,6 +79,12 @@ export function SourceDocument({
     }
   }, [text]);
   const formal = !!order.confirmedAt || state.orders.some((o) => o.id === order.id);
+  // An inline filter allocated a new array on every repaint, restarting the
+  // Rust client_candidates search even when the catalog had not changed.
+  const activeClients = useMemo(
+    () => state.clients.filter((candidate) => candidate.active !== false),
+    [state.clients],
+  );
   useEffect(() => {
     if (!text.trim() || client || formal) return;
     let current = true;
@@ -328,7 +334,7 @@ export function SourceDocument({
               {!formal && !busy && (
                 <ClientPicker
                   compact
-                  clients={state.clients.filter((c) => c.active !== false)}
+                  clients={activeClients}
                   raw={text}
                   onSelect={(c) =>
                     void Promise.resolve()
