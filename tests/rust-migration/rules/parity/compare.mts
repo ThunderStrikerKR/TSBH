@@ -3949,6 +3949,19 @@ for(let i=0;i<cases.length;i++){
       "expected success",c.expectedOk,"actual",ts);
     process.exitCode=1;
   }
+  // Approved UI-language change (36차): the fixed historical TypeScript
+  // oracle still says "직원". Compare exactly the same issue resolution
+  // outcome while acknowledging ONLY this approved human-facing label.
+  // Do not rewrite or import the historical TypeScript baseline.
+  let comparableTs=ts;
+  if(c.name==="reconciliation resolves obsolete issue decision" && ts.ok){
+    comparableTs=structuredClone(ts);
+    const state=(comparableTs as any).value?.state;
+    for(const order of state?.orders??[])
+      for(const issue of Object.values(order.issueResolutions??{}) as any[])
+        if(issue?.resolutionSource==="직원 수정 또는 현재 원문 반영")
+          issue.resolutionSource="사용자 수정 또는 현재 원문 반영";
+  }
   let rust:unknown;
   try{rust=JSON.parse(output[i]);}
   catch {console.error("Invalid Rust JSON",c.name,output[i]);process.exit(2);}
@@ -3965,12 +3978,12 @@ for(let i=0;i<cases.length;i++){
   if(c.operation==="apply_workflow_action" && (rust as any)?.ok===true){
     rust={ok:true,value:{state:(rust as any).value?.state}};
   }
-  if(normalized(ts)===normalized(rust)){
+  if(normalized(comparableTs)===normalized(rust)){
     console.log("PARITY PASS",c.name);passed++;
   } else {
     console.error("PARITY FAIL",c.name);
-    console.error("  DIFFERENT PATHS",differentialPaths(ts,rust).join(", "));
-    console.error("  TS  ",normalized(ts).slice(0,2000));
+    console.error("  DIFFERENT PATHS",differentialPaths(comparableTs,rust).join(", "));
+    console.error("  TS  ",normalized(comparableTs).slice(0,2000));
     console.error("  Rust",normalized(rust).slice(0,2000));
   }
 }

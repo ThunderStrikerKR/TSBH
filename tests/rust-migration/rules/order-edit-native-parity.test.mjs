@@ -108,13 +108,13 @@ function legacyChangeDealer(before,st,target){
   changed.shippingVersion=freight.version;
   return changed;
 }
-// Deliberate Rust-only addition: record why a dealer was selected.
+// Deliberate approved Rust-only addition: store manual dealer provenance without a review alert.
  // Keep the frozen TypeScript business oracle unchanged and compare all
  // prices, shipment flags, and invoices plus the new audit field.
 function expectedDealerChange(before,st,target){
   const changed=legacyChangeDealer(before,st,target);
   changed.clientMatch={source:"MANUAL",clientId:target,
-    detail:"직원이 거래처 ‘"+st.clients.find(c=>c.id===target).name+"’을 직접 선택했습니다."};
+    detail:"사용자가 거래처 ‘"+st.clients.find(c=>c.id===target).name+"’를 직접 선택했습니다."};
   return changed;
 }
 const cases=[];
