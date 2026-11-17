@@ -158,7 +158,7 @@ test("classified source spans remain grey until exact-field selection, with sepa
   assert.doesNotMatch(tag(idle, "r1:note"), /linked-active/);
   assert.match(tag(idle, "r1:note"), /linked-recipient-context/);
   assert.doesNotMatch(tag(idle, "r2:note"), /linked-recipient-context/);
-  assert.match(idle, /회색: 분류된 원문/);
+  assert.doesNotMatch(idle, /회색: 분류된 원문|source-link-legend/);
 
   const active = render("r1:note");
   assert.match(tag(active, "r1:note"), /linked-active/);
