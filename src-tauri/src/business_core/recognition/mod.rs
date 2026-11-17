@@ -304,6 +304,14 @@ fn composite_name_before_address(prefix: &str) -> Option<(usize,usize)> {
     if candidate.chars().filter(|c|('가'..='힣').contains(c)).count()<2 {
         return None;
     }
+    // A heading is not a receiver name, even when followed by a complete
+    // same-line address. This protects "배송지 주소 경기도 ..." from creating
+    // a fake recipient while retaining arbitrary real name composition.
+    if matches!(candidate.trim(),
+        "주소"|"배송지"|"배송지 주소"|"배송주소"|"받는곳"|
+        "수취인주소"|"수취인 주소"|"배송 주소"|"배송지주소"|
+        "배송지 주소:"|"주소:"|"받는곳:"
+    ) {return None;}
     // Refuse a product/quantity, note label, address header or multiple
     // potential recipients. Ambiguous layouts remain reviewable instead of
     // being forcefully assigned to a fabricated compound name.
@@ -1780,6 +1788,23 @@ mod tests {
         assert_eq!(composite_name_before_address("709 1개 (김가상) (12416) "),None);
         assert_eq!(composite_name_before_address("매장 (김가상) (12416) "),
             Some((0,"매장 (김가상)".len())));
+    }
+    #[test]
+    fn address_headings_cannot_become_whole_recipient_names() {
+        let state=state();
+        for header in ["배송지 주소","배송지","배송주소","받는곳",
+            "수취인주소","주소:","배송지 주소:","주소"] {
+            let raw=format!(
+                "709 1개\\n{header} 경기도 가평군 가평읍 문화로 120 010-1234-5678"
+            );
+            let raw=raw.replace("\\n","\n");
+            let result=execute("analyze_order",json!({"raw":raw,"state":state}))
+                .expect("production Rust");
+            let rows=result["recipients"].as_array().unwrap();
+            assert_eq!(rows.len(),1,"one delivery row: {header}");
+            assert_eq!(rows[0]["name"],"","address header cannot be a person: {header}");
+            assert!(rows[0]["address"].as_str().unwrap_or("").contains("문화로 120"));
+        }
     }
     #[test]
     fn lone_parenthesized_recipient_still_uses_existing_name_rule() {
