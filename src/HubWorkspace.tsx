@@ -281,7 +281,7 @@ export function HubWorkspace(props: Props) {
     if (intent === "navigate" && temporaryReceipts.length) {
       const choice = await askSaveChanges(
         `미완성 발주서 ${temporaryReceipts.length}건이 임시 보관 중입니다. 주문 확인 완료 전에는 주문 내역에 저장되지 않으며, 프로그램을 종료하면 사라집니다. 어떻게 할까요?`,
-        { save: "임시 보관하고 이동", discard: "모두 버리고 이동", cancel: "취소" },
+        { title: "미완성 발주서 처리", save: "임시 보관하고 이동", discard: "모두 버리고 이동", cancel: "취소" },
       );
       if (choice === "cancel") return { proceed: false, handledDraft: false };
       temporaryChoice = choice;

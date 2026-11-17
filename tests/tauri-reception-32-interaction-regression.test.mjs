@@ -117,6 +117,8 @@ test("navigation counts every unconfirmed receipt, never attempts to save it as 
   assert.match(hub, /if \(unsaved\(draft\)\) byId\.set\(draft\.id, draft\)/);
   assert.match(hub, /intent === "navigate"/);
   assert.match(hub, /임시 보관하고 이동/);
+  assert.match(hub, /title: "미완성 발주서 처리"/);
+  assert.match(read("src/dialogs.ts"), /labels\?\.title \?\? "변경사항 저장"/);
   assert.match(hub, /모두 버리고 이동/);
   assert.match(hub, /setEdits\(\(previous\) =>\s*Object\.fromEntries/);
   assert.match(model, /confirmOrderLeave\("navigate"\)/);

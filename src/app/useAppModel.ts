@@ -280,7 +280,7 @@ export function useAppModel() {
     if (!persisted && !draft.confirmedAt) {
       const choice = await askSaveChanges(
         "이 발주서는 주문 확인 완료 전이므로 정식 저장되지 않습니다. 임시 보관하고 이동할까요?",
-        { save: "임시 보관하고 이동", discard: "버리고 이동" },
+        { title: "미완성 발주서 처리", save: "임시 보관하고 이동", discard: "버리고 이동" },
       );
       if (choice === "cancel") return false;
       if (choice === "discard") {

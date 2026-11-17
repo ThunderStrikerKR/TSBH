@@ -86,17 +86,17 @@ export function promptText(message: string, initial = "") {
 export type SaveChangesChoice = "save" | "discard" | "cancel";
 export function askSaveChanges(
   message = "변경사항이 저장되지 않았습니다. 어떻게 할까요?",
-  labels?: { save?: string; discard?: string; cancel?: string },
+  labels?: { save?: string; discard?: string; cancel?: string; title?: string },
 ): Promise<SaveChangesChoice> {
   if (pending) return Promise.resolve("cancel");
   pending = true;
   const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const dialog = document.createElement("dialog");
   dialog.className = "app-action-dialog";
-  dialog.setAttribute("aria-label", "변경사항 저장");
+  dialog.setAttribute("aria-label", labels?.title ?? "변경사항 저장");
   const form = document.createElement("form");
   const heading = document.createElement("h2");
-  heading.textContent = "변경사항 저장";
+  heading.textContent = labels?.title ?? "변경사항 저장";
   const description = document.createElement("p");
   description.textContent = message;
   const actions = document.createElement("div");

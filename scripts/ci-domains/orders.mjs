@@ -132,7 +132,7 @@ export async function run(page,{record,snap,paste,chooseDealer}){
     "Switching unsaved receipts must not write new orders to SQLite");
   await snap(page,"orders-unassigned-selection");
   await page.getByRole("button",{name:"주문 내역",exact:true}).click();
-  const leaveModal=page.getByRole("dialog",{name:"변경사항 저장"});
+  const leaveModal=page.getByRole("dialog",{name:"미완성 발주서 처리"});
   await leaveModal.waitFor({state:"visible",timeout:30000});
   const leaveText=await leaveModal.textContent();
   assert.match(leaveText??"",/미완성 발주서 [1-9]\d*건/);
