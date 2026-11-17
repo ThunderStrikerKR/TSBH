@@ -31,10 +31,27 @@ use tauri_plugin_window_state::StateFlags;
 mod native_maximized_restore {
     use std::ffi::c_void;
 
+    // Win32 owns the real show command, not the current physical rectangle.
+    // A frameless WebView can fill the monitor while IsZoomed is false.
+    #[repr(C)]
+    struct Point { x: i32, y: i32 }
+    #[repr(C)]
+    struct Rect { left: i32, top: i32, right: i32, bottom: i32 }
+    #[repr(C)]
+    struct WindowPlacement {
+        length: u32,
+        flags: u32,
+        show_cmd: u32,
+        min_position: Point,
+        max_position: Point,
+        normal_position: Rect,
+    }
     #[link(name = "user32")]
     unsafe extern "system" {
         fn ShowWindow(hwnd: *mut c_void, command: i32) -> i32;
         fn IsZoomed(hwnd: *mut c_void) -> i32;
+        fn GetWindowPlacement(hwnd: *mut c_void, placement: *mut WindowPlacement) -> i32;
+        fn SetWindowPlacement(hwnd: *mut c_void, placement: *const WindowPlacement) -> i32;
     }
 
     pub fn ensure_native_maximized(window: &tauri::Window) {
@@ -48,8 +65,20 @@ mod native_maximized_restore {
         unsafe {
             let before = IsZoomed(hwnd) != 0;
             if !before {
-                // SW_SHOWMAXIMIZED. Do not interpret ShowWindow's return value
-                // as success: it describes the previous window visibility.
+                // First restore the *show command* as well as the maximized
+                // rectangle. ShowWindow alone can be undone by WebView's
+                // post-show SW_SHOWNORMAL on an undecorated main window.
+                let mut placement: WindowPlacement = std::mem::zeroed();
+                placement.length = std::mem::size_of::<WindowPlacement>() as u32;
+                let restored = GetWindowPlacement(hwnd, &mut placement);
+                if restored != 0 {
+                    placement.show_cmd = 3; // SW_SHOWMAXIMIZED
+                    if SetWindowPlacement(hwnd, &placement) == 0 {
+                        eprintln!("BANDO native maximize SetWindowPlacement failed");
+                    }
+                }
+                // ShowWindow's return value indicates previous visibility,
+                // not whether the new zoom command succeeded.
                 ShowWindow(hwnd, 3);
             }
             let after = IsZoomed(hwnd) != 0;
@@ -1253,11 +1282,13 @@ pub fn run() {
                     let ready_window = window.clone();
                     let app = window.app_handle().clone();
                     std::thread::spawn(move || {
-                        // The native HWND may enter Win32 maximized state and
-                        // subsequently lose it while the WebView initializes.
-                        // The second bounded check repairs that late transition.
-                        // Never run this loop unless persisted maximized=true.
-                        for (pass, delay_ms) in [(1, 650u64), (2, 1750u64)] {
+                        // On WebView2/frameless Windows the Win32 zoom bit can
+                        // revert after the first successful maximize. Reconcile
+                        // only during initial window creation, not as a permanent
+                        // watchdog (normal user restore must remain possible).
+                        // Each check is a no-op when already maximized.
+                        for pass in 1..=24u64 {
+                            let delay_ms = 250u64;
                             std::thread::sleep(std::time::Duration::from_millis(delay_ms));
                             if std::env::var_os("GITHUB_ACTIONS").is_some() {
                                 eprintln!("BANDO_WINDOW_RESTORE_DISPATCH pass={pass}");

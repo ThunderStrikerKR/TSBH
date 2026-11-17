@@ -156,10 +156,14 @@ try {
   $maximized=Get-Content -LiteralPath $testStateFile -Raw | ConvertFrom-Json
   if (!$maximized.main.maximized) { throw "DEV state did not save maximized=true" }
   $third=Start-Again
-  # Wait for the post-show maximization queued on the native event loop.
-  for($i=0;$i -lt 30 -and ![BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle);$i++) {
+  # Old restoration briefly reached IsZoomed=true then lost it.
+  # Check final stable Win32 zoom after the startup reconciliation period.
+  $zoomTimeline=New-Object 'System.Collections.Generic.List[bool]'
+  for($i=0;$i -lt 70;$i++) {
+    $zoomTimeline.Add([BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle))
     Start-Sleep -Milliseconds 100
   }
+  Write-Host "DEV_WINDOW_ZOOM_TIMELINE: samples=$($zoomTimeline.Count) first=$($zoomTimeline[0]) last=$($zoomTimeline[$zoomTimeline.Count-1]) falseCount=$(($zoomTimeline | Where-Object { !$_ }).Count)"
   if (![BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle)) {
     $rect=Get-WindowRect $third
     Write-Host "DEV_WINDOW_MAXIMIZED_FAILURE_DIAGNOSTIC: saved=true rect=$($rect | ConvertTo-Json -Compress) hwnd=$($third.MainWindowHandle)"
