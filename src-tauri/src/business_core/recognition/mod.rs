@@ -1603,6 +1603,27 @@ mod tests {
         }
     }
 
+
+    #[test]
+    fn percussion_center_z1_actual_raw_diagnostic() {
+        // Exact user-supplied text, compiled through the actual native engine.
+        // Diagnostics intentionally do not change SKU catalog or matching.
+        let raw="■퍼커션센터 발주서■\nㅇ품목\nZ-1(건반 스탠드) * 1EA\n\nㅇ수령정보\n서울 송파구 석촌호수로 162 강남중앙교회\n정우영 목사\n010-6487-7021";
+        let catalog=serde_json::from_str::<Value>(include_str!(
+            "../../../resources/state-seed.json"
+        )).expect("360 SKU seed");
+        let matched=execute("match_products",json!({
+            "text":"Z-1(건반 스탠드) * 1EA",
+            "state":catalog
+        })).expect("native product matcher");
+        let analyzed=execute("analyze_order",json!({
+            "raw":raw,"state":catalog
+        })).expect("native complete-document analyzer");
+        println!("PERCUSSION_CENTER_Z1_MATCH {}",matched);
+        println!("PERCUSSION_CENTER_Z1_ANALYSIS {}",analyzed);
+        assert!(analyzed["recipients"].is_array(),
+            "the native engine must return a reviewable analysis");
+    }
     #[test]
     fn manual_confirmations_survive_identical_order() {
         let analysis=execute("analyze_order",json!({"raw":"709 2개\n김가상\n서울특별시 마포구 월드컵로 20","state":state()})).unwrap();
