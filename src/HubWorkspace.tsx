@@ -16,7 +16,7 @@ import { useNativeWorkflowReconcile } from "./orders/useNativeWorkflowReconcile"
 import { retainUnsavedOrderEdits } from "./order-edit-snapshots";
 import type { Order } from "./types";
 import { groupShipments } from "./workflow";
-import { activeShipments, validSelection } from "./workspace-selection";
+import { activeShipments, hoveredWorkflowSelection, validSelection } from "./workspace-selection";
 type Props = ComponentProps<typeof OrderDesk> & {
   externalKakao: boolean;
   onNew: () => void;
@@ -215,14 +215,9 @@ export function HubWorkspace(props: Props) {
   // A stage-button hover previews its OWN shipment, never the previously
   // selected order. This is read-only navigation: persistent selection and
   // unsaved edit ownership stay untouched until the card is clicked.
-  const hoverShipment = stageHover && previewReady
-    ? activeShipments(preview).find((shipment) => shipment.groupId === stageHover.groupId)
+  const hoverSelection = previewReady
+    ? hoveredWorkflowSelection(preview, stageHover?.groupId, selected)
     : undefined;
-  const hoverSelection: WorkflowSelection | undefined = hoverShipment ? {
-    orderId: hoverShipment.orderId,
-    groupId: hoverShipment.groupId,
-    shipmentId: hoverShipment.id,
-  } : undefined;
   const visibleSelection = hoverSelection ?? selected;
   const detail = visibleSelection
     ? visibleSelection.orderId === draft.id
