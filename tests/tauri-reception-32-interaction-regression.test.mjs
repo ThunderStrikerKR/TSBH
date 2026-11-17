@@ -65,7 +65,8 @@ test("each workflow receipt uses a separate compact card and a single-line payme
   assert.match(board, /className="flow-summary-compact"/);
   assert.match(board, /배송 \{ss\.length\}건/);
   assert.match(board, /className="flow-summary-payment"/);
-  assert.match(board, /nativeGroup\?\.vatLabel === "부가세 포함"/);
+  assert.match(board, /nativeGroup\?\.shipments\.filter\(\(shipment\) => shipment\.vatIncluded\)\.length/);
+  assert.match(board, /mixedVat \? `포함\$\{vatIncludedCount\}·별도\$\{vatExcludedCount\}` : "부가세 포함"/);
   assert.doesNotMatch(board, /입금액 \{won\(/);
   assert.doesNotMatch(board, /총 운임/);
   assert.doesNotMatch(board, /미확정 · 임시/);
@@ -165,9 +166,24 @@ test("stage signal lights live beside the dealer name without widening the one-t
   assert.doesNotMatch(progress, /<SignalLights/);
   assert.match(progress, /className="primary"/);
   assert.match(progress, /className="workflow-undo"/);
-  assert.match(css, /\.workflow-group \.flow-group-name\s*\{[\s\S]*?flex: 0 0 146px;[\s\S]*?width: 146px;/);
+  assert.match(css, /\.workflow-group \.flow-group-name\s*\{[\s\S]*?flex: 0 0 162px;[\s\S]*?width: 162px;/);
   assert.match(css, /\.workflow-group > header\s*\{[\s\S]*?flex-wrap: nowrap;/);
   assert.match(css, /\.workflow-group \.workflow-signals \.signal\s*\{[\s\S]*?width: 18px;[\s\S]*?height: 18px;/);
-  assert.match(css, /\.flow-heading-toggle > \.workflow-signals\s*\{[\s\S]*?flex: 0 0 auto;[\s\S]*?margin-left: 6px;/);
-  assert.match(css, /\.workflow-progress > \.primary\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?width: max-content;[\s\S]*?max-width: 190px;/);
+  assert.match(css, /\.flow-heading-toggle > \.workflow-signals\s*\{[\s\S]*?flex: 0 0 82px;[\s\S]*?margin-left: 4px;/);
+  assert.match(css, /\.workflow-progress > \.primary\s*\{[\s\S]*?flex: 0 0 140px;[\s\S]*?width: 140px;[\s\S]*?max-width: 140px;/);
+});
+
+test("compact workflow cards retain two rows, consistent action geometry and unambiguous mixed VAT counts", () => {
+  const board = read("src/WorkflowBoard.tsx");
+  const css = read("src/styles/workflow.css");
+  const detail = read("src/OrderDesk.tsx");
+  assert.match(board, /<div className="workflow-action-line">/);
+  assert.match(css, /\.workflow-action-line > \.workflow-progress\s*\{[\s\S]*?flex: 0 0 177px;[\s\S]*?width: 177px;/);
+  assert.match(css, /\.workflow-progress > \.primary\s*\{[\s\S]*?flex: 0 0 140px;[\s\S]*?width: 140px;/);
+  assert.match(css, /\.workflow-group \.flow-group-name b\s*\{[\s\S]*?font-size: 16px;/);
+  assert.match(css, /\.workflow-group > header > button\.trash-button\s*\{[\s\S]*?height: 32px;/);
+  assert.match(board, /const mixedVat = vatIncludedCount > 0 && vatExcludedCount > 0/);
+  assert.match(board, /부가세 포함 \$\{vatIncludedCount\}건 · 부가세 별도 \$\{vatExcludedCount\}건/);
+  assert.doesNotMatch(board, /nativeGroup\?\.vatLabel === "부가세 포함"/);
+  assert.match(detail, /부가세 혼합 · 배송별 확인/);
 });
