@@ -48,6 +48,17 @@ pub(crate) fn extract(text: &str) -> Vec<Quantity> {
             // A fully spelled unit must stop at its boundary: not 1EAS.
             continue;
         }
+        // Korean number+unit fragments inside an uninterrupted word are not
+        // independent quantities: "연향3지구대주피오레" contains "구대",
+        // but the address does not order nine stands. Preserve legitimate
+        // unseparated suffixes such as "블랙한개" at the end of a line.
+        if capture.get(1).is_some_and(|m|m.as_str().chars().all(|c|!c.is_ascii_digit()))
+            && text[..whole.start()].chars().next_back()
+                .is_some_and(|c|('가'..='힣').contains(&c))
+            && following.chars().next()
+                .is_some_and(|c|('가'..='힣').contains(&c)) {
+            continue;
+        }
         // A model identifier must not be interpreted as a quantity.
         if whole.start() > 0 && text[..whole.start()].ends_with('-') {
             let prefix = &text[..whole.start() - 1];
@@ -112,6 +123,14 @@ mod tests {
         assert!(extract("1EAS").is_empty());
         assert_eq!(extract("2EA")[0].value,2);
         assert_eq!(extract("x2")[0].value,2);
+    }
+    #[test]
+    fn korean_number_unit_inside_a_place_name_is_not_a_quantity() {
+        assert!(extract("전라남도 순천시 팔마1길 25 (연향동, 연향3지구대주피오레) 101동 1003호").is_empty());
+        assert!(extract("연향3지구대주피오레").is_empty());
+        assert_eq!(extract("구대").iter().map(|q|q.value).collect::<Vec<_>>(),vec![9]);
+        assert_eq!(extract("BD 709 블랙한개").iter().map(|q|q.value).collect::<Vec<_>>(),vec![1]);
+        assert_eq!(extract("BD 709 (블랙) 4개").iter().map(|q|q.value).collect::<Vec<_>>(),vec![4]);
     }
     #[test]
     fn no_fabricated_quantity() {
