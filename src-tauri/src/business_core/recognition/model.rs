@@ -411,6 +411,28 @@ fn alias_entries<'a>(text: &str, state: &'a Value, client_id: &str,
         .find(|p| str_field(p,"id") == str_field(a,"productId"))
         .map(|p| (a,*p))).collect()
 }
+// Vocabulary-level normalization, not a learned guess. An unambiguous
+// conductor's score stand is described as "지휘용 악보 스탠드" in customer
+// orders even when the catalog uses "지휘자 보면대". Do not override explicit
+// model codes, registered names, or dealer aliases. More than one active
+// conductor SKU must remain an unresolved choice.
+fn conductor_semantic_entries<'a>(text: &str, ps: &[&'a Value]) -> Vec<Entry<'a>> {
+    let phrase=Regex::new(
+        r"지휘(?:자)?\s*용?\s*(?:악보\s*스탠드|보면대|악보대|뮤직\s*스탠드)"
+    ).expect("conductor role with score stand");
+    let Some(m)=phrase.find(text) else { return vec![]; };
+    // A separate model token is stronger evidence, even when it is not
+    // registered in this catalog. Never silently reinterpret its model.
+    let competing_code=Regex::new(
+        r"(?i)(?:^|[\s(/])(?:BD\s*[- ]*)?(?:[A-Z]{1,7}[- ]?\d+|\d{3}(?:-\d+)?)(?:\b|\s|$)"
+    ).expect("independent model token");
+    if competing_code.is_match(text) { return vec![]; }
+    ps.iter().copied()
+        .filter(|p| str_field(p,"category").contains("보면대")
+            && str_field(p,"name").contains("지휘자")
+            && str_field(p,"name").contains("보면대"))
+        .map(|p|Entry{p,priority:1,span:(m.start(),m.end())}).collect()
+}
 pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
     let ps = products(state);
     let verified = verified_bases(&ps);
@@ -443,6 +465,20 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
                     .any(|v|str_field(v,"source")=="DEMO"));
             }
             entries=matched;
+        }
+    }
+    // Only use meaning-equivalent wording if literal names and aliases
+    // found nothing. Ambiguous variants remain unresolved by the usual
+    // candidate-selection safeguards.
+    let mut semantic_name=false;
+    if entries.is_empty() && aliases.is_empty() {
+        let semantic=conductor_semantic_entries(text,&ps);
+        if !semantic.is_empty() {
+            let (filtered,_)=filter_business_candidates(text,state,&ps,semantic);
+            if !filtered.is_empty() {
+                entries=filtered;
+                semantic_name=true;
+            }
         }
     }
     let mut branded_category=false;
@@ -522,7 +558,9 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
         else if category_mismatch { "CATEGORY_CONFLICT" }
         else if broad || ambiguous || branded_category { "CATEGORY" }
         else if let Some(ref e) = chosen {
-            if exact.iter().any(|x| str_field(x.p,"id") == str_field(e.p,"id")) {
+            if semantic_name {
+                "SEMANTIC_NAME"
+            } else if exact.iter().any(|x| str_field(x.p,"id") == str_field(e.p,"id")) {
                 "NAME"
             } else if first_alias.and_then(|a| a.get("clientId").and_then(Value::as_str)).is_some() {
                 "CLIENT_ALIAS"
