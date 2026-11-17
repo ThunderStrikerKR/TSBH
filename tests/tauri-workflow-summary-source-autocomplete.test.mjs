@@ -16,7 +16,9 @@ test("workflow summary uses one line for shipments, deposit and normalized tax s
   assert.equal((block.match(/className="flow-summary-compact"/g) || []).length, 1);
   assert.match(block, /배송 \{ss\.length\}건/);
   assert.match(block, /className="flow-summary-payment"/);
-  assert.match(block, /nativeGroup\?\.vatLabel === "부가세 포함"/);
+  assert.match(block, /vatIncludedCount > 0/);
+  assert.match(block, /vatDescription/);
+  assert.match(block, /mixedVat/);
   assert.match(block, /won\(nativeGroup\?\.totals\.total \?\? null\)/);
   assert.doesNotMatch(block, /입금액 |\(부가세 별도\)/);
   assert.doesNotMatch(block, /총 운임|입금 예정|미확정 · 임시/);
