@@ -273,31 +273,48 @@ fn address_begin(line: &str) -> Option<usize> {
     )).expect("address");
     address.find(line).map(|m| m.start())
 }
-// A receiver may explicitly supply a *whole shipping-label name* such as
-// "청소년활동팀(1층)(김가상)" before "(12416) 경기도 ...". Keep the
-// department and floor with the parenthesized contact; they aren't separate
-// recipients and should not be silently discarded from the label name.
-// Only activate when a parenthesized Korean name CLOSES the prefix and
-// there is a nontrivial organization/department descriptor before it.
+// A delivery label may contain any arrangement of department, contact,
+// office/floor and bracketed remarks. Treat the entire pre-address field as
+// one receiver label; never infer that only the parenthesized person is the
+// shipping name. This function finds field BOUNDARIES, not a name format.
+// An independent address must already have been recognized by the caller.
 fn composite_name_before_address(prefix: &str) -> Option<(usize,usize)> {
-    let before_zip=Regex::new(r"\s+\(?\d{5}\)?\s*$").expect("postal suffix");
-    let without_zip=before_zip.find(prefix)
+    // A postal code before the administrative address is not part of the
+    // shipping name. Leave source offsets for the retained name untouched.
+    let postal=Regex::new(r"(?:\s+\(?\d{5}\)?|\(\d{5}\))\s*$")
+        .expect("trailing postal marker");
+    let without_postal=postal.find(prefix)
         .map_or(prefix, |m| &prefix[..m.start()]);
-    let trim_start=without_zip.len()-without_zip.trim_start().len();
-    let candidate=without_zip.trim();
-    if candidate.is_empty() || candidate.len()>160 {return None;}
-    let person=Regex::new(r"\(([가-힣]{2,5})\)$").expect("contact in parentheses");
-    let m=person.find(candidate)?;
-    let head=candidate[..m.start()].trim();
-    // No broad guess for a lone "(김가상)" or "받는분 (김가상)".
-    // Require a plausible descriptor, not an explicit item/quantity line.
-    let descriptor=head.split('(').next().unwrap_or("").trim();
-    if descriptor.chars().filter(|ch| ('가'..='힣').contains(ch)).count()<3
-        || descriptor.chars().any(|ch|ch.is_ascii_digit())
-        || Regex::new(r"(?i)(?:\d+\s*(?:개|대|EA|PCS)|(?:BD\s*)?\d{3})")
-            .expect("no product descriptor").is_match(descriptor)
+    let raw_start=without_postal.len()-without_postal.trim_start().len();
+    let name_start=Regex::new(
+        r"^(?:수취인(?:명)?|수령자|수하인(?:명)?|받는\s*(?:분|사람)|성함|이름)\s*[:：]\s*"
+    ).expect("explicit recipient label");
+    let field=&without_postal[raw_start..];
+    let label_width=name_start.find(field).map_or(0,|m|m.end());
+    let start=raw_start+label_width;
+    let name=&without_postal[start..];
+    let end=start+name.trim_end().len();
+    if end<=start || end-start>160 {return None;}
+    let candidate=&prefix[start..end];
+    // The existing single-name recognizer intentionally strips parentheses
+    // from "(김가상)" alone; preserve that compatibility.
+    if Regex::new(r"^\([가-힣]{2,5}\)$").expect("lone contact").is_match(candidate) {
+        return None;
+    }
+    if candidate.chars().filter(|c|('가'..='힣').contains(c)).count()<2 {
+        return None;
+    }
+    // Refuse a product/quantity, note label, address header or multiple
+    // potential recipients. Ambiguous layouts remain reviewable instead of
+    // being forcefully assigned to a fabricated compound name.
+    if quantity::extract(candidate).len()>0
+        || Regex::new(r"(?i)(?:\bBD\s*[- ]?\d{3}|(?:^|\s)\d{3}(?:-\d+)?(?:\s|$))")
+            .expect("model code").is_match(candidate)
+        || Regex::new(r"^(?:주소|배송지|배송주소|메시지|메세지|배송\s*요청|비고)\s*[:：]")
+            .expect("non-recipient label").is_match(candidate)
+        || candidate.contains('|') || candidate.contains(';')
     {return None;}
-    Some((trim_start,trim_start+candidate.len()))
+    Some((start,end))
 }
 fn is_person(text: &str) -> bool { ts_semantics::person(text) }
 fn is_institution(text: &str) -> bool {
@@ -734,6 +751,15 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             }
         }
 
+        // A name-format-independent complete receiver label wins over
+        // extracting just a parenthesized person from the same source span.
+        let whole_receiver=address.and_then(|at|
+            composite_name_before_address(&line.text[..at]));
+        if let Some((begin,end))=whole_receiver {
+            add_match(&mut events,line,begin,end,"name",
+                line.text[begin..end].to_owned(),
+                "주소 전 전체 수취인 문자열 보존");
+        } else {
         if let Some(c) = person_label.captures(line.text) {
             if let Some(name) = c.get(1) {
                 if is_person(name.as_str()) {
@@ -785,30 +811,20 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 }
             }
         }
-        // A contact in parentheses can be the PERSON in a longer postal
-        // label name. Preserve its whole department/floor/contact prefix
-        // when there is evidence for a composite receiver name.
+        // A parenthesized person before the address remains a fallback when
+        // the whole receiver label is absent or lacks sufficient evidence.
         if let Some(address_start) = address {
             let prefix = &line.text[..address_start];
-            let existing_name=events.iter().any(|e|
-                e.kind=="name" && e.line==line.number);
-            if !existing_name {
-                if let Some((start,end))=composite_name_before_address(prefix) {
-                    add_match(&mut events,line,start,end,"name",
-                        prefix[start..end].to_owned(),
-                        "주소 앞 부서·위치·담당자 전체 수취인명");
-                } else {
-                    let enclosed = Regex::new(r"\(([가-힣]{2,5})\)").expect("enclosed name");
-                    for c in enclosed.captures_iter(prefix) {
-                        if let Some(name) = c.get(1) {
-                            if is_person(name.as_str()) {
-                                add_match(&mut events,line,name.start(),name.end(),"name",
-                                    name.as_str().to_owned(),"주소 앞 괄호의 수취인");
-                            }
-                        }
+            let enclosed=Regex::new(r"\(([가-힣]{2,5})\)").expect("enclosed name");
+            for c in enclosed.captures_iter(prefix) {
+                if let Some(name)=c.get(1) {
+                    if is_person(name.as_str()) {
+                        add_match(&mut events,line,name.start(),name.end(),"name",
+                            name.as_str().to_owned(),"주소 앞 괄호의 수취인");
                     }
                 }
             }
+        }
         }
         for c in phone.captures_iter(line.text) {
             let full = c.get(0).expect("phone match");
@@ -1729,18 +1745,41 @@ mod tests {
             "the native engine must return a reviewable analysis");
     }
     #[test]
-    fn composite_recipient_name_keeps_full_parentheses_and_leaves_simple_names() {
-        assert_eq!(
-            composite_name_before_address("청소년활동팀(1층)(김가상)   (12416) "),
-            Some((0,"청소년활동팀(1층)(김가상)".len()))
-        );
-        assert_eq!(
-            composite_name_before_address("  중등교육지원팀(2층)(박가상)  "),
-            Some((2,2+"중등교육지원팀(2층)(박가상)".len()))
-        );
-        assert_eq!(composite_name_before_address("(김가상)  (12416) "),None);
+    fn composite_recipient_name_preserves_unbounded_formats_as_a_whole_field() {
+        let variants=[
+            "청소년활동팀(1층)(김가상)",
+            "(청소년활동팀)김가상",
+            "청소년활동팀 김가상",
+            "청소년활동팀김가상",
+            "청소년활동팀(1층)김가상",
+            "김가상(청소년활동팀)",
+            "김가상 청소년활동팀",
+            "김가상청소년활동팀",
+            "김가상(1층)청소년활동팀",
+            "청소년활동팀-김가상",
+            "청소년활동팀/김가상",
+            "청소년활동팀(행정실)(2층)김가상",
+        ];
+        let state=state();
+        for name in variants {
+            let raw=format!(
+                "709 1개\n{name}  (12416) 경기도 가평군 가평읍 문화로 120 010-1234-5678"
+            );
+            let out=execute("analyze_order",json!({"raw":raw,"state":state}))
+                .expect("production parser");
+            let rows=out["recipients"].as_array().expect("recipients");
+            assert_eq!(rows.len(),1,"should be one consignee: {name}");
+            assert_eq!(rows[0]["name"],name,"keep entire recipient label: {name}");
+            assert_eq!(rows[0]["mobile"],"010-1234-5678","phone separated: {name}");
+            assert_eq!(rows[0]["items"][0]["quantity"],1);
+            assert_eq!(rows[0]["candidates"].as_array().unwrap().iter()
+                .filter(|c|c["field"]=="name").count(),1,
+                "no duplicate short name candidates: {name}");
+        }
+        assert_eq!(composite_name_before_address("(김가상) (12416) "),None);
         assert_eq!(composite_name_before_address("709 1개 (김가상) (12416) "),None);
-        assert_eq!(composite_name_before_address("매장 (김가상) (12416) "),None);
+        assert_eq!(composite_name_before_address("매장 (김가상) (12416) "),
+            Some((0,"매장 (김가상)".len())));
     }
     #[test]
     fn lone_parenthesized_recipient_still_uses_existing_name_rule() {
