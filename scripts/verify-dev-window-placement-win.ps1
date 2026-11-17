@@ -27,6 +27,18 @@ public static class BandoDevWindowProbe {
   public static extern bool ShowWindow(IntPtr hwnd, int command);
   [DllImport("user32.dll", SetLastError=true)]
   public static extern bool IsZoomed(IntPtr hwnd);
+  [StructLayout(LayoutKind.Sequential)]
+  public struct POINT { public int X, Y; }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct WINDOWPLACEMENT {
+    public uint length, flags, showCmd;
+    public POINT ptMinPosition, ptMaxPosition;
+    public RECT rcNormalPosition;
+  }
+  [DllImport("user32.dll", SetLastError=true)]
+  public static extern bool GetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT p);
+  [DllImport("user32.dll", SetLastError=true, EntryPoint="GetWindowLongPtrW")]
+  public static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int nIndex);
 }
 '@
 $appRoot=Join-Path $env:APPDATA "com.bandostand.bandohub.tauri"
@@ -164,6 +176,13 @@ try {
     Start-Sleep -Milliseconds 100
   }
   Write-Host "DEV_WINDOW_ZOOM_TIMELINE: samples=$($zoomTimeline.Count) first=$($zoomTimeline[0]) last=$($zoomTimeline[$zoomTimeline.Count-1]) falseCount=$(($zoomTimeline | Where-Object { !$_ }).Count)"
+  $placement=New-Object BandoDevWindowProbe+WINDOWPLACEMENT
+  $placement.length=[System.Runtime.InteropServices.Marshal]::SizeOf([type][BandoDevWindowProbe+WINDOWPLACEMENT])
+  $placementOk=[BandoDevWindowProbe]::GetWindowPlacement($third.MainWindowHandle,[ref]$placement)
+  $style=[BandoDevWindowProbe]::GetWindowLongPtr($third.MainWindowHandle,-16).ToInt64()
+  $win32MaxStyle=($style -band 0x01000000) -ne 0
+  Write-Host "DEV_WINDOW_WIN32_PLACEMENT: ok=$placementOk cmd=$($placement.showCmd) styleMax=$win32MaxStyle style=$style hwnd=$($third.MainWindowHandle)"
+
   if (![BandoDevWindowProbe]::IsZoomed($third.MainWindowHandle)) {
     $rect=Get-WindowRect $third
     Write-Host "DEV_WINDOW_MAXIMIZED_FAILURE_DIAGNOSTIC: saved=true rect=$($rect | ConvertTo-Json -Compress) hwnd=$($third.MainWindowHandle)"
