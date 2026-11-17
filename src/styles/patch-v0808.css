@@ -541,6 +541,8 @@
   max-width: 56px;
   flex: 0 0 56px;
   padding: 3px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .items-freight-panel .compact-items td:nth-child(2) .linked-field:after {
   flex-shrink: 0;
@@ -672,4 +674,15 @@
 /* Keep the tax checkbox inset from the left edge of the freight section. */
 .items-freight-panel .shipment-vat {
   padding: 0 12px;
+}
+
+/* Every quantity entry aligns its digits at the right edge, including
+   number steppers and manual-classification numeric drafts. Do not alter
+   amounts, labels or unit suffixes. */
+.app-v03 .quantity-stepper input,
+.app-v03 .manual-quantity-cell input[inputmode="numeric"],
+.app-v03 .manual-count input[type="number"],
+.app-v03 .compact-items input[type="number"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
