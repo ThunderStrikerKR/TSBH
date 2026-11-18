@@ -543,7 +543,7 @@ export function WorkflowBoard({
               >
                 <span className="flow-toggle-icon" aria-hidden="true">{(open || isPreview) ? "▾" : "▸"}</span>
                 <span className="flow-group-name">
-                  <b>{first.client.displayName || dealerName}</b>
+                  <b>{dealerName}</b>
                 </span>
                 {first.order.orderType !== "RETAIL" && nativeGroup && (
                   <SignalLights step={step} notice={g.needsNotice} />
