@@ -7,7 +7,7 @@ const source = (path) => readFileSync(new URL("../" + path, import.meta.url), "u
 test("staff checkbox is the only source of 1x/2x and staff choice survives Rust resolution", () => {
   const rules = source("src-tauri/src/business_core/rules/remote_delivery.rs");
   const types = source("src/types.ts");
-  assert.match(types, /remoteDelivery\?: \{ address: string; checked: boolean; manual: true \}/);
+  assert.match(types, /remoteDelivery\?: \{ address: string; checked: boolean; manual: boolean; legacy\?: boolean \}/);
   assert.match(rules, /let saved_for_address = decision\.get\("checked"\)/);
   assert.match(rules, /let manually_set = saved_for_address/);
   assert.match(rules, /let checked = if saved_for_address/);
