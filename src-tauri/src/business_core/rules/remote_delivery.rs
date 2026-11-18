@@ -105,6 +105,35 @@ pub(super) fn multiply(base: Option<i64>, recipient: &Value) -> Option<i64> {
         .filter(|n| (0..=super::MAX_SAFE).contains(n))
 }
 
+/// A read-only history or preview can run before reconciliation migrates
+/// a previously billed order. Do not retroactively double such shipments
+/// merely because their old recipient JSON has no locality decision field.
+pub(super) fn resolve_shipment(
+    recipient: &Value, shipment: &Value, order: &Value
+) -> Result<Value, String> {
+    let mut result=resolve_recipient(recipient)?;
+    let legacy_unmarked=!recipient.get("remoteDelivery")
+        .is_some_and(Value::is_object) &&
+        (super::flag(shipment,"transferred") ||
+         super::field(shipment,"step").as_i64().unwrap_or(0)>=2 ||
+         super::has_value(super::field(order,"confirmedAt")) ||
+         super::flag(order,"pricesLocked"));
+    if legacy_unmarked {
+        result["checked"]=json!(false);
+        result["legacy"]=json!(true);
+    }
+    Ok(result)
+}
+
+pub(super) fn multiply_shipment(
+    base: Option<i64>, recipient: &Value, shipment: &Value, order: &Value
+) -> Option<i64> {
+    let result=resolve_shipment(recipient,shipment,order).ok()?;
+    let amount=base?;
+    amount.checked_mul(if result["checked"].as_bool()? {2} else {1})
+        .filter(|n| (0..=super::MAX_SAFE).contains(n))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +212,21 @@ mod tests {
         assert_eq!(result["checked"],false);
         assert_eq!(result["manual"],false);
         assert_eq!(multiply(Some(3000),&recipient),Some(3000));
+    }
+
+    #[test]
+    fn unreconciled_legacy_paid_shipments_keep_their_original_amounts() {
+        let row=json!({"address":"제주특별자치도 서귀포시 대정읍 테스트로 3"});
+        let ordinary=json!({"freightCode":"010"});
+        let paid=json!({"step":2,"transferred":false});
+        assert_eq!(resolve_shipment(&row,&paid,&ordinary).unwrap()["checked"],false);
+        assert_eq!(multiply_shipment(Some(3000),&row,&paid,&ordinary),Some(3000));
+        let drafted=json!({"step":0,"transferred":false});
+        assert_eq!(multiply_shipment(Some(3000),&row,&drafted,&ordinary),Some(6000));
+        let checked=json!({"address":"제주특별자치도 서귀포시 대정읍 테스트로 3",
+            "remoteDelivery":{"address":"제주특별자치도 서귀포시 대정읍 테스트로 3",
+                "checked":true,"manual":false}});
+        assert_eq!(multiply_shipment(Some(3000),&checked,&paid,&ordinary),Some(6000));
     }
 
     #[test]
