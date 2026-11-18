@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { auditReactRender } from "./perf-audit";
 import { CorrectionPanel } from "./CorrectionPanel";
 import { ActualFreightField } from "./ActualFreightField";
+import { useNativeShipmentRead } from "./orders/useNativeShipmentRead";
 import { useNativeDeliveryRequirements } from "./useNativeDeliveryRequirements";
 import { IssueResolver } from "./IssueResolver";
 import { LinkContext, Linked } from "./LinkedText";
@@ -74,6 +75,7 @@ export function OrderDesk(props: OrderDeskProps) {
     chooseProduct,
     itemEditing,
   } = useOrderDesk(props);
+  const retailShipmentRead = useNativeShipmentRead(state, draft.orderType === "RETAIL");
   // Do not clear/recreate the "확인할 내용" list while multiple Rust
   // previews settle after a paste. Old blocks are read-only until current.
   const lastReadyChecks = useRef<{ orderId: string; blocks: typeof staffBlocks } | undefined>(undefined);
@@ -256,6 +258,7 @@ export function OrderDesk(props: OrderDeskProps) {
                         <ActualFreightField
                           key={ship.id}
                           state={state}
+                          nativeRead={retailShipmentRead}
                           shipmentId={ship.id}
                           origin={
                             draft.recipients.find((r) => r.id === ship.recipientId)!.dispatchOrigin!
