@@ -97,7 +97,7 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
             let freight_code = workflow::shipment_freight_code(order, recipient);
             let excluded = workflow::party(state, order)
                 .is_some_and(|client| flag(client, "shippingFeeExcluded"));
-            let remote = super::remote_delivery::resolve_recipient(recipient)?;
+            let remote = super::remote_delivery::resolve_shipment(recipient,ship,order)?;
             let mut display_charges = serde_json::Map::new();
             for item in rows(field(recipient, "items")) {
                 let origin = str_field(item, "origin");
@@ -107,7 +107,7 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
                 } else {
                     let base=field(field(ship,"charges"),origin);
                     if base.is_null() {Value::Null} else {
-                        super::remote_delivery::multiply(safe(base),recipient)
+                        super::remote_delivery::multiply_shipment(safe(base),recipient,ship,order)
                             .map(|amount|json!(amount)).unwrap_or(Value::Null)
                     }
                 };
@@ -142,7 +142,7 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
             // Omit the optional locality projection for ordinary orders to
             // avoid changing unrelated legacy snapshot contracts.
             if matches!(str_field(&remote,"status"),"auto"|"review") ||
-                flag(&remote,"manual") {
+                flag(&remote,"manual") || flag(&remote,"legacy") {
                 shipment_projection["remoteDelivery"]=remote;
             }
             shipment_projections.push(shipment_projection);
