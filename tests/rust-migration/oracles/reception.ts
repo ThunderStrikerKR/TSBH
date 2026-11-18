@@ -3,7 +3,7 @@
  */
 import { explicitSender } from "../../../src/explicit-sender.js";
 import { companyClient, companyParty } from "../../../src/order-types.js";
-import { retailIssues } from "../../../src/orders/retail-validation.js";
+import { retailIssues } from "./retail-validation.js";
 import { blankOrder } from "../../../src/seed.js";
 import type { Order, State, OrderType } from "../../../src/types.js";
 import { stageIssues } from "../../../src/workflow.js";
