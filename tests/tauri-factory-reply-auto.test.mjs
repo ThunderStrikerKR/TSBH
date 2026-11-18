@@ -35,6 +35,9 @@ const { processWatchedFactoryReply: runWithEngine } = load("factory-reply-auto")
 const sourceOracle = load("factory-reply-workbook");
 const processWatchedFactoryReply = (api, source) =>
   runWithEngine(api, source, {
+    // Historical duplicate oracle is only injected by this isolated test.
+    checkDuplicate: async (state, id) =>
+      Boolean(state.factoryReplies?.some((record) => record.id === id)),
     analyze: sourceOracle.parseFactoryReplyWorkbook,
     apply: async (state, preview) =>
       sourceOracle.applyFactoryReplyPreview(state, preview),
@@ -168,6 +171,10 @@ test("startup mounting and native wiring keep TEST and production apart",()=>{
   assert.match(rust,/if is_test \{/);
   assert.match(rust,/공장 회신 수신/);
   assert.match(rust,/file_id\(&bytes\)/);
+  const runtime=read("src/factory-reply-auto.ts");
+  assert.match(runtime,/engine\.checkDuplicate\(current, source\.id\)/);
+  assert.doesNotMatch(runtime,/current\.factoryReplies\?\.some/);
+  assert.match(read("src-tauri/src/business_core/rules/factory_reply.rs"),/factory_reply_duplicate/);
   assert.match(rust,/write_snapshot\(conn, candidate, expected_revision, true\)/);
   assert.match(app,/<FactoryReplyWatcher/);
   assert.match(settings,/수신 폴더 선택/);

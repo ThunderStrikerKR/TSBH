@@ -1,4 +1,5 @@
 import type { FactoryReplyPreview } from "./factory-reply-types";
+import { businessCoreCall } from "./tauri-bridge";
 import type { Api, State } from "./types";
 
 export interface WatchedReplyFile {
@@ -23,11 +24,16 @@ export interface AutoReplyOutcome extends WatchedReplyResult {
  * exclusively to native Rust; it never falls back on a failed IPC call.
  */
 export interface FactoryReplyEngine {
+  checkDuplicate: (state: State, id: string) => Promise<boolean>;
   analyze: (state: State, file: File) => Promise<FactoryReplyPreview>;
   apply: (state: State, preview: FactoryReplyPreview) =>
     Promise<{ next: State; applied: number; held: number }>;
 }
 const nativeReplyEngine: FactoryReplyEngine = {
+  checkDuplicate: async (state, id) =>
+    (await businessCoreCall<{ duplicate: boolean }>(
+      "rules", "factory_reply_duplicate", { state, id },
+    )).duplicate,
   analyze: async (state, file) =>
     (await import("./native-factory-reply")).nativeAnalyzeFactoryReply(state, file),
   apply: async (state, preview) =>
@@ -46,7 +52,8 @@ export async function processWatchedFactoryReply(
     throw Error("자동 공장 회신 저장 기능을 사용할 수 없습니다.");
   }
   const current = await api.load();
-  if (current.factoryReplies?.some((record) => record.id === source.id)) {
+  // Native Rust owns duplicate identity, as it does in manual review and DB commit.
+  if (await engine.checkDuplicate(current, source.id)) {
     return { duplicate: true, applied: 0, held: 0, invalid: false };
   }
   const file = new File(

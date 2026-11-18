@@ -12,6 +12,9 @@ fn s<'a>(v:&'a Value,k:&str)->&'a str { field(v,k).as_str().unwrap_or("") }
 fn rows<'a>(v:&'a Value,k:&str)->&'a [Value] {
     field(v,k).as_array().map(Vec::as_slice).unwrap_or(&[])
 }
+fn is_duplicate(state:&Value,id:&str)->bool {
+    rows(state,"factoryReplies").iter().any(|record|s(record,"id")==id)
+}
 fn valid_tracking(text:&str)->bool {
     (8..=30).contains(&text.len()) && text.bytes().all(|b|b.is_ascii_digit())
 }
@@ -67,7 +70,7 @@ fn audit_id(payload:&Value,key:&str,index:usize)->String {
 }
 fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value,String>{
     let reply_id=s(source,"id");
-    if rows(input,"factoryReplies").iter().any(|r|s(r,"id")==reply_id){
+    if is_duplicate(input,reply_id){
         return Ok(input.clone())
     }
     let mut next=input.clone();
@@ -199,7 +202,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
     Ok(next)
 }
 fn preview(state:&Value,reply:&Value)->Result<Value,String>{
-    if rows(state,"factoryReplies").iter().any(|r|s(r,"id")==s(reply,"id")){
+    if is_duplicate(state,s(reply,"id")){
         return Err("이미 등록된 동일 회신 파일입니다. 회신 이력에서 확인하세요.".into())
     }
     let next=connect(state,reply,false,&Value::Null)?;
@@ -373,6 +376,12 @@ fn review_list(payload:&Value)->Result<Value,String>{
 }
 pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
     match operation {
+        "factory_reply_duplicate"=>{
+            let state=payload.get("state").ok_or("공장 회신 상태 누락")?;
+            let id=payload.get("id").and_then(Value::as_str)
+                .ok_or("공장 회신 식별자 누락")?;
+            Ok(json!({"duplicate":is_duplicate(state,id)}))
+        },
         "factory_reply_review_statuses"=>review_list(payload),
         "factory_conflict_confirmation"=>conflict_confirmation(payload),
         "analyze_factory_reply"=>analyze(payload),
@@ -388,6 +397,16 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn native_duplicate_preflight_and_preview_share_identity() {
+        let state=json!({"factoryReplies":[{"id":"factory-reply-a"}]});
+        assert_eq!(execute("factory_reply_duplicate",&json!({
+            "state":state,"id":"factory-reply-a"
+        })).unwrap(),json!({"duplicate":true}));
+        assert_eq!(execute("factory_reply_duplicate",&json!({
+            "state":state,"id":"factory-reply-b"
+        })).unwrap(),json!({"duplicate":false}));
+        assert!(execute("factory_reply_duplicate",&json!({"state":state})).is_err());
+    }
     fn fixture()->Value{
         let recipient=json!({"id":"r1","name":"김수취","address":"서울 종로구 10",
             "phone":"010-1234-5678","mobile":"","actualFreight":null,
