@@ -26,7 +26,8 @@ test("Client per-account preference is stored and affects outbound billing", () 
   assert.match(manager, /preferredAccountId: value/);
   assert.match(domain, /if \(o\.accountMode === "MANUAL"\)/);
   assert.match(domain, /client\?\.preferredAccountId/);
-  assert.match(domain, /recommendAccount\(o, s, products, c\)/);
+  // The historical TypeScript billing oracle was relocated out of the shared domain.
+  assert.match(read("src/hub-messages.ts"), /recommendAccount\(o, s, products, c\)/);
   // Before confirmation, account recommendations use the live dealer;
   // confirmed orders must keep their captured preferred account setting.
   assert.match(workflow, /orderParty\(active, state\)/);
