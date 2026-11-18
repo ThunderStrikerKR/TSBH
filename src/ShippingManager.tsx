@@ -12,7 +12,7 @@ import { useAsyncTask } from "./shared/useAsyncTask";
 import { sameFreightEditor } from "./shared/meaningful-changes";
 import { requestEditorLeave, requestPageLeave, usePageLeaveGuard } from "./shared/page-leave";
 
-import { initialShipping } from "./shipping";
+import { initialShipping } from "./shipping-initial";
 import type { ShippingRule, ShippingState, State } from "./types";
 import { HelpTooltip } from "./ui/HelpTooltip";
 import { Field, Modal } from "./ui";

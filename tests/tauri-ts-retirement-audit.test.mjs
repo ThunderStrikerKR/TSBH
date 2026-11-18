@@ -22,6 +22,9 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.equal(output.retiredToTestOracle,18,
     "Retired TypeScript business engines must remain outside production src");
   assert.ok(output.inventory.some(row=>
+    row.module==="src/shipping.ts" && !row.reachableFromApp),
+    "Legacy TS shipping recommendation engine must stay out of the live frontend graph");
+  assert.ok(output.inventory.some(row=>
     row.module==="src/automatic-message.ts"&&!row.exists&&!row.reachableFromApp),
     "Historical message generator must no longer exist in production src");
   const retired=[
