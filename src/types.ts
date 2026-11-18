@@ -175,7 +175,7 @@ export interface Recipient {
   freightCode?: "010" | "020";
   /** Staff's override of the Rust island-area suggestion for this exact address.
    *  Absence means native region detection chooses the initial checkbox state. */
-  remoteDelivery?: { address: string; checked: boolean; manual: true };
+  remoteDelivery?: { address: string; checked: boolean; manual: boolean; legacy?: boolean };
   addressParts?: AddressParts;
   vatDefault?: boolean;
   vatOverride?: boolean;
