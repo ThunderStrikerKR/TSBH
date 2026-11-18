@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { actualFreightOf } from "./actual-freight";
+import { useNativeShipmentRead, type NativeShipmentRead } from "./orders/useNativeShipmentRead";
 import { nativeRecordActualFreight } from "./orders/native-rules";
 import { usePageLeaveGuard } from "./shared/page-leave";
 import { Field, MoneyInput } from "./ui";
 import type { Origin, Price, State } from "./types";
 export function ActualFreightField({
   state,
+  nativeRead,
   shipmentId,
   origin,
   onSave,
@@ -14,6 +15,7 @@ export function ActualFreightField({
   onDraftSaved,
 }: {
   state: State;
+  nativeRead?: NativeShipmentRead;
   shipmentId: string;
   origin: Origin;
   onSave: (s: State) => Promise<void>;
@@ -21,18 +23,22 @@ export function ActualFreightField({
   onDraftChange?: (value: Price) => void;
   onDraftSaved?: () => void;
 }) {
-  const ship = state.workflow!.shipments.find((s) => s.id === shipmentId)!,
-    row = state.orders
-      .find((o) => o.id === ship.orderId)!
-      .recipients.find((r) => r.id === ship.recipientId)!,
-    saved = actualFreightOf(ship, row, origin);
+  const fallbackRead = useNativeShipmentRead(state, !nativeRead);
+  const read = nativeRead ?? fallbackRead;
+  const current = read.shipments.get(shipmentId);
+  const ready = read.ready && !!current;
+  const saved: Price = current?.actualFreight[origin] ?? null;
   const [localValue, setLocalValue] = useState(saved),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const previousSaved = useRef(saved);
   const controlled = !!onDraftChange;
   const value = controlled ? (draftValue === undefined ? saved : draftValue) : localValue;
-  const change = (next: Price) => controlled ? onDraftChange?.(next) : setLocalValue(next);
+  const change = (next: Price) => {
+    if (!ready || busy) return;
+    if (controlled) onDraftChange?.(next);
+    else setLocalValue(next);
+  };
   // Refresh untouched fields but never overwrite a user's pending amount.
   useEffect(() => {
     if (!controlled) setLocalValue((current) => current === previousSaved.current ? saved : current);
@@ -44,6 +50,7 @@ export function ActualFreightField({
   const saving = useRef<Promise<boolean> | null>(null);
   const save = (): Promise<boolean> => {
     if (saving.current) return saving.current;
+    if (!ready) return Promise.resolve(false);
     if (value === saved) return Promise.resolve(true);
     const task = (async (): Promise<boolean> => {
       setBusy(true);
@@ -83,10 +90,10 @@ export function ActualFreightField({
       <Field label={(origin === "FACTORY" ? "공장" : "매장") + " 실제 출고 운임"}>
         <MoneyInput value={value} onChange={change} />
       </Field>
-      <button disabled={busy || value === saved} onClick={() => void save()}>
+      <button disabled={!ready || busy || value === saved} onClick={() => void save()}>
         실제 운임 저장
       </button>
-      <small role="status" className="form-error">{error}</small>
+      <small role="status" className="form-error">{error || read.error || (!ready ? "Rust 운임 조회 중" : "")}</small>
     </div>
   );
 }
