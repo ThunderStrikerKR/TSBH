@@ -41,3 +41,84 @@
   --modal-panel-padding: 16px 18px;
   --modal-header-gap: 12px;
 }
+
+/* UI contract v1: prospective semantic design roles. Existing screens are
+   NOT restyled by these declarations until each view is explicitly migrated.
+   The validator ensures the values match src/ui/design-system.json. */
+:root {
+  --ds-color-canvas: #101010;
+  --ds-color-panel: #202020;
+  --ds-color-input: #292929;
+  --ds-color-raised: #303030;
+  --ds-color-hover: #353535;
+  --ds-color-border: #505050;
+  --ds-color-focus: #bcbcbc;
+  --ds-color-main: #ededed;
+  --ds-color-secondary: #b9b9b9;
+  --ds-color-muted: #999999;
+  --ds-color-primary: #eeeeee;
+  --ds-color-primaryInverse: #171717;
+  --ds-color-warning: #f2ba64;
+  --ds-color-success: #a9dab5;
+  --ds-color-danger: #ffb4b4;
+  --ds-color-dangerSurface: #542c30;
+  --ds-color-selection: #70b4ff;
+  --ds-color-transparent: transparent;
+  --ds-type-brand-size: 19px;
+  --ds-type-brand-weight: 700;
+  --ds-type-globalNavigation-size: 16px;
+  --ds-type-globalNavigation-weight: 650;
+  --ds-type-pageHeading-size: 20px;
+  --ds-type-pageHeading-weight: 700;
+  --ds-type-sectionHeading-size: 16px;
+  --ds-type-sectionHeading-weight: 650;
+  --ds-type-subsectionHeading-size: 14px;
+  --ds-type-subsectionHeading-weight: 650;
+  --ds-type-body-size: 14px;
+  --ds-type-body-weight: 400;
+  --ds-type-fieldLabel-size: 13px;
+  --ds-type-fieldLabel-weight: 600;
+  --ds-type-metadata-size: 12px;
+  --ds-type-metadata-weight: 400;
+  --ds-action-primary-height: 36px;
+  --ds-action-primary-font-size: 14px;
+  --ds-action-primary-pad-x: 14px;
+  --ds-action-primary-radius: 6px;
+  --ds-action-standard-height: 34px;
+  --ds-action-standard-font-size: 13px;
+  --ds-action-standard-pad-x: 12px;
+  --ds-action-standard-radius: 6px;
+  --ds-action-quiet-height: 32px;
+  --ds-action-quiet-font-size: 13px;
+  --ds-action-quiet-pad-x: 8px;
+  --ds-action-quiet-radius: 6px;
+  --ds-action-danger-height: 34px;
+  --ds-action-danger-font-size: 13px;
+  --ds-action-danger-pad-x: 12px;
+  --ds-action-danger-radius: 6px;
+  --ds-action-icon-height: 32px;
+  --ds-action-icon-font-size: 14px;
+  --ds-action-icon-pad-x: 0px;
+  --ds-action-icon-radius: 6px;
+  --ds-nav-main-height: 38px;
+  --ds-nav-main-font-size: 16px;
+  --ds-nav-main-pad-x: 12px;
+  --ds-nav-main-radius: 5px;
+  --ds-nav-section-height: 34px;
+  --ds-nav-section-font-size: 14px;
+  --ds-nav-section-pad-x: 12px;
+  --ds-nav-section-radius: 5px;
+  --ds-nav-subsection-height: 32px;
+  --ds-nav-subsection-font-size: 13px;
+  --ds-nav-subsection-pad-x: 10px;
+  --ds-nav-subsection-radius: 5px;
+  --ds-space-4: 4px;
+  --ds-space-8: 8px;
+  --ds-space-12: 12px;
+  --ds-space-16: 16px;
+  --ds-space-24: 24px;
+  --ds-controlRadius: 6px;
+  --ds-panelRadius: 9px;
+  --ds-modalRadius: 9px;
+  --ds-dividerWidth: 1px;
+}
