@@ -116,7 +116,7 @@ test("model-group UI, employee resolver, Rust persistence and messages use produ
   assert.match(resolver, /대표모델.*선택/);
   assert.match(native, /group\.get\("representativeProductId"\)/);
   assert.match(native, /modelRepresentative/);
-  assert.match(source("src/issue-actions.ts"), /appliedRepresentativeModel/);
+  assert.match(source("tests/rust-migration/oracles/issue-actions.ts"), /appliedRepresentativeModel/);
   assert.match(source("src/hub-messages.ts"), /appliedRepresentativeModelNotice/);
   assert.match(source("tests/rust-migration/oracles/automatic-message.ts"), /appliedRepresentativeModelNotice/);
   assert.match(source("src/ProductManager.tsx"), /"모델군 관리"/);
@@ -140,7 +140,7 @@ test("model-group editor places group name, add search and members in order with
 
 test("employee applying a representative model records exact product identity and a declarative notice", async () => {
   const { parseSmart } = await tsImport("../src/parser.ts", import.meta.url);
-  const { resolveProduct } = await tsImport("../src/issue-actions.ts", import.meta.url);
+  const { resolveProduct } = await tsImport("./rust-migration/oracles/issue-actions.ts", import.meta.url);
   const { suggestGroupRepresentative, appliedRepresentativeModelNotice } =
     await tsImport("../src/model-groups.ts", import.meta.url);
   const state = structuredClone(seed);

@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
-const { billingSnapshot } = await tsImport("../../../src/replies.ts", import.meta.url);
+const { billingSnapshot } = await tsImport("../oracles/replies.ts", import.meta.url);
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const manifest = fileURLToPath(new URL("./Cargo.toml", import.meta.url));
 const now = "2026-11-15T01:00:00.000Z";

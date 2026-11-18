@@ -1,8 +1,11 @@
-import { companyClient, companyParty } from "../order-types.js";
-import { retailIssues } from "./retail-validation.js";
-import { processGroup, reconcileWorkflow, rootGroupId } from "../workflow.js";
-import { newReception } from "./reception.js";
-import type { Order, Recipient, State } from "../types.js";
+/** Historic TS business algorithm for differential tests only.
+ * No application React module may import this implementation.
+ */
+import { companyClient, companyParty } from "../../../src/order-types.js";
+import { retailIssues } from "../../../src/orders/retail-validation.js";
+import { processGroup, reconcileWorkflow, rootGroupId } from "../../../src/workflow.js";
+import { newReception } from "../../../src/orders/reception.js";
+import type { Order, Recipient, State } from "../../../src/types.js";
 export function newRetailOrder(): Order {
   return {
     ...newReception("", "RETAIL"),

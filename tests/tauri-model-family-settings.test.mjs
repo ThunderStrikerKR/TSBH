@@ -58,7 +58,7 @@ test("Same-color perforated and nonperforated tops must not be mistaken for colo
 test("Unspecified color JS-2 stays unresolved until staff chooses from error dialog",async()=>{
   const {parseSmart}=await tsImport("../src/parser.ts",import.meta.url);
   const {appliedDefaultColorNotice,suggestGroupColor}=await tsImport("../src/color-guidance.ts",import.meta.url);
-  const {resolveProduct}=await tsImport("../src/issue-actions.ts",import.meta.url);
+  const {resolveProduct}=await tsImport("./rust-migration/oracles/issue-actions.ts",import.meta.url);
   const state=structuredClone(seed),black=siteProduct("245"),silver=siteProduct("254");
   const client={id:"test-client",name:"가상 거래처",contact:"",identifiers:"",active:true,tier:"wholesale",shippingFeeExcluded:false,payment:"PREPAID",overrides:{}};
   state.clients.push(client);
@@ -103,7 +103,7 @@ test("Copy messages notify only after employee action, without dealer choice req
  assert.match(a,/appliedDefaultColorNotice/);
  assert.match(h,/appliedDefaultColorNotice/);
  assert.match(read("src/IssueResolver.tsx"),/대표모델.*선택/);
- assert.match(read("src/issue-actions.ts"),/validateColorGroupProducts/);
+ assert.match(read("tests/rust-migration/oracles/issue-actions.ts"),/validateColorGroupProducts/);
  const native=read("src-tauri/src/lib.rs");
  assert.match(native,/"colorGuidanceGroups"/);
  assert.match(native,/색상별 가격이 다른 상품/);

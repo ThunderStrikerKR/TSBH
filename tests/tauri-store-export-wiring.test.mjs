@@ -30,7 +30,7 @@ test("Tauri can save a store Excel independently of factory and only after previ
 });
 test("a printed store workbook stays pending until a separately confirmed shipment",()=>{
  const ui=read("src/WorkflowQueue.tsx"),work=read("src/workflow.ts");
- const corrections=read("src/corrections.ts"),model=read("src/store-export.ts");
+ const corrections=read("tests/rust-migration/oracles/corrections.ts"),model=read("src/store-export.ts");
  assert.match(ui,/q!\.origin === "STORE"/);
  assert.match(ui,/매장 발송 확인/);
  assert.match(ui,/nativeApplyWorkflowAction\(state, "mark_store_sent", \{ queueId: q!\.id \}\)/);

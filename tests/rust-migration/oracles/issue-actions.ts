@@ -1,8 +1,11 @@
-import { itemFromProduct, normalizeColor, orderClient, uid } from "./domain.js";
-import { aliasProblems, saveAlias } from "./matching.js";
-import { validateColorGroupProducts } from "./color-guidance.js";
-import { validateModelGroupProducts } from "./model-groups.js";
-import type { Order, State } from "./types.js";
+/** Historic TS business algorithm for differential tests only.
+ * No application React module may import this implementation.
+ */
+import { itemFromProduct, normalizeColor, orderClient, uid } from "../../../src/domain.js";
+import { aliasProblems, saveAlias } from "../../../src/matching.js";
+import { validateColorGroupProducts } from "../../../src/color-guidance.js";
+import { validateModelGroupProducts } from "../../../src/model-groups.js";
+import type { Order, State } from "../../../src/types.js";
 export function resolveProduct(
   state: State,
   order: Order,

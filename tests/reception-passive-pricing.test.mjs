@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { tsImport } from "tsx/esm/api";
 
 const { shouldRefreshUncommittedOrderPricing } =
-  await tsImport("../src/orders/passive-pricing.ts", import.meta.url);
+  await tsImport("./rust-migration/oracles/passive-pricing.ts", import.meta.url);
 const { repriceOrder } = await tsImport("../src/domain.ts", import.meta.url);
 
 const draft = (extra = {}) => ({

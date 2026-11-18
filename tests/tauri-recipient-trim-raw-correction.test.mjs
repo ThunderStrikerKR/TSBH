@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const load = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 const desk = load("src/OrderDesk.tsx");
 const staff = load("src/StaffChecks.tsx");
-const guard = load("src/working-raw.ts");
+const guard = load("tests/rust-migration/oracles/working-raw.ts");
 const css = load("src/styles/patch-v0808.css");
 
 test("raw correction is not inserted as an unrequested action in order review", () => {

@@ -1,8 +1,11 @@
-import { uid } from "./domain.js";
-import { internalModel } from "./matching.js";
-import type { Recipient, State } from "./types.js";
-import { blocking, orderIssues } from "./validation.js";
-import { shipmentContext } from "./workflow.js";
+/** Historic TS business algorithm for differential tests only.
+ * No application React module may import this implementation.
+ */
+import { uid } from "../../../src/domain.js";
+import { internalModel } from "../../../src/matching.js";
+import type { Recipient, State } from "../../../src/types.js";
+import { blocking, orderIssues } from "../../../src/validation.js";
+import { shipmentContext } from "../../../src/workflow.js";
 export function correctionStatus(state: State, id: string) {
   return (
     (state.workflow?.events.filter((e) => e.action === "정정 요청 상태" && e.before === id).at(-1)

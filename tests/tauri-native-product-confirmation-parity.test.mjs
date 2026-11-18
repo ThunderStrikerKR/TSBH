@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
 const { resolveProduct, confirmProposedProduct } =
-  await tsImport("../src/issue-actions.ts", import.meta.url);
+  await tsImport("./rust-migration/oracles/issue-actions.ts", import.meta.url);
 const root = fileURLToPath(new URL("../", import.meta.url));
 const cargo = fileURLToPath(new URL("../tests/rust-migration/integration/Cargo.toml", import.meta.url));
 const now = "2026-11-13T12:00:00.000Z";

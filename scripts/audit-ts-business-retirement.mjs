@@ -23,6 +23,12 @@ const movedTestOracles=new Map([
   ["title-clients.ts","tests/rust-migration/oracles/title-clients.ts"],
   ["catalog-price-sync.ts","tests/rust-migration/oracles/catalog-price-sync.ts"],
   ["official-product-import.ts","tests/rust-migration/oracles/official-product-import.ts"],
+  ["issue-actions.ts","tests/rust-migration/oracles/issue-actions.ts"],
+  ["corrections.ts","tests/rust-migration/oracles/corrections.ts"],
+  ["replies.ts","tests/rust-migration/oracles/replies.ts"],
+  ["working-raw.ts","tests/rust-migration/oracles/working-raw.ts"],
+  ["orders/retail.ts","tests/rust-migration/oracles/retail.ts"],
+  ["orders/passive-pricing.ts","tests/rust-migration/oracles/passive-pricing.ts"],
 ]);
 const targets=[
   "domain.ts","workflow.ts","shipping.ts","parser.ts","matching.ts",

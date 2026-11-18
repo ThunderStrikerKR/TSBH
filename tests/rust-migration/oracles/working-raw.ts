@@ -1,6 +1,9 @@
-import type { Order, State } from "./types.js";
-import { orderIssues } from "./validation.js";
-import { applyOrderRawEdit } from "./workflow.js";
+/** Historic TS business algorithm for differential tests only.
+ * No application React module may import this implementation.
+ */
+import type { Order, State } from "../../../src/types.js";
+import { orderIssues } from "../../../src/validation.js";
+import { applyOrderRawEdit } from "../../../src/workflow.js";
 const rawCorrectionIssueKinds = new Set([
   "NAME", "ADDRESS", "CONTACT", "CONTACT_INVALID",
   "MODEL", "QUANTITY_MISSING", "QUANTITY_INVALID", "ITEM", "UNASSIGNED_EVIDENCE",

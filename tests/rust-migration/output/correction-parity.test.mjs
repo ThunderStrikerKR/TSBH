@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
 const { correctionStatus, correctionMessage } =
-  await tsImport("../../../src/corrections.ts", import.meta.url);
+  await tsImport("../oracles/corrections.ts", import.meta.url);
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const manifest = fileURLToPath(new URL("./Cargo.toml", import.meta.url));
 const base = () => ({

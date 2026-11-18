@@ -14,7 +14,7 @@ const seed=JSON.parse(readFileSync(new URL(
   "../../../src-tauri/resources/state-seed.json",import.meta.url),"utf8"));
 const { totals, reviewIssues, canQueue }=await tsImport("../../../src/domain.ts",import.meta.url);
 const { blankOrder }=await tsImport("../../../src/seed.ts",import.meta.url);
-const { billingSnapshot }=await tsImport("../../../src/replies.ts",import.meta.url);
+const { billingSnapshot }=await tsImport("../oracles/replies.ts",import.meta.url);
 const at="2026-11-13T01:05:12.000Z";
 const baseClient={
   id:"synthetic-dealer",name:"가상 거래처",displayName:"가상 거래처",

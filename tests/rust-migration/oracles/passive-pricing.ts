@@ -1,4 +1,7 @@
-import type { Order } from "../types.js";
+/** Historic TS business algorithm for differential tests only.
+ * No application React module may import this implementation.
+ */
+import type { Order } from "../../../src/types.js";
 
 /**
  * Only a still-uncommitted reception may follow current master prices and

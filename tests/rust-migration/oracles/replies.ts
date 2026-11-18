@@ -1,9 +1,12 @@
-import { normalizeColor, orderClient, resolvePrice, totals, uid } from "./domain.js";
-import { addressInfo, addressParts, parseSmart, quantities } from "./parser.js";
-import { colorLabel, registeredProducts } from "./product-models.js";
-import { productModelNames, registeredNameCandidates } from "./product-name-match.js";
-import { recommendShipping } from "./shipping.js";
-import type { BillingSnapshot, Item, Order, ReplyChange, ReplyPreview, State } from "./types.js";
+/** Historic TS business algorithm for differential tests only.
+ * No application React module may import this implementation.
+ */
+import { normalizeColor, orderClient, resolvePrice, totals, uid } from "../../../src/domain.js";
+import { addressInfo, addressParts, parseSmart, quantities } from "../../../src/parser.js";
+import { colorLabel, registeredProducts } from "../../../src/product-models.js";
+import { productModelNames, registeredNameCandidates } from "../../../src/product-name-match.js";
+import { recommendShipping } from "../../../src/shipping.js";
+import type { BillingSnapshot, Item, Order, ReplyChange, ReplyPreview, State } from "../../../src/types.js";
 export function billingSnapshot(o: Order, state: State, reason: string): BillingSnapshot {
   const c = orderClient(o, state);
   if (!c) throw Error("거래처 기록이 없습니다.");
