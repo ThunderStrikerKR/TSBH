@@ -303,6 +303,7 @@ mod tests{
     #[test]fn retail_client_projection_keeps_company_identity(){
         let mut o=draft();
         o["orderType"]=json!("RETAIL");
+        o["clientId"]=json!("");
         o["clientSnapshot"]=Value::Null;
         let value=execute(&json!({"action":"resolve_order_clients","order":o,"state":setup()})).unwrap();
         assert_eq!(value["client"]["name"],"반도스탠드");
