@@ -4,22 +4,30 @@ import { readFileSync } from 'node:fs';
 const read = (file) => readFileSync(new URL('../' + file, import.meta.url), 'utf8');
 
 test('product price workbook preserves hidden product and variant identity', () => {
-  const code = read('src/product-price-xlsx.ts');
-  assert.match(code, /__상품ID/);
-  assert.match(code, /__가격기록ID/);
-  assert.match(code, /data\[8\] === \(v\.option/);
-  assert.match(code, /LEGACY_PRICE_HEADERS/);
-  assert.doesNotMatch(code, /normalizeCode\(data\[8\]\)/);
-  assert.match(code, /productMappings\?\.\[values\[6\] \+ "\|" \+ values\[7\]\]/);
-  assert.match(code, /sheet\.columns\.forEach/);
+  const format = read('src/product-price-xlsx.ts');
+  const native = read('src-tauri/src/business_core/catalog_clients/price_workbook.rs');
+  const oracle = read('tests/rust-migration/oracles/product-price-xlsx.ts');
+  assert.match(format, /__상품ID/);
+  assert.match(format, /__가격기록ID/);
+  assert.match(oracle, /data\[8\] === \(v\.option/);
+  assert.match(format, /LEGACY_PRICE_HEADERS/);
+  assert.doesNotMatch(format, /normalizeCode\(data\[8\]\)/);
+  assert.match(oracle, /productMappings\?\.\[values\[6\] \+ "\|" \+ values\[7\]\]/);
+  assert.match(native, /productMappings/);
+  assert.match(native, /values\[8\]!=field\(variant,"option"\)/);
+  assert.match(format, /sheet\.columns\.forEach/);
 });
-test('XLSX previews require validation and maintain price history', () => {
+test('XLSX previews parse sheet format in TS and validate prices/history in Rust', () => {
   const code = read('src/product-price-xlsx.ts');
+  const native = read('src-tauri/src/business_core/catalog_clients/price_workbook.rs');
+  const oracle = read('tests/rust-migration/oracles/product-price-xlsx.ts');
   assert.match(code, /20 \* 1024 \* 1024/);
   assert.match(code, /sheet\.rowCount > 20001/);
   assert.match(code, /hidden|식별자/);
-  assert.match(code, /priceHistory\.push/);
-  assert.match(code, /if \(!raw\) return;/);
+  assert.match(oracle, /priceHistory\.push/);
+  assert.match(oracle, /if \(!raw\) return;/);
+  assert.match(native, /priceHistory/);
+  assert.match(native, /parse_price\(raw\)/);
   assert.match(code, /cell\.isMerged/);
 });
 test('ExcelJS is loaded only for workbook actions, not application startup', () => {
