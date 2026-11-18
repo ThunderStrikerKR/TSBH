@@ -7,6 +7,20 @@ const read=(file)=>readFileSync(new URL("../"+file, import.meta.url),"utf8");
 const rust=read("src-tauri/src/lib.rs");
 const native=read("src-tauri/src/developer_workspace.rs");
 const bridge=read("src/tauri-bridge.ts");
+async function legacyFixtureNativeCall(domain, operation, payload) {
+  // Synthetic contract oracle only. The application does not import TS parsers.
+  if (domain === "recognition" && operation === "analyze_order") {
+    const { parseEvidence } = await tsImport("../src/parser.ts", import.meta.url);
+    const result = parseEvidence(payload.raw, payload.client, payload.state);
+    return { recipients: result.recipients, candidates: result.candidates, unassigned: result.unassigned };
+  }
+  if (domain === "rules" && operation === "order_issues") {
+    const { orderIssues } = await tsImport("../src/validation.ts", import.meta.url);
+    return { issues: orderIssues(payload.order) };
+  }
+  throw Error("Unexpected diagnostic IPC operation: " + domain + "." + operation);
+}
+
 
 test("developer workspace can only launch a second process with a separate SQLite root",()=>{
   assert.match(rust,/mod developer_workspace/);
@@ -72,30 +86,30 @@ test("developer UI laboratory mounts real business components and prevents write
   assert.doesNotMatch(workbench,/window\.bando!\.save\(/);
 });
 
-test("real receipt parser and actual issue rules find missing contact without modifying state",async()=>{
+test("synthetic developer diagnostics preserve report and state via an injected native contract",async()=>{
   const { inspectOrder, exampleRaw, developerCases } =
     await tsImport("../src/developer/scenarios.ts", import.meta.url);
   const state=JSON.parse(read("src-tauri/resources/state-seed.json"));
   const original=JSON.stringify(state);
   assert.ok(developerCases.length>=9);
   const raw=exampleRaw("missing-contact",state);
-  const report=inspectOrder(state,"missing-contact",raw);
+  const report=await inspectOrder(state,"missing-contact",raw,"","NONE",legacyFixtureNativeCall);
   assert.equal(report.scenario,"연락처 누락");
   assert.ok(report.detected.includes("CONTACT"),report.detected.join(","));
   assert.equal(report.passed,true);
   assert.equal(report.raw,raw);
   assert.equal(JSON.stringify(state),original);
-  const repeat=inspectOrder(state,"duplicate-order",exampleRaw("duplicate-order",state));
+  const repeat=await inspectOrder(state,"duplicate-order",exampleRaw("duplicate-order",state),"","NONE",legacyFixtureNativeCall);
   assert.equal(repeat.passed,true,"An in-memory duplicate fixture must be detected");
   assert.ok(repeat.notes.some(x=>x.includes("메모리에만 임시로 추가"))); 
-  const inDb=inspectOrder(state,"duplicate-db",exampleRaw("duplicate-db",state));
+  const inDb=await inspectOrder(state,"duplicate-db",exampleRaw("duplicate-db",state),"","NONE",legacyFixtureNativeCall);
   assert.equal(inDb.passed,false,"The separate DB-only scenario requires a persisted test order");
-  assert.throws(()=>inspectOrder(state,"custom",""),/1자 이상/);
+  await assert.rejects(inspectOrder(state,"custom","","","NONE",legacyFixtureNativeCall),/1자 이상/);
   assert.equal(JSON.stringify(state),original);
 });
 
 
-test("all structured order issue fixtures use the production issue validator without DB writes",async()=>{
+test("structured native diagnostic report fixtures remain isolated from persistence",async()=>{
   const { inspectOrder, exampleRaw, developerCases, expectedOptions } =
     await tsImport("../src/developer/scenarios.ts", import.meta.url);
   const state=JSON.parse(read("src-tauri/resources/state-seed.json"));
@@ -107,7 +121,7 @@ test("all structured order issue fixtures use the production issue validator wit
     "candidate-mobile","unassigned-evidence","model-confirm",
   ];
   for(const id of ids){
-    const report=inspectOrder(state,id,exampleRaw(id,state));
+    const report=await inspectOrder(state,id,exampleRaw(id,state),"","NONE",legacyFixtureNativeCall);
     assert.equal(report.passed,true,
       id+" expected "+report.expected.join(",")+" actual "+report.detected.join(","));
     assert.ok(report.notes.some(note=>note.includes("복사된 주문의 검증 필드")),id);
@@ -116,4 +130,21 @@ test("all structured order issue fixtures use the production issue validator wit
   assert.ok(developerCases.some(entry=>entry.id==="duplicate-db"&&entry.batch===false));
   assert.ok(expectedOptions.some(entry=>entry.value==="CANDIDATE_mobile"));
   assert.equal(JSON.stringify(state),unchanged,"The real state must be unchanged");
+});
+
+test("developer diagnostics must use Rust commands and reject TS fallback",()=>{
+  const scenarios=read("src/developer/scenarios.ts");
+  const lab=read("src/developer/DeveloperLab.tsx");
+  const modal=read("src/developer/DeveloperModalWorkbench.tsx");
+  assert.doesNotMatch(scenarios,/from ["']\.\.\/parser(?:\.js)?["']/);
+  assert.doesNotMatch(scenarios,/from ["']\.\.\/validation(?:\.js)?["']/);
+  assert.doesNotMatch(modal,/from ["']\.\.\/validation(?:\.js)?["']/);
+  assert.match(scenarios,/"recognition", "analyze_order"/);
+  assert.match(scenarios,/"rules", "order_issues"/);
+  assert.match(scenarios,/assertRustReceptionAnalysis/);
+  assert.match(lab,/await inspectOrder\(/);
+  assert.match(lab,/await diagnosticOrder\(/);
+  assert.match(modal,/await diagnosticOrder\(/);
+  assert.match(modal,/await diagnosticIssues\(/);
+  assert.match(modal,/cancelled = true/);
 });

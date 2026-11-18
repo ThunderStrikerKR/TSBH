@@ -36,7 +36,7 @@ export function DeveloperLab({ state, onNotice, revision }: {
       throw Error("발주서 검증은 격리 개발자 작업공간에서만 실행할 수 있습니다.");
     }
     const live = await api.load();
-    const report = inspectOrder(live, caseId, raw, clientId, expected);
+    const report = await inspectOrder(live, caseId, raw, clientId, expected);
     await api.testRecordRun(report);
     setLatest(report);
     setHistory(await api.testRunHistory());
@@ -51,7 +51,7 @@ export function DeveloperLab({ state, onNotice, revision }: {
       throw Error("Rust 저장 경계 검증은 격리 테스트 작업공간에서만 실행할 수 있습니다.");
     }
     const live = await api.load();
-    const candidate = diagnosticOrder(live, raw, clientId);
+    const candidate = await diagnosticOrder(live, raw, clientId);
     // This is intentionally an unconfirmed draft; native save must block it.
     // No Tauri state_save or SQLite write is issued by this inspection.
     const result = await api.testReceptionBoundary(candidate);
@@ -81,18 +81,20 @@ export function DeveloperLab({ state, onNotice, revision }: {
       throw Error("격리 테스트 작업공간이 아닙니다.");
     }
     const live = await api.load();
-    const reports = developerCases.filter((item) => item.batch !== false).map((item) => {
+    const reports: DeveloperTestReport[] = [];
+    // A rejected Rust request is reported as failure; never use TS fallback.
+    for (const item of developerCases.filter((entry) => entry.batch !== false)) {
       const input = exampleRaw(item.id, live);
       try {
-        return inspectOrder(live, item.id, input);
+        reports.push(await inspectOrder(live, item.id, input));
       } catch (error) {
-        return {
+        reports.push({
           scenario: item.label, raw: input, passed: false,
-          expected: ["시나리오 정상 실행"], detected: ["시나리오 실행 예외"],
+          expected: ["시나리오 정상 실행"], detected: ["Rust 검증 실행 예외"],
           recipients: [], notes: [String(error)],
-        } satisfies DeveloperTestReport;
+        });
       }
-    });
+    }
     for (const report of reports) await api.testRecordRun(report);
     setHistory(await api.testRunHistory());
     setBatchResults(reports);

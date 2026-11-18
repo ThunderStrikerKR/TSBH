@@ -1,8 +1,10 @@
-import { itemFromProduct, unassignedClient } from "../domain.js";
+import { unassignedClient } from "../domain.js";
 import { newReception } from "../orders/new-reception.js";
-import { parseEvidence } from "../parser.js";
-import { orderIssues } from "../validation.js";
-import type { Client, DeveloperTestReport, Item, Order, Recipient, State } from "../types.js";
+import { assertRustReceptionAnalysis } from "../orders/rust-reception.js";
+import { businessCoreCall } from "../tauri-bridge.js";
+import type { Client, DeveloperTestReport, Item, Order, Recipient, State, ValidationIssue } from "../types.js";
+
+type DiagnosticNativeCall = typeof businessCoreCall;
 
 export type CaseId =
   | "normal" | "missing-name" | "missing-address" | "missing-contact"
@@ -43,7 +45,7 @@ export const developerCases: Case[] = [
   { id: "candidate-mobile", label: "휴대전화 후보 충돌", detail: "서로 다른 휴대전화 후보를 판별", mechanism: "구조화 검증" },
   { id: "unassigned-evidence", label: "원문 귀속 불명확", detail: "배송 건에 귀속되지 못한 원문 정보 감지", mechanism: "구조화 검증" },
   { id: "model-confirm", label: "추천 모델 고객 확인", detail: "추천 모델의 고객 재확인 경고", mechanism: "구조화 검증" },
-  { id: "custom", label: "직접 입력", detail: "원문, 거래처 및 기대 오류를 직접 선택해 실제 파서로 검사", mechanism: "직접 입력", batch: false },
+  { id: "custom", label: "직접 입력", detail: "원문, 거래처 및 기대 오류를 선택해 실제 Rust 분석기로 검사", mechanism: "직접 입력", batch: false },
 ];
 
 const fakeClient: Client = {
@@ -120,21 +122,42 @@ export const expectedOptions = [
   ].map((kind) => ({ value: kind, label: kind })),
 ];
 
-/** The same parser and issue evaluator used by reception, with no persistence. */
-export function diagnosticOrder(state: State, raw: string, clientId = ""): Order {
+/** Same native recognition route as the live reception view; no writes.
+ * The injected call is for test-only contract oracles. Runtime never falls
+ * back to TypeScript business logic on Rust errors.
+ */
+export async function diagnosticOrder(
+  state: State, raw: string, clientId = "",
+  nativeCall: DiagnosticNativeCall = businessCoreCall,
+): Promise<Order> {
   const source = structuredClone(state);
   const client = source.clients.find((entry) => entry.id === clientId) ?? fakeClient;
-  const parsed = parseEvidence(raw, client, {
-    ...source,
-    products: source.products.filter((product) =>
-      product.catalog !== "DEMO" && !product.variants.some((variant) => variant.source === "DEMO")),
+  const result = await nativeCall<unknown>("recognition", "analyze_order", {
+    raw, client,
+    state: {
+      ...source,
+      products: source.products.filter((product) =>
+        product.catalog !== "DEMO" && !product.variants.some((variant) => variant.source === "DEMO")),
+    },
   });
+  assertRustReceptionAnalysis(result, raw);
   const order = newReception(client.id);
   order.clientSnapshot = client;
   order.raw = raw;
   order.analysisRaw = raw;
-  order.recipients = parsed.recipients;
+  order.recipients = result.recipients;
   return order;
+}
+
+export async function diagnosticIssues(
+  order: Order, nativeCall: DiagnosticNativeCall = businessCoreCall,
+): Promise<ValidationIssue[]> {
+  const result = await nativeCall<{ issues: ValidationIssue[] }>(
+    "rules", "order_issues", { order },
+  );
+  if (!result || !Array.isArray(result.issues))
+    throw Error("Rust 주문 검증 결과가 올바르지 않습니다.");
+  return result.issues;
 }
 
 const structuredCases = new Set<CaseId>([
@@ -169,7 +192,13 @@ function adjustForScenario(order: Order, state: State, id: CaseId) {
   const variant = product.variants[0];
   let item = recipient.items[0];
   if (!item) {
-    item = itemFromProduct(product, fakeClient, variant.color, 1);
+    // Detached synthetic fixture, not a live TS price or selection decision.
+    item = {
+      id: crypto.randomUUID(), productId: product.id, variantId: variant.id,
+      raw: product.name, name: product.name, color: variant.color,
+      quantity: 1, quantityConfirmed: true, unitPrice: variant.wholesale ?? 1,
+      origin: product.origin, defaulted: false, issues: [], url: variant.url ?? "",
+    };
     recipient.items.push(item);
   }
   // Structured cases deliberately change a copy of the parsed order. They do
@@ -198,20 +227,21 @@ function adjustForScenario(order: Order, state: State, id: CaseId) {
   }
 }
 
-export function inspectOrder(
+export async function inspectOrder(
   state: State, id: CaseId, raw: string, clientId = "", customExpected = "NONE",
-): DeveloperTestReport {
+  nativeCall: DiagnosticNativeCall = businessCoreCall,
+): Promise<DeveloperTestReport> {
   if (!raw.trim() || raw.length > 20000)
     throw Error("발주서 원문은 1자 이상, 20,000자 이내로 입력하세요.");
   const source = structuredClone(state);
-  const order = diagnosticOrder(source, raw, clientId);
+  const order = await diagnosticOrder(source, raw, clientId, nativeCall);
   adjustForScenario(order, source, id);
   if (id === "duplicate-order") {
     const example = newReception(order.clientId);
     example.raw = raw;
     source.orders.push(example);
   }
-  const issues = orderIssues(order).filter((issue) => issue.severity === "ACTION");
+  const issues = (await diagnosticIssues(order, nativeCall)).filter((issue) => issue.severity === "ACTION");
   const detected = [...new Set(issues.map((issue) => issue.kind))];
   const notes = issues.map((issue) => issue.title + ": " + issue.detail).slice(0, 60);
   const expected = id === "custom"

@@ -12,10 +12,9 @@ import { WorkingRawDialog } from "../WorkingRawDialog";
 import { ManualClassification } from "../orders/ManualClassification";
 import { RetailOrderDialog } from "../orders/RetailOrderDialog";
 import type { NoticeSink } from "../shared/notices";
-import type { DeveloperTestReport, State } from "../types";
-import { orderIssues } from "../validation";
+import type { DeveloperTestReport, Item, Order, Recipient, State } from "../types";
 import { Modal } from "../ui";
-import { diagnosticOrder, exampleRaw } from "./scenarios";
+import { diagnosticIssues, diagnosticOrder, exampleRaw } from "./scenarios";
 
 type Mode = "NORMAL" | "EMPTY" | "ERROR" | "BUSY" | "LONG" | "WARNING" | "SUCCESS" | "FAILURE" | "CANCEL";
 type Popup = "common" | "raw" | "manual" | "resolver" | "product-search" |
@@ -68,21 +67,48 @@ export function DeveloperModalWorkbench({ state, raw, onNotice, onRecorded }: {
     return () => window.clearTimeout(timer);
   }, [open, popup, mode]);
 
-  const fixtures = useMemo(() => {
-    // All business dialogs operate on a temporary, detached state clone.
-    // Their save callbacks are rejected, never routed to state_save.
-    const working = structuredClone(state);
-    const input = raw.trim() ? raw : exampleRaw("missing-contact", working);
-    const manual = diagnosticOrder(working, input);
-    const rawOrder = orderIssues(manual).some((issue) => issue.severity === "ACTION" &&
-      ["NAME","ADDRESS","CONTACT","MODEL","QUANTITY_MISSING","ITEM","UNASSIGNED_EVIDENCE"].includes(issue.kind))
-      ? manual : diagnosticOrder(working, exampleRaw("missing-contact", working));
-    working.orders.push(rawOrder);
-    const uncertain = diagnosticOrder(working, exampleRaw("unknown-model", working));
-    const recipient = uncertain.recipients[0];
-    const item = recipient?.items[0];
-    return { working, raw: rawOrder, manual, uncertain, recipient, item };
-  }, [state, raw]);
+  const workingPreview = useMemo(() => structuredClone(state), [state]);
+  type NativeFixtures = {
+    working: State; raw: Order; manual: Order; uncertain: Order;
+    recipient: Recipient | undefined; item: Item | undefined;
+  };
+  type Prepared = { source: State; rawText: string; popup: Popup; value: NativeFixtures };
+  const [prepared, setPrepared] = useState<Prepared>();
+  const [fixtureFailure, setFixtureFailure] = useState<{
+    source: State; rawText: string; popup: Popup; message: string;
+  }>();
+  const needsFixtures = popup === "raw" || popup === "manual" || popup === "resolver";
+  const fixtures = prepared?.source === state && prepared.rawText === raw &&
+    prepared.popup === popup ? prepared.value : undefined;
+  const error = fixtureFailure?.source === state && fixtureFailure.rawText === raw &&
+    fixtureFailure.popup === popup ? fixtureFailure.message : "";
+
+  useEffect(() => {
+    let cancelled = false;
+    setPrepared(undefined);
+    setFixtureFailure(undefined);
+    if (!open || !needsFixtures) return;
+    void (async () => {
+      // Native diagnosis operates on an unattached clone. No DB writes.
+      const working = structuredClone(state);
+      const input = raw.trim() ? raw : exampleRaw("missing-contact", working);
+      const manual = await diagnosticOrder(working, input);
+      const issues = await diagnosticIssues(manual);
+      const rawOrder = issues.some((issue) => issue.severity === "ACTION" &&
+        ["NAME", "ADDRESS", "CONTACT", "MODEL", "QUANTITY_MISSING", "ITEM", "UNASSIGNED_EVIDENCE"].includes(issue.kind))
+        ? manual : await diagnosticOrder(working, exampleRaw("missing-contact", working));
+      working.orders.push(rawOrder);
+      const uncertain = await diagnosticOrder(working, exampleRaw("unknown-model", working));
+      const value: NativeFixtures = {
+        working, raw: rawOrder, manual, uncertain,
+        recipient: uncertain.recipients[0], item: uncertain.recipients[0]?.items[0],
+      };
+      if (!cancelled) setPrepared({ source: state, rawText: raw, popup, value });
+    })().catch((reason) => {
+      if (!cancelled) setFixtureFailure({ source: state, rawText: raw, popup, message: String(reason) });
+    });
+    return () => { cancelled = true; };
+  }, [open, needsFixtures, popup, raw, state]);
 
   const record = async (passed: boolean) => {
     if (!window.bando?.isTestWorkspace || !window.bando.testRecordRun) return;
@@ -111,6 +137,10 @@ export function DeveloperModalWorkbench({ state, raw, onNotice, onRecorded }: {
 
   const preview = () => {
     const close = () => setOpen(false);
+    if (needsFixtures && !fixtures)
+      return <p role={error ? "alert" : "status"}>
+        {error ? "Rust 진단용 시험 자료 생성 실패: " + error : "Rust 진단용 시험 자료 준비 중"}
+      </p>;
     if (popup === "common") return (
       <Modal title={"UI 상태 시험 / " + modes.find((v) => v.id === mode)?.label}
         className="developer-preview-dialog" busy={mode === "BUSY"}
@@ -138,35 +168,35 @@ export function DeveloperModalWorkbench({ state, raw, onNotice, onRecorded }: {
       </Modal>
     );
     if (popup === "raw")
-      return <WorkingRawDialog state={fixtures.working} order={fixtures.raw}
+      return <WorkingRawDialog state={needsFixtures ? fixtures!.working : workingPreview} order={fixtures!.raw}
         onApply={noProductionWrite} onClose={close}/>;
     if (popup === "manual")
-      return <ManualClassification state={fixtures.working} order={fixtures.manual}
+      return <ManualClassification state={needsFixtures ? fixtures!.working : workingPreview} order={fixtures!.manual}
         onNotice={onNotice} onApply={() => { onNotice("수동 분류 화면을 확인했습니다. 테스트 저장은 수행하지 않았습니다.", "success"); close(); }}
         onClose={close} />;
     if (popup === "resolver")
-      return fixtures.recipient && fixtures.item
-        ? <IssueResolver state={fixtures.working} order={fixtures.uncertain}
-            recipient={fixtures.recipient} item={fixtures.item}
+      return fixtures!.recipient && fixtures!.item
+        ? <IssueResolver state={needsFixtures ? fixtures!.working : workingPreview} order={fixtures!.uncertain}
+            recipient={fixtures!.recipient} item={fixtures!.item}
             onApply={async () => noProductionWrite()} onNotice={onNotice} onClose={close}/>
         : <p role="alert">후보 상품을 재현할 수 없습니다. 시험 기준 데이터를 확인하세요.</p>;
     if (popup === "product-search")
-      return <ProductSearchDialog state={fixtures.working} onClose={close}
+      return <ProductSearchDialog state={needsFixtures ? fixtures!.working : workingPreview} onClose={close}
         onChoose={(product) => { onNotice("선택한 상품: " + product.name, "success"); close(); }}/>;
     if (popup === "category")
       return <ProductCategoryPicker categories={state.categories ?? []}
         onClose={close} onSelect={(id) => { onNotice("선택한 카테고리: " + id, "success"); close(); }}/>;
     if (popup === "retail")
-      return <RetailOrderDialog state={fixtures.working} onClose={close} onSave={noProductionWrite}/>;
+      return <RetailOrderDialog state={needsFixtures ? fixtures!.working : workingPreview} onClose={close} onSave={noProductionWrite}/>;
     // Managers show their real modal by clicking the corresponding button.
     if (popup === "client")
-      return <ClientManager state={fixtures.working} onNotice={onNotice}
+      return <ClientManager state={needsFixtures ? fixtures!.working : workingPreview} onNotice={onNotice}
         onSave={noProductionWrite} onRefresh={async () => {}}/>;
     if (popup === "product")
-      return <ProductManager state={fixtures.working} onNotice={onNotice}
+      return <ProductManager state={needsFixtures ? fixtures!.working : workingPreview} onNotice={onNotice}
         onSave={noProductionWrite} onRefresh={async () => {}}/>;
     if (popup === "registration")
-      return <RegistrationManager state={fixtures.working} onNotice={onNotice}
+      return <RegistrationManager state={needsFixtures ? fixtures!.working : workingPreview} onNotice={onNotice}
         onSave={noProductionWrite} onRefresh={async () => {}}/>;
     if (popup === "reply")
       return <FactoryReplyImport previewOnly onNotice={onNotice}
@@ -201,7 +231,7 @@ export function DeveloperModalWorkbench({ state, raw, onNotice, onRecorded }: {
         <button type="button" onClick={() => { setText(""); setOpen((prev) => !prev); }}>
           {open ? "시험 화면 닫기" : "선택한 실제 화면 열기"}
         </button>
-        <button type="button" disabled={!open || recording} onClick={() => void record(true)}>정상으로 기록</button>
+        <button type="button" disabled={!open || recording || (needsFixtures && !fixtures)} onClick={() => void record(true)}>정상으로 기록</button>
         <button type="button" disabled={!open || recording} onClick={() => void record(false)}>문제 발견 기록</button>
       </div>
       {reportError && <p className="form-error" role="alert">{reportError}</p>}
