@@ -658,25 +658,20 @@
   font-size: 10px;
   white-space: nowrap;
 }
-/* All three VAT descriptions share the same measured column. Brackets are
-   permanent grid cells; only the text between them participates in fading. */
+/* VAT status stays in the fixed-width total column, flush right.
+   Do not render brackets or create separate fixed columns for punctuation. */
 .hub-panels .compact-review > .order-grand-total > .order-vat-summary {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) 8px;
-  align-items: center;
+  display: block;
   justify-self: end;
   width: 148px;
-  text-align: center;
-}
-.hub-panels .compact-review .order-vat-paren {
-  display: block;
-  text-align: center;
+  min-width: 0;
+  text-align: right;
 }
 .hub-panels .compact-review .order-vat-label {
   display: block;
   min-width: 0;
   white-space: nowrap;
-  text-align: center;
+  text-align: right;
 }
 
 /* Product links are an optional copy choice beside the message title. */
