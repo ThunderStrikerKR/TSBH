@@ -1,5 +1,5 @@
 import { itemFromProduct, unassignedClient } from "../domain.js";
-import { newReception } from "../orders/reception.js";
+import { newReception } from "../orders/new-reception.js";
 import { parseEvidence } from "../parser.js";
 import { orderIssues } from "../validation.js";
 import type { Client, DeveloperTestReport, Item, Order, Recipient, State } from "../types.js";

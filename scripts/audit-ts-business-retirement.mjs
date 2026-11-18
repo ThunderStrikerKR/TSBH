@@ -34,6 +34,7 @@ const movedTestOracles=new Map([
   ["factory-reply-workbook.ts","tests/rust-migration/oracles/factory-reply-workbook.ts"],
   ["app/order-history.ts","tests/rust-migration/oracles/order-history.ts"],
   ["app/settlement-report.ts","tests/rust-migration/oracles/settlement-report.ts"],
+  ["orders/reception.ts","tests/rust-migration/oracles/reception.ts"],
 ]);
 const targets=[
   "domain.ts","workflow.ts","shipping.ts","parser.ts","matching.ts",

@@ -5,7 +5,7 @@ import { tsImport } from "tsx/esm/api";
 const read = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 
 test("new draft and its temporary workflow rows are not persisted", async () => {
-  const { persistedReceptionState } = await tsImport("../src/orders/reception.ts", import.meta.url);
+  const { persistedReceptionState } = await tsImport("./rust-migration/oracles/reception.ts", import.meta.url);
   const initial = { orders: [], queue: [], workflow: {
     sources: [], shipments: [], groups: [], queue: [], payments: [], confirmations: [], events: []
   }};

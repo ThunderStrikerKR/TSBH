@@ -1,9 +1,12 @@
-import { explicitSender } from "../explicit-sender.js";
-import { companyClient, companyParty } from "../order-types.js";
-import { retailIssues } from "./retail-validation.js";
-import { blankOrder } from "../seed.js";
-import type { Order, State, OrderType } from "../types.js";
-import { stageIssues } from "../workflow.js";
+/** Retired TS reception state reducer and boundary validation.
+ * Rust owns all production reception transitions; React holds a blank form only.
+ */
+import { explicitSender } from "../../../src/explicit-sender.js";
+import { companyClient, companyParty } from "../../../src/order-types.js";
+import { retailIssues } from "../../../src/orders/retail-validation.js";
+import { blankOrder } from "../../../src/seed.js";
+import type { Order, State, OrderType } from "../../../src/types.js";
+import { stageIssues } from "../../../src/workflow.js";
 
 export function newReception(clientId = "", orderType: OrderType = "AGENCY"): Order {
   return { ...blankOrder(clientId), orderType, receptionVersion: 1 };

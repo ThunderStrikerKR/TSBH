@@ -32,7 +32,7 @@ import { correctionStatus, correctionMessage, requestCorrection, copiedCorrectio
 import { recordCopy } from "../../oracles/message-model.ts";
 import { paymentSignature } from "../../oracles/automatic-message.ts";
 import { orderIssues, approveMissingQuantity, pendingIssue } from "../../../../src/validation.ts";
-import { validateReceptionBoundary, newReception, replaceReception, persistedReceptionState } from "../../../../src/orders/reception.ts";
+import { validateReceptionBoundary, newReception, replaceReception, persistedReceptionState } from "../../oracles/reception.ts";
 import { confirmRetail, newRetailOrder } from "../../oracles/retail.ts";
 import { retailIssues } from "../../../../src/orders/retail-validation.ts";
 import { rawCorrectableIssue, rawCorrectionAllowed, correctWorkingRaw } from "../../oracles/working-raw.ts";
