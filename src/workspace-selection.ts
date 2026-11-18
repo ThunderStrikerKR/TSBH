@@ -32,7 +32,7 @@ export function onlyDeletedGroups(state: State, orderId: string) {
 }
 
 /** Accordion visibility is controlled only by explicit selection and
- * title-button toggles. Hover preview is a portal and cannot reflow cards. */
+ * title-button toggles. The absolute in-card hover overlay does not reflow cards. */
 export function workflowGroupOpen(
   groupId: string,
   selectedGroupId?: string,
