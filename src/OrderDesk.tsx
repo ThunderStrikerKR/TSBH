@@ -758,24 +758,24 @@ export function OrderDesk(props: OrderDeskProps) {
               <div className="order-grand-total">
                 총 주문 금액{" "}
                 <span className="shipment-count">
-                  | 택배{" "}
-                  <span data-recipient-fade={recipientRevealPhase}>
+                  <span className="shipment-count-label">| 택배</span>
+                  <span className="shipment-count-number" data-recipient-fade={recipientRevealPhase}>
                     {orderPreview?.shipmentCount ?? "—"}
                   </span>
-                  건 |
+                  <span className="shipment-count-suffix">건 |</span>
                 </span>
                 <b data-recipient-fade={recipientRevealPhase}>
                   {orderPreview?.total !== null && orderPreview?.total !== undefined
                     ? won(orderPreview.total) : "—"}
                 </b>
-                <small>
-                  (
-                  <span data-recipient-fade={recipientRevealPhase}>
+                <small className="order-vat-summary">
+                  <span className="order-vat-paren">(</span>
+                  <span className="order-vat-label" data-recipient-fade={recipientRevealPhase}>
                     {orderPreview?.vatLabel === "부가세 포함/별도"
                       ? "부가세 혼합 · 배송별 확인"
                       : (orderPreview?.vatLabel ?? "—")}
                   </span>
-                  )
+                  <span className="order-vat-paren">)</span>
                 </small>
               </div>
             </section>,
