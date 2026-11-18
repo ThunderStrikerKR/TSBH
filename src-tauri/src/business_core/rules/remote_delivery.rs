@@ -98,7 +98,8 @@ pub(super) fn resolve_recipient(recipient: &Value) -> Result<Value, String> {
 /// The only multiplier authority: base freight is never pre-doubled or
 /// rewritten just because the checkbox is enabled.
 pub(super) fn multiply(base: Option<i64>, recipient: &Value) -> Option<i64> {
-    let checked = resolve_recipient(recipient).ok()?["checked"].as_bool()?;
+    let resolved = resolve_recipient(recipient).ok()?;
+    let checked = resolved["checked"].as_bool()?;
     let value = base?;
     value.checked_mul(if checked {2} else {1})
         .filter(|n| (0..=super::MAX_SAFE).contains(n))
