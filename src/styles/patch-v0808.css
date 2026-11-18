@@ -498,25 +498,17 @@
   white-space: nowrap;
 }
 @container (max-width:350px) {
+  /* The queue header contains only its title after New Order moved
+     to the original-source pane; do not reserve a second button row. */
   .hub-management > .pane-heading {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 22px 32px;
-    min-height: 74px;
-    max-height: 74px;
-    padding: 6px;
+    min-height: 40px;
+    max-height: none;
+    padding: 8px;
     gap: 5px;
   }
   .hub-management > .pane-heading h2 {
-    grid-column: 1/-1;
     margin: 0;
     font-size: 14px;
-  }
-  .hub-management > .pane-heading button {
-    height: 32px;
-    min-height: 32px;
-    padding: 4px;
-    font-size: 12px;
   }
 }
 .items-freight-panel .compact-items th:first-child {
