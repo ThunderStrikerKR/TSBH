@@ -503,7 +503,9 @@ export function HubWorkspace(props: Props) {
     // Effects from an old order must not reopen or reset the new order.
     if (currentFadeKey.current !== key) return;
     setFadeReadiness((previous) => {
-      const current = previous.key === key ? previous : { key };
+      const current = previous.key === key ? previous : {
+        key, message: undefined, checks: undefined, financial: undefined,
+      };
       if (current[section] === ready) return current;
       return { ...current, [section]: ready };
     });
