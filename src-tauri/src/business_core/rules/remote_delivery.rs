@@ -81,10 +81,11 @@ pub(super) fn resolve_recipient(recipient: &Value) -> Result<Value, String> {
     let address = recipient.get("address").and_then(Value::as_str).unwrap_or("");
     let mut analysis = detect(&json!({"address": address}))?;
     let decision = recipient.get("remoteDelivery").unwrap_or(&Value::Null);
-    let manually_set = decision.get("manual").and_then(Value::as_bool) == Some(true) &&
-        decision.get("checked").and_then(Value::as_bool).is_some() &&
+    let saved_for_address = decision.get("checked").and_then(Value::as_bool).is_some() &&
         decision.get("address").and_then(Value::as_str) == Some(address);
-    let checked = if manually_set {
+    let manually_set = saved_for_address &&
+        decision.get("manual").and_then(Value::as_bool) == Some(true);
+    let checked = if saved_for_address {
         decision["checked"].as_bool().unwrap_or(false)
     } else {
         analysis["suggestedChecked"].as_bool().unwrap_or(false)
@@ -168,6 +169,18 @@ mod tests {
         assert_eq!(multiply(Some(3000),&recipient),Some(6000));
         recipient["address"]=json!("서울특별시 강남구 테헤란로 1");
         assert_eq!(resolve_recipient(&recipient).unwrap()["checked"],false);
+        assert_eq!(multiply(Some(3000),&recipient),Some(3000));
+    }
+
+    #[test]
+    fn previously_billed_legacy_area_can_preserve_its_original_freight() {
+        let addr="제주특별자치도 제주시 가상로 1";
+        let recipient=json!({"address":addr,
+            "remoteDelivery":{"address":addr,"checked":false,"manual":false,"legacy":true}});
+        let result=resolve_recipient(&recipient).unwrap();
+        assert_eq!(result["status"],"auto");
+        assert_eq!(result["checked"],false);
+        assert_eq!(result["manual"],false);
         assert_eq!(multiply(Some(3000),&recipient),Some(3000));
     }
 
