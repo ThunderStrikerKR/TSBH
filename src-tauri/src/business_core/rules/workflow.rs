@@ -1236,8 +1236,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 // A 2x locality delivery is valid historical evidence,
                 // but its actual charge must NEVER become a universal
                 // product-combination base tariff for normal addresses.
-                let remote_selected=super::remote_delivery::resolve_recipient(&recipient)?
-                    ["checked"].as_bool().unwrap_or(false);
+                let remote_state=super::remote_delivery::resolve_recipient(&recipient)?;
+                let remote_selected=flag(&remote_state,"checked");
                 if !remote_selected {
                     for previous in state["shipping"]["combinations"].as_array_mut()
                         .ok_or("운임 조합 목록 오류")? {
