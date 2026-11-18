@@ -6,7 +6,8 @@ const source = (name) => readFileSync(new URL("../" + name, import.meta.url), "u
 
 test("expanded and hovered workflow groups share one shipment table", () => {
   const board = source("src/WorkflowBoard.tsx");
-  assert.equal((board.match(/className="workflow-shipment-list"/g) ?? []).length, 1);
+  // One pending-reception list plus one shared, expanded/hovered workflow list.
+  assert.equal((board.match(/className="workflow-shipment-list"/g) ?? []).length, 2);
   assert.match(board, /const renderShipmentList = \(inPreview: boolean\)/);
   assert.match(board, /\{open && renderShipmentList\(false\)\}/);
   assert.match(board, /\{renderShipmentList\(true\)\}/);
