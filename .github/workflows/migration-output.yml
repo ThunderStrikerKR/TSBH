@@ -227,6 +227,8 @@ jobs:
         env:
           UI_DIFF_BASE: ${{ github.event.before || github.event.pull_request.base.sha || '' }}
         run: npm run check:ui-design
+      - name: Record live TypeScript business dependency inventory
+        run: node scripts/audit-ts-business-retirement.mjs
       - name: Enforce native reception source import boundary
         run: node scripts/audit-ts-business-retirement.mjs --guard-native-recognition
       - name: Verify TypeScript and production bundle
