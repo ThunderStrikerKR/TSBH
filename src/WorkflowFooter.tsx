@@ -159,6 +159,7 @@ export function WorkflowFooter({
   shipment,
   vatIncluded,
   onVat,
+  recipientFade,
   unavailable = false,
 }: {
   state: State;
@@ -166,13 +167,17 @@ export function WorkflowFooter({
   vatIncluded: boolean;
   groupId: string;
   onVat: (v: boolean | undefined) => void;
+  recipientFade?: "pending" | "ready";
   unavailable?: boolean;
 }) {
   // Keep the native preview's last settled checkbox mounted without
   // permitting a stale VAT decision while the next Rust result is pending.
   const disabled = shipment.transferred || unavailable;
   return (
-    <section className="workflow-footer order-settings" aria-label="발주 설정">
+    <section className="workflow-footer order-settings" aria-label="발주 설정"
+      data-recipient-fade={recipientFade}
+      aria-busy={recipientFade === "pending"}
+      inert={recipientFade === "pending"}>
       <div className="shipment-vat">
         <label className="check">
           <input
