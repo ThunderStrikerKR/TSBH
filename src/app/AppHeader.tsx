@@ -1,25 +1,14 @@
-import type { DockStatus } from "../types";
 import { navigation, type PageId } from "./navigation";
 export function AppHeader({
   page,
-  dock,
-  busy,
   onNavigate,
-  onDock,
-  onDockMode,
-  onDockStop,
   onWindow,
   onNotifications,
   notificationCount = 0,
   notificationError = false,
 }: {
   page: PageId;
-  dock: DockStatus;
-  busy: boolean;
   onNavigate: (page: PageId) => void;
-  onDock: () => void;
-  onDockMode: (mode: "OVERLAP" | "STACK") => void;
-  onDockStop: () => void;
   onNotifications?: () => void;
   notificationCount?: number;
   notificationError?: boolean;
@@ -70,23 +59,6 @@ export function AppHeader({
                 </small>
               )}
           </button>
-        )}
-        {!dock.active ? (
-          <button disabled={busy} onClick={onDock} title="카카오톡 기본창과 대화창 연결">
-            {busy ? "연결 중…" : "카카오톡 함께 보기"}
-          </button>
-        ) : (
-          <div className="kakao-view-modes" role="group" aria-label="카카오톡 보기 방식">
-            <button disabled={busy} aria-pressed={dock.mode === "OVERLAP"}
-              className={dock.mode === "OVERLAP" ? "current" : undefined}
-              onClick={() => onDockMode("OVERLAP")}>함께 보기</button>
-            <button disabled={busy} aria-pressed={dock.mode === "STACK"}
-              className={dock.mode === "STACK" ? "current" : undefined}
-              onClick={() => onDockMode("STACK")}>나누어 보기</button>
-            <button disabled={busy} onClick={onDockStop}
-              title="카카오톡 연결 해제 및 모든 창 원래 위치 복원"
-              aria-label="카카오톡 연결 해제">연결 해제</button>
-          </div>
         )}
       </div>
       <div className="window-controls">
