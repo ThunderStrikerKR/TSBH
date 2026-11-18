@@ -92,8 +92,8 @@ test("selected catalog items in reception and correction come from Rust", () => 
 
 test("reception no longer runs dead TypeScript shared-color eligibility per render", () => {
   const desk = read("src/orders/useOrderDesk.tsx");
-  assert.doesNotMatch(desk, /\\bnormalizeColor\\s*\\(/);
-  assert.doesNotMatch(desk, /\\bselectedItems\\b|\\bsetSelected\\b/);
+  assert.doesNotMatch(desk, /\bnormalizeColor\s*\(/);
+  assert.doesNotMatch(desk, /\bselectedItems\b|\bsetSelected\b/);
   assert.match(desk, /"rules", "create_catalog_item"/);
   assert.match(desk, /"rules", "should_refresh_pricing"/);
 });
