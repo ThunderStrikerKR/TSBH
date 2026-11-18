@@ -84,8 +84,9 @@ pub(super) fn fee_total(ship: &Value, row: &Value, order: &Value) -> Option<i64>
     if shipment_freight_code(order,row)=="020" {return Some(0);}
     let os=row_origins(row);
     if os.is_empty() {return None;}
-    os.iter().map(|origin|safe(field(field(ship,"charges"),origin)))
-        .collect::<Option<Vec<_>>>().and_then(checked_sum)
+    let base=os.iter().map(|origin|safe(field(field(ship,"charges"),origin)))
+        .collect::<Option<Vec<_>>>().and_then(checked_sum);
+    super::remote_delivery::multiply(base,row)
 }
 fn frozen_snapshot<'a>(state: &'a Value, ship: &Value) -> Option<&'a Value> {
     if !flag(ship,"transferred") || has_value(field(ship,"latestRecipient")) {return None;}
@@ -1207,7 +1208,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 let charged=if shipment_freight_code(&order,&order_single["recipients"][0])=="020" {
                     0
                 } else {
-                    safe(field(field(&ship,"charges"),origin))
+                    super::remote_delivery::multiply(
+                        safe(field(field(&ship,"charges"),origin)),&recipient)
                         .ok_or("청구 운임 확인 필요")?
                 };
                 let applied=if has_value(field(&ship,"latestRecipient")) {None}
