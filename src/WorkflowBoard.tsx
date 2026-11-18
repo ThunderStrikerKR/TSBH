@@ -111,26 +111,29 @@ export function WorkflowBoard({
     hoverReturnDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
     previewButton = useRef<HTMLButtonElement | null>(null);
   const [previewLayer, setPreviewLayer] = useState<{
-    groupId: string; left: number; top: number; width: number; maxHeight: number;
+    groupId: string; left: number; top: number; width: number;
+    maxHeight: number; above: boolean;
   }>();
-  // Fixed portal: the hovered group never expands or moves other action buttons.
+  // Keep the fixed portal inside the window and close to its order card.
+  // Its height follows its contents; only long shipment lists need scrolling.
   const positionPreview = (button: HTMLButtonElement, groupId: string, shipmentCount: number) => {
     const rect = button.getBoundingClientRect();
-    const width = Math.min(380, Math.max(180, window.innerWidth - 16));
-    const desiredHeight = Math.min(330, 64 + shipmentCount * 52);
-    const below = window.innerHeight - rect.bottom - 8;
-    const above = rect.top - 8;
+    const cardRect = button.closest<HTMLElement>(".workflow-group")?.getBoundingClientRect() ?? rect;
+    const margin = 8;
+    const width = Math.max(0, Math.min(340, cardRect.width - 12, window.innerWidth - margin * 2));
+    const desiredHeight = Math.min(280, 44 + shipmentCount * 40);
+    const below = Math.max(0, window.innerHeight - rect.bottom - margin - 4);
+    const above = Math.max(0, rect.top - margin - 4);
     const showAbove = below < desiredHeight && above > below;
-    const maxHeight = Math.max(80, Math.min(330, (showAbove ? above : below) - 4));
-    const top = showAbove
-      ? Math.max(8, rect.top - Math.min(desiredHeight, maxHeight) - 2)
-      : Math.min(window.innerHeight - 8 - Math.min(desiredHeight, maxHeight), rect.bottom + 2);
     setPreviewLayer({
       groupId,
-      left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
-      top: Math.max(8, top),
+      left: Math.max(margin, Math.min(cardRect.right - width - 6, window.innerWidth - width - margin)),
+      // Anchoring above with a transform uses the actual rendered height,
+      // avoiding clipping when text wraps or the UI scale changes.
+      top: showAbove ? rect.top - 4 : rect.bottom + 4,
       width,
-      maxHeight,
+      maxHeight: Math.min(280, showAbove ? above : below),
+      above: showAbove,
     });
   };
   const stopStagePreview = () => {
@@ -577,12 +580,13 @@ export function WorkflowBoard({
                 {hovered && previewLayer?.groupId === g.id && typeof document !== "undefined" &&
                   createPortal(
                     <div
-                      className="app-v03 workflow-preview-layer"
+                      className="workflow-preview-layer"
                       role="group"
                       aria-label={(first.client.displayName || first.client.name) + " 배송 건 미리보기"}
                       style={{
                         left: previewLayer.left, top: previewLayer.top,
                         width: previewLayer.width, maxHeight: previewLayer.maxHeight,
+                        transform: previewLayer.above ? "translateY(-100%)" : undefined,
                       }}
                       onMouseEnter={keepStagePreview}
                       onMouseLeave={scheduleStagePreviewExit}
