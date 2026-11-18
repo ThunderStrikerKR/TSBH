@@ -132,9 +132,9 @@ test("payment-confirmation stage highlights only payment text and hovered group 
   assert.match(message, /const emphasisSpans = request \? \[\] : paymentMessageHighlights\(/);
   assert.match(message, /selectedAccountNumberFromSignature\(automatic\.signature\)/);
   assert.match(board, /data-payment-confirm-preview=\{hovered && stageHover\?\.step === 4 \? "true" : undefined\}/);
-  const totalSelector = '.hub-slot-3 .workflow-group[data-payment-confirm-preview="true"] .workflow-action-line .flow-summary-payment';
+  const totalSelector = '.hub-slot-3 .workflow-group[data-payment-confirm-preview="true"] .workflow-action-line .flow-summary-payment > .flow-summary-amount';
   assert.ok(workflowCss.includes(totalSelector), "Stage 4 must emphasize the hovered group's payment total");
-  assert.match(board, /<span className="flow-summary-payment"[\s\S]*?nativeGroup\?\.totals\.total/);
+  assert.match(board, /<span className="flow-summary-payment"[\s\S]*?<span className="flow-summary-amount">\{won\(nativeGroup\?\.totals\.total/);
   const stage4Rule = css.slice(css.indexOf(messageSelector), css.indexOf("}", css.indexOf(messageSelector)));
   assert.doesNotMatch(stage4Rule, /message-copy-actions|button|compact-review|items-freight-panel/);
   const totalRule = workflowCss.slice(workflowCss.indexOf(totalSelector), workflowCss.indexOf("}", workflowCss.indexOf(totalSelector)));

@@ -613,7 +613,7 @@ export function WorkflowBoard({
                     )}
                     <span className="flow-summary-payment"
                       title={!nativeGroup ? "부가세 계산 확인 중" : vatIncludedCount > 0 ? vatDescription : undefined}>
-                      {won(nativeGroup?.totals.total ?? null)}
+                      <span className="flow-summary-amount">{won(nativeGroup?.totals.total ?? null)}</span>
                     </span>
                   </span>
                 </div>
