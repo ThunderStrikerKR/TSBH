@@ -20,10 +20,13 @@ const movedTestOracles=new Map([
   ["automatic-message.ts","tests/rust-migration/oracles/automatic-message.ts"],
   ["message-model.ts","tests/rust-migration/oracles/message-model.ts"],
   ["group-trash.ts","tests/rust-migration/oracles/group-trash.ts"],
+  ["title-clients.ts","tests/rust-migration/oracles/title-clients.ts"],
+  ["catalog-price-sync.ts","tests/rust-migration/oracles/catalog-price-sync.ts"],
 ]);
 const targets=[
   "domain.ts","workflow.ts","shipping.ts","parser.ts","matching.ts",
   "group-trash.ts",
+  "title-clients.ts","catalog-price-sync.ts",
   "order-evidence.ts","validation.ts","issue-actions.ts","corrections.ts",
   "working-raw.ts","orders/retail.ts","orders/manual-classification.ts",
   "orders/reception.ts","replies.ts","automatic-message.ts",
