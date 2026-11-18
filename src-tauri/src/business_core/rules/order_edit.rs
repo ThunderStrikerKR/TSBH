@@ -227,6 +227,11 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
     match required_str(payload,"action")? {
         "resolve_order_client" => Ok(json!({"client":client(req(payload,"order")?,
             req(payload,"state")?)})),
+        "resolve_order_clients" => {
+            let order=req(payload,"order")?;
+            let state=req(payload,"state")?;
+            Ok(json!({"client":client(order,state),"liveClient":live_client(order,state)}))
+        },
         "prepare_order_edit" => prepare_edit(payload),
         "calculate_order_shipping" => effective_shipping(req(payload,"order")?,
             req(payload,"state")?),
@@ -279,6 +284,29 @@ mod tests{
         // The legacy client fallback permits the existing deleted master
         // record for a draft until its dealer is explicitly changed.
         assert_eq!(live_client(&o,&state)["id"],"c2");
+    }
+    #[test]fn live_client_projection_uses_master_for_pricing_and_snapshot_for_display(){
+        let mut state=setup();
+        let mut o=draft();
+        o["confirmedAt"]=json!("2026-11-19T00:00:00Z");
+        let value=execute(&json!({"action":"resolve_order_clients","order":o,"state":state})).unwrap();
+        assert_eq!(value["client"]["tier"],"wholesale");
+        assert_eq!(value["liveClient"]["tier"],"wholesale");
+        state["clients"][0]["tier"]=json!("special");
+        let value=execute(&json!({"action":"resolve_order_clients","order":o,"state":state})).unwrap();
+        assert_eq!(value["client"]["tier"],"wholesale");
+        assert_eq!(value["liveClient"]["tier"],"special");
+        state["clients"][0]["deletedAt"]=json!("today");
+        let value=execute(&json!({"action":"resolve_order_clients","order":o,"state":state})).unwrap();
+        assert_eq!(value["liveClient"]["tier"],"wholesale");
+    }
+    #[test]fn retail_client_projection_keeps_company_identity(){
+        let mut o=draft();
+        o["orderType"]=json!("RETAIL");
+        o["clientSnapshot"]=Value::Null;
+        let value=execute(&json!({"action":"resolve_order_clients","order":o,"state":setup()})).unwrap();
+        assert_eq!(value["client"]["name"],"반도스탠드");
+        assert_eq!(value["liveClient"]["name"],"반도스탠드");
     }
     #[test]fn pending_native_edits_cannot_be_prepared_for_persistence(){
         let mut order=draft();
