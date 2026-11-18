@@ -517,8 +517,13 @@ export function HubWorkspace(props: Props) {
   const messageProjectionSettled = messageReady || Boolean(
     nativeBase.error || (messageOrder.id === draft.id ? nativePreview.error : nativeMessage.error),
   );
-  const noMessageExpected = messageReady && !messageGroup &&
-    !activeShipments(messageState).some((shipment) => shipment.orderId === messageOrder.id);
+  // Retail orders do not use the dealer automatic message workflow.
+  // Treat this as an intentional empty message, not an endless pending state.
+  const noMessageExpected = messageReady && (
+    messageOrder.orderType === "RETAIL" ||
+    (!messageGroup &&
+      !activeShipments(messageState).some((shipment) => shipment.orderId === messageOrder.id))
+  );
   const allSectionsReady = sourceSettled &&
     fadeReadiness.key === fadeKey &&
     fadeReadiness.message === true &&
