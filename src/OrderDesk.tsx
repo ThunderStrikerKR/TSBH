@@ -461,6 +461,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                     recEdit(
                                       r.id,
                                       (r) => {
+                                        if (r.address !== e.target.value) delete r.remoteDelivery;
                                         r.address = e.target.value;
                                         delete r.addressParts;
                                         r.confirmedFields = [
@@ -653,27 +654,49 @@ export function OrderDesk(props: OrderDeskProps) {
                                   state={freightEditor.state}
                                   shipment={freightEditor.shipment}
                                   freightCode={r.freightCode ?? freightEditor.preview.freightCode}
-                                  displayCharges={{
-                                    ...freightEditor.preview.displayCharges,
-                                    ...r.shippingCharges,
-                                  }}
+                                  // Native preview displays APPLIED charges. Never
+                                  // overlay saved base charges, or the field
+                                  // would show 1x while the bill uses 2x.
+                                  displayCharges={freightEditor.preview.displayCharges}
                                   freightEditingBlocked={
                                     freightEditor.preview.freightEditingBlocked || r.freightCode === "020"
                                   }
-                                  activeKey={highlight}
-                                  onFreight={(origin, value) =>
-                                    recEdit(
-                                      r.id,
-                                      (row) => {
-                                        row.shippingCharges = {
-                                          ...freightEditor.shipment.charges,
-                                          ...row.shippingCharges,
-                                          [origin]: value,
-                                        };
-                                      },
-                                      false,
-                                    )
+                                  remoteDelivery={freightEditor.preview.remoteDelivery}
+                                  remoteChecked={
+                                    r.remoteDelivery?.manual === true &&
+                                    r.remoteDelivery.address === r.address
+                                      ? r.remoteDelivery.checked
+                                      : freightEditor.preview.remoteDelivery?.checked === true
                                   }
+                                  onRemoteChecked={(checked) =>
+                                    recEdit(r.id, (row) => {
+                                      row.remoteDelivery = {
+                                        address: row.address, checked, manual: true,
+                                      };
+                                    }, false)
+                                  }
+                                  activeKey={highlight}
+                                  onFreight={(origin, value) => {
+                                    const checked = r.remoteDelivery?.manual === true &&
+                                      r.remoteDelivery.address === r.address
+                                        ? r.remoteDelivery.checked
+                                        : freightEditor.preview.remoteDelivery?.checked === true;
+                                    // The input displays an applied amount, but
+                                    // storage keeps its undoubled base so toggling
+                                    // the box cannot multiply it twice.
+                                    if (checked && value !== null && value % 2 !== 0) {
+                                      props.onNotice("도서/산간 적용 운임은 기준 운임의 2배입니다. 짝수 금액으로 입력하세요.", "error");
+                                      return false;
+                                    }
+                                    const base = checked && value !== null ? value / 2 : value;
+                                    recEdit(r.id, (row) => {
+                                      row.shippingCharges = {
+                                        ...freightEditor.shipment.charges,
+                                        ...row.shippingCharges,
+                                        [origin]: base,
+                                      };
+                                    }, false);
+                                  }}
                                   onCode={(v) => recEdit(r.id, (row) => (row.freightCode = v), false)}
                                 />
                               )}
