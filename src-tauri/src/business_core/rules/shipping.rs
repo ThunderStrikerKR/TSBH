@@ -837,6 +837,39 @@ mod p1_product_freight_tests {
     }
 
     #[test]
+    fn island_check_doubles_applied_recommendation_but_never_the_base() {
+        let state=json!({
+            "products":[{"id":"p","origin":"FACTORY","shippingGroupId":"g"}],
+            "shipping":{"epoch":1,"groups":[{"id":"g","name":"테스트 운임",
+                "current":{"version":"v2","maxBundle":3,"maxConfirmed":true,
+                    "perItem":null,"fees":{"2":4000}}}],"combinations":[]}
+        });
+        let mut order=json!({"recipients":[{"id":"r",
+            "name":"가상 수취인",
+            "address":"제주특별자치도 서귀포시 대정읍 테스트로 3",
+            "dispatchOrigin":"FACTORY",
+            "items":[{"id":"i","name":"제품","productId":"p","variantId":"v",
+                "origin":"FACTORY","quantity":2}]}]});
+        let remote=recommend(&order,&state).unwrap();
+        assert_eq!(remote["total"],8000);
+        assert_eq!(remote["bundles"][0]["recommendation"],8000);
+        assert_eq!(remote["bundles"][0]["baseRecommendation"],4000);
+        // Repeating the calculation NEVER multiplies the prior result.
+        assert_eq!(recommend(&order,&state).unwrap()["total"],8000);
+        order["recipients"][0]["remoteDelivery"]=json!({
+            "address":"제주특별자치도 서귀포시 대정읍 테스트로 3",
+            "checked":false,"manual":true
+        });
+        let ordinary=recommend(&order,&state).unwrap();
+        assert_eq!(ordinary["total"],4000);
+        assert!(ordinary["bundles"][0].get("baseRecommendation").is_none());
+        order["recipients"][0]["remoteDelivery"]["checked"]=json!(true);
+        let restored=recommend(&order,&state).unwrap();
+        assert_eq!(restored["total"],8000);
+        assert_eq!(restored["bundles"][0]["baseRecommendation"],4000);
+    }
+
+    #[test]
     fn group_reset_keeps_historical_rate_and_unrelated_orders() {
         let state=json!({
             "products":[{"id":"p1","shippingGroupId":"g1"},{"id":"p2"}],
