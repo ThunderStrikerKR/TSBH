@@ -722,8 +722,9 @@ export function HubWorkspace(props: Props) {
           draft={receptionOrder}
           sharedNativeFlow={receptionOrder === draft ? sharedCurrentDraftFlow : undefined}
           sourceProjectionReady={receptionOrder.id === draft.id
-            ? nativeBase.ready && (draft.clientId ? nativePreview.ready : unassignedDraftPreview.ready)
-            : nativeBase.ready}
+            ? (nativeBase.ready && (draft.clientId ? nativePreview.ready : unassignedDraftPreview.ready)) ||
+              Boolean(nativeBase.error || (draft.clientId ? nativePreview.error : unassignedDraftPreview.error))
+            : nativeBase.ready || Boolean(nativeBase.error)}
           onChange={changeReceptionLive}
           viewMode="reception"
           onNew={createReceptionLive}
