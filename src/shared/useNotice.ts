@@ -28,7 +28,7 @@ export function useNotice() {
     // A routine validation message can be an error without being a critical
     // problem. Only safety-of-operation failures are persisted in the inbox.
     const critical = tone === "error" &&
-      /저장.*(?:실패|오류)|(?:실패|오류).*저장|SQLite|데이터베이스|\\bDB\\b|IPC|state:save|\\bdisk\\b|디스크|not defined|Cannot read/i.test(text);
+      /저장.*(?:실패|오류)|(?:실패|오류).*저장|SQLite|데이터베이스|\bDB\b|IPC|state:save|\bdisk\b|디스크|not defined|Cannot read/i.test(text);
     const target = lastTarget.current?.isConnected
       ? lastTarget.current
       : document.activeElement instanceof HTMLElement
