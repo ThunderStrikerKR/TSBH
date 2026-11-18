@@ -16,8 +16,14 @@ import { fileURLToPath } from "node:url";
 const root=fileURLToPath(new URL("../",import.meta.url));
 const src=join(root,"src");
 const liveEntry=join(src,"main.tsx");
+const movedTestOracles=new Map([
+  ["automatic-message.ts","tests/rust-migration/oracles/automatic-message.ts"],
+  ["message-model.ts","tests/rust-migration/oracles/message-model.ts"],
+  ["group-trash.ts","tests/rust-migration/oracles/group-trash.ts"],
+]);
 const targets=[
   "domain.ts","workflow.ts","shipping.ts","parser.ts","matching.ts",
+  "group-trash.ts",
   "order-evidence.ts","validation.ts","issue-actions.ts","corrections.ts",
   "working-raw.ts","orders/retail.ts","orders/manual-classification.ts",
   "orders/reception.ts","replies.ts","automatic-message.ts",
@@ -91,14 +97,20 @@ const rows=targets.map(file=>{
   const absolute=join(src,file);
   const importers=[...graph.entries()].filter(([,deps])=>deps.includes(absolute))
     .map(([from])=>relative(root,from).replaceAll("\\","/"));
+  const exists=existsSync(absolute);
+  const testOracle=movedTestOracles.get(file);
+  const retired=!exists && testOracle && existsSync(join(root,testOracle));
   return {
     module:"src/"+file,
-    exists:existsSync(absolute),
+    exists,
     reachableFromApp:reachable.has(absolute),
     directRuntimeImporters:importers.filter(x=>reachable.has(join(root,x))),
     directAllImporters:importers,
-    // Legacy code may still be deliberately retained for differential tests.
-    classification:reachable.has(absolute)?"LIVE_TS_BUSINESS_DEPENDENCY":"ORACLE_OR_REVIEW_CANDIDATE",
+    testOracle:retired?testOracle:null,
+    // Distinguish retired test oracles from still-shipped production code.
+    classification:retired?"RETIRED_TO_TEST_ORACLE":
+      !exists?"MISSING_UNVERIFIED":
+      reachable.has(absolute)?"LIVE_TS_BUSINESS_DEPENDENCY":"ORACLE_OR_REVIEW_CANDIDATE",
   };
 });
 const report={
@@ -106,13 +118,15 @@ const report={
   inspectedSourceFiles:all.length,liveReachableSourceFiles:reachable.size,
   trackedLegacyModules:rows.length,
   reachableLegacyModules:rows.filter(row=>row.reachableFromApp).length,
+  retiredToTestOracle:rows.filter(row=>row.classification==="RETIRED_TO_TEST_ORACLE").length,
   inventory:rows
 };
 if(process.argv.includes("--json"))console.log(JSON.stringify(report,null,2));
 else{
   console.log("TSBH TypeScript retirement inventory");
   console.log("Entry",report.entry,"| examined",all.length,"source files");
-  console.log("Live legacy modules:",report.reachableLegacyModules,"/",rows.length);
+  console.log("Live legacy modules:",report.reachableLegacyModules,"/",rows.length,
+    "| retired to test oracles:",report.retiredToTestOracle);
   for(const row of rows)console.log(
     row.reachableFromApp?"LIVE  ":"REVIEW ",
     row.module,"| live importers:",row.directRuntimeImporters.length);
