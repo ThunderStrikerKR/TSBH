@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "policy": "AGENTS.md",
-  "recordedAt": "2026-11-18",
-  "recordedHead": "6ff8df949643eb364ba915bf81b498a9ff14f899",
+  "recordedAt": "2026-11-19",
+  "recordedHead": "b4fa9fbc36249baacfe2a1c567426a62d998ae3a",
   "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
   "proofLevels": [
     "patch",
@@ -90,7 +90,25 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "6ff8df949643eb364ba915bf81b498a9ff14f899"
+      "lastReviewedCommit": "b4fa9fbc36249baacfe2a1c567426a62d998ae3a",
+      "runtimeCleanupAudit": [
+        {
+          "date": "2026-11-19",
+          "description": "Shared domain no longer imports the obsolete TS parser or exports parseOrder. Legacy workflow and two differential oracle consumers now import the unchanged parseSmart function directly; developer diagnostics still require TS parsing, so full parser retirement is NOT VERIFIED.",
+          "commits": [
+            "70bdd621c8849c7f1c9613db0ebc2d8f584855f9",
+            "18c8777d2d062010342d8086b8c0aa443246dc91",
+            "b4fa9fbc36249baacfe2a1c567426a62d998ae3a"
+          ],
+          "patch": "COMMITTED",
+          "unit": "BOUNDARY_TESTS_PASS_IN_18c8777 (2 tests)",
+          "differential": "NOT_REEXECUTED_FOR_THIS_CHANGE",
+          "action": "NOT_REEXECUTED_FOR_THIS_CHANGE",
+          "ci": "FULL_GATE_FAIL_BASELINE_COMPARISON_REQUIRED",
+          "windows": "NOT_EXECUTED",
+          "details": "18c8777 frontend TypeScript/Vite build PASSED. Boundary regression tests PASSED. 25/780 frontend tests failed; one extra stale file-location assertion was corrected in b4fa9fbc. Full behavior, Windows and new-head CI are not certified."
+        }
+      ]
     },
     {
       "id": "F02",
@@ -990,7 +1008,25 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "b4fa9fbc36249baacfe2a1c567426a62d998ae3a",
+      "runtimeCleanupAudit": [
+        {
+          "date": "2026-11-19",
+          "description": "Legacy src/workflow.ts was rewired to import parseSmart directly for comparison-only logic. No React workflow action was switched from Rust back to TS. Old src/workflow.ts remains for differential tests, not yet retired.",
+          "commits": [
+            "70bdd621c8849c7f1c9613db0ebc2d8f584855f9",
+            "18c8777d2d062010342d8086b8c0aa443246dc91",
+            "b4fa9fbc36249baacfe2a1c567426a62d998ae3a"
+          ],
+          "patch": "COMMITTED",
+          "unit": "BOUNDARY_TESTS_PASS_IN_18c8777 (2 tests)",
+          "differential": "NOT_REEXECUTED_FOR_THIS_CHANGE",
+          "action": "NOT_REEXECUTED_FOR_THIS_CHANGE",
+          "ci": "FULL_GATE_FAIL_BASELINE_COMPARISON_REQUIRED",
+          "windows": "NOT_EXECUTED",
+          "details": "18c8777 frontend TypeScript/Vite build PASSED. Boundary regression tests PASSED. 25/780 frontend tests failed; one extra stale file-location assertion was corrected in b4fa9fbc. Full behavior, Windows and new-head CI are not certified."
+        }
+      ]
     },
     {
       "id": "F14",
@@ -1056,7 +1092,25 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "b4fa9fbc36249baacfe2a1c567426a62d998ae3a",
+      "runtimeCleanupAudit": [
+        {
+          "date": "2026-11-19",
+          "description": "Historical reviewIssues and messages implementations were relocated verbatim from shared domain.ts to legacy hub-messages.ts. Live MessageWorkspace remains on nativeAutomaticMessage/Rust output. TS oracle removal itself does not establish Rust behavior parity.",
+          "commits": [
+            "70bdd621c8849c7f1c9613db0ebc2d8f584855f9",
+            "18c8777d2d062010342d8086b8c0aa443246dc91",
+            "b4fa9fbc36249baacfe2a1c567426a62d998ae3a"
+          ],
+          "patch": "COMMITTED",
+          "unit": "BOUNDARY_TESTS_PASS_IN_18c8777 (2 tests)",
+          "differential": "NOT_REEXECUTED_FOR_THIS_CHANGE",
+          "action": "NOT_REEXECUTED_FOR_THIS_CHANGE",
+          "ci": "FULL_GATE_FAIL_BASELINE_COMPARISON_REQUIRED",
+          "windows": "NOT_EXECUTED",
+          "details": "18c8777 frontend TypeScript/Vite build PASSED. Boundary regression tests PASSED. 25/780 frontend tests failed; one extra stale file-location assertion was corrected in b4fa9fbc. Full behavior, Windows and new-head CI are not certified."
+        }
+      ]
     },
     {
       "id": "F15",
