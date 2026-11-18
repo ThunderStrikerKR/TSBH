@@ -600,6 +600,8 @@ export interface Api {
     Promise<import("./app/notification-center.js").HubNotification[]>;
   notificationMarkRead: (id: string) =>
     Promise<import("./app/notification-center.js").HubNotification[]>;
+  notificationDelete: (id: string) =>
+    Promise<import("./app/notification-center.js").HubNotification[]>;
   notificationClear: () => Promise<import("./app/notification-center.js").HubNotification[]>;
   captureOcr?: () => Promise<OcrCapture>;
   clipboardOcr?: () => Promise<OcrCapture>;
