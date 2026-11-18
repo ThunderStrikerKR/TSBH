@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "policy": "AGENTS.md",
   "recordedAt": "2026-11-19",
-  "recordedHead": "6a1a59c37f06096009a506c059252019b1d7d955",
+  "recordedHead": "2b4ed344dd152bd4529431a3c31eda60e433b876",
   "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
   "proofLevels": [
     "patch",
@@ -90,7 +90,7 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "6a1a59c37f06096009a506c059252019b1d7d955",
+      "lastReviewedCommit": "2b4ed344dd152bd4529431a3c31eda60e433b876",
       "runtimeCleanupAudit": [
         {
           "date": "2026-11-19",
@@ -122,6 +122,25 @@
           "ci": "FRONTEND_BUILD_PASS at 6a1a59c3; existing frontend regressions: 781 total / 755 pass / 24 fail / 2 skipped. Previous 780 total / 754 pass / 24 fail / 2 skipped; no newly failed frontend case.",
           "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44404409420",
           "windows": "NOT_EXECUTED"
+        },
+        {
+          "date": "2026-11-19",
+          "description": "Compiled Rust recognition and issue validation own the production paths. Keep src/parser.ts and src/validation.ts as unchanged historical TypeScript comparison baselines; they are neither reachable from src/main.tsx (including lazy developer diagnostic UI) nor present in emitted Vite chunks. Both source-graph and real bundler module checks now block reintroduction.",
+          "commits": [
+            "ca2448a64e3a0d7bb42ff26ed1c2788ee284ffe3",
+            "2b4ed344dd152bd4529431a3c31eda60e433b876"
+          ],
+          "patch": "COMMITTED",
+          "unit": "PASS_SCOPED - tests/tauri-ts-retirement-audit.test.mjs native boundary",
+          "differential": "NOT_REEXECUTED - no business algorithm changed",
+          "action": "NOT_REEXECUTED - build-only check, no operational behavior changed",
+          "ci": "SOURCE_GRAPH_PASS / ACTUAL_BUNDLE_MODULES_PASS / TS+VITE_BUILD_PASS; other existing frontend tests 782 total, 756 pass, 24 fail, 2 skipped. CI overall FAIL due baseline regressions.",
+          "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44405778861",
+          "checkedSourceFiles": 187,
+          "emittedChunks": 12,
+          "includedForbiddenModules": [],
+          "windows": "NOT_EXECUTED",
+          "note": "Do not mistake asset string fingerprint no-hits for algorithm absence. Verified actual Rollup chunk.modules and TypeScript compiler import graph; still no full Rust app parity or Windows PASS."
         }
       ]
     },
@@ -543,7 +562,7 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "6a1a59c37f06096009a506c059252019b1d7d955",
+      "lastReviewedCommit": "2b4ed344dd152bd4529431a3c31eda60e433b876",
       "runtimeCleanupAudit": [
         {
           "date": "2026-11-19",
@@ -559,6 +578,25 @@
           "ci": "FRONTEND_BUILD_PASS at 6a1a59c3; existing frontend regressions: 781 total / 755 pass / 24 fail / 2 skipped. Previous 780 total / 754 pass / 24 fail / 2 skipped; no newly failed frontend case.",
           "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44404409420",
           "windows": "NOT_EXECUTED"
+        },
+        {
+          "date": "2026-11-19",
+          "description": "Compiled Rust recognition and issue validation own the production paths. Keep src/parser.ts and src/validation.ts as unchanged historical TypeScript comparison baselines; they are neither reachable from src/main.tsx (including lazy developer diagnostic UI) nor present in emitted Vite chunks. Both source-graph and real bundler module checks now block reintroduction.",
+          "commits": [
+            "ca2448a64e3a0d7bb42ff26ed1c2788ee284ffe3",
+            "2b4ed344dd152bd4529431a3c31eda60e433b876"
+          ],
+          "patch": "COMMITTED",
+          "unit": "PASS_SCOPED - tests/tauri-ts-retirement-audit.test.mjs native boundary",
+          "differential": "NOT_REEXECUTED - no business algorithm changed",
+          "action": "NOT_REEXECUTED - build-only check, no operational behavior changed",
+          "ci": "SOURCE_GRAPH_PASS / ACTUAL_BUNDLE_MODULES_PASS / TS+VITE_BUILD_PASS; other existing frontend tests 782 total, 756 pass, 24 fail, 2 skipped. CI overall FAIL due baseline regressions.",
+          "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44405778861",
+          "checkedSourceFiles": 187,
+          "emittedChunks": 12,
+          "includedForbiddenModules": [],
+          "windows": "NOT_EXECUTED",
+          "note": "Do not mistake asset string fingerprint no-hits for algorithm absence. Verified actual Rollup chunk.modules and TypeScript compiler import graph; still no full Rust app parity or Windows PASS."
         }
       ]
     },
@@ -2117,7 +2155,28 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "2b4ed344dd152bd4529431a3c31eda60e433b876",
+      "runtimeCleanupAudit": [
+        {
+          "date": "2026-11-19",
+          "description": "Compiled Rust recognition and issue validation own the production paths. Keep src/parser.ts and src/validation.ts as unchanged historical TypeScript comparison baselines; they are neither reachable from src/main.tsx (including lazy developer diagnostic UI) nor present in emitted Vite chunks. Both source-graph and real bundler module checks now block reintroduction.",
+          "commits": [
+            "ca2448a64e3a0d7bb42ff26ed1c2788ee284ffe3",
+            "2b4ed344dd152bd4529431a3c31eda60e433b876"
+          ],
+          "patch": "COMMITTED",
+          "unit": "PASS_SCOPED - tests/tauri-ts-retirement-audit.test.mjs native boundary",
+          "differential": "NOT_REEXECUTED - no business algorithm changed",
+          "action": "NOT_REEXECUTED - build-only check, no operational behavior changed",
+          "ci": "SOURCE_GRAPH_PASS / ACTUAL_BUNDLE_MODULES_PASS / TS+VITE_BUILD_PASS; other existing frontend tests 782 total, 756 pass, 24 fail, 2 skipped. CI overall FAIL due baseline regressions.",
+          "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44405778861",
+          "checkedSourceFiles": 187,
+          "emittedChunks": 12,
+          "includedForbiddenModules": [],
+          "windows": "NOT_EXECUTED",
+          "note": "Do not mistake asset string fingerprint no-hits for algorithm absence. Verified actual Rollup chunk.modules and TypeScript compiler import graph; still no full Rust app parity or Windows PASS."
+        }
+      ]
     }
   ]
 }
