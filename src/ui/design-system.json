@@ -203,5 +203,81 @@
       "status": "approved-awaiting-ui-change",
       "rule": "Brand symbol and BANDO HUB logotype should have comparable visual height; test-workspace label is subordinate; remove unidentified trailing stripe without deleting any functional separator."
     }
+  },
+  "componentRoles": {
+    "input": {
+      "height": 36,
+      "fontSize": 14,
+      "paddingX": 10,
+      "radius": 6,
+      "surface": "input",
+      "border": "border",
+      "text": "main"
+    },
+    "tableHeader": {
+      "minHeight": 36,
+      "fontSize": 13,
+      "fontWeight": 600,
+      "surface": "panel",
+      "text": "secondary"
+    },
+    "tableRow": {
+      "minHeight": 42,
+      "fontSize": 13,
+      "fontWeight": 400,
+      "surface": "panel",
+      "text": "main"
+    },
+    "card": {
+      "radius": 9,
+      "padding": 16,
+      "surface": "panel",
+      "border": "border"
+    },
+    "modal": {
+      "radius": 9,
+      "paddingX": 18,
+      "titleFontSize": 18,
+      "bodyFontSize": 14,
+      "surface": "panel",
+      "text": "main"
+    },
+    "status": {
+      "fontSize": 12,
+      "fontWeight": 600,
+      "shape": "text-or-small-chip",
+      "surface": "transparent"
+    },
+    "toolbar": {
+      "gap": 8,
+      "paddingX": 12,
+      "paddingY": 8,
+      "surface": "panel",
+      "border": "border"
+    },
+    "notification": {
+      "fontSize": 13,
+      "paddingX": 12,
+      "paddingY": 10,
+      "surface": "raised"
+    }
+  },
+  "tradeTierColors": {
+    "wholesale": {
+      "background": "#234c37",
+      "foreground": "#a6edc0"
+    },
+    "semiWholesale": {
+      "background": "#53451c",
+      "foreground": "#ffe393"
+    },
+    "retail": {
+      "background": "#542c30",
+      "foreground": "#ffb2b9"
+    },
+    "special": {
+      "background": "#44305c",
+      "foreground": "#dab5ff"
+    }
   }
 }
