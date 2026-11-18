@@ -654,6 +654,7 @@ export function HubWorkspace(props: Props) {
               onNotice={props.onNotice}
               onStageHover={setStageHover}
               stageHover={stageHover}
+              hoveredShipmentId={hoverSelection?.shipmentId}
               pendingReceptions={pendingWithoutClient}
               selectedPendingOrderId={!selected ? receptionId : undefined}
               onSelectPending={selectPendingLive}

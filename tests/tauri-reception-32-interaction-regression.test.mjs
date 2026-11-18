@@ -100,10 +100,10 @@ test("explicit unassigned receipt selection is never replaced by the first shipm
   assert.match(hub, /commitSelection\(undefined\);\s*setReceptionId\(id\)/);
 });
 
-test("the title row selects and expands only one group while unfinished drafts stay explicit", () => {
+test("title selects one group and hover temporarily expands its preview without persisting changes", () => {
   const board = read("src/WorkflowBoard.tsx");
   const css = read("src/styles/workflow.css");
-  assert.match(board, /open = selected && manuallyClosedGroup !== g\.id/);
+  assert.match(board, /open = workflowGroupOpen\(g\.id, selection\?\.groupId, stageHover\?\.groupId, manuallyClosedGroup\)/);
   assert.match(board, /useEffect\(\(\) => setManuallyClosedGroup\(undefined\), \[selection\?\.groupId\]\)/);
   assert.match(board, /className="flow-heading-toggle"/);
   assert.match(board, /setManuallyClosedGroup\(open \? g\.id : undefined\)/);

@@ -31,6 +31,20 @@ export function onlyDeletedGroups(state: State, orderId: string) {
   return groups.length > 0 && groups.every((g) => !!g.deletedAt);
 }
 
+/** During a stage hover the hovered group temporarily owns the expanded
+ * viewport. Once the hover clears, restore the exact committed accordion
+ * state, including a manually closed selected group. */
+export function workflowGroupOpen(
+  groupId: string,
+  selectedGroupId?: string,
+  hoveredGroupId?: string,
+  manuallyClosedGroupId?: string,
+): boolean {
+  return hoveredGroupId
+    ? hoveredGroupId === groupId
+    : selectedGroupId === groupId && manuallyClosedGroupId !== groupId;
+}
+
 /** Resolve the hovered action's own order without changing the committed
  * selection. For multi-recipient groups keep the currently selected recipient
  * if it belongs to that group; otherwise use its first active shipment. */

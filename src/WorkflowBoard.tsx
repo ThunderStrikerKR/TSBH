@@ -1,4 +1,5 @@
 import { nativePaymentWasCopied } from "./native-automatic-message";
+import { workflowGroupOpen } from "./workspace-selection";
 import { useNativeWorkflowBoard } from "./orders/useNativeWorkflowBoard";
 import { memo, useEffect, useRef, useState } from "react";
 import { auditReactRender } from "./perf-audit";
@@ -52,6 +53,7 @@ export function WorkflowBoard({
   onNotice,
   onStageHover,
   stageHover,
+  hoveredShipmentId,
   pendingReceptions = [],
   selectedPendingOrderId,
   onSelectPending,
@@ -59,6 +61,7 @@ export function WorkflowBoard({
 }: {
   onStageHover?: (v: { groupId: string; step: number } | undefined) => void;
   stageHover?: { groupId: string; step: number };
+  hoveredShipmentId?: string;
   state: State;
   previewReady?: boolean;
   previewError?: string;
@@ -103,8 +106,14 @@ export function WorkflowBoard({
   }, [selection?.shipmentId]);
   const boardRef = useRef<HTMLDivElement>(null),
     hoveredGroup = useRef<string | undefined>(undefined),
-    hoverDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => { if (hoverDelay.current) clearTimeout(hoverDelay.current); }, []);
+    hoverDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
+    hoverReturnDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Enter is deliberate (120ms); leaving gets a 260ms grace period so
+  // moving across an adjacent button or shipment row does not flicker.
+  useEffect(() => () => {
+    if (hoverDelay.current) clearTimeout(hoverDelay.current);
+    if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
+  }, []);
   useEffect(() => {
     const id = hoveredGroup.current;
     if (!id) return;
@@ -275,7 +284,8 @@ export function WorkflowBoard({
                     <button type="button" className="workflow-shipment"
                       key={recipient.id} onClick={() => onSelectPending?.(receipt.id)}>
                       <span className="shipment-recipient" title={recipient.name}>
-                        {recipient.name || "수취인 확인"}
+                        <span className="shipment-recipient-name">{recipient.name || "수취인 확인"}</span>
+                        {isPreviewed && <span className="workflow-preview-indicator">표시 중</span>}
                       </span>
                       <span className="shipment-products">
                         {recipient.items.map((item) => (
@@ -306,7 +316,8 @@ export function WorkflowBoard({
           step = nativeGroup?.step ?? 0,
           first = shipmentContext(state, ss[0]),
           selected = selection?.groupId === g.id,
-          open = selected && manuallyClosedGroup !== g.id;
+          hovered = stageHover?.groupId === g.id,
+          open = workflowGroupOpen(g.id, selection?.groupId, stageHover?.groupId, manuallyClosedGroup);
         const label =
           g.needsNotice && step >= 2
             ? "계좌 재안내 완료"
@@ -337,6 +348,7 @@ export function WorkflowBoard({
             className={
               "workflow-group" +
               (selected ? " selected" : "") +
+              (hovered ? " workflow-preview-group" : "") +
               (stageHover?.groupId === g.id && stageHover.step === 4
                 ? " workflow-payment-hover"
                 : "")
@@ -443,10 +455,15 @@ export function WorkflowBoard({
                 <div className="workflow-progress">
                 <button
                   className="primary"
+                  data-ui-role="action-primary"
                   disabled={!ready || busy || remaining > 0 || ss.some((s) => s.transferred)}
                   aria-label={buttonLabel}
                   onMouseEnter={() => {
                     if (hoverDelay.current) clearTimeout(hoverDelay.current);
+                    if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
+                    hoverDelay.current = undefined;
+                    hoverReturnDelay.current = undefined;
+                    if (hoveredGroup.current === g.id) return;
                     hoverDelay.current = setTimeout(() => {
                       hoveredGroup.current = g.id;
                       onStageHover?.({ groupId: g.id, step: Math.min(step + 1, 4) });
@@ -456,8 +473,14 @@ export function WorkflowBoard({
                   onMouseLeave={() => {
                     if (hoverDelay.current) clearTimeout(hoverDelay.current);
                     hoverDelay.current = undefined;
-                    hoveredGroup.current = undefined;
-                    onStageHover?.(undefined);
+                    if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
+                    hoverReturnDelay.current = setTimeout(() => {
+                      if (hoveredGroup.current === g.id) {
+                        hoveredGroup.current = undefined;
+                        onStageHover?.(undefined);
+                      }
+                      hoverReturnDelay.current = undefined;
+                    }, 260);
                   }}
                   onClick={async () => {
                     if (
@@ -534,12 +557,14 @@ export function WorkflowBoard({
                 {ss.map((s) => {
                   const { recipient } = shipmentContext(state, s);
                   const nativeShipment = nativeGroup?.shipments.find((row) => row.shipmentId === s.id);
+                  const isPreviewed = hovered && hoveredShipmentId === s.id;
                   return (
                     <button
                       key={s.id}
                       className={
                         "workflow-shipment" +
                         (s.id === selection?.shipmentId ? " chosen" : "") +
+                        (isPreviewed ? " previewed" : "") +
                         (s.id === leaving ? " query-leaving" : "") +
                         (activeKey &&
                         (activeKey.startsWith(recipient.id + ":") ||
@@ -548,7 +573,7 @@ export function WorkflowBoard({
                           : "")
                       }
                       data-shipment-id={s.id}
-                      aria-label={"배송 건 " + recipient.name}
+                      aria-label={"배송 건 " + recipient.name + (isPreviewed ? " (현재 화면에 표시 중)" : "")}
                       onClick={() =>
                         onSelect({
                           orderId: s.orderId,

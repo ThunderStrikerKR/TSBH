@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { tsImport } from "tsx/esm/api";
 
 const read = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
-const { hoveredWorkflowSelection } =
+const { hoveredWorkflowSelection, workflowGroupOpen } =
   await tsImport("../src/workspace-selection.ts", import.meta.url);
 
 function seeded() {
@@ -41,6 +41,22 @@ test("hover retains the current recipient when hovering its own multi-recipient 
     "deleted groups cannot regain focus from transient hover");
 });
 
+test("hover temporarily expands its entire shipment group and restores manually closed group", () => {
+  // Old group is selected and open, another group's one-touch button is hovered.
+  assert.equal(workflowGroupOpen("g1", "g1", "g2"), false);
+  assert.equal(workflowGroupOpen("g2", "g1", "g2"), true);
+  assert.equal(workflowGroupOpen("g1", "g1", undefined), true);
+  assert.equal(workflowGroupOpen("g2", "g1", undefined), false);
+  // A manually closed selected group must return to collapsed after preview.
+  assert.equal(workflowGroupOpen("g1", "g1", "g1", "g1"), true);
+  assert.equal(workflowGroupOpen("g1", "g1", undefined, "g1"), false);
+  // Multi-recipient previews keep the committed shipment unchanged.
+  const state = seeded();
+  const selected = {orderId:"o3",groupId:"g2",shipmentId:"s3"};
+  assert.deepEqual(hoveredWorkflowSelection(state, "g2", selected), selected);
+  assert.equal(state.workflow.shipments.filter(s=>s.groupId==="g2").length, 2);
+});
+
 test("hover selects each actual source and detail and scrolls into stage content", () => {
   const hub=read("src/HubWorkspace.tsx");
   const board=read("src/WorkflowBoard.tsx");
@@ -50,6 +66,11 @@ test("hover selects each actual source and detail and scrolls into stage content
   assert.match(hub,/visibleReceptionId === draft\.id/);
   assert.match(hub,/const detail = visibleSelection/);
   assert.match(hub,/workflowSelection=\{visibleSelection\}/);
+  assert.match(hub,/hoveredShipmentId=\{hoverSelection\?\.shipmentId\}/);
+  assert.match(board,/open = workflowGroupOpen\(g\.id, selection\?\.groupId, stageHover\?\.groupId, manuallyClosedGroup\)/);
+  assert.match(board,/isPreviewed = hovered && hoveredShipmentId === s\.id/);
+  assert.match(board,/workflow-preview-indicator">표시 중/);
+  assert.match(board,/aria-label=\{"배송 건 " \+ recipient\.name \+ \(isPreviewed \?/);
   assert.match(hub,/stageHover\.step === 1[\s\S]*?\.recipient-review/);
   assert.match(hub,/stageHover\.step === 2[\s\S]*?\.freight-input-area/);
   assert.match(hub,/stageHover\.step === 3[\s\S]*?\.payment-message/);
@@ -132,9 +153,16 @@ test("payment and VAT stay beside each other to the left of right-fixed stage bu
   assert.match(css, /\.workflow-action-line > \.workflow-progress\s*\{[\s\S]*?justify-content: flex-end/);
 });
 
-test("one-touch stage hover waits 120ms but action click remains immediate", () => {
+test("one-touch preview enters at 120ms, restores at 260ms, and action click remains immediate", () => {
   const board = read("src/WorkflowBoard.tsx");
+  const css = read("src/styles/workflow.css");
   assert.match(board, /hoverDelay\.current = setTimeout\(\(\) => \{[\s\S]*?onStageHover\?\.\([\s\S]*?\}, 120\)/);
-  assert.match(board, /onMouseLeave=\{\(\) => \{[\s\S]*?clearTimeout\(hoverDelay\.current\)/);
+  assert.match(board, /onMouseLeave=\{\(\) => \{[\s\S]*?hoverReturnDelay\.current = setTimeout\(\(\) => \{[\s\S]*?onStageHover\?\.\(undefined\);[\s\S]*?\}, 260\)/);
+  assert.match(board, /onMouseEnter=\{\(\) => \{[\s\S]*?clearTimeout\(hoverReturnDelay\.current\)/);
+  assert.match(board, /if \(hoverReturnDelay\.current\) clearTimeout\(hoverReturnDelay\.current\);\s*\}, \[\]\)/);
   assert.match(board, /onClick=\{async \(\) => \{[\s\S]*?nativeApplyWorkflowAction/);
+  assert.match(css, /\.workflow-progress > \.primary:hover:not\(:disabled\)/);
+  assert.match(css, /--ds-role-surface-emphasized-action-hover/);
+  assert.match(css, /\.workflow-shipment\.previewed::before/);
+  assert.match(css, /--ds-role-border-selected/);
 });

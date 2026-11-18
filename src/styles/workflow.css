@@ -168,6 +168,45 @@
   max-width: 140px;
   white-space: nowrap;
 }
+/* The stage action gets the same blue hover cue as other approved actions;
+   blue here indicates pointer hover, not committed workflow progress. */
+.app-v03 .hub-slot-3 .workflow-progress > .primary:hover:not(:disabled) {
+  background: var(--ds-role-surface-emphasized-action-hover);
+  border-color: var(--ds-role-surface-emphasized-action-hover);
+  color: var(--ds-color-primaryInverse);
+}
+/* Hover previews one whole group at a time and restores its prior
+   selected/manually-collapsed state after the 260ms leave grace period. */
+.app-v03 .hub-slot-3 .workflow-group.workflow-preview-group {
+  border-color: var(--ds-role-border-selected);
+}
+.hub-slot-3 .workflow-shipment.previewed::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--ds-role-border-selected) 16%, transparent);
+  box-shadow: inset 3px 0 0 var(--ds-role-border-selected);
+  z-index: 0;
+  pointer-events: none;
+  animation: none;
+}
+.hub-slot-3 .workflow-shipment .shipment-recipient {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--ds-space-4);
+}
+.hub-slot-3 .workflow-shipment .shipment-recipient-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hub-slot-3 .workflow-shipment .workflow-preview-indicator {
+  flex: 0 0 auto;
+  font-size: calc(var(--ds-type-metadata-size) * var(--ui-scale, 1));
+  color: var(--ds-role-text-selected);
+  font-weight: 650;
+}
 .hub-slot-3 .flow-draft-status {
   flex: 0 0 auto;
   margin-left: 6px;
