@@ -297,16 +297,6 @@
       "reason": "우도·분점도 일부만 대상, 지곡면 전체 자동 체크 금지"
     },
     {
-      "path": "인천광역시 옹진군",
-      "decision": "auto",
-      "sources": [
-        "sellerpick",
-        "cheonyu",
-        "epost"
-      ],
-      "reason": "옹진군 도서지역, 영흥면 제외"
-    },
-    {
       "path": "옹진군",
       "decision": "auto",
       "sources": [
