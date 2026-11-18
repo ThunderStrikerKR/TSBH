@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { Origin, Price, State } from "./types";
+import type { NativeShipmentPreview } from "./orders/useNativeWorkflowBoard";
 import { shipmentContext } from "./workflow";
 import type { WorkflowShipment } from "./workflow-types";
 /** Keep freight typing local; native totals run on blur, Enter or unmount. */
 function FreightAmountInput({ label, value, disabled, onCommit }: {
   label: string; value: Price | undefined; disabled: boolean;
-  onCommit: (value: Price) => void;
+  onCommit: (value: Price) => boolean | void;
 }) {
   const format = (amount: Price | undefined) =>
     amount === null || amount === undefined ? "" : amount.toLocaleString("ko-KR");
@@ -21,8 +22,9 @@ function FreightAmountInput({ label, value, disabled, onCommit }: {
   const flush = () => {
     const amount = pending.current;
     pending.current = undefined;
-    if (amount !== undefined && amount !== currentValue.current)
-      latestCommit.current(amount);
+    if (amount !== undefined && amount !== currentValue.current &&
+        latestCommit.current(amount) === false)
+      setText(format(currentValue.current));
   };
   useEffect(() => () => {
     if (pending.current !== undefined && pending.current !== currentValue.current)
@@ -75,8 +77,11 @@ type FreightProps = {
   displayCharges: Partial<Record<Origin, Price>>;
   freightEditingBlocked: boolean;
   activeKey?: string;
-  onFreight: (origin: Origin, value: Price) => void;
+  onFreight: (origin: Origin, value: Price) => boolean | void;
   onCode: (v: "010" | "020") => void;
+  remoteDelivery?: NativeShipmentPreview["remoteDelivery"];
+  remoteChecked: boolean;
+  onRemoteChecked: (checked: boolean) => void;
 };
 export function WorkflowFreightRows({
   state,
@@ -86,6 +91,9 @@ export function WorkflowFreightRows({
   freightEditingBlocked,
   onFreight,
   onCode,
+  remoteDelivery,
+  remoteChecked,
+  onRemoteChecked,
   activeKey,
 }: FreightProps) {
   const { recipient } = shipmentContext(state, shipment),
@@ -138,6 +146,16 @@ export function WorkflowFreightRows({
                     <span aria-hidden="true">)</span>
                   </span>
                 </div>
+                {index === 0 && (
+                  <label className="freight-remote-check">
+                    <input type="checkbox" aria-label="도서/산간"
+                      disabled={disabled}
+                      checked={remoteChecked}
+                      onChange={(e) => onRemoteChecked(e.currentTarget.checked)}
+                    />
+                    <span>도서/산간</span>
+                  </label>
+                )}
                 <button
                   className="freight-inquiry"
                   aria-hidden={origin !== "FACTORY"}
@@ -148,6 +166,14 @@ export function WorkflowFreightRows({
                   공장에 운임 문의
                 </button>
               </div>
+              {index === 0 && remoteDelivery?.status === "auto" &&
+                <div className="freight-remote-info" role="status">
+                  도서·산간 지역으로 판단했습니다. 확인 후 체크 여부를 결정하세요.
+                </div>}
+              {index === 0 && remoteDelivery?.status === "review" &&
+                <div className="freight-remote-info" role="status">
+                  도서·산간 지역일 수 있습니다. 주소를 확인 후 체크 여부를 결정하세요.
+                </div>}
             </td>
           </tr>
         );
