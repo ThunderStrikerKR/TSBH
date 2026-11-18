@@ -106,7 +106,7 @@ test("title selects one group and hover temporarily expands its preview without 
   assert.match(board, /open = workflowGroupOpen\(g\.id, selection\?\.groupId, stageHover\?\.groupId, manuallyClosedGroup\)/);
   assert.match(board, /useEffect\(\(\) => setManuallyClosedGroup\(undefined\), \[selection\?\.groupId\]\)/);
   assert.match(board, /className="flow-heading-toggle"/);
-  assert.match(board, /setManuallyClosedGroup\(open \? g\.id : undefined\)/);
+  assert.match(board, /setManuallyClosedGroup\(manuallyClosedGroup === g\.id \? undefined : g\.id\)/);
   assert.match(board, /onSelect\(\{\s*orderId: ss\[0\]\.orderId,\s*groupId: g\.id/);
   assert.match(board, /selectedPendingOrderId === receipt\.id/);
   assert.match(css, /\.flow-heading-toggle \{[\s\S]*?flex: 1 1 auto/);

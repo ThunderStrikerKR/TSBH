@@ -362,7 +362,7 @@ export function WorkflowBoard({
                 aria-expanded={open}
                 onClick={() => {
                   if (selected) {
-                    setManuallyClosedGroup(open ? g.id : undefined);
+                    setManuallyClosedGroup(manuallyClosedGroup === g.id ? undefined : g.id);
                   } else {
                     setManuallyClosedGroup(undefined);
                     onSelect({
