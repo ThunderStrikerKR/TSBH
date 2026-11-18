@@ -119,11 +119,12 @@ const rows=targets.map(file=>{
   const serializerNames={
     "factory-export.ts":"createFactoryWorkbook",
     "store-export.ts":"createStoreWorkbook",
+    "product-price-xlsx.ts":"readPriceWorkbookRows",
   };
   const serializerSource=exists && serializerNames[file] ? readFileSync(absolute,"utf8") : "";
   const serializerOnly=!!serializerNames[file] && reachable.has(absolute) &&
     serializerSource.includes("export async function "+serializerNames[file]+"(") &&
-    !/\b(?:previewFactoryExport|previewStoreExport|recordFactoryExport|recordStoreExport|exportRow|storeRow)\s*\(/.test(serializerSource) &&
+    !/\b(?:previewFactoryExport|previewStoreExport|recordFactoryExport|recordStoreExport|exportRow|storeRow|previewPriceWorkbook|rowMatches)\s*\(/.test(serializerSource) &&
     !/\.status\s*=\s*"EXPORTED"/.test(serializerSource);
   return {
     module:"src/"+file,

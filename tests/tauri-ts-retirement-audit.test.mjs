@@ -15,8 +15,8 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.equal(output.entry,"src/main.tsx");
   assert.ok(output.inspectedSourceFiles>100);
   assert.ok(output.trackedLegacyModules>=25);
-  assert.ok(output.inventory.some(row=>row.module==="src/product-price-xlsx.ts" && row.reachableFromApp && row.classification==="LIVE_TS_BUSINESS_DEPENDENCY"),
-    "Price workbook preview still uses TS business logic; must remain an open Rust migration candidate until its real UI path is replaced");
+  assert.ok(output.inventory.some(row=>row.module==="src/product-price-xlsx.ts" && row.reachableFromApp && row.classification==="LIVE_XLSX_SERIALIZER_ONLY"),
+    "Price workbook preview must remain Rust-owned after XLSX parsing");
   assert.ok(Number.isInteger(output.reachableLegacyModules));
   assert.ok(output.reachableLegacyModules>=0);
   assert.equal(output.retiredToTestOracle,18,
@@ -56,12 +56,12 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.ok(output.inventory.some(row=>
     row.module==="src/factory-export.ts"&&row.exists&&row.reachableFromApp),
     "ExcelJS serializer remains a legitimate TS module");
-  for(const name of ["factory-export.ts","store-export.ts"]){
+  for(const name of ["factory-export.ts","store-export.ts","product-price-xlsx.ts"]){
     const row=output.inventory.find(row=>row.module==="src/"+name);
     assert.equal(row?.classification,"LIVE_XLSX_SERIALIZER_ONLY",
       name+" must remain a serializer, not a TypeScript business rule engine");
   }
-  assert.equal(output.liveSerializersOnly,2);
+  assert.equal(output.liveSerializersOnly,3);
 });
 test("native reception and issue validation never depend on legacy TS from app",()=>{
   const run=spawnSync(process.execPath,[script,"--guard-native-recognition"],{
