@@ -7,10 +7,14 @@
   display: block;
 }
 .hub-slot-3 .workflow-group {
+  box-sizing: border-box;
   flex-shrink: 0;
   margin: 0 0 8px;
   padding: 8px 9px;
   border: 1px solid #535353;
+  /* Reserve the selected 2px stripe even while the group is folded.
+     Changing only its color avoids moving the card's inner content. */
+  border-left-width: 2px;
   border-radius: 7px;
   background: #202020;
 }
@@ -132,7 +136,13 @@
   outline-offset: -2px;
 }
 .hub-slot-3 .workflow-group .flow-toggle-icon {
-  flex: 0 0 auto;
+  /* ▸ and ▾ have different glyph advances: a fixed slot prevents the
+     title/status controls from moving when the accordion toggles. */
+  display: inline-flex;
+  flex: 0 0 12px;
+  width: 12px;
+  align-items: center;
+  justify-content: center;
   margin-right: 6px;
 }
 .hub-slot-3 .workflow-group .flow-group-name {
@@ -180,8 +190,15 @@
    no additional box or viewport calculation may shift its dimensions. */
 .workflow-card-anchor {
   position: relative;
+  display: flow-root;
   min-width: 0;
+  margin-bottom: 8px;
   isolation: isolate;
+}
+/* The original card supplies the anchor's box; its 8px bottom gap belongs
+   to the anchor, not to a child margin that may collapse or shift. */
+.hub-slot-3 .workflow-card-anchor > .workflow-group {
+  margin: 0;
 }
 .workflow-card-anchor.previewing {
   z-index: 400;
@@ -198,6 +215,7 @@
   overflow: visible;
 }
 .workflow-card-overlay .workflow-group {
+  box-sizing: border-box;
   width: 100%;
   margin: 0;
 }
