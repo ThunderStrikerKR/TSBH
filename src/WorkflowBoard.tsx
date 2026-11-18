@@ -692,6 +692,9 @@ export function WorkflowBoard({
                         width: previewLayer.width, height: previewLayer.height,
                         maxHeight: previewLayer.maxHeight,
                         backgroundColor: previewLayer.backgroundColor,
+                        // Expanded rows do not have their own scrollbar; a
+                        // duplicate scrollbar would change column widths.
+                        overflowY: previewLayer.height === undefined ? undefined : "hidden",
                         transform: previewLayer.above ? "translateY(-100%)" : undefined,
                       }}
                       onMouseEnter={keepStagePreview}
