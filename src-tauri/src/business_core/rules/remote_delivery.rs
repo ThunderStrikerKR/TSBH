@@ -21,10 +21,27 @@ fn tokens(s: &str) -> Vec<String> {
 fn locality_matches(address: &[String], path: &str) -> bool {
     let parts: Vec<_> = path.split_whitespace().collect();
     if parts.is_empty() || address.len() < parts.len() { return false; }
-    let limit = address.len().saturating_sub(parts.len()).min(2);
-    (0..=limit).any(|start|
-        parts.iter().enumerate().all(|(i, part)| address[start + i] == *part)
-    )
+    // A postcode may appear before the administrative address. Otherwise
+    // candidate localities may start only at the beginning of the address or
+    // after an actual province, never after an unrelated city/building.
+    let offset = usize::from(address.first().is_some_and(|s|
+        s.chars().all(|c| c.is_ascii_digit()) && s.len() == 5
+        || s.starts_with('[') && s.ends_with(']')
+    ));
+    let is_province = |token: &str| matches!(token,
+        "서울특별시" | "부산광역시" | "대구광역시" | "인천광역시" |
+        "광주광역시" | "대전광역시" | "울산광역시" | "세종특별자치시" |
+        "경기도" | "강원도" | "강원특별자치도" | "충청북도" |
+        "충청남도" | "전라북도" | "전북특별자치도" | "전라남도" |
+        "경상북도" | "경상남도" | "제주도" | "제주특별자치도" |
+        "전남광주통합특별시" | "서울" | "부산" | "대구" | "인천" |
+        "광주" | "대전" | "울산" | "경기" | "강원" | "충북" |
+        "충남" | "전북" | "전남" | "경북" | "경남"
+    );
+    let matched = |start: usize| address.len() >= start + parts.len() &&
+        parts.iter().enumerate().all(|(i, part)| address[start + i] == *part);
+    matched(offset) || address.get(offset).is_some_and(|s| is_province(s)) &&
+        matched(offset + 1)
 }
 
 pub(super) fn detect(payload: &Value) -> Result<Value, String> {
@@ -112,5 +129,6 @@ mod tests {
         assert_eq!(check("경기도 군포시 옥도면타워 24")["status"], "unknown");
         assert_eq!(check("서울특별시 서초구 제주특별자치도빌딩 7")["status"], "unknown");
         assert_eq!(check("부산광역시 강서구 대항동")["status"], "review");
+        assert_eq!(check("서울특별시 서초구 제주특별자치도")["status"], "unknown");
     }
 }
