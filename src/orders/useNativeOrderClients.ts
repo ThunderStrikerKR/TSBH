@@ -47,8 +47,8 @@ export function useNativeOrderClients(order: Order, state: State) {
   const ready = resolved?.key === key;
   return {
     ready,
-    client: ready ? resolved.value.client ?? undefined : undefined,
-    liveClient: ready ? resolved.value.liveClient ?? undefined : undefined,
+    client: ready ? resolved!.value.client ?? undefined : undefined,
+    liveClient: ready ? resolved!.value.liveClient ?? undefined : undefined,
     error: failure?.key === key ? failure.reason : "",
   };
 }
