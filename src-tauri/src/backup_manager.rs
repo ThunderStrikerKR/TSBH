@@ -173,6 +173,9 @@ fn restore_selected(conn: &mut Connection, base: &Path, filename: &str)
         // Backups made before the split still contain legacy JSON. Convert
         // them transactionally after the entire backup is restored.
         relational_store::migrate(conn)?;
+        // Older backups predate the working-reception table. A restored DB
+        // must still accept durable, pre-confirmation orders immediately.
+        working_receptions::initialize(conn)?;
         let mut restored = get_snapshot(conn)?;
         restored["revision"] = json!(next_revision);
         relational_store::strip_core(&mut restored);
