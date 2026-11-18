@@ -12,6 +12,18 @@ export type NativeShipmentPreview = {
   paid: number;
   displayCharges: Partial<Record<Origin, Price>>;
   freightEditingBlocked: boolean;
+  /** Compiled Rust's locality assessment; absent for ordinary addresses. */
+  remoteDelivery?: {
+    status: "auto" | "review" | "normal" | "unknown";
+    suggestedChecked: boolean;
+    requiresReview: boolean;
+    matchedPath: string | null;
+    reason: string | null;
+    checked: boolean;
+    manual: boolean;
+    sources: string[];
+    dataVersion: string;
+  };
   totals: { subtotal: Price; shipping: Price; vat: Price; total: Price };
   freightCode: string;
   vatIncluded: boolean;
