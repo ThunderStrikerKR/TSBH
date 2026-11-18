@@ -1,12 +1,5 @@
 import type ExcelJS from "exceljs";
 import type { Product, State } from "./types";
-import {
-  applyProductSyncWorkbook,
-  previewProductSyncRows,
-  type ProductSyncPreview,
-  type ProductSyncRow,
-  type WorkbookSource,
-} from "./product-sync-workbook";
 
 /** One independent product and exactly one protected price record per worksheet row.
  * Existing SQLite records retain their IDs. The legacy V2 workbook engine is
@@ -111,68 +104,6 @@ export async function exportUnifiedProductWorkbook(state: State): Promise<number
   return Array.from(new Uint8Array(await book.xlsx.writeBuffer() as ArrayBuffer));
 }
 
-/** Convert one human-facing Excel row to the legacy validated state-patch
- * engine's two internal records. These are not multiple purchasable options.
- */
-const toValidatedRows = (row: number, values: string[]) => {
-  // V1 import is explicit; V2 omits the obsolete model-code column.
-  const c = values.length === 20
-    ? [...values.slice(0, 8), "", ...values.slice(8)]
-    : values;
-  return {
-  product: {
-    row, cells: [c[0], c[1], c[2], c[3], c[8], c[9], c[10],
-      c[11], c[12], c[13], c[14], c[4], c[15], c[16]],
-  },
-  price: {
-    row, cells: [c[0], c[1], c[17], c[4], c[18], c[5], c[6],
-      c[7], c[19], c[20]],
-  },
-  };
-};
-
-function consolidateRows(items: ProductSyncRow[]): ProductSyncRow[] {
-  const rows = new Map<number, ProductSyncRow>();
-  const priority = { UNCHANGED: 0, UPDATE: 1, ADD: 2, HOLD: 3, ERROR: 4 };
-  for (const item of items) {
-    const prior = rows.get(item.row);
-    if (!prior) {
-      rows.set(item.row, { ...item, sheet: "상품 목록",
-        changes: [...item.changes], errors: [...item.errors] });
-      continue;
-    }
-    if (priority[item.status] > priority[prior.status]) prior.status = item.status;
-    if (item.name && item.sheet === "상품 목록") prior.name = item.name;
-    prior.changes.push(...item.changes);
-    prior.errors.push(...item.errors);
-  }
-  return [...rows.values()].sort((a, b) => a.row - b.row);
-}
-
-export function previewUnifiedProductRows(
-  state: State,
-  input: { revision: number; rows: { row: number; cells: string[] }[] },
-): ProductSyncPreview {
-  const products: WorkbookSource["products"] = [];
-  const options: WorkbookSource["options"] = [];
-  for (const { row, cells } of input.rows) {
-    if (!cells.some(Boolean)) continue;
-    const converted = toValidatedRows(row, cells);
-    products.push(converted.product);
-    options.push(converted.price);
-  }
-  const preview = previewProductSyncRows(state, {
-    revision: input.revision, products, options,
-  });
-  const rows = consolidateRows(preview.rows);
-  return {
-    ...preview,
-    rows,
-    createdProducts: rows.filter((r) => r.status === "ADD").length,
-    updatedProducts: rows.filter((r) => r.status === "UPDATE").length,
-  };
-}
-
 /** ExcelJS file-format boundary. The source rows can feed the TS oracle or
  * the native Rust preview without duplicating workbook parsing.
  */
@@ -215,10 +146,3 @@ export async function readUnifiedProductWorkbookRows(
   return { revision, rows };
 }
 
-export async function previewUnifiedProductWorkbook(
-  state: State, file: File,
-): Promise<ProductSyncPreview> {
-  return previewUnifiedProductRows(state, await readUnifiedProductWorkbookRows(file));
-}
-
-export const applyUnifiedProductWorkbook = applyProductSyncWorkbook;

@@ -11,7 +11,7 @@ import ExcelJS from "exceljs";
 const require = createRequire(import.meta.url);
 const read = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
 const exports = {};
-const compiled = ts.transpileModule(read("src/product-sync-workbook.ts"), {
+const compiled = ts.transpileModule(read("tests/rust-migration/oracles/product-sync-workbook.ts"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText;
 const execute = vm.runInThisContext(

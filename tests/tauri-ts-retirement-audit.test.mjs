@@ -96,3 +96,15 @@ test("strict TS retirement audit follows the actual live dependency count",()=>{
     assert.doesNotMatch(run.stderr,/BLOCKED:/);
   }
 });
+
+test("product and unified Excel source only transport/serialize Rust-owned business data",()=>{
+  const sync=readFileSync(new URL("../src/product-sync-workbook.ts",import.meta.url),"utf8");
+  const unified=readFileSync(new URL("../src/product-unified-workbook.ts",import.meta.url),"utf8");
+  for(const fn of ["previewProductSyncRows","applyProductSyncWorkbook","previewProductSyncWorkbook"])
+    assert.doesNotMatch(sync,new RegExp("\\b"+fn+"\\s*\\("));
+  for(const fn of ["previewUnifiedProductRows","previewUnifiedProductWorkbook","applyUnifiedProductWorkbook"])
+    assert.doesNotMatch(unified,new RegExp("\\b"+fn+"\\s*\\("));
+  assert.match(unified,/export async function exportUnifiedProductWorkbook/);
+  assert.match(unified,/export async function readUnifiedProductWorkbookRows/);
+  assert.match(readFileSync(new URL("../tests/rust-migration/oracles/product-unified-workbook.ts",import.meta.url),"utf8"),/export function previewUnifiedProductRows/);
+});

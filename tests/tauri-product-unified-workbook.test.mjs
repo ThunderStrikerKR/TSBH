@@ -29,11 +29,21 @@ const load = (path, imports) => {
     (name) => imports[name] ?? require(name), webcrypto, structuredClone);
   return target;
 };
-const legacy = load("src/product-sync-workbook.ts", {
+const legacy = load("tests/rust-migration/oracles/product-sync-workbook.ts", {
   "./domain": domain,
   "./product-models": { registeredProducts: (ps) => ps.filter((p) => !p.deletedAt && !p.supersededBy && p.active !== false) },
 });
-const unified = load("src/product-unified-workbook.ts", { "./product-sync-workbook": legacy });
+const previous = load("tests/rust-migration/oracles/product-unified-workbook.ts", {
+  "./product-sync-workbook": legacy,
+});
+const current = load("src/product-unified-workbook.ts", {});
+// Use real output/read serialization with the historical TS preview and apply
+// only as a frozen comparison oracle. Production calls native Rust for those.
+const unified = {
+  ...previous,
+  exportUnifiedProductWorkbook: current.exportUnifiedProductWorkbook,
+  readUnifiedProductWorkbookRows: current.readUnifiedProductWorkbookRows,
+};
 
 async function workbook(state) {
   const out = new ExcelJS.Workbook();
