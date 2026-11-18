@@ -752,6 +752,8 @@ export function HubWorkspace(props: Props) {
               order={messageOrder}
               gid={messageReady ? messageGroup : undefined}
               projectionReady={messageProjectionSettled}
+              projectionError={nativeBase.error ||
+                (messageOrder.id === draft.id ? nativePreview.error : nativeMessage.error)}
               noMessageExpected={noMessageExpected}
               sharedFadePhase={sharedFadePhase}
               fadeKey={fadeKey}
