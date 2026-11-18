@@ -62,6 +62,7 @@ export type OrderDeskProps = {
   onNotice: NoticeSink;
   onManageProducts: () => void;
   onManual?: () => void;
+  onNew?: () => void;
   onSettings?: () => void;
 };
 export function useOrderDesk({
