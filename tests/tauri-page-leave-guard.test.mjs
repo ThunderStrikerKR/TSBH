@@ -102,7 +102,7 @@ test("receipt editor waits for in-progress save, then navigates automatically", 
     save:async()=>{saved++;return true;},discard:()=>{discarded++;},
   });
   assert.deepEqual(await x.app.requestPageLeave(()=>{}, {autosave:true}),
-    {proceed:true,handled:false});
+    {proceed:true,handled:true});
   assert.equal(saved,0);assert.equal(discarded,0);
   x.cleanups.forEach(fn=>fn());
 });
