@@ -4,7 +4,7 @@ import { test } from "node:test";
 
 const source = (name) => readFileSync(new URL("../" + name, import.meta.url), "utf8");
 
-test("hover shows the SAME complete expanded card over its original card", () => {
+test("hover renders the actual expanded card markup at the original card coordinates", () => {
   const board = source("src/WorkflowBoard.tsx");
   const css = source("src/styles/workflow.css");
   assert.equal((board.match(/className="workflow-shipment-list"/g) ?? []).length, 2);
@@ -13,33 +13,27 @@ test("hover shows the SAME complete expanded card over its original card", () =>
   assert.match(board, /\{renderGroupCard\(false\)\}/);
   assert.match(board, /\{renderGroupCard\(true\)\}/);
   assert.match(board, /\{\(open \|\| isPreview\) && renderShipmentList\(isPreview\)\}/);
-  assert.match(board, /className="workflow-preview-stage hub-slot-3"/);
-  assert.match(board, /document\.querySelector\("\.app-v03"\) \?\? document\.body/);
+  assert.match(board, /className="workflow-card-overlay"/);
+  assert.match(board, /className=\{"workflow-card-anchor"/);
+  assert.doesNotMatch(board, /createPortal/);
+  assert.doesNotMatch(board, /positionPreview/);
   assert.doesNotMatch(board, /workflow-preview-layer/);
-  assert.doesNotMatch(board, /createPortal\(\s*<div[^>]*>[\s\S]*?renderShipmentList\(true\)/);
-  assert.match(css, /\.workflow-preview-stage \{/);
-  assert.match(css, /\.workflow-preview-stage \.workflow-group \{/);
+  assert.match(css, /\.workflow-card-anchor\s*\{\s*position:\s*relative;/);
+  assert.match(css, /\.workflow-card-overlay\s*\{\s*position:\s*absolute;\s*inset:\s*0 0 auto 0;/);
+  assert.match(css, /\.workflow-card-overlay \.workflow-group\s*\{[^}]*width:\s*100%;[^}]*margin:\s*0;/s);
 });
 
-test("preview aligns to entire original card and reveals all its content", () => {
+test("preview does not introduce its own selection colors, row labels or a second layout", () => {
   const board = source("src/WorkflowBoard.tsx");
   const css = source("src/styles/workflow.css");
-  assert.match(board, /\.closest<HTMLElement>\("\.workflow-group:not\(\.workflow-preview-clone\)"\)/);
-  assert.match(board, /Math\.min\(rect\.width, window\.innerWidth - margin \* 2\)/);
-  assert.match(board, /\.querySelector<HTMLElement>\("\.workflow-preview-clone"\)\?\.scrollHeight/);
-  assert.match(board, /top = Math\.max\(margin, Math\.min\(rect\.top,/);
-  assert.match(board, /maxHeight: previewLayer\.maxHeight/);
-  assert.match(board, /onMouseEnter=\{keepStagePreview\}/);
-  assert.match(board, /onMouseLeave=\{scheduleStagePreviewExit\}/);
-  assert.doesNotMatch(board, /height:\s*previewLayer\.height/);
-  assert.doesNotMatch(board, /overflowY:\s*"hidden"/);
-  assert.match(board, /resizeObserver\?\.observe\(list\)/);
-  const layer = css.slice(css.indexOf(".workflow-preview-stage {"),
-    css.indexOf(".workflow-preview-stage .workflow-group {"));
-  assert.match(layer, /position:\s*fixed;/);
-  assert.match(layer, /padding:\s*0;/);
-  assert.match(layer, /border:\s*0;/);
-  assert.match(layer, /overflow-y:\s*auto;/);
+  assert.match(board, /const visuallyChosen = isPreview[\s\S]*?ss\[0\]\.id === s\.id/);
+  assert.match(board, /const isPreviewed = !isPreview && hovered/);
+  assert.match(board, /\(selected \|\| isPreview \? " selected" : ""\)/);
+  assert.match(board, /\(hovered && !isPreview \? " workflow-preview-group" : ""\)/);
+  assert.match(css, /\.workflow-card-anchor\.previewing\s*\{\s*z-index:\s*400;/);
+  assert.match(css, /\.workflow-card-overlay \.workflow-progress > \.primary:hover:not\(:disabled\)/);
+  assert.doesNotMatch(board, /maxHeight: previewLayer/);
+  assert.doesNotMatch(board, /transform:\s*previewLayer/);
 });
 
 test("clicking a shipment preview selects it and expands its order card", () => {
