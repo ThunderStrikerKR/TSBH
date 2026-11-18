@@ -34,6 +34,26 @@ export async function nativeReceptionClientCandidates(
     state, windows, raw, activeChatHandle: activeChatHandle ?? "",
   });
 }
+/** Manual chooser candidates are computed in Rust; React only renders and
+ * applies explicitly chosen IDs. The historic two-character nickname search
+ * is preserved without a TypeScript fallback on IPC errors. */
+export type NativeKakaoManualCandidates = {
+  chats: {
+    handle: string;
+    duplicate: boolean;
+    rememberedClientId: string | null;
+    candidates: { clientId: string }[];
+  }[];
+  search: { clientId: string }[];
+};
+export function nativeKakaoManualCandidates(
+  state: State, windows: DockWindow[], search: string,
+): Promise<NativeKakaoManualCandidates> {
+  return businessCoreCall<NativeKakaoManualCandidates>(
+    "catalog_clients", "kakao_manual_candidates", { state, windows, search },
+  );
+}
+
 export async function nativeRememberTitle(
   state: State, windows: DockWindow[], handle: string,
   clientId: string, actor: string,
