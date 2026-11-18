@@ -75,3 +75,43 @@ test("redundant group heading and source button are gone, cards remain scrollabl
   assert.match(css,/\.hub-slot-3 \.workflow-board\s*\{[\s\S]*?overflow: auto;/);
   assert.doesNotMatch(css,/\.workflow-board-heading/);
 });
+
+test("pending reception card keeps standard controls without obsolete draft badge", () => {
+  const board = read("src/WorkflowBoard.tsx");
+  const pending = board.split('if (entry.kind === "pending")')[1]?.split("const g = entry.group;")[0];
+  assert.ok(pending, "pending reception branch must exist");
+  assert.match(pending, /<SignalLights step=\{0\} \/>/);
+  assert.match(pending, /묶음 관리/);
+  assert.match(pending, /onDeletePending\?\.\(receipt\.id\)/);
+  assert.match(pending, /className="workflow-action-line"/);
+  assert.match(pending, /거래처 확인/);
+  assert.match(pending, /className="workflow-undo"/);
+  assert.doesNotMatch(pending, />미확정<\/span>/);
+  assert.match(board, /pendingManage && pendingReceptions/);
+  const hub = read("src/HubWorkspace.tsx");
+  assert.match(hub, /onDeletePending=\{deletePendingLive\}/);
+});
+
+test("payment and VAT stay beside each other to the left of right-fixed stage buttons", () => {
+  const board = read("src/WorkflowBoard.tsx");
+  const css = read("src/styles/workflow.css");
+  const group = board.split("const g = entry.group;")[1];
+  const action = group.split('<div className="workflow-action-line">')[1]
+    ?.split("{(g.needsNotice")[0];
+  assert.ok(action);
+  assert.ok(action.indexOf('className="flow-fixed-summary"') <
+    action.indexOf('className="workflow-progress"'),
+    "financial summary must come before right-hand actions");
+  assert.match(action, /className="flow-summary-financial"/);
+  assert.match(action, /nativeGroup && vatIncludedCount > 0/);
+  assert.doesNotMatch(action, /: "부가세 별도"\}/);
+  assert.match(css, /\.flow-summary-financial\s*\{[\s\S]*?margin-left: auto;/);
+  assert.match(css, /\.workflow-action-line > \.workflow-progress\s*\{[\s\S]*?justify-content: flex-end/);
+});
+
+test("one-touch stage hover waits 120ms but action click remains immediate", () => {
+  const board = read("src/WorkflowBoard.tsx");
+  assert.match(board, /hoverDelay\.current = setTimeout\(\(\) => \{[\s\S]*?onStageHover\?\.\([\s\S]*?\}, 120\)/);
+  assert.match(board, /onMouseLeave=\{\(\) => \{[\s\S]*?clearTimeout\(hoverDelay\.current\)/);
+  assert.match(board, /onClick=\{async \(\) => \{[\s\S]*?nativeApplyWorkflowAction/);
+});
