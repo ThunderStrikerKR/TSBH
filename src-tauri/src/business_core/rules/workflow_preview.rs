@@ -97,6 +97,7 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
             let freight_code = workflow::shipment_freight_code(order, recipient);
             let excluded = workflow::party(state, order)
                 .is_some_and(|client| flag(client, "shippingFeeExcluded"));
+            let remote = super::remote_delivery::resolve_recipient(recipient)?;
             let mut display_charges = serde_json::Map::new();
             for item in rows(field(recipient, "items")) {
                 let origin = str_field(item, "origin");
@@ -104,7 +105,11 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
                 let value = if freight_code == "020" || excluded {
                     json!(0)
                 } else {
-                    field(field(ship, "charges"), origin).clone()
+                    let base=field(field(ship,"charges"),origin);
+                    if base.is_null() {Value::Null} else {
+                        super::remote_delivery::multiply(safe(base),recipient)
+                            .map(|amount|json!(amount)).unwrap_or(Value::Null)
+                    }
                 };
                 display_charges.insert(origin.to_string(), value);
             }
@@ -125,7 +130,7 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
                         .ok_or("입금액 합계를 확인하세요.")?;
                 }
             }
-            shipment_projections.push(json!({
+            let mut shipment_projection=json!({
                 "shipmentId": field(ship, "id"),
                 "paid": paid,
                 "totals": amount,
@@ -133,7 +138,14 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
                 "displayCharges": display_charges,
                 "freightEditingBlocked": freight_code == "020" || excluded,
                 "vatIncluded": vat
-            }));
+            });
+            // Omit the optional locality projection for ordinary orders to
+            // avoid changing unrelated legacy snapshot contracts.
+            if matches!(str_field(&remote,"status"),"auto"|"review") ||
+                flag(&remote,"manual") {
+                shipment_projection["remoteDelivery"]=remote;
+            }
+            shipment_projections.push(shipment_projection);
             totals.push(amount);
         }
         let step = ships.iter()
