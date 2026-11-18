@@ -524,11 +524,36 @@
 .hub-brand span {
   display: inline;
 }
+/* The brand mark is an identity element, not a global design-system button.
+   Keep the letterform and wordmark comparable in perceived visual height. */
 .app-header .hub-brand img {
-  width: 38px;
-  height: 30px;
+  width: 30px;
+  height: 26px;
+  flex: 0 0 30px;
   object-fit: contain;
   background: transparent;
+}
+.app-header .hub-brand .hub-brand-title {
+  display: inline;
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: calc(24px * var(--ui-scale, 1));
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+}
+.app-header .hub-brand .hub-brand-env {
+  display: inline;
+  margin: 0 0 0 4px;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: calc(12px * var(--ui-scale, 1));
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .app-v03 .overlay {
