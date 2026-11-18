@@ -29,13 +29,13 @@ test("no charge is pre-doubled or saved as a permanently multiplied tariff", () 
 test("all native invoice paths and actual-delivery verification use checked multiplier", () => {
   const workflow = source("src-tauri/src/business_core/rules/workflow.rs");
   const preview = source("src-tauri/src/business_core/rules/workflow_preview.rs");
-  assert.match(workflow, /pub\(super\) fn fee_total[\s\S]*?remote_delivery::multiply\(base,row\)/);
-  assert.match(workflow, /"complete_delivery" => \{[\s\S]*?remote_delivery::multiply\(/);
+  assert.match(workflow, /pub\(super\) fn fee_total[\s\S]*?remote_delivery::multiply_shipment\(base,row,ship,order\)/);
+  assert.match(workflow, /"complete_delivery" => \{[\s\S]*?remote_delivery::multiply_shipment\(/);
   assert.match(workflow, /let active=!remote_selected &&/);
   assert.match(workflow, /if !remote_selected \{\s*for previous in state\["shipping"\]\["combinations"\]/);
   assert.match(workflow, /fn invoice_uses_one_checked_multiplier_on_summed_undoubled_base_charges\(\)/);
-  assert.match(preview, /let remote = super::remote_delivery::resolve_recipient\(recipient\)\?/);
-  assert.match(preview, /super::remote_delivery::multiply\(safe\(base\),recipient\)/);
+  assert.match(preview, /let remote = super::remote_delivery::resolve_shipment\(recipient,ship,order\)\?/);
+  assert.match(preview, /super::remote_delivery::multiply_shipment\(safe\(base\),recipient,ship,order\)/);
   assert.match(preview, /shipment_projection\["remoteDelivery"\]=remote;/);
 });
 
@@ -81,4 +81,7 @@ test("already billed and dispatched orders do not retroactively acquire a charge
   assert.match(reconcile, /field\(ship,"step"\)\.as_i64\(\)\.unwrap_or\(0\)>=2/);
   assert.match(reconcile, /"address":current_address,"checked":false,\s*"manual":false,"legacy":true/);
   assert.match(reconcile, /"address":current_address,"checked":true,"manual":false/);
+  const detector = source("src-tauri/src/business_core/rules/remote_delivery.rs");
+  assert.match(detector, /fn unreconciled_legacy_paid_shipments_keep_their_original_amounts\(\)/);
+  assert.match(detector, /pub\(super\) fn multiply_shipment\(/);
 });
