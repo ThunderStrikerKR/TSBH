@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import { projectHistoricalRemoteDelivery } from "../../legacy-remote-delivery-parity.mjs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolvePrice, totals, parseOrder, itemFromProduct } from "../../../../src/domain.ts";
+import { resolvePrice, totals, itemFromProduct } from "../../../../src/domain.ts";
 import {
   recommendShipping,
   editableShippingRule,
@@ -44,7 +44,7 @@ import { replyNeedsReview } from "../../oracles/factory-replies.ts";
 import { factoryConflictConfirmation } from "../../../../src/factory-conflict-review.ts";
 import { validateProvisionalProductNotices } from "../../../../src/provisional-product-notices.ts";
 import { validateAutomaticMessageTemplates } from "../../../../src/automatic-message-templates.ts";
-import { addressInfo, addressParts } from "../../../../src/parser.ts";
+import { addressInfo, addressParts, parseSmart as parseOrder } from "../../../../src/parser.ts";
 import { validDeliveryAddress, deliveryRequirements } from "../../../../src/delivery-requirements.ts";
 import { companyClient, companyParty, companySenderMissing } from "../../../../src/order-types.ts";
 import { explicitSender } from "../../../../src/explicit-sender.ts";

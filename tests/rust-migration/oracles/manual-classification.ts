@@ -1,6 +1,6 @@
 /** Historical TS manual classification oracle; production uses Rust. */
-import { itemFromProduct, parseOrder, unassignedClient } from "../../../src/domain.js";
-import { addressParts, quantities } from "../../../src/parser.js";
+import { itemFromProduct, unassignedClient } from "../../../src/domain.js";
+import { addressParts, parseSmart as parseOrder, quantities } from "../../../src/parser.js";
 import type { Item, Order, Product, Recipient, State } from "../../../src/types.js";
 import { synchronizeIssueDecisions } from "../../../src/validation.js";
 

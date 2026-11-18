@@ -1,7 +1,6 @@
 import { companyParty } from "./order-types.js";
 import { z } from "zod";
 import { aliasProblems } from "./matching.js";
-import { parseSmart } from "./parser.js";
 import { colorLabel } from "./product-models.js";
 import { renderAutomaticTemplate } from "./automatic-message-templates.js";
 import type { Alias, Client, Item, Order, Product, Recipient, Settings, State } from "./types.js";
@@ -393,4 +392,3 @@ export const statusNames = {
   EXPORTED: "공장 전달 완료",
 };
 
-export const parseOrder = parseSmart;
