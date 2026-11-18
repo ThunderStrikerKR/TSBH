@@ -63,6 +63,29 @@ pub(super) fn party<'a>(state: &'a Value, order: &'a Value) -> Option<&'a Value>
     find_by_id(field(state,"clients"),str_field(order,"clientId"))
         .or_else(||order.get("clientSnapshot"))
 }
+/// Read-only shipment party and saved-freight projection. These values are
+/// resolved by Rust before React filters rows or compares editable drafts.
+/// No TypeScript dealer selection or freight fallback is required.
+pub(super) fn read_shipments(payload: &Value) -> Result<Value,String> {
+    let state=req(payload,"state")?;
+    let result=rows(field(field(state,"workflow"),"shipments")).iter().filter_map(|ship| {
+        let order=find_by_id(field(state,"orders"),str_field(ship,"orderId"))?;
+        let recipient=find_by_id(field(order,"recipients"),str_field(ship,"recipientId"))?;
+        let mut freight=serde_json::Map::new();
+        for origin in ["FACTORY","STORE"] {
+            let value=field(ship,"actualFreight").get(origin).cloned()
+                .unwrap_or_else(||field(recipient,"actualFreight").clone());
+            freight.insert(origin.to_string(),value);
+        }
+        Some(json!({
+            "shipmentId":field(ship,"id"),
+            "client":super::order_edit::client(order,state),
+            "actualFreight": Value::Object(freight)
+        }))
+    }).collect::<Vec<_>>();
+    Ok(json!({"shipments":result}))
+}
+
 fn row_origins(row: &Value) -> Vec<&str> {
     let mut origins:Vec<&str>=Vec::new();
     for i in rows(field(row,"items")) {
@@ -1320,5 +1343,34 @@ mod remote_freight_multiplier_tests {
         assert_eq!(fee_total(&ship,&recipient,&order),Some(11000));
         order["freightCode"]=json!("020");
         assert_eq!(fee_total(&ship,&recipient,&order),Some(0));
+    }
+}
+
+#[cfg(test)]
+mod shipment_read_migration_tests {
+    use super::*;
+    #[test]
+    fn master_and_frozen_party_come_from_native_and_freight_null_is_authoritative(){
+        let state=json!({
+            "clients":[{"id":"c","name":"현재 거래처"}],
+            "orders":[
+                {"id":"active","clientId":"c","recipients":[{"id":"r1","actualFreight":2500}]},
+                {"id":"frozen","clientId":"c","confirmedAt":"2026-11-18",
+                 "clientSnapshot":{"id":"c","name":"확정 당시 거래처"},
+                 "recipients":[{"id":"r2","actualFreight":3000}]}
+            ],
+            "workflow":{"shipments":[
+                {"id":"s1","orderId":"active","recipientId":"r1",
+                 "actualFreight":{"FACTORY":null,"STORE":0}},
+                {"id":"s2","orderId":"frozen","recipientId":"r2"}
+            ]}
+        });
+        let result=read_shipments(&json!({"state":state})).unwrap();
+        assert_eq!(result["shipments"][0]["client"]["name"],"현재 거래처");
+        assert_eq!(result["shipments"][0]["actualFreight"]["FACTORY"],Value::Null);
+        assert_eq!(result["shipments"][0]["actualFreight"]["STORE"],0);
+        assert_eq!(result["shipments"][1]["client"]["name"],"확정 당시 거래처");
+        assert_eq!(result["shipments"][1]["actualFreight"]["FACTORY"],3000);
+        assert_eq!(result["shipments"][1]["actualFreight"]["STORE"],3000);
     }
 }
