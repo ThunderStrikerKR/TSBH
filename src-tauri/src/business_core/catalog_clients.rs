@@ -67,7 +67,7 @@ fn normalized_color(value: &str) -> String {
         _ => trimmed.into(),
     }
 }
-fn product_url_ok(value: &str) -> bool {
+pub(super) fn product_url_ok(value: &str) -> bool {
     let Ok(url) = Url::parse(value) else { return false };
     url.scheme() == "https"
         && ["bandostand.com", "www.bandostand.com",
@@ -299,7 +299,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "validate_model_groups" | "validate_model_group_products" => model_groups::execute(operation,&payload),
         "preview_official_product_html" => official_html::preview(&payload),
         "client_candidates" | "classified_products" | "category_ids" |
-        "management_products" | "search_products" | "representative_products" | "suggest_group_representative" |
+        "management_products" | "search_products" | "search_products_with_urls" | "representative_products" | "suggest_group_representative" |
         "official_links" => queries::execute(operation, &payload),
         "upsert_brand" | "validate_brands" => brands::execute(operation, &payload),
         "change_category" | "delete_category" | "legacy_add_category" |

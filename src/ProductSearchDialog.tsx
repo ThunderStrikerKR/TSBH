@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { ClassificationFilters } from "./Classification";
-import { validProductUrl } from "./domain";
 import { internalModel } from "./matching";
 import { useNativeProductIds } from "./native-catalog-queries";
 import { useAsyncTask } from "./shared/useAsyncTask";
@@ -25,8 +24,8 @@ export function ProductSearchDialog({
     [brand, setBrand] = useState(""),
     input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
-  const {products: rows, error: searchError, pending} = useNativeProductIds(
-    state, "search_products", {
+  const {products: rows, detailLinkIds, error: searchError, pending} = useNativeProductIds(
+    state, "search_products_with_urls", {
       query, clientId, major: category, brand, excludeDemo: true,
     }, [query, clientId, category, brand],
   );
@@ -61,7 +60,7 @@ export function ProductSearchDialog({
               <span>{p.subtitle || p.specification}</span>
               <small>선택</small>
             </button>
-            {validProductUrl(p.variants[0]?.url ?? "") && (
+            {detailLinkIds.includes(p.id) && (
               <button
                 onClick={() => void openLink(() => window.bando!.openProduct(p.variants[0].url))}
               >

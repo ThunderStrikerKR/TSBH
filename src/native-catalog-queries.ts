@@ -61,12 +61,16 @@ export function useNativeProductIds(
   operation: string,
   args: Record<string, unknown>,
   keys: readonly unknown[],
-): { products: Product[]; pending: boolean; error: string } {
-  const {value,pending,error}=useNativeCatalogQuery<string[]>(
+): { products: Product[]; detailLinkIds: string[]; pending: boolean; error: string } {
+  const {value,pending,error}=useNativeCatalogQuery<string[] | {
+    ids: string[]; detailLinkIds: string[];
+  }>(
     state,operation,args,keys,NO_IDS,
   );
+  const ids = Array.isArray(value) ? value : value.ids;
+  const detailLinkIds = Array.isArray(value) ? NO_IDS : value.detailLinkIds;
   const mapping=useMemo(()=>new Map(state.products.map(p=>[p.id,p])),[state.products]);
-  const products=useMemo(()=>value.flatMap(id=>mapping.has(id)?[mapping.get(id)!]:[]),
-    [value,mapping]);
-  return {products,pending,error};
+  const products=useMemo(()=>ids.flatMap(id=>mapping.has(id)?[mapping.get(id)!]:[]),
+    [ids,mapping]);
+  return {products,detailLinkIds,pending,error};
 }

@@ -306,6 +306,21 @@ fn official_links(report:&Value)->Value{
     // which official products are included.
     json!(links)
 }
+fn filtered_product_search<'a>(state: &'a Value,payload:&Value)->Vec<&'a Value>{
+    let major=field(payload,"major");
+    let brand=field(payload,"brand");
+    let permitted=if major.is_empty()&&brand.is_empty(){None}
+        else{Some(classified(state,major,"",brand).into_iter()
+            .map(|p|field(p,"id").to_owned()).collect::<HashSet<_>>())};
+    product_search(state,field(payload,"query"),
+        field(payload,"clientId"),field(payload,"category"))
+        .into_iter().filter(|p|
+            permitted.as_ref().is_none_or(|set|set.contains(field(p,"id"))) &&
+            (payload.get("excludeDemo")!=Some(&Value::Bool(true)) ||
+             (field(p,"catalog")!="DEMO"&&
+              !items(p,"variants").iter().any(|v|field(v,"source")=="DEMO"))))
+        .collect()
+}
 pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
     let state=payload.get("state").unwrap_or(&Value::Null);
     let result=match operation{
@@ -335,19 +350,15 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
                             price.as_i64()==Some(0)))))
             }))
         }
-        "search_products"=>{
-            let major=field(payload,"major");
-            let brand=field(payload,"brand");
-            let permitted=if major.is_empty()&&brand.is_empty(){None}
-                else{Some(classified(state,major,"",brand).into_iter()
-                    .map(|p|field(p,"id").to_owned()).collect::<HashSet<_>>())};
-            let candidates=product_search(state,field(payload,"query"),
-                field(payload,"clientId"),field(payload,"category"));
-            ids(candidates.into_iter().filter(|p|
-                permitted.as_ref().is_none_or(|set|set.contains(field(p,"id"))) &&
-                (payload.get("excludeDemo")!=Some(&Value::Bool(true)) ||
-                 (field(p,"catalog")!="DEMO"&&
-                  !items(p,"variants").iter().any(|v|field(v,"source")=="DEMO")))))
+        "search_products"=>ids(filtered_product_search(state,payload).into_iter()),
+        "search_products_with_urls"=>{
+            let candidates=filtered_product_search(state,payload);
+            json!({
+                "ids": ids(candidates.iter().copied()),
+                "detailLinkIds": ids(candidates.iter().copied().filter(|p|
+                    items(p,"variants").first().is_some_and(|v|
+                        super::product_url_ok(field(v,"url"))))),
+            })
         }
         "representative_products"=>json!(representative_products(state,
             field(payload,"text"),field(payload,"clientId"))),
@@ -369,5 +380,23 @@ mod tests{
         let result=client_search(&state,&json!({"query":"반도","raw":"반도 악기 주문"}));
         assert_eq!(result["ids"],json!(["a"]));
         assert_eq!(result["suggestedIds"],json!(["a"]));
+    }
+}
+
+#[cfg(test)]
+mod search_link_projection_tests {
+    use super::*;
+    #[test]
+    fn detailed_search_preserves_order_and_uses_catalog_url_validator() {
+        let state=json!({"products":[
+            {"id":"p1","name":"보면대 709","variants":[{"url":"https://www.bandostand.com/product/709"}]},
+            {"id":"p2","name":"보면대 708","variants":[{"url":"https://untrusted.example/product/708"}]},
+            {"id":"p3","name":"보면대 707","variants":[{"url":"http://www.bandostand.com/product/707"}]}
+        ]});
+        let payload=json!({"state":state,"query":"보면대","excludeDemo":true});
+        let original=execute("search_products",&payload).unwrap();
+        let detail=execute("search_products_with_urls",&payload).unwrap();
+        assert_eq!(detail["ids"],original);
+        assert_eq!(detail["detailLinkIds"],json!(["p1"]));
     }
 }
