@@ -76,14 +76,16 @@ pub(super) fn replace(conn: &mut Connection, orders: Vec<Value>) -> Result<(), S
 
 #[tauri::command]
 pub(super) fn working_receptions_load(db: State<'_, Database>) -> Result<Vec<Value>, String> {
-    load(&lock_db(&db)?)
+    let conn = lock_db(&db)?;
+    load(&*conn)
 }
 
 #[tauri::command]
 pub(super) fn working_receptions_replace(
     db: State<'_, Database>, orders: Vec<Value>,
 ) -> Result<(), String> {
-    replace(&mut lock_db(&db)?, orders)
+    let mut conn = lock_db(&db)?;
+    replace(&mut *conn, orders)
 }
 
 #[cfg(test)]
