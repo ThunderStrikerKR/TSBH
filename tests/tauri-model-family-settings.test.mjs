@@ -98,7 +98,7 @@ test("Explicit color or unrelated products never receive default-color notificat
 
 test("Copy messages notify only after employee action, without dealer choice request",()=>{
  const helper=read("src/color-guidance.ts");
- const a=read("src/automatic-message.ts"),h=read("src/hub-messages.ts");
+ const a=read("tests/rust-migration/oracles/automatic-message.ts"),h=read("src/hub-messages.ts");
  assert.doesNotMatch(helper,/진행해도 될까요/);
  assert.match(a,/appliedDefaultColorNotice/);
  assert.match(h,/appliedDefaultColorNotice/);
