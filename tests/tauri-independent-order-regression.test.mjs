@@ -12,7 +12,7 @@ const { itemFromProduct, resolvePrice, validateProduct, unassignedClient } =
   await tsImport("../src/domain.ts", import.meta.url);
 const { parseSmart, parseEvidence } = await tsImport("../src/parser.ts", import.meta.url);
 const { applyOfficialProductPreview } =
-  await tsImport("../src/official-product-import.ts", import.meta.url);
+  await tsImport("./rust-migration/oracles/official-product-import.ts", import.meta.url);
 const { resolveHistoricalProductReference } =
   await tsImport("../src/historical-product-reference.ts", import.meta.url);
 const client = {

@@ -47,7 +47,7 @@ import { validDeliveryAddress, deliveryRequirements } from "../../../../src/deli
 import { companyClient, companyParty, companySenderMissing } from "../../../../src/order-types.ts";
 import { explicitSender } from "../../../../src/explicit-sender.ts";
 import { initialManual, assignManualBlock, releaseManualBlock, applyManual, setManualValue, pendingManualQuantity, validManualQuantity, type ManualModel } from "../../../../src/orders/manual-classification.ts";
-import { rememberTitle, rememberedTitleClient } from "../../../../src/title-clients.ts";
+import { rememberTitle, rememberedTitleClient } from "../../oracles/title-clients.ts";
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
 const now="2026-11-13T09:00:00+09:00";
