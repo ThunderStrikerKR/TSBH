@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { confirmAction } from "./dialogs";
 import { won } from "./domain";
-import { leafCategories } from "./official-product-import";
+import { leafCategories } from "./catalog-leaf-options";
 import { businessCoreCall } from "./tauri-bridge";
 import type { NoticeSink } from "./shared/notices";
 import { useAsyncTask } from "./shared/useAsyncTask";
