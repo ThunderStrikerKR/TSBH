@@ -118,7 +118,7 @@ test("model-group UI, employee resolver, Rust persistence and messages use produ
   assert.match(native, /modelRepresentative/);
   assert.match(source("src/issue-actions.ts"), /appliedRepresentativeModel/);
   assert.match(source("src/hub-messages.ts"), /appliedRepresentativeModelNotice/);
-  assert.match(source("src/automatic-message.ts"), /appliedRepresentativeModelNotice/);
+  assert.match(source("tests/rust-migration/oracles/automatic-message.ts"), /appliedRepresentativeModelNotice/);
   assert.match(source("src/ProductManager.tsx"), /"모델군 관리"/);
 });
 
