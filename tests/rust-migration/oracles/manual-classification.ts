@@ -1,7 +1,8 @@
-import { itemFromProduct, parseOrder, unassignedClient } from "../domain.js";
-import { addressParts, quantities } from "../parser.js";
-import type { Item, Order, Product, Recipient, State } from "../types.js";
-import { synchronizeIssueDecisions } from "../validation.js";
+/** Historical TS manual classification oracle; production uses Rust. */
+import { itemFromProduct, parseOrder, unassignedClient } from "../../../src/domain.js";
+import { addressParts, quantities } from "../../../src/parser.js";
+import type { Item, Order, Product, Recipient, State } from "../../../src/types.js";
+import { synchronizeIssueDecisions } from "../../../src/validation.js";
 
 export type Cell = { recipientId: string; field: string; itemId?: string };
 export type Block = NonNullable<Order["manualClassification"]>["blocks"][number];

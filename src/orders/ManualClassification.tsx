@@ -13,7 +13,7 @@ import {
   manualValue,
   type Cell,
   type ManualModel,
-} from "./manual-classification";
+} from "./manual-cell-view";
 
 type Frame = {
   model: ManualModel;

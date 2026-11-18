@@ -24,7 +24,7 @@ import {
   changeShippingBasis,
 } from "../../../../src/shipping.ts";
 import { shipmentTotals, validateWorkflow, reconcileWorkflow, clientChangeIssue, deleteOrder, workflowIssues, stageIssues, applyOrderRawEdit, migrateWorkflow, advanceGroup, undoGroup, setShipmentFreight, processGroup, confirmGroupPayment, recordPayment, restoreShipment, markStoreSent, recordChangeRequest, setGroupAccount, detachShipment, regroupShipment, completeDelivery, groupContext, groupStep, groupTotals } from "../../../../src/workflow.ts";
-import { recordActualFreight } from "../../../../src/actual-freight.ts";
+import { recordActualFreight } from "../../oracles/actual-freight.ts";
 import { dispatchState } from "../../../../src/factory-replies.ts";
 import { shouldRefreshUncommittedOrderPricing } from "../../oracles/passive-pricing.ts";
 import { deleteGroup, restoreGroup } from "../../oracles/group-trash.ts";
@@ -46,7 +46,7 @@ import { addressInfo, addressParts } from "../../../../src/parser.ts";
 import { validDeliveryAddress, deliveryRequirements } from "../../../../src/delivery-requirements.ts";
 import { companyClient, companyParty, companySenderMissing } from "../../../../src/order-types.ts";
 import { explicitSender } from "../../../../src/explicit-sender.ts";
-import { initialManual, assignManualBlock, releaseManualBlock, applyManual, setManualValue, pendingManualQuantity, validManualQuantity, type ManualModel } from "../../../../src/orders/manual-classification.ts";
+import { initialManual, assignManualBlock, releaseManualBlock, applyManual, setManualValue, pendingManualQuantity, validManualQuantity, type ManualModel } from "../../oracles/manual-classification.ts";
 import { rememberTitle, rememberedTitleClient } from "../../oracles/title-clients.ts";
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
