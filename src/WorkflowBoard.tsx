@@ -1,7 +1,7 @@
 import { nativePaymentWasCopied } from "./native-automatic-message";
 import { workflowGroupOpen } from "./workspace-selection";
 import { useNativeWorkflowBoard } from "./orders/useNativeWorkflowBoard";
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { auditReactRender } from "./perf-audit";
 import { confirmAction } from "./dialogs";
@@ -112,56 +112,28 @@ export function WorkflowBoard({
     previewButton = useRef<HTMLButtonElement | null>(null),
     previewElement = useRef<HTMLDivElement | null>(null);
   const [previewLayer, setPreviewLayer] = useState<{
-    groupId: string; left: number; top: number; width: number;
-    maxHeight: number; above: boolean; backgroundColor: string;
+    groupId: string; left: number; top: number; width: number; maxHeight: number;
   }>();
-  // The portal renders the exact same shipment-list markup as expansion.
-  // Never copy a measured element HEIGHT to the portal: its independently
-  // rendered content may wrap differently and would be silently cropped.
+  // The hover preview is a copy of the WHOLE expanded order card, rendered
+  // at that card's original position. A free-floating shipment-only popup
+  // cannot match its headings, action row or dimensions.
   const positionPreview = (button: HTMLButtonElement, groupId: string, shipmentCount: number) => {
-    const buttonRect = button.getBoundingClientRect();
-    const card = button.closest<HTMLElement>(".workflow-group");
-    const cardRect = card?.getBoundingClientRect() ?? buttonRect;
-    const cardStyle = window.getComputedStyle(card ?? button);
-    const inset = (value: string) => parseFloat(value) || 0;
-    const expanded = card?.querySelector<HTMLElement>(":scope > .workflow-shipment-list");
-    const expandedRect = expanded?.getBoundingClientRect();
+    const card = button.closest<HTMLElement>(".workflow-group:not(.workflow-preview-clone)");
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
     const margin = 8;
-    const contentLeft = cardRect.left +
-      inset(cardStyle.borderLeftWidth) + inset(cardStyle.paddingLeft);
-    const contentWidth = cardRect.width -
-      inset(cardStyle.borderLeftWidth) - inset(cardStyle.borderRightWidth) -
-      inset(cardStyle.paddingLeft) - inset(cardStyle.paddingRight);
-    const width = Math.max(0, Math.min(
-      expandedRect?.width ?? contentWidth, window.innerWidth - margin * 2,
-    ));
-    const left = Math.max(margin, Math.min(
-      expandedRect?.left ?? contentLeft, window.innerWidth - width - margin,
-    ));
-    const naturalTop = expandedRect?.top ?? (
-      cardRect.bottom - inset(cardStyle.borderBottomWidth) - inset(cardStyle.paddingBottom)
-    );
-    // The rendered table's scrollHeight includes wrapped product chips and
-    // every row. The estimate is used only before the first portal layout.
-    const renderedHeight = previewElement.current
-      ?.querySelector<HTMLElement>(".workflow-shipment-list")?.scrollHeight;
-    const contentHeight = renderedHeight && renderedHeight > 0
-      ? renderedHeight : 26 + shipmentCount * 41;
-    const below = Math.max(0, window.innerHeight - Math.max(margin, naturalTop) - margin);
-    const above = Math.max(0, cardRect.top - margin - 4);
-    const showAbove = !expandedRect && below < contentHeight && above > below;
-    const top = expandedRect ? expandedRect.top
-      : showAbove ? cardRect.top - 4 : Math.max(margin, naturalTop);
-    const availableHeight = showAbove ? above
-      : Math.max(0, window.innerHeight - top - margin);
-    const next = {
-      groupId, left, top, width,
-      // This is a viewport safety limit, NOT a copied list height.
-      // A short list keeps its natural height; a long one scrolls.
-      maxHeight: availableHeight,
-      above: showAbove,
-      backgroundColor: card ? cardStyle.backgroundColor : "#202020",
-    };
+    const width = Math.max(0, Math.min(rect.width, window.innerWidth - margin * 2));
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
+    // Measure the rendered full-card content. The approximation only applies
+    // during the first paint before the portal element exists.
+    const measuredHeight = previewElement.current
+      ?.querySelector<HTMLElement>(".workflow-preview-clone")?.scrollHeight;
+    const naturalHeight = measuredHeight && measuredHeight > 0
+      ? measuredHeight : rect.height + 26 + shipmentCount * 43;
+    const maxHeight = Math.max(0, window.innerHeight - margin * 2);
+    const top = Math.max(margin, Math.min(rect.top,
+      window.innerHeight - margin - Math.min(naturalHeight, maxHeight)));
+    const next = { groupId, left, top, width, maxHeight };
     setPreviewLayer((previous) => previous &&
       Object.keys(next).every((key) =>
         previous[key as keyof typeof next] === next[key as keyof typeof next])
@@ -205,15 +177,14 @@ export function WorkflowBoard({
     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
     hoverReturnDelay.current = undefined;
   };
-  // Measure the rendered table before paint. A wrapped row may be taller
-  // than the heuristic used when the stage-hover timer first fires.
+  // Measure the entire expanded card before paint, including wrapped rows.
   useLayoutEffect(() => {
     if (!previewLayer || !previewElement.current) return;
     const button = previewButton.current;
     if (button?.isConnected)
       positionPreview(button, previewLayer.groupId, groupShipments(state, previewLayer.groupId).length);
   }, [previewLayer?.groupId, state]);
-  // Reposition on resize/scroll and whenever the actual preview rows reflow.
+  // Reposition on resize/scroll and whenever the expanded card reflows.
   useEffect(() => {
     if (!previewLayer) return;
     const update = () => {
@@ -224,7 +195,7 @@ export function WorkflowBoard({
     };
     const board = boardRef.current;
     const card = previewButton.current?.closest<HTMLElement>(".workflow-group");
-    const list = previewElement.current?.querySelector<HTMLElement>(".workflow-shipment-list");
+    const list = previewElement.current?.querySelector<HTMLElement>(".workflow-preview-clone");
     const resizeObserver = typeof ResizeObserver !== "undefined"
       ? new ResizeObserver(update) : undefined;
     if (card) resizeObserver?.observe(card);
@@ -545,10 +516,11 @@ export function WorkflowBoard({
                 })}
               </div>
         );
-        return (
+        const renderGroupCard = (isPreview: boolean) => (
           <article
             className={
               "workflow-group" +
+              (isPreview ? " workflow-preview-clone" : "") +
               (selected ? " selected" : "") +
               (hovered ? " workflow-preview-group" : "") +
               (stageHover?.groupId === g.id && stageHover.step === 4
@@ -562,10 +534,14 @@ export function WorkflowBoard({
               <button
                 className="flow-heading-toggle"
                 data-ui-role="nav-subsection"
-                aria-label={(first.client.displayName || first.client.name) + (open ? " 묶음 접기" : " 묶음 펼치기")}
-                aria-expanded={open}
+                aria-label={(first.client.displayName || first.client.name) + ((open || isPreview) ? " 묶음 접기" : " 묶음 펼치기")}
+                aria-expanded={open || isPreview}
                 onClick={() => {
-                  if (selected) {
+                  if (isPreview) {
+                    setManuallyClosedGroup(undefined);
+                    stopStagePreview();
+                    onSelect({ orderId: ss[0].orderId, groupId: g.id, shipmentId: ss[0].id });
+                  } else if (selected) {
                     setManuallyClosedGroup(manuallyClosedGroup === g.id ? undefined : g.id);
                   } else {
                     setManuallyClosedGroup(undefined);
@@ -577,7 +553,7 @@ export function WorkflowBoard({
                   }
                 }}
               >
-                <span className="flow-toggle-icon" aria-hidden="true">{open ? "▾" : "▸"}</span>
+                <span className="flow-toggle-icon" aria-hidden="true">{(open || isPreview) ? "▾" : "▸"}</span>
                 <span className="flow-group-name">
                   <b>{first.client.displayName || first.client.name}</b>
                 </span>
@@ -661,8 +637,8 @@ export function WorkflowBoard({
                   data-ui-role="action-primary"
                   disabled={!ready || busy || remaining > 0 || ss.some((s) => s.transferred)}
                   aria-label={buttonLabel}
-                  onMouseEnter={(event) => startStagePreview(event.currentTarget, g.id, step, ss.length)}
-                  onMouseLeave={scheduleStagePreviewExit}
+                  onMouseEnter={isPreview ? keepStagePreview : (event) => startStagePreview(event.currentTarget, g.id, step, ss.length)}
+                  onMouseLeave={isPreview ? undefined : scheduleStagePreviewExit}
                   onClick={async () => {
                     if (
                       (step === 2 || (g.needsNotice && step >= 2)) &&
@@ -699,27 +675,6 @@ export function WorkflowBoard({
                 >
                   ↶
                 </button>
-                {hovered && !open && previewLayer?.groupId === g.id && typeof document !== "undefined" &&
-                  createPortal(
-                    <div
-                      ref={previewElement}
-                      className="workflow-preview-layer hub-slot-3"
-                      role="group"
-                      aria-label={(first.client.displayName || first.client.name) + " 배송 건 미리보기"}
-                      style={{
-                        left: previewLayer.left, top: previewLayer.top,
-                        width: previewLayer.width,
-                        maxHeight: previewLayer.maxHeight,
-                        backgroundColor: previewLayer.backgroundColor,
-                        transform: previewLayer.above ? "translateY(-100%)" : undefined,
-                      }}
-                      onMouseEnter={keepStagePreview}
-                      onMouseLeave={scheduleStagePreviewExit}
-                    >
-                      {renderShipmentList(true)}
-                    </div>,
-                    document.body,
-                  )}
                 </div>
               )}
             </div>
@@ -749,8 +704,33 @@ export function WorkflowBoard({
                 )}
               </div>
             )}
-            {open && renderShipmentList(false)}
+            {(open || isPreview) && renderShipmentList(isPreview)}
           </article>
+        );
+        return (
+          <Fragment key={g.id}>
+            {renderGroupCard(false)}
+            {hovered && !open && previewLayer?.groupId === g.id && typeof document !== "undefined" &&
+              createPortal(
+                <div
+                  ref={previewElement}
+                  className="workflow-preview-stage hub-slot-3"
+                  role="group"
+                  aria-label={(first.client.displayName || first.client.name) + " 펼침 미리보기"}
+                  style={{
+                    left: previewLayer.left,
+                    top: previewLayer.top,
+                    width: previewLayer.width,
+                    maxHeight: previewLayer.maxHeight,
+                  }}
+                  onMouseEnter={keepStagePreview}
+                  onMouseLeave={scheduleStagePreviewExit}
+                >
+                  {renderGroupCard(true)}
+                </div>,
+                document.querySelector(".app-v03") ?? document.body,
+              )}
+          </Fragment>
         );
       })}
       {undoDelete && (
