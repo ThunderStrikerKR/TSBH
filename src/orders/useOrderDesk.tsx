@@ -808,6 +808,11 @@ export function useOrderDesk({
     flowState,
     flowReady,
     flowSummaryReady,
+    // A recipient can only be revealed after the current Rust line amounts
+    // and the workflow/order financial projection have both resolved.
+    orderLineReady: nativeLines.ready,
+    financialPreviewReady: flowSummaryReady && nativeLines.ready &&
+      (!activeShipment || Boolean(activeShipmentPreview)),
     staffChecksReady,
     staffChecksActionsReady,
     staffChecksError,
