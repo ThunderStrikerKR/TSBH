@@ -4,6 +4,7 @@ import { auditReactRender } from "./perf-audit";
 import { nativeAutomaticMessage, nativeDecorateCopyText, type NativeAutomaticMessage } from "./native-automatic-message";
 import { nativeRecordMessageCopy } from "./native-message-audit";
 import { LinkedText, messageSpans } from "./LinkedText";
+import { useReadyContentFade } from "./shared/useReadyContentFade";
 import type { NoticeSink } from "./shared/notices";
 import type { Order, State } from "./types";
 export function MessageWorkspace({
@@ -85,6 +86,13 @@ export function MessageWorkspace({
       : "",
     optionalSuffix = optionalRequestLinks ? "\n\n" + optionalRequestLinks : "",
     text = baseText + optionalSuffix;
+  // Keep the message title, links toggle, copy controls and status area
+  // mounted. Only the Rust-generated body fades after the exact current
+  // fingerprint/group/link-option response is available. Request text edits
+  // do not invalidate this key or restart the animation.
+  const contentKey = [order.id, gid ?? "", order.orderType ?? "", includeLinks].join(":");
+  const bodyReady = !gid || order.orderType === "RETAIL" || Boolean(automatic);
+  const messageFadePhase = useReadyContentFade(contentKey, bodyReady);
   const disabled = busy || !automatic || !text.trim() || (!request && !!automatic.paymentIssues.length);
   const copy = async (greeting: boolean) => {
     if (disabled || !gid) return;
@@ -123,6 +131,8 @@ export function MessageWorkspace({
         </label>
       </header>
       <div className="stage-message-preview">
+        <div className="message-generated-content" data-content-fade={messageFadePhase}
+          aria-busy={messageFadePhase === "pending"} inert={messageFadePhase === "pending"}>
         <LinkedText
           key={order.id + ":" + (gid ?? "") + ":" + (request ? "request" : "payment")}
           readOnly={!request}
@@ -141,6 +151,7 @@ export function MessageWorkspace({
             }
           }}
         />
+        </div>
       </div>
       <div className="message-inline-status" role="status">
         {loadError || status}
