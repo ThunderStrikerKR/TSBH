@@ -21,6 +21,8 @@ test("one completed transition gates recipient, items, freight and financial foo
   assert.match(desk, /if \(!recipientReady\) return;[\s\S]*?requestAnimationFrame\(\(\) => setRevealedRecipient\(recipientViewKey\)\)/);
   assert.match(desk, /return \(\) => cancelAnimationFrame\(frame\)/);
   assert.match(desk, /revealedRecipient === recipientViewKey \? "ready" : "pending"/);
+  assert.match(desk, /const recipientRevealPhase = props\.coordinatedFadePhase \?\? localRecipientPhase/);
+  assert.match(desk, /const checksFadePhase = props\.coordinatedFadePhase \?\? localChecksPhase/);
   // Headers, borders, scroll containers and empty-state instructions must
   // never disappear. Only actual recipient/order data is transition content.
   assert.match(desk, /<div className="recipient-body">\s*<header className="recipient-section-heading">/);
