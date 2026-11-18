@@ -756,13 +756,16 @@ export function OrderDesk(props: OrderDeskProps) {
                 <p role="alert">Rust 품목 금액 조회 오류: {orderLineError}</p>
               )}
               <div className="order-grand-total">
-                총 주문 금액{" "}
+                <span className="order-grand-total-label">총 주문 금액</span>
                 <span className="shipment-count">
                   <span className="shipment-count-label">| 택배</span>
-                  <span className="shipment-count-number" data-recipient-fade={recipientRevealPhase}>
-                    {orderPreview?.shipmentCount ?? "—"}
+                  <span className="shipment-count-value">
+                    <span className="shipment-count-number" data-recipient-fade={recipientRevealPhase}>
+                      {orderPreview?.shipmentCount ?? "—"}
+                    </span>
+                    <span className="shipment-count-unit">건</span>
                   </span>
-                  <span className="shipment-count-suffix">건 |</span>
+                  <span className="shipment-count-divider">|</span>
                 </span>
                 <b data-recipient-fade={recipientRevealPhase}>
                   {orderPreview?.total !== null && orderPreview?.total !== undefined
