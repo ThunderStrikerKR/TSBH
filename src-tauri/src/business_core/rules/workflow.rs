@@ -1238,7 +1238,12 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 // product-combination base tariff for normal addresses.
                 let remote_state=super::remote_delivery::resolve_shipment(&recipient,&ship,&order)?;
                 let remote_selected=flag(&remote_state,"checked");
-                if !remote_selected {
+                // Even if staff unchecked an auto/review locality, an actual
+                // island delivery fee must not replace a normal destination's
+                // reusable base tariff for this product combination.
+                let remote_candidate=matches!(str_field(&remote_state,"status"),"auto"|"review");
+                let eligible_base=!remote_selected && !remote_candidate;
+                if eligible_base {
                     for previous in state["shipping"]["combinations"].as_array_mut()
                         .ok_or("운임 조합 목록 오류")? {
                         if field(previous,"key")==&key && flag(previous,"active") {
@@ -1248,7 +1253,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 }
                 let epoch=field(&ship,"appliedEpoch").as_i64()
                     .unwrap_or_else(||field(field(&state,"shipping"),"epoch").as_i64().unwrap_or(1));
-                let active=!remote_selected &&
+                let active=eligible_base &&
                     epoch==field(field(&state,"shipping"),"epoch").as_i64().unwrap_or(1)
                     && basis_versions==*field(bundle,"versions");
                 let count=rows(field(&state["workflow"],"deliveries")).iter().filter(|d|{
