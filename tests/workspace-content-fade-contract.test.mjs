@@ -31,7 +31,8 @@ test("copy message header links options buttons and status never fade", () => {
   const msg = source("src/MessageWorkspace.tsx");
   const styles = source("src/styles/workflow-states.css");
   assert.match(msg, /const contentKey = \[order\.id, gid \?\? "", order\.orderType \?\? "", includeLinks\]/);
-  assert.match(msg, /const bodyReady = !gid \|\| order\.orderType === "RETAIL" \|\| Boolean\(automatic\)/);
+  assert.match(msg, /const bodyReady = Boolean\(gid && automatic\)/);
+  assert.doesNotMatch(msg, /bodyReady = !gid/);
   assert.match(msg, /const messageFadePhase = useReadyContentFade\(contentKey, bodyReady\)/);
   assert.match(msg, /<header className="pane-heading">/);
   assert.match(msg, /<div className="stage-message-preview">[\s\S]*?className="message-generated-content" data-content-fade=\{messageFadePhase\}/);
@@ -39,6 +40,22 @@ test("copy message header links options buttons and status never fade", () => {
   assert.match(msg, /<footer className="message-copy-actions">/);
   assert.doesNotMatch(msg, /className="stage-message-preview" data-content-fade/);
   assert.match(styles, /\.message-generated-content \{[\s\S]*?min-height: 0;/);
+});
+
+test("a transient missing group never starts the auto-message fade-in", () => {
+  const msg = source("src/MessageWorkspace.tsx");
+  const hub = source("src/HubWorkspace.tsx");
+  assert.match(msg, /const bodyReady = Boolean\(gid && automatic\)/);
+  assert.match(msg, /resolved\?\.fingerprint === fingerprint &&/);
+  assert.match(msg, /resolved\?\.groupId === gid && resolved\?\.links === includeLinks/);
+  assert.match(hub, /gid=\{messageReady \? messageGroup : undefined\}/);
+  assert.doesNotMatch(msg, /bodyReady = !gid/);
+});
+
+test("transient group or raw changes do not repeatedly reset message link options", () => {
+  const msg = source("src/MessageWorkspace.tsx");
+  assert.match(msg, /useLayoutEffect\(\(\) => \{\s*setStatus\(""\);\s*setIncludeLinks\(false\);\s*\}, \[order\.id\]\)/);
+  assert.doesNotMatch(msg, /setIncludeLinks\(false\);\s*\}, \[order\.id, order\.raw, gid\]/);
 });
 
 test("raw-source heading, border and blank intake guidance never fade", () => {
