@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ClientChooser } from "./ClientChooser";
 import { KakaoClients } from "./KakaoClients";
 import { LinkedText, sourceDocumentSpans } from "./LinkedText";
+import { useReadyContentFade } from "./shared/useReadyContentFade";
 import { ClientPicker, TierBadge } from "./ManagementUI";
 import { confirmAction } from "./dialogs";
 import { businessCoreCall } from "./tauri-bridge";
@@ -20,6 +21,7 @@ export function SourceDocument({
   order,
   text,
   client,
+  contentReady = true,
   onText,
   onOrder,
   onDealer,
@@ -33,6 +35,7 @@ export function SourceDocument({
   order: Order;
   text: string;
   client?: Client;
+  contentReady?: boolean;
   onText: (text: string) => void;
   onOrder: (order: Order) => void;
   onDealer: (client: Client) => Promise<void> | void;
@@ -84,6 +87,11 @@ export function SourceDocument({
   }, [text]);
   const formal = !!order.confirmedAt || state.orders.some((o) => o.id === order.id);
   const waitingForSource = !formal && !(order.analysisRaw ?? text).trim();
+  // Keep the source frame and intake guidance fixed. A pasted/replaced
+  // source becomes visible only after the matching Rust projection settles.
+  // Editing unrelated fields must not restart the raw text fade.
+  const sourceKey = [order.id, order.analysisRaw ?? order.raw, order.clientId].join(":");
+  const sourceFadePhase = useReadyContentFade(sourceKey, contentReady || waitingForSource, true);
   // An inline filter allocated a new array on every repaint, restarting the
   // Rust client_candidates search even when the catalog had not changed.
   const activeClients = useMemo(
@@ -360,7 +368,8 @@ export function SourceDocument({
       <div className="source-top" aria-label="현재 거래처 영역">
         {!!text &&
           (client ? (
-            <div className="receipt-client">
+            <div className="receipt-client" data-content-fade={sourceFadePhase}
+              aria-busy={sourceFadePhase === "pending"} inert={sourceFadePhase === "pending"}>
               <small>현재 거래처</small>
               <b title={client.name}>{client.name}</b>
               <TierBadge client={client} />
@@ -369,7 +378,8 @@ export function SourceDocument({
               </button>
             </div>
           ) : (
-            <div className="source-client-actions">
+            <div className="source-client-actions" data-content-fade={sourceFadePhase}
+              aria-busy={sourceFadePhase === "pending"} inert={sourceFadePhase === "pending"}>
               <button disabled={busy} onClick={() => setDealer(true)}>
                 거래처 찾기
               </button>
@@ -470,13 +480,16 @@ export function SourceDocument({
             </div>
           </div>
         ) : (
-          <LinkedText
-            readOnly
-            label="주문 원문"
-            text={order.analysisRaw ?? order.raw}
-            spans={sourceDocumentSpans(order.analysisRaw ?? order.raw, order)}
-            onChange={() => {}}
-          />
+          <div className="source-raw-content" data-content-fade={sourceFadePhase}
+            aria-busy={sourceFadePhase === "pending"} inert={sourceFadePhase === "pending"}>
+            <LinkedText
+              readOnly
+              label="주문 원문"
+              text={order.analysisRaw ?? order.raw}
+              spans={sourceDocumentSpans(order.analysisRaw ?? order.raw, order)}
+              onChange={() => {}}
+            />
+          </div>
         )}
         {ocrPhase === "recognizing" && (
           <div className="source-ocr-progress" role="status" aria-live="polite" aria-label="OCR 진행 상태">
