@@ -24,7 +24,7 @@ test("passive price, freight, and prepare edits have exactly one active pane own
   const order=read("src/orders/useOrderDesk.tsx");
   assert.match(hub, /suppressPassiveOrderEffects=\{receptionOrder === draft && \(detail \?\? draft\) === draft\}/);
   assert.match(order, /if \(suppressPassiveOrderEffects \|\| !draft\.pendingNativeEdit\) return/);
-  assert.match(order, /if \(suppressPassiveOrderEffects \|\| !liveClient/);
+  assert.match(order, /if \(suppressPassiveOrderEffects \|\| !clientSelection\.ready \|\| !liveClient/);
   assert.match(order, /if \(suppressPassiveOrderEffects \|\|[\s\S]*?shippingPending/);
   assert.match(order, /suppressPassiveOrderEffects,\s*\]\)/);
 });
