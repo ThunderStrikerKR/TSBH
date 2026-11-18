@@ -37,8 +37,33 @@ for (const [name, value] of Object.entries(contract.controlRoles)) {
 }
 for (const [name, properties] of Object.entries(contract.componentRoles)) {
   for (const [property, value] of Object.entries(properties)) {
-    if (typeof value === "number") token(name + "-" + property, value + "px");
+    if (typeof value !== "number") continue;
+    // Font weights are dimensionless numbers, unlike font sizes and spacing.
+    const unit = /[Ww]eight$/.test(property) ? "" : "px";
+    token(name + "-" + property, String(value) + unit);
   }
+}
+for (const [name, value] of Object.entries(contract.colorRoles)) {
+  assert.ok(contract.palette[value.color] !== undefined,
+    name + ": unknown color semantic " + value.color);
+  token("role-" + name, "var(--ds-color-" + value.color + ")");
+}
+for (const [name, properties] of Object.entries(contract.structureRoles)) {
+  for (const field of ["surface", "border"]) {
+    assert.ok(contract.palette[properties[field]] !== undefined,
+      name + ": unknown " + field + " color " + properties[field]);
+  }
+  token("structure-" + name + "-surface", "var(--ds-color-" + properties.surface + ")");
+  token("structure-" + name + "-border-color", "var(--ds-color-" + properties.border + ")");
+  for (const field of ["borderWidth", "radius", "paddingX", "paddingY", "gap"]) {
+    assert.ok(Number.isInteger(properties[field]) && properties[field] >= 0,
+      name + ": invalid box metric " + field);
+    token("structure-" + name + "-" + field, properties[field] + "px");
+  }
+}
+for (const name of ["primary-section", "nested-section", "record-card", "information-block",
+  "warning-block", "error-block", "toolbar-group", "divider-soft", "divider-strong"]) {
+  assert.ok(contract.structureRoles[name], "Missing structural role " + name);
 }
 for (const [name, value] of Object.entries(contract.tradeTierColors)) {
   token("tier-" + name + "-background", value.background);
