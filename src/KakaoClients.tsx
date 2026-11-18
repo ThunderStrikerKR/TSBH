@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { NoticeSink } from "./shared/notices";
-import { titleCandidates, titleKey } from "./title-clients";
-import { nativeRememberTitle } from "./native-title-clients";
+import { nativeRememberTitle, nativeKakaoManualCandidates, type NativeKakaoManualCandidates } from "./native-title-clients";
 import type { DockWindow, Order, State, Client } from "./types";
 import { Modal } from "./ui";
 export function KakaoClients({
@@ -25,6 +24,28 @@ export function KakaoClients({
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const chats = windows.filter((window) => window.kind === "CHAT" && window.title.trim());
+  // Guard stale async answers when a chat closes or the dealer list changes.
+  const fingerprint = JSON.stringify([state.clients, state.settings.kakaoTitleMappings, windows, search]);
+  const [resolved, setResolved] = useState<{ key: string; result: NativeKakaoManualCandidates }>();
+  const visible = resolved?.key === fingerprint ? resolved.result : undefined;
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void nativeKakaoManualCandidates(state, windows, search)
+      .then((result) => {
+        if (active) {
+          setResolved({ key: fingerprint, result });
+          setError("");
+        }
+      })
+      .catch((cause) => {
+        if (active) {
+          setResolved(undefined);
+          setError(String(cause));
+        }
+      });
+    return () => { active = false; };
+  }, [open, fingerprint]);
   const refresh = async () => {
     try {
       onWindows(await window.bando!.dockWindows());
@@ -83,21 +104,13 @@ export function KakaoClients({
         >
           <div className="title-client-results">
             {chats.map((chat) => {
-              const mapping = state.settings.kakaoTitleMappings?.[titleKey(chat.title)];
-              const remembered = state.clients.find(
-                (client) =>
-                  client.id === mapping?.clientId && !client.deletedAt && client.active !== false,
-              );
-              const rows = [
-                ...new Map(
-                  [
-                    ...(remembered ? [remembered] : []),
-                    ...titleCandidates(chat.title, state.clients).filter((c) => c.active !== false),
-                  ].map((client) => [client.id, client]),
-                ).values(),
-              ];
-              const duplicate =
-                chats.filter((other) => titleKey(other.title) === titleKey(chat.title)).length > 1;
+              const info = visible?.chats.find((entry) => entry.handle === chat.handle);
+              const remembered = state.clients.find((client) => client.id === info?.rememberedClientId);
+              const rows = (info?.candidates ?? []).flatMap(({ clientId }) => {
+                const client = state.clients.find((candidate) => candidate.id === clientId);
+                return client ? [client] : [];
+              });
+              const duplicate = info?.duplicate === true;
               return (
                 <article className="title-client-row" key={chat.handle}>
                   <h3>현재 대화창: {chat.title}</h3>
@@ -114,7 +127,7 @@ export function KakaoClients({
                       </button>
                     ))
                   ) : (
-                    <p>일치 후보가 없습니다. 거래처를 직접 검색하세요.</p>
+                    <p>{!visible && !error ? "거래처 후보 확인 중" : "일치 후보가 없습니다. 거래처를 직접 검색하세요."}</p>
                   )}
                 </article>
               );
@@ -134,9 +147,10 @@ export function KakaoClients({
           </label>
           {!!search && (
             <div className="title-client-search-results">
-              {titleCandidates(search, state.clients)
-                .filter((c) => c.active !== false)
-                .map((client) => (
+              {(visible?.search ?? []).flatMap(({ clientId }) => {
+                const client = state.clients.find((candidate) => candidate.id === clientId);
+                return client ? [client] : [];
+              }).map((client) => (
                   <button
                     key={client.id}
                     onClick={() => void choose(client, chats.length === 1 ? chats[0] : undefined)}
