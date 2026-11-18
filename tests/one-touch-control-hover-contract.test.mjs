@@ -115,7 +115,7 @@ test("payment-copy stage highlights only two copy buttons, exact account, total 
   assert.match(message, /emphasisSpans=\{emphasisSpans\}/);
   assert.match(message, /<footer className="message-copy-actions">[\s\S]*?그대로 복사[\s\S]*?인사말 포함 복사/);
   assert.match(linked, /data-payment-field=\{s\.kind\}/);
-  assert.match(message, /selectedAccountNumberFromSignature\(automatic\.signature\)/);
+  assert.match(message, /selectedAccountFromSignature\(automatic\.signature\)/);
   assert.doesNotMatch(native, /selectedAccountNumber\?: string/);
   assert.match(workspace, /stageHover\.step === 3[\s\S]*?\.hub-slot-1 \.message-copy-actions/);
   assert.doesNotMatch(css, /\[data-hover-stage="3"\][^\n]*\.items-freight-panel/);
@@ -130,7 +130,7 @@ test("payment-confirmation stage highlights only payment text and hovered group 
   const messageSelector = stage4 + ' .messages-pane[data-payment-copy-ready="true"] .stage-message-preview .message-payment-emphasis';
   assert.ok(css.includes(messageSelector), "Stage 4 must emphasize the rendered payment fields");
   assert.match(message, /const emphasisSpans = request \? \[\] : paymentMessageHighlights\(/);
-  assert.match(message, /selectedAccountNumberFromSignature\(automatic\.signature\)/);
+  assert.match(message, /selectedAccountFromSignature\(automatic\.signature\)/);
   assert.match(board, /data-payment-confirm-preview=\{hovered && stageHover\?\.step === 4 \? "true" : undefined\}/);
   const totalSelector = '.hub-slot-3 .workflow-group[data-payment-confirm-preview="true"] .workflow-action-line .flow-summary-payment > .flow-summary-amount';
   assert.ok(workflowCss.includes(totalSelector), "Stage 4 must emphasize the hovered group's payment total");
