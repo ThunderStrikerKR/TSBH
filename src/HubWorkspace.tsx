@@ -625,6 +625,7 @@ export function HubWorkspace(props: Props) {
       className="hub-live-workspace"
       data-hover-stage={stageHover?.step}
       data-hover-selected={stageHover?.groupId === visibleSelection?.groupId ? "true" : "false"}
+      data-one-touch-hover={stageHover && hoverSelection ? "true" : "false"}
     >
       <HubPanels
         externalKakao={props.externalKakao}
