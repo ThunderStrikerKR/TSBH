@@ -7,8 +7,8 @@ import type { WorkflowShipment } from "./workflow-types.js";
 export function shipmentContext(state: State, s: WorkflowShipment, client: Client | null | undefined) {
   const order = state.orders.find((o) => o.id === s.orderId);
   const recipient = order?.recipients.find((r) => r.id === s.recipientId);
-  if (!order || !recipient || !client)
-    throw Error("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.");
+  if (!order || !recipient)
+    throw Error("배송 건의 발주서 / 수취인 연결을 확인하세요.");
   return { order, recipient, client };
 }
 export function groupShipments(state: State, groupId: string) {
