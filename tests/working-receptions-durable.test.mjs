@@ -61,3 +61,52 @@ test("native SQLite working receipts never alter confirmed order ledger or histo
   assert.doesNotMatch(model,/pendingDraftCount|미완성 발주서 처리/);
   assert.match(source("src-tauri/src/business_core/rules/workflow.rs"),/set\(order,"confirmedAt",json!\(now\)\)/);
 });
+
+test("navigation waits for the second SQLite commit, not a settled previous enqueue", async () => {
+  let releaseFirst;
+  let releaseSecond;
+  const writes = [];
+  const saver = new WorkingReceptionAutosave(async (orders) => {
+    writes.push(orders);
+    if (writes.length === 1)
+      await new Promise((resolve) => { releaseFirst = resolve; });
+    else
+      await new Promise((resolve) => { releaseSecond = resolve; });
+  });
+  const first = saver.enqueue([{id:"a",raw:"처음"}]);
+  let navigated = false;
+  const second = saver.enqueue([{id:"a",raw:"최종"}]).then(() => {
+    navigated = true;
+  });
+  releaseFirst();
+  await first;
+  assert.equal(writes.length, 2);
+  assert.equal(writes[1][0].raw, "최종");
+  assert.equal(navigated, false, "Navigation cannot finish before the final write");
+  releaseSecond();
+  await second;
+  assert.equal(navigated, true);
+});
+
+test("SQLite failure rejects all coalesced waiters and retains latest input for retry", async () => {
+  let releaseFailure;
+  let shouldFail = true;
+  const writes = [];
+  const saver = new WorkingReceptionAutosave(async (orders) => {
+    writes.push(orders);
+    if (shouldFail) {
+      await new Promise((resolve) => { releaseFailure = resolve; });
+      shouldFail = false;
+      throw Error("disk full");
+    }
+  });
+  const one = saver.enqueue([{id:"x",raw:"old"}]);
+  const two = saver.enqueue([{id:"x",raw:"latest"}]);
+  // Attach rejections before deliberately making the write fail.
+  const failures = Promise.allSettled([one, two]);
+  releaseFailure();
+  const results = await failures;
+  assert.deepEqual(results.map((x) => x.status), ["rejected", "rejected"]);
+  await saver.enqueue([{id:"x",raw:"latest"}]);
+  assert.equal(writes.at(-1)[0].raw, "latest");
+});
