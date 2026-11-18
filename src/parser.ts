@@ -454,6 +454,9 @@ function parseLegacy(raw: string, selectedClient: Client | undefined, state: Sta
       ? { index: addressPrefix[0].length + postalPrefix.length }
       : remainder.match(admin);
     if (found && found.index !== undefined) {
+      const value = remainder.slice(found.index).trim();
+      // A label followed only by a postcode is not a shipping address.
+      if (!value) continue;
       if (
         current?.address &&
         (current.mobile || current.phone) &&
@@ -465,7 +468,6 @@ function parseLegacy(raw: string, selectedClient: Client | undefined, state: Sta
       // name-shaped words from the middle or tail of an address: district,
       // building and institution names belong to the address until an
       // explicit name field or an independent recipient line says otherwise.
-      const value = remainder.slice(found.index).trim();
       let before = addressPrefix
         ? ""
         : remainder
