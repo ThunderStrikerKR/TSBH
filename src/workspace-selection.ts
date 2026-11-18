@@ -41,17 +41,19 @@ export function workflowGroupOpen(
   return selectedGroupId === groupId && manuallyClosedGroupId !== groupId;
 }
 
-/** Resolve the hovered action's own order without changing the committed
- * selection. For multi-recipient groups keep the currently selected recipient
- * if it belongs to that group; otherwise use its first active shipment. */
+/** A temporary preview row takes priority over the committed selection.
+ * Hovering changes only what source/details show, never the actual selection. */
 export function hoveredWorkflowSelection(
   state: State,
   groupId: string | undefined,
   selected?: WorkflowSelection,
+  hoveredShipmentId?: string,
 ): WorkflowSelection | undefined {
   if (!groupId) return undefined;
   const shipments = activeShipments(state).filter((ship) => ship.groupId === groupId);
-  const ship = shipments.find((s) => s.id === selected?.shipmentId) ?? shipments[0];
+  const ship = shipments.find((s) => s.id === hoveredShipmentId)
+    ?? shipments.find((s) => s.id === selected?.shipmentId)
+    ?? shipments[0];
   return ship
     ? { orderId: ship.orderId, groupId: ship.groupId, shipmentId: ship.id }
     : undefined;
