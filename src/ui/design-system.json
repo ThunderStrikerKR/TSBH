@@ -221,7 +221,7 @@
     },
     "brightBusinessActions": "Reception New Order, proxy shipping, dealer delivery, direct entry, capture range and KakaoTalk connect use action-emphasized (white background, dark text, blue hover). Retain 34px height and label-based width. Keycaps and unrelated buttons remain neutral.",
     "workflowOneTouchHover": "One-touch stage: enter preview after 250ms, restore after 250ms. Show all group shipments in a fixed-position portal with blue '표시 중' on the visible row. Hover never modifies accordion expansion, list height, committed selection or business state. Move from trigger to portal cancels exit timer. Explicit row click commits selection, stage action click remains immediate.",
-    "linkedSourceHoverGrace": "Linked source, recipient and product hover activates after 200ms, clears 250ms after pointer exit; crossing another key cancels pending timers. Keyboard focus and explicit selection are immediate. Hover must not commit shipment selection or persist business changes."
+    "linkedSourceHoverGrace": "Linked source, recipient and product hover activates after 100ms, clears 150ms after pointer exit; crossing another key cancels pending timers. Keyboard focus and explicit selection are immediate. Hover must not commit shipment selection or persist business changes."
   },
   "componentRoles": {
     "input": {
