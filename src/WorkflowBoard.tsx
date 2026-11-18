@@ -358,6 +358,7 @@ export function WorkflowBoard({
             <header>
               <button
                 className="flow-heading-toggle"
+                data-ui-role="nav-subsection"
                 aria-label={(first.client.displayName || first.client.name) + (open ? " 묶음 접기" : " 묶음 펼치기")}
                 aria-expanded={open}
                 onClick={() => {
