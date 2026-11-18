@@ -8,14 +8,9 @@
 .source-pane .receipt-client {
   flex-wrap: wrap;
 }
-.recipient-review {
-  animation: detail-in 260ms ease-out both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .recipient-review {
-    animation: none;
-  }
-}
+/* Recipient data is animated by the coordinated data-recipient-fade phase.
+   A separate detail-in animation overrides opacity:0 during Rust loading
+   and reveals form values before the five panels are ready. */
 .source-pane .receipt-client > small {
   flex-basis: 100%;
   color: var(--text-secondary);
