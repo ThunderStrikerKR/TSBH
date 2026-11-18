@@ -768,6 +768,24 @@
   background: #292929;
   color: inherit;
 }
+.notification-center-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+.notification-center-entry .notification-center-item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.app-v03 .notification-center-entry .notification-center-delete {
+  flex: 0 0 auto;
+  padding: 7px 8px;
+  font-size: 11px;
+  background: #303030;
+  border: 1px solid #535353;
+  border-radius: 4px;
+}
 .notification-center-item.unread { border-left: 3px solid #aaa; }
 .notification-center-item[aria-pressed="true"] { background: #393939; border-color: #929292; }
 .notification-center-item strong { font-size: 12px; }
