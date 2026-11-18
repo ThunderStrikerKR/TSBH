@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "policy": "All screens share these roles. New JSX controls require a classified semantic role; existing controls migrate incrementally.",
+  "screens": [
+    {
+      "id": "접수",
+      "title": "접수"
+    },
+    {
+      "id": "주문내역",
+      "title": "주문 내역"
+    },
+    {
+      "id": "공장목록",
+      "title": "엑셀 관리"
+    },
+    {
+      "id": "결산",
+      "title": "일일 결산"
+    },
+    {
+      "id": "상품",
+      "title": "상품 관리"
+    },
+    {
+      "id": "운임",
+      "title": "운임 관리"
+    },
+    {
+      "id": "거래처",
+      "title": "거래처 관리"
+    },
+    {
+      "id": "설정",
+      "title": "설정"
+    }
+  ],
+  "typeRoles": {
+    "brand": {
+      "fontSize": 19,
+      "fontWeight": 700
+    },
+    "globalNavigation": {
+      "fontSize": 16,
+      "fontWeight": 650
+    },
+    "pageHeading": {
+      "fontSize": 20,
+      "fontWeight": 700
+    },
+    "sectionHeading": {
+      "fontSize": 16,
+      "fontWeight": 650
+    },
+    "subsectionHeading": {
+      "fontSize": 14,
+      "fontWeight": 650
+    },
+    "body": {
+      "fontSize": 14,
+      "fontWeight": 400
+    },
+    "fieldLabel": {
+      "fontSize": 13,
+      "fontWeight": 600
+    },
+    "metadata": {
+      "fontSize": 12,
+      "fontWeight": 400
+    }
+  },
+  "controlRoles": {
+    "action-primary": {
+      "height": 36,
+      "fontSize": 14,
+      "horizontalPadding": 14,
+      "radius": 6,
+      "surface": "primary",
+      "text": "primaryInverse"
+    },
+    "action-standard": {
+      "height": 34,
+      "fontSize": 13,
+      "horizontalPadding": 12,
+      "radius": 6,
+      "surface": "raised",
+      "text": "main"
+    },
+    "action-quiet": {
+      "height": 32,
+      "fontSize": 13,
+      "horizontalPadding": 8,
+      "radius": 6,
+      "surface": "transparent",
+      "text": "secondary"
+    },
+    "action-danger": {
+      "height": 34,
+      "fontSize": 13,
+      "horizontalPadding": 12,
+      "radius": 6,
+      "surface": "dangerSurface",
+      "text": "danger"
+    },
+    "action-icon": {
+      "height": 32,
+      "fontSize": 14,
+      "horizontalPadding": 0,
+      "radius": 6,
+      "surface": "transparent",
+      "text": "main"
+    },
+    "nav-main": {
+      "height": 38,
+      "fontSize": 16,
+      "horizontalPadding": 12,
+      "radius": 5,
+      "surface": "transparent",
+      "text": "main"
+    },
+    "nav-section": {
+      "height": 34,
+      "fontSize": 14,
+      "horizontalPadding": 12,
+      "radius": 5,
+      "surface": "transparent",
+      "text": "main"
+    },
+    "nav-subsection": {
+      "height": 32,
+      "fontSize": 13,
+      "horizontalPadding": 10,
+      "radius": 5,
+      "surface": "transparent",
+      "text": "secondary"
+    }
+  },
+  "palette": {
+    "canvas": "#101010",
+    "panel": "#202020",
+    "input": "#292929",
+    "raised": "#303030",
+    "hover": "#353535",
+    "border": "#505050",
+    "focus": "#bcbcbc",
+    "main": "#ededed",
+    "secondary": "#b9b9b9",
+    "muted": "#999999",
+    "primary": "#eeeeee",
+    "primaryInverse": "#171717",
+    "warning": "#f2ba64",
+    "success": "#a9dab5",
+    "danger": "#ffb4b4",
+    "dangerSurface": "#542c30",
+    "selection": "#70b4ff",
+    "transparent": "transparent"
+  },
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24
+  ],
+  "shapes": {
+    "controlRadius": 6,
+    "panelRadius": 9,
+    "modalRadius": 9,
+    "dividerWidth": 1
+  },
+  "operatingRules": {
+    "roleClassification": "Information hierarchy and action importance are independent. Do not resize a primary action because it is inside a subsection.",
+    "stateColors": "Neutral is default. Amber = needs action, green = success/wholesale when explicitly labeled, red = error/destructive, blue = selection/linked source; no decorative status colors.",
+    "layout": "Align sibling inputs to the same label and value columns; button width adapts to label but heights/padding follow the role. Preserve money's right edge and VAT beside the amount.",
+    "pendingKakaoToolbar": {
+      "status": "approved-awaiting-ui-change",
+      "location": "inside the KakaoTalk pane at the top, above the native Windows window docking area",
+      "buttons": [
+        {
+          "id": "kakao-view-together",
+          "label": "함께 보기",
+          "role": "nav-subsection",
+          "operation": "set OVERLAP"
+        },
+        {
+          "id": "kakao-view-split",
+          "label": "나누어 보기",
+          "role": "nav-subsection",
+          "operation": "set STACK"
+        },
+        {
+          "id": "kakao-disconnect",
+          "label": "카카오톡 연결 해제",
+          "role": "action-quiet",
+          "operation": "stop dock, restore native windows"
+        }
+      ],
+      "interaction": "Three independent buttons. Never use a cycling/switch-to-next mode button. Active view indicated with aria-pressed.",
+      "visibility": "Only show docked-mode controls while the native KakaoTalk session is connected.",
+      "constraint": "The toolbar must remain within the Kakao pane and outside the native overlay region; do not cover KakaoTalk's chat input or list scrollbar."
+    },
+    "pendingBrand": {
+      "status": "approved-awaiting-ui-change",
+      "rule": "Brand symbol and BANDO HUB logotype should have comparable visual height; test-workspace label is subordinate; remove unidentified trailing stripe without deleting any functional separator."
+    }
+  }
+}
