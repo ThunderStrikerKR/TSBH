@@ -22,6 +22,7 @@ export function SourceDocument({
   text,
   client,
   contentReady = true,
+  coordinatedFadePhase,
   onText,
   onOrder,
   onDealer,
@@ -36,6 +37,7 @@ export function SourceDocument({
   text: string;
   client?: Client;
   contentReady?: boolean;
+  coordinatedFadePhase?: import("./shared/useReadyContentFade").ContentFadePhase;
   onText: (text: string) => void;
   onOrder: (order: Order) => void;
   onDealer: (client: Client) => Promise<void> | void;
@@ -91,7 +93,8 @@ export function SourceDocument({
   // source becomes visible only after the matching Rust projection settles.
   // Editing unrelated fields must not restart the raw text fade.
   const sourceKey = [order.id, order.analysisRaw ?? order.raw, order.clientId].join(":");
-  const sourceFadePhase = useReadyContentFade(sourceKey, contentReady || waitingForSource, true);
+  const localSourceFadePhase = useReadyContentFade(sourceKey, contentReady || waitingForSource, true);
+  const sourceFadePhase = coordinatedFadePhase ?? localSourceFadePhase;
   // An inline filter allocated a new array on every repaint, restarting the
   // Rust client_candidates search even when the catalog had not changed.
   const activeClients = useMemo(
