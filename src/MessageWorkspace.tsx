@@ -11,12 +11,24 @@ export function MessageWorkspace({
   state,
   order,
   gid,
+  projectionReady = true,
+  projectionError = "",
+  noMessageExpected = false,
+  sharedFadePhase,
+  fadeKey,
+  onFadeReadiness,
   onOrder,
   onSave,
 }: {
   state: State;
   order: Order;
   gid?: string;
+  projectionReady?: boolean;
+  projectionError?: string;
+  noMessageExpected?: boolean;
+  sharedFadePhase?: import("./shared/useReadyContentFade").ContentFadePhase;
+  fadeKey?: string;
+  onFadeReadiness?: (key: string, section: "message" | "checks" | "financial", ready: boolean) => void;
   onOrder: (o: Order) => void;
   onSave: (s: State) => Promise<void>;
   onSelect: (id: string) => void;
@@ -29,10 +41,13 @@ export function MessageWorkspace({
     [resolved, setResolved] = useState<{
       fingerprint: string;
       groupId: string;
+      orderId: string;
       links: boolean;
       result: NativeAutomaticMessage;
     }>(),
-    [loadError, setLoadError] = useState(""),
+    [loadError, setLoadError] = useState<{
+      fingerprint: string; groupId: string; links: boolean; reason: string;
+    }>(),
     latest = useRef(order),
     latestState = useRef(state);
   latest.current = order;
@@ -46,23 +61,26 @@ export function MessageWorkspace({
   useEffect(() => {
     if (!gid || order.orderType === "RETAIL") {
       setResolved(undefined);
-      setLoadError("");
+      setLoadError(undefined);
       return;
     }
     let cancelled = false;
-    setLoadError("");
+    setLoadError(undefined);
+    const requestedOrderId = order.id;
     void nativeAutomaticMessage(latestState.current, gid, includeLinks)
       .then((result) => {
-        if (!cancelled) setResolved({ fingerprint, groupId: gid, links: includeLinks, result });
+        if (!cancelled) setResolved({ fingerprint, orderId: requestedOrderId, groupId: gid, links: includeLinks, result });
       })
       .catch((error) => {
         if (!cancelled) {
           setResolved(undefined);
-          setLoadError(String(error));
+          setLoadError({
+            fingerprint, groupId: gid, links: includeLinks, reason: String(error),
+          });
         }
       });
     return () => { cancelled = true; };
-  }, [fingerprint, gid, includeLinks, order.orderType]);
+  }, [fingerprint, gid, includeLinks, order.orderType, order.id]);
   // Reset user options only on an actual order switch. During Rust
   // reconciliation gid can temporarily disappear and reappear; coupling
   // that transient value to checkbox state triggers duplicate recalculation.
@@ -71,6 +89,7 @@ export function MessageWorkspace({
     setIncludeLinks(false);
   }, [order.id]);
   const automatic = resolved?.fingerprint === fingerprint &&
+      resolved?.orderId === order.id &&
       resolved?.groupId === gid && resolved?.links === includeLinks
       ? resolved.result
       : undefined,
@@ -97,7 +116,16 @@ export function MessageWorkspace({
   // A missing group is NOT a completed message. It is an intermediate
   // reconciliation state, so wait for the exact Rust message response.
   const bodyReady = Boolean(gid && automatic);
-  const messageFadePhase = useReadyContentFade(contentKey, bodyReady);
+  const currentLoadError = loadError?.fingerprint === fingerprint &&
+    loadError.groupId === gid && loadError.links === includeLinks ? loadError.reason : "";
+  const messageSettled = projectionReady &&
+    (bodyReady || noMessageExpected || Boolean(currentLoadError || projectionError));
+  useEffect(() => {
+    if (!fadeKey || !onFadeReadiness) return;
+    onFadeReadiness(fadeKey, "message", messageSettled);
+  }, [fadeKey, onFadeReadiness, messageSettled]);
+  const localMessageFadePhase = useReadyContentFade(contentKey, bodyReady);
+  const messageFadePhase = sharedFadePhase ?? localMessageFadePhase;
   const disabled = busy || !automatic || !text.trim() || (!request && !!automatic.paymentIssues.length);
   const copy = async (greeting: boolean) => {
     if (disabled || !gid) return;
@@ -159,7 +187,7 @@ export function MessageWorkspace({
         </div>
       </div>
       <div className="message-inline-status" role="status">
-        {loadError || status}
+        {projectionError || currentLoadError || status}
       </div>
       <footer className="message-copy-actions">
         <button disabled={disabled} onClick={() => void copy(false)}>
