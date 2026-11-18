@@ -28,7 +28,6 @@ test("only the explicitly requested, editable, order-value controls get orange e
     ".items-freight-panel .freight-input-area .freight-payment-code > select",
     '.items-freight-panel .dispatch-origin > button[aria-pressed="true"]',
     ".items-freight-panel .shipment-vat label.check",
-    ".order-grand-total > .order-grand-total-label",
     ".order-grand-total > b",
     ".order-grand-total .shipment-count-value",
   ]) {
@@ -39,6 +38,7 @@ test("only the explicitly requested, editable, order-value controls get orange e
     ".payment-message", ".message-account", ".waiting-payment",
     ".workflow-balance", ".staff-checks", ".freight-input-area,",
     ".items-freight-panel,", ".order-grand-total,",
+    ".order-grand-total > .order-grand-total-label",
   ]) {
     assert.ok(!selectors.includes(forbidden), "Whole-area highlight returned: " + forbidden);
   }
@@ -165,11 +165,16 @@ test("recipient, product, quantity, money, freight, selected origin and VAT use 
   assert.match(freight, /type="checkbox"/);
 });
 
-test("total label, total amount and only the dynamic count-plus-unit are highlighted", () => {
+test("total label reads 총 주문 without highlighting it; only amount and dynamic count are emphasized", () => {
   const desk = source("src/OrderDesk.tsx");
   const css = source("src/styles/receipt-layout.css");
   const oldFooter = source("src/styles/patch-v0808.css");
-  assert.match(desk, /className="order-grand-total-label">총 주문 금액<\/span>/);
+  assert.match(desk, /className="order-grand-total-label">총 주문<\/span>/);
+  assert.doesNotMatch(desk, /className="order-grand-total-label">총 주문 금액<\/span>/);
+  const activeEmphasis = css.split(".hub-live-workspace[data-one-touch-hover=\"true\"]:not([data-hover-stage=\"2\"]):not([data-hover-stage=\"3\"]):not([data-hover-stage=\"4\"]) .hub-panels .compact-review :is(")[1]?.split(") {")[0] ?? "";
+  assert.ok(activeEmphasis, "Missing common one-touch highlight whitelist");
+  assert.doesNotMatch(activeEmphasis, /\.order-grand-total > \.order-grand-total-label/);
+  assert.match(activeEmphasis, /\.order-grand-total > b/);
   assert.match(desk, /<b data-recipient-fade=\{recipientRevealPhase\}>/);
   assert.match(desk, /className="shipment-count-label">\| 택배<\/span>/);
   assert.match(desk, /className="shipment-count-value">[\s\S]*?className="shipment-count-number"[\s\S]*?className="shipment-count-unit">건<\/span>/);

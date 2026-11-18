@@ -379,7 +379,6 @@
   .items-freight-panel .freight-input-area .freight-payment-code > select,
   .items-freight-panel .dispatch-origin > button[aria-pressed="true"],
   .items-freight-panel .shipment-vat label.check,
-  .order-grand-total > .order-grand-total-label,
   .order-grand-total > b,
   .order-grand-total .shipment-count-value
 ) {
