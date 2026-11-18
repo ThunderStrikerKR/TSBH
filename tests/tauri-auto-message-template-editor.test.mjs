@@ -65,9 +65,9 @@ test("editing templates does not modify sale prices or historical orders",()=>{
 });
 
 test("the live copy pipelines resolve templates for payment, request and color",()=>{
-  for(const path of ["src/automatic-message.ts","src/hub-messages.ts","src/domain.ts"])
+  for(const path of ["tests/rust-migration/oracles/automatic-message.ts","src/hub-messages.ts","src/domain.ts"])
     assert.match(source(path),/renderAutomaticTemplate/);
   assert.match(source("src/hub-messages.ts"),/appliedDefaultColorNotice\(i,state\.settings\)/);
-  assert.match(source("src/automatic-message.ts"),/requestClosing/);
+  assert.match(source("tests/rust-migration/oracles/automatic-message.ts"),/requestClosing/);
   assert.match(source("src/customer-questions.ts"),/renderAutomaticTemplate/);
 });
