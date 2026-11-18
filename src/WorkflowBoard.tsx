@@ -423,6 +423,77 @@ export function WorkflowBoard({
             Math.ceil(((stageDeadlines[g.id] ?? 0) - Math.max(clock, Date.now())) / 1000),
           ),
           buttonLabel = label + (remaining ? ` (${remaining})` : "");
+        // Expanded contents and hover preview intentionally render the SAME
+        // shipment table so their headings, fields and status cues cannot drift.
+        const renderShipmentList = (inPreview: boolean) => (
+              <div className="workflow-shipment-list">
+                <div className="workflow-list-head">
+                  <span>수취인</span>
+                  <span>상품</span>
+                  <span>운임</span>
+                </div>
+                {ss.map((s) => {
+                  const { recipient } = shipmentContext(state, s);
+                  const nativeShipment = nativeGroup?.shipments.find((row) => row.shipmentId === s.id);
+                  const isPreviewed = hovered && hoveredShipmentId === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      data-ui-role="nav-subsection"
+                      className={
+                        "workflow-shipment" +
+                        (s.id === selection?.shipmentId ? " chosen" : "") +
+                        (isPreviewed ? " previewed" : "") +
+                        (s.id === leaving ? " query-leaving" : "") +
+                        (activeKey &&
+                        (activeKey.startsWith(recipient.id + ":") ||
+                          recipient.items.some((i) => activeKey.startsWith(i.id + ":")))
+                          ? " linked-active"
+                          : "")
+                      }
+                      data-shipment-id={s.id}
+                      aria-label={"배송 건 " + recipient.name + (isPreviewed ? " (현재 화면에 표시 중)" : "")}
+                      onClick={() => {
+                        if (inPreview) stopStagePreview();
+                        onSelect({
+                          orderId: s.orderId,
+                          groupId: g.id,
+                          shipmentId: s.id,
+                        });
+                      }}
+                    >
+                      <span className="shipment-recipient" title={recipient.name}>
+                        <span className="shipment-recipient-name">{recipient.name || "수취인 확인"}</span>
+                        {isPreviewed && <span className="workflow-preview-indicator">표시 중</span>}
+                      </span>
+                      <span className="shipment-products">
+                        {recipient.items.map((i) => (
+                          <span
+                            className={
+                              "product-chip" +
+                              (nativeGroup?.issues.some(
+                                (issue) => issue.itemId === i.id && issue.severity === "ACTION",
+                              )
+                                ? " product-chip-error"
+                                : "")
+                            }
+                            key={i.id}
+                            title={i.name}
+                          >
+                            {internalModel(i.name)} × {i.quantity ?? "?"}
+                          </span>
+                        ))}
+                      </span>
+                      <span className="shipment-freight">
+                        {nativeShipment?.freightCode === "020"
+                          ? "착불"
+                          : won(nativeShipment?.totals.shipping ?? null)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+        );
         return (
           <article
             className={
@@ -580,7 +651,7 @@ export function WorkflowBoard({
                 {hovered && previewLayer?.groupId === g.id && typeof document !== "undefined" &&
                   createPortal(
                     <div
-                      className="workflow-preview-layer"
+                      className="workflow-preview-layer hub-slot-3"
                       role="group"
                       aria-label={(first.client.displayName || first.client.name) + " 배송 건 미리보기"}
                       style={{
@@ -591,39 +662,7 @@ export function WorkflowBoard({
                       onMouseEnter={keepStagePreview}
                       onMouseLeave={scheduleStagePreviewExit}
                     >
-                      <div className="workflow-preview-layer-heading">
-                        <b>{first.client.displayName || first.client.name}</b>
-                        <span>배송 {ss.length}건 · 미리보기</span>
-                      </div>
-                      <div className="workflow-preview-layer-list">
-                        {ss.map((shipment) => {
-                          const { recipient } = shipmentContext(state, shipment);
-                          const nativeShipment = nativeGroup?.shipments.find((row) => row.shipmentId === shipment.id);
-                          const displayed = hoveredShipmentId === shipment.id;
-                          const products = recipient.items.map((item) =>
-                            internalModel(item.name) + " × " + (item.quantity ?? "?")).join(", ") || "품목 확인";
-                          return (
-                            <button type="button" data-ui-role="nav-subsection"
-                              key={shipment.id}
-                              className={"workflow-preview-layer-shipment" + (displayed ? " displayed" : "")}
-                              aria-label={"배송 건 " + recipient.name + (displayed ? " 현재 표시 중" : "") + " 선택"}
-                              onClick={() => {
-                                stopStagePreview();
-                                onSelect({ orderId: shipment.orderId, groupId: g.id, shipmentId: shipment.id });
-                              }}
-                            >
-                              <span className="workflow-preview-layer-recipient">
-                                {recipient.name || "수취인 확인"}
-                                {displayed && <span className="workflow-preview-indicator">표시 중</span>}
-                              </span>
-                              <span className="workflow-preview-layer-products" title={products}>{products}</span>
-                              <span className="workflow-preview-layer-freight">
-                                {nativeShipment?.freightCode === "020" ? "착불" : won(nativeShipment?.totals.shipping ?? null)}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                      {renderShipmentList(true)}
                     </div>,
                     document.body,
                   )}
@@ -656,74 +695,7 @@ export function WorkflowBoard({
                 )}
               </div>
             )}
-            {open && (
-              <div className="workflow-shipment-list">
-                <div className="workflow-list-head">
-                  <span>수취인</span>
-                  <span>상품</span>
-                  <span>운임</span>
-                </div>
-                {ss.map((s) => {
-                  const { recipient } = shipmentContext(state, s);
-                  const nativeShipment = nativeGroup?.shipments.find((row) => row.shipmentId === s.id);
-                  const isPreviewed = hovered && hoveredShipmentId === s.id;
-                  return (
-                    <button
-                      key={s.id}
-                      data-ui-role="nav-subsection"
-                      className={
-                        "workflow-shipment" +
-                        (s.id === selection?.shipmentId ? " chosen" : "") +
-                        (isPreviewed ? " previewed" : "") +
-                        (s.id === leaving ? " query-leaving" : "") +
-                        (activeKey &&
-                        (activeKey.startsWith(recipient.id + ":") ||
-                          recipient.items.some((i) => activeKey.startsWith(i.id + ":")))
-                          ? " linked-active"
-                          : "")
-                      }
-                      data-shipment-id={s.id}
-                      aria-label={"배송 건 " + recipient.name + (isPreviewed ? " (현재 화면에 표시 중)" : "")}
-                      onClick={() =>
-                        onSelect({
-                          orderId: s.orderId,
-                          groupId: g.id,
-                          shipmentId: s.id,
-                        })
-                      }
-                    >
-                      <span className="shipment-recipient" title={recipient.name}>
-                        <span className="shipment-recipient-name">{recipient.name || "수취인 확인"}</span>
-                        {isPreviewed && <span className="workflow-preview-indicator">표시 중</span>}
-                      </span>
-                      <span className="shipment-products">
-                        {recipient.items.map((i) => (
-                          <span
-                            className={
-                              "product-chip" +
-                              (nativeGroup?.issues.some(
-                                (issue) => issue.itemId === i.id && issue.severity === "ACTION",
-                              )
-                                ? " product-chip-error"
-                                : "")
-                            }
-                            key={i.id}
-                            title={i.name}
-                          >
-                            {internalModel(i.name)} × {i.quantity ?? "?"}
-                          </span>
-                        ))}
-                      </span>
-                      <span className="shipment-freight">
-                        {nativeShipment?.freightCode === "020"
-                          ? "착불"
-                          : won(nativeShipment?.totals.shipping ?? null)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            {open && renderShipmentList(false)}
           </article>
         );
       })}
