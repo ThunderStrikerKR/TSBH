@@ -26,6 +26,7 @@ export function SourceDocument({
   onSaveState,
   onNotice,
   onManual,
+  onNew,
   onSettings,
 }: {
   state: State;
@@ -39,6 +40,7 @@ export function SourceDocument({
   onSaveState: (state: State) => Promise<void>;
   onNotice: NoticeSink;
   onManual?: () => void;
+  onNew?: () => void;
   onSettings?: () => void;
 }) {
   const [retail, setRetail] = useState(false);
@@ -79,6 +81,7 @@ export function SourceDocument({
     }
   }, [text]);
   const formal = !!order.confirmedAt || state.orders.some((o) => o.id === order.id);
+  const waitingForSource = !formal && !(order.analysisRaw ?? text).trim();
   // An inline filter allocated a new array on every repaint, restarting the
   // Rust client_candidates search even when the catalog had not changed.
   const activeClients = useMemo(
@@ -298,21 +301,9 @@ export function SourceDocument({
       )}
       <header className="pane-heading source-heading">
         <h2 className="source-help-heading">발주 원문 <HelpTooltip title="발주서 접수" purpose="거래처에서 받은 주문 내용을 입력하고, 주문할 상품과 받는 사람 정보를 확인합니다." when="카카오톡이나 문자, 메일, 팩스 등으로 주문이 들어왔을 때 사용합니다." steps={["대리발송이나 대리점 납품 등 주문에 맞는 입력 방식을 선택합니다.", "주문 내용을 붙여넣거나 캡처 범위 지정을 눌러 화면 글자를 인식합니다.", "거래처를 확인하고 수취인과 상품 내용을 검토합니다.", "확인이 필요한 항목을 수정한 뒤 주문을 진행합니다."]} result="주문 원문을 바탕으로 상품과 수취인 정보를 확인할 수 있습니다." caution="화면에서 글자를 인식하더라도 잘못 읽은 내용은 사용자가 직접 확인해야 합니다." /></h2>
-        {!formal && (
-          <div className="source-heading-actions" aria-label="발주 입력 방식">
-            <button disabled={busy} onClick={() => void paste(undefined, "AGENCY")}>
-              대리발송
-            </button>
-            <button disabled={busy} onClick={() => void paste(undefined, "DEALER")}>
-              대리점 납품
-            </button>
-            <button disabled={busy} onClick={() => setRetail(true)}>
-              직접 입력
-            </button>
-            <button disabled={busy} onClick={() => void captureOcr()}>
-              캡처 범위 지정
-            </button>
-          </div>
+        {onNew && (
+          <button type="button" className="source-new-order" data-ui-role="action-standard"
+            onClick={onNew}>＋ 새 주문</button>
         )}
       </header>
       <div className="source-top" aria-label="현재 거래처 영역">
@@ -361,20 +352,47 @@ export function SourceDocument({
           ))}
       </div>
       <div
-        className="source-document"
+        className={"source-document" + (waitingForSource ? " source-awaiting-input" : "")}
+        tabIndex={waitingForSource ? 0 : undefined}
+        aria-label={waitingForSource ? "새 발주서 TXT 또는 IMG 접수" : undefined}
         onPaste={(event) => {
           event.preventDefault();
           event.stopPropagation();
           if (!formal) void paste(event.clipboardData.getData("text/plain"));
         }}
       >
-        <LinkedText
-          readOnly
-          label="주문 원문"
-          text={order.analysisRaw ?? order.raw}
-          spans={sourceDocumentSpans(order.analysisRaw ?? order.raw, order)}
-          onChange={() => {}}
-        />
+        {waitingForSource ? (
+          <div className="source-intake-choice" aria-label="발주서 입력 유형">
+            <section className="source-intake-half" aria-label="TXT 발주서 접수">
+              <strong className="source-intake-kind">TXT</strong>
+              <p className="source-intake-hint">텍스트 발주서</p>
+              <div className="source-intake-buttons">
+                <button type="button" data-ui-role="action-standard"
+                  disabled={busy} onClick={() => void paste(undefined, "AGENCY")}>대리발송</button>
+                <button type="button" data-ui-role="action-standard"
+                  disabled={busy} onClick={() => void paste(undefined, "DEALER")}>대리점 납품</button>
+                <button type="button" data-ui-role="action-standard"
+                  disabled={busy} onClick={() => setRetail(true)}>직접 입력</button>
+              </div>
+            </section>
+            <section className="source-intake-half" aria-label="IMG 발주서 접수">
+              <strong className="source-intake-kind">IMG</strong>
+              <p className="source-intake-hint">화면 이미지 글자 인식</p>
+              <div className="source-intake-buttons">
+                <button type="button" data-ui-role="action-standard"
+                  disabled={busy} onClick={() => void captureOcr()}>캡처 범위 지정</button>
+              </div>
+            </section>
+          </div>
+        ) : (
+          <LinkedText
+            readOnly
+            label="주문 원문"
+            text={order.analysisRaw ?? order.raw}
+            spans={sourceDocumentSpans(order.analysisRaw ?? order.raw, order)}
+            onChange={() => {}}
+          />
+        )}
         {ocrPhase === "recognizing" && (
           <div className="source-ocr-progress" role="status" aria-live="polite" aria-label="OCR 진행 상태">
             <strong>OCR 처리 중…</strong>
