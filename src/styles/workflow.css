@@ -175,38 +175,30 @@
   border-color: var(--ds-role-surface-emphasized-action-hover);
   color: var(--ds-color-primaryInverse);
 }
-/* Same content box and shipment table as the expanded order card.
-   The fixed portal does not add padding, borders or a second visual frame.
-   A 250ms exit grace still connects the stage button to the preview rows. */
-.workflow-preview-layer {
+/* The temporary preview is the same complete .workflow-group card
+   rendered at the original card coordinates, with its real expanded list.
+   Only this transparent viewport-safe portal wrapper is preview-specific. */
+.workflow-preview-stage {
   position: fixed;
-  box-sizing: border-box;
   z-index: 400;
-  display: block;
+  box-sizing: border-box;
   min-width: 0;
-  min-height: 0;
-  height: auto;
   padding: 0;
+  margin: 0;
   border: 0;
-  border-radius: 0;
-  background: #202020;
-  color: var(--ds-role-text-primary);
-  box-shadow: none;
+  background: transparent;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: auto;
 }
-.workflow-preview-layer .workflow-shipment-list {
+.workflow-preview-stage .workflow-group {
   width: 100%;
-  min-width: 0;
+  margin: 0;
 }
-/* Portaled rows are outside .app-v03, so explicitly retain the same
-   foreground as the in-card rows instead of the global button color. */
-.workflow-preview-layer .workflow-shipment {
-  color: #f5f5f5;
-}
-.workflow-preview-layer .workflow-shipment.chosen::before,
-.workflow-preview-layer .workflow-shipment.query-leaving::before {
+/* The preview must not replay a leaving-selection animation on top of the
+   identical underlying card. */
+.workflow-preview-stage .workflow-shipment.chosen::before,
+.workflow-preview-stage .workflow-shipment.query-leaving::before {
   animation: none;
   transform: none;
 }
