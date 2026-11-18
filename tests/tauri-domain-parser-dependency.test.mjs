@@ -12,3 +12,12 @@ test("shared domain helpers must not import or re-export the deprecated TS parse
   assert.match(read("tests/rust-migration/oracles/manual-classification.ts"), /parseSmart as parseOrder/);
   assert.match(read("tests/rust-migration/rules/parity/compare.mts"), /parseSmart as parseOrder/);
 });
+
+test("shared domain has no old TypeScript issue or message renderer dependencies", () => {
+  const domain = read("src/domain.ts");
+  assert.doesNotMatch(domain, /from\s+["']\.\/validation(?:\.js|\.ts)?["']/);
+  assert.doesNotMatch(domain, /renderAutomaticTemplate|orderIssues\(/);
+  const oracle = read("src/hub-messages.ts");
+  assert.match(oracle, /export function reviewIssues/);
+  assert.match(oracle, /export function messages/);
+});

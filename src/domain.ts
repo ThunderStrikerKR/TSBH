@@ -1,10 +1,7 @@
 import { companyParty } from "./order-types.js";
 import { z } from "zod";
 import { aliasProblems } from "./matching.js";
-import { colorLabel } from "./product-models.js";
-import { renderAutomaticTemplate } from "./automatic-message-templates.js";
 import type { Alias, Client, Item, Order, Product, Recipient, Settings, State } from "./types.js";
-import { blocking, orderIssues } from "./validation.js";
 export const unassignedClient: Client = {
   id: "",
   name: "",
@@ -275,112 +272,8 @@ export function totals(o: Order, c: Client) {
     return { subtotal: null, shipping, vat: null, total: null };
   return { subtotal, shipping, vat, total };
 }
-export function reviewIssues(o: Order) {
-  return [
-    ...new Set(
-      orderIssues(o)
-        .filter((i) => blocking(i, 1))
-        .map(
-          (i) =>
-            (i.itemId
-              ? (o.recipients.flatMap((r) => r.items).find((x) => x.id === i.itemId)?.name ??
-                "상품")
-              : "수취인 " + (o.recipients.findIndex((r) => r.id === i.recipientId) + 1)) +
-            ": " +
-            i.title,
-        ),
-    ),
-  ];
-}
 export const won = (n: number | null) =>
   n === null ? "확인 필요" : n.toLocaleString("ko-KR") + "원";
-export function messages(
-  o: Order,
-  c: Client,
-  s: Settings,
-  links: { payment: boolean; options: boolean },
-  products: Product[] = [],
-) {
-  c = o.pricesLocked && o.clientSnapshot ? o.clientSnapshot : c;
-  const t = totals(o, c),
-    items = o.recipients.flatMap((r) => r.items),
-    a = recommendAccount(o, s, products, c);
-  const label = (i: Item) => {
-    const p = products.find((p) => p.id === i.productId);
-    return (
-      i.name +
-      (p?.colorStatus === "NOT_REQUIRED" || !i.color || ["단일", "색상 미표기"].includes(i.color)
-        ? ""
-        : " (" + colorLabel(i.color) + ")")
-    );
-  };
-  const urls = (on: boolean) =>
-    on
-      ? [
-          ...new Set(
-            items
-              .filter((i) => i.url && validProductUrl(i.url))
-              .map((i) => label(i) + "\n" + i.url),
-          ),
-        ].join("\n")
-      : "";
-  const paymentIssues = [
-    ...new Set([
-      ...(!c.id ? ["거래처 선택 필요"] : []),
-      ...reviewIssues(o),
-      ...(items.some((i) => !i.productId || !i.variantId) ? ["제품명이 확인되지 않습니다."] : []),
-      ...(c.id && items.some((i) => i.unitPrice === null) ? ["판매가 확인 필요"] : []),
-      ...(t.shipping === null ? ["운임 확인 필요"] : []),
-      ...(!a?.bank.trim() || !a.number.trim() || !a.holder.trim() ? ["입금 계좌 등록 필요"] : []),
-    ]),
-  ];
-  const amountLines = items.map(i =>
-    renderAutomaticTemplate(s,"paymentItem",{
-      상품명:label(i),수량:String(i.quantity??"?"),
-      금액:i.unitPrice !== null && i.quantity !== null
-        ? won(i.unitPrice * i.quantity)
-        : i.quantity === null ? "수량 확인 필요"
-        : !c.id ? "거래처 선택 후 단가 적용" : "판매가 확인 필요",
-    })+(i.quantityConfirmed === false ? " (수량 미확정)" : ""),
-  );
-  const payment = [
-    renderAutomaticTemplate(s,"paymentGreeting"),
-    "",
-    ...(paymentIssues.length ? ["[작성 중 / 확인 후 복사 가능]", ""] : []),
-    ...amountLines,
-    "",
-    renderAutomaticTemplate(s,"paymentFreight",{운임:won(t.shipping)}),
-    ...(o.applyVat ? [renderAutomaticTemplate(s,"paymentVat",{부가세:won(t.vat)})] : []),
-    "",
-    renderAutomaticTemplate(s,"paymentTotal",{합계:t.total===null ? "금액 확인 필요" : won(t.total)}),
-    "",
-    a?.bank && a.number && a.holder
-      ? renderAutomaticTemplate(s,"paymentAccount",{
-          은행명:a.bank,계좌번호:a.number,예금주:a.holder,
-        })
-      : "[입금 계좌 등록 필요]",
-    urls(links.payment),
-  ].join("\n");
-  const questions = items.flatMap((i) => [
-    ...(i.quantityConfirmed === false ? [renderAutomaticTemplate(s,"quantityMissing",{상품명:i.name})] : []),
-    ...(!i.productId ? [renderAutomaticTemplate(s,"modelMissing",{상품명:i.name})] : []),
-    ...(i.issues.some((x) => x.includes("색상")) ? [`${i.name}: 실제 색상을 확인해 주세요.`] : []),
-  ]);
-  const options = [
-    renderAutomaticTemplate(s,"paymentGreeting"),
-    "",
-    renderAutomaticTemplate(s,"optionsIntro"),
-    "",
-    ...items.map((i) => `${label(i)} * ${i.quantity ?? "?"}개`),
-    "",
-    ...questions,
-
-    "",
-    renderAutomaticTemplate(s,"optionsClosing"),
-    urls(links.options),
-  ].join("\n");
-  return { payment, options, paymentIssues };
-}
 export const statusNames = {
   RECEIVED: "주문 접수",
   REVIEW: "정보 확인 필요",
