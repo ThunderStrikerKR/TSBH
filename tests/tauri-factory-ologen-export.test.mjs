@@ -28,7 +28,7 @@ const serializer = {};
 const nativeSerializer = ts.transpileModule(read("src/factory-export.ts"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText;
-vm.runInThisContext("(function(exports) {\n" + nativeSerializer + "\n})")(serializer);
+vm.runInThisContext("(function(exports, require) {\n" + nativeSerializer + "\n})")(serializer, require);
 const { createFactoryWorkbook, LOGEN_HEADERS } = serializer;
 
 function stateFixture() {

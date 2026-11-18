@@ -51,7 +51,7 @@ test("92 exact mapped names have source-grounded change records; no unproven des
 });
 
 test("factory diamond never leaks into product names, buyer messages, or store export",()=>{
-  const factory = src("src/factory-export.ts");
+  const factory = src("tests/rust-migration/oracles/factory-export.ts");
   assert.match(factory,/"◆ " \+ trim\(item\.name\)/);
   assert.ok(!src("src/hub-messages.ts").includes("◆"));
   assert.ok(!src("src/domain.ts").includes("◆"));
