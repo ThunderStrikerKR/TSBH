@@ -80,7 +80,7 @@ test("already billed and dispatched orders do not retroactively acquire a charge
   const reconcile = source("src-tauri/src/business_core/rules/reconciliation.rs");
   assert.match(reconcile, /let old_bill=existing_ship\.is_some_and/);
   assert.match(reconcile, /flag\(ship,"transferred"\)/);
-  assert.match(reconcile, /field\(ship,"step"\)\.as_i64\(\)\.unwrap_or\(0\)>=2/);
+  assert.match(reconcile, /field\(ship,"step"\)\.as_i64\(\)\.unwrap_or\(0\)>=1/);
   assert.match(reconcile, /"address":current_address,"checked":false,\s*"manual":false,"legacy":true/);
   assert.match(reconcile, /"address":current_address,"checked":true,"manual":false/);
   const detector = source("src-tauri/src/business_core/rules/remote_delivery.rs");
