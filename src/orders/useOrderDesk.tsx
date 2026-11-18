@@ -46,6 +46,7 @@ export type OrderDeskProps = {
     active: string;
     recipientId?: string;
     setActive: (value: string) => void;
+    beginHover?: (key: string) => void;
     clearHover?: () => void;
   };
   workflowSelection?: WorkflowSelection;
