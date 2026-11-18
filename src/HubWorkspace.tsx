@@ -52,10 +52,14 @@ export function HubWorkspace(props: Props) {
       lastVisiblePreview.current = undefined;
     }
   }, [draft.id]);
-  // Classified-field hover gets a grace period before clearing.
+  // Classified-field hover uses a short entrance delay and an exit grace
+  // period. Focus and explicit commands must always react immediately.
+  const linkHoverOnTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const linkHoverOffTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => {
+    if (linkHoverOnTimer.current) clearTimeout(linkHoverOnTimer.current);
     if (linkHoverOffTimer.current) clearTimeout(linkHoverOffTimer.current);
+    linkHoverOnTimer.current = undefined;
     linkHoverOffTimer.current = undefined;
   }, [draft.id]);
   const [source, setSource] = useState<HTMLElement | null>(null),
@@ -403,12 +407,27 @@ export function HubWorkspace(props: Props) {
     );
   const setSelectedLive = useEventCallback(setSelected);
   const setActiveLive = useEventCallback((key: string) => {
+    // Focus, click-driven evidence navigation and explicit clear are immediate.
+    if (linkHoverOnTimer.current) clearTimeout(linkHoverOnTimer.current);
     if (linkHoverOffTimer.current) clearTimeout(linkHoverOffTimer.current);
+    linkHoverOnTimer.current = undefined;
     linkHoverOffTimer.current = undefined;
     setActive(key);
   });
-  const clearLinkHoverLive = useEventCallback(() => {
+  const beginLinkHoverLive = useEventCallback((key: string) => {
+    if (linkHoverOnTimer.current) clearTimeout(linkHoverOnTimer.current);
     if (linkHoverOffTimer.current) clearTimeout(linkHoverOffTimer.current);
+    linkHoverOffTimer.current = undefined;
+    linkHoverOnTimer.current = setTimeout(() => {
+      linkHoverOnTimer.current = undefined;
+      setActive(key);
+    }, 100);
+  });
+  const clearLinkHoverLive = useEventCallback(() => {
+    // Ignore fast pointer passes before the entry timer can activate.
+    if (linkHoverOnTimer.current) clearTimeout(linkHoverOnTimer.current);
+    if (linkHoverOffTimer.current) clearTimeout(linkHoverOffTimer.current);
+    linkHoverOnTimer.current = undefined;
     linkHoverOffTimer.current = setTimeout(() => {
       linkHoverOffTimer.current = undefined;
       setActive("");
@@ -418,8 +437,9 @@ export function HubWorkspace(props: Props) {
     active,
     recipientId: linkedRecipient?.recipient.id,
     setActive: setActiveLive,
+    beginHover: beginLinkHoverLive,
     clearHover: clearLinkHoverLive,
-  }), [active, linkedRecipient?.recipient.id, setActiveLive, clearLinkHoverLive]);
+  }), [active, linkedRecipient?.recipient.id, setActiveLive, beginLinkHoverLive, clearLinkHoverLive]);
   const visibleReceptionId = hoverSelection?.orderId ?? linkedHoverSelection?.orderId ?? receptionId;
   const receptionOrder =
     visibleReceptionId === draft.id

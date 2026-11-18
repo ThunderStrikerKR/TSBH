@@ -16,12 +16,17 @@ const contains = (spans, text, targetId, field, term) =>
   spans.some((s) => s.targetId === targetId && s.field === field &&
     text.slice(s.start, s.end).includes(term));
 
-test("classified source and detail hover release waits 180ms without committing workflow selection", () => {
+test("linked source hover activates at 100ms, clears at 180ms, without committing a shipment", () => {
   const linked = read("src/LinkedText.tsx");
   const hub = read("src/HubWorkspace.tsx");
   const desk = read("src/OrderDesk.tsx");
   const hook = read("src/orders/useOrderDesk.tsx");
+  assert.match(linked, /beginHover\?: \(key: string\) => void/);
   assert.match(linked, /clearHover\?: \(\) => void/);
+  assert.match(linked, /onMouseEnter=\{\(\) => \(c\.beginHover \?\? c\.setActive\)\(key\)\}/);
+  assert.match(linked, /onMouseEnter=\{\(\) => \(c\.beginHover \?\? c\.setActive\)\(linkKey\)\}/);
+  assert.match(hub, /linkHoverOnTimer\.current = setTimeout\(\(\) => \{[\s\S]*?setActive\(key\);[\s\S]*?\}, 100\)/);
+  assert.match(hub, /if \(linkHoverOnTimer\.current\) clearTimeout\(linkHoverOnTimer\.current\)/);
   assert.equal((linked.match(/c\.clearHover \?\? \(\(\) => c\.setActive\(""\)\)/g) ?? []).length, 2);
   assert.match(hub, /linkHoverOffTimer\.current = setTimeout\(\(\) => \{[\s\S]*?setActive\(""\);[\s\S]*?\}, 180\)/);
   assert.match(hub, /if \(linkHoverOffTimer\.current\) clearTimeout\(linkHoverOffTimer\.current\)/);
@@ -30,6 +35,8 @@ test("classified source and detail hover release waits 180ms without committing 
   assert.match(hub, /const linkedHoverShipment = active && previewReady/);
   assert.match(hub, /const visibleSelection = hoverSelection \?\? linkedHoverSelection \?\? selected/);
   assert.match(desk, /clearHover: linkController\?\.clearHover/);
+  assert.match(hub, /beginHover: beginLinkHoverLive/);
+  assert.match(hub, /setActive: setActiveLive/);
   assert.match(hook, /clearHover\?: \(\) => void/);
 });
 
@@ -95,7 +102,7 @@ test("actual message preview passes its phase to the hover mapper, and hover eve
   const hub = read("src/HubWorkspace.tsx");
   assert.match(view, /messageSpans\(text, order, request \? "request" : "payment"\)/);
   assert.match(linked, /if \(phase === "request"\) return requestMessageSpans\(text, order\)/);
-  assert.match(linked, /onMouseEnter=\{\(\) => c\.setActive\(key\)\}/);
+  assert.match(linked, /onMouseEnter=\{\(\) => \(c\.beginHover \?\? c\.setActive\)\(key\)\}/);
   assert.match(linked, /c\.active === linkKey \? "linked-active" : ""/);
   assert.match(desk, /<Linked linkKey=\{r\.id \+ ":address"\}>/);
   assert.match(desk, /<Linked linkKey=\{r\.id \+ ":phone"\}>/);

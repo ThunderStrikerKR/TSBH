@@ -153,10 +153,10 @@ test("payment and VAT stay beside each other to the left of right-fixed stage bu
   assert.match(css, /\.workflow-action-line > \.workflow-progress\s*\{[\s\S]*?justify-content: flex-end/);
 });
 
-test("one-touch preview enters at 120ms, restores at 260ms, and action click remains immediate", () => {
+test("one-touch preview enters at 250ms, restores at 260ms, and action click remains immediate", () => {
   const board = read("src/WorkflowBoard.tsx");
   const css = read("src/styles/workflow.css");
-  assert.match(board, /hoverDelay\.current = setTimeout\(\(\) => \{[\s\S]*?onStageHover\?\.\([\s\S]*?\}, 120\)/);
+  assert.match(board, /hoverDelay\.current = setTimeout\(\(\) => \{[\s\S]*?onStageHover\?\.\([\s\S]*?\}, 250\)/);
   assert.match(board, /onMouseLeave=\{\(\) => \{[\s\S]*?hoverReturnDelay\.current = setTimeout\(\(\) => \{[\s\S]*?onStageHover\?\.\(undefined\);[\s\S]*?\}, 260\)/);
   assert.match(board, /onMouseEnter=\{\(\) => \{[\s\S]*?clearTimeout\(hoverReturnDelay\.current\)/);
   assert.match(board, /if \(hoverReturnDelay\.current\) clearTimeout\(hoverReturnDelay\.current\);\s*\}, \[\]\)/);

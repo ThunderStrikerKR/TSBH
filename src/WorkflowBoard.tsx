@@ -108,7 +108,7 @@ export function WorkflowBoard({
     hoveredGroup = useRef<string | undefined>(undefined),
     hoverDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
     hoverReturnDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // Enter is deliberate (120ms); leaving gets a 260ms grace period so
+  // Enter is deliberate (250ms); leaving gets a 260ms grace period so
   // moving across an adjacent button or shipment row does not flicker.
   useEffect(() => () => {
     if (hoverDelay.current) clearTimeout(hoverDelay.current);
@@ -468,7 +468,7 @@ export function WorkflowBoard({
                       hoveredGroup.current = g.id;
                       onStageHover?.({ groupId: g.id, step: Math.min(step + 1, 4) });
                       hoverDelay.current = undefined;
-                    }, 120);
+                    }, 250);
                   }}
                   onMouseLeave={() => {
                     if (hoverDelay.current) clearTimeout(hoverDelay.current);
@@ -476,7 +476,7 @@ export function WorkflowBoard({
                     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
                     hoverReturnDelay.current = setTimeout(() => {
                       // If the pointer briefly crossed another button that
-                      // never reached its 120ms enter threshold, clear the
+                      // never reached its 250ms enter threshold, clear the
                       // previous preview as well; never leave a stale hover.
                       hoveredGroup.current = undefined;
                       onStageHover?.(undefined);
