@@ -1,9 +1,11 @@
 import type { StaffBlock } from "./hub-messages";
+import type { ContentFadePhase } from "./shared/useReadyContentFade";
 export function StaffChecks({
   blocks,
   loading = false,
   interactive = true,
   error = "",
+  fadePhase = "ready",
   onSelect,
   onApproveOne,
   canApproveOne,
@@ -16,6 +18,7 @@ export function StaffChecks({
   /** A retained Rust projection is read-only until its current inputs settle. */
   interactive?: boolean;
   error?: string;
+  fadePhase?: ContentFadePhase;
   onSelect: (block: StaffBlock) => void;
   onApproveOne?: (block: StaffBlock) => void;
   canApproveOne?: (block: StaffBlock) => boolean;
@@ -36,7 +39,7 @@ export function StaffChecks({
     <section className="staff-checks" aria-label="확인할 내용" aria-busy={loading}>
       <h3>
         확인할 내용{" "}
-        <small>
+        <small data-content-fade={fadePhase}>
           조치 {actions.length}건 / 안내 {facts.length}건
         </small>
       </h3>
@@ -44,6 +47,8 @@ export function StaffChecks({
         {error && <p className="form-error" role="alert">Rust 확인 항목 조회 실패: {error}</p>}
         {!error && !loading && !actions.length &&
           <p className="staff-empty">필수 확인 사항 없음</p>}
+        <div className="staff-check-content" data-content-fade={fadePhase}
+          aria-busy={fadePhase === "pending"} inert={fadePhase === "pending"}>
         {actions.map((b, n) => (
           <article
             className={
@@ -155,6 +160,7 @@ export function StaffChecks({
             </div>
           </article>
         ))}
+        </div>
       </div>
     </section>
   );
