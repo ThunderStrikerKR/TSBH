@@ -14,7 +14,9 @@ function load(name) {
   if (cache.has(name)) return cache.get(name);
   const exported = {};
   cache.set(name, exported);
-  const transpiled = ts.transpileModule(read("src/" + name + ".ts"), {
+  const source = name === "store-export-oracle"
+    ? "tests/rust-migration/oracles/store-export.ts" : "src/" + name + ".ts";
+  const transpiled = ts.transpileModule(read(source), {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2022,
@@ -25,14 +27,15 @@ function load(name) {
     "(function(exports, require, crypto, structuredClone){\n" + transpiled + "\n})",
     { filename: "src/" + name + ".ts" },
   );
-  fn(exported, (name) => name.startsWith("./")
-    ? load(name.slice(2).replace(/\.js$/, ""))
-    : requireModule(name), webcrypto, structuredClone);
+  fn(exported, (name) => name.includes("factory-export.js")
+    ? load("factory-export")
+    : name.startsWith("./")
+      ? load(name.slice(2).replace(/\.js$/, ""))
+      : requireModule(name), webcrypto, structuredClone);
   return exported;
 }
-const {
-  previewStoreExport, createStoreWorkbook, recordStoreExport,
-} = load("store-export");
+const { previewStoreExport, recordStoreExport } = load("store-export-oracle");
+const { createStoreWorkbook } = load("store-export");
 const { LOGEN_HEADERS } = load("factory-export");
 function fixture() {
   const recipient = {

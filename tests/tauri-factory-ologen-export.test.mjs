@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 
 const read = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
 const require = createRequire(import.meta.url);
-const compiled = ts.transpileModule(read("src/factory-export.ts"), {
+const compiled = ts.transpileModule(read("tests/rust-migration/oracles/factory-export.ts"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText;
 const exported = {};
@@ -19,9 +19,17 @@ const referenceCode = ts.transpileModule(read("src/historical-product-reference.
 const referenceExports = {};
 vm.runInThisContext("(function(exports) {\n" + referenceCode + "\n})")(referenceExports);
 const load = vm.runInThisContext("(function(exports, require, crypto, structuredClone) {\n" + compiled + "\n})");
-load(exported, (id) => id === "./historical-product-reference.js" ? referenceExports : require(id),
+load(exported, (id) => id.endsWith("historical-product-reference.js") ? referenceExports : require(id),
   webcrypto, structuredClone);
-const { previewFactoryExport, createFactoryWorkbook, recordFactoryExport, LOGEN_HEADERS } = exported;
+const { previewFactoryExport, recordFactoryExport } = exported;
+// Exercise the real, still-shipped serializer; compare historical preview and
+// transition behavior separately against the frozen TypeScript test oracle.
+const serializer = {};
+const nativeSerializer = ts.transpileModule(read("src/factory-export.ts"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+}).outputText;
+vm.runInThisContext("(function(exports) {\n" + nativeSerializer + "\n})")(serializer);
+const { createFactoryWorkbook, LOGEN_HEADERS } = serializer;
 
 function stateFixture() {
   const sender = { id:"client1", name:"예시대리점", displayName:"예시악기", address:"인천 중구 100",
