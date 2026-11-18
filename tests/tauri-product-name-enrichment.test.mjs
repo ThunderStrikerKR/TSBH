@@ -55,7 +55,7 @@ test("factory diamond never leaks into product names, buyer messages, or store e
   assert.match(factory,/"◆ " \+ trim\(item\.name\)/);
   assert.ok(!src("src/hub-messages.ts").includes("◆"));
   assert.ok(!src("src/domain.ts").includes("◆"));
-  assert.ok(!src("src/automatic-message.ts").includes("◆"));
+  assert.ok(!src("tests/rust-migration/oracles/automatic-message.ts").includes("◆"));
   assert.ok(!src("src/store-export.ts").includes("◆"));
   assert.ok(current.products.every(p=>!p.name.includes("◆")));
   assert.ok(plan.changes.every(p=>!p.newName.includes("◆")));
