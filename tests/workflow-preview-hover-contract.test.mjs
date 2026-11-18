@@ -23,17 +23,19 @@ test("hover renders the actual expanded card markup at the original card coordin
   assert.match(css, /\.workflow-card-overlay \.workflow-group\s*\{[^}]*width:\s*100%;[^}]*margin:\s*0;/s);
 });
 
-test("preview does not introduce its own selection colors, row labels or a second layout", () => {
+test("blue temporary display is separate from orange committed selection", () => {
   const board = source("src/WorkflowBoard.tsx");
   const css = source("src/styles/workflow.css");
-  assert.match(board, /const visuallyChosen = isPreview[\s\S]*?ss\[0\]\.id === s\.id/);
-  assert.match(board, /const isPreviewed = !isPreview && hovered/);
-  assert.match(board, /\(selected \|\| isPreview \? " selected" : ""\)/);
-  assert.match(board, /\(hovered && !isPreview \? " workflow-preview-group" : ""\)/);
+  assert.match(board, /const visuallyChosen = !inPreview && selection\?\.shipmentId === s\.id/);
+  assert.match(board, /const isPreviewed = inPreview && hovered && hoveredShipmentId === s\.id/);
+  assert.match(board, /\(selected && !isPreview \? " selected" : ""\)/);
+  assert.match(board, /\(isPreview \? " temporary-preview" : ""\)/);
+  assert.match(css, /\.hub-slot-3 \.workflow-group\.selected\s*\{[^}]*border-left: 2px solid #f59e0b;/);
+  assert.match(css, /\.hub-slot-3 \.workflow-card-overlay \.workflow-group\.temporary-preview\s*\{[^}]*border-left: 2px solid var\(--ds-role-border-selected\);/);
+  assert.match(css, /\.hub-slot-3 \.workflow-card-overlay \.workflow-shipment\.previewed::before\s*\{[^}]*box-shadow: inset 3px 0 0 var\(--ds-role-border-selected\);/);
+  assert.match(board, /const isPreviewed = inPreview/);
   assert.match(css, /\.workflow-card-anchor\.previewing\s*\{\s*z-index:\s*400;/);
-  assert.match(css, /\.workflow-card-overlay \.workflow-progress > \.primary:hover:not\(:disabled\)/);
   assert.doesNotMatch(board, /maxHeight: previewLayer/);
-  assert.doesNotMatch(board, /transform:\s*previewLayer/);
 });
 
 test("shipment-list renderer only references its own inPreview argument", () => {
@@ -43,9 +45,25 @@ test("shipment-list renderer only references its own inPreview argument", () => 
   assert.ok(start >= 0 && end > start, "both render helpers must exist");
   const body = board.slice(start, end);
   assert.doesNotMatch(body, /\bisPreview\b/, "undefined isPreview crashes expanded order rendering");
-  assert.match(body, /const visuallyChosen = inPreview/);
-  assert.match(body, /const isPreviewed = !inPreview/);
+  assert.match(body, /const visuallyChosen = !inPreview/);
+  assert.match(body, /const isPreviewed = inPreview/);
   assert.match(body, /if \(inPreview\)/);
+});
+
+test("hovering recipient rows temporarily switches source and details", () => {
+  const board = source("src/WorkflowBoard.tsx");
+  const workspace = source("src/HubWorkspace.tsx");
+  const selection = source("src/workspace-selection.ts");
+  assert.match(board, /onMouseEnter=\{inPreview \? \(\) => beginPreviewRowHover\(g\.id, step, s\.id\) : undefined\}/);
+  assert.match(board, /onMouseLeave=\{inPreview \? \(\) => endPreviewRowHover\(g\.id, step\) : undefined\}/);
+  assert.match(board, /beginPreviewRowHover[\s\S]*?shipmentId[\s\S]*?\}, 100\)/);
+  assert.match(board, /endPreviewRowHover[\s\S]*?\}, 150\)/);
+  assert.match(board, /if \(rowEnterDelay\.current\) clearTimeout\(rowEnterDelay\.current\)/);
+  assert.match(board, /if \(rowLeaveDelay\.current\) clearTimeout\(rowLeaveDelay\.current\)/);
+  assert.match(workspace, /stageHover\?\.groupId, selected, stageHover\?\.shipmentId/);
+  assert.match(selection, /shipments\.find\(\(s\) => s\.id === hoveredShipmentId\)/);
+  assert.match(selection, /\?\? shipments\.find\(\(s\) => s\.id === selected\?\.shipmentId\)/);
+  assert.doesNotMatch(board, /onMouseEnter=\{inPreview[^}]*onSelect/);
 });
 
 test("accordion preview preserves the exact card box and heading positions", () => {
