@@ -80,6 +80,23 @@
   overflow: auto;
   padding: 0 9px 10px;
 }
+/* Recipient details, item prices, freight and order total form a single
+   readiness-gated visual transition. Pending results stay invisible rather
+   than fading in placeholders while independent Rust previews finish. */
+.compact-review [data-recipient-fade="pending"] {
+  opacity: 0;
+  transition: none;
+  pointer-events: none;
+}
+.compact-review [data-recipient-fade="ready"] {
+  opacity: 1;
+  transition: opacity 260ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .compact-review [data-recipient-fade="ready"] {
+    transition: none;
+  }
+}
 .compact-review .review-toolbar {
   padding: 7px 0;
   flex-wrap: wrap;
