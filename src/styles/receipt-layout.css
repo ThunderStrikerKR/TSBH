@@ -83,6 +83,23 @@
 /* Recipient details, item prices, freight and order total form a single
    readiness-gated visual transition. Pending results stay invisible rather
    than fading in placeholders while independent Rust previews finish. */
+/* Shared content-only transitions for checking, messages and raw source.
+   Titles, separators, scroll frames, placeholders and toolbars are outside
+   these nodes. Readiness is driven by the current Rust/source projection. */
+.hub-panels [data-content-fade="pending"] {
+  opacity: 0;
+  transition: none;
+  pointer-events: none;
+}
+.hub-panels [data-content-fade="ready"] {
+  opacity: 1;
+  transition: opacity 260ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hub-panels [data-content-fade="ready"] {
+    transition: none;
+  }
+}
 .compact-review [data-recipient-fade="pending"] {
   opacity: 0;
   transition: none;
