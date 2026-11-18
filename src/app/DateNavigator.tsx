@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { useField } from "../ui/Field";
-import { seoulDate } from "./settlement-report";
+import { seoulDate } from "./seoul-date";
 export function moveDate(value: string, delta: number) {
   const base = value || seoulDate(new Date().toISOString());
   const date = new Date(base + "T12:00:00Z");

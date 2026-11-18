@@ -11,7 +11,7 @@ import type { NoticeSink } from "./shared/notices";
 import { useAsyncTask } from "./shared/useAsyncTask";
 import type { Product, Recipient, State } from "./types";
 import { Field, Modal, MoneyInput } from "./ui";
-import { shipmentContext } from "./workflow";
+import { shipmentContext } from "./workflow-view";
 export function CorrectionPanel({
   state,
   sid,

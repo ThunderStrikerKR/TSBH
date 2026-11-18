@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Origin, Price, State } from "./types";
-import { shipmentContext } from "./workflow";
+import { shipmentContext } from "./workflow-view";
 import type { WorkflowShipment } from "./workflow-types";
 /** Keep freight typing local; native totals run on blur, Enter or unmount. */
 function FreightAmountInput({ label, value, disabled, onCommit }: {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { businessCoreCall } from "../tauri-bridge";
 import { auditStateTransition } from "../perf-audit";
-import { newReception } from "../orders/reception";
+import { newReception } from "../orders/new-reception";
 import { sameValue } from "../shared/draft";
 import { useHasPendingChanges } from "../shared/pending-changes";
 import { requestPageLeave } from "../shared/page-leave";

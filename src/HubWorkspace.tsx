@@ -12,12 +12,12 @@ import { LinkContext } from "./LinkedText";
 import { MemoMessageWorkspace as MessageWorkspace } from "./MessageWorkspace";
 import { OrderDesk, MemoOrderDesk } from "./OrderDesk";
 import { MemoWorkflowBoard as WorkflowBoard, type WorkflowSelection } from "./WorkflowBoard";
-import { newReception } from "./orders/reception";
+import { newReception } from "./orders/new-reception";
 import { nativeReconcileWorkflow } from "./orders/native-rules";
 import { useNativeWorkflowReconcile } from "./orders/useNativeWorkflowReconcile";
 import { retainUnsavedOrderEdits } from "./order-edit-snapshots";
 import type { Order } from "./types";
-import { groupShipments } from "./workflow";
+import { groupShipments } from "./workflow-view";
 import { activeShipments, hoveredWorkflowSelection, validSelection } from "./workspace-selection";
 type Props = ComponentProps<typeof OrderDesk> & {
   externalKakao: boolean;

@@ -21,7 +21,7 @@ import { sortedRegisteredProductView } from "./registered-product-view";
 import type { NoticeSink } from "../shared/notices";
 import type { Item, Order, Product, State, ValidationIssue } from "../types";
 import { clone } from "../ui";
-import { groupShipments } from "../workflow";
+import { groupShipments } from "../workflow-view";
 type SaveMode = "save" | "notify" | "pay" | "queue" | "wait";
 export type OrderDeskProps = {
   onRawEditDirty?: (dirty: boolean) => void;

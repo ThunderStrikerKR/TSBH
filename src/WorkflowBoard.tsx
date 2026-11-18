@@ -14,7 +14,7 @@ import { Field, Modal } from "./ui";
 import {
   groupShipments,
   shipmentContext,
-} from "./workflow";
+} from "./workflow-view";
 export interface WorkflowSelection {
   orderId: string;
   groupId: string;

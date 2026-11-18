@@ -19,7 +19,7 @@ import { internalModel } from "./matching";
 import type { NoticeSink } from "./shared/notices";
 import { useAsyncTask } from "./shared/useAsyncTask";
 import type { Origin, Price, State } from "./types";
-import { shipmentContext } from "./workflow";
+import { shipmentContext } from "./workflow-view";
 import { nativeApplyWorkflowAction } from "./orders/native-rules";
 export function WorkflowQueue({
   state,
