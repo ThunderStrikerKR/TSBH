@@ -113,6 +113,12 @@ fn mark_read(conn: &Connection, id: &str) -> Result<Vec<Value>, String> {
     load(conn)
 }
 
+fn delete(conn: &Connection, id: &str) -> Result<Vec<Value>, String> {
+    conn.execute("DELETE FROM hub_notifications WHERE id=?1", params![id])
+        .map_err(db_error)?;
+    load(conn)
+}
+
 fn clear(conn: &Connection) -> Result<Vec<Value>, String> {
     conn.execute("DELETE FROM hub_notifications", []).map_err(db_error)?;
     load(conn)
@@ -135,6 +141,13 @@ pub(super) fn hub_notifications_mark_read(
     db: State<'_, Database>, id: String,
 ) -> Result<Vec<Value>, String> {
     mark_read(&*lock_db(&db)?, &id)
+}
+
+#[tauri::command]
+pub(super) fn hub_notifications_delete(
+    db: State<'_, Database>, id: String,
+) -> Result<Vec<Value>, String> {
+    delete(&*lock_db(&db)?, &id)
 }
 
 #[tauri::command]
@@ -201,6 +214,23 @@ mod tests {
         assert_eq!(mark_read(&db,"unknown").unwrap().len(),2);
         assert!(clear(&db).unwrap().is_empty());
         assert!(load(&db).unwrap().is_empty());
+    }
+
+    #[test]
+    fn deleting_one_alert_does_not_remove_other_alerts_or_business_records() {
+        let mut db = memory();
+        db.execute_batch("CREATE TABLE business_history(id INTEGER PRIMARY KEY, entry TEXT);
+            INSERT INTO business_history(id,entry) VALUES (1,'factory reply preserved');")
+            .unwrap();
+        insert(&mut db, notice(1)).unwrap();
+        insert(&mut db, notice(2)).unwrap();
+        assert_eq!(delete(&db, "n1").unwrap().len(), 1);
+        assert_eq!(load(&db).unwrap()[0]["id"], "n2");
+        assert_eq!(delete(&db, "missing").unwrap().len(), 1);
+        let history: String = db.query_row(
+            "SELECT entry FROM business_history WHERE id=1", [], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(history, "factory reply preserved");
     }
 
     #[test]
