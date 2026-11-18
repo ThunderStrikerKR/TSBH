@@ -75,11 +75,11 @@ export function WorkflowQueue({
     .filter((q) => q.status === "QUEUED" && q.origin === scope)
     .filter((q) => {
       const ship = state.workflow!.shipments.find((s) => s.id === q.shipmentId)!;
-      const client = shipmentRead.shipments.get(ship.id)?.client;
-      if (!client) return false;
-      const ctx = shipmentContext(state, ship, client);
+      if (!shipmentRead.ready) return false;
+      const ctx = shipmentContext(state, ship,
+        shipmentRead.shipments.get(ship.id)?.client);
       return (
-        ctx.client.name +
+        (ctx.client?.name ?? "거래처 확인 필요") +
         ctx.recipient.name +
         ctx.recipient.items.map((i) => i.name).join(" ")
       ).includes(query);
@@ -321,7 +321,7 @@ export function WorkflowQueue({
                     <td>
                       {ctx.order.orderType === "RETAIL"
                         ? "반도스탠드"
-                        : ctx.client.displayName || ctx.client.name}
+                        : ctx.client?.displayName || ctx.client?.name || "거래처 확인 필요"}
                       <small>
                         {ctx.order.orderType === "RETAIL"
                           ? "소매 주문"
