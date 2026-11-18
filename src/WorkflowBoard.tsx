@@ -390,10 +390,10 @@ export function WorkflowBoard({
                 {ss.map((s) => {
                   const { recipient } = shipmentContext(state, s);
                   const nativeShipment = nativeGroup?.shipments.find((row) => row.shipmentId === s.id);
-                  const visuallyChosen = isPreview
+                  const visuallyChosen = inPreview
                     ? (selected ? selection?.shipmentId === s.id : ss[0].id === s.id)
                     : selection?.shipmentId === s.id;
-                  const isPreviewed = !isPreview && hovered && hoveredShipmentId === s.id;
+                  const isPreviewed = !inPreview && hovered && hoveredShipmentId === s.id;
                   return (
                     <button
                       key={s.id}
@@ -402,7 +402,7 @@ export function WorkflowBoard({
                         "workflow-shipment" +
                         (visuallyChosen ? " chosen" : "") +
                         (isPreviewed ? " previewed" : "") +
-                        (!isPreview && s.id === leaving ? " query-leaving" : "") +
+                        (!inPreview && s.id === leaving ? " query-leaving" : "") +
                         (activeKey &&
                         (activeKey.startsWith(recipient.id + ":") ||
                           recipient.items.some((i) => activeKey.startsWith(i.id + ":")))
