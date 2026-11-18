@@ -287,8 +287,9 @@ fn address_begin(line: &str) -> Option<usize> {
 fn composite_name_before_address(prefix: &str) -> Option<(usize,usize)> {
     // A postal code before the administrative address is not part of the
     // shipping name. Leave source offsets for the retained name untouched.
-    let postal=Regex::new(r"(?:\s+\(?\d{5}\)?|\(\d{5}\))\s*$")
-        .expect("trailing postal marker");
+    let postal=Regex::new(
+        r"(?:\s+(?:\d{5}|\(\d{5,6}\)|\[\d{5,6}\])|(?:\(\d{5,6}\)|\[\d{5,6}\]))\s*$"
+    ).expect("trailing postal marker");
     let without_postal=postal.find(prefix)
         .map_or(prefix, |m| &prefix[..m.start()]);
     let raw_start=without_postal.len()-without_postal.trim_start().len();
@@ -1720,6 +1721,16 @@ mod tests {
         assert_eq!(address_evidence["start"].as_u64().unwrap() as usize,
             raw[..expected_start].encode_utf16().count());
         assert!(!address_evidence["text"].as_str().unwrap().contains("[63644]"));
+    }
+
+    #[test]
+    fn bracketed_postcode_before_inline_address_does_not_become_recipient_name() {
+        let alone="[63644] ";
+        assert_eq!(composite_name_before_address(alone),None);
+        let prefix="김가상 [63644] ";
+        assert_eq!(composite_name_before_address(prefix),Some((0,"김가상".len())));
+        let prefix_old="김가상 [663644] ";
+        assert_eq!(composite_name_before_address(prefix_old),Some((0,"김가상".len())));
     }
 
     #[test]
