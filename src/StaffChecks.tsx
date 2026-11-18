@@ -1,4 +1,5 @@
 import type { StaffBlock } from "./hub-messages";
+import type { NativeShipmentPreview } from "./orders/useNativeWorkflowBoard";
 import type { ContentFadePhase } from "./shared/useReadyContentFade";
 export function StaffChecks({
   blocks,
@@ -12,6 +13,8 @@ export function StaffChecks({
   approvingQuantity = false,
   onCancelApproval,
   onCandidate,
+  remoteDelivery,
+  onRemoteSelect,
 }: {
   blocks: StaffBlock[];
   loading?: boolean;
@@ -25,8 +28,13 @@ export function StaffChecks({
   approvingQuantity?: boolean;
   onCancelApproval?: (b: StaffBlock) => void;
   onCandidate?: (b: StaffBlock, value: string) => void;
+  /** Rust locality advisory for the recipient currently shown in the order desk. */
+  remoteDelivery?: NativeShipmentPreview["remoteDelivery"];
+  onRemoteSelect?: () => void;
 }) {
   const visible = blocks;
+  const remoteReview = remoteDelivery?.status === "auto" || remoteDelivery?.status === "review"
+    ? remoteDelivery : undefined;
   const unavailable = loading || !!error || !interactive;
   const actions = visible.filter((b) => b.severity !== "INFO"),
     facts = visible.filter((b) => b.severity === "INFO"),
@@ -40,7 +48,7 @@ export function StaffChecks({
       <h3>
         확인할 내용{" "}
         <small data-content-fade={fadePhase}>
-          조치 {actions.length}건 / 안내 {facts.length}건
+          조치 {actions.length}건 / 안내 {facts.length + (remoteReview ? 1 : 0)}건
         </small>
       </h3>
       <div className="staff-check-scroll">
@@ -128,6 +136,21 @@ export function StaffChecks({
             </div>
           </article>
         ))}
+        {remoteReview && (
+          <article className="staff-fact staff-remote-info" role="status">
+            <div className="staff-fact-message">
+              <b>도서·산간 지역 확인</b>
+              <small>{remoteReview.status === "auto"
+                ? "도서·산간 지역으로 판단했습니다. 확인 후 체크 여부를 결정하세요."
+                : "도서·산간 지역일 수 있습니다. 주소를 확인 후 체크 여부를 결정하세요."}</small>
+            </div>
+            <div className="issue-actions">
+              <button type="button" disabled={unavailable || !onRemoteSelect} onClick={onRemoteSelect}>
+                운임 위치로 이동
+              </button>
+            </div>
+          </article>
+        )}
         {inherited.length > 0 && (
           <details className="staff-fact">
             <summary>공통 상품 자동 적용 / {inherited.length}개 항목</summary>

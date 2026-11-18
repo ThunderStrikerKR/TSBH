@@ -310,6 +310,14 @@ export function OrderDesk(props: OrderDeskProps) {
               <div className="review-layout">
                 <StaffChecks
                   blocks={shownChecks}
+                  remoteDelivery={freightEditor?.preview.remoteDelivery}
+                  onRemoteSelect={() => {
+                    const checkbox = document.querySelector<HTMLInputElement>(
+                      ".items-freight-panel .freight-remote-check input",
+                    );
+                    checkbox?.scrollIntoView({ block: "nearest", inline: "nearest" });
+                    checkbox?.focus();
+                  }}
                   fadePhase={checksFadePhase}
                   loading={!staffChecksReady}
                   interactive={staffChecksActionsReady}
@@ -661,7 +669,6 @@ export function OrderDesk(props: OrderDeskProps) {
                                   freightEditingBlocked={
                                     freightEditor.preview.freightEditingBlocked || r.freightCode === "020"
                                   }
-                                  remoteDelivery={freightEditor.preview.remoteDelivery}
                                   remoteChecked={
                                     r.remoteDelivery?.manual === true &&
                                     r.remoteDelivery.address === r.address

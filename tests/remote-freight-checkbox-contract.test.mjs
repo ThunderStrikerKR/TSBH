@@ -64,10 +64,17 @@ test("UI automatically checks Rust-detected area but preserves manual checkbox c
 test("blue message prompts review; no 2x is applied on top of the edited applied amount", () => {
   const desk = source("src/OrderDesk.tsx");
   const footer = source("src/WorkflowFooter.tsx");
+  const checks = source("src/StaffChecks.tsx");
   const css = source("src/styles/patch-v0808.css");
-  assert.match(footer, /도서·산간 지역으로 판단했습니다\. 확인 후 체크 여부를 결정하세요\./);
-  assert.match(footer, /도서·산간 지역일 수 있습니다\. 주소를 확인 후 체크 여부를 결정하세요\./);
-  assert.match(css, /\.freight-remote-info\s*\{[^}]*background: rgba\([^}]*color: #70b4ff;/s);
+  assert.match(checks, /도서·산간 지역으로 판단했습니다\. 확인 후 체크 여부를 결정하세요\./);
+  assert.match(checks, /도서·산간 지역일 수 있습니다\. 주소를 확인 후 체크 여부를 결정하세요\./);
+  assert.match(checks, /facts\.length \+ \(remoteReview \? 1 : 0\)/);
+  assert.match(desk, /remoteDelivery=\{freightEditor\?\.preview\.remoteDelivery\}/);
+  assert.doesNotMatch(footer, /도서·산간 지역으로 판단했습니다/);
+  assert.match(css, /\.staff-checks \.staff-remote-info\s*\{[^}]*background: rgba\([^}]*color: #d7e8f7;/s);
+  const checkboxStyle = css.match(/\.items-freight-panel \.freight-remote-check > input\[type="checkbox"\]\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.doesNotMatch(checkboxStyle, /accent-color:/);
+  assert.match(source("src/styles/theme.css"), /\.app-v03 input\[type="checkbox"\]\s*\{\s*accent-color: #a3a3a3;/);
   assert.match(desk, /displayCharges=\{freightEditor\.preview\.displayCharges\}/);
   assert.doesNotMatch(desk, /\.\.\.freightEditor\.preview\.displayCharges,\s*\.\.\.r\.shippingCharges/);
   assert.match(desk, /const base = checked && value !== null \? value \/ 2 : value/);

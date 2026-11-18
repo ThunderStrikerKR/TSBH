@@ -603,7 +603,6 @@
   height: 15px;
   min-width: 15px;
   margin: 0;
-  accent-color: #f59e0b;
 }
 .items-freight-panel .freight-line > .freight-inquiry {
   box-sizing: border-box;
@@ -616,15 +615,24 @@
   margin-left: 0;
   white-space: nowrap;
 }
-.items-freight-panel .freight-remote-info {
-  margin: 4px 0 0;
-  padding: 5px 8px;
+.staff-checks .staff-remote-info {
+  margin: 6px 8px;
+  padding: 9px 10px;
   border: 1px solid rgba(112, 180, 255, 0.38);
   border-radius: 5px;
   background: rgba(39, 89, 142, 0.17);
+  color: #d7e8f7;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.staff-checks .staff-remote-info .staff-fact-message > b {
+  display: block;
   color: #70b4ff;
-  font-size: 12px;
-  line-height: 1.4;
+}
+.staff-checks .staff-remote-info .staff-fact-message > small {
+  display: block;
+  margin-top: 4px;
+  color: #d7e8f7;
 }
 
 .source-pane .receipt-client > b {

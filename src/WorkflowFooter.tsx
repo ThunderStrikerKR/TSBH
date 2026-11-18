@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { Origin, Price, State } from "./types";
-import type { NativeShipmentPreview } from "./orders/useNativeWorkflowBoard";
 import { shipmentContext } from "./workflow";
 import type { WorkflowShipment } from "./workflow-types";
 /** Keep freight typing local; native totals run on blur, Enter or unmount. */
@@ -79,7 +78,6 @@ type FreightProps = {
   activeKey?: string;
   onFreight: (origin: Origin, value: Price) => boolean | void;
   onCode: (v: "010" | "020") => void;
-  remoteDelivery?: NativeShipmentPreview["remoteDelivery"];
   remoteChecked: boolean;
   onRemoteChecked: (checked: boolean) => void;
 };
@@ -91,7 +89,6 @@ export function WorkflowFreightRows({
   freightEditingBlocked,
   onFreight,
   onCode,
-  remoteDelivery,
   remoteChecked,
   onRemoteChecked,
   activeKey,
@@ -167,14 +164,6 @@ export function WorkflowFreightRows({
                   공장에 운임 문의
                 </button>
               </div>
-              {origin === remoteRowOrigin && remoteDelivery?.status === "auto" &&
-                <div className="freight-remote-info" role="status">
-                  도서·산간 지역으로 판단했습니다. 확인 후 체크 여부를 결정하세요.
-                </div>}
-              {origin === remoteRowOrigin && remoteDelivery?.status === "review" &&
-                <div className="freight-remote-info" role="status">
-                  도서·산간 지역일 수 있습니다. 주소를 확인 후 체크 여부를 결정하세요.
-                </div>}
             </td>
           </tr>
         );
