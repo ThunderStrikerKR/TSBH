@@ -74,6 +74,35 @@ pub(super) fn detect(payload: &Value) -> Result<Value, String> {
     }))
 }
 
+/// Resolve the checked state for a recipient without changing the source
+/// address, stored base freight or tariff. A staff choice is authoritative only
+/// for that exact address; changing the address re-enables auto-detection.
+pub(super) fn resolve_recipient(recipient: &Value) -> Result<Value, String> {
+    let address = recipient.get("address").and_then(Value::as_str).unwrap_or("");
+    let mut analysis = detect(&json!({"address": address}))?;
+    let decision = recipient.get("remoteDelivery").unwrap_or(&Value::Null);
+    let manually_set = decision.get("manual").and_then(Value::as_bool) == Some(true) &&
+        decision.get("checked").and_then(Value::as_bool).is_some() &&
+        decision.get("address").and_then(Value::as_str) == Some(address);
+    let checked = if manually_set {
+        decision["checked"].as_bool().unwrap_or(false)
+    } else {
+        analysis["suggestedChecked"].as_bool().unwrap_or(false)
+    };
+    analysis["checked"] = json!(checked);
+    analysis["manual"] = json!(manually_set);
+    Ok(analysis)
+}
+
+/// The only multiplier authority: base freight is never pre-doubled or
+/// rewritten just because the checkbox is enabled.
+pub(super) fn multiply(base: Option<i64>, recipient: &Value) -> Option<i64> {
+    let checked = resolve_recipient(recipient).ok()?["checked"].as_bool()?;
+    let value = base?;
+    value.checked_mul(if checked {2} else {1})
+        .filter(|n| (0..=super::MAX_SAFE).contains(n))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,6 +151,36 @@ mod tests {
         assert_eq!(check("전남 여수시 화정면 개도리")["status"], "auto");
         assert_eq!(check("충남 보령시 오천면 원산도리")["status"], "review");
         assert_eq!(check("충남 보령시 오천면 녹도리")["status"], "auto");
+    }
+
+    #[test]
+    fn auto_check_can_be_manually_overridden_and_address_change_resets_it() {
+        let address = "제주특별자치도 서귀포시 대정읍 에듀시티로 23";
+        let mut recipient = json!({"address":address});
+        assert_eq!(resolve_recipient(&recipient).unwrap()["checked"],true);
+        assert_eq!(multiply(Some(3000),&recipient),Some(6000));
+        recipient["remoteDelivery"]=json!({
+            "address":address,"checked":false,"manual":true
+        });
+        assert_eq!(resolve_recipient(&recipient).unwrap()["checked"],false);
+        assert_eq!(multiply(Some(3000),&recipient),Some(3000));
+        recipient["remoteDelivery"]["checked"]=json!(true);
+        assert_eq!(multiply(Some(3000),&recipient),Some(6000));
+        recipient["address"]=json!("서울특별시 강남구 테헤란로 1");
+        assert_eq!(resolve_recipient(&recipient).unwrap()["checked"],false);
+        assert_eq!(multiply(Some(3000),&recipient),Some(3000));
+    }
+
+    #[test]
+    fn multiplier_is_applied_once_to_base_and_preserves_null_overflow() {
+        let remote=json!({"address":"제주특별자치도 제주시 아라일동 3"});
+        assert_eq!(multiply(Some(2500),&remote),Some(5000));
+        assert_eq!(multiply(None,&remote),None);
+        assert_eq!(multiply(Some(super::super::MAX_SAFE),&remote),None);
+        let ordinary=json!({"address":"전북특별자치도 군산시 소룡동 3"});
+        assert_eq!(multiply(Some(2500),&ordinary),Some(2500));
+        let review=json!({"address":"군산시 옥도면 선유도리 3"});
+        assert_eq!(multiply(Some(2500),&review),Some(2500));
     }
 
     #[test]
