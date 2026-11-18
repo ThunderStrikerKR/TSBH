@@ -121,9 +121,16 @@ fn signature(order:&Value,recipient:&Value,sender:&Value)->String {
     let sender_data=json!([field(sender,"name"),field(sender,"displayName"),
         field(sender,"address"),field(sender,"phone"),field(sender,"mobile"),
         field(sender,"payment")]);
-    let recipient_data=json!([field(recipient,"name"),field(recipient,"address"),
-        field(recipient,"addressStatus"),field(recipient,"phone"),field(recipient,"mobile"),
-        field(recipient,"note")]);
+    let mut recipient_data=vec![field(recipient,"name").clone(),field(recipient,"address").clone(),
+        field(recipient,"addressStatus").clone(),field(recipient,"phone").clone(),
+        field(recipient,"mobile").clone(),field(recipient,"note").clone()];
+    // Keep existing signatures byte-identical for ordinary orders. When a
+    // remote charge or employee override changes the bill, invalidate the old
+    // workflow selection and payment notice just like any other freight edit.
+    let remote=super::remote_delivery::resolve_recipient(recipient).ok();
+    let selected=remote.as_ref().is_some_and(|v|flag(v,"checked"));
+    let manual=remote.as_ref().is_some_and(|v|flag(v,"manual"));
+    if selected || manual {recipient_data.push(json!(selected));}
     let items=rows(field(recipient,"items")).iter().map(|i|json!([
         field(i,"id"),field(i,"productId"),field(i,"variantId"),field(i,"color"),
         field(i,"quantity"),field(i,"quantityConfirmed"),field(i,"unitPrice"),
@@ -403,7 +410,9 @@ pub(super) fn reconcile(payload:&Value)->Result<Value,String> {
                 for origin in &origins {
                     let v=rows(field(&reco,"bundles")).iter()
                         .find(|b|str_field(b,"origin")==origin)
-                        .map(|b|field(b,"recommendation")).unwrap_or(&Value::Null);
+                        .map(|b|b.get("baseRecommendation")
+                            .unwrap_or_else(||field(b,"recommendation")))
+                        .unwrap_or(&Value::Null);
                     set(&mut charges,origin,v.clone())?;
                 }
             }
