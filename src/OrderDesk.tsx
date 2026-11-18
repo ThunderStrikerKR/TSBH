@@ -217,6 +217,7 @@ export function OrderDesk(props: OrderDeskProps) {
             <SourceDocument
               state={state}
               onManual={props.onManual}
+              onNew={props.onNew}
               onSettings={props.onSettings}
               order={draft}
               text={source}
