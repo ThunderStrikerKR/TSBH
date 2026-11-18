@@ -582,7 +582,7 @@ export function useOrderDesk({
         title: autoDealerApplied ? "거래처 자동 적용" : b.title,
         canApproveOne: nativeIssues.ready && approvalFlags.get(b.issueId) === true,
         detail:
-          (autoDealerApplied ? `${client.name} 거래처를 자동 적용했습니다. ` : "") +
+          (autoDealerApplied ? `${client?.name ?? "선택된"} 거래처를 자동 적용했습니다. ` : "") +
           b.detail +
           (b.kind === "APPLIED" ? " × " + item?.quantity : "") +
           (item?.recognitionReason ? " / " + item.recognitionReason : ""),
