@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
-import {existsSync} from "node:fs";
+import {existsSync,readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 
 const root=fileURLToPath(new URL("../",import.meta.url));
