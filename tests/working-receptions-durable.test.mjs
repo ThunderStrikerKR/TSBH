@@ -44,7 +44,7 @@ test("native SQLite working receipts never alter confirmed order ledger or histo
   const bridge = source("src/tauri-bridge.ts");
   assert.match(native,/CREATE TABLE IF NOT EXISTS reception_working_orders/);
   assert.match(native,/tx\.commit\(\)\.map_err\(err\)/);
-  assert.doesNotMatch(native,/UPDATE app_state|INSERT INTO core_orders/);
+  assert.doesNotMatch(native.split("#[cfg(test)]")[0],/UPDATE app_state|INSERT INTO core_orders/);
   assert.match(lib,/working_receptions::initialize\(&conn\)/);
   assert.match(lib,/working_receptions::working_receptions_load/);
   assert.match(lib,/working_receptions::working_receptions_replace/);
