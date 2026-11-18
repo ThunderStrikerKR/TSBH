@@ -201,19 +201,6 @@ export function itemFromProduct(
     catalog: p.catalog,
   };
 }
-export function repriceOrder(order: Order, client: Client, state: State): Order {
-  const o = structuredClone(order);
-  for (const r of o.recipients)
-    for (const i of r.items) {
-      const p = state.products.find((p) => p.id === i.productId);
-      if (p && i.variantId) {
-        i.unitPrice = resolvePrice(p, i.variantId, client);
-        if (i.modelProposal?.required)
-          i.url = p.variants.find((v) => v.id === i.variantId)?.url ?? i.url;
-      }
-    }
-  return o;
-}
 export function orderClient(o: Order, state: State) {
   if (o.orderType === "RETAIL") return o.clientSnapshot ?? companyParty(state.settings);
   return (o.confirmedAt || o.pricesLocked) && o.clientSnapshot
@@ -394,20 +381,6 @@ export function messages(
     urls(links.options),
   ].join("\n");
   return { payment, options, paymentIssues };
-}
-export function canQueue(o: Order, c: Client, s: Settings) {
-  const issues = reviewIssues(o);
-  if (o.status === "EXPORTED")
-    issues.push("이미 공장에 전달한 주문입니다. 수정 / 재확인 후 추가하세요.");
-  if (totals(o, c).total === null) issues.push("청구 금액 / 운임 미확정");
-  if (!o.notified) issues.push("안내 완료 처리 필요");
-  if (c.payment === "PREPAID" && !o.paid) issues.push("실제 입금 확인 필요");
-  if (c.payment === "POSTPAID" && !o.postpaidApproved) issues.push("후불 출고 승인 필요");
-  if (!o.recipients.some((r) => r.items.some((i) => i.origin === "FACTORY")))
-    issues.push("공장 출고 상품 없음");
-  if (!(c.displayName || c.name) || !c.address || (!c.phone && !c.mobile))
-    issues.push("거래처 송장 상호 / 주소 / 전화번호 등록 필요");
-  return issues;
 }
 export const statusNames = {
   RECEIVED: "주문 접수",
