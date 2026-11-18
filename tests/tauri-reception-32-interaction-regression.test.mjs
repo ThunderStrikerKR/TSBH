@@ -159,10 +159,12 @@ test("stage signal lights live beside the dealer name without widening the one-t
   const css = read("src/styles/workflow.css");
   const group = board.slice(board.indexOf("const g = entry.group;"));
   const header = group.slice(group.indexOf("<header>"), group.indexOf("</header>"));
-  const progress = group.slice(
-    group.indexOf('<div className="workflow-progress">'),
-    group.indexOf('<div className="flow-fixed-summary"'),
-  );
+  // Totals intentionally precede the right-aligned stage controls.
+  const progressStart = group.indexOf('<div className="workflow-progress">');
+  const progressEnd = group.indexOf('                </div>\n              )}', progressStart);
+  assert.ok(progressStart > group.indexOf('<div className="flow-fixed-summary"'));
+  assert.ok(progressEnd > progressStart);
+  const progress = group.slice(progressStart, progressEnd);
   assert.match(header, /<span className="flow-group-name">[\s\S]*?<\/span>\s*\{first\.order\.orderType !== "RETAIL" && nativeGroup && \(\s*<SignalLights step=\{step\} notice=\{g\.needsNotice\} \/>/);
   assert.doesNotMatch(progress, /<SignalLights/);
   assert.match(progress, /className="primary"/);
