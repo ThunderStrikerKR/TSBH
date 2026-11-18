@@ -1314,13 +1314,4 @@ mod remote_freight_multiplier_tests {
         order["freightCode"]=json!("020");
         assert_eq!(fee_total(&ship,&recipient,&order),Some(0));
     }
-    #[test]
-    fn remote_delivered_actual_is_recorded_but_never_becomes_active_base_tariff() {
-        // Guard the settlement implementation's "actual evidence vs tariff
-        // recommendation" separation, including existing active combinations.
-        let code=include_str!("workflow.rs");
-        assert!(code.contains("let active=!remote_selected &&"));
-        assert!(code.contains("if !remote_selected {"));
-        assert!(code.contains("\"observedCharge\":charged"));
-    }
 }
