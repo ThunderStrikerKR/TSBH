@@ -231,7 +231,7 @@ export function DeveloperModalWorkbench({ state, raw, onNotice, onRecorded }: {
         <button type="button" onClick={() => { setText(""); setOpen((prev) => !prev); }}>
           {open ? "시험 화면 닫기" : "선택한 실제 화면 열기"}
         </button>
-        <button type="button" disabled={!open || recording || (needsFixtures && !fixtures)} onClick={() => void record(true)}>정상으로 기록</button>
+        <button type="button" data-ui-role="action-standard" disabled={!open || recording || (needsFixtures && !fixtures)} onClick={() => void record(true)}>정상으로 기록</button>
         <button type="button" disabled={!open || recording} onClick={() => void record(false)}>문제 발견 기록</button>
       </div>
       {reportError && <p className="form-error" role="alert">{reportError}</p>}
