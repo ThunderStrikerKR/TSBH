@@ -34,6 +34,7 @@ export function OrderDesk(props: OrderDeskProps) {
     draft,
     source,
     client,
+    clientSelectionPending,
     setSource,
     saved,
     onChange,
@@ -300,6 +301,7 @@ export function OrderDesk(props: OrderDeskProps) {
               order={draft}
               text={source}
               client={client}
+              clientPending={clientSelectionPending}
               contentReady={props.sourceProjectionReady ?? true}
               coordinatedFadePhase={props.coordinatedFadePhase}
               onText={(value) => {
