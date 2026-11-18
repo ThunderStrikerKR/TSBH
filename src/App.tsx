@@ -134,12 +134,7 @@ export function App() {
           }
           notificationError={Boolean(storageError)}
           page={tab}
-          dock={model.dock}
-          busy={model.dockBusy}
           onNavigate={model.navigate}
-          onDock={() => void model.run(model.docking)}
-          onDockMode={(mode) => void model.run(() => model.setDockMode(mode))}
-          onDockStop={() => void model.run(model.stopDock)}
           onWindow={(action) => void model.run(() => model.windowAction(action))}
         />
         {model.dockCandidates.length > 0 && (
@@ -170,6 +165,8 @@ export function App() {
           dock={model.dock}
           busy={model.dockBusy}
           onConnect={() => void model.run(model.docking)}
+          onDockMode={(mode) => void model.run(() => model.setDockMode(mode))}
+          onDockStop={() => void model.run(model.stopDock)}
           onSave={(ratios) =>
             void model.run(() =>
               model.commit({
