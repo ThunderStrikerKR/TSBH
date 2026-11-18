@@ -15,8 +15,10 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.equal(output.entry,"src/main.tsx");
   assert.ok(output.inspectedSourceFiles>100);
   assert.ok(output.trackedLegacyModules>=25);
-  assert.ok(output.reachableLegacyModules>0,
-    "Business layer removal cannot be declared complete while live TS imports remain");
+  assert.ok(Number.isInteger(output.reachableLegacyModules));
+  assert.ok(output.reachableLegacyModules>=0);
+  assert.equal(output.retiredToTestOracle,3,
+    "All three migrated legacy implementations must remain outside src/");
   assert.ok(output.inventory.some(row=>
     row.module==="src/automatic-message.ts"&&!row.exists&&!row.reachableFromApp),
     "Historical message generator must no longer exist in production src");
@@ -30,10 +32,19 @@ test("TypeScript business retirement audit reads actual app source import graph"
     row.module==="src/factory-export.ts"&&row.exists&&row.reachableFromApp),
     "ExcelJS serializer remains a legitimate TS module");
 });
-test("strict TS retirement audit fails while business implementation is still live",()=>{
+test("strict TS retirement audit follows the actual live dependency count",()=>{
+  const inspection=spawnSync(process.execPath,[script,"--json"],{
+    cwd:root,encoding:"utf8",timeout:60000,
+  });
+  assert.equal(inspection.status,0,inspection.stderr);
+  const remaining=JSON.parse(inspection.stdout).reachableLegacyModules;
   const run=spawnSync(process.execPath,[script,"--strict"],{
     cwd:root,encoding:"utf8",timeout:60000,
   });
-  assert.equal(run.status,1);
-  assert.match(run.stderr,/BLOCKED: TS business runtime dependencies remain/);
+  assert.equal(run.status,remaining>0?1:0);
+  if(remaining>0){
+    assert.match(run.stderr,/BLOCKED: TS business runtime dependencies remain/);
+  } else {
+    assert.doesNotMatch(run.stderr,/BLOCKED:/);
+  }
 });
