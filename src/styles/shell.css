@@ -450,13 +450,68 @@
   min-width: 0;
 }
 .hub-kakao-slot {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border: 1px solid #3d3d3d;
   border-radius: 3px;
   background: #212121;
   overflow: hidden;
 }
+/* Dock only the native Kakao window into the region BELOW these controls.
+   Otherwise Windows z-order may cover React buttons with the external HWND. */
+.kakao-panel-toolbar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  min-height: 34px;
+  padding: 3px 6px;
+  border-bottom: 1px solid #3d3d3d;
+  background: var(--surface-panel);
+}
+.app-v03 .hub-kakao-slot .kakao-panel-toolbar button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 26px;
+  min-height: 26px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: calc(12px * var(--ui-scale, 1));
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.app-v03 .hub-kakao-slot .kakao-panel-toolbar button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.app-v03 .hub-kakao-slot .kakao-panel-toolbar button[aria-pressed="true"] {
+  border-color: var(--border-default);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.app-v03 .hub-kakao-slot .kakao-panel-toolbar .kakao-disconnect {
+  margin-left: auto;
+  padding-inline: 6px;
+  color: var(--text-muted);
+}
+.app-v03 .hub-kakao-slot .kakao-panel-toolbar button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
 .kakao-native-region {
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
   width: 100%;
   display: flex;
   align-items: center;
