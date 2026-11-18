@@ -1,5 +1,4 @@
 import type { FactoryReplyPreview } from "./factory-reply-types";
-import { businessCoreCall } from "./tauri-bridge";
 import type { Api, State } from "./types";
 
 export interface WatchedReplyFile {
@@ -31,7 +30,7 @@ export interface FactoryReplyEngine {
 }
 const nativeReplyEngine: FactoryReplyEngine = {
   checkDuplicate: async (state, id) =>
-    (await businessCoreCall<{ duplicate: boolean }>(
+    (await (await import("./tauri-bridge")).businessCoreCall<{ duplicate: boolean }>(
       "rules", "factory_reply_duplicate", { state, id },
     )).duplicate,
   analyze: async (state, file) =>
