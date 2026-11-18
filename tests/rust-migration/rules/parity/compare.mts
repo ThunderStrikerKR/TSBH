@@ -27,10 +27,10 @@ import { shipmentTotals, validateWorkflow, reconcileWorkflow, clientChangeIssue,
 import { recordActualFreight } from "../../../../src/actual-freight.ts";
 import { dispatchState } from "../../../../src/factory-replies.ts";
 import { shouldRefreshUncommittedOrderPricing } from "../../../../src/orders/passive-pricing.ts";
-import { deleteGroup, restoreGroup } from "../../../../src/group-trash.ts";
+import { deleteGroup, restoreGroup } from "../../oracles/group-trash.ts";
 import { correctionStatus, correctionMessage, requestCorrection, copiedCorrection, confirmCorrection, markFactoryDelivered, markCollected, reopenUnsentExport } from "../../../../src/corrections.ts";
-import { recordCopy } from "../../../../src/message-model.ts";
-import { paymentSignature } from "../../../../src/automatic-message.ts";
+import { recordCopy } from "../../oracles/message-model.ts";
+import { paymentSignature } from "../../oracles/automatic-message.ts";
 import { orderIssues, approveMissingQuantity, pendingIssue } from "../../../../src/validation.ts";
 import { validateReceptionBoundary, newReception, replaceReception, persistedReceptionState } from "../../../../src/orders/reception.ts";
 import { confirmRetail, newRetailOrder } from "../../../../src/orders/retail.ts";
