@@ -64,7 +64,7 @@ pub(super) fn preview(payload: &Value) -> Result<Value,String> {
         let original_id=&values[6];
         let variant_id=&values[7];
         let mapping_key=format!("{original_id}|{variant_id}");
-        let product_id=state.get("productMappings").and_then(|v|v.get(&mapping_key))
+        let product_id=state.get("productMappings").and_then(|v|v.get(mapping_key.as_str()))
             .and_then(Value::as_str).unwrap_or(original_id);
         let key=format!("{product_id}|{variant_id}");
         if !seen.insert(key) {
