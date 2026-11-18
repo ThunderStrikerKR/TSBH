@@ -12,6 +12,7 @@ import { useAsyncTask } from "./shared/useAsyncTask";
 import type { Product, Recipient, State } from "./types";
 import { Field, Modal, MoneyInput } from "./ui";
 import { shipmentContext } from "./workflow-view";
+import { useNativeShipmentRead } from "./orders/useNativeShipmentRead";
 export function CorrectionPanel({
   state,
   sid,
@@ -26,6 +27,7 @@ export function CorrectionPanel({
   onNotice: NoticeSink;
 }) {
   const { busy, run } = useAsyncTask(onNotice);
+  const shipmentRead = useNativeShipmentRead(state);
   const ship = state.workflow!.shipments.find((s) => s.id === sid)!,
     ctx = shipmentContext(state, ship),
     [after, setAfter] = useState<Recipient>(() => structuredClone(ctx.recipient)),
@@ -81,13 +83,16 @@ export function CorrectionPanel({
   const setProduct = (p: Product) => {
     const target = search;
     if (!target || busy) return;
-    const client = ctx.client;
+    const client = shipmentRead.shipments.get(sid)?.client;
+    if (!shipmentRead.ready || !client) {
+      onNotice(shipmentRead.error || "Rust 거래처 조회가 완료된 뒤 상품을 선택하세요.", "error");
+      return;
+    }
     void run(async () => {
       // The old itemFromProduct helper must not calculate a TS quote before
       // its unitPrice is overwritten. Only a registered independent variant
       // can be quoted; unconfigured products keep the original null price.
-      const variantId = p.variants.length === 1 && !p.requiresOption
-        ? p.variants[0].id : undefined;
+      const variantId = p.variants[0]?.id;
       const { item: catalogItem } = await businessCoreCall<{ item: Item }>(
         "rules", "create_catalog_item", {
           product: p, client, variantId,
