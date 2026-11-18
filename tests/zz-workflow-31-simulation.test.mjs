@@ -16,7 +16,7 @@ const start=fixture.indexOf("const samples=")+"const samples=".length;
 const end=fixture.indexOf("\n];",start)+2;
 assert.ok(start>15 && end>start,"sanitized order fixtures unavailable");
 const samples=JSON.parse(fixture.slice(start,end));
-const {newReception}=await tsImport("../src/orders/reception.ts",import.meta.url);
+const {newReception}=await tsImport("./rust-migration/oracles/reception.ts",import.meta.url);
 const clock="2026-11-16T09:00:00+09:00";
 const dealer={
   id:"sim-dealer-31",name:"가상대리점",displayName:"가상대리점",
