@@ -31,6 +31,8 @@ export type OrderDeskProps = {
     details?: HTMLElement | null;
   };
   viewMode?: "all" | "reception" | "details";
+  /** Readiness of the Rust projection for the currently displayed raw source. */
+  sourceProjectionReady?: boolean;
   // Same draft is already reconciled by HubWorkspace. Reuse that exact Rust
   // projection rather than dispatching an identical second/third IPC.
   sharedNativeFlow?: {
