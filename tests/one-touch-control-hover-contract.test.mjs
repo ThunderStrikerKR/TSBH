@@ -82,6 +82,25 @@ test("freight-stage hover highlights only item, quantity, freight input, payment
   assert.match(desk, /data-remote-suspect=\{remoteCandidateRecipientId === r\.id \? "true" : undefined\}/);
 });
 
+test("stage-two preview emphasizes every shipment freight only inside its hovered group", () => {
+  const board = source("src/WorkflowBoard.tsx");
+  const css = source("src/styles/workflow.css");
+  assert.match(board, /data-freight-preview=\{hovered && stageHover\?\.step === 2 \? "true" : undefined\}/);
+  assert.match(board, /const renderGroupCard = \(isPreview: boolean\) =>/);
+  assert.match(board, /\{renderGroupCard\(false\)\}/);
+  assert.match(board, /\{renderGroupCard\(true\)\}/);
+  assert.match(board, /ss\.map\(\(s\) => \{/);
+  assert.match(board, /<span className="shipment-freight">/);
+  const selector = '.hub-slot-3 .workflow-group[data-freight-preview="true"] .workflow-shipment > .shipment-freight';
+  assert.ok(css.includes(selector), "All shipment freight amounts in the hovered group must be emphasized");
+  const at = css.indexOf(selector);
+  const end = css.indexOf("}", at);
+  const freightRule = css.slice(at, end);
+  assert.match(freightRule, /background-color: #3b2b1b/);
+  assert.match(freightRule, /box-shadow: inset 0 0 0 2px #f59e0b/);
+  assert.doesNotMatch(freightRule, /\.chosen|\.previewed|:nth-child|\.flow-summary-payment/);
+});
+
 test("recipient, product, quantity, money, freight, selected origin and VAT use real controls", () => {
   const desk = source("src/OrderDesk.tsx");
   const freight = source("src/WorkflowFooter.tsx");

@@ -511,6 +511,7 @@ export function WorkflowBoard({
             }
             key={g.id}
             data-group-id={g.id}
+            data-freight-preview={hovered && stageHover?.step === 2 ? "true" : undefined}
           >
             <header>
               <button
