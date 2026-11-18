@@ -9,6 +9,8 @@ export function HubShell({
   dock,
   busy,
   onConnect,
+  onDockMode,
+  onDockStop,
   onSave,
   onReset,
 }: {
@@ -17,6 +19,8 @@ export function HubShell({
   dock: DockStatus;
   busy: boolean;
   onConnect: () => void;
+  onDockMode: (mode: "OVERLAP" | "STACK") => void;
+  onDockStop: () => void;
   onSave: (r: number[]) => void;
   onReset: () => void;
 }) {
@@ -94,6 +98,21 @@ export function HubShell({
         }}
       >
         <aside className="hub-panel-slot hub-slot-0 hub-kakao-slot">
+          {dock.active && (
+            <div className="kakao-panel-toolbar" role="group" aria-label="카카오톡 보기 및 연결 관리">
+              <button type="button" data-ui-role="nav-subsection" disabled={busy}
+                aria-pressed={dock.mode === "OVERLAP"}
+                onClick={() => onDockMode("OVERLAP")}>함께 보기</button>
+              <button type="button" data-ui-role="nav-subsection" disabled={busy}
+                aria-pressed={dock.mode === "STACK"}
+                onClick={() => onDockMode("STACK")}>나누어 보기</button>
+              <button type="button" data-ui-role="action-quiet" className="kakao-disconnect"
+                disabled={busy} onClick={onDockStop}
+                title="연결을 해제하고 카카오톡 창을 원래 위치로 복원">
+                카카오톡 연결 해제
+              </button>
+            </div>
+          )}
           <div ref={region} className="kakao-native-region">
             {!dock.active && (
               <button className="kakao-connect" disabled={busy} onClick={onConnect}>
