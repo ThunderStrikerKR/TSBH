@@ -502,6 +502,33 @@ export function HubWorkspace(props: Props) {
     }
     setStageHover(undefined);
   });
+  const createReceptionLive = useEventCallback(() => {
+    // Keep unfinished documents in React memory, never in production SQLite.
+    const draftsToRetain = [draft, receptionOrder].filter((order) =>
+      !state.orders.some((saved) => saved.id === order.id) &&
+      (order.raw.trim() || order.clientId || order.recipients.length || order.photos?.length));
+    if (draftsToRetain.length)
+      setEdits((previous) => ({
+        ...previous,
+        ...Object.fromEntries(draftsToRetain.map((order) => [
+          order.id, structuredClone(order),
+        ])),
+      }));
+    // A blank draft's ID remains unchanged on repeated New Order clicks.
+    // Return the source display to it even when another receipt was selected.
+    const emptyNewDraft = draft.receptionVersion === 1 &&
+      !state.orders.some((saved) => saved.id === draft.id) &&
+      !draft.raw.trim() && !draft.clientId &&
+      !draft.recipients.length && !draft.photos?.length;
+    if (emptyNewDraft) {
+      setReceptionId(draft.id);
+      setStageHover(undefined);
+      setActive("");
+      commitSelection(undefined);
+      lastVisiblePreview.current = undefined;
+    }
+    props.onNew();
+  });
   const openManual = useCallback(() => setManual(true), []);
   const receptionTargets = useMemo(() => ({ source, messages }), [source, messages]);
   const detailTargets = useMemo(() => ({ details }), [details]);
@@ -613,38 +640,7 @@ export function HubWorkspace(props: Props) {
           <section className="desk-pane hub-management">
             <header className="pane-heading">
               <h2>처리 중인 주문</h2>
-              <button className="primary" onClick={() => {
-                // The current receipt is temporarily retained in the read-only
-                // Rust preview overlay, not persisted to production SQLite.
-                const draftsToRetain = [draft, receptionOrder].filter((order) =>
-                  !state.orders.some((saved) => saved.id === order.id) &&
-                  (order.raw.trim() || order.clientId || order.recipients.length || order.photos?.length));
-                if (draftsToRetain.length)
-                  setEdits((previous) => ({
-                    ...previous,
-                    ...Object.fromEntries(draftsToRetain.map((order) => [
-                      order.id, structuredClone(order),
-                    ])),
-                  }));
-                // A blank draft may already be the model's current draft
-                // while a previously selected receipt remains visible here.
-                // newOrder() intentionally keeps that blank draft's ID, so
-                // clear local selection as well instead of a visual no-op.
-                const emptyNewDraft = draft.receptionVersion === 1 &&
-                  !state.orders.some((saved) => saved.id === draft.id) &&
-                  !draft.raw.trim() && !draft.clientId &&
-                  !draft.recipients.length && !draft.photos?.length;
-                if (emptyNewDraft) {
-                  setReceptionId(draft.id);
-                  setStageHover(undefined);
-                  setActive("");
-                  commitSelection(undefined);
-                  lastVisiblePreview.current = undefined;
-                }
-                props.onNew();
-              }}>
-                ＋ 새 주문
-              </button>
+
             </header>
             <AuditProfiler id="WorkflowBoard"><WorkflowBoard
               state={boardPreview}
@@ -691,6 +687,7 @@ export function HubWorkspace(props: Props) {
           sharedNativeFlow={receptionOrder === draft ? sharedCurrentDraftFlow : undefined}
           onChange={changeReceptionLive}
           viewMode="reception"
+          onNew={createReceptionLive}
           onManual={openManual}
           portalTargets={receptionTargets}
           linkController={linkController}
