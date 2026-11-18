@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import { projectHistoricalRemoteDelivery } from "../../legacy-remote-delivery-parity.mjs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolvePrice, totals, parseOrder, repriceOrder, itemFromProduct } from "../../../../src/domain.ts";
+import { resolvePrice, totals, parseOrder, itemFromProduct } from "../../../../src/domain.ts";
 import {
   recommendShipping,
   editableShippingRule,
@@ -31,10 +31,12 @@ import { deleteGroup, restoreGroup } from "../../oracles/group-trash.ts";
 import { correctionStatus, correctionMessage, requestCorrection, copiedCorrection, confirmCorrection, markFactoryDelivered, markCollected, reopenUnsentExport } from "../../oracles/corrections.ts";
 import { recordCopy } from "../../oracles/message-model.ts";
 import { paymentSignature } from "../../oracles/automatic-message.ts";
-import { orderIssues, approveMissingQuantity, pendingIssue } from "../../../../src/validation.ts";
+import { orderIssues } from "../../../../src/validation.ts";
+import { repriceOrder } from "../../oracles/reprice-order.ts";
+import { approveMissingQuantity, pendingIssue } from "../../oracles/legacy-issue-actions.ts";
 import { validateReceptionBoundary, newReception, replaceReception, persistedReceptionState } from "../../oracles/reception.ts";
 import { confirmRetail, newRetailOrder } from "../../oracles/retail.ts";
-import { retailIssues } from "../../../../src/orders/retail-validation.ts";
+import { retailIssues } from "../../oracles/retail-validation.ts";
 import { rawCorrectableIssue, rawCorrectionAllowed, correctWorkingRaw } from "../../oracles/working-raw.ts";
 import { receiptOf, correctReceipt } from "../../../../src/receipt.ts";
 import { billingSnapshot, applyReply } from "../../oracles/replies.ts";
