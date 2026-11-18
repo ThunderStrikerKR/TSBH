@@ -208,9 +208,15 @@ export function LinkedText({
   readOnly = false,
   directEdit = false,
   editingRequested = false,
+  emphasisSpans = [],
 }: {
   text: string;
   spans: SourceSpan[];
+  emphasisSpans?: ReadonlyArray<{
+    start: number;
+    end: number;
+    kind: "total" | "vat" | "account";
+  }>;
   label: string;
   onChange: (s: string) => void;
   readOnly?: boolean;
@@ -258,11 +264,22 @@ export function LinkedText({
   )?.recipientId ?? c.recipientId;
   let cursor = 0;
   const content: ReactNode[] = [];
-  for (const [index, s] of [...spans]
-    .sort((a, b) => a.start - b.start || b.end - a.end)
-    .entries()) {
-    if (s.start < cursor || s.start < 0 || s.end > text.length) continue;
+  const visualSpans = [
+    ...spans.map((span) => ({ ...span, displayKind: "link" as const })),
+    ...emphasisSpans.map((span) => ({ ...span, displayKind: "emphasis" as const })),
+  ].sort((a, b) => a.start - b.start || b.end - a.end);
+  for (const [index, s] of visualSpans.entries()) {
+    if (s.start < cursor || s.start < 0 || s.end > text.length ||
+        s.end <= s.start) continue;
     content.push(text.slice(cursor, s.start));
+    if (s.displayKind === "emphasis") {
+      content.push(
+        <span key={"emphasis:" + index} className="message-payment-emphasis"
+          data-payment-field={s.kind}>{text.slice(s.start, s.end)}</span>,
+      );
+      cursor = s.end;
+      continue;
+    }
     const key = s.targetId + ":" + s.field;
     content.push(
       <span

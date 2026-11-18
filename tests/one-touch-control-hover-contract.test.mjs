@@ -15,7 +15,7 @@ test("one-touch preview controls the orange emphasis only while the preview ship
 
 test("only the explicitly requested, editable, order-value controls get orange emphasis", () => {
   const css = source("src/styles/receipt-layout.css");
-  const start = css.indexOf('.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]) .hub-panels .compact-review :is(');
+  const start = css.indexOf('.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]):not([data-hover-stage="3"]) .hub-panels .compact-review :is(');
   const end = css.indexOf(") {", start);
   assert.ok(start >= 0 && end > start, "Missing precisely scoped one-touch whitelist");
   const selectors = css.slice(start, end);
@@ -70,11 +70,11 @@ test("freight-stage hover highlights only item, quantity, freight input, payment
     ".shipment-vat", ".order-grand-total", ".item-amount,",
     ".staff-checks", ".freight-remote-check", ".payment-message",
   ]) assert.ok(!targets.includes(forbidden), "Unrelated stage-two highlight: " + forbidden);
-  assert.ok(css.includes(':not([data-hover-stage="2"]) .hub-panels .compact-review :is('),
+  assert.ok(css.includes(':not([data-hover-stage="2"]):not([data-hover-stage="3"]) .hub-panels .compact-review :is('),
     "Other hover stages must retain their existing scope");
   const vatAccent = css.indexOf('.items-freight-panel .shipment-vat label.check > input[type="checkbox"]');
   assert.ok(vatAccent > 0);
-  assert.match(css.slice(Math.max(0, vatAccent - 150), vatAccent), /:not\(\[data-hover-stage="2"\]\)/);
+  assert.match(css.slice(Math.max(0, vatAccent - 200), vatAccent), /:not\(\[data-hover-stage="2"\]\):not\(\[data-hover-stage="3"\]\)/);
   const desk = source("src/OrderDesk.tsx");
   assert.match(desk, /const remoteCandidateRecipientId = flowSummaryReady &&/);
   assert.match(desk, /activeShipmentPreview\?\.remoteDelivery\?\.status === "auto"/);
@@ -99,6 +99,25 @@ test("stage-two preview emphasizes every shipment freight only inside its hovere
   assert.match(freightRule, /background-color: #3b2b1b/);
   assert.match(freightRule, /box-shadow: inset 0 0 0 2px #f59e0b/);
   assert.doesNotMatch(freightRule, /\.chosen|\.previewed|:nth-child|\.flow-summary-payment/);
+});
+
+test("payment-copy stage highlights only two copy buttons, exact account, total and VAT in message section", () => {
+  const css = source("src/styles/receipt-layout.css");
+  const message = source("src/MessageWorkspace.tsx");
+  const linked = source("src/LinkedText.tsx");
+  const rust = source("src-tauri/src/business_core/output/automatic_full.rs");
+  const workspace = source("src/HubWorkspace.tsx");
+  assert.match(css, /\[data-hover-stage="3"\] \.messages-pane\[data-payment-copy-ready="true"\] :is\(/);
+  assert.match(css, /\.message-copy-actions > button:not\(:disabled\)/);
+  assert.match(css, /\.stage-message-preview \.message-payment-emphasis/);
+  assert.match(css, /:not\(\[data-hover-stage="2"\]\):not\(\[data-hover-stage="3"\]\) \.hub-panels \.compact-review :is\(/);
+  assert.match(message, /data-payment-copy-ready=\{paymentCopyReady \? "true" : undefined\}/);
+  assert.match(message, /emphasisSpans=\{emphasisSpans\}/);
+  assert.match(message, /<footer className="message-copy-actions">[\s\S]*?그대로 복사[\s\S]*?인사말 포함 복사/);
+  assert.match(linked, /data-payment-field=\{s\.kind\}/);
+  assert.match(rust, /"selectedAccountNumber":selected_account_number/);
+  assert.match(workspace, /stageHover\.step === 3[\s\S]*?\.hub-slot-1 \.message-copy-actions/);
+  assert.doesNotMatch(css, /\[data-hover-stage="3"\][^\n]*\.items-freight-panel/);
 });
 
 test("recipient, product, quantity, money, freight, selected origin and VAT use real controls", () => {

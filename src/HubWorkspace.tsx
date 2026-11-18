@@ -544,7 +544,7 @@ export function HubWorkspace(props: Props) {
           : stageHover.step === 2
             ? ".hub-slot-2 .freight-input-area"
             : stageHover.step === 3
-              ? ".hub-slot-1 .payment-message, .hub-slot-1 .message-account"
+              ? ".hub-slot-1 .message-copy-actions"
               : ".hub-slot-2 .workflow-balance"
       );
       document.querySelector<HTMLElement>(target)

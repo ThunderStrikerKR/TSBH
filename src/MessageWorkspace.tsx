@@ -4,6 +4,7 @@ import { auditReactRender } from "./perf-audit";
 import { nativeAutomaticMessage, nativeDecorateCopyText, type NativeAutomaticMessage } from "./native-automatic-message";
 import { nativeRecordMessageCopy } from "./native-message-audit";
 import { LinkedText, messageSpans } from "./LinkedText";
+import { paymentMessageHighlights } from "./message-payment-highlights";
 import { useReadyContentFade } from "./shared/useReadyContentFade";
 import type { NoticeSink } from "./shared/notices";
 import type { Order, State } from "./types";
@@ -127,6 +128,9 @@ export function MessageWorkspace({
   const localMessageFadePhase = useReadyContentFade(contentKey, bodyReady);
   const messageFadePhase = sharedFadePhase ?? localMessageFadePhase;
   const disabled = busy || !automatic || !text.trim() || (!request && !!automatic.paymentIssues.length);
+  const emphasisSpans = request ? [] :
+    paymentMessageHighlights(text, automatic?.selectedAccountNumber ?? "");
+  const paymentCopyReady = Boolean(automatic && !request && !disabled);
   const copy = async (greeting: boolean) => {
     if (disabled || !gid) return;
     setBusy(true);
@@ -148,7 +152,8 @@ export function MessageWorkspace({
     }
   };
   return (
-    <aside className="desk-pane messages-pane">
+    <aside className="desk-pane messages-pane"
+      data-payment-copy-ready={paymentCopyReady ? "true" : undefined}>
       <header className="pane-heading">
         <h2>복사용 자동 메시지</h2>
         <label className="message-link-toggle">
@@ -173,6 +178,7 @@ export function MessageWorkspace({
           label="복사용 자동 메시지 본문"
           text={text}
           spans={messageSpans(text, order, request ? "request" : "payment")}
+          emphasisSpans={emphasisSpans}
           onChange={(value) => {
             if (gid && request) {
               // Optional links belong to the copy preview, not the editable request draft.

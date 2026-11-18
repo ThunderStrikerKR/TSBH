@@ -330,9 +330,13 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
             string(&e["after"],"signature")==signature);
         return Ok(json!({"copied":copied}));
     }
+    let selected_account_number=if string(&request,"phase")=="payment" {
+        account.map(|a|string(a,"number")).unwrap_or("")
+    }else{""};
     Ok(json!({
         "phase":string(&request,"phase"),"text":text,
         "paymentIssues":issues,"signature":signature,
-        "validRequestLinks":valid_links
+        "validRequestLinks":valid_links,
+        "selectedAccountNumber":selected_account_number
     }))
 }
