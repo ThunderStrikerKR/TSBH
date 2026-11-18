@@ -5,4 +5,6 @@ export interface Notice {
   tone: NoticeTone;
   id: number;
   anchor?: HTMLElement;
+  /** Only infrastructure failures that block safe operation enter the inbox. */
+  critical?: boolean;
 }
