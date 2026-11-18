@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { confirmAction, askSaveChanges } from "../dialogs";
 import { businessCoreCall } from "../tauri-bridge";
 import { auditStateTransition } from "../perf-audit";
 import { newReception } from "../orders/reception";
@@ -273,29 +272,13 @@ export function useAppModel() {
     setDraft((currentDraft) => currentDraft === sourceDraft ? clone(committedOrder) : currentDraft);
     setNotice(mode === "queue" ? "공장 목록에 추가했습니다." : "주문을 저장했습니다.");
   };
-  // The workflow workspace owns durable unconfirmed reception autosaves.
-  // Never let a fallback navigation discard such a reception.
+  // The mounted HubWorkspace is the single owner of SQLite working copies.
+  // If it cannot register a save/flush guard, NEVER discard a dirty receipt
+  // or silently commit confirmed billing information on navigation.
   const confirmReceptionDraftLeave = async (): Promise<boolean> => {
     if (!draft || !dirty) return true;
-    const persisted = state?.orders.find((order) => order.id === draft.id);
-    if (!persisted && !draft.confirmedAt) {
-      setNotice("미확정 발주서 자동 저장 상태를 확인하세요.", "error");
-      return false;
-    }
-    const choice = await askSaveChanges("접수 화면에 저장하지 않은 변경사항이 있습니다. 어떻게 할까요?");
-    if (choice === "cancel") return false;
-    if (choice === "save") {
-      try {
-        await saveOrder("save");
-      } catch (error) {
-        setNotice(error instanceof Error ? error.message : String(error), "error");
-        return false;
-      }
-    } else {
-      setDraft(persisted ? clone(persisted) : newReception());
-      setRawEditDirty(false);
-    }
-    return true;
+    setNotice("접수 자동 저장 연결을 확인할 수 없습니다. 편집 내용은 유지했습니다.", "error");
+    return false;
   };
   const open = async (o?: Order) => {
     if (o && onlyDeletedGroups(state!, o.id)) {
@@ -312,8 +295,21 @@ export function useAppModel() {
         return false;
       }
     } else if (!leave.handledDraft && !(await confirmReceptionDraftLeave())) return false;
+    let opened = o ? clone(o) : newReception();
+    if (o?.confirmedAt) {
+      try {
+        // Recover an already-autosaved edit, not a fresh copy of the frozen
+        // confirmed ledger. Rust rejects drafts with a changed DB baseline.
+        const working = await window.bando!.workingReceptionsLoad();
+        const edited = working.find((row) => row.id === o.id && row.confirmedAt);
+        if (edited) opened = clone(edited);
+      } catch (error) {
+        setNotice("확정 주문 작업본 복원 실패: " + String(error), "error");
+        return false;
+      }
+    }
     setWorkflowSelection(undefined);
-    setDraft(o ? clone(o) : newReception());
+    setDraft(opened);
     setTab("접수");
     return true;
   };
@@ -417,10 +413,16 @@ export function useAppModel() {
   const navigate = async (page: PageId) => {
     if (page === tab) return;
     if (tab === "접수") {
+      // Finish active editors first; after that, flush all SQLite working
+      // copies. Neither step asks to discard or confirm employee changes.
+      const editor = await requestPageLeave(
+        (message) => setNotice(message, "error"), { autosave: true },
+      );
+      if (!editor.proceed) return;
       const leave = await confirmOrderLeave("navigate");
       if (!leave.proceed) return;
-      if (hasPendingChanges && !leave.handledDraft) {
-        setNotice("저장하지 않은 편집창이 있습니다. 편집창에서 저장하거나 취소한 뒤 이동하세요.", "error");
+      if (hasPendingChanges && !editor.handled) {
+        setNotice("접수 편집 자동 저장 실패: 미처리 편집 내용이 남아 있습니다.", "error");
         return;
       }
       if (!leave.handledDraft && !(await confirmReceptionDraftLeave())) return;
@@ -482,19 +484,21 @@ export function useAppModel() {
   };
   const windowAction = async (action: "minimize" | "maximize" | "close") => {
     if (action === "close") {
-      // Even when closing from another tab, finish pending SQLite autosaves.
-      // Stored unconfirmed receptions are recoverable and require no loss warning.
+      // An unfinished reception already lives in SQLite. A close only needs
+      // to wait for pending writes; no browser confirm() or draft-loss popup.
+      const pageLeave = await requestPageLeave(
+        (message) => setNotice(message, "error"),
+        { autosave: tab === "접수" },
+      );
+      if (!pageLeave.proceed) return;
       const leave = await confirmOrderLeave("close");
       if (!leave.proceed) return;
-      if (tab === "접수") {
-        return window.bando!.requestClose(dirty && !leave.handledDraft);
-      }
-      const pageLeave = await requestPageLeave((message) => setNotice(message, "error"));
-      if (!pageLeave.proceed) return;
       if (hasPendingChanges && !pageLeave.handled) {
-        setNotice("편집 중인 내용을 저장하거나 취소한 뒤 종료하세요.", "error");
+        setNotice("저장되지 않은 편집 내용이 있습니다. 저장 상태를 확인하세요.", "error");
         return;
       }
+      if (tab === "접수" && !leave.handledDraft &&
+          !(await confirmReceptionDraftLeave())) return;
       return window.bando!.requestClose(false);
     }
     await window.bando!.windowControl(action);
