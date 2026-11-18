@@ -27,7 +27,7 @@ test("blank source canvas groups clipboard, alternative input, and folder guidan
   assert.match(source, /으로 복사하세요/);
   assert.doesNotMatch(source, /으로 캡처한 뒤 위 버튼으로 접수하세요/);
   assert.match(css, /\.source-intake-keycap\s*\{[^}]*border:/);
-  assert.match(css, /\.source-intake-other \.source-intake-buttons button\s*\{[^}]*background:/);
+  assert.match(css, /\.source-intake-buttons button\[data-ui-role="action-emphasized"\]\s*\{[^}]*background: var\(--ds-role-surface-emphasized-action\)/);
   assert.match(source, /onClick=\{\(\) => void paste\(undefined, "AGENCY"\)\}/);
   assert.match(source, /onClick=\{\(\) => void paste\(undefined, "DEALER"\)\}/);
   assert.match(source, /onClick=\{\(\) => setRetail\(true\)\}/);
