@@ -211,6 +211,8 @@ export interface Order {
     detail: string;
     chatTitle?: string;
     confirmedMatchCount?: number;
+    /** Rust-proposed, not yet selected, dealer candidates. */
+    candidates?: { clientId: string; name: string }[];
   };
   orderType?: OrderType;
   senderSnapshot?: Client;

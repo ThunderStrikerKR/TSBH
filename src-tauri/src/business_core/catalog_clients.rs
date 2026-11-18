@@ -292,6 +292,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
     let state = payload.get("state").ok_or("현재 상태가 없습니다.")?;
     match operation {
         "remembered_title_client" | "remember_title_client" | "auto_match_reception_client" => title_clients::execute(operation,&payload),
+        "reception_client_candidates" => title_clients::execute(operation,&payload),
         "preview_client_rows" => client_preview::preview(&payload),
         "upsert_product_from_editor" => editor::execute(&payload),
         "save_alias" | "alias_problems" | "alias_problems_one" => aliases::execute(operation,&payload),

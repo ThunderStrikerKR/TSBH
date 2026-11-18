@@ -26,6 +26,14 @@ export async function nativeAutoReceptionClient(
   });
 }
 
+/** Candidate lookup stays in Rust. No candidate is automatically applied. */
+export async function nativeReceptionClientCandidates(
+  state: State, windows: DockWindow[], raw: string, activeChatHandle?: string,
+): Promise<{ candidates: { clientId: string; name: string }[] }> {
+  return businessCoreCall("catalog_clients", "reception_client_candidates", {
+    state, windows, raw, activeChatHandle: activeChatHandle ?? "",
+  });
+}
 export async function nativeRememberTitle(
   state: State, windows: DockWindow[], handle: string,
   clientId: string, actor: string,

@@ -164,6 +164,51 @@ fn reception_client(payload:&Value)->Result<Value,String>{
         "detail":"거래처를 찾지 못했습니다. 직접 선택하세요."}))
 }
 
+
+/* Advisory candidate search. Only the active Kakao title and explicitly
+ * labeled ordering-business lines qualify. Consignee text is excluded.
+ * Selecting a candidate remains a separate explicit Rust order edit. */
+fn reception_candidates(payload:&Value)->Result<Value,String>{
+    let state=payload.get("state").ok_or("거래처 데이터를 확인할 수 없습니다.")?;
+    let windows=payload.get("windows").unwrap_or(&Value::Null);
+    let chats=rows(windows).iter()
+        .filter(|w|s(w,"kind")=="CHAT" && !s(w,"title").trim().is_empty())
+        .collect::<Vec<_>>();
+    let active=s(payload,"activeChatHandle");
+    let chat=if chats.len()==1{Some(chats[0])}else{
+        chats.iter().copied().find(|w|!active.is_empty() && s(w,"handle")==active)
+    };
+    let title=chat.map(|w|key(s(w,"title")).replace(' ',""));
+    let mut senders=Vec::new();
+    for line in s(payload,"raw").lines(){
+        let Some((label,value))=line.split_once(':').or_else(||line.split_once('：')) else {continue};
+        if ["거래처","발주처","주문처","주문업체","발신업체",
+            "발신자","대리점","업체명","상호"].contains(&key(label).as_str()){
+            let value=key(value);
+            if !value.is_empty(){senders.push(value);}
+        }
+    }
+    let mut candidates=Vec::<Value>::new();
+    let mut seen=std::collections::HashSet::<String>::new();
+    for c in list(state,"clients"){
+        let id=s(c,"id");
+        if id.is_empty() || !eligible_client(c,id,false){continue;}
+        let terms=client_terms(c);
+        let title_hit=title.as_ref().is_some_and(|name|terms.iter().any(|term|{
+            let term=term.replace(' ',"");
+            term.chars().count()>=3 && name.contains(&term)
+        }));
+        let explicit_hit=senders.iter().any(|sender|
+            terms.iter().any(|term|term==sender));
+        if !(title_hit||explicit_hit) || !seen.insert(id.to_owned()){continue;}
+        candidates.push(json!({
+            "clientId":id,
+            "name":if s(c,"name").is_empty(){s(c,"displayName")}else{s(c,"name")}
+        }));
+        if candidates.len()>=8{break;}
+    }
+    Ok(json!({"candidates":candidates}))
+}
 fn remember(payload:&Value)->Result<Value,String> {
     let state=payload.get("state").ok_or("현재 거래처 데이터가 없습니다.")?;
     let windows=payload.get("windows").ok_or("카카오톡 창 목록이 없습니다.")?;
@@ -200,6 +245,7 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
         }
         "remember_title_client"=>remember(payload),
         "auto_match_reception_client"=>reception_client(payload),
+        "reception_client_candidates"=>reception_candidates(payload),
         _=>Err(format!("지원하지 않는 카카오 거래처 연결 업무: {operation}"))
     }
 }

@@ -3,7 +3,7 @@ import { HelpTooltip } from "./ui/HelpTooltip";
 import { RetailOrderDialog } from "./orders/RetailOrderDialog";
 import { OcrReviewDialog } from "./OcrReviewDialog";
 import { Modal } from "./ui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ClientChooser } from "./ClientChooser";
 import { LinkedText, sourceDocumentSpans } from "./LinkedText";
@@ -12,7 +12,7 @@ import { TierBadge } from "./ManagementUI";
 import { confirmAction } from "./dialogs";
 import { businessCoreCall } from "./tauri-bridge";
 import type { NoticeSink } from "./shared/notices";
-import { nativeAutoReceptionClient } from "./native-title-clients";
+import { nativeAutoReceptionClient, nativeReceptionClientCandidates } from "./native-title-clients";
 import type { Client, DockWindow, OcrCapture, Order, State } from "./types";
 
 export function SourceDocument({
@@ -69,7 +69,6 @@ export function SourceDocument({
     );
     return next;
   };
-  const [windows, setWindows] = useState<DockWindow[]>([]);
   const watchedImageBusy = useRef(false);
   const [error, setError] = useState("");
   const [ocrFailure, setOcrFailure] = useState("");
@@ -81,10 +80,7 @@ export function SourceDocument({
     };
   }, []);
   useEffect(() => {
-    if (!text) {
-      setWindows([]);
-      setError("");
-    }
+    if (!text) setError("");
   }, [text]);
   const formal = !!order.confirmedAt || state.orders.some((o) => o.id === order.id);
   const waitingForSource = !formal && !(order.analysisRaw ?? text).trim();
@@ -96,28 +92,6 @@ export function SourceDocument({
   const sourceFadePhase = coordinatedFadePhase ?? localSourceFadePhase;
   // An inline filter allocated a new array on every repaint, restarting the
   // Rust client_candidates search even when the catalog had not changed.
-
-  useEffect(() => {
-    if (!text.trim() || client || formal) return;
-    let current = true;
-    const timer = setInterval(
-      () =>
-        void window
-          .bando!.dockWindows()
-          .then((rows) => {
-            if (current)
-              setWindows((previous) =>
-                JSON.stringify(previous) === JSON.stringify(rows) ? previous : rows,
-              );
-          })
-          .catch(() => {}),
-      2000,
-    );
-    return () => {
-      current = false;
-      clearInterval(timer);
-    };
-  }, [!!text.trim(), client?.id, formal]);
 
   // New images are recognized only for empty drafts, and only after stable file observations.
   // The OCR review dialog still owns the final accept/reject decision.
@@ -274,7 +248,6 @@ export function SourceDocument({
       if (!alive.current || (latestReception.current.order.id !== order.id ||
               latestReception.current.order.raw !== order.raw) ||
           latestReception.current.text !== text) return;
-      setWindows(chats);
       if (!order.clientId) {
         try {
           const result = await nativeAutoReceptionClient(
@@ -300,14 +273,21 @@ export function SourceDocument({
             );
             next = selected.order;
           } else {
-            // Rust distinguishes a missing match from conflicting strong evidence.
-            // A conflict is an ACTION item in the first-stage review.
+            // Unselected Rust candidates become buttons in staff checks.
+            // No candidate is automatically assigned in this branch.
+            const suggestions = await nativeReceptionClientCandidates(
+              state, chats, raw, activeChatHandle,
+            ).catch(() => ({ candidates: [] }));
+            if (!alive.current || latestReception.current.order.id !== order.id ||
+                latestReception.current.order.raw !== order.raw ||
+                latestReception.current.text !== text) return;
             const staleDealer = !!result.clientId;
             next.clientMatch = {
               source: staleDealer ? "ERROR" : result.source, clientId: null,
               detail: staleDealer
                 ? "매칭된 거래처를 찾지 못했습니다. 직접 선택하세요."
                 : result.detail,
+              candidates: suggestions.candidates,
             };
           }
         } catch (error) {
