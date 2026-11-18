@@ -17,10 +17,28 @@ export function useNativeShipmentRead(state: State, enabled = true) {
   // Search text, checkbox selection, and local freight drafts do not restart
   // native reads. This signature tracks every input Rust uses for the view.
   const key = useMemo(() => enabled ? JSON.stringify({
-    orders: state.orders,
+    orders: state.orders.map((order) => ({
+      id: order.id,
+      clientId: order.clientId,
+      orderType: order.orderType,
+      confirmedAt: order.confirmedAt,
+      pricesLocked: order.pricesLocked,
+      clientSnapshot: order.clientSnapshot,
+      recipients: order.recipients.map((row) => ({
+        id: row.id, actualFreight: row.actualFreight,
+      })),
+    })),
     clients: state.clients,
-    settings: state.settings,
-    shipments: state.workflow?.shipments,
+    settings: {
+      senderPostcode: state.settings.senderPostcode,
+      senderAddress: state.settings.senderAddress,
+      senderPhone: state.settings.senderPhone,
+      senderMobile: state.settings.senderMobile,
+    },
+    shipments: state.workflow?.shipments.map((ship) => ({
+      id: ship.id, orderId: ship.orderId,
+      recipientId: ship.recipientId, actualFreight: ship.actualFreight,
+    })),
   }) : "", [enabled, state.orders, state.clients, state.settings,
     state.workflow?.shipments]);
   const input = useRef(state);
