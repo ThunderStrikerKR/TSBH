@@ -111,21 +111,24 @@ test("title selects one group and hover never changes the accordion layout", () 
   assert.match(board, /selectedPendingOrderId === receipt\.id/);
   assert.match(css, /\.flow-heading-toggle \{[\s\S]*?flex: 1 1 auto/);
 });
-test("navigation counts every unconfirmed receipt, never attempts to save it as confirmed", () => {
+test("navigation retains every unconfirmed reception without repetitive discard dialogs", () => {
   const model = read("src/app/useAppModel.ts");
   const hub = read("src/HubWorkspace.tsx");
+  const app = read("src/App.tsx");
   assert.match(hub, /const temporaryReceipts = useMemo/);
   assert.match(hub, /for \(const order of Object\.values\(edits\)\)/);
   assert.match(hub, /if \(unsaved\(draft\)\) byId\.set\(draft\.id, draft\)/);
-  assert.match(hub, /intent === "navigate"/);
-  assert.match(hub, /임시 보관하고 이동/);
-  assert.match(hub, /title: "미완성 발주서 처리"/);
-  assert.match(read("src/dialogs.ts"), /labels\?\.title \?\? "변경사항 저장"/);
-  assert.match(hub, /모두 버리고 이동/);
-  assert.match(hub, /setEdits\(\(previous\) =>\s*Object\.fromEntries/);
+  assert.match(app, /className="hub-desk-host" hidden=\{tab !== "접수"\}/);
+  assert.match(hub, /\(intent === "navigate" \|\| intent === "close"\) && temporaryReceipts\.length/);
+  assert.doesNotMatch(hub, /미완성 발주서 \$\{temporaryReceipts\.length\}건이 임시 보관 중입니다/);
+  assert.doesNotMatch(hub, /title: "미완성 발주서 처리"/);
+  assert.doesNotMatch(hub, /모두 버리고 이동/);
   assert.match(model, /confirmOrderLeave\("navigate"\)/);
+  assert.match(model, /if \(!leave\.handledDraft && !\(await confirmReceptionDraftLeave\(\)\)\) return;/);
+  assert.match(model, /pendingDraftCount > 0 && !\(await confirmAction/);
   assert.match(model, /confirmOrderLeave\("close"\)/);
-  assert.match(model, /임시 보관하고 이동/);
+  assert.match(hub, /intent === "switch" && temporaryReceipts\.some/);
+  assert.match(hub, /setEdits\(\(previous\) => \(\{ \.\.\.previous, \[draft\.id\]: structuredClone\(draft\) \}\)\)/);
 });
 
 test("photograph-only unfinished orders are retained and counted as unsaved", () => {

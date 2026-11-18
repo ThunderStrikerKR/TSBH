@@ -309,8 +309,9 @@ export function HubWorkspace(props: Props) {
       persisted && pending && JSON.stringify(pending) !== JSON.stringify(persisted),
     );
 
-    // Obtain both decisions before changing any stored or temporary draft.
-    // Cancelling either dialog must never partially discard work.
+    // A tab change only hides this mounted workspace. Never require a second
+    // decision to retain unconfirmed receptions already held in React memory.
+    // Real edits of persisted orders still require the normal save/discard guard.
     let savedChoice: "save" | "discard" | undefined;
     if (savedOrderDirty) {
       const choice = await askSaveChanges(
@@ -319,16 +320,6 @@ export function HubWorkspace(props: Props) {
       if (choice === "cancel") return { proceed: false, handledDraft: false };
       savedChoice = choice;
     }
-    let temporaryChoice: "save" | "discard" | undefined;
-    if (intent === "navigate" && temporaryReceipts.length) {
-      const choice = await askSaveChanges(
-        `미완성 발주서 ${temporaryReceipts.length}건이 임시 보관 중입니다. 주문 확인 완료 전에는 주문 내역에 저장되지 않으며, 프로그램을 종료하면 사라집니다. 어떻게 할까요?`,
-        { title: "미완성 발주서 처리", save: "임시 보관하고 이동", discard: "모두 버리고 이동", cancel: "취소" },
-      );
-      if (choice === "cancel") return { proceed: false, handledDraft: false };
-      temporaryChoice = choice;
-    }
-
     if (savedChoice === "save") {
       try {
         await onSave(await nativeReconcileWorkflow(state, pending!));
@@ -348,28 +339,10 @@ export function HubWorkspace(props: Props) {
     }
 
     let handledTemporary = false;
-    if (temporaryChoice) {
-      const ids = new Set(temporaryReceipts.map((order) => order.id));
-      if (temporaryChoice === "discard") {
-        // Never briefly show a stale shipment preview after explicit discard.
-        lastVisiblePreview.current = undefined;
-        setEdits((previous) =>
-          Object.fromEntries(Object.entries(previous).filter(([id]) => !ids.has(id))));
-        if (ids.has(draft.id)) {
-          const next = newReception();
-          props.onChange(next);
-          setReceptionId(next.id);
-        } else if (ids.has(receptionId)) {
-          setReceptionId(draft.id);
-        }
-        commitSelection(undefined);
-        setDiscardRevision((value) => value + 1);
-      } else if (ids.has(draft.id)) {
-        setEdits((previous) => ({ ...previous, [draft.id]: structuredClone(draft) }));
-      }
-      handledTemporary = true;
-    } else if (intent === "close" && temporaryReceipts.length) {
-      // AppModel already warned about all temporary drafts before closing.
+    if ((intent === "navigate" || intent === "close") && temporaryReceipts.length) {
+      // App.tsx keeps HubWorkspace mounted (hidden) across tabs. Its current
+      // draft and retained edits survive ordinary navigation without a dialog.
+      // AppModel separately warns once when closing the application.
       handledTemporary = true;
     } else if (intent === "switch" && temporaryReceipts.some((order) => order.id === draft.id)) {
       setEdits((previous) => ({ ...previous, [draft.id]: structuredClone(draft) }));
