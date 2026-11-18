@@ -14,7 +14,7 @@ function load(path) {
   if (modules.has(path)) return modules.get(path);
   const output = {};
   modules.set(path, output);
-  const js = ts.transpileModule(read("src/" + path + ".ts"), {
+  const js = ts.transpileModule(read((["factory-replies","factory-reply-workbook","actual-freight"].includes(path) ? "tests/rust-migration/oracles/" : "src/") + path + ".ts"), {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
       esModuleInterop: true,

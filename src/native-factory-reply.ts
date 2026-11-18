@@ -5,7 +5,7 @@
  */
 import type ExcelJS from "exceljs";
 import { businessCoreCall } from "./tauri-bridge";
-import type { FactoryReplyPreview } from "./factory-reply-workbook";
+import type { FactoryReplyPreview } from "./factory-reply-types";
 import type { State } from "./types";
 
 const MAX_BYTES = 10 * 1024 * 1024;

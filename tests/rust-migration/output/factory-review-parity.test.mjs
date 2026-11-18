@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
 const { replyNeedsReview } =
-  await tsImport("../../../src/factory-replies.ts", import.meta.url);
+  await tsImport("../oracles/factory-replies.ts", import.meta.url);
 const { factoryConflictConfirmation } =
   await tsImport("../../../src/factory-conflict-review.ts", import.meta.url);
 const manifest = fileURLToPath(new URL("./Cargo.toml", import.meta.url));

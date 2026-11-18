@@ -1,4 +1,4 @@
-import type { FactoryReplyPreview } from "./factory-reply-workbook";
+import type { FactoryReplyPreview } from "./factory-reply-types";
 import type { Api, State } from "./types";
 
 export interface WatchedReplyFile {

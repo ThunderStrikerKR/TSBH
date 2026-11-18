@@ -25,7 +25,7 @@ import {
 } from "../../../../src/shipping.ts";
 import { shipmentTotals, validateWorkflow, reconcileWorkflow, clientChangeIssue, deleteOrder, workflowIssues, stageIssues, applyOrderRawEdit, migrateWorkflow, advanceGroup, undoGroup, setShipmentFreight, processGroup, confirmGroupPayment, recordPayment, restoreShipment, markStoreSent, recordChangeRequest, setGroupAccount, detachShipment, regroupShipment, completeDelivery, groupContext, groupStep, groupTotals } from "../../../../src/workflow.ts";
 import { recordActualFreight } from "../../oracles/actual-freight.ts";
-import { dispatchState } from "../../../../src/factory-replies.ts";
+import { dispatchState } from "../../oracles/factory-replies.ts";
 import { shouldRefreshUncommittedOrderPricing } from "../../oracles/passive-pricing.ts";
 import { deleteGroup, restoreGroup } from "../../oracles/group-trash.ts";
 import { correctionStatus, correctionMessage, requestCorrection, copiedCorrection, confirmCorrection, markFactoryDelivered, markCollected, reopenUnsentExport } from "../../oracles/corrections.ts";
@@ -38,7 +38,7 @@ import { retailIssues } from "../../../../src/orders/retail-validation.ts";
 import { rawCorrectableIssue, rawCorrectionAllowed, correctWorkingRaw } from "../../oracles/working-raw.ts";
 import { receiptOf, correctReceipt } from "../../../../src/receipt.ts";
 import { billingSnapshot, applyReply } from "../../oracles/replies.ts";
-import { replyNeedsReview } from "../../../../src/factory-replies.ts";
+import { replyNeedsReview } from "../../oracles/factory-replies.ts";
 import { factoryConflictConfirmation } from "../../../../src/factory-conflict-review.ts";
 import { validateProvisionalProductNotices } from "../../../../src/provisional-product-notices.ts";
 import { validateAutomaticMessageTemplates } from "../../../../src/automatic-message-templates.ts";

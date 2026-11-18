@@ -6,7 +6,7 @@ import {fileURLToPath} from "node:url";
 import {tsImport} from "tsx/esm/api";
 const {orderHistory,orderHistoryStatus}=await tsImport("../../../src/app/order-history.ts",import.meta.url);
 const {dailySettlement}=await tsImport("../../../src/app/settlement-report.ts",import.meta.url);
-const {trackingMessage}=await tsImport("../../../src/factory-replies.ts",import.meta.url);
+const {trackingMessage}=await tsImport("../oracles/factory-replies.ts",import.meta.url);
 const {resolveHistoricalProductReference}=await tsImport(
   "../../../src/historical-product-reference.ts",import.meta.url);
 const manifest=fileURLToPath(new URL("./Cargo.toml",import.meta.url));

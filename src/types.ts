@@ -480,7 +480,7 @@ export interface State {
   deletedProductKeys?: string[];
   productMappings?: Record<string, string>;
   variantMappings?: Record<string, string>;
-  factoryReplies?: import("./factory-replies.js").FactoryReply[];
+  factoryReplies?: import("./factory-reply-types.js").FactoryReply[];
 }
 export interface ImportPreview {
   product: Product;

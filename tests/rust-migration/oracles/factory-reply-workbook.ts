@@ -1,6 +1,7 @@
+/** Historical factory reply workbook and approval oracle. No runtime import. */
 import type ExcelJS from "exceljs";
 import { connectFactoryReply, type FactoryReply, type ReplyRow } from "./factory-replies";
-import type { State } from "./types";
+import type { State } from "../../../src/types";
 
 /** Factory replies use the original Logen columns A/C/D/E/G and the
  * additional Q waybill column. Never infer a tracking number from A-O. */

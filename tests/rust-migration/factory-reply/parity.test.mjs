@@ -10,7 +10,7 @@ import {tsImport} from "tsx/esm/api";
 import ExcelJS from "exceljs";
 
 const {previewFactoryReply,applyFactoryReplyPreview,parseFactoryReplyWorkbook}=
-  await tsImport("../../../src/factory-reply-workbook.ts",import.meta.url);
+  await tsImport("../oracles/factory-reply-workbook.ts",import.meta.url);
 const manifest=fileURLToPath(new URL("../rules/Cargo.toml",import.meta.url));
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const fixed="2026-11-13T11:00:00.000Z";

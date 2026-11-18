@@ -1,4 +1,5 @@
-import type { State, Origin } from "./types.js";
+/** Historical factory reply matching/transition oracle. Rust handles production decisions. */
+import type { State, Origin } from "../../../src/types.js";
 import { actualFreightOf, recordActualFreight } from "./actual-freight.js";
 export interface ReplyRow {
   row: number;
