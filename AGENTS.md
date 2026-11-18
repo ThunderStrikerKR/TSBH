@@ -10,6 +10,7 @@
 ## 공통 디자인 시스템 계약 — 모든 화면 필수
 
 - **최신 사용자 UI 합의의 지속 가능한 원본:** [전 화면 UI 설계 계약](docs/ui-design-system.md)과 앱 내 역할 레지스트리 [`src/ui/design-system.json`](src/ui/design-system.json)을 반드시 먼저 읽는다. 디자인 기준은 대화 차수에 의존하지 않는다.
+- **2026-11-18 최신 결정 — 통합 보류:** 사용자는 **기능 개선을 더 진행한 후 UI 디자인 시스템 전면 통합을 재개**하기로 결정했다. [T0~T8 역할 분류·화면별 소스 감사·불일치 및 미완료 목록](docs/ui-typography-audit-deferred-2026-11-18.md)을 반드시 확인한다. 해당 T0~T8은 **제안·보관 상태**이며 `design-system.json` 현행 적용 완료가 아니다. 사용자 재개 지시 없이 전체 CSS/전역 타이포그래피 이관을 시작하지 않는다.
 - **8개 화면 동일 규칙:** 접수·주문 내역·엑셀 관리·일일 결산·상품 관리·운임 관리·거래처 관리·설정의 모든 메뉴·버튼·입력·표·모달·상태·알림을 동일 역할/크기/색상/여백 체계로 분류한다. 정보 계층과 버튼 중요도는 구별한다.
 - **새롭거나 수정된 버튼에는 역할 지정:** HTML `<button>`에는 `data-ui-role="action-standard"` 등 `design-system.json` 등록 값을 부여하고, 공유 `<Button>`에는 명시적 `variant`를 사용한다. 규격을 기능별 CSS 숫자로 임의 추가하지 않는다.
 - **강제 검사:** `npm run check:ui-design` (`scripts/check-ui-design.mjs`). GitHub CI는 비교 커밋을 전달해 **신규/수정 JSX 버튼의 역할 누락을 실패 처리**하고, JSON↔CSS 토큰 불일치를 차단한다. 이는 코드 일관성 검사이지 실제 Windows GUI 통과 증거가 아니다.
