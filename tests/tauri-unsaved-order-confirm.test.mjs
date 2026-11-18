@@ -20,7 +20,8 @@ test("leaving selected order with edits saves or discards before changing select
   assert.match(hub, /const persisted = state\.orders\.find/);
   assert.match(hub, /JSON\.stringify\(pending\) !== JSON\.stringify\(persisted\)/);
   assert.match(hub, /savedChoice === "save"/);
-  assert.match(hub, /temporaryChoice === "discard"/);
+  assert.match(hub, /await workingWriter\.current!\.enqueue\(temporaryReceipts\)/);
+  assert.doesNotMatch(hub, /temporaryChoice/);
   assert.match(hub, /await onSave\(await nativeReconcileWorkflow\(state, pending!\)\)/);
   // The original Rust reconciliation/save remains mandatory for confirmed edits.
   assert.match(hub, /if \(savedChoice === "save"\) \{\s*try \{\s*await onSave\(await nativeReconcileWorkflow\(state, pending!\)\);/);
@@ -47,12 +48,12 @@ test("unconditional order save is removed, workflow one-touch progression remain
   assert.match(app, /onWorkflowSave=\{workspaceWorkflowSave\}/);
 });
 
-test("cancelling either leave decision preserves saved edits and unfinished receipts",()=>{
+test("confirmed-order leave cancellation preserves SQLite-stored working receptions",()=>{
   const guard=source("src/HubWorkspace.tsx").split('  leaveGuardRef.current = async (intent = "switch") => {')[1]
     ?.split("  useEffect(() => {\n    props.onRegisterOrderLeaveGuard")[0] ?? "";
   assert.match(guard,/savedChoice = choice/);
-  assert.match(guard,/temporaryChoice = choice/);
-  assert.ok(guard.indexOf("temporaryChoice = choice") < guard.indexOf('if (savedChoice === "save")'));
-  assert.ok(guard.indexOf("temporaryChoice = choice") < guard.indexOf('if (savedChoice === "discard")'));
-  assert.match(guard,/if \(temporaryChoice === "discard"\)/);
+  assert.doesNotMatch(guard,/temporaryChoice/);
+  assert.match(guard,/workingStoreReady/);
+  assert.match(guard,/workingWriter\.current!\.enqueue\(temporaryReceipts\)/);
+  assert.match(guard,/if \(choice === "cancel"\) return \{ proceed: false, handledDraft: false \};/);
 });

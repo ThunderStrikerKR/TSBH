@@ -46,7 +46,9 @@ test("two unconfirmed receipts are not discarded and are previewed independently
   assert.match(hub, /const selectPendingLive = useEventCallback\(\(id: string\) => \{/);
   assert.match(hub, /if \(id === draft\.id \|\| edits\[id\]\) \{/);
   assert.match(hub, /commitSelection\(undefined\);\s*setReceptionId\(id\)/);
-  assert.match(app, /pendingDraftCount > 0 && !\(await confirmAction/);
+  assert.match(hub, /workingReceptionsLoad\(\)/);
+  assert.match(hub, /workingWriter\.current!\.enqueue\(temporaryReceipts\)/);
+  assert.doesNotMatch(app, /pendingDraftCount/);
   assert.match(hub, /Object\.values\(edits\)\.filter\(\(order\) => order\.id !== draft\.id && order\.clientId\)/);
   assert.match(hub, /useNativeWorkflowReconcile\(state, independentEdits\)/);
   assert.match(hub, /useNativeWorkflowReconcile\(base, draft\.clientId \? \[draft\] : \[\]\)/);
@@ -125,7 +127,8 @@ test("navigation retains every unconfirmed reception without repetitive discard 
   assert.doesNotMatch(hub, /모두 버리고 이동/);
   assert.match(model, /confirmOrderLeave\("navigate"\)/);
   assert.match(model, /if \(!leave\.handledDraft && !\(await confirmReceptionDraftLeave\(\)\)\) return;/);
-  assert.match(model, /pendingDraftCount > 0 && !\(await confirmAction/);
+  assert.doesNotMatch(model, /pendingDraftCount/);
+  assert.match(model, /const leave = await confirmOrderLeave\("close"\)/);
   assert.match(model, /confirmOrderLeave\("close"\)/);
   assert.match(hub, /intent === "switch" && temporaryReceipts\.some/);
   assert.match(hub, /setEdits\(\(previous\) => \(\{ \.\.\.previous, \[draft\.id\]: structuredClone\(draft\) \}\)\)/);
