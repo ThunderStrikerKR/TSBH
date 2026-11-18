@@ -31,8 +31,10 @@ test("all native invoice paths and actual-delivery verification use checked mult
   const preview = source("src-tauri/src/business_core/rules/workflow_preview.rs");
   assert.match(workflow, /pub\(super\) fn fee_total[\s\S]*?remote_delivery::multiply_shipment\(base,row,ship,order\)/);
   assert.match(workflow, /"complete_delivery" => \{[\s\S]*?remote_delivery::multiply_shipment\(/);
-  assert.match(workflow, /let active=!remote_selected &&/);
-  assert.match(workflow, /if !remote_selected \{\s*for previous in state\["shipping"\]\["combinations"\]/);
+  assert.match(workflow, /let active=eligible_base &&/);
+  assert.match(workflow, /let remote_candidate=matches!\(str_field\(&remote_state,"status"\),"auto"\|"review"\)/);
+  assert.match(workflow, /let eligible_base=!remote_selected && !remote_candidate/);
+  assert.match(workflow, /if eligible_base \{\s*for previous in state\["shipping"\]\["combinations"\]/);
   assert.match(workflow, /fn invoice_uses_one_checked_multiplier_on_summed_undoubled_base_charges\(\)/);
   assert.match(preview, /let remote = super::remote_delivery::resolve_shipment\(recipient,ship,order\)\?/);
   assert.match(preview, /super::remote_delivery::multiply_shipment\(safe\(base\),recipient,ship,order\)/);
