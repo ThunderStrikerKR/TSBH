@@ -351,7 +351,7 @@ pub(super) fn reconcile(payload:&Value)->Result<Value,String> {
                     rows(field(&state["workflow"],"shipments")).get(si));
                 let old_bill=existing_ship.is_some_and(|ship|
                     flag(ship,"transferred") ||
-                    field(ship,"step").as_i64().unwrap_or(0)>=2) ||
+                    field(ship,"step").as_i64().unwrap_or(0)>=1) ||
                     has_value(field(&order_before,"confirmedAt")) ||
                     flag(&order_before,"pricesLocked");
                 let analysis=super::remote_delivery::detect(&json!({"address":current_address}))?;
