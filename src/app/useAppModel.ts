@@ -280,11 +280,19 @@ export function useAppModel() {
     setNotice("접수 자동 저장 연결을 확인할 수 없습니다. 편집 내용은 유지했습니다.", "error");
     return false;
   };
+  const flushReceptionEditor = async (): Promise<boolean> => {
+    if (tab !== "접수") return true;
+    const result = await requestPageLeave(
+      (message) => setNotice(message, "error"), { autosave: true },
+    );
+    return result.proceed;
+  };
   const open = async (o?: Order) => {
     if (o && onlyDeletedGroups(state!, o.id)) {
       setNotice("이 주문의 묶음은 삭제되었습니다. 최초 원문은 설정의 감사 기록에서 확인하세요.");
       return false;
     }
+    if (!(await flushReceptionEditor())) return false;
     const leave = await confirmOrderLeave();
     if (!leave.proceed) return false;
     if (tab !== "접수") {
@@ -456,6 +464,7 @@ export function useAppModel() {
     // table, not the confirmed order ledger. Switching does not discard them.
     if (!state.orders.some((o) => o.id === draft.id) &&
         !draft.confirmedAt && (draft.raw.trim() || draft.clientId || draft.recipients.length || draft.photos?.length)) {
+      if (!(await flushReceptionEditor())) return;
       const leave = await confirmOrderLeave();
       if (!leave.proceed) return;
       setWorkflowSelection(undefined);
@@ -465,6 +474,7 @@ export function useAppModel() {
     await open();
   };
   const receive = async (entry: InboxEntry) => {
+    if (!(await flushReceptionEditor())) return;
     const leave = await confirmOrderLeave();
     if (!leave.proceed) return;
     if (tab !== "접수") {
