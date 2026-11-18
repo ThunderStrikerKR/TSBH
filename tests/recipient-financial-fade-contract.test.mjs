@@ -59,7 +59,10 @@ test("shipping count, surrounding labels and VAT parentheses have immutable posi
   const css = source("src/styles/patch-v0808.css");
   assert.match(desk, /className="shipment-count-label">\| 택배<\/span>/);
   assert.match(desk, /className="shipment-count-number" data-recipient-fade=\{recipientRevealPhase\}/);
-  assert.match(desk, /className="shipment-count-suffix">건 \|<\/span>/);
+  assert.match(desk, /className="shipment-count-value"/);
+  assert.match(desk, /className="shipment-count-unit">건<\/span>/);
+  assert.match(desk, /className="shipment-count-divider">\|<\/span>/);
+  assert.match(desk, /className="order-grand-total-label">총 주문 금액<\/span>/);
   assert.match(desk, /className="order-vat-summary"/);
   assert.match(desk, /className="order-vat-paren">\(<\/span>/);
   assert.match(desk, /className="order-vat-label" data-recipient-fade=\{recipientRevealPhase\}/);
