@@ -1,7 +1,7 @@
 import { nativePaymentWasCopied } from "./native-automatic-message";
 import { workflowGroupOpen } from "./workspace-selection";
 import { useNativeWorkflowBoard } from "./orders/useNativeWorkflowBoard";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { auditReactRender } from "./perf-audit";
 import { confirmAction } from "./dialogs";
@@ -109,13 +109,15 @@ export function WorkflowBoard({
     hoveredGroup = useRef<string | undefined>(undefined),
     hoverDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
     hoverReturnDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
-    previewButton = useRef<HTMLButtonElement | null>(null);
+    previewButton = useRef<HTMLButtonElement | null>(null),
+    previewElement = useRef<HTMLDivElement | null>(null);
   const [previewLayer, setPreviewLayer] = useState<{
     groupId: string; left: number; top: number; width: number;
-    maxHeight: number; above: boolean; height?: number; backgroundColor: string;
+    maxHeight: number; above: boolean; backgroundColor: string;
   }>();
-  // A preview is the same shipment list as the expanded card, drawn over its
-  // exact content box. No independent popup width, padding or row measurements.
+  // The portal renders the exact same shipment-list markup as expansion.
+  // Never copy a measured element HEIGHT to the portal: its independently
+  // rendered content may wrap differently and would be silently cropped.
   const positionPreview = (button: HTMLButtonElement, groupId: string, shipmentCount: number) => {
     const buttonRect = button.getBoundingClientRect();
     const card = button.closest<HTMLElement>(".workflow-group");
@@ -125,8 +127,6 @@ export function WorkflowBoard({
     const expanded = card?.querySelector<HTMLElement>(":scope > .workflow-shipment-list");
     const expandedRect = expanded?.getBoundingClientRect();
     const margin = 8;
-    // Match the actual card's content width; the old 340px cap left the
-    // preview narrower than the identical expanded table.
     const contentLeft = cardRect.left +
       inset(cardStyle.borderLeftWidth) + inset(cardStyle.paddingLeft);
     const contentWidth = cardRect.width -
@@ -141,21 +141,24 @@ export function WorkflowBoard({
     const naturalTop = expandedRect?.top ?? (
       cardRect.bottom - inset(cardStyle.borderBottomWidth) - inset(cardStyle.paddingBottom)
     );
-    const below = Math.max(0, window.innerHeight - naturalTop - margin);
-    const above = Math.max(0, cardRect.top - margin);
-    const estimatedHeight = 26 + shipmentCount * 41;
-    // If a real expanded list exists, overlap it pixel-for-pixel. If it is
-    // collapsed, extend from the spot where expanding would place that list,
-    // choosing above only when the viewport lacks enough room below.
-    const showAbove = !expandedRect && below < estimatedHeight && above > below;
+    // The rendered table's scrollHeight includes wrapped product chips and
+    // every row. The estimate is used only before the first portal layout.
+    const renderedHeight = previewElement.current
+      ?.querySelector<HTMLElement>(".workflow-shipment-list")?.scrollHeight;
+    const contentHeight = renderedHeight && renderedHeight > 0
+      ? renderedHeight : 26 + shipmentCount * 41;
+    const below = Math.max(0, window.innerHeight - Math.max(margin, naturalTop) - margin);
+    const above = Math.max(0, cardRect.top - margin - 4);
+    const showAbove = !expandedRect && below < contentHeight && above > below;
+    const top = expandedRect ? expandedRect.top
+      : showAbove ? cardRect.top - 4 : Math.max(margin, naturalTop);
+    const availableHeight = showAbove ? above
+      : Math.max(0, window.innerHeight - top - margin);
     const next = {
-      groupId,
-      left,
-      top: expandedRect ? expandedRect.top : showAbove ? cardRect.top - 2 : naturalTop,
-      width,
-      height: expandedRect && width === expandedRect.width ? expandedRect.height : undefined,
-      maxHeight: expandedRect ? expandedRect.height :
-        Math.max(0, showAbove ? above : below),
+      groupId, left, top, width,
+      // This is a viewport safety limit, NOT a copied list height.
+      // A short list keeps its natural height; a long one scrolls.
+      maxHeight: availableHeight,
       above: showAbove,
       backgroundColor: card ? cardStyle.backgroundColor : "#202020",
     };
@@ -202,7 +205,15 @@ export function WorkflowBoard({
     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
     hoverReturnDelay.current = undefined;
   };
-  // Reposition the portal if the scrollable order list or window moves.
+  // Measure the rendered table before paint. A wrapped row may be taller
+  // than the heuristic used when the stage-hover timer first fires.
+  useLayoutEffect(() => {
+    if (!previewLayer || !previewElement.current) return;
+    const button = previewButton.current;
+    if (button?.isConnected)
+      positionPreview(button, previewLayer.groupId, groupShipments(state, previewLayer.groupId).length);
+  }, [previewLayer?.groupId, state]);
+  // Reposition on resize/scroll and whenever the actual preview rows reflow.
   useEffect(() => {
     if (!previewLayer) return;
     const update = () => {
@@ -213,9 +224,11 @@ export function WorkflowBoard({
     };
     const board = boardRef.current;
     const card = previewButton.current?.closest<HTMLElement>(".workflow-group");
-    const resizeObserver = card && typeof ResizeObserver !== "undefined"
+    const list = previewElement.current?.querySelector<HTMLElement>(".workflow-shipment-list");
+    const resizeObserver = typeof ResizeObserver !== "undefined"
       ? new ResizeObserver(update) : undefined;
     if (card) resizeObserver?.observe(card);
+    if (list) resizeObserver?.observe(list);
     board?.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
     return () => {
@@ -487,7 +500,12 @@ export function WorkflowBoard({
                       data-shipment-id={s.id}
                       aria-label={"배송 건 " + recipient.name + (isPreviewed ? " (현재 화면에 표시 중)" : "")}
                       onClick={() => {
-                        if (inPreview) stopStagePreview();
+                        if (inPreview) {
+                          // An already-selected but manually folded group must
+                          // reopen too, not just update the selected shipment.
+                          setManuallyClosedGroup(undefined);
+                          stopStagePreview();
+                        }
                         onSelect({
                           orderId: s.orderId,
                           groupId: g.id,
@@ -681,20 +699,18 @@ export function WorkflowBoard({
                 >
                   ↶
                 </button>
-                {hovered && previewLayer?.groupId === g.id && typeof document !== "undefined" &&
+                {hovered && !open && previewLayer?.groupId === g.id && typeof document !== "undefined" &&
                   createPortal(
                     <div
+                      ref={previewElement}
                       className="workflow-preview-layer hub-slot-3"
                       role="group"
                       aria-label={(first.client.displayName || first.client.name) + " 배송 건 미리보기"}
                       style={{
                         left: previewLayer.left, top: previewLayer.top,
-                        width: previewLayer.width, height: previewLayer.height,
+                        width: previewLayer.width,
                         maxHeight: previewLayer.maxHeight,
                         backgroundColor: previewLayer.backgroundColor,
-                        // Expanded rows do not have their own scrollbar; a
-                        // duplicate scrollbar would change column widths.
-                        overflowY: previewLayer.height === undefined ? undefined : "hidden",
                         transform: previewLayer.above ? "translateY(-100%)" : undefined,
                       }}
                       onMouseEnter={keepStagePreview}
