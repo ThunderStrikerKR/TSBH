@@ -6,6 +6,7 @@ import { AuditProfiler } from "./perf-audit-profiler";
 import { createPortal, flushSync } from "react-dom";
 import { HubPanels, defaultPanels } from "./HubPanels";
 import { WorkingReceptionAutosave } from "./orders/working-reception-autosave";
+import { sameValue } from "./shared/draft";
 import { requestPageLeave } from "./shared/page-leave";
 import { LinkContext } from "./LinkedText";
 import { MemoMessageWorkspace as MessageWorkspace } from "./MessageWorkspace";
@@ -158,11 +159,11 @@ export function HubWorkspace(props: Props) {
     const drafts = new Map<string, Order>();
     for (const edit of Object.values(edits)) {
       const original = saved.get(edit.id);
-      if (original && JSON.stringify(edit) !== JSON.stringify(original))
+      if (original && !sameValue(edit, original))
         drafts.set(edit.id, edit);
     }
     const currentSaved = saved.get(draft.id);
-    if (currentSaved && JSON.stringify(draft) !== JSON.stringify(currentSaved))
+    if (currentSaved && !sameValue(draft, currentSaved))
       drafts.set(draft.id, draft);
     return [...drafts.values()];
   }, [draft, edits, state.orders]);
@@ -179,7 +180,7 @@ export function HubWorkspace(props: Props) {
       const recovered = stored.filter((order) => {
         const saved = state.orders.find((row) => row.id === order.id);
         return saved
-          ? Boolean(order.confirmedAt) && JSON.stringify(order) !== JSON.stringify(saved)
+          ? Boolean(order.confirmedAt) && !sameValue(order, saved)
           : !order.confirmedAt;
       });
       setEdits((previous) => ({
@@ -190,7 +191,7 @@ export function HubWorkspace(props: Props) {
       const currentlySaved = state.orders.find((row) => row.id === current.id);
       const savedEdit = recovered.find((row) => row.id === current.id && row.confirmedAt);
       if (currentlySaved && savedEdit &&
-          JSON.stringify(current) === JSON.stringify(currentlySaved)) {
+          sameValue(current, currentlySaved)) {
         props.onChange(structuredClone(savedEdit));
       } else if (!current.raw.trim() && !current.clientId &&
           !current.recipients.length && !current.photos?.length) {

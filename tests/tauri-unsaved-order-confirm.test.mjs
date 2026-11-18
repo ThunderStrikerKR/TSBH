@@ -17,7 +17,7 @@ test("confirmed order edits are SQLite working copies, not confirmed ledger writ
   const hub = read("src/HubWorkspace.tsx");
   const native = read("src-tauri/src/working_receptions.rs");
   assert.match(hub, /const confirmedWorkingEdits = useMemo/);
-  assert.match(hub, /JSON\.stringify\(draft\) !== JSON\.stringify\(currentSaved\)/);
+  assert.match(hub, /!sameValue\(draft, currentSaved\)/);
   assert.match(hub, /const workingCopies = useMemo/);
   assert.match(hub, /await workingWriter\.current!\.enqueue\(workingCopies\)/);
   const guard = hub.split('leaveGuardRef.current = async (intent = "switch") => {')[1]
