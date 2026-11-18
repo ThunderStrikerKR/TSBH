@@ -136,3 +136,14 @@ test("Tauri layout still synchronizes region on window movement and monitor scal
   assert.match(shell,/unlisten\.forEach\(\(off\) => off\(\)\)/);
   assert.match(shell,/lastDragged\.current = next/);
 });
+
+test("extend KakaoTalk MAIN footer off physical screen, preserve CHAT composer and reversible placement", () => {
+  const dock = read("src-tauri/src/kakao_dock.rs");
+  assert.match(dock, /fn offscreen_main_target\(area:Rect,screen:Rect,dpi:u32\)->Rect/);
+  assert.match(dock, /screen\.bottom/);
+  assert.match(dock, /monitor_info\(s\.main\)\?\.monitor/);
+  assert.match(dock, /else if \*kind=="MAIN"\s*\{\s*offscreen_main_target\(area,screen,main_dpi\)/);
+  assert.match(dock, /else\{area\};\s*set_visible_rect\(\*hwnd,target\)/);
+  assert.match(dock, /SetWindowPlacement\(s\.hwnd,&s\.kakao_original\)/);
+  assert.match(dock, /fn kakao_main_footer_is_placed_below_physical_screen_without_moving_chat/);
+});
