@@ -109,7 +109,9 @@ export function HubWorkspace(props: Props) {
     if (next?.shipmentId === selected?.shipmentId && next?.orderId === selected?.orderId && next?.groupId === selected?.groupId) return;
     void (async () => {
       // In-place shipment changes can unmount an actual-freight editor too.
-      const fields = await requestPageLeave((message) => props.onNotice(message, "error"));
+      const fields = await requestPageLeave(
+        (message) => props.onNotice(message, "error"), { autosave: true },
+      );
       if (!fields.proceed) return;
       if (selected?.orderId && next?.orderId && selected.orderId !== next.orderId) {
         const leave = await leaveGuardRef.current();
