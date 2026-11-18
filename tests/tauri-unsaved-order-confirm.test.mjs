@@ -1,59 +1,53 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+const read = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 
-const source = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
-const dialogs = source("src/dialogs.ts");
-const model = source("src/app/useAppModel.ts");
-const hub = source("src/HubWorkspace.tsx");
-const footer = source("src/WorkflowFooter.tsx");
-const order = source("src/OrderDesk.tsx");
-const app = source("src/App.tsx");
-
-test("manual order modifications prompt for save, don't save or cancel", () => {
-  assert.match(dialogs, /export type SaveChangesChoice = "save" \| "discard" \| "cancel"/);
-  for (const text of ["저장", "저장 안 함", "취소"]) assert.ok(dialogs.includes(text));
-  assert.match(dialogs, /dialog\.oncancel = \(event\) => \{[\s\S]*finish\("cancel"\)/);
-  assert.match(dialogs, /if \(pending\) return Promise\.resolve\("cancel"\)/);
-});
-test("leaving selected order with edits saves or discards before changing selection", () => {
-  assert.match(hub, /const persisted = state\.orders\.find/);
-  assert.match(hub, /JSON\.stringify\(pending\) !== JSON\.stringify\(persisted\)/);
-  assert.match(hub, /savedChoice === "save"/);
-  assert.match(hub, /await workingWriter\.current!\.enqueue\(temporaryReceipts\)/);
-  assert.doesNotMatch(hub, /temporaryChoice/);
-  assert.match(hub, /await onSave\(await nativeReconcileWorkflow\(state, pending!\)\)/);
-  // The original Rust reconciliation/save remains mandatory for confirmed edits.
-  assert.match(hub, /if \(savedChoice === "save"\) \{\s*try \{\s*await onSave\(await nativeReconcileWorkflow\(state, pending!\)\);/);
-  assert.match(hub, /catch \(error\) \{[\s\S]*?return \{ proceed: false, handledDraft: false \};/);
-  // Explicit discard restores the prior persisted order, never the dirty copy.
-  assert.match(hub, /props\.onChange\(structuredClone\(persisted!\)\)/);
-  assert.match(hub, /delete next\[orderId\]/);
-  assert.match(hub, /const leave = await leaveGuardRef\.current\(\)/);
-  assert.match(hub, /if \(!leave\.proceed\) return/);
-  assert.match(hub, /applySelection\(next\)/);
-  assert.match(hub, /setDiscardRevision/);
-});
-test("top-level navigation and window close respect unsaved-order decision", () => {
-  assert.match(app, /onRegisterOrderLeaveGuard=\{model\.registerOrderLeaveGuard\}/);
-  assert.match(model, /const leave = await confirmOrderLeave\(\)/);
-  assert.match(model, /if \(!leave\.proceed\) return/);
-  assert.match(model, /return window\.bando!\.requestClose\(dirty && !leave\.handledDraft\)/);
-});
-test("unconditional order save is removed, workflow one-touch progression remains independent", () => {
-  assert.doesNotMatch(footer, /주문 저장/);
-  assert.doesNotMatch(order, /onSave=\{\(\) => void run\(\(\) => onWorkflowSave\(flowState\)\)\}/);
-  assert.match(order, /<WorkflowFooter/);
-  assert.match(app, /const workspaceWorkflowSave = useEventCallback\(model\.onWorkflowSave\)/);
-  assert.match(app, /onWorkflowSave=\{workspaceWorkflowSave\}/);
+test("explicit managers retain three-choice dialogs, but reception navigation never opens one", () => {
+  const dialogs = read("src/dialogs.ts");
+  const hub = read("src/HubWorkspace.tsx");
+  const model = read("src/app/useAppModel.ts");
+  assert.match(dialogs,/export type SaveChangesChoice = "save" \| "discard" \| "cancel"/);
+  assert.doesNotMatch(hub,/askSaveChanges|savedChoice|temporaryChoice/);
+  assert.doesNotMatch(model,/askSaveChanges|수정한 주문 정보가 저장되지 않았습니다|미완성 발주서 처리/);
+  assert.match(model, /requestPageLeave\([\s\S]*?\{ autosave: true \}/);
 });
 
-test("confirmed-order leave cancellation preserves SQLite-stored working receptions",()=>{
-  const guard=source("src/HubWorkspace.tsx").split('  leaveGuardRef.current = async (intent = "switch") => {')[1]
+test("confirmed order edits are SQLite working copies, not confirmed ledger writes", () => {
+  const hub = read("src/HubWorkspace.tsx");
+  const native = read("src-tauri/src/working_receptions.rs");
+  assert.match(hub, /const confirmedWorkingEdits = useMemo/);
+  assert.match(hub, /JSON\.stringify\(draft\) !== JSON\.stringify\(currentSaved\)/);
+  assert.match(hub, /const workingCopies = useMemo/);
+  assert.match(hub, /await workingWriter\.current!\.enqueue\(workingCopies\)/);
+  const guard = hub.split('leaveGuardRef.current = async (intent = "switch") => {')[1]
     ?.split("  useEffect(() => {\n    props.onRegisterOrderLeaveGuard")[0] ?? "";
-  assert.match(guard,/savedChoice = choice/);
-  assert.doesNotMatch(guard,/temporaryChoice/);
-  assert.match(guard,/workingStoreReady/);
-  assert.match(guard,/workingWriter\.current!\.enqueue\(temporaryReceipts\)/);
-  assert.match(guard,/if \(choice === "cancel"\) return \{ proceed: false, handledDraft: false \};/);
+  assert.doesNotMatch(guard,/onSave\(|nativeReconcileWorkflow\(|confirm\(|askSaveChanges\(/);
+  assert.match(guard,/return \{ proceed: true, handledDraft: true \}/);
+  assert.match(native,/CREATE TABLE IF NOT EXISTS reception_confirmed_edits/);
+  assert.match(native,/base_payload/);
+  assert.match(native,/if baseline!=saved/);
+  assert.doesNotMatch(guard,/setDiscardRevision/);
+});
+
+test("tab exit, record switch and application close flush edits without browser confirmation", () => {
+  const model = read("src/app/useAppModel.ts");
+  const app = read("src/App.tsx");
+  assert.match(app,/onRegisterOrderLeaveGuard=\{model\.registerOrderLeaveGuard\}/);
+  assert.match(model,/confirmOrderLeave\("navigate"\)/);
+  assert.match(model,/confirmOrderLeave\("close"\)/);
+  assert.match(model,/const flushReceptionEditor = async \(\): Promise<boolean>/);
+  assert.match(model,/return window\.bando!\.requestClose\(false\)/);
+  assert.doesNotMatch(model,/requestClose\(dirty/);
+});
+
+test("workflow confirmation and explicit save still use Rust business rules", () => {
+  const footer = read("src/WorkflowFooter.tsx");
+  const order = read("src/OrderDesk.tsx");
+  const model = read("src/app/useAppModel.ts");
+  assert.doesNotMatch(footer,/주문 저장/);
+  assert.match(order,/<WorkflowFooter/);
+  assert.match(model,/"rules", "save_order"/);
+  assert.match(model,/"rules", "finalize_billing_history"/);
+  assert.match(model,/"rules", "persisted_reception_state"/);
 });

@@ -51,7 +51,11 @@ test("native SQLite working receipts never alter confirmed order ledger or histo
   assert.match(bridge,/workingReceptionsLoad: \(\) => invoke<Order\[\]>\("working_receptions_load"\)/);
   assert.match(hub,/setWorkingStoreReady\(true\)/);
   assert.match(hub,/if \(!workingStoreReady\) return;/);
-  assert.match(hub,/await workingWriter\.current!\.enqueue\(temporaryReceipts\)/);
+  assert.match(hub,/await workingWriter\.current!\.enqueue\(workingCopies\)/);
+  assert.match(hub,/const confirmedWorkingEdits = useMemo/);
+  assert.match(native,/CREATE TABLE IF NOT EXISTS reception_confirmed_edits/);
+  assert.match(native,/base_payload/);
+  assert.match(native,/saved_order_edit_stays_out_of_confirmed_ledger/);
   assert.match(model,/setRestoreEpoch\(\(current\) => current \+ 1\)/);
   assert.match(source("src/App.tsx"),/key=\{model\.restoreEpoch\}/);
   assert.doesNotMatch(model,/pendingDraftCount|미완성 발주서 처리/);

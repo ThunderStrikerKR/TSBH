@@ -47,7 +47,7 @@ test("two unconfirmed receipts are not discarded and are previewed independently
   assert.match(hub, /if \(id === draft\.id \|\| edits\[id\]\) \{/);
   assert.match(hub, /commitSelection\(undefined\);\s*setReceptionId\(id\)/);
   assert.match(hub, /workingReceptionsLoad\(\)/);
-  assert.match(hub, /workingWriter\.current!\.enqueue\(temporaryReceipts\)/);
+  assert.match(hub, /workingWriter\.current!\.enqueue\(workingCopies\)/);
   assert.doesNotMatch(app, /pendingDraftCount/);
   assert.match(hub, /Object\.values\(edits\)\.filter\(\(order\) => order\.id !== draft\.id && order\.clientId\)/);
   assert.match(hub, /useNativeWorkflowReconcile\(state, independentEdits\)/);
@@ -121,7 +121,7 @@ test("navigation retains every unconfirmed reception without repetitive discard 
   assert.match(hub, /for \(const order of Object\.values\(edits\)\)/);
   assert.match(hub, /if \(unsaved\(draft\)\) byId\.set\(draft\.id, draft\)/);
   assert.match(app, /className="hub-desk-host" hidden=\{tab !== "접수"\}/);
-  assert.match(hub, /\(intent === "navigate" \|\| intent === "close"\) && temporaryReceipts\.length/);
+  assert.match(hub, /await workingWriter\.current!\.enqueue\(workingCopies\)/);
   assert.doesNotMatch(hub, /미완성 발주서 \$\{temporaryReceipts\.length\}건이 임시 보관 중입니다/);
   assert.doesNotMatch(hub, /title: "미완성 발주서 처리"/);
   assert.doesNotMatch(hub, /모두 버리고 이동/);
@@ -130,7 +130,7 @@ test("navigation retains every unconfirmed reception without repetitive discard 
   assert.doesNotMatch(model, /pendingDraftCount/);
   assert.match(model, /const leave = await confirmOrderLeave\("close"\)/);
   assert.match(model, /confirmOrderLeave\("close"\)/);
-  assert.match(hub, /intent === "switch" && temporaryReceipts\.some/);
+  assert.match(hub, /intent === "switch" && workingCopies\.some/);
   assert.match(hub, /setEdits\(\(previous\) => \(\{ \.\.\.previous, \[draft\.id\]: structuredClone\(draft\) \}\)\)/);
 });
 

@@ -77,3 +77,32 @@ test("local dirty editor prompts only for its own edit and preserves cancel", as
   assert.deepEqual(await x.app.requestEditorLeave(editor,()=>{}),{proceed:true,handled:true});
   assert.equal(save,0); assert.equal(discard,1);
 });
+
+test("receipt autosave skips the three-choice dialog and does not discard on failure", async () => {
+  const x=makeGuard("discard");
+  let saves=0,discards=0,errors=[];
+  x.app.usePageLeaveGuard({
+    hasChanges:()=>true, label:"실제 출고 운임",
+    save:async()=>{saves++;return false;},
+    discard:()=>{discards++;},
+  });
+  assert.deepEqual(await x.app.requestPageLeave((m)=>errors.push(m),{autosave:true}),
+    {proceed:false,handled:false});
+  assert.equal(saves,1);
+  assert.equal(discards,0);
+  assert.match(errors.join(" "),/저장 실패/);
+  x.cleanups.forEach(fn=>fn());
+});
+
+test("receipt editor waits for in-progress save, then navigates automatically", async () => {
+  const x=makeGuard("cancel");let busy=true,saved=0,discarded=0;
+  x.app.usePageLeaveGuard({
+    hasChanges:()=>false,busy:()=>busy,
+    waitForIdle:async()=>{await Promise.resolve();busy=false;},
+    save:async()=>{saved++;return true;},discard:()=>{discarded++;},
+  });
+  assert.deepEqual(await x.app.requestPageLeave(()=>{}, {autosave:true}),
+    {proceed:true,handled:false});
+  assert.equal(saved,0);assert.equal(discarded,0);
+  x.cleanups.forEach(fn=>fn());
+});
