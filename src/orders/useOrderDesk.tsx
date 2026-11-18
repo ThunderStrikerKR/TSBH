@@ -281,15 +281,6 @@ export function useOrderDesk({
             previous.id !== orderId ||
             JSON.stringify(previous.recipients) !== before) return previous;
         const next = { ...previous, recipients: order.recipients };
-        // Factory-transferred and further-confirmed rows are frozen even if
-        // a catalog update has occurred since the receipt was entered.
-        for (const r of next.recipients)
-          if (state.workflow?.shipments.some((ship) =>
-            ship.orderId === previous.id && ship.recipientId === r.id &&
-            (ship.transferred || ship.step >= 3))) {
-            const old = previous.recipients.find((row) => row.id === r.id);
-            if (old) Object.assign(r, clone(old));
-          }
         lastCompletedPricing.current = {
           key: pricingInputKey, products: state.products,
         };

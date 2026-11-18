@@ -122,9 +122,21 @@ pub(super) fn reprice_order(payload: &Value) -> Result<Value, String> {
     let products = payload.get("products")
         .or_else(|| payload.get("state").map(|s| field(s, "products")))
         .ok_or_else(|| "상품 목록 입력이 필요합니다.".to_string())?;
+    // Rust also owns the post-reprice freeze. React must not overwrite
+    // returned prices with a second, independent TypeScript business rule.
+    let order_id=str_field(&order,"id").to_string();
+    let frozen:Vec<String>=if flag(payload,"explicitEdit") {Vec::new()} else {
+        rows(field(field(field(payload,"state"),"workflow"),"shipments"))
+            .iter().filter(|ship|
+                str_field(ship,"orderId")==order_id &&
+                (flag(ship,"transferred") ||
+                 field(ship,"step").as_i64().is_some_and(|step|step>=3)))
+            .map(|ship|str_field(ship,"recipientId").to_string()).collect()
+    };
     let recipients = order.get_mut("recipients").and_then(Value::as_array_mut)
         .ok_or_else(|| "수취인 목록을 확인하세요.".to_string())?;
     for recipient in recipients {
+        if frozen.iter().any(|id|id==str_field(recipient,"id")) { continue; }
         let items = recipient.get_mut("items").and_then(Value::as_array_mut)
             .ok_or_else(|| "상품 목록을 확인하세요.".to_string())?;
         for item in items {
@@ -146,4 +158,34 @@ pub(super) fn reprice_order(payload: &Value) -> Result<Value, String> {
         }
     }
     Ok(json!({"order":order,"refreshed":true}))
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+    #[test]
+    fn passive_catalog_reprice_keeps_frozen_shipments_at_original_price() {
+        let state=json!({
+            "products":[{"id":"p","variants":[{"id":"v","wholesale":12000}]}],
+            "workflow":{"shipments":[
+                {"orderId":"o","recipientId":"frozen","transferred":true,"step":1},
+                {"orderId":"o","recipientId":"confirmed","transferred":false,"step":3},
+                {"orderId":"other","recipientId":"open","transferred":true,"step":3}
+            ]}
+        });
+        let order=json!({
+            "id":"o","recipients":[
+                {"id":"frozen","items":[{"id":"i1","productId":"p","variantId":"v","unitPrice":8000}]},
+                {"id":"confirmed","items":[{"id":"i2","productId":"p","variantId":"v","unitPrice":9000}]},
+                {"id":"open","items":[{"id":"i3","productId":"p","variantId":"v","unitPrice":10000}]}
+            ]
+        });
+        let client=json!({"id":"dealer","tier":"wholesale"});
+        let next=reprice_order(&json!({"state":state,"order":order,"client":client,
+            "persistedOrders":[]})).unwrap();
+        assert_eq!(next["refreshed"],true);
+        assert_eq!(next["order"]["recipients"][0]["items"][0]["unitPrice"],8000);
+        assert_eq!(next["order"]["recipients"][1]["items"][0]["unitPrice"],9000);
+        assert_eq!(next["order"]["recipients"][2]["items"][0]["unitPrice"],12000);
+    }
 }

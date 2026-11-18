@@ -107,3 +107,13 @@ test("reception demo-product eligibility is Rust-owned before matching", () => {
   assert.ok(rust.includes('product.get("catalog").and_then(Value::as_str)!=Some("DEMO")'));
   assert.ok(rust.includes('variant.get("source").and_then(Value::as_str)==Some("DEMO")'));
 });
+
+test("transferred or confirmed recipient repricing is Rust-owned", () => {
+  const desk=read("src/orders/useOrderDesk.tsx");
+  const rust=read("src-tauri/src/business_core/rules/pricing.rs");
+  assert.ok(desk.includes('"rules", "reprice_order"'));
+  assert.ok(!desk.includes('for (const r of next.recipients)'));
+  assert.ok(rust.includes('let frozen:Vec<String>'));
+  assert.ok(rust.includes('flag(ship,"transferred")'));
+  assert.ok(rust.includes('step>=3'));
+});
