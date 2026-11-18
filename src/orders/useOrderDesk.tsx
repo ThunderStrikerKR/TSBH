@@ -3,10 +3,8 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type WorkflowSelection } from "../WorkflowBoard";
-import {
-  orderClient,
-  unassignedClient,
-} from "../domain";
+import { unassignedClient } from "../domain";
+import { useNativeOrderClients } from "./useNativeOrderClients";
 import type { StaffBlock } from "../hub-messages";
 import { businessCoreCall } from "../tauri-bridge";
 import { useNativeWorkflowReconcile } from "./useNativeWorkflowReconcile";
@@ -115,9 +113,13 @@ export function useOrderDesk({
   const place = (content: ReactNode, node?: HTMLElement | null) =>
     portalTargets ? (node ? createPortal(content, node) : null) : content;
   const [source, setSource] = useState(draft.analysisRaw ?? draft.raw);
-  const client = orderClient(draft, state),
-    liveClient = state.clients.find((c) => c.id === draft.clientId && !c.deletedAt) ?? client,
-    pricingClient = liveClient ?? unassignedClient;
+  const clientSelection = useNativeOrderClients(draft, state);
+  const { client, liveClient } = clientSelection;
+  const pricingClient = liveClient ?? unassignedClient;
+  useEffect(() => {
+    if (clientSelection.error)
+      onNotice("Rust 거래처 선택 확인 실패: " + clientSelection.error, "error");
+  }, [clientSelection.error]);
   const products = useMemo(
     () => sortedRegisteredProductView(state.products),
     [state.products],
@@ -258,7 +260,8 @@ export function useOrderDesk({
   } | undefined>(undefined);
   useEffect(() => {
     const request = ++ruleRequests.current.price;
-    if (suppressPassiveOrderEffects || !liveClient || !passivePricingAllowed || draft.pendingNativeEdit) return;
+    if (suppressPassiveOrderEffects || !clientSelection.ready || !liveClient ||
+        !passivePricingAllowed || draft.pendingNativeEdit) return;
     if (lastCompletedPricing.current?.key === pricingInputKey &&
         lastCompletedPricing.current.products === state.products) return;
     const before = JSON.stringify(draft.recipients);
@@ -297,7 +300,7 @@ export function useOrderDesk({
     draft.id, draft.recipients, state.products, liveClient?.id,
     liveClient?.tier, JSON.stringify(liveClient?.overrides),
     passivePricingAllowed, draft.pendingNativeEdit, pricingInputKey,
-    suppressPassiveOrderEffects,
+    clientSelection.ready, suppressPassiveOrderEffects,
   ]);
   useEffect(() => {
     const request = ++ruleRequests.current.shipping;
@@ -383,6 +386,7 @@ export function useOrderDesk({
     const request = ++recognitionRequest.current;
     if (
       viewMode === "details" ||
+      !clientSelection.ready ||
       saved ||
       (!!draft.manualClassification && draft.analysisRaw === source) ||
       !receptionAnalysisAllowed(draft, source, pricingClient.id)
@@ -469,7 +473,7 @@ export function useOrderDesk({
   }, [
     source, draft.id, draft.clientId, draft.analysisRaw, draft.analysisClientId,
     draft.manualClassification, draft.confirmedAt, draft.pricesLocked,
-    viewMode, saved, pricingClient.id, clientSignature,
+    viewMode, saved, pricingClient.id, clientSignature, clientSelection.ready,
     state.products, state.aliases,
   ]);
   const run = async (fn: () => Promise<unknown> | unknown) => {
@@ -702,6 +706,10 @@ export function useOrderDesk({
     return () => cancelAnimationFrame(frame);
   }, [pendingFocus, shownRecipient, itemEditing]);
   const chooseProduct = (rid: string, p: Product, iid?: string) => {
+    if (!clientSelection.ready) {
+      onNotice("Rust 거래처 선택을 확인한 뒤 상품을 추가하세요.", "error");
+      return;
+    }
     const orderId = draft.id;
     const itemId = iid;
     const variantId = p.variants[0]?.id;
@@ -768,6 +776,7 @@ export function useOrderDesk({
     draft,
     source,
     client,
+    clientSelectionPending: !clientSelection.ready && !clientSelection.error,
     setSource,
     saved,
     onChange,
