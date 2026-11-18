@@ -44,7 +44,9 @@ export class WorkingReceptionAutosave {
         // A failed transaction must be reported to EVERY caller waiting for
         // a pending write. Retain the most recent snapshot for the next retry,
         // but never retry indefinitely while the DB is unavailable.
-        const newer = this.pending;
+        // Another enqueue may run while await save(...) is suspended.
+        // TS control-flow analysis otherwise narrows this field to undefined.
+        const newer = this.pending as PendingBatch | undefined;
         this.pending = {
           orders: newer?.orders ?? batch.orders,
           waiters: [],
