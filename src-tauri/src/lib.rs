@@ -1322,6 +1322,7 @@ pub fn run() {
             state_load, state_save, business_core_call, settings_patch, price_set, clipboard_write, clipboard_read,
             ocr::capture_ocr, ocr::clipboard_ocr, ocr::cancel_ocr,
             order_image_inbox::choose_order_image_inbox_directory,
+            order_image_inbox::open_order_image_inbox_directory,
             order_image_inbox::order_image_watch_scan, order_image_inbox::order_image_ocr,
             notification_store::hub_notifications_list,
             notification_store::hub_notifications_add,

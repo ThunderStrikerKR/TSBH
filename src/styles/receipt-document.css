@@ -375,6 +375,30 @@
   line-height: 1;
   white-space: nowrap;
 }
+.app-v03 .source-pane .source-intake-folder-path {
+  display: inline-block;
+  max-width: 100%;
+  min-width: 0;
+  width: auto;
+  min-height: calc(var(--ds-action-standard-height) * var(--ui-scale, 1));
+  padding: var(--ds-space-8) var(--ds-action-standard-pad-x);
+  border: 1px solid var(--ds-role-border-normal);
+  border-radius: var(--ds-controlRadius);
+  background: var(--ds-color-raised);
+  color: var(--ds-role-text-primary);
+  font-size: calc(var(--ds-action-standard-font-size) * var(--ui-scale, 1));
+  text-align: left;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  cursor: pointer;
+}
+.app-v03 .source-pane .source-intake-folder-path:hover {
+  background: var(--ds-role-surface-interactive-hover);
+}
+.app-v03 .source-pane .source-intake-folder-path:focus-visible {
+  outline: 2px solid var(--ds-role-border-focus);
+  outline-offset: 2px;
+}
 .app-v03 .source-pane .source-intake-buttons button:hover:not(:disabled) {
   background: var(--ds-role-surface-interactive-hover);
   border-color: var(--ds-role-border-normal);

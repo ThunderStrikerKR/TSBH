@@ -46,6 +46,14 @@ pub(crate) async fn choose_order_image_inbox_directory(
     }).await.map_err(err)?
 }
 #[tauri::command]
+pub(crate) fn open_order_image_inbox_directory(db: State<'_, Database>) -> Result<(), String> {
+    let current = get_snapshot(&*lock_db(&db)?)?;
+    let directory = inbox_dir(&db.base, db.is_test, &current["settings"])?
+        .ok_or("발주 이미지 수신 폴더가 지정되지 않았습니다.")?;
+    open::that(directory).map_err(err)
+}
+
+#[tauri::command]
 pub(crate) fn order_image_watch_scan(
     db: State<'_, Database>, watch: State<'_, OrderImageWatch>,
 ) -> Result<Vec<String>, String> {

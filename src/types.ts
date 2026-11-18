@@ -604,6 +604,7 @@ export interface Api {
   captureOcr?: () => Promise<OcrCapture>;
   clipboardOcr?: () => Promise<OcrCapture>;
   chooseOrderImageInboxDirectory?: () => Promise<string | undefined>;
+  openOrderImageInboxDirectory: () => Promise<void>;
   orderImageWatchScan?: () => Promise<string[]>;
   orderImageOcr?: (filename: string) => Promise<OcrCapture>;
   cancelOcr?: () => Promise<void>;

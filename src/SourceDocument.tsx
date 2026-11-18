@@ -426,6 +426,7 @@ export function SourceDocument({
                     disabled={busy} onClick={() => void paste(undefined, "DEALER")}>대리점 납품</button>
                 </div>
                 <div className="source-intake-shortcuts">
+                  <span>이미지 캡처는</span>
                   <span className="source-intake-key-group" aria-label="Ctrl + Shift + S">
                     <kbd className="source-intake-keycap">Ctrl</kbd>
                     <span>+</span>
@@ -435,7 +436,7 @@ export function SourceDocument({
                   </span>
                   <span>또는</span>
                   <kbd className="source-intake-keycap">Print Screen</kbd>
-                  <span>으로 캡처한 뒤 위 버튼으로 접수하세요.</span>
+                  <span>으로 복사하세요.</span>
                 </div>
               </section>
               <section className="source-intake-group source-intake-other" aria-label="다른 입력 방법">
@@ -449,9 +450,21 @@ export function SourceDocument({
               </section>
               <section className="source-intake-group source-intake-folder" aria-label="폴더 자동 인식">
                 <h3>폴더 자동 인식</h3>
-                <p>지정 폴더에 이미지를 저장하면 자동으로 이미지 인식을 실행합니다.</p>
-                {!state.settings.orderImageInboxDirectory && (
-                  <p className="source-intake-hint">설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요.</p>
+                {state.settings.orderImageInboxDirectory?.trim() ? (
+                  <>
+                    <button type="button" className="source-intake-folder-path" data-ui-role="action-standard"
+                      title={state.settings.orderImageInboxDirectory}
+                      aria-label={`지정된 발주 이미지 폴더 열기: ${state.settings.orderImageInboxDirectory}`}
+                      onClick={() => {
+                        void window.bando!.openOrderImageInboxDirectory().catch((cause) =>
+                          setError("폴더 열기 실패: " + String(cause).replace(/^Error: /, "")));
+                      }}>
+                      {state.settings.orderImageInboxDirectory}
+                    </button>
+                    <p>이 폴더에 이미지를 저장하면 자동으로 이미지 인식을 실행합니다.</p>
+                  </>
+                ) : (
+                  <p className="source-intake-hint">지정된 폴더가 없습니다. 설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요.</p>
                 )}
               </section>
             </div>

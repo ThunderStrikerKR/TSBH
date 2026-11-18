@@ -23,6 +23,9 @@ test("blank source canvas groups clipboard, alternative input, and folder guidan
     assert.ok(source.includes(`<kbd className="source-intake-keycap">${key}</kbd>`));
   }
   assert.doesNotMatch(source, /캡처 앱 설정/);
+  assert.match(source, /이미지 캡처는/);
+  assert.match(source, /으로 복사하세요/);
+  assert.doesNotMatch(source, /으로 캡처한 뒤 위 버튼으로 접수하세요/);
   assert.match(css, /\.source-intake-keycap\s*\{[^}]*border:/);
   assert.match(css, /\.source-intake-other \.source-intake-buttons button\s*\{[^}]*background:/);
   assert.match(source, /onClick=\{\(\) => void paste\(undefined, "AGENCY"\)\}/);
@@ -49,6 +52,14 @@ test("dedicated image inbox scans stable files and uses existing review dialog",
   assert.match(source, /setOcrResult\(capture\)/);
   assert.match(bridge, /order_image_watch_scan/);
   assert.match(source, /state\.settings\.orderImageInboxDirectory/);
+  assert.match(source, /지정된 폴더가 없습니다/);
+  assert.match(source, /className="source-intake-folder-path"/);
+  assert.match(source, /openOrderImageInboxDirectory\(\)/);
+  assert.match(css, /\.source-intake-folder-path\s*\{[^}]*overflow-wrap: anywhere/);
+  assert.match(bridge, /invoke<void>\("open_order_image_inbox_directory"\)/);
+  assert.match(lib, /order_image_inbox::open_order_image_inbox_directory/);
+  assert.match(inbox, /pub\(crate\) fn open_order_image_inbox_directory/);
+  assert.match(inbox, /open::that\(directory\)/);
 });
 test("OCR result requires user review before replacing a provisional order", () => {
   assert.match(source, /confirmAction\("기존 미확정 원문/);
