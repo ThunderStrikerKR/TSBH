@@ -23,6 +23,7 @@ test("only the explicitly requested, editable, order-value controls get orange e
     ".recipient-review .recipient-fields .linked-field:not(.linked-active) .field > input",
     ".items-freight-panel .compact-items tbody tr:not(.freight-item-row) .linked-field:not(.linked-active) > button",
     ".items-freight-panel .compact-items tbody tr:not(.freight-item-row) .linked-field:not(.linked-active) > input",
+    ".items-freight-panel .freight-input-area .freight-name",
     ".items-freight-panel .freight-input-area .freight-money > input",
     ".items-freight-panel .freight-input-area .freight-payment-code > select",
     '.items-freight-panel .dispatch-origin > button[aria-pressed="true"]',
