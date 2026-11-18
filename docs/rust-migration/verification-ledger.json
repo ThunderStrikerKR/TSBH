@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "policy": "AGENTS.md",
   "recordedAt": "2026-11-19",
-  "recordedHead": "b4fa9fbc36249baacfe2a1c567426a62d998ae3a",
+  "recordedHead": "6a1a59c37f06096009a506c059252019b1d7d955",
   "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
   "proofLevels": [
     "patch",
@@ -90,7 +90,7 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "b4fa9fbc36249baacfe2a1c567426a62d998ae3a",
+      "lastReviewedCommit": "6a1a59c37f06096009a506c059252019b1d7d955",
       "runtimeCleanupAudit": [
         {
           "date": "2026-11-19",
@@ -107,6 +107,21 @@
           "ci": "FULL_GATE_FAIL_BASELINE_COMPARISON_REQUIRED",
           "windows": "NOT_EXECUTED",
           "details": "18c8777 frontend TypeScript/Vite build PASSED. Boundary regression tests PASSED. 25/780 frontend tests failed; one extra stale file-location assertion was corrected in b4fa9fbc. Full behavior, Windows and new-head CI are not certified."
+        },
+        {
+          "date": "2026-11-19",
+          "description": "Developer diagnostics single/batch/modal now await compiled recognition.analyze_order rather than calling src/parser.ts. UI validates the same Rust result envelope as live reception. No TS fallback on native errors.",
+          "commits": [
+            "ec88cc8848149cd4a8bb4ac8f1530132088fe30b",
+            "6a1a59c37f06096009a506c059252019b1d7d955"
+          ],
+          "patch": "COMMITTED",
+          "unit": "PASS_SCOPED: tests/tauri-developer-workspace.test.mjs 3 developer scenario/native-routing contract checks passed; test-only injected legacy oracle, NOT actual Rust differential evidence.",
+          "differential": "NOT_VERIFIED for developer UI action; compiled Rust parity jobs separately retain baseline failures.",
+          "action": "NOT_VERIFIED in real Windows TEST GUI; no SQLite write performed by these functions.",
+          "ci": "FRONTEND_BUILD_PASS at 6a1a59c3; existing frontend regressions: 781 total / 755 pass / 24 fail / 2 skipped. Previous 780 total / 754 pass / 24 fail / 2 skipped; no newly failed frontend case.",
+          "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44404409420",
+          "windows": "NOT_EXECUTED"
         }
       ]
     },
@@ -209,7 +224,24 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "6ff8df949643eb364ba915bf81b498a9ff14f899"
+      "lastReviewedCommit": "6a1a59c37f06096009a506c059252019b1d7d955",
+      "runtimeCleanupAudit": [
+        {
+          "date": "2026-11-19",
+          "description": "Native recognition recipients are used to prepare detached developer modal fixtures. Asynchronous stale results are ignored on popup, raw or state changes; actual Windows recipient UI action is not yet verified.",
+          "commits": [
+            "ec88cc8848149cd4a8bb4ac8f1530132088fe30b",
+            "6a1a59c37f06096009a506c059252019b1d7d955"
+          ],
+          "patch": "COMMITTED",
+          "unit": "PASS_SCOPED: tests/tauri-developer-workspace.test.mjs 3 developer scenario/native-routing contract checks passed; test-only injected legacy oracle, NOT actual Rust differential evidence.",
+          "differential": "NOT_VERIFIED for developer UI action; compiled Rust parity jobs separately retain baseline failures.",
+          "action": "NOT_VERIFIED in real Windows TEST GUI; no SQLite write performed by these functions.",
+          "ci": "FRONTEND_BUILD_PASS at 6a1a59c3; existing frontend regressions: 781 total / 755 pass / 24 fail / 2 skipped. Previous 780 total / 754 pass / 24 fail / 2 skipped; no newly failed frontend case.",
+          "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44404409420",
+          "windows": "NOT_EXECUTED"
+        }
+      ]
     },
     {
       "id": "F03",
@@ -511,7 +543,24 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d"
+      "lastReviewedCommit": "6a1a59c37f06096009a506c059252019b1d7d955",
+      "runtimeCleanupAudit": [
+        {
+          "date": "2026-11-19",
+          "description": "Synthetic structured problem fixtures remain detached in TEST workspace, and their issue assessment is delegated to compiled rules.order_issues. Test-specific fixture assembly does not write operational records.",
+          "commits": [
+            "ec88cc8848149cd4a8bb4ac8f1530132088fe30b",
+            "6a1a59c37f06096009a506c059252019b1d7d955"
+          ],
+          "patch": "COMMITTED",
+          "unit": "PASS_SCOPED: tests/tauri-developer-workspace.test.mjs 3 developer scenario/native-routing contract checks passed; test-only injected legacy oracle, NOT actual Rust differential evidence.",
+          "differential": "NOT_VERIFIED for developer UI action; compiled Rust parity jobs separately retain baseline failures.",
+          "action": "NOT_VERIFIED in real Windows TEST GUI; no SQLite write performed by these functions.",
+          "ci": "FRONTEND_BUILD_PASS at 6a1a59c3; existing frontend regressions: 781 total / 755 pass / 24 fail / 2 skipped. Previous 780 total / 754 pass / 24 fail / 2 skipped; no newly failed frontend case.",
+          "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44404409420",
+          "windows": "NOT_EXECUTED"
+        }
+      ]
     },
     {
       "id": "F07",
@@ -1973,7 +2022,24 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "c58572b1b2e0ab91cb09ea546164bd963bd6a76d"
+      "lastReviewedCommit": "6a1a59c37f06096009a506c059252019b1d7d955",
+      "runtimeCleanupAudit": [
+        {
+          "date": "2026-11-19",
+          "description": "DeveloperLab and DeveloperModalWorkbench now asynchronously prepare native diagnostics and gate success recording until modal fixture is ready. Popup save callbacks remain blocked and TEST database is isolated.",
+          "commits": [
+            "ec88cc8848149cd4a8bb4ac8f1530132088fe30b",
+            "6a1a59c37f06096009a506c059252019b1d7d955"
+          ],
+          "patch": "COMMITTED",
+          "unit": "PASS_SCOPED: tests/tauri-developer-workspace.test.mjs 3 developer scenario/native-routing contract checks passed; test-only injected legacy oracle, NOT actual Rust differential evidence.",
+          "differential": "NOT_VERIFIED for developer UI action; compiled Rust parity jobs separately retain baseline failures.",
+          "action": "NOT_VERIFIED in real Windows TEST GUI; no SQLite write performed by these functions.",
+          "ci": "FRONTEND_BUILD_PASS at 6a1a59c3; existing frontend regressions: 781 total / 755 pass / 24 fail / 2 skipped. Previous 780 total / 754 pass / 24 fail / 2 skipped; no newly failed frontend case.",
+          "ciEvidence": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44404409420",
+          "windows": "NOT_EXECUTED"
+        }
+      ]
     },
     {
       "id": "F28",
