@@ -402,12 +402,7 @@ export function useOrderDesk({
       ? businessCoreCall<unknown>("recognition", "analyze_order", {
           raw: source,
           client: liveClient ?? null,
-          state: {
-            ...state,
-            products: state.products.filter(
-              (p) => p.catalog !== "DEMO" && !p.variants.some((v) => v.source === "DEMO"),
-            ),
-          },
+          state,
         })
       : Promise.resolve({ recipients: [], candidates: [], unassigned: [] });
     void pending.then(async (result) => {

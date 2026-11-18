@@ -48,7 +48,19 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "analyze_order" => {
             let raw = required_string(&payload, "raw")?;
             let state = required_state(&payload)?;
-            analyze(raw, state, payload.get("client"))
+            // Production reception never resolves a synthetic catalog or a
+            // product containing synthetic variants. Do not rely on React
+            // removing those candidates before crossing the native boundary.
+            let mut reception = state.clone();
+            reception["products"].as_array_mut()
+                .ok_or("state products must be an array")?
+                .retain(|product| {
+                    product.get("catalog").and_then(Value::as_str)!=Some("DEMO") &&
+                    !product.get("variants").and_then(Value::as_array)
+                        .is_some_and(|variants|variants.iter().any(|variant|
+                            variant.get("source").and_then(Value::as_str)==Some("DEMO")))
+                });
+            analyze(raw, &reception, payload.get("client"))
         }
         "match_products" => {
             let state = required_state(&payload)?;
@@ -1496,6 +1508,30 @@ mod tests {
     fn contract_rejects_incomplete_state() {
         assert!(execute("analyze_order",json!({"raw":"709 1개","state":{}})).is_err());
         assert!(execute("invalid",json!({})).is_err());
+    }
+    #[test]
+    fn production_reception_excludes_demo_catalogs_and_demo_variants_in_rust() {
+        let mut data=state();
+        data["products"].as_array_mut().unwrap().push(json!({
+            "id":"demo-catalog","code":"D-700","name":"가상보면대 D-700",
+            "catalog":"DEMO","category":"보면대","origin":"FACTORY",
+            "active":true,"variants":[{"id":"dv","color":"Black","source":"MANUAL"}]
+        }));
+        data["products"].as_array_mut().unwrap().push(json!({
+            "id":"demo-variant","code":"D-701","name":"가상보면대 D-701",
+            "catalog":"BANDOSTAND","category":"보면대","origin":"FACTORY",
+            "active":true,"variants":[{"id":"dv2","color":"Black","source":"DEMO"}]
+        }));
+        let output=execute("analyze_order",json!({
+            "raw":"김가상\\n010-1234-5678\\n서울특별시 마포구 월드컵로 20\\n가상보면대 D-700 1개\\n가상보면대 D-701 1개",
+            "state":data
+        })).unwrap();
+        for recipient in output["recipients"].as_array().unwrap() {
+            for item in recipient["items"].as_array().unwrap() {
+                assert_ne!(item["productId"],"demo-catalog");
+                assert_ne!(item["productId"],"demo-variant");
+            }
+        }
     }
     #[test]
     fn no_quantity_is_approved_without_evidence() {

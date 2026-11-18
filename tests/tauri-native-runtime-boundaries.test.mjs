@@ -97,3 +97,13 @@ test("reception no longer runs dead TypeScript shared-color eligibility per rend
   assert.match(desk, /"rules", "create_catalog_item"/);
   assert.match(desk, /"rules", "should_refresh_pricing"/);
 });
+
+test("reception demo-product eligibility is Rust-owned before matching", () => {
+  const desk = read("src/orders/useOrderDesk.tsx");
+  const rust = read("src-tauri/src/business_core/recognition/mod.rs");
+  assert.ok(desk.includes('"recognition", "analyze_order"'));
+  assert.ok(!desk.includes('products: state.products.filter('));
+  assert.ok(rust.includes('let mut reception = state.clone()'));
+  assert.ok(rust.includes('product.get("catalog").and_then(Value::as_str)!=Some("DEMO")'));
+  assert.ok(rust.includes('variant.get("source").and_then(Value::as_str)==Some("DEMO")'));
+});
