@@ -1233,15 +1233,23 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                     str_field(d,"shipmentId")==shipment_id && str_field(d,"origin")==origin) {
                     return Err("같은 배송 건 / 출고지의 배송 완료 기록이 중복됩니다.".into());
                 }
-                for previous in state["shipping"]["combinations"].as_array_mut()
-                    .ok_or("운임 조합 목록 오류")? {
-                    if field(previous,"key")==&key && flag(previous,"active") {
-                        set(previous,"active",json!(false))?;
+                // A 2x locality delivery is valid historical evidence,
+                // but its actual charge must NEVER become a universal
+                // product-combination base tariff for normal addresses.
+                let remote_selected=super::remote_delivery::resolve_recipient(&recipient)?
+                    ["checked"].as_bool().unwrap_or(false);
+                if !remote_selected {
+                    for previous in state["shipping"]["combinations"].as_array_mut()
+                        .ok_or("운임 조합 목록 오류")? {
+                        if field(previous,"key")==&key && flag(previous,"active") {
+                            set(previous,"active",json!(false))?;
+                        }
                     }
                 }
                 let epoch=field(&ship,"appliedEpoch").as_i64()
                     .unwrap_or_else(||field(field(&state,"shipping"),"epoch").as_i64().unwrap_or(1));
-                let active=epoch==field(field(&state,"shipping"),"epoch").as_i64().unwrap_or(1)
+                let active=!remote_selected &&
+                    epoch==field(field(&state,"shipping"),"epoch").as_i64().unwrap_or(1)
                     && basis_versions==*field(bundle,"versions");
                 let count=rows(field(&state["workflow"],"deliveries")).iter().filter(|d|{
                     let prior_combo=find_by_id(field(&state["shipping"],"combinations"),
