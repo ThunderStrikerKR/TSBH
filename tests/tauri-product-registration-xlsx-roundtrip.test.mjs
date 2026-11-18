@@ -22,7 +22,7 @@ const root = { id: "catalog", name: "반도스탠드", parentId: null, active: t
 const leaf = { id: "leaf", name: "보면대", parentId: "catalog", active: true };
 const normalize = (text) => text.trim().toUpperCase().replace(/\s/g,"");
 const key = (text) => text.normalize("NFKC").trim().toLocaleLowerCase().replace(/\s+/g," ");
-execution(exports, (path) => {
+const resolveModule = (path) => {
   if(path.endsWith("/category-tree")) return {
     categoryPath: (all, id) => id === "leaf" ? [root,leaf] : [root],
   };
@@ -48,7 +48,8 @@ execution(exports, (path) => {
     registryIdentity:(values)=>["최종 등록명","색상","규격","판매 단위"].map(k=>key(values[k]||"")).join("|"),
   };
   return nodeRequire(path);
-}, webcrypto, structuredClone);
+};
+execution(exports, resolveModule, webcrypto, structuredClone);
 // The historical business oracle stays separate; exported workbooks remain
 // the actual source used in the app.
 const currentCode = ts.transpileModule(read("src/product-registration-xlsx.ts"), {
@@ -58,7 +59,7 @@ const liveExports = {};
 vm.runInThisContext(
   "(function(exports,require,crypto,structuredClone){\n" + currentCode + "\n})",
   { filename: "src/product-registration-xlsx.ts" },
-)(liveExports, nodeRequire, webcrypto, structuredClone);
+)(liveExports, resolveModule, webcrypto, structuredClone);
 exports.exportRegistrationTemplate = liveExports.exportRegistrationTemplate;
 exports.exportRegistrationResults = liveExports.exportRegistrationResults;
 
