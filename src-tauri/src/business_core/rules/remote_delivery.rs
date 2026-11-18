@@ -120,7 +120,7 @@ pub(super) fn resolve_shipment(
     let legacy_unmarked=!recipient.get("remoteDelivery")
         .is_some_and(Value::is_object) &&
         (super::flag(shipment,"transferred") ||
-         super::field(shipment,"step").as_i64().unwrap_or(0)>=2 ||
+         super::field(shipment,"step").as_i64().unwrap_or(0)>=1 ||
          super::has_value(super::field(order,"confirmedAt")) ||
          super::flag(order,"pricesLocked"));
     if legacy_unmarked {
