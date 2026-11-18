@@ -415,7 +415,7 @@ export function SourceDocument({
           </button>
         )}
       </div>
-      {!formal && (
+      {!formal && !!text && (
         <div className="source-actions">
           {!!text && (
             <button
