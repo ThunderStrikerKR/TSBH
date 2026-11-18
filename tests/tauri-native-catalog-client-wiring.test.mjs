@@ -102,7 +102,7 @@ test("live catalog search, native model guidance and official link browsing have
   assert.match(editor,/fn prepare\(/);
   assert.match(product,/"upsert_product_from_editor"/);
   assert.doesNotMatch(product,/p\.modelKey = productKey/);
-  assert.match(search,/"search_products"/);
+  assert.match(search,/"search_products_with_urls"/);
   assert.match(item,/"search_products"/);
   assert.match(issue,/"suggest_group_representative"/);
   assert.match(issue,/"resolution_product_candidates"/);
