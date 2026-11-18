@@ -80,7 +80,8 @@ export function WorkflowBoard({
   auditReactRender("WorkflowBoard");
   const [undoDelete, setUndoDelete] = useState<{ gid: string; at: string }>();
   const native = useNativeWorkflowBoard(state, previewReady);
-  const shipmentRead = useNativeShipmentRead(state, previewReady);
+  // Keep the selected dealer stable while independent workflow preview requests settle.
+  const shipmentRead = useNativeShipmentRead(state);
   const ready = previewReady && native.ready && shipmentRead.ready;
   // A newly selected group opens automatically; all other groups are closed.
   useEffect(() => setManuallyClosedGroup(undefined), [selection?.groupId]);
