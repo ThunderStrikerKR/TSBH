@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
-const { automaticMessage } = await tsImport("../../../src/automatic-message.ts",import.meta.url);
+const { automaticMessage } = await tsImport("../oracles/automatic-message.ts",import.meta.url);
 const { groupOrder, groupStep, workflowIssues } = await tsImport("../../../src/workflow.ts",import.meta.url);
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const manifest=fileURLToPath(new URL("./Cargo.toml",import.meta.url));
