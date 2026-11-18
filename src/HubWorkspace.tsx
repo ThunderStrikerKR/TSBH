@@ -626,6 +626,21 @@ export function HubWorkspace(props: Props) {
                       order.id, structuredClone(order),
                     ])),
                   }));
+                // A blank draft may already be the model's current draft
+                // while a previously selected receipt remains visible here.
+                // newOrder() intentionally keeps that blank draft's ID, so
+                // clear local selection as well instead of a visual no-op.
+                const emptyNewDraft = draft.receptionVersion === 1 &&
+                  !state.orders.some((saved) => saved.id === draft.id) &&
+                  !draft.raw.trim() && !draft.clientId &&
+                  !draft.recipients.length && !draft.photos?.length;
+                if (emptyNewDraft) {
+                  setReceptionId(draft.id);
+                  setStageHover(undefined);
+                  setActive("");
+                  commitSelection(undefined);
+                  lastVisiblePreview.current = undefined;
+                }
                 props.onNew();
               }}>
                 ＋ 새 주문
