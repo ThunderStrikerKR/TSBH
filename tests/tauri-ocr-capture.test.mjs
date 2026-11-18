@@ -7,11 +7,24 @@ const bridge = read("src/tauri-bridge.ts");
 const lib = read("src-tauri/src/lib.rs");
 const ocr = read("src-tauri/src/ocr.rs");
 const script = read("src-tauri/resources/ocr/recognize.py");
-test("source header has four intake controls and no duplicated buttons below", () => {
-  assert.match(source, /source-heading-actions/);
+test("source heading owns New Order; blank original-document canvas holds TXT and IMG halves", () => {
+  const css=read("src/styles/receipt-document.css");
+  const hub=read("src/HubWorkspace.tsx");
   for (const label of ["대리발송", "대리점 납품", "직접 입력", "캡처 범위 지정"])
     assert.ok(source.includes(label), label);
-  assert.equal((source.match(/<button disabled=\{busy\} onClick=\{\(\) => void paste\(undefined, "AGENCY"\)\}>/g) ?? []).length, 1);
+  assert.match(source, /className="source-new-order"/);
+  assert.match(source, /onClick=\{onNew\}/);
+  assert.match(source, /className="source-intake-choice"/);
+  assert.match(source, /waitingForSource \? \(/);
+  assert.match(source, /<strong className="source-intake-kind">TXT<\/strong>/);
+  assert.match(source, /<strong className="source-intake-kind">IMG<\/strong>/);
+  assert.match(source, /onClick=\{\(\) => void paste\(undefined, "AGENCY"\)\}/);
+  assert.match(source, /onClick=\{\(\) => void paste\(undefined, "DEALER"\)\}/);
+  assert.match(source, /onClick=\{\(\) => setRetail\(true\)\}/);
+  assert.match(source, /onClick=\{\(\) => void captureOcr\(\)\}/);
+  assert.doesNotMatch(source, /source-heading-actions/);
+  assert.match(css, /\.source-intake-choice\s*\{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(hub, /onNew=\{createReceptionLive\}/);
 });
 test("OCR result requires user review before replacing a provisional order", () => {
   assert.match(source, /confirmAction\("기존 미확정 원문/);
@@ -43,7 +56,7 @@ test("OCR progress is shown prominently over the source body and never replaces 
   assert.doesNotMatch(source, /\{ocrPhase === "selecting" && \([\s\S]*?<strong>OCR 처리 중/);
   assert.match(source, /className="source-ocr-progress"/);
   assert.match(source, /<strong>OCR 처리 중…<\/strong>/);
-  assert.match(source, /<button disabled=\{busy\} onClick=\{\(\) => void captureOcr\(\)\}>\s*캡처 범위 지정\s*<\/button>/);
+  assert.match(source, /onClick=\{\(\) => void captureOcr\(\)\}>캡처 범위 지정<\/button>/);
   assert.doesNotMatch(source, /\{busy \? "처리 중…"/);
   assert.match(css, /\.source-pane \.source-ocr-progress\s*\{[\s\S]*?position: absolute/);
 });
