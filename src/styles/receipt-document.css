@@ -277,40 +277,55 @@
   color: var(--ds-color-primaryInverse);
 }
 /* Preserve the client-slot box even before a dealer is known. */
+/* A new, untouched order has neither a dealer strip nor edit actions.
+   Their legacy fixed 82px rows would otherwise crush the intake guide. */
 .source-pane .source-top:empty { display: flex; }
+.source-pane.source-intake-mode > .source-top,
+.source-pane.source-intake-mode > .source-actions,
+.source-pane.source-intake-mode > .source-inline-status:empty {
+  display: none;
+}
+.source-pane.source-intake-mode > .source-document {
+  margin: var(--ds-space-8) 6px 6px;
+}
 .source-pane .source-document.source-awaiting-input {
   padding: 0;
 }
 
+/* Center the guide only while it fits. Safe centering preserves its first
+   heading if a user makes this pane exceptionally short; a scrollbar is a
+   last-resort accessibility fallback, never the normal empty-state layout. */
 .source-intake-choice {
   display: flex;
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
-  height: 100%;
-  overflow: auto;
-  justify-content: center;
-  align-items: center;
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  justify-content: safe center;
+  align-items: safe center;
   box-sizing: border-box;
-  padding: var(--ds-space-16);
+  padding: var(--ds-space-8);
 }
 .source-intake-inner {
-  width: max-content;
-  max-width: 100%;
+  width: min(100%, 440px);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--ds-space-16);
+  gap: var(--ds-space-8);
 }
 .source-intake-group {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--ds-space-8);
+  gap: var(--ds-space-4);
   min-width: 0;
 }
 .source-intake-group + .source-intake-group {
   border-top: var(--ds-dividerWidth) solid var(--ds-role-border-divider);
-  padding-top: var(--ds-space-16);
+  padding-top: var(--ds-space-8);
 }
 .source-intake-group h3 {
   margin: 0;
@@ -358,7 +373,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--ds-space-8);
+  gap: var(--ds-space-4);
   max-width: 440px;
   color: var(--ds-role-text-secondary);
   font-size: calc(var(--ds-type-metadata-size) * var(--ui-scale, 1));
