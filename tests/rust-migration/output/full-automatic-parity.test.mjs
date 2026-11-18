@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
 const { automaticMessage, paymentSignature, paymentWasCopied, withGreeting } =
-  await tsImport("../../../src/automatic-message.ts",import.meta.url);
+  await tsImport("../oracles/automatic-message.ts",import.meta.url);
 const { groupOrder, groupMessages } =
   await tsImport("../../../src/workflow.ts",import.meta.url);
 const { validProductUrl } =
