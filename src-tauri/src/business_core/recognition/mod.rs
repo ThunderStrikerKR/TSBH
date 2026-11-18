@@ -1522,16 +1522,20 @@ mod tests {
             "catalog":"BANDOSTAND","category":"보면대","origin":"FACTORY",
             "active":true,"variants":[{"id":"dv2","color":"Black","source":"DEMO"}]
         }));
-        let output=execute("analyze_order",json!({
-            "raw":"김가상\\n010-1234-5678\\n서울특별시 마포구 월드컵로 20\\n가상보면대 D-700 1개\\n가상보면대 D-701 1개",
-            "state":data
-        })).unwrap();
+        let raw=[
+            "김가상","010-1234-5678","서울특별시 마포구 월드컵로 20",
+            "709 1개","가상보면대 D-700 1개","가상보면대 D-701 1개"
+        ].join("\n");
+        let output=execute("analyze_order",json!({"raw":raw,"state":data})).unwrap();
+        let mut recognized_real=false;
         for recipient in output["recipients"].as_array().unwrap() {
             for item in recipient["items"].as_array().unwrap() {
                 assert_ne!(item["productId"],"demo-catalog");
                 assert_ne!(item["productId"],"demo-variant");
+                if item["productId"]=="p709" {recognized_real=true;}
             }
         }
+        assert!(recognized_real,"A registered non-DEMO product must still match");
     }
     #[test]
     fn no_quantity_is_approved_without_evidence() {
