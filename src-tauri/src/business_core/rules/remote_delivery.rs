@@ -3,8 +3,10 @@
 //! calculated here: the optional 2x application rule belongs to the freight
 //! engine, and staff must remain free to override the automatic suggestion.
 use serde_json::{json, Value};
+use std::sync::OnceLock;
 
 static ZONES_JSON: &str = include_str!("../../../resources/remote-delivery-zones.json");
+static ZONES: OnceLock<Result<Value,String>> = OnceLock::new();
 
 fn tokens(s: &str) -> Vec<String> {
     s.split_whitespace()
@@ -47,8 +49,11 @@ fn locality_matches(address: &[String], path: &str) -> bool {
 pub(super) fn detect(payload: &Value) -> Result<Value, String> {
     let address = payload.get("address").and_then(Value::as_str)
         .ok_or("주소 문자열이 필요합니다.")?;
-    let dataset: Value = serde_json::from_str(ZONES_JSON)
-        .map_err(|e| format!("도서산간 지역 데이터 오류: {e}"))?;
+    // Shipping, preview and settlement all query the same embedded data:
+    // parse the verified 99-zone resource only once per process.
+    let dataset=ZONES.get_or_init(|| serde_json::from_str(ZONES_JSON)
+        .map_err(|e| format!("도서산간 지역 데이터 오류: {e}")))
+        .as_ref().map_err(Clone::clone)?;
     let source_tokens = tokens(address);
     let mut chosen: Option<&Value> = None;
     let mut length = 0usize;
