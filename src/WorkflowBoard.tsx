@@ -59,8 +59,8 @@ export function WorkflowBoard({
   onSelectPending,
   onDeletePending,
 }: {
-  onStageHover?: (v: { groupId: string; step: number } | undefined) => void;
-  stageHover?: { groupId: string; step: number };
+  onStageHover?: (v: { groupId: string; step: number; shipmentId?: string } | undefined) => void;
+  stageHover?: { groupId: string; step: number; shipmentId?: string };
   hoveredShipmentId?: string;
   state: State;
   previewReady?: boolean;
@@ -105,17 +105,25 @@ export function WorkflowBoard({
     return () => clearTimeout(timer);
   }, [selection?.shipmentId]);
   const hoveredGroup = useRef<string | undefined>(undefined),
+    hoveredRow = useRef<string | undefined>(undefined),
     hoverDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
-    hoverReturnDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    hoverReturnDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
+    rowEnterDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
+    rowLeaveDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // The preview is anchored in the SAME layout position as the original
   // card, so viewport coordinates and independent popup sizing are unnecessary.
   const [previewLayer, setPreviewLayer] = useState<{ groupId: string }>();
   const stopStagePreview = () => {
     if (hoverDelay.current) clearTimeout(hoverDelay.current);
     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
+    if (rowEnterDelay.current) clearTimeout(rowEnterDelay.current);
+    if (rowLeaveDelay.current) clearTimeout(rowLeaveDelay.current);
     hoverDelay.current = undefined;
     hoverReturnDelay.current = undefined;
+    rowEnterDelay.current = undefined;
+    rowLeaveDelay.current = undefined;
     hoveredGroup.current = undefined;
+    hoveredRow.current = undefined;
     setPreviewLayer(undefined);
     onStageHover?.(undefined);
   };
@@ -146,9 +154,38 @@ export function WorkflowBoard({
     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
     hoverReturnDelay.current = undefined;
   };
+  // A preview row temporarily replaces the displayed shipment, without
+  // changing the expanded/selected card or writing to Rust/SQLite.
+  // Fast pointer passes do not cause the detail panes to flicker.
+  const beginPreviewRowHover = (groupId: string, step: number, shipmentId: string) => {
+    if (rowEnterDelay.current) clearTimeout(rowEnterDelay.current);
+    if (rowLeaveDelay.current) clearTimeout(rowLeaveDelay.current);
+    rowLeaveDelay.current = undefined;
+    if (hoveredRow.current === shipmentId) return;
+    rowEnterDelay.current = setTimeout(() => {
+      rowEnterDelay.current = undefined;
+      if (hoveredGroup.current !== groupId) return;
+      hoveredRow.current = shipmentId;
+      onStageHover?.({ groupId, step: Math.min(step + 1, 4), shipmentId });
+    }, 100);
+  };
+  const endPreviewRowHover = (groupId: string, step: number) => {
+    if (rowEnterDelay.current) clearTimeout(rowEnterDelay.current);
+    if (rowLeaveDelay.current) clearTimeout(rowLeaveDelay.current);
+    rowEnterDelay.current = undefined;
+    rowLeaveDelay.current = setTimeout(() => {
+      rowLeaveDelay.current = undefined;
+      if (hoveredGroup.current !== groupId) return;
+      hoveredRow.current = undefined;
+      onStageHover?.({ groupId, step: Math.min(step + 1, 4) });
+    }, 150);
+  };
+
   useEffect(() => () => {
     if (hoverDelay.current) clearTimeout(hoverDelay.current);
     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
+    if (rowEnterDelay.current) clearTimeout(rowEnterDelay.current);
+    if (rowLeaveDelay.current) clearTimeout(rowLeaveDelay.current);
   }, []);
   useEffect(() => {
     const id = hoveredGroup.current;
@@ -156,7 +193,7 @@ export function WorkflowBoard({
     if (!ready) return;
     const step = native.byId[id]?.step;
     if (step === undefined) return;
-    onStageHover?.({ groupId: id, step: Math.min(step + 1, 4) });
+    onStageHover?.({ groupId: id, step: Math.min(step + 1, 4), shipmentId: hoveredRow.current });
   }, [ready, native.byId, onStageHover]);
   const [manuallyClosedGroup, setManuallyClosedGroup] = useState<string>(),
     [pendingManage, setPendingManage] = useState<string>(),
@@ -390,10 +427,10 @@ export function WorkflowBoard({
                 {ss.map((s) => {
                   const { recipient } = shipmentContext(state, s);
                   const nativeShipment = nativeGroup?.shipments.find((row) => row.shipmentId === s.id);
-                  const visuallyChosen = inPreview
-                    ? (selected ? selection?.shipmentId === s.id : ss[0].id === s.id)
-                    : selection?.shipmentId === s.id;
-                  const isPreviewed = !inPreview && hovered && hoveredShipmentId === s.id;
+                  // Orange is ONLY committed selection; blue is ONLY the
+                  // temporary shipment visible through the hover preview.
+                  const visuallyChosen = !inPreview && selection?.shipmentId === s.id;
+                  const isPreviewed = inPreview && hovered && hoveredShipmentId === s.id;
                   return (
                     <button
                       key={s.id}
@@ -410,7 +447,9 @@ export function WorkflowBoard({
                           : "")
                       }
                       data-shipment-id={s.id}
-                      aria-label={"배송 건 " + recipient.name + (isPreviewed ? " (현재 화면에 표시 중)" : "")}
+                      aria-label={"배송 건 " + recipient.name + (isPreviewed ? " (미리보기 표시 중)" : "")}
+                      onMouseEnter={inPreview ? () => beginPreviewRowHover(g.id, step, s.id) : undefined}
+                      onMouseLeave={inPreview ? () => endPreviewRowHover(g.id, step) : undefined}
                       onClick={() => {
                         if (inPreview) {
                           // An already-selected but manually folded group must
@@ -427,7 +466,8 @@ export function WorkflowBoard({
                     >
                       <span className="shipment-recipient" title={recipient.name}>
                         <span className="shipment-recipient-name">{recipient.name || "수취인 확인"}</span>
-                        {isPreviewed && <span className="workflow-preview-indicator">표시 중</span>}
+                        {/* Keep the recipient name full-width; the blue row itself
+                            indicates temporary display without adding a label. */}
                       </span>
                       <span className="shipment-products">
                         {recipient.items.map((i) => (
@@ -462,7 +502,8 @@ export function WorkflowBoard({
             className={
               "workflow-group" +
               (isPreview ? " workflow-preview-clone" : "") +
-              (selected || isPreview ? " selected" : "") +
+              (selected && !isPreview ? " selected" : "") +
+              (isPreview ? " temporary-preview" : "") +
               (hovered && !isPreview ? " workflow-preview-group" : "") +
               (!isPreview && stageHover?.groupId === g.id && stageHover.step === 4
                 ? " workflow-payment-hover"
