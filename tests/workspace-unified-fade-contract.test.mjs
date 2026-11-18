@@ -53,6 +53,25 @@ test("message readiness is for the current order, group, fingerprint and option 
   assert.doesNotMatch(msg, /bodyReady = !gid/);
 });
 
+test("retail and empty orders do not deadlock waiting for a nonexistent auto-message", () => {
+  const hub = source("src/HubWorkspace.tsx");
+  const msg = source("src/MessageWorkspace.tsx");
+  assert.match(hub, /const noMessageExpected = messageReady && \(/);
+  assert.match(hub, /messageOrder\.orderType === "RETAIL"/);
+  assert.match(hub, /!activeShipments\(messageState\)\.some\(\(shipment\) => shipment\.orderId === messageOrder\.id\)/);
+  assert.match(msg, /bodyReady \|\| noMessageExpected \|\| Boolean\(currentLoadError \|\| projectionError\)/);
+});
+
+test("one native calculation error does not leave every data panel permanently hidden", () => {
+  const hub = source("src/HubWorkspace.tsx");
+  const desk = source("src/OrderDesk.tsx");
+  const msg = source("src/MessageWorkspace.tsx");
+  assert.match(hub, /const sourceSettled = [\s\S]*?Boolean\(nativeBase\.error/);
+  assert.match(desk, /const checksSettled = staffChecksReady \|\| Boolean\(staffChecksError\)/);
+  assert.match(desk, /const financialError = Boolean\(flowSummaryError \|\| orderLineError\)/);
+  assert.match(msg, /Boolean\(currentLoadError \|\| projectionError\)/);
+});
+
 test("the five permanent section frames, empty guidance and action buttons never fade", () => {
   const checks = source("src/StaffChecks.tsx");
   const sourceDoc = source("src/SourceDocument.tsx");
