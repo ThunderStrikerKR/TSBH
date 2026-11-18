@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type WorkflowSelection } from "../WorkflowBoard";
 import {
-  normalizeColor,
   orderClient,
   unassignedClient,
 } from "../domain";
@@ -115,8 +114,7 @@ export function useOrderDesk({
     setHighlight = linkController?.setActive ?? setLocalHighlight;
   const place = (content: ReactNode, node?: HTMLElement | null) =>
     portalTargets ? (node ? createPortal(content, node) : null) : content;
-  const [source, setSource] = useState(draft.analysisRaw ?? draft.raw),
-    [selected, setSelected] = useState<string[]>([]);
+  const [source, setSource] = useState(draft.analysisRaw ?? draft.raw);
   const client = orderClient(draft, state),
     liveClient = state.clients.find((c) => c.id === draft.clientId && !c.deletedAt) ?? client,
     pricingClient = liveClient ?? unassignedClient;
@@ -200,7 +198,6 @@ export function useOrderDesk({
   useEffect(() => {
     setRawEditing(false);
     setSource(draft.analysisRaw ?? draft.raw);
-    setSelected([]);
   }, [draft.id, draft.rawCorrections?.at(-1)?.id]);
   useEffect(() => {
     if (viewMode !== "details") onRawEditDirty?.(rawEditing && source !== draft.raw);
@@ -718,23 +715,6 @@ export function useOrderDesk({
     });
     return () => cancelAnimationFrame(frame);
   }, [pendingFocus, shownRecipient, itemEditing]);
-  const selectedItems = draft.recipients
-    .flatMap((r) => r.items)
-    .filter((i) => selected.includes(i.id));
-  let colors: string[] = [];
-  if (selectedItems.length) {
-    colors =
-      products
-        .find((p) => p.id === selectedItems[0].productId)
-        ?.variants.map((v) => normalizeColor(v.color)) ?? [];
-    colors = [...new Set(colors)].filter((c) =>
-      selectedItems.every((i) =>
-        products
-          .find((p) => p.id === i.productId)
-          ?.variants.some((v) => normalizeColor(v.color) === c),
-      ),
-    );
-  }
   const chooseProduct = (rid: string, p: Product, iid?: string) => {
     const orderId = draft.id;
     const itemId = iid;
