@@ -86,7 +86,7 @@ pub(super) fn fee_total(ship: &Value, row: &Value, order: &Value) -> Option<i64>
     if os.is_empty() {return None;}
     let base=os.iter().map(|origin|safe(field(field(ship,"charges"),origin)))
         .collect::<Option<Vec<_>>>().and_then(checked_sum);
-    super::remote_delivery::multiply(base,row)
+    super::remote_delivery::multiply_shipment(base,row,ship,order)
 }
 fn frozen_snapshot<'a>(state: &'a Value, ship: &Value) -> Option<&'a Value> {
     if !flag(ship,"transferred") || has_value(field(ship,"latestRecipient")) {return None;}
@@ -1208,8 +1208,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 let charged=if shipment_freight_code(&order,&order_single["recipients"][0])=="020" {
                     0
                 } else {
-                    super::remote_delivery::multiply(
-                        safe(field(field(&ship,"charges"),origin)),&recipient)
+                    super::remote_delivery::multiply_shipment(
+                        safe(field(field(&ship,"charges"),origin)),&recipient,&ship,&order)
                         .ok_or("청구 운임 확인 필요")?
                 };
                 let applied=if has_value(field(&ship,"latestRecipient")) {None}
@@ -1236,7 +1236,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 // A 2x locality delivery is valid historical evidence,
                 // but its actual charge must NEVER become a universal
                 // product-combination base tariff for normal addresses.
-                let remote_state=super::remote_delivery::resolve_recipient(&recipient)?;
+                let remote_state=super::remote_delivery::resolve_shipment(&recipient,&ship,&order)?;
                 let remote_selected=flag(&remote_state,"checked");
                 if !remote_selected {
                     for previous in state["shipping"]["combinations"].as_array_mut()
@@ -1304,6 +1304,8 @@ mod remote_freight_multiplier_tests {
         });
         let mut order=json!({"freightCode":"010"});
         assert_eq!(fee_total(&ship,&recipient,&order),Some(11000));
+        let old_paid=json!({"charges":{"FACTORY":3000,"STORE":2500},"step":2});
+        assert_eq!(fee_total(&old_paid,&recipient,&order),Some(5500));
         recipient["remoteDelivery"]=json!({
             "address":"제주특별자치도 서귀포시 대정읍 테스트로 3",
             "checked":false,"manual":true
