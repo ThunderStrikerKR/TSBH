@@ -5,7 +5,7 @@
 //! and receipt snapshots and makes a row eligible for 주문내역.
 use std::collections::{HashMap,HashSet};
 use rusqlite::{params, Connection};
-use serde_json::Value;
+use serde_json::{json,Value};
 use tauri::State;
 use super::{Database, err, lock_db};
 
@@ -32,14 +32,46 @@ fn confirmed_order_ids(conn: &Connection) -> Result<HashSet<String>, String> {
     ids.map_err(err)
 }
 
+/// Recreate the FULL confirmed order from the relational three-table
+/// schema. core_orders.payload intentionally omits recipients and item rows,
+/// so comparing that JSON alone would miss external recipient/item changes.
 fn confirmed_baselines(conn:&Connection)->Result<HashMap<String,Value>,String>{
-    let mut stmt=conn.prepare("SELECT id,payload FROM core_orders").map_err(err)?;
-    let rows=stmt.query_map([],|r|Ok((
+    let mut stmt=conn.prepare("SELECT id,payload FROM core_orders ORDER BY position,id").map_err(err)?;
+    let order_rows=stmt.query_map([],|r|Ok((
         r.get::<_,String>(0)?,r.get::<_,String>(1)?
     ))).map_err(err)?.collect::<rusqlite::Result<Vec<_>>>().map_err(err)?;
-    rows.into_iter().map(|(id,raw)|{
-        Ok((id,serde_json::from_str::<Value>(&raw).map_err(err)?))
-    }).collect()
+    let mut orders=HashMap::new();
+    for (id,raw) in order_rows{
+        orders.insert(id,serde_json::from_str::<Value>(&raw).map_err(err)?);
+    }
+    let mut stmt=conn.prepare(
+        "SELECT recipient_id,payload FROM core_items ORDER BY recipient_id,position,id"
+    ).map_err(err)?;
+    let item_rows=stmt.query_map([],|r|Ok((
+        r.get::<_,String>(0)?,r.get::<_,String>(1)?
+    ))).map_err(err)?.collect::<rusqlite::Result<Vec<_>>>().map_err(err)?;
+    let mut items:HashMap<String,Vec<Value>>=HashMap::new();
+    for (owner,raw) in item_rows{
+        items.entry(owner).or_default().push(serde_json::from_str(&raw).map_err(err)?);
+    }
+    let mut stmt=conn.prepare(
+        "SELECT id,order_id,payload FROM core_recipients ORDER BY order_id,position,id"
+    ).map_err(err)?;
+    let recipient_rows=stmt.query_map([],|r|Ok((
+        r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?
+    ))).map_err(err)?.collect::<rusqlite::Result<Vec<_>>>().map_err(err)?;
+    let mut recipients:HashMap<String,Vec<Value>>=HashMap::new();
+    for (id,owner,raw) in recipient_rows{
+        let mut recipient:Value=serde_json::from_str(&raw).map_err(err)?;
+        recipient["items"]=json!(items.remove(&id).unwrap_or_default());
+        recipients.entry(owner).or_default().push(recipient);
+    }
+    if !items.is_empty(){return Err("품목을 소유한 수취인이 없습니다.".into());}
+    for (id,order) in &mut orders{
+        order["recipients"]=json!(recipients.remove(id).unwrap_or_default());
+    }
+    if !recipients.is_empty(){return Err("수취인이 속한 주문이 없습니다.".into());}
+    Ok(orders)
 }
 fn prior_edit_baselines(conn:&Connection)->Result<HashMap<String,Value>,String>{
     let mut stmt=conn.prepare("SELECT id,base_payload FROM reception_confirmed_edits").map_err(err)?;
@@ -161,7 +193,9 @@ mod tests {
         let conn=Connection::open_in_memory().unwrap();
         conn.execute_batch(
             "CREATE TABLE order_index(id TEXT PRIMARY KEY);
-             CREATE TABLE core_orders(id TEXT PRIMARY KEY,payload TEXT NOT NULL);"
+             CREATE TABLE core_orders(id TEXT PRIMARY KEY,position INTEGER NOT NULL DEFAULT 0,payload TEXT NOT NULL);
+             CREATE TABLE core_recipients(id TEXT PRIMARY KEY,order_id TEXT NOT NULL,position INTEGER NOT NULL DEFAULT 0,payload TEXT NOT NULL);
+             CREATE TABLE core_items(id TEXT PRIMARY KEY,recipient_id TEXT NOT NULL,position INTEGER NOT NULL DEFAULT 0,payload TEXT NOT NULL);"
         ).unwrap();
         initialize(&conn).unwrap();
         conn
@@ -190,7 +224,9 @@ mod tests {
             let mut conn = Connection::open(&path).unwrap();
             conn.execute_batch(
             "CREATE TABLE order_index(id TEXT PRIMARY KEY);
-             CREATE TABLE core_orders(id TEXT PRIMARY KEY,payload TEXT NOT NULL);"
+             CREATE TABLE core_orders(id TEXT PRIMARY KEY,position INTEGER NOT NULL DEFAULT 0,payload TEXT NOT NULL);
+             CREATE TABLE core_recipients(id TEXT PRIMARY KEY,order_id TEXT NOT NULL,position INTEGER NOT NULL DEFAULT 0,payload TEXT NOT NULL);
+             CREATE TABLE core_items(id TEXT PRIMARY KEY,recipient_id TEXT NOT NULL,position INTEGER NOT NULL DEFAULT 0,payload TEXT NOT NULL);"
         ).unwrap();
             initialize(&conn).unwrap();
             replace(&mut conn, vec![order.clone()]).unwrap();
@@ -222,7 +258,9 @@ mod tests {
         replace(&mut conn,vec![edited.clone()]).unwrap();
         assert_eq!(load(&conn).unwrap(),vec![edited.clone()]);
         let stored:String=conn.query_row("SELECT payload FROM core_orders WHERE id='c'",[],|r|r.get(0)).unwrap();
-        assert_eq!(serde_json::from_str::<Value>(&stored).unwrap(),frozen);
+        assert_eq!(serde_json::from_str::<Value>(&stored).unwrap(),json!({
+            "id":"c","confirmedAt":"2026-11-19T00:00:00Z","raw":"원본"
+        }));
         // A later writer changing the frozen ledger cannot be overwritten by
         // the old local edit. The working copy remains in SQLite for recovery.
         let mut changed=frozen.clone();changed["raw"]=json!("다른 세션 변경");
@@ -232,6 +270,27 @@ mod tests {
         let still:String=conn.query_row(
             "SELECT payload FROM reception_confirmed_edits WHERE id='c'",[],|r|r.get(0)).unwrap();
         assert!(still.contains("직원 수정"));
+    }
+    #[test]
+    fn normalized_recipient_changes_invalidate_confirmed_edit_baseline() {
+        let mut conn=db();
+        let frozen=json!({"id":"full","confirmedAt":"now","raw":"원본","recipients":[
+            {"id":"r1","name":"가상","items":[{"id":"i1","quantity":1}]}
+        ]});
+        conn.execute("INSERT INTO order_index(id) VALUES('full')",[]).unwrap();
+        conn.execute("INSERT INTO core_orders(id,payload) VALUES('full',?1)",
+            [json!({"id":"full","confirmedAt":"now","raw":"원본"}).to_string()]).unwrap();
+        conn.execute("INSERT INTO core_recipients(id,order_id,payload) VALUES('r1','full',?1)",
+            [json!({"id":"r1","name":"가상"}).to_string()]).unwrap();
+        conn.execute("INSERT INTO core_items(id,recipient_id,payload) VALUES('i1','r1',?1)",
+            [json!({"id":"i1","quantity":1}).to_string()]).unwrap();
+        let mut edit=frozen.clone();edit["raw"]=json!("직원 수정");
+        replace(&mut conn,vec![edit.clone()]).unwrap();
+        assert_eq!(load(&conn).unwrap(),vec![edit.clone()]);
+        conn.execute("UPDATE core_items SET payload=?1 WHERE id='i1'",
+            [json!({"id":"i1","quantity":2}).to_string()]).unwrap();
+        assert!(load(&conn).is_err());
+        assert!(replace(&mut conn,vec![edit]).is_err());
     }
     #[test]
     fn invalid_replace_rolls_back_existing_work() {
