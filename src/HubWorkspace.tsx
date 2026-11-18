@@ -6,7 +6,6 @@ import { AuditProfiler } from "./perf-audit-profiler";
 import { createPortal, flushSync } from "react-dom";
 import { HubPanels, defaultPanels } from "./HubPanels";
 import { WorkingReceptionAutosave } from "./orders/working-reception-autosave";
-import { askSaveChanges } from "./dialogs";
 import { requestPageLeave } from "./shared/page-leave";
 import { LinkContext } from "./LinkedText";
 import { MemoMessageWorkspace as MessageWorkspace } from "./MessageWorkspace";
@@ -137,8 +136,8 @@ export function HubWorkspace(props: Props) {
     () => Object.values(edits).filter((order) => order.id !== draft.id && order.clientId),
     [edits, draft.id],
   );
-  // "새 주문" retains unfinished receipts only in React memory. The current
-  // draft AND every retained local draft share the same loss/leave policy.
+  // All unconfirmed receptions are persisted to SQLite immediately, and
+  // continue to be visible in 처리 중인 주문 before the business confirmation.
   const temporaryReceipts = useMemo(() => {
     const byId = new Map<string, Order>();
     const unsaved = (order: Order) =>
@@ -150,23 +149,51 @@ export function HubWorkspace(props: Props) {
     if (unsaved(draft)) byId.set(draft.id, draft);
     return [...byId.values()];
   }, [draft, edits, state.orders]);
+  // For confirmed orders, save ONLY a working edit. Never overwrite the
+  // frozen confirmed order or its billing snapshot on ordinary navigation.
+  const confirmedWorkingEdits = useMemo(() => {
+    const saved = new Map(state.orders.map((order) => [order.id, order]));
+    const drafts = new Map<string, Order>();
+    for (const edit of Object.values(edits)) {
+      const original = saved.get(edit.id);
+      if (original && JSON.stringify(edit) !== JSON.stringify(original))
+        drafts.set(edit.id, edit);
+    }
+    const currentSaved = saved.get(draft.id);
+    if (currentSaved && JSON.stringify(draft) !== JSON.stringify(currentSaved))
+      drafts.set(draft.id, draft);
+    return [...drafts.values()];
+  }, [draft, edits, state.orders]);
+  const workingCopies = useMemo(
+    () => [...temporaryReceipts, ...confirmedWorkingEdits],
+    [temporaryReceipts, confirmedWorkingEdits],
+  );
   // Restore persisted receptions before starting autosave: writing an empty
   // list during startup would otherwise erase the previous session's orders.
   useEffect(() => {
     let cancelled = false;
     void window.bando!.workingReceptionsLoad().then((stored) => {
       if (cancelled) return;
-      const recovered = stored.filter((order) =>
-        !order.confirmedAt &&
-        !state.orders.some((saved) => saved.id === order.id));
+      const recovered = stored.filter((order) => {
+        const saved = state.orders.find((row) => row.id === order.id);
+        return saved
+          ? Boolean(order.confirmedAt) && JSON.stringify(order) !== JSON.stringify(saved)
+          : !order.confirmedAt;
+      });
       setEdits((previous) => ({
         ...Object.fromEntries(recovered.map((order) => [order.id, order])),
         ...previous,
       }));
       const current = currentDraftRef.current;
-      if (recovered.length && !current.raw.trim() && !current.clientId &&
+      const currentlySaved = state.orders.find((row) => row.id === current.id);
+      const savedEdit = recovered.find((row) => row.id === current.id && row.confirmedAt);
+      if (currentlySaved && savedEdit &&
+          JSON.stringify(current) === JSON.stringify(currentlySaved)) {
+        props.onChange(structuredClone(savedEdit));
+      } else if (!current.raw.trim() && !current.clientId &&
           !current.recipients.length && !current.photos?.length) {
-        setReceptionId(recovered[0].id);
+        const pending = recovered.find((row) => !row.confirmedAt);
+        if (pending) setReceptionId(pending.id);
       }
       setWorkingStoreReady(true);
     }).catch((error) =>
@@ -178,9 +205,9 @@ export function HubWorkspace(props: Props) {
   // Serialized/coalesced writes ensure the last edit wins under rapid typing.
   useEffect(() => {
     if (!workingStoreReady) return;
-    void workingWriter.current!.enqueue(temporaryReceipts).catch((error) =>
+    void workingWriter.current!.enqueue(workingCopies).catch((error) =>
       props.onNotice("발주서 자동 저장 실패: " + String(error), "error"));
-  }, [temporaryReceipts, workingStoreReady, props.onNotice]);
+  }, [workingCopies, workingStoreReady, props.onNotice]);
   // An explicitly selected unassigned receipt must never fall back to a
   // shipment that belongs to an unrelated dealer.
   const pendingWithoutClient = useMemo(() =>
@@ -339,67 +366,26 @@ export function HubWorkspace(props: Props) {
     }
   };
   leaveGuardRef.current = async (intent = "switch") => {
-    // Flush the current SQLite working set before tab changes, switching
-    // orders or closing. No '임시 보관' decision should appear.
-    if (temporaryReceipts.length && !workingStoreReady) {
-      props.onNotice("발주서 SQLite 저장소가 아직 준비되지 않았습니다.", "error");
+    // Tab changes, order switches and app shutdown all flush SQLite edits.
+    // Neither confirmed business invoices nor the original order ledger are
+    // modified by this automatic working-copy save.
+    if (workingCopies.length && !workingStoreReady) {
+      props.onNotice("발주서 SQLite 자동 저장 준비가 끝나지 않았습니다.", "error");
       return { proceed: false, handledDraft: false };
     }
     try {
-      if (workingStoreReady) await workingWriter.current!.enqueue(temporaryReceipts);
+      if (workingStoreReady) await workingWriter.current!.enqueue(workingCopies);
     } catch (error) {
       props.onNotice("발주서 자동 저장 실패: " + String(error), "error");
       return { proceed: false, handledDraft: false };
     }
-    const orderId = selected?.orderId ?? receptionId;
-    const persisted = state.orders.find((order) => order.id === orderId);
-    const pending = orderId === draft.id ? draft : edits[orderId];
-    const savedOrderDirty = Boolean(
-      persisted && pending && JSON.stringify(pending) !== JSON.stringify(persisted),
-    );
-
-    // A tab change only hides this mounted workspace. Never require a second
-    // decision to retain unconfirmed receptions already held in React memory.
-    // Real edits of persisted orders still require the normal save/discard guard.
-    let savedChoice: "save" | "discard" | undefined;
-    if (savedOrderDirty) {
-      const choice = await askSaveChanges(
-        "수정한 주문 정보가 저장되지 않았습니다. 저장하고 이동할까요?",
-      );
-      if (choice === "cancel") return { proceed: false, handledDraft: false };
-      savedChoice = choice;
-    }
-    if (savedChoice === "save") {
-      try {
-        await onSave(await nativeReconcileWorkflow(state, pending!));
-      } catch (error) {
-        props.onNotice(error instanceof Error ? error.message : String(error), "error");
-        return { proceed: false, handledDraft: false };
-      }
-    } else if (savedChoice === "discard") {
-      if (orderId === draft.id) props.onChange(structuredClone(persisted!));
-      setEdits((previous) => {
-        if (!(orderId in previous)) return previous;
-        const next = { ...previous };
-        delete next[orderId];
-        return next;
-      });
-      setDiscardRevision((value) => value + 1);
-    }
-
-    let handledTemporary = false;
-    if ((intent === "navigate" || intent === "close") && temporaryReceipts.length) {
-      // SQLite now durably owns every unfinished reception. The business
-      // confirmation step, not navigation, controls 주문내역 visibility.
-      handledTemporary = true;
-    } else if (intent === "switch" && temporaryReceipts.some((order) => order.id === draft.id)) {
+    // Preserve the current source in the local overlay on order switching;
+    // the SQLite copy has already been written above.
+    if (intent === "switch" && workingCopies.some((row) => row.id === draft.id)) {
       setEdits((previous) => ({ ...previous, [draft.id]: structuredClone(draft) }));
-      handledTemporary = true;
     }
-    return {
-      proceed: true,
-      handledDraft: handledTemporary || (savedOrderDirty && orderId === draft.id),
-    };
+    // There is no separate confirmation for unconfirmed or confirmed edits.
+    return { proceed: true, handledDraft: true };
   };
   useEffect(() => {
     props.onRegisterOrderLeaveGuard?.((intent) => leaveGuardRef.current(intent));
