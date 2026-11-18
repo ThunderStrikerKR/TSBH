@@ -43,6 +43,7 @@ test("blank source canvas groups clipboard, alternative input, and folder guidan
   assert.match(hub, /onNew=\{createReceptionLive\}/);
 });
 test("dedicated image inbox scans stable files and uses existing review dialog", () => {
+  const css = read("src/styles/receipt-document.css");
   const inbox = read("src-tauri/src/order_image_inbox.rs");
   const settings = read("src/SettingsPanel.tsx");
   assert.match(inbox, /order_image_watch_scan/);
