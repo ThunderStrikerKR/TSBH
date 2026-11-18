@@ -34,7 +34,7 @@ function documentFromHtml(html){
 }
 function loadParser(){
   const output={};
-  const compiled=ts.transpileModule(read("src/official-product-import.ts"),{
+  const compiled=ts.transpileModule(read("tests/rust-migration/oracles/official-product-import.ts"),{
     compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
   }).outputText;
   const mockDomain={
@@ -44,10 +44,10 @@ function loadParser(){
     validProductUrl:(s)=>/^https:\/\/bandostand\.com\/product\//.test(s),
   };
   const deps={
-    "./category-tree":{categoryPath:()=>[]},
-    "./category-roots":{catalogFromCategory:()=> "BANDOSTAND",withCatalogRoots:(s)=>s},
-    "./domain":mockDomain,
-    "./product-models":{
+    "../../../src/category-tree":{categoryPath:()=>[]},
+    "../../../src/category-roots":{catalogFromCategory:()=> "BANDOSTAND",withCatalogRoots:(s)=>s},
+    "../../../src/domain":mockDomain,
+    "../../../src/product-models":{
       normalizeModel:(s)=>s.trim().replace(/^BD\s*/i,"BD "),
       registeredProducts:(items)=>items.filter((p)=>!p.deletedAt&&p.active!==false&&!p.supersededBy),
     },
