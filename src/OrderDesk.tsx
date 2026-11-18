@@ -128,13 +128,21 @@ export function OrderDesk(props: OrderDeskProps) {
     const frame = requestAnimationFrame(() => setRevealedRecipient(recipientViewKey));
     return () => cancelAnimationFrame(frame);
   }, [recipientViewKey, recipientReady]);
-  const recipientRevealPhase = !draft.recipients.length ||
+  const localRecipientPhase = !draft.recipients.length ||
     revealedRecipient === recipientViewKey ? "ready" : "pending";
-  // The checks panel may retain last-settled items during edits, but never
-  // reveal a different shipment's checks before its Rust projection is ready.
-  const checksFadePhase = useReadyContentFade(
-    recipientViewKey, staffChecksReady && recipientRevealPhase === "ready", true,
+  // Continue computing local readiness without allowing separate animations
+  // while HubWorkspace coordinates the five panels.
+  const localChecksPhase = useReadyContentFade(
+    recipientViewKey, staffChecksReady && localRecipientPhase === "ready", true,
   );
+  const recipientRevealPhase = props.coordinatedFadePhase ?? localRecipientPhase;
+  const checksFadePhase = props.coordinatedFadePhase ?? localChecksPhase;
+  const checksSettled = staffChecksReady || Boolean(staffChecksError);
+  useEffect(() => {
+    if (viewMode === "reception" || !props.fadeKey || !props.onFadeReadiness) return;
+    props.onFadeReadiness(props.fadeKey, "checks", checksSettled);
+    props.onFadeReadiness(props.fadeKey, "financial", recipientReady);
+  }, [viewMode, props.fadeKey, props.onFadeReadiness, checksSettled, recipientReady]);
 
   const addressRequests = useRef<Record<string, number>>({});
   const addressMounted = useRef(true);
@@ -255,6 +263,7 @@ export function OrderDesk(props: OrderDeskProps) {
               text={source}
               client={client}
               contentReady={props.sourceProjectionReady ?? true}
+              coordinatedFadePhase={props.coordinatedFadePhase}
               onText={(value) => {
                 setSource(value);
               }}
