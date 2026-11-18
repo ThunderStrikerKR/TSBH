@@ -663,6 +663,9 @@ export interface Api {
   dockSelect: (handle: string) => Promise<DockStatus>;
   load: () => Promise<State>;
   save: (state: State) => Promise<State>;
+  /** Durable working receptions; not shown in confirmed order history. */
+  workingReceptionsLoad: () => Promise<Order[]>;
+  workingReceptionsReplace: (orders: Order[]) => Promise<void>;
   patchSettings?: (changes: Record<string, unknown>, expected: Record<string, unknown>) => Promise<State>;
   chooseExcelDirectory: () => Promise<string | undefined>;
   openExcelDirectory: () => Promise<void>;

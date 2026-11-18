@@ -60,7 +60,7 @@ export function businessCoreCall<T>(
 }
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Api, State, CatalogReport, OcrCapture, OfficialLink, ImportPreview } from "./types";
+import type { Order, Api, State, CatalogReport, OcrCapture, OfficialLink, ImportPreview } from "./types";
 import productImages from "./tauri-product-images.json";
 
 
@@ -105,6 +105,9 @@ const api: Api = {
     auditNativeCall("state_save");
     return invoke<State>("state_save", { state });
   },
+  workingReceptionsLoad: () => invoke<Order[]>("working_receptions_load"),
+  workingReceptionsReplace: (orders) =>
+    invoke<void>("working_receptions_replace", { orders }),
   patchSettings: (changes, expected) => invoke<State>("settings_patch", { changes, expected }),
   setPrice: (productId, variantId, tier, price, expected) =>
     invoke<State>("price_set", { productId, variantId, tier, price, expected }),
