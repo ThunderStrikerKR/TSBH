@@ -333,6 +333,45 @@ pub(super) fn reconcile(payload:&Value)->Result<Value,String> {
                     .all(|key|str_field(&recipient,key).is_empty()) {
                 continue;
             }
+            let ship_id=format!("shipment:{order_id}:{}",str_field(&recipient,"id"));
+            let mut index=rows(field(&state["workflow"],"shipments")).iter().position(|s|
+                str_field(s,"orderId")==order_id &&
+                str_field(s,"recipientId")==str_field(&recipient,"id"));
+            let order_before=state["orders"][oi].clone();
+            let frozen=index.is_some() && (has_value(field(&order_before,"confirmedAt")) ||
+                flag(&order_before,"pricesLocked"));
+            // Migrate only when a decision is absent/stale. Old previously
+            // billed or dispatched orders must NOT silently acquire a 2x
+            // charge after a new remote-area dataset is deployed.
+            let current_address=str_field(&recipient,"address").to_string();
+            let saved_address=str_field(field(&recipient,"remoteDelivery"),"address");
+            if saved_address!=current_address ||
+                !field(&recipient,"remoteDelivery").is_object() {
+                let existing_ship=index.and_then(|si|
+                    rows(field(&state["workflow"],"shipments")).get(si));
+                let old_bill=existing_ship.is_some_and(|ship|
+                    flag(ship,"transferred") ||
+                    field(ship,"step").as_i64().unwrap_or(0)>=2) ||
+                    has_value(field(&order_before,"confirmedAt")) ||
+                    flag(&order_before,"pricesLocked");
+                let analysis=super::remote_delivery::detect(&json!({"address":current_address}))?;
+                if old_bill {
+                    set(&mut recipient,"remoteDelivery",json!({
+                        "address":current_address,"checked":false,
+                        "manual":false,"legacy":true
+                    }))?;
+                    state["orders"][oi]["recipients"][ri]=recipient.clone();
+                } else if flag(&analysis,"suggestedChecked") {
+                    set(&mut recipient,"remoteDelivery",json!({
+                        "address":current_address,"checked":true,"manual":false
+                    }))?;
+                    state["orders"][oi]["recipients"][ri]=recipient.clone();
+                } else if field(&recipient,"remoteDelivery").is_object() {
+                    recipient.as_object_mut().ok_or("수취인 형식 오류")?
+                        .remove("remoteDelivery");
+                    state["orders"][oi]["recipients"][ri]=recipient.clone();
+                }
+            }
             let order=state["orders"][oi].clone();
             let client=party(&state,&order).ok_or("거래처 정보를 확인하세요.")?.clone();
             let sender=sender_for(&state,&order);
@@ -340,12 +379,6 @@ pub(super) fn reconcile(payload:&Value)->Result<Value,String> {
             let mut single=order.clone();
             set(&mut single,"recipients",json!([recipient]))?;
             let reco=shipping::recommend(&single,&state)?;
-            let ship_id=format!("shipment:{order_id}:{}",str_field(&recipient,"id"));
-            let mut index=rows(field(&state["workflow"],"shipments")).iter().position(|s|
-                str_field(s,"orderId")==order_id &&
-                str_field(s,"recipientId")==str_field(&recipient,"id"));
-            let frozen=index.is_some() && (has_value(field(&order,"confirmedAt")) ||
-                flag(&order,"pricesLocked"));
             if index.is_none() {
                 if recipient.get("vatDefault").is_none() {
                     let value=if rows(field(input,"orders")).iter().any(|o|
