@@ -25,6 +25,10 @@ export function useNotice() {
       /저장.*(?:실패|오류)|(?:실패|오류).*저장|SQLite|데이터베이스|DB|시스템|네트워크|통신|충돌|연결 오류|not defined|Cannot read|IPC|state:save|disk|SQLITE/i.test(
         text,
       );
+    // A routine validation message can be an error without being a critical
+    // problem. Only safety-of-operation failures are persisted in the inbox.
+    const critical = tone === "error" &&
+      /저장.*(?:실패|오류)|(?:실패|오류).*저장|SQLite|데이터베이스|\\bDB\\b|IPC|state:save|\\bdisk\\b|디스크|not defined|Cannot read/i.test(text);
     const target = lastTarget.current?.isConnected
       ? lastTarget.current
       : document.activeElement instanceof HTMLElement
@@ -38,9 +42,10 @@ export function useNotice() {
     setNotice((previous) =>
       !message
         ? undefined
-        : previous?.tone === tone && previous.message === text && previous.anchor === anchor
+        : previous?.tone === tone && previous.message === text &&
+          previous.anchor === anchor && previous.critical === critical
           ? previous
-          : { message: text, tone, id: ++serial.current, anchor },
+          : { message: text, tone, id: ++serial.current, anchor, critical },
     );
   }, []);
   const dismiss = useCallback(() => setNotice(undefined), []);
