@@ -35,7 +35,7 @@ test("native open-folder action accepts only a verified existing export ID", () 
 
 test("order management renders a single stage and no extra dispatch row",()=>{
   const view=read("src/app/OrderHistory.tsx");
-  const logic=read("src/app/order-history.ts");
+  const logic=read("tests/rust-migration/oracles/order-history.ts");
   assert.ok(view.includes("{row.status}"));
   assert.ok(!view.includes("dispatchState(state, row.order.id)"));
   for(const label of ["처리 중","엑셀 추출 대기","엑셀 추출 완료","공장 회신 완료"]){

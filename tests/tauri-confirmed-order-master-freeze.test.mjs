@@ -8,8 +8,8 @@ const { reconcileWorkflow, shipmentTotals, groupContext, groupAccount, setShipme
   await tsImport("../src/workflow.ts", import.meta.url);
 const { orderParty } = await tsImport("../src/order-types.ts", import.meta.url);
 const { orderClient, totals } = await tsImport("../src/domain.ts", import.meta.url);
-const { orderHistory } = await tsImport("../src/app/order-history.ts", import.meta.url);
-const { dailySettlement } = await tsImport("../src/app/settlement-report.ts", import.meta.url);
+const { orderHistory } = await tsImport("./rust-migration/oracles/order-history.ts", import.meta.url);
+const { dailySettlement } = await tsImport("./rust-migration/oracles/settlement-report.ts", import.meta.url);
 
 function createFixture({ waived = false, vat = false } = {}) {
   const state = seed();
