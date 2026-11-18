@@ -318,7 +318,7 @@ export function SourceDocument({
     }
   };
   return (
-    <section className={"desk-pane source-pane" + (text ? " received-source" : "")}>
+    <section className={"desk-pane source-pane" + (text ? " received-source" : "") + (waitingForSource ? " source-intake-mode" : "")}>
       {retail && (
         <RetailOrderDialog
           state={state}
