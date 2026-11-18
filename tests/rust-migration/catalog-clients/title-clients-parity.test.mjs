@@ -5,8 +5,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
-const { rememberedTitleClient, rememberTitle, titleKey } =
-  await tsImport("../../../src/title-clients.ts", import.meta.url);
+const { rememberedTitleClient, rememberTitle, titleKey, titleCandidates } =
+  await tsImport("../oracles/title-clients.ts", import.meta.url);
 const manifest = fileURLToPath(new URL("./Cargo.toml", import.meta.url));
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const now = "2026-11-15T00:00:00.000Z";
@@ -90,6 +90,42 @@ store("missing selected dealer", (state) => {
 });
 store("archived selected dealer", (state) => {
   state.clients[1].deletedAt = "2026-11-12";
+});
+// Compare the NEW native chooser to the same historical manual suggestion
+// order; its action is advisory and must never select a dealer automatically.
+function manualCase(label,change=()=>{}){
+  const state=initial(), windows=[chat("1","악기사")], search="악기사";
+  change(state,windows);
+  const known=windows.filter(w=>w.kind==="CHAT" && w.title.trim());
+  const candidates=(title)=>titleCandidates(title,state.clients)
+    .filter(client=>client.active!==false)
+    .map(client=>({clientId:client.id}));
+  const chats=known.map(window=>{
+    const key=titleKey(window.title);
+    const mapping=state.settings.kakaoTitleMappings?.[key];
+    const rememberedClientId=mapping && !mapping.ambiguous &&
+      state.clients.some(c=>c.id===mapping.clientId && !c.deletedAt && c.active!==false)
+      ? mapping.clientId : null;
+    const ids=candidates(window.title).filter(c=>c.clientId!==rememberedClientId);
+    return {handle:window.handle,
+      duplicate:known.filter(other=>titleKey(other.title)===key).length>1,
+      rememberedClientId,
+      candidates:rememberedClientId
+        ? [{clientId:rememberedClientId},...ids] : ids};
+  });
+  cases.push({label,operation:"kakao_manual_candidates",
+    payload:{state,windows,search},
+    expected:{ok:true,value:{chats,search:candidates(search)}}});
+}
+manualCase("manual Kakao chooser uses Rust for title and search");
+manualCase("manual candidate duplicate windows",(_,windows)=>{
+  windows.push(chat("2"," 악기사 "));
+});
+manualCase("manual inactive dealer cannot be suggested",(state)=>{
+  state.clients[0].active=false;
+});
+manualCase("manual two-character alias and remembered priority",(state)=>{
+  state.clients[1].shortNames="악기사, 종로";
 });
 test("original Kakao mapping and automatic dealer identity match compiled Rust", () => {
   const result = spawnSync("cargo", [
