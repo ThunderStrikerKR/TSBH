@@ -263,12 +263,28 @@ pub(super) fn recommend(order: &Value, state: &Value) -> Result<Value, String> {
                         else {field(i,"quantity").to_string()};
                     format!("{} × {q}",str_field(i,"name"))
                 }).collect::<Vec<_>>().join(" + "));
-            versions_for_string.push(versions_json(&versions));
-            bundles.push(json!({
+            // All tariffs and combinations yield a BASE charge. The actual
+            // recommendation is derived once from the staff-controlled
+            // remote-area flag, never written back into the tariff table.
+            let remote = super::remote_delivery::resolve_recipient(recipient)?;
+            let selected = flag(&remote,"checked");
+            let applied = if selected {
+                super::remote_delivery::multiply(recommendation,recipient)
+            } else {recommendation};
+            let mut bundle=json!({
                 "key":key,"recipientId":field(recipient,"id"),"origin":origin,
                 "items":items,"versions":values,"description":description,
-                "recommendation":recommendation,"reason":reason,"source":source
-            }));
+                "recommendation":applied,"reason":if selected && recommendation.is_some() && applied.is_none()
+                    {"도서·산간 운임 금액 오류"}else{reason.as_str()},
+                "source":if selected && recommendation.is_some() && applied.is_none()
+                    {"MANUAL"}else{source}
+            });
+            // Preserve the normal-order Rust/TS contract. The optional
+            // baseRecommendation field is emitted only when multiplying:
+            // reconciliation must persist the undoubled base in ship.charges.
+            if selected {bundle["baseRecommendation"]=json!(recommendation);}
+            versions_for_string.push(versions_json(&versions));
+            bundles.push(bundle);
         }
     }
     let total = if bundles.is_empty() || bundles.iter()
