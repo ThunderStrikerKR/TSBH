@@ -5,7 +5,7 @@ import { ManagementTable } from "./ui/ManagementTable";
 import { ManagementSearch } from "./ui/ManagementSearch";
 import { FactoryReplyImport } from "./FactoryReplyImport";
 import { ActualFreightField } from "./ActualFreightField";
-import { actualFreightOf } from "./actual-freight";
+import { useNativeShipmentRead } from "./orders/useNativeShipmentRead";
 import { nativeApplyCorrectionAction, nativeRecordActualFreight } from "./orders/native-rules";
 import { requestPageLeave, usePageLeaveGuard } from "./shared/page-leave";
 import { createFactoryWorkbook, type FactoryExportPreview } from "./factory-export";
@@ -41,14 +41,16 @@ export function WorkflowQueue({
     [selected, setSelected] = useState<string[]>([]),
     [query, setQuery] = useState("");
   const [freightDrafts, setFreightDrafts] = useState<Record<string, { shipmentId: string; origin: Origin; value: Price }>>({});
+  const shipmentRead = useNativeShipmentRead(state);
+  useEffect(() => {
+    if (shipmentRead.error) onNotice("Rust 배송 조회 실패: " + shipmentRead.error, "error");
+  }, [shipmentRead.error]);
   const pendingFreight = Object.values(freightDrafts).filter(({shipmentId, origin, value}) => {
-    const ship = state.workflow?.shipments.find((s) => s.id === shipmentId);
-    const row = state.orders.find((o) => o.id === ship?.orderId)
-      ?.recipients.find((r) => r.id === ship?.recipientId);
-    return !ship || !row || actualFreightOf(ship, row, origin) !== value;
+    const native = shipmentRead.shipments.get(shipmentId);
+    return !shipmentRead.ready || !native || native.actualFreight[origin] !== value;
   });
   const saveFreightDrafts = async (): Promise<boolean> => {
-    if (busy) return false;
+    if (busy || !shipmentRead.ready) return false;
     if (!pendingFreight.length) return true;
     try {
       let latest = await window.bando!.load();
@@ -73,7 +75,9 @@ export function WorkflowQueue({
     .filter((q) => q.status === "QUEUED" && q.origin === scope)
     .filter((q) => {
       const ship = state.workflow!.shipments.find((s) => s.id === q.shipmentId)!;
-      const ctx = shipmentContext(state, ship);
+      const client = shipmentRead.shipments.get(ship.id)?.client;
+      if (!client) return false;
+      const ctx = shipmentContext(state, ship, client);
       return (
         ctx.client.name +
         ctx.recipient.name +
@@ -111,7 +115,7 @@ export function WorkflowQueue({
   );
   const excelListEmpty = scope === "HISTORY"
     ? exportHistoryRows.length === 0 && !hasReplyHistory
-    : rows.length === 0 && legacy.length === 0;
+    : shipmentRead.ready && rows.length === 0 && legacy.length === 0;
   // Sender completeness is the Rust export domain's decision, not a TS
   // approximation of the business rule. Ignore stale asynchronous responses.
   const senderSelectionKey = chosen.join("|");
@@ -296,7 +300,7 @@ export function WorkflowQueue({
             <tbody>
               {rows.map((q) => {
                 const ship = state.workflow!.shipments.find((s) => s.id === q.shipmentId)!,
-                  ctx = shipmentContext(state, ship),
+                  ctx = shipmentContext(state, ship, shipmentRead.shipments.get(ship.id)?.client),
                   row = q.snapshot?.recipient ?? ctx.recipient;
                 return (
                   <tr key={q.id} data-queue-id={q.id}>
@@ -344,6 +348,7 @@ export function WorkflowQueue({
                         <summary>관리</summary>
                         <ActualFreightField
                           state={state}
+                          nativeRead={shipmentRead}
                           shipmentId={ship.id}
                           origin={q.origin}
                           onSave={onSave}
