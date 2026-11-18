@@ -81,11 +81,11 @@ test("Excel exports use a native Save As dialog with user-chosen folder and name
 test("Cancelling Save As is not an error or a false success notice", () => {
   const rust = read("src-tauri/src/lib.rs");
   const client = read("src/RegistrationManager.tsx");
-  const price = read("src/ProductPriceWorkbookTools.tsx");
+  const productWorkbook = read("src/ProductSyncWorkbookTools.tsx");
   assert.match(rust, /let Some\(selected\) = selected else \{ return Ok\(None\); \}/);
   assert.match(client, /if \(path\) onNotice\("상품 등록 양식을 저장했습니다/);
   assert.match(client, /lastBatch\.rows\.map/);
-  assert.match(price, /if \(path\) onNotice\("상품 가격표를 저장했습니다/);
+  assert.match(productWorkbook, /if \(destination\) onNotice\("독립 상품 및 가격 전체 목록을 저장했습니다/);
 });
 
 test("Excel Save As does not overwrite an existing file or accept another extension", () => {
