@@ -67,19 +67,25 @@ test("new order resets stale preview immediately and second click is idempotent"
 
 test("new order always returns to a blank receipt when another temporary or saved receipt is visible", () => {
   const hub = read("src/HubWorkspace.tsx");
-  const button = hub.split('<button className="primary" onClick={() => {')[1]
-    ?.split("＋ 새 주문")[0];
-  assert.ok(button, "new-order handler must be mounted");
+  const action = hub.split('const createReceptionLive = useEventCallback(() => {')[1]
+    ?.split('  const openManual = ')[0];
+  assert.ok(action, "new-order draft-retention handler must be mounted");
+  const source = read("src/SourceDocument.tsx");
+  assert.match(source, /className="source-new-order"/);
+  assert.match(source, /onClick=\{onNew\}/);
+  assert.match(hub, /onNew=\{createReceptionLive\}/);
+  assert.doesNotMatch(hub.split('<h2>처리 중인 주문<\/h2>')[1]?.split('</header>')[0] ?? "",
+    /새 주문/, "workflow queue must no longer own the button");
   // The current viewed receipt is saved only to React's temporary overlay.
-  assert.match(button, /const draftsToRetain = \[draft, receptionOrder\]/);
-  assert.match(button, /setEdits\(\(previous\) => \(\{/);
+  assert.match(action, /const draftsToRetain = \[draft, receptionOrder\]/);
+  assert.match(action, /setEdits\(\(previous\) => \(\{/);
   // Existing empty draft is reused by useAppModel. Its ID does not change;
   // the local visible receipt, pending selection and hovered workflow must.
-  assert.match(button, /const emptyNewDraft = draft\.receptionVersion === 1/);
-  assert.match(button, /if \(emptyNewDraft\) \{\s*setReceptionId\(draft\.id\);\s*setStageHover\(undefined\);\s*setActive\(""\);\s*commitSelection\(undefined\);\s*lastVisiblePreview\.current = undefined;/);
-  assert.ok(button.indexOf("setReceptionId(draft.id)") < button.indexOf("props.onNew()"));
+  assert.match(action, /const emptyNewDraft = draft\.receptionVersion === 1/);
+  assert.match(action, /if \(emptyNewDraft\) \{\s*setReceptionId\(draft\.id\);\s*setStageHover\(undefined\);\s*setActive\(""\);\s*commitSelection\(undefined\);\s*lastVisiblePreview\.current = undefined;/);
+  assert.ok(action.indexOf("setReceptionId(draft.id)") < action.indexOf("props.onNew()"));
   // Filled or saved receipts still obey their existing asynchronous leave guard.
-  assert.match(button, /props\.onNew\(\)/);
+  assert.match(action, /props\.onNew\(\)/);
 });
 
 test("redundant group heading and source button are gone, cards remain scrollable", () => {
