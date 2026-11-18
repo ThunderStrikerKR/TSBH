@@ -44,7 +44,7 @@
 
 /* UI contract v1: prospective semantic design roles. Existing screens are
    NOT restyled by these declarations until each view is explicitly migrated.
-   The validator ensures the values match src/ui/design-system.json. */
+   The validator checks values against src/ui/design-system.json. */
 :root {
   --ds-color-canvas: #101010;
   --ds-color-panel: #202020;
@@ -112,6 +112,38 @@
   --ds-nav-subsection-font-size: 13px;
   --ds-nav-subsection-pad-x: 10px;
   --ds-nav-subsection-radius: 5px;
+  --ds-input-height: 36px;
+  --ds-input-fontSize: 14px;
+  --ds-input-paddingX: 10px;
+  --ds-input-radius: 6px;
+  --ds-tableHeader-minHeight: 36px;
+  --ds-tableHeader-fontSize: 13px;
+  --ds-tableHeader-fontWeight: 600px;
+  --ds-tableRow-minHeight: 42px;
+  --ds-tableRow-fontSize: 13px;
+  --ds-tableRow-fontWeight: 400px;
+  --ds-card-radius: 9px;
+  --ds-card-padding: 16px;
+  --ds-modal-radius: 9px;
+  --ds-modal-paddingX: 18px;
+  --ds-modal-titleFontSize: 18px;
+  --ds-modal-bodyFontSize: 14px;
+  --ds-status-fontSize: 12px;
+  --ds-status-fontWeight: 600px;
+  --ds-toolbar-gap: 8px;
+  --ds-toolbar-paddingX: 12px;
+  --ds-toolbar-paddingY: 8px;
+  --ds-notification-fontSize: 13px;
+  --ds-notification-paddingX: 12px;
+  --ds-notification-paddingY: 10px;
+  --ds-tier-wholesale-background: #234c37;
+  --ds-tier-wholesale-foreground: #a6edc0;
+  --ds-tier-semiWholesale-background: #53451c;
+  --ds-tier-semiWholesale-foreground: #ffe393;
+  --ds-tier-retail-background: #542c30;
+  --ds-tier-retail-foreground: #ffb2b9;
+  --ds-tier-special-background: #44305c;
+  --ds-tier-special-foreground: #dab5ff;
   --ds-space-4: 4px;
   --ds-space-8: 8px;
   --ds-space-12: 12px;
