@@ -486,9 +486,9 @@ export function useAppModel() {
       if (tab === "접수") {
         return window.bando!.requestClose(dirty && !leave.handledDraft);
       }
-      const leave = await requestPageLeave((message) => setNotice(message, "error"));
-      if (!leave.proceed) return;
-      if (hasPendingChanges && !leave.handled) {
+      const pageLeave = await requestPageLeave((message) => setNotice(message, "error"));
+      if (!pageLeave.proceed) return;
+      if (hasPendingChanges && !pageLeave.handled) {
         setNotice("편집 중인 내용을 저장하거나 취소한 뒤 종료하세요.", "error");
         return;
       }
@@ -527,7 +527,6 @@ export function useAppModel() {
     workflowSelection,
     setWorkflowSelection,
     setRawEditDirty,
-    setPendingDraftCount,
     registerOrderLeaveGuard,
     setDraft,
     refresh,
