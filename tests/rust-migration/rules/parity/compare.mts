@@ -8,6 +8,7 @@
  * Any mismatch fails the process. Fixtures contain synthetic data only.
  */
 import { spawnSync } from "node:child_process";
+import { projectHistoricalRemoteDelivery } from "../../legacy-remote-delivery-parity.mjs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePrice, totals, parseOrder, repriceOrder, itemFromProduct } from "../../../../src/domain.ts";
@@ -3978,11 +3979,15 @@ for(let i=0;i<cases.length;i++){
   if(c.operation==="apply_workflow_action" && (rust as any)?.ok===true){
     rust={ok:true,value:{state:(rust as any).value?.state}};
   }
-  if(normalized(comparableTs)===normalized(rust)){
+  // Historical TS did not generate the approved remote-area metadata.
+  // Exclude ONLY Rust's unchanged/unchecked legacy marker, with independent
+  // remote delivery behavior still covered by dedicated new-contract tests.
+  const comparableRust=projectHistoricalRemoteDelivery(comparableTs,rust);
+  if(normalized(comparableTs)===normalized(comparableRust)){
     console.log("PARITY PASS",c.name);passed++;
   } else {
     console.error("PARITY FAIL",c.name);
-    console.error("  DIFFERENT PATHS",differentialPaths(comparableTs,rust).join(", "));
+    console.error("  DIFFERENT PATHS",differentialPaths(comparableTs,comparableRust).join(", "));
     console.error("  TS  ",normalized(comparableTs).slice(0,2000));
     console.error("  Rust",normalized(rust).slice(0,2000));
   }
