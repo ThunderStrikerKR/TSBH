@@ -44,7 +44,7 @@ const WorkflowQueue = lazy(() =>
 const noopDockReset = () => {};
 export function App() {
   const [notifications, setNotifications] = useState(false);
-  const lastCriticalNoticeId = useRef<number>();
+  const lastCriticalNoticeId = useRef<number | undefined>(undefined);
   const model = useAppModel(),
     { state, draft, tab } = model;
   // Dock/notification repaints must not recreate handlers for live orders.
@@ -68,14 +68,14 @@ export function App() {
   // were explicitly classified by the notice owner enter this inbox.
   useEffect(() => {
     const notice = model.notice;
-    if (!notice?.critical || lastCriticalNoticeId.current === notice.id) return;
+    if (!state || !draft || !notice?.critical || lastCriticalNoticeId.current === notice.id) return;
     lastCriticalNoticeId.current = notice.id;
     void addNotification({
       priority: "critical",
       source: "시스템", tone: "error",
       title: "긴급 조치 필요", detail: notice.message,
     });
-  }, [model.notice, addNotification]);
+  }, [model.notice, state, draft, addNotification]);
   if (!state || !draft) {
     if (model.startup.phase === "ERROR" || model.startup.phase === "RETRYING") {
       return (
