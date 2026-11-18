@@ -317,13 +317,6 @@ export function OrderDesk(props: OrderDeskProps) {
                 <StaffChecks
                   blocks={shownChecks}
                   remoteDelivery={freightEditor?.preview.remoteDelivery}
-                  onRemoteSelect={() => {
-                    const checkbox = document.querySelector<HTMLInputElement>(
-                      ".items-freight-panel .freight-remote-check input",
-                    );
-                    checkbox?.scrollIntoView({ block: "nearest", inline: "nearest" });
-                    checkbox?.focus();
-                  }}
                   fadePhase={checksFadePhase}
                   loading={!staffChecksReady}
                   interactive={staffChecksActionsReady}

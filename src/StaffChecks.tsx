@@ -14,7 +14,6 @@ export function StaffChecks({
   onCancelApproval,
   onCandidate,
   remoteDelivery,
-  onRemoteSelect,
 }: {
   blocks: StaffBlock[];
   loading?: boolean;
@@ -30,7 +29,6 @@ export function StaffChecks({
   onCandidate?: (b: StaffBlock, value: string) => void;
   /** Rust locality advisory for the recipient currently shown in the order desk. */
   remoteDelivery?: NativeShipmentPreview["remoteDelivery"];
-  onRemoteSelect?: () => void;
 }) {
   const visible = blocks;
   const remoteReview = remoteDelivery?.status === "auto" || remoteDelivery?.status === "review"
@@ -143,11 +141,6 @@ export function StaffChecks({
               <small>{remoteReview.status === "auto"
                 ? "도서·산간 지역으로 판단했습니다. 확인 후 체크 여부를 결정하세요."
                 : "도서·산간 지역일 수 있습니다. 주소를 확인 후 체크 여부를 결정하세요."}</small>
-            </div>
-            <div className="issue-actions">
-              <button type="button" data-ui-role="action-quiet" disabled={unavailable || !onRemoteSelect} onClick={onRemoteSelect}>
-                운임 위치로 이동
-              </button>
             </div>
           </article>
         )}

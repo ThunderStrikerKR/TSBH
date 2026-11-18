@@ -70,6 +70,8 @@ test("blue message prompts review; no 2x is applied on top of the edited applied
   assert.match(checks, /도서·산간 지역일 수 있습니다\. 주소를 확인 후 체크 여부를 결정하세요\./);
   assert.match(checks, /facts\.length \+ \(remoteReview \? 1 : 0\)/);
   assert.match(desk, /remoteDelivery=\{freightEditor\?\.preview\.remoteDelivery\}/);
+  assert.doesNotMatch(checks, /운임 위치로 이동|onRemoteSelect/);
+  assert.doesNotMatch(desk, /onRemoteSelect=/);
   assert.doesNotMatch(footer, /도서·산간 지역으로 판단했습니다/);
   assert.match(css, /\.staff-checks \.staff-remote-info\s*\{[^}]*background: rgba\([^}]*color: #d7e8f7;/s);
   const checkboxStyle = css.match(/\.items-freight-panel \.freight-remote-check > input\[type="checkbox"\]\s*\{[^}]*\}/)?.[0] ?? "";
