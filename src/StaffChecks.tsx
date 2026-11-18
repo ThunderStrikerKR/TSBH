@@ -145,7 +145,7 @@ export function StaffChecks({
                 : "도서·산간 지역일 수 있습니다. 주소를 확인 후 체크 여부를 결정하세요."}</small>
             </div>
             <div className="issue-actions">
-              <button type="button" disabled={unavailable || !onRemoteSelect} onClick={onRemoteSelect}>
+              <button type="button" data-ui-role="action-quiet" disabled={unavailable || !onRemoteSelect} onClick={onRemoteSelect}>
                 운임 위치로 이동
               </button>
             </div>
