@@ -55,6 +55,7 @@ export function WorkflowBoard({
   pendingReceptions = [],
   selectedPendingOrderId,
   onSelectPending,
+  onDeletePending,
 }: {
   onStageHover?: (v: { groupId: string; step: number } | undefined) => void;
   stageHover?: { groupId: string; step: number };
@@ -70,6 +71,7 @@ export function WorkflowBoard({
   pendingReceptions?: Array<Pick<Order, "id" | "raw" | "recipients" | "createdAt">>;
   selectedPendingOrderId?: string;
   onSelectPending?: (orderId: string) => void;
+  onDeletePending?: (orderId: string) => void;
 }) {
   auditReactRender("WorkflowBoard");
   const [undoDelete, setUndoDelete] = useState<{ gid: string; at: string }>();
@@ -100,7 +102,9 @@ export function WorkflowBoard({
     return () => clearTimeout(timer);
   }, [selection?.shipmentId]);
   const boardRef = useRef<HTMLDivElement>(null),
-    hoveredGroup = useRef<string | undefined>(undefined);
+    hoveredGroup = useRef<string | undefined>(undefined),
+    hoverDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { if (hoverDelay.current) clearTimeout(hoverDelay.current); }, []);
   useEffect(() => {
     const id = hoveredGroup.current;
     if (!id) return;
@@ -110,6 +114,7 @@ export function WorkflowBoard({
     onStageHover?.({ groupId: id, step: Math.min(step + 1, 4) });
   }, [ready, native.byId, onStageHover]);
   const [manuallyClosedGroup, setManuallyClosedGroup] = useState<string>(),
+    [pendingManage, setPendingManage] = useState<string>(),
     [busy, setBusy] = useState(false),
     [manage, setManage] = useState<string>();
   const actionState = (groupId: string) =>
@@ -226,14 +231,39 @@ export function WorkflowBoard({
                   }}>
                   <span className="flow-toggle-icon" aria-hidden="true">{open ? "▾" : "▸"}</span>
                   <span className="flow-group-name"><b>미확인 거래처</b></span>
-                  <span className="flow-draft-status"
-                    title="확인 전 임시 보관 중이며, 앱 종료 시 사라집니다.">미확정</span>
+                  <SignalLights step={0} />
+                </button>
+                <button type="button" onClick={() => setPendingManage(receipt.id)}>
+                  묶음 관리
+                </button>
+                <button type="button" className="trash-button"
+                  aria-label="미확인 거래처 발주서 삭제"
+                  onClick={async () => {
+                    if (await confirmAction(
+                      "미확인 거래처의 미완성 발주서를 삭제할까요? 임시 원문과 분석 내용이 사라집니다.",
+                    )) onDeletePending?.(receipt.id);
+                  }}>
+                  <svg width="14" height="14" viewBox="0 0 16 16"
+                    fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+                    <path d="M3 4h10M6 2h4M4 4l1 10h6l1-10M7 6v6M9 6v6" />
+                  </svg>
                 </button>
               </header>
-              <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
-                <div className="flow-summary-compact">
-                  <span>배송 {receipt.recipients.length}건</span>
-                  <span className="flow-summary-payment">금액 미확정</span>
+              <div className="workflow-action-line">
+                <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
+                  <div className="flow-summary-compact">
+                    <span>배송 {receipt.recipients.length}건</span>
+                    <span className="flow-summary-financial">
+                      <span className="flow-summary-payment">금액 미확정</span>
+                    </span>
+                  </div>
+                </div>
+                <div className="workflow-progress">
+                  <button type="button" className="primary" aria-label="거래처 확인"
+                    onClick={() => onSelectPending?.(receipt.id)}>거래처 확인</button>
+                  <button type="button" className="workflow-undo" disabled
+                    title="거래처 확인 후 업무 단계를 시작할 수 있습니다."
+                    aria-label="이전 단계 취소">↶</button>
                 </div>
               </div>
               {open && (
@@ -390,6 +420,25 @@ export function WorkflowBoard({
               </button>
             </header>
             <div className="workflow-action-line">
+              <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
+                <div className="flow-summary-compact">
+                  <span>배송 {ss.length}건</span>
+                  <span className="flow-summary-financial">
+                    {nativeGroup && vatIncludedCount > 0 && (
+                      <span className="flow-summary-vat" title={vatDescription}
+                        aria-label={vatDescription}>
+                        {mixedVat
+                          ? `포함${vatIncludedCount}·별도${vatExcludedCount}`
+                          : "부가세 포함"}
+                      </span>
+                    )}
+                    <span className="flow-summary-payment"
+                      title={!nativeGroup ? "부가세 계산 확인 중" : vatIncludedCount > 0 ? vatDescription : undefined}>
+                      {won(nativeGroup?.totals.total ?? null)}
+                    </span>
+                  </span>
+                </div>
+              </div>
               {first.order.orderType !== "RETAIL" && (
                 <div className="workflow-progress">
                 <button
@@ -397,10 +446,16 @@ export function WorkflowBoard({
                   disabled={!ready || busy || remaining > 0 || ss.some((s) => s.transferred)}
                   aria-label={buttonLabel}
                   onMouseEnter={() => {
-                    hoveredGroup.current = g.id;
-                    onStageHover?.({ groupId: g.id, step: Math.min(step + 1, 4) });
+                    if (hoverDelay.current) clearTimeout(hoverDelay.current);
+                    hoverDelay.current = setTimeout(() => {
+                      hoveredGroup.current = g.id;
+                      onStageHover?.({ groupId: g.id, step: Math.min(step + 1, 4) });
+                      hoverDelay.current = undefined;
+                    }, 120);
                   }}
                   onMouseLeave={() => {
+                    if (hoverDelay.current) clearTimeout(hoverDelay.current);
+                    hoverDelay.current = undefined;
                     hoveredGroup.current = undefined;
                     onStageHover?.(undefined);
                   }}
@@ -442,23 +497,6 @@ export function WorkflowBoard({
                 </button>
                 </div>
               )}
-              <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
-              <div className="flow-summary-compact">
-                <span>배송 {ss.length}건</span>
-                {nativeGroup && vatIncludedCount > 0 && (
-                  <span className="flow-summary-vat" title={vatDescription}
-                    aria-label={vatDescription}>
-                    {mixedVat
-                      ? `포함${vatIncludedCount}·별도${vatExcludedCount}`
-                      : "부가세 포함"}
-                  </span>
-                )}
-                <span className="flow-summary-payment"
-                  title={!nativeGroup ? "부가세 계산 확인 중" : vatIncludedCount > 0 ? vatDescription : undefined}>
-                  {won(nativeGroup?.totals.total ?? null)}
-                </span>
-              </div>
-            </div>
             </div>
             {(g.needsNotice || ss.some((s) => s.rechecks?.some((c) => !c.resolvedAt))) && (
               <div className="flow-recheck">
@@ -578,6 +616,21 @@ export function WorkflowBoard({
             실행 취소
           </button>
         </div>
+      )}
+      {pendingManage && pendingReceptions.some((row) => row.id === pendingManage) && (
+        <Modal title="배송 건 묶음 관리" onClose={() => setPendingManage(undefined)}>
+          <p>거래처를 확인해야 실제 배송 묶음 및 업무 이력이 생성됩니다.</p>
+          <p>거래처 지정 후 배송 건 분리와 다시 묶기 기능을 사용할 수 있습니다.</p>
+          {pendingReceptions.find((row) => row.id === pendingManage)!.recipients.map((recipient) => (
+            <div className="flow-manage-row" key={recipient.id}>
+              <span>{recipient.name || "수취인 확인"} / 상품 {recipient.items.length}종</span>
+            </div>
+          ))}
+          <button type="button" className="primary" onClick={() => {
+            onSelectPending?.(pendingManage);
+            setPendingManage(undefined);
+          }}>거래처 확인하기</button>
+        </Modal>
       )}
       {manage && (
         <GroupManagement
