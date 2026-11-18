@@ -384,7 +384,8 @@ export function OrderDesk(props: OrderDeskProps) {
                   }}
                 />
                 <div className="recipient-body" data-recipient-fade={recipientRevealPhase}
-                  aria-busy={recipientRevealPhase === "pending"}>
+                  aria-busy={recipientRevealPhase === "pending"}
+                  inert={recipientRevealPhase === "pending"}>
                   <header className="recipient-section-heading">
                     <h2>수취인별 주문 정보</h2>
                     {exported &&
