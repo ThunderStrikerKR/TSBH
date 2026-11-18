@@ -23,7 +23,7 @@ function load(path, imports) {
 }
 const active = (products) => products.filter((p) => p.active !== false && !p.deletedAt && !p.supersededBy);
 const prices = load("tests/rust-migration/oracles/catalog-price-sync.ts", {
-  "./product-models": { registeredProducts: active },
+  "../../../src/product-models": { registeredProducts: active },
 });
 const source = (id) => structuredClone(legacy.products.find((p) => p.siteId === id));
 const target = (state, siteId, oldVariantId) => state.products.find(
