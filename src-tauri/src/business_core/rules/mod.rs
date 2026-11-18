@@ -102,6 +102,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "stage_issues" => Ok(json!({"issues":workflow_issues::stage_issues(
             req(&payload,"state")?,required_str(&payload,"groupId")?,
             req(&payload,"next")?.as_i64().ok_or("진행 단계 숫자가 필요합니다.")?)?})),
+        "read_shipments" => workflow::read_shipments(&payload),
         "evaluate_dispatch_state" => workflow::dispatch_state(
             req(&payload, "state")?, required_str(&payload, "orderId")?,
         ),
