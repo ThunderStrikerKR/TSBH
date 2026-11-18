@@ -5,11 +5,12 @@ import test from "node:test";
 const view = readFileSync(new URL("../src/app/SettingsView.tsx", import.meta.url), "utf8");
 const settings = readFileSync(new URL("../src/SettingsPanel.tsx", import.meta.url), "utf8");
 
-test("settings have five tabs and accounts are part of basic settings", () => {
-  for (const title of ["기본 설정", "파일 관리", "데이터 관리", "시스템", "개발자 모드"]) {
+test("settings expose four tabs and accounts are part of basic settings", () => {
+  for (const title of ["기본 설정", "파일 관리", "데이터 관리", "시스템"]) {
     assert.ok(view.includes('title: "' + title + '"'));
   }
-  assert.equal((view.match(/title: "(기본 설정|파일 관리|데이터 관리|시스템|개발자 모드)"/g) ?? []).length, 5);
+  assert.equal((view.match(/title: "(기본 설정|파일 관리|데이터 관리|시스템)"/g) ?? []).length, 4);
+  assert.doesNotMatch(view, /settings-panel-developer|title: "개발자 모드"/);
   assert.ok(!view.includes('title: "계좌 관리"'));
   assert.ok(settings.includes('<h2 className="settings-help-heading">입금 계좌 <HelpTooltip'));
   assert.ok(settings.includes('<h2 className="settings-help-heading">Excel 보관함 위치 <HelpTooltip'));
@@ -31,5 +32,6 @@ test("settings render only the active category and retain guarded operations", (
   assert.ok(settings.includes('hidden={section !== "files"}'));
   assert.ok(view.includes("<BackupPanel"));
   assert.ok(view.includes("<ReceiptArchive"));
-  assert.ok(view.includes("<DeveloperLab"));
+  assert.ok(!view.includes("<DeveloperLab"));
+  assert.ok(!view.includes("<TestDatabasePanel"));
 });

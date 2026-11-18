@@ -115,7 +115,7 @@ export function HubShell({
           )}
           <div ref={region} className="kakao-native-region">
             {!dock.active && (
-              <button className="kakao-connect" disabled={busy} onClick={onConnect}>
+              <button type="button" className="kakao-connect" data-ui-role="action-emphasized" disabled={busy} onClick={onConnect}>
                 {busy ? "연결 중…" : "카카오톡 연결"}
               </button>
             )}

@@ -32,7 +32,7 @@ const report = {
   usesMockIPC: false,
   isolatedTestDatabase: true,
   startedAt: new Date().toISOString(),
-  required: { menus: 8, settingsTabs: 5, dialogs: 4 },
+  required: { menus: 8, settingsTabs: 4, dialogs: 4 },
   passes: [], captures: [], errors: [], status: "STARTED"
 };
 const save = () => fs.writeFile(join(out, "screen-audit.json"),
@@ -293,7 +293,7 @@ try {
     await openMenu(menu);
     if (menu === "설정") {
       for (const title of ["기본 설정", "파일 관리", "데이터 관리",
-        "시스템", "개발자 모드"]) {
+        "시스템"]) {
         const tab = page.getByRole("tab", { name: title, exact: true });
         await openSubtab(menu, title, tab, async () => {
           await assert.doesNotReject(() =>
@@ -304,13 +304,6 @@ try {
             }, title, {timeout: 22000}));
         });
         record("settings-tab", title);
-        if (title === "개발자 모드") {
-          const emptyErrors = await page.locator("#settings-panel-developer .form-error")
-            .evaluateAll(nodes => nodes.filter(el => !el.textContent?.trim()).length);
-          assert.equal(emptyErrors, 0,
-            "Developer TEST panel must not display an empty red error message");
-          record("layout", "Developer TEST panel has no empty red error box");
-        }
       }
     } else if (subtabGroups[menu]) {
       for (const title of subtabGroups[menu]) {
@@ -450,7 +443,7 @@ try {
   const dialogCount = report.passes.filter(x => x.type === "dialog").length;
   assert.equal(report.passes.filter(x => x.type === "menu").length, 11,
     "Eight base menus plus three modal revisit entries must be captured");
-  assert.equal(report.passes.filter(x => x.type === "settings-tab").length, 5);
+  assert.equal(report.passes.filter(x => x.type === "settings-tab").length, 4);
   assert.equal(dialogCount, 4, "Four native editing dialogs must be verified");
   const finalState = await page.evaluate(async () => window.bando.load());
   assert.equal(finalState.revision, startup.state.revision,
@@ -459,12 +452,12 @@ try {
     "Screen-only audit must preserve all TEST orders");
   assert.equal(report.errors.length, 0,
     "Browser errors during native screen navigation: " + report.errors.join(" | "));
-  report.status = "REAL_WINDOWS_EIGHT_MENUS_FIVE_SETTINGS_FOUR_MODALS_PASSED";
+  report.status = "REAL_WINDOWS_EIGHT_MENUS_FOUR_SETTINGS_FOUR_MODALS_PASSED";
   record("preservation", "No SQLite revision or order mutation", {
     revision: finalState.revision
   });
   console.log("FULL_NATIVE_GUI_AUDIT_PASS", JSON.stringify({
-    menus: 8, settingsTabs: 5, dialogs: 4,
+    menus: 8, settingsTabs: 4, dialogs: 4,
     subtabVisits: report.passes.filter(x => x.type === "subtab").length,
     screenshots: report.captures.length, binaryCommit: report.sourceCommit
   }));

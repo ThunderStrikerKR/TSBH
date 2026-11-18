@@ -133,6 +133,14 @@
       "radius": 5,
       "surface": "transparent",
       "text": "secondary"
+    },
+    "action-emphasized": {
+      "height": 34,
+      "fontSize": 13,
+      "horizontalPadding": 12,
+      "radius": 6,
+      "surface": "emphasizedAction",
+      "text": "primaryInverse"
     }
   },
   "palette": {
@@ -159,7 +167,9 @@
     "warningSurface": "#45351f",
     "successSurface": "#253c2f",
     "infoSurface": "#233c4d",
-    "errorSurface": "#41282c"
+    "errorSurface": "#41282c",
+    "emphasizedAction": "#ffffff",
+    "emphasizedActionHover": "#70b4ff"
   },
   "spacing": [
     4,
@@ -208,7 +218,8 @@
     "pendingBrand": {
       "status": "implemented-source-awaiting-windows-verification",
       "rule": "Brand symbol and BANDO HUB logotype should have comparable visual height; test-workspace label is subordinate; remove unidentified trailing stripe without deleting any functional separator."
-    }
+    },
+    "brightBusinessActions": "Reception New Order, proxy shipping, dealer delivery, direct entry, capture range and KakaoTalk connect use action-emphasized (white background, dark text, blue hover). Retain 34px height and label-based width. Keycaps and unrelated buttons remain neutral."
   },
   "componentRoles": {
     "input": {
@@ -362,6 +373,14 @@
     "border-selected": {
       "color": "selection",
       "usage": "content selection; not a substitute for focus"
+    },
+    "surface-emphasized-action": {
+      "color": "emphasizedAction",
+      "usage": "high-visibility reception and KakaoTalk connect actions only; excludes shortcut keycaps and folder path controls"
+    },
+    "surface-emphasized-action-hover": {
+      "color": "emphasizedActionHover",
+      "usage": "hover state for explicitly promoted actions, distinct from selected content and keyboard focus"
     }
   },
   "structureRoles": {

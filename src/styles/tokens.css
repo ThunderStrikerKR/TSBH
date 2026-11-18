@@ -58,6 +58,8 @@
   --ds-color-muted: #999999;
   --ds-color-primary: #eeeeee;
   --ds-color-primaryInverse: #171717;
+  --ds-color-emphasizedAction: #ffffff;
+  --ds-color-emphasizedActionHover: #70b4ff;
   --ds-color-warning: #f2ba64;
   --ds-color-success: #a9dab5;
   --ds-color-danger: #ffb4b4;
@@ -88,6 +90,10 @@
   --ds-action-standard-font-size: 13px;
   --ds-action-standard-pad-x: 12px;
   --ds-action-standard-radius: 6px;
+  --ds-action-emphasized-height: 34px;
+  --ds-action-emphasized-font-size: 13px;
+  --ds-action-emphasized-pad-x: 12px;
+  --ds-action-emphasized-radius: 6px;
   --ds-action-quiet-height: 32px;
   --ds-action-quiet-font-size: 13px;
   --ds-action-quiet-pad-x: 8px;
@@ -172,6 +178,8 @@
   --ds-role-surface-nested: var(--ds-color-raised);
   --ds-role-surface-input: var(--ds-color-input);
   --ds-role-surface-interactive-hover: var(--ds-color-hover);
+  --ds-role-surface-emphasized-action: var(--ds-color-emphasizedAction);
+  --ds-role-surface-emphasized-action-hover: var(--ds-color-emphasizedActionHover);
   --ds-role-surface-warning: var(--ds-color-warningSurface);
   --ds-role-surface-error: var(--ds-color-errorSurface);
   --ds-role-border-normal: var(--ds-color-border);

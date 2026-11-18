@@ -32,6 +32,15 @@ test("blank source canvas groups clipboard, alternative input, and folder guidan
   assert.match(source, /onClick=\{\(\) => void paste\(undefined, "DEALER"\)\}/);
   assert.match(source, /onClick=\{\(\) => setRetail\(true\)\}/);
   assert.match(source, /onClick=\{\(\) => void captureOcr\(\)\}/);
+  assert.equal((source.match(/data-ui-role="action-emphasized"/g) ?? []).length, 5);
+  const tokens = read("src/styles/tokens.css");
+  const shell = read("src/HubShell.tsx");
+  const shellCss = read("src/styles/shell.css");
+  assert.match(shell, /kakao-connect" data-ui-role="action-emphasized"/);
+  assert.match(tokens, /--ds-role-surface-emphasized-action: var\(--ds-color-emphasizedAction\)/);
+  assert.match(css, /--ds-role-surface-emphasized-action-hover/);
+  assert.match(shellCss, /--ds-role-surface-emphasized-action-hover/);
+  assert.match(css, /\.source-intake-keycap[\s\S]*?--ds-color-raised/);
   assert.doesNotMatch(source, /source-heading-actions/);
   assert.match(css, /\.source-intake-choice\s*\{[^}]*display: flex/);
   assert.match(css, /\.source-intake-buttons\s*\{[^}]*flex-wrap: wrap/);

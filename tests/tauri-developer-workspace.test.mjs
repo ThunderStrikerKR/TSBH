@@ -66,7 +66,8 @@ test("developer UI laboratory mounts real business components and prevents write
   assert.match(workbench,/onSave=\{noProductionWrite\}/);
   assert.match(workbench,/testRecordRun/);
   assert.match(lab,/if \(!api\?\.isTestWorkspace/);
-  assert.match(host,/window\.bando\?\.isTestWorkspace &&/);
+  assert.doesNotMatch(host, /<DeveloperLab/);
+  assert.doesNotMatch(host, /<TestDatabasePanel/);
   assert.match(entry,/workspaceMode/);
   assert.doesNotMatch(workbench,/window\.bando!\.save\(/);
 });

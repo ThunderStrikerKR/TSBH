@@ -517,9 +517,32 @@
   align-items: center;
   justify-content: center;
 }
-.kakao-connect {
-  font-size: 15px;
-  padding: 13px 20px;
+.app-v03 .hub-kakao-slot .kakao-connect[data-ui-role="action-emphasized"] {
+  box-sizing: border-box;
+  width: auto;
+  height: calc(var(--ds-action-emphasized-height) * var(--ui-scale, 1));
+  min-height: calc(var(--ds-action-emphasized-height) * var(--ui-scale, 1));
+  padding: 0 var(--ds-action-emphasized-pad-x);
+  border: 1px solid var(--ds-role-surface-emphasized-action);
+  border-radius: var(--ds-controlRadius);
+  background: var(--ds-role-surface-emphasized-action);
+  color: var(--ds-color-primaryInverse);
+  font-size: calc(var(--ds-action-emphasized-font-size) * var(--ui-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+}
+.app-v03 .hub-kakao-slot .kakao-connect[data-ui-role="action-emphasized"]:hover:not(:disabled) {
+  background: var(--ds-role-surface-emphasized-action-hover);
+  border-color: var(--ds-role-surface-emphasized-action-hover);
+  color: var(--ds-color-primaryInverse);
+}
+.app-v03 .hub-kakao-slot .kakao-connect[data-ui-role="action-emphasized"]:focus-visible {
+  outline: 2px solid var(--ds-role-border-focus);
+  outline-offset: 2px;
+}
+.app-v03 .hub-kakao-slot .kakao-connect[data-ui-role="action-emphasized"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .hub-brand span {
   display: inline;

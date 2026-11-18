@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { TestDatabasePanel } from "../TestDatabasePanel";
 import { BackupPanel } from "../ManagementUI";
 import { ReceiptArchive } from "../ReceiptArchive";
 import { SettingsPanel, type SettingsPanelHandle } from "../SettingsPanel";
@@ -9,18 +8,16 @@ import { Modal } from "../ui";
 import { PageHeading } from "../ui/PageHeading";
 import { HelpTooltip } from "../ui/HelpTooltip";
 import { usePageLeaveGuard } from "../shared/page-leave";
-import { DeveloperLab } from "../developer/DeveloperLab";
 
 declare const __BANDO_VERSION__: string;
 declare const __BANDO_BUILD_ID__: string;
 
-type SettingsTab = "basic" | "files" | "data" | "system" | "developer";
+type SettingsTab = "basic" | "files" | "data" | "system";
 const settingsTabs: { id: SettingsTab; title: string }[] = [
   { id: "basic", title: "기본 설정" },
   { id: "files", title: "파일 관리" },
   { id: "data", title: "데이터 관리" },
   { id: "system", title: "시스템" },
-  { id: "developer", title: "개발자 모드" },
 ];
 
 export function SettingsView({
@@ -134,15 +131,6 @@ export function SettingsView({
             <p>현재 버전: v{__BANDO_VERSION__}</p>
             <p>빌드 ID: {__BANDO_BUILD_ID__}</p>
           </section>
-        )}
-        {activeTab === "developer" && (
-          <div className="settings-support" id="settings-panel-developer"
-            role="tabpanel" aria-labelledby="settings-tab-developer">
-            <TestDatabasePanel state={state} onReset={onRestored} />
-            {window.bando?.isTestWorkspace && (
-              <DeveloperLab state={state} onNotice={onNotice} revision={state.revision ?? 0} />
-            )}
-          </div>
         )}
       </div>
       {requestedTab && (
