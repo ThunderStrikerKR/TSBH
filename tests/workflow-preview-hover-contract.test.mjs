@@ -38,6 +38,31 @@ test("blue temporary display is separate from orange committed selection", () =>
   assert.doesNotMatch(board, /maxHeight: previewLayer/);
 });
 
+test("active workflow preview keeps its stage action blue until the preview ends", () => {
+  const board = source("src/WorkflowBoard.tsx");
+  const css = source("src/styles/workflow.css");
+
+  assert.match(board, /hovered = stageHover\?\.groupId === g\.id/);
+  assert.match(board, /data-preview-hover-active=\{hovered \? "true" : undefined\}/);
+  assert.match(board, /const renderGroupCard = \(isPreview: boolean\) =>/);
+  assert.match(board, /\{renderGroupCard\(false\)\}/);
+  assert.match(board, /\{renderGroupCard\(true\)\}/);
+  assert.match(board, /onMouseEnter=\{isPreview \? keepStagePreview : \(event\) => startStagePreview/);
+  assert.match(board, /hoverDelay\.current = setTimeout\([\s\S]*?\}, 250\);/);
+  assert.match(board, /hoverReturnDelay\.current = setTimeout\([\s\S]*?\}, 250\);/);
+  assert.match(board, /stopStagePreview[\s\S]*?onStageHover\?\.\(undefined\)/);
+
+  // :hover handles instant entry; state handles overlay hit-testing and
+  // transitions across recipient rows until the same 250ms return expires.
+  const rule = '.app-v03 .hub-slot-3 .workflow-progress > .primary:is(:hover, [data-preview-hover-active="true"]):not(:disabled)';
+  assert.ok(css.includes(rule));
+  const style = css.slice(css.indexOf(rule), css.indexOf("}", css.indexOf(rule)));
+  assert.match(style, /background: var\(--ds-role-surface-emphasized-action-hover\)/);
+  assert.match(style, /border-color: var\(--ds-role-surface-emphasized-action-hover\)/);
+  assert.doesNotMatch(css, /\.workflow-card-overlay \.workflow-progress > \.primary:hover:not\(:disabled\)\s*\{/);
+  assert.doesNotMatch(board, /data-preview-hover-active=\{selected/);
+});
+
 test("shipment-list renderer only references its own inPreview argument", () => {
   const board = source("src/WorkflowBoard.tsx");
   const start = board.indexOf("const renderShipmentList = (inPreview: boolean)");

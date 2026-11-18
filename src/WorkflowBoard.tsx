@@ -623,6 +623,7 @@ export function WorkflowBoard({
                 <button
                   className="primary"
                   data-ui-role="action-primary"
+                  data-preview-hover-active={hovered ? "true" : undefined}
                   disabled={!ready || busy || remaining > 0 || ss.some((s) => s.transferred)}
                   aria-label={buttonLabel}
                   onMouseEnter={isPreview ? keepStagePreview : (event) => startStagePreview(event.currentTarget, g.id, step)}

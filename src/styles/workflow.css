@@ -178,9 +178,11 @@
   max-width: 140px;
   white-space: nowrap;
 }
-/* The stage action gets the same blue hover cue as other approved actions;
-   blue here indicates pointer hover, not committed workflow progress. */
-.app-v03 .hub-slot-3 .workflow-progress > .primary:hover:not(:disabled) {
+/* Keep the action's blue cue while its 250ms-delayed preview is active.
+   The in-place expanded clone obscures the original button, so CSS :hover
+   drops out. Stage hover state marks both the original and preview button;
+   the existing 250ms exit grace period clears it. */
+.app-v03 .hub-slot-3 .workflow-progress > .primary:is(:hover, [data-preview-hover-active="true"]):not(:disabled) {
   background: var(--ds-role-surface-emphasized-action-hover);
   border-color: var(--ds-role-surface-emphasized-action-hover);
   color: var(--ds-color-primaryInverse);
@@ -255,13 +257,6 @@
   box-shadow: inset 0 0 0 2px #f59e0b;
   border-radius: 4px;
   transition: background-color 180ms ease, box-shadow 180ms ease;
-}
-/* The hovered action must look the same as the unhovered action in the
-   normal expanded card, not turn blue solely because this is a preview. */
-.app-v03 .hub-slot-3 .workflow-card-overlay .workflow-progress > .primary:hover:not(:disabled) {
-  background: #e3e3e3;
-  border-color: #e3e3e3;
-  color: #111;
 }
 .workflow-card-overlay .workflow-shipment.chosen::before,
 .workflow-card-overlay .workflow-shipment.query-leaving::before {
