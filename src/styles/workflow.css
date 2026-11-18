@@ -200,6 +200,11 @@
   width: 100%;
   min-width: 0;
 }
+/* Portaled rows are outside .app-v03, so explicitly retain the same
+   foreground as the in-card rows instead of the global button color. */
+.workflow-preview-layer .workflow-shipment {
+  color: #f5f5f5;
+}
 .workflow-preview-layer .workflow-shipment.chosen::before,
 .workflow-preview-layer .workflow-shipment.query-leaving::before {
   animation: none;
