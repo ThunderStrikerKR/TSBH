@@ -19,8 +19,9 @@ test("all five content areas consume the SAME visible phase", () => {
   const msg = source("src/MessageWorkspace.tsx");
   const src = source("src/SourceDocument.tsx");
   assert.match(hub, /<MessageWorkspace[\s\S]*?sharedFadePhase=\{sharedFadePhase\}/);
-  assert.match(hub, /viewMode="reception"[\s\S]*?coordinatedFadePhase=\{sharedFadePhase\}/);
-  assert.match(hub, /viewMode="details"[\s\S]*?coordinatedFadePhase=\{sharedFadePhase\}/);
+  assert.equal((hub.match(/coordinatedFadePhase=\{sharedFadePhase\}/g) ?? []).length, 2);
+  assert.match(hub, /<MemoOrderDesk[\s\S]*?viewMode="reception"/);
+  assert.match(hub, /<MemoOrderDesk[\s\S]*?viewMode="details"/);
   assert.match(desk, /const recipientRevealPhase = props\.coordinatedFadePhase \?\? localRecipientPhase/);
   assert.match(desk, /const checksFadePhase = props\.coordinatedFadePhase \?\? localChecksPhase/);
   assert.match(desk, /coordinatedFadePhase=\{props\.coordinatedFadePhase\}/);
