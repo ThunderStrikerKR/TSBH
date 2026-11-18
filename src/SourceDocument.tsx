@@ -6,10 +6,9 @@ import { Modal } from "./ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ClientChooser } from "./ClientChooser";
-import { KakaoClients } from "./KakaoClients";
 import { LinkedText, sourceDocumentSpans } from "./LinkedText";
 import { useReadyContentFade } from "./shared/useReadyContentFade";
-import { ClientPicker, TierBadge } from "./ManagementUI";
+import { TierBadge } from "./ManagementUI";
 import { confirmAction } from "./dialogs";
 import { businessCoreCall } from "./tauri-bridge";
 import type { NoticeSink } from "./shared/notices";
@@ -97,10 +96,7 @@ export function SourceDocument({
   const sourceFadePhase = coordinatedFadePhase ?? localSourceFadePhase;
   // An inline filter allocated a new array on every repaint, restarting the
   // Rust client_candidates search even when the catalog had not changed.
-  const activeClients = useMemo(
-    () => state.clients.filter((candidate) => candidate.active !== false),
-    [state.clients],
-  );
+
   useEffect(() => {
     if (!text.trim() || client || formal) return;
     let current = true;
@@ -386,32 +382,6 @@ export function SourceDocument({
               <button disabled={busy} onClick={() => setDealer(true)}>
                 거래처 찾기
               </button>
-              {!formal && !busy && (
-                <ClientPicker
-                  compact
-                  clients={activeClients}
-                  raw={text}
-                  onSelect={(c) =>
-                    void Promise.resolve()
-                      .then(() => onDealer(c))
-                      .catch((e) => setError(String(e)))
-                  }
-                />
-              )}
-              {!formal && (
-                <KakaoClients
-                  state={state}
-                  order={order}
-                  windows={windows}
-                  onWindows={setWindows}
-                  onSelect={async (id) => {
-                    const c = state.clients.find((c) => c.id === id);
-                    if (c) await onDealer(c);
-                  }}
-                  onSave={onSaveState}
-                  onNotice={onNotice}
-                />
-              )}
             </div>
           ))}
       </div>
@@ -516,9 +486,8 @@ export function SourceDocument({
           </button>
         )}
       </div>
-      {!formal && !!text && (
-        <div className="source-actions">
-          {!!text && (
+      <div className="source-actions">
+          {!formal && !!text && (
             <button
               disabled={busy}
               onClick={async () => {
@@ -544,7 +513,7 @@ export function SourceDocument({
               내용 삭제
             </button>
           )}
-          {!!text && (
+          {!formal && !!text && (
             <span className="source-actions-right">
               <button disabled={busy || order.analysisRaw !== text || !onManual} onClick={onManual}>
                 수동 분류
@@ -554,9 +523,7 @@ export function SourceDocument({
               </button>
             </span>
           )}
-        </div>
-      )}
-      {formal && <div className="source-footer-space" aria-hidden="true" />}
+      </div>
       {showOcrFailure && (
         <Modal title="OCR 실행 오류" onClose={() => setShowOcrFailure(false)}>
           <p>OCR 실행 중 오류가 발생했습니다. 기존 발주 원문과 주문 데이터는 변경되지 않았습니다.</p>

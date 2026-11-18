@@ -276,7 +276,8 @@
   border-color: var(--ds-role-surface-emphasized-action-hover);
   color: var(--ds-color-primaryInverse);
 }
-.source-pane .source-top:empty { display: none; }
+/* Preserve the client-slot box even before a dealer is known. */
+.source-pane .source-top:empty { display: flex; }
 .source-pane .source-document.source-awaiting-input {
   padding: 0;
 }
