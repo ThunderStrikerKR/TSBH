@@ -1,6 +1,7 @@
 import { nativePaymentWasCopied } from "./native-automatic-message";
 import { workflowGroupOpen } from "./workspace-selection";
 import { useNativeWorkflowBoard } from "./orders/useNativeWorkflowBoard";
+import { useNativeShipmentRead } from "./orders/useNativeShipmentRead";
 import { memo, useEffect, useRef, useState } from "react";
 import { auditReactRender } from "./perf-audit";
 import { confirmAction } from "./dialogs";
@@ -79,7 +80,8 @@ export function WorkflowBoard({
   auditReactRender("WorkflowBoard");
   const [undoDelete, setUndoDelete] = useState<{ gid: string; at: string }>();
   const native = useNativeWorkflowBoard(state, previewReady);
-  const ready = previewReady && native.ready;
+  const shipmentRead = useNativeShipmentRead(state, previewReady);
+  const ready = previewReady && native.ready && shipmentRead.ready;
   // A newly selected group opens automatically; all other groups are closed.
   useEffect(() => setManuallyClosedGroup(undefined), [selection?.groupId]);
   useEffect(() => {
@@ -284,8 +286,8 @@ export function WorkflowBoard({
   ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
     <div className="workflow-board" aria-label="진행 중인 배송 묶음" aria-busy={!ready}>
-      {(previewError || native.error) && (
-        <p role="alert">업무 미리보기 계산 오류: {previewError || native.error}</p>
+      {(previewError || native.error || shipmentRead.error) && (
+        <p role="alert">업무 미리보기 계산 오류: {previewError || native.error || shipmentRead.error}</p>
       )}
       {!entries.length && (
         <p className="muted">거래처와 발주 원문을 입력하면 수취인별 배송 건이 생성됩니다.</p>
@@ -386,10 +388,12 @@ export function WorkflowBoard({
         const nativeGroup = native.byId[g.id];
         const ss = groupShipments(state, g.id),
           step = nativeGroup?.step ?? 0,
-          first = shipmentContext(state, ss[0]),
+          first = shipmentContext(state, ss[0], shipmentRead.shipments.get(ss[0].id)?.client),
           selected = selection?.groupId === g.id,
           hovered = stageHover?.groupId === g.id,
           open = workflowGroupOpen(g.id, selection?.groupId, manuallyClosedGroup);
+        const dealerName = first.client?.displayName || first.client?.name ||
+          (shipmentRead.ready ? "거래처 확인 필요" : "거래처 확인 중");
         const label =
           g.needsNotice && step >= 2
             ? "계좌 재안내 완료"
@@ -399,7 +403,7 @@ export function WorkflowBoard({
                   "주문 확인 완료",
                   "운임 적용",
                   "계좌 안내 완료",
-                  first.client.payment === "POSTPAID" ? "후불 출고 승인" : "입금 확인 완료",
+                  first.client?.payment === "POSTPAID" ? "후불 출고 승인" : "입금 확인 완료",
                 ][step];
         // The Rust preview already decides VAT per shipment. Present mixed
         // groups with actual included/excluded counts, not the ambiguous
@@ -518,7 +522,7 @@ export function WorkflowBoard({
               <button
                 className="flow-heading-toggle"
                 data-ui-role="nav-subsection"
-                aria-label={(first.client.displayName || first.client.name) + ((open || isPreview) ? " 묶음 접기" : " 묶음 펼치기")}
+                aria-label={dealerName + ((open || isPreview) ? " 묶음 접기" : " 묶음 펼치기")}
                 aria-expanded={open || isPreview}
                 onClick={() => {
                   if (isPreview) {
@@ -539,7 +543,7 @@ export function WorkflowBoard({
               >
                 <span className="flow-toggle-icon" aria-hidden="true">{(open || isPreview) ? "▾" : "▸"}</span>
                 <span className="flow-group-name">
-                  <b>{first.client.displayName || first.client.name}</b>
+                  <b>{first.client.displayName || dealerName}</b>
                 </span>
                 {first.order.orderType !== "RETAIL" && nativeGroup && (
                   <SignalLights step={step} notice={g.needsNotice} />
@@ -557,13 +561,13 @@ export function WorkflowBoard({
               <button
                 className="trash-button"
                 disabled={!ready || (first.order.receptionVersion === 1 && !first.order.confirmedAt)}
-                aria-label={"주문 묶음 삭제 " + first.client.name}
+                aria-label={"주문 묶음 삭제 " + dealerName}
                 onClick={async () => {
                   if (isPreview) stopStagePreview();
                   if (
                     busy || !ready ||
                     !(await confirmAction(
-                      first.client.name +
+                      dealerName +
                         " / 배송 " +
                         ss.length +
                         "건 묶음을 삭제할까요? 접수 원문 / 감사 기록은 보존됩니다.",
@@ -708,7 +712,7 @@ export function WorkflowBoard({
               <div
                 className="workflow-card-overlay"
                 role="group"
-                aria-label={(first.client.displayName || first.client.name) + " 펼침 미리보기"}
+                aria-label={dealerName + " 펼침 미리보기"}
                 onMouseEnter={keepStagePreview}
                 onMouseLeave={scheduleStagePreviewExit}
               >
