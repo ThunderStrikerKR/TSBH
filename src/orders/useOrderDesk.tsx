@@ -573,10 +573,16 @@ export function useOrderDesk({
     .map((b) => {
       const r = draft.recipients.find((r) => r.id === b.recipientId),
         item = r?.items.find((i) => i.id === b.itemId);
+      // This is a read-only description of the dealer already chosen by Rust.
+      // An unresolved suggestion remains an ACTION; no candidate is applied here.
+      const autoDealerApplied = b.kind === "CLIENT_MATCH_EVIDENCE" &&
+        !!client && draft.clientId === draft.clientMatch?.clientId;
       return {
         ...b,
+        title: autoDealerApplied ? "거래처 자동 적용" : b.title,
         canApproveOne: nativeIssues.ready && approvalFlags.get(b.issueId) === true,
         detail:
+          (autoDealerApplied ? `${client.name} 거래처를 자동 적용했습니다. ` : "") +
           b.detail +
           (b.kind === "APPLIED" ? " × " + item?.quantity : "") +
           (item?.recognitionReason ? " / " + item.recognitionReason : ""),

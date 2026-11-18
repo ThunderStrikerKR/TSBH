@@ -28,6 +28,10 @@ test("staff review shows both evidence and conflict without a second notificatio
   assert.match(issues, /CLIENT_MATCH_ERROR/);
   assert.match(checks, /CLIENT_MATCH_EVIDENCE/);
   assert.match(checks, /거래처 확인/);
+  assert.match(desk, /const autoDealerApplied = b\.kind === "CLIENT_MATCH_EVIDENCE"/);
+  assert.match(desk, /draft\.clientId === draft\.clientMatch\?\.clientId/);
+  assert.match(desk, /title: autoDealerApplied \? "거래처 자동 적용" : b\.title/);
+  assert.match(desk, /거래처를 자동 적용했습니다/);
   assert.match(desk, /\.source-top \.receipt-client button/);
 });
 
