@@ -148,6 +148,27 @@ else{
     row.module,"| live importers:",row.directRuntimeImporters.length);
   console.log("Read docs/rust-migration/03-ts-retirement-checklist.md before deletions.");
 }
+// Unlike the broad --strict inventory, this narrow command is a real gate:
+// the compiled Rust recognition and order-issues paths must not be imported
+// by the app entrypoint (including lazy developer TEST routes).
+if (process.argv.includes("--guard-native-recognition")) {
+  const guarded = ["src/parser.ts", "src/validation.ts"];
+  const violations = rows.filter(row =>
+    guarded.includes(row.module) && row.reachableFromApp);
+  console.log("BANDO_NATIVE_SOURCE_BOUNDARY", JSON.stringify({
+    entry: "src/main.tsx",
+    checkedSourceFiles: all.length,
+    guarded,
+    unexpectedRuntimeDependencies: violations.map(row => ({
+      module: row.module,
+      directRuntimeImporters: row.directRuntimeImporters,
+    })),
+  }));
+  if (violations.length) {
+    console.error("BLOCKED: Rust-owned TS recognition/validation is reachable from app.");
+    process.exitCode = 1;
+  }
+}
 if(process.argv.includes("--strict")&&report.reachableLegacyModules>0){
   console.error("BLOCKED: TS business runtime dependencies remain.");
   process.exitCode=1;

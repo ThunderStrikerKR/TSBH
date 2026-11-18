@@ -52,6 +52,17 @@ test("TypeScript business retirement audit reads actual app source import graph"
     row.module==="src/factory-export.ts"&&row.exists&&row.reachableFromApp),
     "ExcelJS serializer remains a legitimate TS module");
 });
+test("native reception and issue validation never depend on legacy TS from app",()=>{
+  const run=spawnSync(process.execPath,[script,"--guard-native-recognition"],{
+    cwd:root,encoding:"utf8",timeout:60000,maxBuffer:8*1024*1024,
+  });
+  assert.equal(run.status,0,run.stderr);
+  const line=run.stdout.split("\n").find(line=>line.startsWith("BANDO_NATIVE_SOURCE_BOUNDARY "));
+  assert.ok(line,"Native recognition source boundary must be reported");
+  const audit=JSON.parse(line.slice("BANDO_NATIVE_SOURCE_BOUNDARY ".length));
+  assert.deepEqual(audit.guarded,["src/parser.ts","src/validation.ts"]);
+  assert.deepEqual(audit.unexpectedRuntimeDependencies,[]);
+});
 test("strict TS retirement audit follows the actual live dependency count",()=>{
   const inspection=spawnSync(process.execPath,[script,"--json"],{
     cwd:root,encoding:"utf8",timeout:60000,
