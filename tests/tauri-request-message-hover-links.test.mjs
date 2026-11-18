@@ -16,6 +16,23 @@ const contains = (spans, text, targetId, field, term) =>
   spans.some((s) => s.targetId === targetId && s.field === field &&
     text.slice(s.start, s.end).includes(term));
 
+test("classified source and detail hover release waits 180ms without committing workflow selection", () => {
+  const linked = read("src/LinkedText.tsx");
+  const hub = read("src/HubWorkspace.tsx");
+  const desk = read("src/OrderDesk.tsx");
+  const hook = read("src/orders/useOrderDesk.tsx");
+  assert.match(linked, /clearHover\?: \(\) => void/);
+  assert.equal((linked.match(/c\.clearHover \?\? \(\(\) => c\.setActive\(""\)\)/g) ?? []).length, 2);
+  assert.match(hub, /linkHoverOffTimer\.current = setTimeout\(\(\) => \{[\s\S]*?setActive\(""\);[\s\S]*?\}, 180\)/);
+  assert.match(hub, /if \(linkHoverOffTimer\.current\) clearTimeout\(linkHoverOffTimer\.current\)/);
+  const setter = hub.split("  const setActiveLive = ")[1]?.split("  const clearLinkHoverLive = ")[0] ?? "";
+  assert.doesNotMatch(setter, /setSelectedLive|commitSelection/);
+  assert.match(hub, /const linkedHoverShipment = active && previewReady/);
+  assert.match(hub, /const visibleSelection = hoverSelection \?\? linkedHoverSelection \?\? selected/);
+  assert.match(desk, /clearHover: linkController\?\.clearHover/);
+  assert.match(hook, /clearHover\?: \(\) => void/);
+});
+
 test("default request hover links missing-address/contact, item quantity, model and name to the actual field", () => {
   const data = order(recipient("r1", "김민수", [
     ["i1", "BD 709"], ["i2", "BD 708"],

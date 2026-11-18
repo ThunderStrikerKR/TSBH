@@ -14,6 +14,7 @@ export const LinkContext = createContext<{
   active: string;
   recipientId?: string;
   setActive: (key: string) => void;
+  clearHover?: () => void;
 }>({ active: "", setActive: (_key: string) => {} });
 export function Linked({ linkKey, children }: { linkKey: string; children: ReactNode }) {
   const c = useContext(LinkContext);
@@ -23,7 +24,7 @@ export function Linked({ linkKey, children }: { linkKey: string; children: React
       className={"linked-field " + (c.active === linkKey ? "linked-active" : "")}
       onMouseEnter={() => c.setActive(linkKey)}
       onMouseLeave={(e) => {
-        if (!e.currentTarget.contains(document.activeElement)) c.setActive("");
+        if (!e.currentTarget.contains(document.activeElement)) (c.clearHover ?? (() => c.setActive("")))();
       }}
       onFocusCapture={() => c.setActive(linkKey)}
       onBlurCapture={() => c.setActive("")}
@@ -274,7 +275,7 @@ export function LinkedText({
         }
         onMouseEnter={() => c.setActive(key)}
         onMouseLeave={(e) => {
-          if (document.activeElement !== e.currentTarget) c.setActive("");
+          if (document.activeElement !== e.currentTarget) (c.clearHover ?? (() => c.setActive("")))();
         }}
         onFocus={() => c.setActive(key)}
         onBlur={() => c.setActive("")}

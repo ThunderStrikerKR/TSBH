@@ -52,6 +52,12 @@ export function HubWorkspace(props: Props) {
       lastVisiblePreview.current = undefined;
     }
   }, [draft.id]);
+  // Classified-field hover gets a grace period before clearing.
+  const linkHoverOffTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => {
+    if (linkHoverOffTimer.current) clearTimeout(linkHoverOffTimer.current);
+    linkHoverOffTimer.current = undefined;
+  }, [draft.id]);
   const [source, setSource] = useState<HTMLElement | null>(null),
     [messages, setMessages] = useState<HTMLElement | null>(null),
     [details, setDetails] = useState<HTMLElement | null>(null),
@@ -218,7 +224,23 @@ export function HubWorkspace(props: Props) {
   const hoverSelection = previewReady
     ? hoveredWorkflowSelection(preview, stageHover?.groupId, selected)
     : undefined;
-  const visibleSelection = hoverSelection ?? selected;
+  // A linked token only changes the visible preview, not committed selection.
+  const linkedHoverShipment = active && previewReady
+    ? activeShipments(preview).find((ship) =>
+        preview.orders.find((order) => order.id === ship.orderId)
+          ?.recipients.some((recipient) =>
+            recipient.id === ship.recipientId &&
+            (active.startsWith(recipient.id + ":") ||
+              recipient.items.some((item) => active.startsWith(item.id + ":"))),
+          ),
+      )
+    : undefined;
+  const linkedHoverSelection = linkedHoverShipment ? {
+    orderId: linkedHoverShipment.orderId,
+    groupId: linkedHoverShipment.groupId,
+    shipmentId: linkedHoverShipment.id,
+  } : undefined;
+  const visibleSelection = hoverSelection ?? linkedHoverSelection ?? selected;
   const detail = visibleSelection
     ? visibleSelection.orderId === draft.id
       ? draft
@@ -381,31 +403,24 @@ export function HubWorkspace(props: Props) {
     );
   const setSelectedLive = useEventCallback(setSelected);
   const setActiveLive = useEventCallback((key: string) => {
+    if (linkHoverOffTimer.current) clearTimeout(linkHoverOffTimer.current);
+    linkHoverOffTimer.current = undefined;
     setActive(key);
-    if (!key) return;
-    const target = activeShipments(preview).find((ship) =>
-      preview.orders.find((order) => order.id === ship.orderId)
-        ?.recipients.some((recipient) =>
-          recipient.id === ship.recipientId &&
-          (key.startsWith(recipient.id + ":") ||
-            recipient.items.some((item) => key.startsWith(item.id + ":"))),
-        ),
-    );
-    if (target)
-      setSelectedLive((previous) =>
-        previous?.shipmentId === target.id ? previous : {
-          orderId: target.orderId,
-          groupId: target.groupId,
-          shipmentId: target.id,
-        },
-      );
+  });
+  const clearLinkHoverLive = useEventCallback(() => {
+    if (linkHoverOffTimer.current) clearTimeout(linkHoverOffTimer.current);
+    linkHoverOffTimer.current = setTimeout(() => {
+      linkHoverOffTimer.current = undefined;
+      setActive("");
+    }, 180);
   });
   const linkController = useMemo(() => ({
     active,
     recipientId: linkedRecipient?.recipient.id,
     setActive: setActiveLive,
-  }), [active, linkedRecipient?.recipient.id, setActiveLive]);
-  const visibleReceptionId = hoverSelection?.orderId ?? receptionId;
+    clearHover: clearLinkHoverLive,
+  }), [active, linkedRecipient?.recipient.id, setActiveLive, clearLinkHoverLive]);
+  const visibleReceptionId = hoverSelection?.orderId ?? linkedHoverSelection?.orderId ?? receptionId;
   const receptionOrder =
     visibleReceptionId === draft.id
       ? draft

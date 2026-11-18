@@ -61,8 +61,8 @@ test("hover selects each actual source and detail and scrolls into stage content
   const hub=read("src/HubWorkspace.tsx");
   const board=read("src/WorkflowBoard.tsx");
   assert.match(hub,/hoveredWorkflowSelection\(preview, stageHover\?\.groupId, selected\)/);
-  assert.match(hub,/const visibleSelection = hoverSelection \?\? selected/);
-  assert.match(hub,/const visibleReceptionId = hoverSelection\?\.orderId \?\? receptionId/);
+  assert.match(hub,/const visibleSelection = hoverSelection \?\? linkedHoverSelection \?\? selected/);
+  assert.match(hub,/const visibleReceptionId = hoverSelection\?\.orderId \?\? linkedHoverSelection\?\.orderId \?\? receptionId/);
   assert.match(hub,/visibleReceptionId === draft\.id/);
   assert.match(hub,/const detail = visibleSelection/);
   assert.match(hub,/workflowSelection=\{visibleSelection\}/);
