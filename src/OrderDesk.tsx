@@ -200,6 +200,7 @@ export function OrderDesk(props: OrderDeskProps) {
         active: highlight,
         recipientId: linkController?.recipientId,
         setActive: setHighlight,
+        beginHover: linkController?.beginHover,
         clearHover: linkController?.clearHover,
       }}
     >
