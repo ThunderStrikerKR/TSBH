@@ -112,29 +112,57 @@ export function WorkflowBoard({
     previewButton = useRef<HTMLButtonElement | null>(null);
   const [previewLayer, setPreviewLayer] = useState<{
     groupId: string; left: number; top: number; width: number;
-    maxHeight: number; above: boolean;
+    maxHeight: number; above: boolean; height?: number; backgroundColor: string;
   }>();
-  // Keep the fixed portal inside the window and close to its order card.
-  // Its height follows its contents; only long shipment lists need scrolling.
+  // A preview is the same shipment list as the expanded card, drawn over its
+  // exact content box. No independent popup width, padding or row measurements.
   const positionPreview = (button: HTMLButtonElement, groupId: string, shipmentCount: number) => {
-    const rect = button.getBoundingClientRect();
-    const cardRect = button.closest<HTMLElement>(".workflow-group")?.getBoundingClientRect() ?? rect;
+    const buttonRect = button.getBoundingClientRect();
+    const card = button.closest<HTMLElement>(".workflow-group");
+    const cardRect = card?.getBoundingClientRect() ?? buttonRect;
+    const cardStyle = window.getComputedStyle(card ?? button);
+    const inset = (value: string) => parseFloat(value) || 0;
+    const expanded = card?.querySelector<HTMLElement>(":scope > .workflow-shipment-list");
+    const expandedRect = expanded?.getBoundingClientRect();
     const margin = 8;
-    const width = Math.max(0, Math.min(340, cardRect.width - 12, window.innerWidth - margin * 2));
-    const desiredHeight = Math.min(280, 44 + shipmentCount * 40);
-    const below = Math.max(0, window.innerHeight - rect.bottom - margin - 4);
-    const above = Math.max(0, rect.top - margin - 4);
-    const showAbove = below < desiredHeight && above > below;
-    setPreviewLayer({
+    // Match the actual card's content width; the old 340px cap left the
+    // preview narrower than the identical expanded table.
+    const contentLeft = cardRect.left +
+      inset(cardStyle.borderLeftWidth) + inset(cardStyle.paddingLeft);
+    const contentWidth = cardRect.width -
+      inset(cardStyle.borderLeftWidth) - inset(cardStyle.borderRightWidth) -
+      inset(cardStyle.paddingLeft) - inset(cardStyle.paddingRight);
+    const width = Math.max(0, Math.min(
+      expandedRect?.width ?? contentWidth, window.innerWidth - margin * 2,
+    ));
+    const left = Math.max(margin, Math.min(
+      expandedRect?.left ?? contentLeft, window.innerWidth - width - margin,
+    ));
+    const naturalTop = expandedRect?.top ?? (
+      cardRect.bottom - inset(cardStyle.borderBottomWidth) - inset(cardStyle.paddingBottom)
+    );
+    const below = Math.max(0, window.innerHeight - naturalTop - margin);
+    const above = Math.max(0, cardRect.top - margin);
+    const estimatedHeight = 26 + shipmentCount * 41;
+    // If a real expanded list exists, overlap it pixel-for-pixel. If it is
+    // collapsed, extend from the spot where expanding would place that list,
+    // choosing above only when the viewport lacks enough room below.
+    const showAbove = !expandedRect && below < estimatedHeight && above > below;
+    const next = {
       groupId,
-      left: Math.max(margin, Math.min(cardRect.right - width - 6, window.innerWidth - width - margin)),
-      // Anchoring above with a transform uses the actual rendered height,
-      // avoiding clipping when text wraps or the UI scale changes.
-      top: showAbove ? rect.top - 4 : rect.bottom + 4,
+      left,
+      top: expandedRect ? expandedRect.top : showAbove ? cardRect.top - 2 : naturalTop,
       width,
-      maxHeight: Math.min(280, showAbove ? above : below),
+      height: expandedRect && width === expandedRect.width ? expandedRect.height : undefined,
+      maxHeight: expandedRect ? expandedRect.height :
+        Math.max(0, showAbove ? above : below),
       above: showAbove,
-    });
+      backgroundColor: card ? cardStyle.backgroundColor : "#202020",
+    };
+    setPreviewLayer((previous) => previous &&
+      Object.keys(next).every((key) =>
+        previous[key as keyof typeof next] === next[key as keyof typeof next])
+      ? previous : next);
   };
   const stopStagePreview = () => {
     if (hoverDelay.current) clearTimeout(hoverDelay.current);
@@ -184,9 +212,14 @@ export function WorkflowBoard({
       else stopStagePreview();
     };
     const board = boardRef.current;
+    const card = previewButton.current?.closest<HTMLElement>(".workflow-group");
+    const resizeObserver = card && typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(update) : undefined;
+    if (card) resizeObserver?.observe(card);
     board?.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
     return () => {
+      resizeObserver?.disconnect();
       board?.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
     };
@@ -656,7 +689,9 @@ export function WorkflowBoard({
                       aria-label={(first.client.displayName || first.client.name) + " 배송 건 미리보기"}
                       style={{
                         left: previewLayer.left, top: previewLayer.top,
-                        width: previewLayer.width, maxHeight: previewLayer.maxHeight,
+                        width: previewLayer.width, height: previewLayer.height,
+                        maxHeight: previewLayer.maxHeight,
+                        backgroundColor: previewLayer.backgroundColor,
                         transform: previewLayer.above ? "translateY(-100%)" : undefined,
                       }}
                       onMouseEnter={keepStagePreview}
