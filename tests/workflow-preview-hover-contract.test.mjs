@@ -16,20 +16,33 @@ test("expanded and hovered workflow groups share one shipment table", () => {
   assert.doesNotMatch(board, /className="app-v03 workflow-preview-layer"/);
 });
 
-test("preview matches the expanded content box without independent size caps", () => {
+test("preview uses natural row height, only scrolls when viewport requires it", () => {
   const board = source("src/WorkflowBoard.tsx");
   const css = source("src/styles/workflow.css");
   assert.match(board, /querySelector<HTMLElement>\(":scope > \.workflow-shipment-list"\)/);
   assert.match(board, /expandedRect\?\.width \?\? contentWidth/);
-  assert.match(board, /expandedRect \? expandedRect\.top/);
-  assert.match(board, /height: expandedRect && width === expandedRect\.width \? expandedRect\.height/);
-  assert.match(board, /backgroundColor: card \? cardStyle\.backgroundColor/);
-  assert.doesNotMatch(board, /Math\.min\(340,/);
+  assert.match(board, /\.querySelector<HTMLElement>\("\.workflow-shipment-list"\)\?\.scrollHeight/);
+  assert.match(board, /maxHeight: availableHeight/);
+  assert.doesNotMatch(board, /height:\s*previewLayer\.height/);
+  assert.doesNotMatch(board, /overflowY:\s*"hidden"/);
+  assert.doesNotMatch(board, /maxHeight:\s*expandedRect\s*\?/);
+  assert.match(board, /useLayoutEffect\(\(\) =>/);
+  assert.match(board, /resizeObserver\?\.observe\(list\)/);
+  assert.match(board, /hovered && !open && previewLayer\?\.groupId === g\.id/);
   const layer = css.slice(css.indexOf(".workflow-preview-layer {"),
     css.indexOf(".workflow-preview-layer .workflow-shipment-list {"));
   assert.match(layer, /padding:\s*0;/);
   assert.match(layer, /border:\s*0;/);
   assert.match(layer, /box-shadow:\s*none;/);
+  assert.match(layer, /overflow-y:\s*auto;/);
+});
+
+test("clicking a shipment preview selects it and expands its order card", () => {
+  const board = source("src/WorkflowBoard.tsx");
+  assert.match(board, /if \(inPreview\) \{[\s\S]*?setManuallyClosedGroup\(undefined\);[\s\S]*?stopStagePreview\(\);[\s\S]*?\}[\s\S]*?onSelect\(\{/);
+  assert.match(board, /useEffect\(\(\) => setManuallyClosedGroup\(undefined\), \[selection\?\.groupId\]\)/);
+  const selection = source("src/workspace-selection.ts");
+  assert.match(selection, /return selectedGroupId === groupId && manuallyClosedGroupId !== groupId/);
 });
 
 test("source and detail hover use the actual delayed controller", () => {
