@@ -211,6 +211,29 @@ export const SettingsPanel = forwardRef<SettingsPanelHandle, {
       )}
 
 
+      <h2 className="settings-help-heading">발주 이미지 자동 수신 폴더
+        <HelpTooltip title="발주 이미지 자동 수신 폴더"
+          purpose="저장한 발주서 이미지를 새 접수 화면에서 자동으로 인식합니다."
+          steps={["이미지 전용 폴더를 선택합니다.", "설정 저장을 누릅니다.", "프로그램 실행 중 PNG·JPG·BMP 이미지를 폴더에 저장합니다.", "OCR 검토창에서 인식 내용을 확인하고 반영합니다."]}
+          caution="공장 회신 폴더와 별도로 지정하며, 자동 인식 결과는 검토 전 주문에 저장되지 않습니다." />
+      </h2>
+      <p>{window.bando?.isTestWorkspace ? "격리 TEST / Excel / 발주 이미지 수신" :
+        (s.orderImageInboxDirectory || "미설정: 이미지 폴더 자동 수신 중지")}</p>
+      {!window.bando?.isTestWorkspace && (
+        <div className="settings-actions">
+          <button type="button" data-ui-role="action-standard" disabled={saving}
+            onClick={() => void run(async () => {
+              if (!window.bando?.chooseOrderImageInboxDirectory)
+                throw Error("발주 이미지 폴더 선택 기능을 사용할 수 없습니다.");
+              const folder = await window.bando.chooseOrderImageInboxDirectory();
+              if (folder) setS((current) => ({ ...current, orderImageInboxDirectory: folder }));
+            })}>수신 폴더 선택</button>
+          <button type="button" data-ui-role="action-quiet"
+            disabled={saving || !s.orderImageInboxDirectory}
+            onClick={() => setS((current) => ({ ...current, orderImageInboxDirectory: "" }))}>자동 수신 중지</button>
+        </div>
+      )}
+
       </div>
       <div hidden={section !== "basic"}>
       <h2 className="settings-help-heading">입금 계좌 <HelpTooltip title="입금 계좌" purpose="거래처에 입금 안내를 보낼 때 사용할 은행 계좌를 등록합니다." steps={["은행명, 계좌번호, 예금주를 입력해 계좌를 추가합니다.", "필요하면 반도스탠드와 반도몰에 사용할 기본 계좌를 각각 선택합니다.", "설정 저장을 누릅니다."]} result="주문 상품 종류에 맞는 계좌를 입금 안내에 사용할 수 있습니다." caution="거래처에 지정된 계좌나 주문에서 직접 선택한 계좌가 있다면 그 설정이 우선합니다. 부가세는 주문별 조건에 따라 계산합니다." /></h2>

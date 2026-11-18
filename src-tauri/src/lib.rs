@@ -1,5 +1,6 @@
 mod reception;
 mod ocr;
+mod order_image_inbox;
 mod factory_conflict;
 mod factory_reply_watch;
 mod export_file;
@@ -1223,6 +1224,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(kakao_dock::Dock::default())
         .manage(factory_reply_watch::InboxWatch::default())
+        .manage(order_image_inbox::OrderImageWatch::default())
         .plugin(tauri_plugin_dialog::init())
         // Restore only the BANDO HUB main window. External KakaoTalk windows
         // are managed separately by kakao_dock and must never be persisted here.
@@ -1318,7 +1320,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             state_load, state_save, business_core_call, settings_patch, price_set, clipboard_write, clipboard_read,
-            ocr::capture_ocr, ocr::cancel_ocr,
+            ocr::capture_ocr, ocr::clipboard_ocr, ocr::cancel_ocr,
+            order_image_inbox::choose_order_image_inbox_directory,
+            order_image_inbox::order_image_watch_scan, order_image_inbox::order_image_ocr,
             notification_store::hub_notifications_list,
             notification_store::hub_notifications_add,
             notification_store::hub_notifications_mark_read,

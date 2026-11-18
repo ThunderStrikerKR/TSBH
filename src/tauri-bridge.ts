@@ -116,6 +116,10 @@ const api: Api = {
     return invoke<string>("clipboard_read");
   },
   captureOcr: () => invoke<OcrCapture>("capture_ocr"),
+  clipboardOcr: () => invoke<OcrCapture>("clipboard_ocr"),
+  chooseOrderImageInboxDirectory: async () => (await invoke<string | null>("choose_order_image_inbox_directory")) ?? undefined,
+  orderImageWatchScan: () => invoke<string[]>("order_image_watch_scan"),
+  orderImageOcr: (filename) => invoke<OcrCapture>("order_image_ocr", { filename }),
   cancelOcr: () => invoke<void>("cancel_ocr"),
   openProduct: (url) => invoke<void>("product_open", { target: url }),
   catalogReport: () => invoke<CatalogReport>("catalog_report"),

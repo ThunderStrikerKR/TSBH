@@ -37,6 +37,63 @@ pub async fn capture_ocr(app: tauri::AppHandle) -> Result<OcrCapture, String> {
     }).await.map_err(|e| format!("OCR 캡처 작업 중단: {e}"))?
 }
 
+
+#[tauri::command]
+pub async fn clipboard_ocr(app: tauri::AppHandle) -> Result<OcrCapture, String> {
+    if OCR_RUNNING.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+        return Err("이미 OCR 인식을 진행 중입니다.".into());
+    }
+    OCR_CANCEL_REQUESTED.store(false, Ordering::Release);
+    let guard = RunningGuard;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        #[cfg(windows)]
+        {
+            let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+            let image = clipboard.get_image().map_err(|_| "클립보드에 이미지가 없습니다.".to_string())?;
+            recognize_rgba(app, image.width, image.height, &image.bytes)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = app;
+            Err("클립보드 이미지 OCR은 Windows에서만 지원합니다.".into())
+        }
+    }).await.map_err(|e| format!("클립보드 OCR 작업 중단: {e}"))?
+}
+
+pub async fn recognize_inbox_image(app: tauri::AppHandle, path: std::path::PathBuf)
+    -> Result<OcrCapture, String>
+{
+    if OCR_RUNNING.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+        return Err("이미 OCR 인식을 진행 중입니다.".into());
+    }
+    OCR_CANCEL_REQUESTED.store(false, Ordering::Release);
+    let guard = RunningGuard;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        #[cfg(windows)]
+        {
+            let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+            if bytes.is_empty() || bytes.len() > 15_000_000 {
+                return Err("발주 이미지 크기가 허용 범위를 벗어났습니다.".into());
+            }
+            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+            let mime = match ext.as_str() {
+                "png" => "image/png",
+                "jpg" | "jpeg" => "image/jpeg",
+                "bmp" => "image/bmp",
+                _ => return Err("PNG·JPG·BMP 이미지만 인식할 수 있습니다.".into()),
+            };
+            recognize_image_bytes(app, &bytes, &ext, mime, 0, 0)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (app, path);
+            Err("발주 이미지 OCR은 Windows에서만 지원합니다.".into())
+        }
+    }).await.map_err(|e| format!("발주 이미지 OCR 작업 중단: {e}"))?
+}
+
 /// Cancels both the screen-selection wait and an active PaddleOCR process.
 /// No order text is changed by a cancelled request.
 #[tauri::command]
@@ -85,9 +142,7 @@ impl Drop for CaptureWindowGuard {
 
 #[cfg(windows)]
 fn capture_blocking(app: tauri::AppHandle) -> Result<OcrCapture, String> {
-    use base64::Engine;
-    use tauri::Emitter;
-    use std::{fs, io::Write, process::{Command, Stdio}, time::{Duration, Instant}};
+    use std::time::Duration;
 
     let (width, height, rgba) = {
         // Scope the window guard to capture only. OCR recognition must start
@@ -96,6 +151,11 @@ fn capture_blocking(app: tauri::AppHandle) -> Result<OcrCapture, String> {
         std::thread::sleep(Duration::from_millis(250));
         screen_snip::snip()?
     };
+    recognize_rgba(app, width, height, &rgba)
+}
+
+#[cfg(windows)]
+fn recognize_rgba(app: tauri::AppHandle, width: usize, height: usize, rgba: &[u8]) -> Result<OcrCapture, String> {
     if OCR_CANCEL_REQUESTED.load(Ordering::Acquire) {
         return Err(OCR_CANCELLED.into());
     }
@@ -104,7 +164,18 @@ fn capture_blocking(app: tauri::AppHandle) -> Result<OcrCapture, String> {
     if width == 0 || height == 0 || count > 24_000_000 || count != rgba.len() {
         return Err("캡처 범위가 너무 크거나 이미지 형식이 잘못됐습니다. 더 작은 범위를 선택해 주세요.".into());
     }
-    let bmp = bmp_from_rgba(width, height, &rgba)?;
+    let bmp = bmp_from_rgba(width, height, rgba)?;
+    recognize_image_bytes(app, &bmp, "bmp", "image/bmp", width, height)
+}
+
+#[cfg(windows)]
+fn recognize_image_bytes(
+    app: tauri::AppHandle, bytes: &[u8], ext: &str, mime: &str,
+    width: usize, height: usize,
+) -> Result<OcrCapture, String> {
+    use base64::Engine;
+    use tauri::Emitter;
+    use std::{fs, io::Write, process::{Command, Stdio}, time::{Duration, Instant}};
     // Locate the private, relocatable OCR runtime next to bando_hub.exe.
     // Never read the employee's system Python, PATH or old AppData venv.
     let executable = std::env::current_exe()
@@ -120,10 +191,10 @@ fn capture_blocking(app: tauri::AppHandle) -> Result<OcrCapture, String> {
         return Err("OCR 실행 파일 또는 한글 모델이 없습니다. 배포 ZIP을 모두 압축 해제하고 bando_hub.exe와 ocr 폴더를 함께 보관하세요.".into());
     }
     let temp = TempWorkspace::create()?;
-    let input = temp.path.join("capture.bmp");
+    let input = temp.path.join(format!("capture.{ext}"));
     let stdout = temp.path.join("output.txt");
     let stderr = temp.path.join("error.txt");
-    fs::write(&input, &bmp).map_err(|e| format!("OCR 임시 이미지 쓰기 실패: {e}"))?;
+    fs::write(&input, bytes).map_err(|e| format!("OCR 임시 이미지 쓰기 실패: {e}"))?;
     let mut command = Command::new(python);
     command.arg("-I").arg("-B").arg("-X").arg("utf8").arg("-c").arg(include_str!("../resources/ocr/recognize.py")).arg(&input);
     command.current_dir(&ocr_dir)
@@ -178,8 +249,8 @@ fn capture_blocking(app: tauri::AppHandle) -> Result<OcrCapture, String> {
     let text = json["text"].as_str().ok_or("OCR 문자열 형식 오류")?.trim().to_owned();
     Ok(OcrCapture {
         text,
-        image_data_url: format!("data:image/bmp;base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(bmp)),
+        image_data_url: format!("data:{mime};base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)),
         width, height,
     })
 }

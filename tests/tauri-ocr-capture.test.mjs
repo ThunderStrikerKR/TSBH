@@ -7,7 +7,7 @@ const bridge = read("src/tauri-bridge.ts");
 const lib = read("src-tauri/src/lib.rs");
 const ocr = read("src-tauri/src/ocr.rs");
 const script = read("src-tauri/resources/ocr/recognize.py");
-test("source heading owns New Order; blank original-document canvas holds TXT and IMG halves", () => {
+test("blank source canvas groups clipboard, alternative input, and folder guidance without moving client card", () => {
   const css=read("src/styles/receipt-document.css");
   const hub=read("src/HubWorkspace.tsx");
   for (const label of ["대리발송", "대리점 납품", "직접 입력", "캡처 범위 지정"])
@@ -16,15 +16,33 @@ test("source heading owns New Order; blank original-document canvas holds TXT an
   assert.match(source, /onClick=\{onNew\}/);
   assert.match(source, /className="source-intake-choice"/);
   assert.match(source, /waitingForSource \? \(/);
-  assert.match(source, /<strong className="source-intake-kind">TXT<\/strong>/);
-  assert.match(source, /<strong className="source-intake-kind">IMG<\/strong>/);
+  for (const label of ["클립보드 접수", "다른 방법으로 접수", "폴더 자동 인식"]) assert.ok(source.includes(label));
+  assert.doesNotMatch(source, /source-intake-half/);
+  assert.ok(source.indexOf('className="source-top"') < source.indexOf('className={"source-document"'));
+  assert.match(source, /Ctrl\+Shift\+S/);
+  assert.match(source, /Print Screen/);
   assert.match(source, /onClick=\{\(\) => void paste\(undefined, "AGENCY"\)\}/);
   assert.match(source, /onClick=\{\(\) => void paste\(undefined, "DEALER"\)\}/);
   assert.match(source, /onClick=\{\(\) => setRetail\(true\)\}/);
   assert.match(source, /onClick=\{\(\) => void captureOcr\(\)\}/);
   assert.doesNotMatch(source, /source-heading-actions/);
-  assert.match(css, /\.source-intake-choice\s*\{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.source-intake-choice\s*\{[^}]*display: flex/);
+  assert.match(css, /\.source-intake-buttons\s*\{[^}]*flex-wrap: wrap/);
+  assert.match(css, /width: auto/);
+  assert.doesNotMatch(css, /\.source-intake-half/);
+  assert.match(source, /data-ui-role="action-quiet"/);
   assert.match(hub, /onNew=\{createReceptionLive\}/);
+});
+test("dedicated image inbox scans stable files and uses existing review dialog", () => {
+  const inbox = read("src-tauri/src/order_image_inbox.rs");
+  const settings = read("src/SettingsPanel.tsx");
+  assert.match(inbox, /order_image_watch_scan/);
+  assert.match(inbox, /order_image_ocr/);
+  assert.match(inbox, /observations >= 3/);
+  assert.match(settings, /발주 이미지 자동 수신 폴더/);
+  assert.match(source, /setOcrResult\(capture\)/);
+  assert.match(bridge, /order_image_watch_scan/);
+  assert.match(source, /state\.settings\.orderImageInboxDirectory/);
 });
 test("OCR result requires user review before replacing a provisional order", () => {
   assert.match(source, /confirmAction\("기존 미확정 원문/);
@@ -41,6 +59,9 @@ test("Windows local PP-OCRv5 uses new clipboard images only", () => {
   assert.match(lib, /ocr::capture_ocr/);
   assert.match(bridge, /invoke<OcrCapture>\("capture_ocr"\)/);
   assert.match(ocr, /GetClipboardSequenceNumber/);
+  assert.match(ocr, /pub async fn clipboard_ocr/);
+  assert.match(source, /window\.bando\.clipboardOcr\(\)/);
+  assert.match(bridge, /invoke<OcrCapture>\("clipboard_ocr"\)/);
   assert.ok(ocr.includes('include_str!("../resources/ocr/recognize.py")'));
   assert.match(script, /ocr_version="PP-OCRv5"/);
   assert.match(script, /lang="korean"/);

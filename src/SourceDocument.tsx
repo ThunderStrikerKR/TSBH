@@ -51,6 +51,7 @@ export function SourceDocument({
   settingsLink.current = onSettings;
   const [dealer, setDealer] = useState(false),
     [busy, setBusy] = useState(false);
+  const ocrOrderType = useRef<"AGENCY" | "DEALER">("AGENCY");
   const pending = useRef(false),
     alive = useRef(true);
   const latestReception = useRef({ order, text });
@@ -65,6 +66,7 @@ export function SourceDocument({
     return next;
   };
   const [windows, setWindows] = useState<DockWindow[]>([]);
+  const watchedImageBusy = useRef(false);
   const [error, setError] = useState("");
   const [ocrFailure, setOcrFailure] = useState("");
   const [showOcrFailure, setShowOcrFailure] = useState(false);
@@ -109,10 +111,41 @@ export function SourceDocument({
       clearInterval(timer);
     };
   }, [!!text.trim(), client?.id, formal]);
+
+  // New images are recognized only for empty drafts, and only after stable file observations.
+  // The OCR review dialog still owns the final accept/reject decision.
+  useEffect(() => {
+    if (!waitingForSource || !state.settings.orderImageInboxDirectory) return;
+    let disposed = false;
+    const scan = async () => {
+      if (disposed || watchedImageBusy.current || pending.current || ocrResult || !window.bando?.orderImageWatchScan) return;
+      watchedImageBusy.current = true;
+      try {
+        const filenames = await window.bando.orderImageWatchScan();
+        if (disposed || !filenames.length || !window.bando.orderImageOcr) return;
+        ocrOrderType.current = order.orderType === "DEALER" ? "DEALER" : "AGENCY";
+        setOcrPhase("recognizing");
+        const capture = await window.bando.orderImageOcr(filenames[0]);
+        if (disposed || latestReception.current.order.id !== order.id) return;
+        if (!capture.text.trim()) throw Error("자동 수신 이미지에서 문자를 인식하지 못했습니다.");
+        setOcrResult(capture);
+        setError("");
+      } catch (cause) {
+        if (!disposed) setError("발주 이미지 자동 인식 오류: " + String(cause).replace(/^Error: /, ""));
+      } finally {
+        watchedImageBusy.current = false;
+        if (!disposed) setOcrPhase("idle");
+      }
+    };
+    void scan();
+    const timer = setInterval(() => void scan(), 4000);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [waitingForSource, state.settings.orderImageInboxDirectory, order.id, order.orderType, ocrResult]);
   const captureOcr = async () => {
     if (formal || pending.current) return;
     pending.current = true;
     setBusy(true);
+    ocrOrderType.current = order.orderType === "DEALER" ? "DEALER" : "AGENCY";
     setOcrPhase("selecting");
     setError("");
     setOcrFailure("");
@@ -171,6 +204,7 @@ export function SourceDocument({
     setBusy(true);
     try {
       const next = await nativeReplaceReception(order, raw);
+      next.orderType = ocrOrderType.current;
       if (!alive.current || (latestReception.current.order.id !== order.id ||
               latestReception.current.order.raw !== order.raw) ||
           latestReception.current.text !== text) return;
@@ -191,7 +225,23 @@ export function SourceDocument({
     pending.current = true;
     setBusy(true);
     try {
-      const raw = value ?? (await window.bando!.readClipboard());
+      let raw = value ?? "";
+      if (value === undefined) {
+        try { raw = await window.bando!.readClipboard(); }
+        catch { /* A clipboard image has no text payload. */ }
+        if (!raw.trim()) {
+          if (!window.bando?.clipboardOcr) throw Error("클립보드에서 텍스트나 이미지를 읽을 수 없습니다.");
+          ocrOrderType.current = orderType === "DEALER" ? "DEALER" : "AGENCY";
+          setOcrPhase("recognizing");
+          const capture = await window.bando.clipboardOcr();
+          if (!capture.text.trim()) throw Error("클립보드 이미지에서 문자를 인식하지 못했습니다.");
+          if (alive.current && latestReception.current.order.id === order.id) {
+            setOcrResult(capture);
+            setError("");
+          }
+          return;
+        }
+      }
       if (!raw.trim()) throw Error("클립보드에 발주 텍스트가 없습니다.");
       if (
         text &&
@@ -275,6 +325,7 @@ export function SourceDocument({
     } finally {
       pending.current = false;
       setBusy(false);
+      setOcrPhase("idle");
     }
   };
   return (
@@ -354,35 +405,45 @@ export function SourceDocument({
       <div
         className={"source-document" + (waitingForSource ? " source-awaiting-input" : "")}
         tabIndex={waitingForSource ? 0 : undefined}
-        aria-label={waitingForSource ? "새 발주서 TXT 또는 IMG 접수" : undefined}
+        aria-label={waitingForSource ? "새 발주서 입력 대기" : undefined}
         onPaste={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          if (!formal) void paste(event.clipboardData.getData("text/plain"));
+          if (!formal) void paste(event.clipboardData.getData("text/plain") || undefined);
         }}
       >
         {waitingForSource ? (
-          <div className="source-intake-choice" aria-label="발주서 입력 유형">
-            <section className="source-intake-half" aria-label="TXT 발주서 접수">
-              <strong className="source-intake-kind">TXT</strong>
-              <p className="source-intake-hint">텍스트 발주서</p>
-              <div className="source-intake-buttons">
-                <button type="button" data-ui-role="action-standard"
-                  disabled={busy} onClick={() => void paste(undefined, "AGENCY")}>대리발송</button>
-                <button type="button" data-ui-role="action-standard"
-                  disabled={busy} onClick={() => void paste(undefined, "DEALER")}>대리점 납품</button>
-                <button type="button" data-ui-role="action-standard"
-                  disabled={busy} onClick={() => setRetail(true)}>직접 입력</button>
-              </div>
-            </section>
-            <section className="source-intake-half" aria-label="IMG 발주서 접수">
-              <strong className="source-intake-kind">IMG</strong>
-              <p className="source-intake-hint">화면 이미지 글자 인식</p>
-              <div className="source-intake-buttons">
-                <button type="button" data-ui-role="action-standard"
-                  disabled={busy} onClick={() => void captureOcr()}>캡처 범위 지정</button>
-              </div>
-            </section>
+
+          <div className="source-intake-choice" aria-label="발주서 입력 방법">
+            <div className="source-intake-inner">
+              <section className="source-intake-group" aria-label="클립보드 접수">
+                <h3>클립보드 접수</h3>
+                <p>복사한 텍스트와 이미지를 자동으로 구분해 인식합니다.</p>
+                <div className="source-intake-buttons">
+                  <button type="button" data-ui-role="action-standard"
+                    disabled={busy} onClick={() => void paste(undefined, "AGENCY")}>대리발송</button>
+                  <button type="button" data-ui-role="action-standard"
+                    disabled={busy} onClick={() => void paste(undefined, "DEALER")}>대리점 납품</button>
+                </div>
+                <p className="source-intake-hint">Ctrl+Shift+S(캡처 앱 설정) 또는 Print Screen으로 캡처한 뒤 위 버튼으로 접수할 수 있습니다.</p>
+              </section>
+              <section className="source-intake-group source-intake-other" aria-label="다른 입력 방법">
+                <h3>다른 방법으로 접수</h3>
+                <div className="source-intake-buttons">
+                  <button type="button" data-ui-role="action-quiet"
+                    disabled={busy} onClick={() => setRetail(true)}>직접 입력</button>
+                  <button type="button" data-ui-role="action-quiet"
+                    disabled={busy} onClick={() => void captureOcr()}>캡처 범위 지정</button>
+                </div>
+              </section>
+              <section className="source-intake-group source-intake-folder" aria-label="폴더 자동 인식">
+                <h3>폴더 자동 인식</h3>
+                <p>지정 폴더에 이미지를 저장하면 자동으로 이미지 인식을 실행합니다.</p>
+                {!state.settings.orderImageInboxDirectory && (
+                  <p className="source-intake-hint">설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요.</p>
+                )}
+              </section>
+            </div>
           </div>
         ) : (
           <LinkedText

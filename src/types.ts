@@ -415,6 +415,7 @@ export interface Settings {
   senderPostcode?: string;
   excelDirectory?: string;
   factoryReplyDirectory?: string;
+  orderImageInboxDirectory?: string;
   // Database key retained for compatibility. New groups select a stable product ID;
   // representativeColor exists only on previously saved color-only groups.
   colorGuidanceGroups?: Record<string, { name: string; productIds: string[]; representativeProductId?: string; representativeColor?: string }>;
@@ -601,6 +602,10 @@ export interface Api {
     Promise<import("./app/notification-center.js").HubNotification[]>;
   notificationClear: () => Promise<import("./app/notification-center.js").HubNotification[]>;
   captureOcr?: () => Promise<OcrCapture>;
+  clipboardOcr?: () => Promise<OcrCapture>;
+  chooseOrderImageInboxDirectory?: () => Promise<string | undefined>;
+  orderImageWatchScan?: () => Promise<string[]>;
+  orderImageOcr?: (filename: string) => Promise<OcrCapture>;
   cancelOcr?: () => Promise<void>;
   saveProductWorkbook?: (bytes: number[]) => Promise<string | null>;
   saveProductSyncWorkbook?: (bytes: number[]) => Promise<string | null>;
