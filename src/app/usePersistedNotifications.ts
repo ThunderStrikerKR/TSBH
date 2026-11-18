@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addHubNotification, type HubNotification, type NewHubNotification } from "./notification-center";
+import { addHubNotification, isActionRequiredNotification, type HubNotification, type NewHubNotification } from "./notification-center";
 
 /**
  * Sequence all inbox operations against the dedicated SQLite table.
@@ -11,6 +11,7 @@ import { addHubNotification, type HubNotification, type NewHubNotification } fro
  */
 export function usePersistedNotifications(ready: boolean) {
   const [inbox, setInbox] = useState<HubNotification[]>([]);
+  const [hiddenCount, setHiddenCount] = useState(0);
   const [storageError, setStorageError] = useState("");
   const chain = useRef<Promise<void>>(Promise.resolve());
   const mounted = useRef(true);
@@ -21,7 +22,10 @@ export function usePersistedNotifications(ready: boolean) {
         const notices = await op();
         if (!Array.isArray(notices)) throw Error("알림 저장소 응답이 올바르지 않습니다.");
         if (mounted.current) {
-          setInbox(notices);
+          // Older informational/success notifications remain deletable from
+          // SQLite but never count as urgent, even after app restart.
+          setInbox(notices.filter(isActionRequiredNotification));
+          setHiddenCount(notices.filter((notice) => !isActionRequiredNotification(notice)).length);
           setStorageError("");
         }
       })
@@ -51,8 +55,11 @@ export function usePersistedNotifications(ready: boolean) {
   const markRead = useCallback((id: string) =>
     enqueue(() => window.bando!.notificationMarkRead(id)), [enqueue]);
 
+  const remove = useCallback((id: string) =>
+    enqueue(() => window.bando!.notificationDelete(id)), [enqueue]);
+
   const clear = useCallback(() =>
     enqueue(() => window.bando!.notificationClear()), [enqueue]);
 
-  return { inbox, storageError, add, markRead, clear };
+  return { inbox, hiddenCount, storageError, add, markRead, remove, clear };
 }
