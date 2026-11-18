@@ -7,7 +7,7 @@ import { tsImport } from "tsx/esm/api";
 
 const { previewFactoryExport, recordFactoryExportPrepared } = await tsImport("../../../src/factory-export.ts", import.meta.url);
 const { previewStoreExport, recordStoreExportPrepared } = await tsImport("../../../src/store-export.ts", import.meta.url);
-const { dailySettlement } = await tsImport("../../../src/app/settlement-report.ts", import.meta.url);
+const { dailySettlement } = await tsImport("../oracles/settlement-report.ts", import.meta.url);
 const { AUTOMATIC_MESSAGE_TEMPLATES, renderAutomaticTemplate, validateAutomaticMessageTemplates } =
   await tsImport("../../../src/automatic-message-templates.ts", import.meta.url);
 
