@@ -23,7 +23,9 @@ export function usePageLeaveGuard(value: PageLeaveGuard) {
       save: () => latest.current.save(),
       discard: () => latest.current.discard(),
       busy: () => latest.current.busy?.() ?? false,
-      waitForIdle: () => latest.current.waitForIdle?.() ?? Promise.resolve(),
+      waitForIdle: value.waitForIdle
+        ? () => latest.current.waitForIdle?.() ?? Promise.resolve()
+        : undefined,
       label: latest.current.label,
     });
     return () => { guards.delete(id); };
