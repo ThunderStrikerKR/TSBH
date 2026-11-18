@@ -1,5 +1,5 @@
 import { HelpTooltip } from "./ui/HelpTooltip";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { confirmAction, promptText } from "./dialogs";
 import { useNativeClients } from "./native-catalog-queries";
 import { businessCoreCall } from "./tauri-bridge";
