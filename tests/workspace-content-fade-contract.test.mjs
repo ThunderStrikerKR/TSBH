@@ -16,7 +16,8 @@ test("shared fade begins after readiness and never crosses a content identity", 
 test("checking panel preserves heading, scroll surface and empty guidance", () => {
   const desk = source("src/OrderDesk.tsx");
   const checks = source("src/StaffChecks.tsx");
-  assert.match(desk, /const checksFadePhase = useReadyContentFade\([\s\S]*?staffChecksReady && recipientRevealPhase === "ready", true/);
+  assert.match(desk, /const localChecksPhase = useReadyContentFade\([\s\S]*?staffChecksReady && localRecipientPhase === "ready", true/);
+  assert.match(desk, /const checksFadePhase = props\.coordinatedFadePhase \?\? localChecksPhase/);
   assert.match(desk, /<StaffChecks[\s\S]*?fadePhase=\{checksFadePhase\}/);
   assert.match(checks, /<section className="staff-checks"[^>]*>[\s\S]*?<h3>/);
   assert.match(checks, /<small data-content-fade=\{fadePhase\}>/);
@@ -33,7 +34,8 @@ test("copy message header links options buttons and status never fade", () => {
   assert.match(msg, /const contentKey = \[order\.id, gid \?\? "", order\.orderType \?\? "", includeLinks\]/);
   assert.match(msg, /const bodyReady = Boolean\(gid && automatic\)/);
   assert.doesNotMatch(msg, /bodyReady = !gid/);
-  assert.match(msg, /const messageFadePhase = useReadyContentFade\(contentKey, bodyReady\)/);
+  assert.match(msg, /const localMessageFadePhase = useReadyContentFade\(contentKey, bodyReady\)/);
+  assert.match(msg, /const messageFadePhase = sharedFadePhase \?\? localMessageFadePhase/);
   assert.match(msg, /<header className="pane-heading">/);
   assert.match(msg, /<div className="stage-message-preview">[\s\S]*?className="message-generated-content" data-content-fade=\{messageFadePhase\}/);
   assert.match(msg, /className="message-inline-status" role="status"/);
@@ -63,9 +65,11 @@ test("raw-source heading, border and blank intake guidance never fade", () => {
   const desk = source("src/OrderDesk.tsx");
   const doc = source("src/SourceDocument.tsx");
   const css = source("src/styles/receipt-document.css");
-  assert.match(hub, /sourceProjectionReady=\{receptionOrder\.id === draft\.id[\s\S]*?unassignedDraftPreview\.ready/);
+  assert.match(hub, /sourceProjectionReady=\{sourceSettled\}/);
+  assert.match(hub, /coordinatedFadePhase=\{sharedFadePhase\}/);
   assert.match(desk, /contentReady=\{props\.sourceProjectionReady \?\? true\}/);
-  assert.match(doc, /const sourceFadePhase = useReadyContentFade\(sourceKey, contentReady \|\| waitingForSource, true\)/);
+  assert.match(doc, /const localSourceFadePhase = useReadyContentFade\(sourceKey, contentReady \|\| waitingForSource, true\)/);
+  assert.match(doc, /const sourceFadePhase = coordinatedFadePhase \?\? localSourceFadePhase/);
   assert.match(doc, /<header className="pane-heading source-heading">/);
   assert.match(doc, /className=\{"source-document" \+ \(waitingForSource/);
   assert.match(doc, /<div className="source-intake-choice" aria-label="발주서 입력 방법">/);
