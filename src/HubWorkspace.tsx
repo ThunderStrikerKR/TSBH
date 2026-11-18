@@ -5,6 +5,7 @@ import { auditReactRender, auditStateTransition } from "./perf-audit";
 import { AuditProfiler } from "./perf-audit-profiler";
 import { createPortal, flushSync } from "react-dom";
 import { HubPanels, defaultPanels } from "./HubPanels";
+import { WorkingReceptionAutosave } from "./orders/working-reception-autosave";
 import { askSaveChanges } from "./dialogs";
 import { requestPageLeave } from "./shared/page-leave";
 import { LinkContext } from "./LinkedText";
@@ -21,7 +22,6 @@ import { activeShipments, hoveredWorkflowSelection, validSelection } from "./wor
 type Props = ComponentProps<typeof OrderDesk> & {
   externalKakao: boolean;
   onNew: () => void;
-  onPendingDraftCount?: (count: number) => void;
   onRememberSelection: (s: WorkflowSelection) => void;
   onResetDock: () => void;
   onRegisterOrderLeaveGuard?: (guard?: (intent?: "switch" | "navigate" | "close") => Promise<{ proceed: boolean; handledDraft: boolean }>) => void;
@@ -63,6 +63,15 @@ export function HubWorkspace(props: Props) {
     linkHoverOnTimer.current = undefined;
     linkHoverOffTimer.current = undefined;
   }, [draft.id]);
+  const [workingStoreReady, setWorkingStoreReady] = useState(false);
+  const currentDraftRef = useRef(draft);
+  currentDraftRef.current = draft;
+  const workingWriter = useRef<WorkingReceptionAutosave | null>(null);
+  if (!workingWriter.current) {
+    workingWriter.current = new WorkingReceptionAutosave(
+      (orders) => window.bando!.workingReceptionsReplace(orders),
+    );
+  }
   const [source, setSource] = useState<HTMLElement | null>(null),
     [messages, setMessages] = useState<HTMLElement | null>(null),
     [details, setDetails] = useState<HTMLElement | null>(null),
@@ -141,9 +150,37 @@ export function HubWorkspace(props: Props) {
     if (unsaved(draft)) byId.set(draft.id, draft);
     return [...byId.values()];
   }, [draft, edits, state.orders]);
+  // Restore persisted receptions before starting autosave: writing an empty
+  // list during startup would otherwise erase the previous session's orders.
   useEffect(() => {
-    props.onPendingDraftCount?.(temporaryReceipts.length);
-  }, [temporaryReceipts.length, props.onPendingDraftCount]);
+    let cancelled = false;
+    void window.bando!.workingReceptionsLoad().then((stored) => {
+      if (cancelled) return;
+      const recovered = stored.filter((order) =>
+        !order.confirmedAt &&
+        !state.orders.some((saved) => saved.id === order.id));
+      setEdits((previous) => ({
+        ...Object.fromEntries(recovered.map((order) => [order.id, order])),
+        ...previous,
+      }));
+      const current = currentDraftRef.current;
+      if (recovered.length && !current.raw.trim() && !current.clientId &&
+          !current.recipients.length && !current.photos?.length) {
+        setReceptionId(recovered[0].id);
+      }
+      setWorkingStoreReady(true);
+    }).catch((error) =>
+      props.onNotice("미확정 발주서 SQLite 복원 실패: " + String(error), "error"));
+    return () => { cancelled = true; };
+  }, []);
+  // Every working copy is written to the independent SQLite table, without
+  // advancing any workflow step or entering the confirmed order-history ledger.
+  // Serialized/coalesced writes ensure the last edit wins under rapid typing.
+  useEffect(() => {
+    if (!workingStoreReady) return;
+    void workingWriter.current!.enqueue(temporaryReceipts).catch((error) =>
+      props.onNotice("발주서 자동 저장 실패: " + String(error), "error"));
+  }, [temporaryReceipts, workingStoreReady, props.onNotice]);
   // An explicitly selected unassigned receipt must never fall back to a
   // shipment that belongs to an unrelated dealer.
   const pendingWithoutClient = useMemo(() =>
@@ -302,6 +339,18 @@ export function HubWorkspace(props: Props) {
     }
   };
   leaveGuardRef.current = async (intent = "switch") => {
+    // Flush the current SQLite working set before tab changes, switching
+    // orders or closing. No '임시 보관' decision should appear.
+    if (temporaryReceipts.length && !workingStoreReady) {
+      props.onNotice("발주서 SQLite 저장소가 아직 준비되지 않았습니다.", "error");
+      return { proceed: false, handledDraft: false };
+    }
+    try {
+      if (workingStoreReady) await workingWriter.current!.enqueue(temporaryReceipts);
+    } catch (error) {
+      props.onNotice("발주서 자동 저장 실패: " + String(error), "error");
+      return { proceed: false, handledDraft: false };
+    }
     const orderId = selected?.orderId ?? receptionId;
     const persisted = state.orders.find((order) => order.id === orderId);
     const pending = orderId === draft.id ? draft : edits[orderId];
@@ -340,9 +389,8 @@ export function HubWorkspace(props: Props) {
 
     let handledTemporary = false;
     if ((intent === "navigate" || intent === "close") && temporaryReceipts.length) {
-      // App.tsx keeps HubWorkspace mounted (hidden) across tabs. Its current
-      // draft and retained edits survive ordinary navigation without a dialog.
-      // AppModel separately warns once when closing the application.
+      // SQLite now durably owns every unfinished reception. The business
+      // confirmation step, not navigation, controls 주문내역 visibility.
       handledTemporary = true;
     } else if (intent === "switch" && temporaryReceipts.some((order) => order.id === draft.id)) {
       setEdits((previous) => ({ ...previous, [draft.id]: structuredClone(draft) }));
@@ -546,8 +594,8 @@ export function HubWorkspace(props: Props) {
     }
   });
   const deletePendingLive = useEventCallback((id: string) => {
-    // These orders exist only in the temporary React overlay. Never issue
-    // a Rust group deletion or touch the persisted SQLite order ledger.
+    // Remove the working copy; autosave deletes the durable reception row,
+    // leaving confirmed orders and their immutable history untouched.
     setEdits((previous) => {
       if (!(id in previous)) return previous;
       const next = { ...previous };
@@ -564,7 +612,8 @@ export function HubWorkspace(props: Props) {
     setStageHover(undefined);
   });
   const createReceptionLive = useEventCallback(() => {
-    // Keep unfinished documents in React memory, never in production SQLite.
+    // Multiple unfinished documents stay visible while their SQLite working
+    // records are durably saved outside the confirmed order history.
     const draftsToRetain = [draft, receptionOrder].filter((order) =>
       !state.orders.some((saved) => saved.id === order.id) &&
       (order.raw.trim() || order.clientId || order.recipients.length || order.photos?.length));
