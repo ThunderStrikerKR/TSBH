@@ -16,6 +16,22 @@ test("expanded and hovered workflow groups share one shipment table", () => {
   assert.doesNotMatch(board, /className="app-v03 workflow-preview-layer"/);
 });
 
+test("preview matches the expanded content box without independent size caps", () => {
+  const board = source("src/WorkflowBoard.tsx");
+  const css = source("src/styles/workflow.css");
+  assert.match(board, /querySelector<HTMLElement>\(":scope > \.workflow-shipment-list"\)/);
+  assert.match(board, /expandedRect\?\.width \?\? contentWidth/);
+  assert.match(board, /expandedRect \? expandedRect\.top/);
+  assert.match(board, /height: expandedRect && width === expandedRect\.width \? expandedRect\.height/);
+  assert.match(board, /backgroundColor: card \? cardStyle\.backgroundColor/);
+  assert.doesNotMatch(board, /Math\.min\(340,/);
+  const layer = css.slice(css.indexOf(".workflow-preview-layer {"),
+    css.indexOf(".workflow-preview-layer .workflow-shipment-list {"));
+  assert.match(layer, /padding:\s*0;/);
+  assert.match(layer, /border:\s*0;/);
+  assert.match(layer, /box-shadow:\s*none;/);
+});
+
 test("source and detail hover use the actual delayed controller", () => {
   const workspace = source("src/HubWorkspace.tsx");
   const desk = source("src/OrderDesk.tsx");
