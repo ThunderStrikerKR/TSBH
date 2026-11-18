@@ -284,8 +284,7 @@ export function WorkflowBoard({
                     <button type="button" className="workflow-shipment"
                       key={recipient.id} onClick={() => onSelectPending?.(receipt.id)}>
                       <span className="shipment-recipient" title={recipient.name}>
-                        <span className="shipment-recipient-name">{recipient.name || "수취인 확인"}</span>
-                        {isPreviewed && <span className="workflow-preview-indicator">표시 중</span>}
+                        {recipient.name || "수취인 확인"}
                       </span>
                       <span className="shipment-products">
                         {recipient.items.map((item) => (
@@ -584,7 +583,8 @@ export function WorkflowBoard({
                       }
                     >
                       <span className="shipment-recipient" title={recipient.name}>
-                        {recipient.name || "수취인 확인"}
+                        <span className="shipment-recipient-name">{recipient.name || "수취인 확인"}</span>
+                        {isPreviewed && <span className="workflow-preview-indicator">표시 중</span>}
                       </span>
                       <span className="shipment-products">
                         {recipient.items.map((i) => (
