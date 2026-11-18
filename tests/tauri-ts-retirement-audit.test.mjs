@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
+import {existsSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 
 const root=fileURLToPath(new URL("../",import.meta.url));
@@ -17,8 +18,14 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.ok(output.reachableLegacyModules>0,
     "Business layer removal cannot be declared complete while live TS imports remain");
   assert.ok(output.inventory.some(row=>
-    row.module==="src/automatic-message.ts"&&row.exists&&!row.reachableFromApp),
-    "Original automatic-message oracle must be retained but unreachable from the live app");
+    row.module==="src/automatic-message.ts"&&!row.exists&&!row.reachableFromApp),
+    "Historical message generator must no longer exist in production src");
+  for(const name of ["automatic-message.ts","message-model.ts","group-trash.ts"]){
+    assert.equal(existsSync(fileURLToPath(new URL("../src/"+name,import.meta.url))),false,
+      name+" must not remain in production source");
+    assert.equal(existsSync(fileURLToPath(new URL("../tests/rust-migration/oracles/"+name,import.meta.url))),true,
+      name+" must be retained only as a frozen TS test oracle");
+  }
   assert.ok(output.inventory.some(row=>
     row.module==="src/factory-export.ts"&&row.exists&&row.reachableFromApp),
     "ExcelJS serializer remains a legitimate TS module");
