@@ -153,7 +153,13 @@
     "danger": "#ffb4b4",
     "dangerSurface": "#542c30",
     "selection": "#70b4ff",
-    "transparent": "transparent"
+    "transparent": "transparent",
+    "dividerSoft": "#3f3f3f",
+    "dividerStrong": "#686868",
+    "warningSurface": "#45351f",
+    "successSurface": "#253c2f",
+    "infoSurface": "#233c4d",
+    "errorSurface": "#41282c"
   },
   "spacing": [
     4,
@@ -173,7 +179,7 @@
     "stateColors": "Neutral is default. Amber = needs action, green = success/wholesale when explicitly labeled, red = error/destructive, blue = selection/linked source; no decorative status colors.",
     "layout": "Align sibling inputs to the same label and value columns; button width adapts to label but heights/padding follow the role. Preserve money's right edge and VAT beside the amount.",
     "pendingKakaoToolbar": {
-      "status": "approved-awaiting-ui-change",
+      "status": "implemented-source-awaiting-windows-verification",
       "location": "inside the KakaoTalk pane at the top, above the native Windows window docking area",
       "buttons": [
         {
@@ -200,7 +206,7 @@
       "constraint": "The toolbar must remain within the Kakao pane and outside the native overlay region; do not cover KakaoTalk's chat input or list scrollbar."
     },
     "pendingBrand": {
-      "status": "approved-awaiting-ui-change",
+      "status": "implemented-source-awaiting-windows-verification",
       "rule": "Brand symbol and BANDO HUB logotype should have comparable visual height; test-workspace label is subordinate; remove unidentified trailing stripe without deleting any functional separator."
     }
   },
@@ -279,5 +285,225 @@
       "background": "#44305c",
       "foreground": "#dab5ff"
     }
+  },
+  "colorRoles": {
+    "text-primary": {
+      "color": "main",
+      "usage": "data, titles, editable values and action labels"
+    },
+    "text-secondary": {
+      "color": "secondary",
+      "usage": "field labels, secondary actions and supporting descriptions"
+    },
+    "text-muted": {
+      "color": "muted",
+      "usage": "timestamps and low-priority metadata; never sole carrier of required business information"
+    },
+    "text-danger": {
+      "color": "danger",
+      "usage": "error messages and destructive action labels, independent of font hierarchy"
+    },
+    "text-warning": {
+      "color": "warning",
+      "usage": "manual verification/attention; never normal navigation highlight"
+    },
+    "text-success": {
+      "color": "success",
+      "usage": "completed/confirmed status"
+    },
+    "text-selected": {
+      "color": "selection",
+      "usage": "linked source evidence/selection in content, not all active tabs"
+    },
+    "surface-page": {
+      "color": "canvas",
+      "usage": "whole workspace only"
+    },
+    "surface-section": {
+      "color": "panel",
+      "usage": "standalone major section/card"
+    },
+    "surface-nested": {
+      "color": "raised",
+      "usage": "nested information groups inside a section"
+    },
+    "surface-input": {
+      "color": "input",
+      "usage": "editable inputs, search and choice controls"
+    },
+    "surface-interactive-hover": {
+      "color": "hover",
+      "usage": "mouse hover on any neutral interactive surface"
+    },
+    "surface-warning": {
+      "color": "warningSurface",
+      "usage": "attention blocks only"
+    },
+    "surface-error": {
+      "color": "errorSurface",
+      "usage": "error message blocks only"
+    },
+    "border-normal": {
+      "color": "border",
+      "usage": "section/control perimeter"
+    },
+    "border-divider": {
+      "color": "dividerSoft",
+      "usage": "separating siblings without additional boxes"
+    },
+    "border-emphasis": {
+      "color": "dividerStrong",
+      "usage": "major group or table header boundary"
+    },
+    "border-focus": {
+      "color": "focus",
+      "usage": "keyboard focus, independent of selection"
+    },
+    "border-selected": {
+      "color": "selection",
+      "usage": "content selection; not a substitute for focus"
+    }
+  },
+  "structureRoles": {
+    "page-frame": {
+      "purpose": "whole screen content; not itself a card",
+      "surface": "transparent",
+      "border": "transparent",
+      "borderWidth": 0,
+      "radius": 0,
+      "paddingX": 0,
+      "paddingY": 0,
+      "gap": 16
+    },
+    "primary-section": {
+      "purpose": "standalone business section, only one surrounding perimeter",
+      "surface": "panel",
+      "border": "border",
+      "borderWidth": 1,
+      "radius": 9,
+      "paddingX": 16,
+      "paddingY": 16,
+      "gap": 12
+    },
+    "nested-section": {
+      "purpose": "subsection visually inside an existing major section; do not duplicate outer heavy borders",
+      "surface": "raised",
+      "border": "dividerSoft",
+      "borderWidth": 1,
+      "radius": 6,
+      "paddingX": 12,
+      "paddingY": 12,
+      "gap": 8
+    },
+    "field-group": {
+      "purpose": "label + inputs in the same form; grid and aligned baselines, no unnecessary box",
+      "surface": "transparent",
+      "border": "transparent",
+      "borderWidth": 0,
+      "radius": 0,
+      "paddingX": 0,
+      "paddingY": 0,
+      "gap": 8
+    },
+    "record-card": {
+      "purpose": "repeatable order/shipment/dealer card",
+      "surface": "panel",
+      "border": "border",
+      "borderWidth": 1,
+      "radius": 9,
+      "paddingX": 12,
+      "paddingY": 12,
+      "gap": 8
+    },
+    "information-block": {
+      "purpose": "neutral information to be read together",
+      "surface": "raised",
+      "border": "dividerSoft",
+      "borderWidth": 1,
+      "radius": 6,
+      "paddingX": 12,
+      "paddingY": 10,
+      "gap": 8
+    },
+    "summary-strip": {
+      "purpose": "compact shipment count, VAT and amounts on one aligned row",
+      "surface": "transparent",
+      "border": "transparent",
+      "borderWidth": 0,
+      "radius": 0,
+      "paddingX": 0,
+      "paddingY": 0,
+      "gap": 8
+    },
+    "toolbar-group": {
+      "purpose": "search/filter and context actions in one row",
+      "surface": "panel",
+      "border": "dividerSoft",
+      "borderWidth": 1,
+      "radius": 6,
+      "paddingX": 12,
+      "paddingY": 8,
+      "gap": 8
+    },
+    "warning-block": {
+      "purpose": "confirmation needed; show label and reason, not color alone",
+      "surface": "warningSurface",
+      "border": "warning",
+      "borderWidth": 1,
+      "radius": 6,
+      "paddingX": 12,
+      "paddingY": 10,
+      "gap": 8
+    },
+    "error-block": {
+      "purpose": "actionable error or operation failure; full readable message",
+      "surface": "errorSurface",
+      "border": "danger",
+      "borderWidth": 1,
+      "radius": 6,
+      "paddingX": 12,
+      "paddingY": 10,
+      "gap": 8
+    },
+    "success-block": {
+      "purpose": "confirmed completion only",
+      "surface": "successSurface",
+      "border": "success",
+      "borderWidth": 1,
+      "radius": 6,
+      "paddingX": 12,
+      "paddingY": 10,
+      "gap": 8
+    },
+    "divider-soft": {
+      "purpose": "separate rows within same group, never surround each row",
+      "surface": "transparent",
+      "border": "dividerSoft",
+      "borderWidth": 1,
+      "radius": 0,
+      "paddingX": 0,
+      "paddingY": 0,
+      "gap": 0
+    },
+    "divider-strong": {
+      "purpose": "one boundary between independently meaningful sections",
+      "surface": "transparent",
+      "border": "dividerStrong",
+      "borderWidth": 1,
+      "radius": 0,
+      "paddingX": 0,
+      "paddingY": 0,
+      "gap": 0
+    }
+  },
+  "structureGuidance": {
+    "ownership": "Container border belongs to the outer section only; child groups do not each add a second enclosing outline.",
+    "choose": "Use bordered sections for independent business units, dividers for siblings in one unit, and neutral information blocks for logically inseparable fields.",
+    "density": "Same-role sections must have identical padding and border thickness. Use smaller nested grouping, not unrelated margins, for compact layouts.",
+    "spacing": "Use the shared 4/8/12/16/24px rhythm; balance top and bottom padding and align information block headings to the same left edge.",
+    "selection": "Highlight selection without changing geometry; focus and selected states are visually distinct and cannot change element size.",
+    "responsive": "At reduced width, wrap complete information groups or scroll tables within their area; never allow amount/phone values or buttons to clip.",
+    "edgeCases": "Do not add borders to each field or row inside an already bordered group; avoid fake dividers with empty pseudo-elements.",
+    "rollout": "Specification only; existing cross-screen CSS migration is postponed until the user explicitly resumes it."
   }
 }
