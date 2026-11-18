@@ -1,6 +1,6 @@
 import type ExcelJS from "exceljs";
-import { registeredProducts, saleOption, sortProducts, variantLabel } from "./product-models";
-import type { BulkPreview, Product, State, Variant } from "./types";
+import { registeredProducts, saleOption, sortProducts } from "./product-models";
+import type { State } from "./types";
 
 // The hidden identifiers intentionally match the legacy Electron price workbook.
 // Never use row order, an editable name, or a model code as the sole record key.
@@ -57,18 +57,15 @@ function text(value: ExcelJS.CellValue): string {
   return String(value).trim();
 }
 
-function rowMatches(p: Product, v: Variant, data: string[]): boolean {
-  return data[0] === p.name &&
-    data[1] === (p.subtitle ?? "") &&
-    (data[2] === saleOption(p, v) || data[2] === variantLabel(v)) &&
-    data[8] === (v.option ?? "") && data[9] === v.color;
+/** XLSX parsing only. All price, SKU and history decisions belong to Rust. */
+export interface PriceWorkbookSource {
+  rows: { row: number; values: string[]; unsafe: boolean }[];
 }
-
-export async function previewPriceWorkbook(state: State, file: File): Promise<BulkPreview> {
+export async function readPriceWorkbookRows(file: File): Promise<PriceWorkbookSource> {
   if (file.size > 20 * 1024 * 1024) throw Error("20MB 이하의 가격표 파일을 선택하세요.");
   if (!/\.xlsx$/i.test(file.name)) throw Error(".xlsx 파일만 사용할 수 있습니다.");
-  const excelJs = (await import("exceljs")).default;
-  const wb = new excelJs.Workbook();
+  const Excel = (await import("exceljs")).default;
+  const wb = new Excel.Workbook();
   await wb.xlsx.load(new Uint8Array(await file.arrayBuffer()) as unknown as Parameters<typeof wb.xlsx.load>[0]);
   const sheet = wb.worksheets[0];
   if (!sheet) throw Error("엑셀 시트가 없습니다.");
@@ -79,58 +76,16 @@ export async function previewPriceWorkbook(state: State, file: File): Promise<Bu
     matches(LEGACY_PRICE_HEADERS)?LEGACY_PRICE_HEADERS:undefined;
   if (!headers) throw Error("반도허브에서 내려받은 가격표 양식과 열이 다릅니다.");
   if (sheet.rowCount > 20001) throw Error("한 번에 최대 2만 행까지 검증할 수 있습니다.");
-  const products = structuredClone(state.products);
-  const changes: BulkPreview["changes"] = [];
-  const errors: string[] = [];
-  const seen = new Set<string>();
+  const rows: PriceWorkbookSource["rows"] = [];
   for (let rowIndex = 2; rowIndex <= sheet.rowCount; rowIndex++) {
-    const row = sheet.getRow(rowIndex);
-    const cells = headers.map((_, i) => row.getCell(i + 1));
+    const cells = headers.map((_, i) => sheet.getRow(rowIndex).getCell(i + 1));
     const rawValues = cells.map((cell) => text(cell.value));
     const values = headers === LEGACY_PRICE_HEADERS
       ? [...rawValues.slice(0,8),...rawValues.slice(9)] : rawValues;
     if (!values.some(Boolean)) continue;
-    const issue = (message: string) => errors.push(`${rowIndex}행: ${message}`);
-    if (cells.some((cell) => cell.isMerged || (cell.value && typeof cell.value === "object" && "formula" in cell.value))) {
-      issue("병합된 셀과 수식은 허용되지 않습니다.");
-      continue;
-    }
-    const id = state.productMappings?.[values[6] + "|" + values[7]] ?? values[6];
-    const key = id + "|" + values[7];
-    if (seen.has(key)) { issue("상품과 가격기록 ID가 중복된 행입니다."); continue; }
-    seen.add(key);
-    const product = registeredProducts(products).find((p) => p.id === id);
-    const variant = product?.variants.find((v) => v.id === values[7]);
-    if (!product || !variant || !rowMatches(product, variant, values)) {
-      issue("상품명 또는 숨김 상품/가격 ID가 현재 데이터와 일치하지 않습니다. 최신 가격표를 다시 내려받으세요.");
-      continue;
-    }
-    (["wholesale", "semi", "retail"] as const).forEach((tier, index) => {
-      const raw = values[index + 3];
-      if (!raw) return; // Blank means keep the current value.
-      if (raw !== "삭제" && !/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(raw)) {
-        issue(`${PRICE_HEADERS[index + 3]}: 가격은 정수 또는 삭제로 입력하세요.`);
-        return;
-      }
-      const parsed = raw === "삭제" ? 0 : Number(raw.replaceAll(",", ""));
-      if (!Number.isSafeInteger(parsed) || parsed < 0) { issue("가격은 0 이상의 안전한 정수여야 합니다."); return; }
-      const nextPrice = parsed === 0 ? null : parsed;
-      const before = variant[tier];
-      if (before === nextPrice) return;
-      changes.push({
-        id: variant.id + ":" + tier,
-        label: `${product.name} ${saleOption(product, variant)} / ${["도매가", "반도매가", "소매가"][index]}`,
-        before: before === null ? "미등록" : before.toLocaleString("ko-KR"),
-        after: nextPrice === null ? "가격 삭제" : nextPrice.toLocaleString("ko-KR"),
-        ...(tier === "retail" && variant.officialRetail !== undefined && variant.officialRetail !== nextPrice ? {
-          warning: `공식 수집 소매가 ${variant.officialRetail?.toLocaleString("ko-KR") ?? "미확인"}원과 다릅니다.`,
-        } : {}),
-      });
-      variant[tier] = nextPrice;
-      product.priceHistory ??= [];
-      product.priceHistory.push({ at: new Date().toISOString(), field: `${variant.id}.${tier}`, before, after: nextPrice, source: "XLSX" });
-      product.updatedAt = new Date().toISOString();
-    });
+    const unsafe = cells.some(cell =>
+      cell.isMerged || (cell.value && typeof cell.value === "object" && "formula" in cell.value));
+    rows.push({ row: rowIndex, values, unsafe: Boolean(unsafe) });
   }
-  return { kind: "prices", changes, errors, products };
+  return { rows };
 }

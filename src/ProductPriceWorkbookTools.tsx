@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { exportPriceWorkbook, previewPriceWorkbook } from "./product-price-xlsx";
+import { exportPriceWorkbook } from "./product-price-xlsx";
+import { previewNativePriceWorkbook } from "./native-price-workbook";
 import { useAsyncTask } from "./shared/useAsyncTask";
 import type { NoticeSink } from "./shared/notices";
 import type { BulkPreview, State } from "./types";
@@ -28,7 +29,7 @@ export function ProductPriceWorkbookTools({ state, onSave, onRefresh, onNotice, 
     void run(async () => {
       setPreview(undefined);
       setAck(false);
-      const result = await previewPriceWorkbook(state, file);
+      const result = await previewNativePriceWorkbook(state, file);
       setPreview(result);
       setSourceRevision(state.revision);
     });

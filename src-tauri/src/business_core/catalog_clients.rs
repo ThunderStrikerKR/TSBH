@@ -12,6 +12,8 @@ mod registration;
 mod registration_preview;
 #[path = "catalog_clients/product_sync_preview.rs"]
 mod product_sync_preview;
+#[path = "catalog_clients/price_workbook.rs"]
+mod price_workbook;
 #[path = "catalog_clients/official_import.rs"]
 mod official_import;
 #[path = "catalog_clients/brands.rs"]
@@ -308,6 +310,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "prepare_registration_commit" => registration::commit(&payload),
         "preview_registration_rows" => registration_preview::preview(&payload),
         "preview_product_sync_rows" => product_sync_preview::preview(&payload),
+        "preview_price_workbook_rows" => price_workbook::preview(&payload),
         "archive_client" => archive_client(
             state, field(&payload, "clientId"), field(&payload, "at")),
         "archive_product" => archive_product(
