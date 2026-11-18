@@ -70,6 +70,7 @@ export function visibleSettings(settings: Settings): Settings {
     operatorName: optionalText(settings.operatorName),
     excelDirectory: optionalText(settings.excelDirectory),
     factoryReplyDirectory: optionalText(settings.factoryReplyDirectory),
+    orderImageInboxDirectory: optionalText(settings.orderImageInboxDirectory),
     defaultAccountId: optionalText(settings.defaultAccountId),
     brandAccounts: {
       BANDOSTAND: optionalText(settings.brandAccounts?.BANDOSTAND),

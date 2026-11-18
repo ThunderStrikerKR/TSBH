@@ -97,7 +97,7 @@ test("Esc cancellation is silent, restores BANDO window and never starts PaddleO
 });
 
 test("recognition starts after screenshot selection and its worker is cancellable", () => {
-  assert.match(lib, /ocr::capture_ocr, ocr::cancel_ocr/);
+  assert.match(lib, /ocr::capture_ocr, ocr::clipboard_ocr, ocr::cancel_ocr/);
   assert.match(bridge, /invoke<void>\("cancel_ocr"\)/);
   assert.match(ocr, /let mut child = command\.spawn\(\)/);
   assert.match(ocr, /app\.emit\("bando-ocr-phase", "recognizing"\)/);

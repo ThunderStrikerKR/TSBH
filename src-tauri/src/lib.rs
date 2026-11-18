@@ -589,10 +589,10 @@ fn settings_patch(db: State<'_, Database>, changes: Value, expected: Value) -> R
     let changes = changes.as_object().ok_or("설정 변경 형식 오류")?;
     let expected = expected.as_object().ok_or("설정 기준값 형식 오류")?;
     if changes.is_empty() { return get_snapshot(&*lock_db(&db)?); }
-    if db.is_test && (changes.contains_key("excelDirectory") || changes.contains_key("factoryReplyDirectory")) {
+    if db.is_test && (changes.contains_key("excelDirectory") || changes.contains_key("factoryReplyDirectory") || changes.contains_key("orderImageInboxDirectory")) {
         return Err("격리 작업공간의 Excel 보관 경로는 변경할 수 없습니다.".into());
     }
-    let allowed = ["senderPostcode", "excelDirectory", "factoryReplyDirectory",
+    let allowed = ["senderPostcode", "excelDirectory", "factoryReplyDirectory", "orderImageInboxDirectory",
         "colorGuidanceGroups", "automaticMessageTemplates", "provisionalProductNotices", "kakaoTitleMappings", "kakaoTitleEnabled",
         "panelRatios", "receptionVerticalRatio", "operatorName", "uiScale", "accounts",
         "defaultAccountId", "senderName", "senderAddress", "senderPhone", "senderMobile",
