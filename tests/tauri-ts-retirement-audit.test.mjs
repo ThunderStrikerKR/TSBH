@@ -17,12 +17,13 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.ok(output.trackedLegacyModules>=25);
   assert.ok(Number.isInteger(output.reachableLegacyModules));
   assert.ok(output.reachableLegacyModules>=0);
-  assert.equal(output.retiredToTestOracle,3,
-    "All three migrated legacy implementations must remain outside src/");
+  assert.equal(output.retiredToTestOracle,5,
+    "Retired TypeScript business engines must remain outside production src");
   assert.ok(output.inventory.some(row=>
     row.module==="src/automatic-message.ts"&&!row.exists&&!row.reachableFromApp),
     "Historical message generator must no longer exist in production src");
-  for(const name of ["automatic-message.ts","message-model.ts","group-trash.ts"]){
+  for(const name of ["automatic-message.ts","message-model.ts","group-trash.ts",
+    "title-clients.ts","catalog-price-sync.ts"]){
     assert.equal(existsSync(fileURLToPath(new URL("../src/"+name,import.meta.url))),false,
       name+" must not remain in production source");
     assert.equal(existsSync(fileURLToPath(new URL("../tests/rust-migration/oracles/"+name,import.meta.url))),true,
