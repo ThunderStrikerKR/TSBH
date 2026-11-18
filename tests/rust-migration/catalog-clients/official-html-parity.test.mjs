@@ -40,14 +40,14 @@ function documentFromHtml(html){
   };
 }
 const output={};
-const compiled=ts.transpileModule(read("src/official-product-import.ts"),{
+const compiled=ts.transpileModule(read("tests/rust-migration/oracles/official-product-import.ts"),{
   compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
 }).outputText;
 const deps={
-  "./category-tree":{categoryPath:()=>[]},
-  "./category-roots":{catalogFromCategory:()=> "BANDOSTAND",withCatalogRoots:s=>s},
-  "./domain":{normalizeColor,validProductUrl,normalizeCode:s=>s.toUpperCase().replace(/\s/g,""),validateProduct:()=>{}},
-  "./product-models":{normalizeModel,registeredProducts},
+  "../../../src/category-tree":{categoryPath:()=>[]},
+  "../../../src/category-roots":{catalogFromCategory:()=> "BANDOSTAND",withCatalogRoots:s=>s},
+  "../../../src/domain":{normalizeColor,validProductUrl,normalizeCode:s=>s.toUpperCase().replace(/\s/g,""),validateProduct:()=>{}},
+  "../../../src/product-models":{normalizeModel,registeredProducts},
 };
 vm.runInNewContext(compiled,{
   exports:output,require:name=>deps[name]??(()=>{throw Error("Unexpected module "+name)})(),
