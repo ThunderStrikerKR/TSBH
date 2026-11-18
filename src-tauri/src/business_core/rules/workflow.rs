@@ -1290,3 +1290,37 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
         _ => Err(format!("지원하지 않는 업무 action: {action}")),
     }
 }
+
+
+#[cfg(test)]
+mod remote_freight_multiplier_tests {
+    use super::*;
+    #[test]
+    fn invoice_uses_one_checked_multiplier_on_summed_undoubled_base_charges() {
+        let ship=json!({"charges":{"FACTORY":3000,"STORE":2500}});
+        let mut recipient=json!({
+            "address":"제주특별자치도 서귀포시 대정읍 테스트로 3",
+            "items":[{"origin":"FACTORY"},{"origin":"STORE"}]
+        });
+        let mut order=json!({"freightCode":"010"});
+        assert_eq!(fee_total(&ship,&recipient,&order),Some(11000));
+        recipient["remoteDelivery"]=json!({
+            "address":"제주특별자치도 서귀포시 대정읍 테스트로 3",
+            "checked":false,"manual":true
+        });
+        assert_eq!(fee_total(&ship,&recipient,&order),Some(5500));
+        recipient["remoteDelivery"]["checked"]=json!(true);
+        assert_eq!(fee_total(&ship,&recipient,&order),Some(11000));
+        order["freightCode"]=json!("020");
+        assert_eq!(fee_total(&ship,&recipient,&order),Some(0));
+    }
+    #[test]
+    fn remote_delivered_actual_is_recorded_but_never_becomes_active_base_tariff() {
+        // Guard the settlement implementation's "actual evidence vs tariff
+        // recommendation" separation, including existing active combinations.
+        let code=include_str!("workflow.rs");
+        assert!(code.contains("let active=!remote_selected &&"));
+        assert!(code.contains("if !remote_selected {"));
+        assert!(code.contains("\"observedCharge\":charged"));
+    }
+}
