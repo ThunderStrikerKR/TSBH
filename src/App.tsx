@@ -2,7 +2,7 @@ import type { Order } from "./types";
 import { FactoryNotifications } from "./FactoryNotifications";
 import { FactoryReplyWatcher } from "./FactoryReplyWatcher";
 import { usePersistedNotifications } from "./app/usePersistedNotifications";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { AppHeader } from "./app/AppHeader";
 import { StartupRecoveryPanel } from "./app/StartupRecoveryPanel";
 import { DailySettlement } from "./app/DailySettlement";
@@ -44,6 +44,7 @@ const WorkflowQueue = lazy(() =>
 const noopDockReset = () => {};
 export function App() {
   const [notifications, setNotifications] = useState(false);
+  const lastCriticalNoticeId = useRef<number>();
   const model = useAppModel(),
     { state, draft, tab } = model;
   // Dock/notification repaints must not recreate handlers for live orders.
@@ -60,11 +61,21 @@ export function App() {
     previous ? (typeof value === "function" ? value(previous) : value) : previous,
   ));
   // Wait until the Tauri startup registered the managed SQLite connection.
-  const { inbox, hiddenCount, storageError, markRead, remove, clear } =
+  const { inbox, hiddenCount, storageError, add: addNotification, markRead, remove, clear } =
     usePersistedNotifications(Boolean(state && draft));
-  // The existing model.notice handles ordinary success, validation and error
-  // messages in their own UI; it is not an implicit persistent notification.
-  // Only explicitly classified critical events can enter the inbox.
+  // Never turn routine saves, ordinary field validation or reply-file events
+  // into persistent notifications. Only serious infrastructure failures that
+  // were explicitly classified by the notice owner enter this inbox.
+  useEffect(() => {
+    const notice = model.notice;
+    if (!notice?.critical || lastCriticalNoticeId.current === notice.id) return;
+    lastCriticalNoticeId.current = notice.id;
+    void addNotification({
+      priority: "critical",
+      source: "시스템", tone: "error",
+      title: "긴급 조치 필요", detail: notice.message,
+    });
+  }, [model.notice, addNotification]);
   if (!state || !draft) {
     if (model.startup.phase === "ERROR" || model.startup.phase === "RETRYING") {
       return (
