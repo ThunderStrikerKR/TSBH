@@ -72,6 +72,31 @@ test("one native calculation error does not leave every data panel permanently h
   assert.match(msg, /Boolean\(currentLoadError \|\| projectionError\)/);
 });
 
+test("no-action confirmation is a calculated result, not a permanent empty hint", () => {
+  const checks = source("src/StaffChecks.tsx");
+  const open = checks.indexOf('className="staff-check-content" data-content-fade={fadePhase}');
+  const empty = checks.indexOf('<p className="staff-empty">필수 확인 사항 없음</p>');
+  const firstIssue = checks.indexOf("actions.map((b, n)", open);
+  assert.ok(open >= 0 && empty > open && firstIssue > empty,
+    "no-action result must be INSIDE the shared fade wrapper");
+  assert.match(checks, /!error && !loading && !actions\.length/);
+  assert.match(checks, /aria-busy=\{fadePhase === "pending"\} inert=\{fadePhase === "pending"\}/);
+  assert.doesNotMatch(checks.slice(0, open), /<p className="staff-empty">/);
+});
+
+test("recipient form must not run an independent opacity animation before unified readiness", () => {
+  const desk = source("src/OrderDesk.tsx");
+  const layout = source("src/styles/receipt-layout.css");
+  const legacy = source("src/styles/reception-manual.css");
+  const hub = source("src/HubWorkspace.tsx");
+  assert.match(desk, /const recipientRevealPhase = props\.coordinatedFadePhase \?\? localRecipientPhase/);
+  assert.match(hub, /coordinatedFadePhase=\{sharedFadePhase\}/);
+  assert.match(desk, /<article className="recipient-review" key=\{r\.id\}\s*data-recipient-fade=\{recipientRevealPhase\}/);
+  assert.match(layout, /\.compact-review \[data-recipient-fade="pending"\] \{[^}]*opacity: 0;[^}]*transition: none;/s);
+  assert.doesNotMatch(legacy, /\.recipient-review\s*\{\s*animation\s*:/);
+  assert.doesNotMatch(legacy, /\.recipient-review\s*\{[^}]*animation: detail-in/s);
+});
+
 test("the five permanent section frames, empty guidance and action buttons never fade", () => {
   const checks = source("src/StaffChecks.tsx");
   const sourceDoc = source("src/SourceDocument.tsx");
