@@ -337,13 +337,43 @@
   color: var(--ds-role-text-primary);
   background: var(--ds-color-raised);
 }
-.app-v03 .source-pane .source-intake-buttons button[data-ui-role="action-quiet"] {
-  height: calc(var(--ds-action-quiet-height) * var(--ui-scale, 1));
-  font-size: calc(var(--ds-action-quiet-font-size) * var(--ui-scale, 1));
-  padding: 0 var(--ds-action-quiet-pad-x);
+.app-v03 .source-pane .source-intake-other .source-intake-buttons button {
+  /* Alternative actions must look clickable even without hover. */
+  background: var(--ds-role-surface-interactive-hover);
+  border-color: var(--ds-role-border-normal);
+}
+.source-intake-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-8);
+  max-width: 440px;
   color: var(--ds-role-text-secondary);
-  background: transparent;
-  border-color: transparent;
+  font-size: calc(var(--ds-type-metadata-size) * var(--ui-scale, 1));
+  line-height: 1.5;
+}
+.source-intake-key-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-4);
+  white-space: nowrap;
+}
+.source-intake-keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  padding: var(--ds-space-4) var(--ds-space-8);
+  border: 1px solid var(--ds-role-border-normal);
+  border-radius: var(--ds-controlRadius);
+  background: var(--ds-color-raised);
+  color: var(--ds-role-text-primary);
+  box-shadow: inset 0 -2px 0 var(--ds-role-border-divider);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
 }
 .app-v03 .source-pane .source-intake-buttons button:hover:not(:disabled) {
   background: var(--ds-role-surface-interactive-hover);

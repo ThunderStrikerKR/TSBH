@@ -425,14 +425,25 @@ export function SourceDocument({
                   <button type="button" data-ui-role="action-standard"
                     disabled={busy} onClick={() => void paste(undefined, "DEALER")}>대리점 납품</button>
                 </div>
-                <p className="source-intake-hint">Ctrl+Shift+S(캡처 앱 설정) 또는 Print Screen으로 캡처한 뒤 위 버튼으로 접수할 수 있습니다.</p>
+                <div className="source-intake-shortcuts">
+                  <span className="source-intake-key-group" aria-label="Ctrl + Shift + S">
+                    <kbd className="source-intake-keycap">Ctrl</kbd>
+                    <span>+</span>
+                    <kbd className="source-intake-keycap">Shift</kbd>
+                    <span>+</span>
+                    <kbd className="source-intake-keycap">S</kbd>
+                  </span>
+                  <span>또는</span>
+                  <kbd className="source-intake-keycap">Print Screen</kbd>
+                  <span>으로 캡처한 뒤 위 버튼으로 접수하세요.</span>
+                </div>
               </section>
               <section className="source-intake-group source-intake-other" aria-label="다른 입력 방법">
                 <h3>다른 방법으로 접수</h3>
                 <div className="source-intake-buttons">
-                  <button type="button" data-ui-role="action-quiet"
+                  <button type="button" data-ui-role="action-standard"
                     disabled={busy} onClick={() => setRetail(true)}>직접 입력</button>
-                  <button type="button" data-ui-role="action-quiet"
+                  <button type="button" data-ui-role="action-standard"
                     disabled={busy} onClick={() => void captureOcr()}>캡처 범위 지정</button>
                 </div>
               </section>

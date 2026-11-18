@@ -19,8 +19,12 @@ test("blank source canvas groups clipboard, alternative input, and folder guidan
   for (const label of ["클립보드 접수", "다른 방법으로 접수", "폴더 자동 인식"]) assert.ok(source.includes(label));
   assert.doesNotMatch(source, /source-intake-half/);
   assert.ok(source.indexOf('className="source-top"') < source.indexOf('className={"source-document"'));
-  assert.match(source, /Ctrl\+Shift\+S/);
-  assert.match(source, /Print Screen/);
+  for (const key of ["Ctrl", "Shift", "S", "Print Screen"]) {
+    assert.ok(source.includes(`<kbd className="source-intake-keycap">${key}</kbd>`));
+  }
+  assert.doesNotMatch(source, /캡처 앱 설정/);
+  assert.match(css, /\.source-intake-keycap\s*\{[^}]*border:/);
+  assert.match(css, /\.source-intake-other \.source-intake-buttons button\s*\{[^}]*background:/);
   assert.match(source, /onClick=\{\(\) => void paste\(undefined, "AGENCY"\)\}/);
   assert.match(source, /onClick=\{\(\) => void paste\(undefined, "DEALER"\)\}/);
   assert.match(source, /onClick=\{\(\) => setRetail\(true\)\}/);
@@ -30,7 +34,9 @@ test("blank source canvas groups clipboard, alternative input, and folder guidan
   assert.match(css, /\.source-intake-buttons\s*\{[^}]*flex-wrap: wrap/);
   assert.match(css, /width: auto/);
   assert.doesNotMatch(css, /\.source-intake-half/);
-  assert.match(source, /data-ui-role="action-quiet"/);
+  assert.doesNotMatch(source, /data-ui-role="action-quiet"/);
+  assert.match(source, /onClick=\{\(\) => setRetail\(true\)\}>직접 입력<\/button>/);
+  assert.match(source, /onClick=\{\(\) => void captureOcr\(\)\}>캡처 범위 지정<\/button>/);
   assert.match(hub, /onNew=\{createReceptionLive\}/);
 });
 test("dedicated image inbox scans stable files and uses existing review dialog", () => {
