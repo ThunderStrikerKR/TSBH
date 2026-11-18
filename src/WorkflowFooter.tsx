@@ -98,6 +98,7 @@ export function WorkflowFreightRows({
 }: FreightProps) {
   const { recipient } = shipmentContext(state, shipment),
     origins = [...new Set(recipient.items.map((item) => item.origin))],
+    remoteRowOrigin = origins.includes("FACTORY") ? "FACTORY" : origins[0],
     disabled = shipment.transferred;
   return (
     <>
@@ -146,7 +147,7 @@ export function WorkflowFreightRows({
                     <span aria-hidden="true">)</span>
                   </span>
                 </div>
-                {index === 0 && (
+                {origin === remoteRowOrigin && (
                   <label className="freight-remote-check">
                     <input type="checkbox" aria-label="도서/산간"
                       disabled={disabled}
@@ -166,11 +167,11 @@ export function WorkflowFreightRows({
                   공장에 운임 문의
                 </button>
               </div>
-              {index === 0 && remoteDelivery?.status === "auto" &&
+              {origin === remoteRowOrigin && remoteDelivery?.status === "auto" &&
                 <div className="freight-remote-info" role="status">
                   도서·산간 지역으로 판단했습니다. 확인 후 체크 여부를 결정하세요.
                 </div>}
-              {index === 0 && remoteDelivery?.status === "review" &&
+              {origin === remoteRowOrigin && remoteDelivery?.status === "review" &&
                 <div className="freight-remote-info" role="status">
                   도서·산간 지역일 수 있습니다. 주소를 확인 후 체크 여부를 결정하세요.
                 </div>}
