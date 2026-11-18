@@ -49,5 +49,5 @@ test("workflow confirmation and explicit save still use Rust business rules", ()
   assert.match(order,/<WorkflowFooter/);
   assert.match(model,/"rules", "save_order"/);
   assert.match(model,/"rules", "finalize_billing_history"/);
-  assert.match(model,/"rules", "persisted_reception_state"/);
+  assert.match(model,/action: "persisted_reception_state"/);
 });
