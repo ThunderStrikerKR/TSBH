@@ -22,7 +22,7 @@ function load(path, imports) {
   return exported;
 }
 const active = (products) => products.filter((p) => p.active !== false && !p.deletedAt && !p.supersededBy);
-const prices = load("src/catalog-price-sync.ts", {
+const prices = load("tests/rust-migration/oracles/catalog-price-sync.ts", {
   "./product-models": { registeredProducts: active },
 });
 const source = (id) => structuredClone(legacy.products.find((p) => p.siteId === id));
@@ -113,8 +113,12 @@ test("Old bulk approval cannot bypass review and backup", () => {
   assert.match(native, /fn catalog_approve\(_db: State<'_, Database>\)/);
   assert.match(native, /이전 방식의 일괄 승인은 안전하지 않아 중지/);
   assert.doesNotMatch(ui, /approveCatalog\(\)/);
-  assert.match(ui, /applyCatalogPriceSync\(current, report, review\)/);
-  assert.match(ui, /await window\.bando!\.backup\(\)/);
+  // The old CatalogPanel was never mounted. Its TS mutator is a test oracle,
+  // not a runtime approval path or a condition for TypeScript retirement.
+  assert.doesNotMatch(ui, /CatalogPanel|applyCatalogPriceSync|previewCatalogPriceSync/);
+  const imports = read("src/ProductImports.tsx");
+  assert.match(imports, /"catalog_clients", "apply_official_product_import"/);
+  assert.match(imports, /await window\.bando!\.backup\(\)/);
 });
 
 test("No staff-facing SKU split or multi-option creation path remains", () => {
