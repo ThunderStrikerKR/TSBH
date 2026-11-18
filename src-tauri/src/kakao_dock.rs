@@ -311,14 +311,25 @@ mod native {
             &mut query as *mut _ as isize);}
         query.2.into_iter().min().unwrap_or(reference.bottom)
     }
-    fn monitor_work(hwnd:Hwnd)->Result<Rect,String>{
+    fn monitor_info(hwnd:Hwnd)->Result<MonitorInfo,String>{
         let monitor=unsafe{MonitorFromWindow(hwnd,2)};
         if monitor==0{return Err("모니터를 확인할 수 없습니다.".into())}
         let mut info=MonitorInfo{size:std::mem::size_of::<MonitorInfo>() as u32,
             monitor:Rect::default(),work:Rect::default(),flags:0};
         if unsafe{GetMonitorInfoW(monitor,&mut info)}==0{
             Err(os("모니터 영역 조회 실패"))
-        }else{Ok(info.work)}
+        }else{Ok(info)}
+    }
+    fn monitor_work(hwnd:Hwnd)->Result<Rect,String>{
+        Ok(monitor_info(hwnd)?.work)
+    }
+    // A KakaoTalk MAIN window has a footer advertisement anchored to its
+    // bottom edge. Leave the top/width within the Hub's Kakao pane, but move
+    // that footer beyond the physical monitor bottom. The CHAT windows are
+    // deliberately NOT extended: their input composer must stay visible.
+    fn offscreen_main_target(area:Rect,screen:Rect,dpi:u32)->Rect{
+        let extra=((160.0*dpi.max(96) as f64/96.0).ceil() as i32).clamp(160,400);
+        Rect{bottom:area.bottom.max(screen.bottom).saturating_add(extra),..area}
     }
     fn overlay_region(app:&AppHandle,r:Region)->Result<Rect,String>{
         let main=app.get_webview_window("main").ok_or("반도허브 창을 찾지 못했습니다.")?;
@@ -551,6 +562,8 @@ mod native {
         if unsafe{IsIconic(s.main)}!=0{return Ok(())}
         let area=overlay_region(app,region.ok_or(
             "카카오톡 배치 영역을 확인하지 못했습니다.")?)?;
+        let screen=monitor_info(s.main)?.monitor;
+        let main_dpi=unsafe{GetDpiForWindow(s.hwnd)};
         let base=all.iter().find(|(_,kind)|*kind=="MAIN")
             .map(|(hwnd,_)|*hwnd);
         let chats=all.iter().filter(|(_,kind)|*kind=="CHAT")
@@ -580,6 +593,8 @@ mod native {
                     main_target
                 }else if s.mode==Mode::Stack && base.is_some() {
                     chat_target
+                }else if *kind=="MAIN" {
+                    offscreen_main_target(area,screen,main_dpi)
                 }else{area};
                 set_visible_rect(*hwnd,target)?;
             }
@@ -820,6 +835,20 @@ mod native {
             let _=&mut process;
         }
 
+
+        #[test] fn kakao_main_footer_is_placed_below_physical_screen_without_moving_chat() {
+            let area=Rect{left:20,top:40,right:440,bottom:1040};
+            let screen=Rect{left:0,top:0,right:1920,bottom:1080};
+            let extended=offscreen_main_target(area,screen,96);
+            assert_eq!(extended.left,area.left);
+            assert_eq!(extended.top,area.top);
+            assert_eq!(extended.right,area.right);
+            assert_eq!(extended.bottom,1240);
+            assert!(extended.bottom>screen.bottom,
+                "MAIN footer must be outside monitor bounds, not merely below Hub pane");
+            let dpi200=offscreen_main_target(area,screen,192);
+            assert_eq!(dpi200.bottom,1400,"footer crop scales with Windows DPI");
+        }
 
         #[test] fn native_layouts_do_not_treat_a_third_state_as_a_view() {
             assert_eq!(Mode::Overlap.name(),"OVERLAP");
