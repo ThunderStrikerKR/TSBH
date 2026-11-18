@@ -22,6 +22,7 @@ test("one completed transition gates recipient, items, freight and financial foo
   assert.match(desk, /return \(\) => cancelAnimationFrame\(frame\)/);
   assert.match(desk, /revealedRecipient === recipientViewKey \? "ready" : "pending"/);
   assert.match(desk, /className="recipient-body" data-recipient-fade=\{recipientRevealPhase\}/);
+  assert.match(desk, /inert=\{recipientRevealPhase === "pending"\}/);
   assert.match(desk, /className="order-grand-total" data-recipient-fade=\{recipientRevealPhase\}/);
   assert.match(css, /\.compact-review \[data-recipient-fade="pending"\] \{[^}]*opacity:\s*0;[^}]*transition:\s*none;/s);
   assert.match(css, /\.compact-review \[data-recipient-fade="ready"\] \{[^}]*opacity:\s*1;[^}]*transition:\s*opacity 260ms ease-out;/s);
