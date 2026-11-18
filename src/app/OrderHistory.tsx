@@ -6,7 +6,7 @@ import { ManagementSearch } from "../ui/ManagementSearch";
 import { HelpTooltip } from "../ui/HelpTooltip";
 import { EmptyState, PageHeading } from "../ui/PageHeading";
 import { ManagementTable } from "../ui/ManagementTable";
-import type { orderHistory } from "./order-history";
+import type { HistoryRow as BaseHistoryRow } from "./report-types";
 import { businessCoreCall } from "../tauri-bridge";
 import type { NoticeSink } from "../shared/notices";
 export function OrderHistory({
@@ -24,7 +24,7 @@ export function OrderHistory({
   onNotice: NoticeSink;
 }) {
   const [expanded, setExpanded] = useState<string[]>([]);
-  type HistoryRow = ReturnType<typeof orderHistory>[number] & {
+  type HistoryRow = BaseHistoryRow & {
     display: {
       trackingMessage: string;
       paymentEvidenceMissing: boolean;

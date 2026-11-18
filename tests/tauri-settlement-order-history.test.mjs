@@ -10,7 +10,7 @@ const compiled = new Map();
 const modules = new Map();
 function moduleFor(path) {
   if (modules.has(path)) return modules.get(path);
-  const source = read("src/app/" + path + ".ts");
+  const source = read((["settlement-report","order-history"].includes(path) ? "tests/rust-migration/oracles/" : "src/app/") + path + ".ts");
   const out = {};
   modules.set(path, out);
   const js = ts.transpileModule(source, {
@@ -23,12 +23,12 @@ function moduleFor(path) {
   evaluate(out, (name) => {
     if (name === "exceljs") return ExcelJS;
     if (name.startsWith("./")) return moduleFor(name.slice(2).replace(/\.js$/, ""));
-    if (name === "../domain") return {
+    if (name === "../../../src/domain") return {
       orderClient: (o, state) => state.clients.find((c) => c.id === o.clientId) ?? o.clientSnapshot,
       totals: (o) => o.fixtureTotals,
       statusNames: { RECEIVED: "접수", APPROVED:"승인", EXPORTED:"출력" },
     };
-    if (name === "../workflow") return {
+    if (name === "../../../src/workflow") return {
       shipmentTotals: (state, s) => s.fixtureTotals,
       shipmentContext: (state, ship) => ({
         order: state.orders.find((o) => o.id === ship.orderId),
@@ -36,7 +36,7 @@ function moduleFor(path) {
         recipient: state.orders.find((o) => o.id === ship.orderId)?.recipients.find((r) => r.id === ship.recipientId),
       }),
     };
-    if (name === "../workspace-selection") return { onlyDeletedGroups: () => false };
+    if (name === "../../../src/workspace-selection") return { onlyDeletedGroups: () => false };
     throw Error("Unknown dependency in report test: " + name);
   }, structuredClone);
   return out;
@@ -362,7 +362,7 @@ test("report screens keep live read-only views while Excel export buttons are de
   // A type-only import disappears from JavaScript output. Prohibit runtime
   // imports of the old TS business module without rejecting TypeScript types.
   assert.doesNotMatch(reportWorkbook, /^import\s+(?!type\b)[^\n]*from\s+["']\.\/settlement-report["']/m);
-  assert.match(reportWorkbook, /^import type \{[^\n]+\} from "\.\/settlement-report";/m);
+  assert.match(reportWorkbook, /^import type \{[^\n]+\} from "\.\/report-types";/m);
 
   assert.doesNotMatch(historyFormat, /^import /m);
   assert.doesNotMatch(dateFormat, /^import /m);

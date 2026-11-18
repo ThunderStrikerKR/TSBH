@@ -7,8 +7,8 @@ import { EmptyState, PageHeading } from "../ui/PageHeading";
 import { ManagementTable } from "../ui/ManagementTable";
 import { DateNavigator } from "./DateNavigator";
 import { HelpTooltip } from "../ui/HelpTooltip";
-import type { HistoryRow } from "./settlement-report";
-import type { DailySettlementReport } from "./settlement-report";
+import type { HistoryRow } from "./report-types";
+import type { DailySettlementReport } from "./report-types";
 import { businessCoreCall } from "../tauri-bridge";
 
 const cash = (value: number | null) => value === null ? "확인 필요" : won(value);

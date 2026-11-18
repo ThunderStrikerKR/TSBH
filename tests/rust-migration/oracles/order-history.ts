@@ -1,8 +1,9 @@
-import { orderClient, totals } from "../domain";
-import type { State } from "../types";
-import { shipmentContext, shipmentTotals } from "../workflow";
+/** Historical TS order-history calculation, only for Rust parity. */
+import { orderClient, totals } from "../../../src/domain";
+import type { State } from "../../../src/types";
+import { shipmentContext, shipmentTotals } from "../../../src/workflow";
 import { seoulDate } from "./settlement-report";
-import { onlyDeletedGroups } from "../workspace-selection";
+import { onlyDeletedGroups } from "../../../src/workspace-selection";
 
 export type OrderHistoryStatus =
   | "처리 중"

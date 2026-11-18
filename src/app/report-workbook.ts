@@ -1,6 +1,6 @@
 import { seoulDate } from "./seoul-date";
 import type { State } from "../types";
-import type { DailySettlementReport, HistoryRow } from "./settlement-report";
+import type { DailySettlementReport, HistoryRow } from "./report-types";
 
 export interface ReportWorkbookData {
   date: string;

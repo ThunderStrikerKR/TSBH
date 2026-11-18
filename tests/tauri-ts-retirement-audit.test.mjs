@@ -17,7 +17,7 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.ok(output.trackedLegacyModules>=25);
   assert.ok(Number.isInteger(output.reachableLegacyModules));
   assert.ok(output.reachableLegacyModules>=0);
-  assert.equal(output.retiredToTestOracle,15,
+  assert.equal(output.retiredToTestOracle,17,
     "Retired TypeScript business engines must remain outside production src");
   assert.ok(output.inventory.some(row=>
     row.module==="src/automatic-message.ts"&&!row.exists&&!row.reachableFromApp),
@@ -38,6 +38,8 @@ test("TypeScript business retirement audit reads actual app source import graph"
     ["orders/manual-classification.ts","manual-classification.ts"],
     ["factory-replies.ts","factory-replies.ts"],
     ["factory-reply-workbook.ts","factory-reply-workbook.ts"],
+    ["app/order-history.ts","order-history.ts"],
+    ["app/settlement-report.ts","settlement-report.ts"],
   ];
   for(const [name,oracle] of retired){
     assert.equal(existsSync(fileURLToPath(new URL("../src/"+name,import.meta.url))),false,

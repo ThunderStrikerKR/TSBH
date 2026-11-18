@@ -1,5 +1,6 @@
-import type { State } from "../types";
-import type { WorkflowPayment } from "../workflow-types";
+/** Historical TS settlement calculation, only for Rust parity. */
+import type { State } from "../../../src/types";
+import type { WorkflowPayment } from "../../../src/workflow-types";
 import type { orderHistory } from "./order-history";
 
 export type HistoryRow = ReturnType<typeof orderHistory>[number];

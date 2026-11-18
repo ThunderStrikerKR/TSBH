@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { tsImport } from "tsx/esm/api";
 
-const { orderHistory } = await tsImport("../src/app/order-history.ts", import.meta.url);
-const { dailySettlement } = await tsImport("../src/app/settlement-report.ts", import.meta.url);
+const { orderHistory } = await tsImport("./rust-migration/oracles/order-history.ts", import.meta.url);
+const { dailySettlement } = await tsImport("./rust-migration/oracles/settlement-report.ts", import.meta.url);
 
 function realWorkflowFixture() {
   const c = { id:"dealer", name:"거래처A", contact:"", tier:"wholesale", payment:"PREPAID",
