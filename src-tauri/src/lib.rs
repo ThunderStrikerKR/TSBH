@@ -329,6 +329,8 @@ fn initialize_database(path: &Path) -> Result<Connection, String> {
     notification_store::initialize(&conn)?;
     // Persist reception edits independently from the confirmed-order archive.
     // The whole SQLite DB (including this table) belongs to normal backups.
+    // The Windows DEV smoke must compile both exposed commands and this
+    // initializer: preview registration must never substitute for SQLite.
     working_receptions::initialize(&conn)?;
     let exists: Option<i64> = conn.query_row("SELECT 1 FROM app_state WHERE id=1", [], |r| r.get(0)).optional().map_err(err)?;
     if exists.is_none() {
