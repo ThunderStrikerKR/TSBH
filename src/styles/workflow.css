@@ -175,30 +175,41 @@
   border-color: var(--ds-role-surface-emphasized-action-hover);
   color: var(--ds-color-primaryInverse);
 }
-/* The temporary preview is the same complete .workflow-group card
-   rendered at the original card coordinates, with its real expanded list.
-   Only this transparent viewport-safe portal wrapper is preview-specific. */
-.workflow-preview-stage {
-  position: fixed;
-  z-index: 400;
-  box-sizing: border-box;
+/* Render the same expanded card in exactly the same position and
+   containing block as the collapsed card. Only the overlay is absolute;
+   no additional box or viewport calculation may shift its dimensions. */
+.workflow-card-anchor {
+  position: relative;
   min-width: 0;
-  padding: 0;
-  margin: 0;
-  border: 0;
-  background: transparent;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: auto;
+  isolation: isolate;
 }
-.workflow-preview-stage .workflow-group {
+.workflow-card-anchor.previewing {
+  z-index: 400;
+}
+.workflow-card-overlay {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 1;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+}
+.workflow-card-overlay .workflow-group {
   width: 100%;
   margin: 0;
 }
-/* The preview must not replay a leaving-selection animation on top of the
-   identical underlying card. */
-.workflow-preview-stage .workflow-shipment.chosen::before,
-.workflow-preview-stage .workflow-shipment.query-leaving::before {
+/* The hovered action must look the same as the unhovered action in the
+   normal expanded card, not turn blue solely because this is a preview. */
+.app-v03 .hub-slot-3 .workflow-card-overlay .workflow-progress > .primary:hover:not(:disabled) {
+  background: #e3e3e3;
+  border-color: #e3e3e3;
+  color: #111;
+}
+.workflow-card-overlay .workflow-shipment.chosen::before,
+.workflow-card-overlay .workflow-shipment.query-leaving::before {
   animation: none;
   transform: none;
 }
