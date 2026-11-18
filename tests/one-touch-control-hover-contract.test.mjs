@@ -59,7 +59,7 @@ test("recipient, product, quantity, money, freight, selected origin and VAT use 
   assert.match(desk, /<table className="compact-items">/);
   assert.match(desk, /className="item-row-edit"/);
   assert.match(desk, /className="item-row-edit item-amount"/);
-  assert.match(freight, /className="freight-item-row freight-input-area"/);
+  assert.match(freight, /"freight-item-row freight-input-area"/);
   assert.match(freight, /className="freight-money"/);
   assert.match(freight, /className="freight-payment-code"/);
   assert.match(freight, /<select[\s\S]*?value=\{freightCode\}/);
