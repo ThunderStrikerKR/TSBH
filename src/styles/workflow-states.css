@@ -126,7 +126,8 @@
   gap: 4px;
   min-width: 0;
 }
-.app-v03 .product-chip {
+.app-v03 .product-chip,
+.workflow-preview-layer .product-chip {
   display: inline-flex;
   background: #303030;
   border: 1px solid #555;
