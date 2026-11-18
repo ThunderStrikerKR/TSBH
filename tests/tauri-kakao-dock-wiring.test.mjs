@@ -38,16 +38,16 @@ test("native Kakao process authentication, safe original placement and no inject
 });
 
 test("there are precisely two viewing modes and connection is not a view",()=>{
-  assert.match(header,/role="group" aria-label="카카오톡 보기 방식"/);
-  assert.match(header,/aria-pressed=\{dock.mode === "OVERLAP"\}/);
-  assert.match(header,/aria-pressed=\{dock.mode === "STACK"\}/);
-  assert.match(header,/함께 보기/);
-  assert.doesNotMatch(header,/겹쳐 보기/);
-  assert.match(header,/나누어 보기/);
-  assert.match(header,/카카오톡 함께 보기/);
-  assert.match(header,/onDockStop/);
-  assert.match(header,/카카오톡 연결 해제/);
-  assert.doesNotMatch(header,/다음: 카카오톡|다음: 나누어 보기|다음: 카카오톡 창 원래 위치 복구/);
+  assert.match(shell,/role="group" aria-label="카카오톡 보기 및 연결 관리"/);
+  assert.match(shell,/aria-pressed=\{dock.mode === "OVERLAP"\}/);
+  assert.match(shell,/aria-pressed=\{dock.mode === "STACK"\}/);
+  assert.match(shell,/함께 보기/);
+  assert.doesNotMatch(shell,/겹쳐 보기/);
+  assert.match(shell,/나누어 보기/);
+  assert.match(shell,/onDockStop/);
+  assert.match(shell,/카카오톡 연결 해제/);
+  assert.doesNotMatch(header,/kakao-view-modes|함께 보기|나누어 보기|연결 해제/);
+  assert.doesNotMatch(shell,/다음: 카카오톡|다음: 나누어 보기|다음: 카카오톡 창 원래 위치 복구/);
   assert.match(model,/dockMode\(mode\)/);
   assert.ok(model.includes('windows.find((window) => window.kind === "CHAT")'));
   assert.ok(model.includes("dockStart(selected.handle, 0.8)"));
@@ -55,6 +55,14 @@ test("there are precisely two viewing modes and connection is not a view",()=>{
   assert.doesNotMatch(model,/bando!\.dockCycle\(\)/);
   assert.match(app,/onDockMode=/);
   assert.match(app,/onDockStop=/);
+  assert.match(shell,/className="kakao-panel-toolbar"/);
+  assert.match(shell,/data-ui-role="nav-subsection"/);
+  assert.match(shell,/data-ui-role="action-quiet"/);
+  assert.ok(shell.indexOf('className="kakao-panel-toolbar"') < shell.indexOf('ref={region} className="kakao-native-region"'));
+  const css=read("src/styles/shell.css");
+  assert.match(css,/\.kakao-native-region\s*\{[^}]*flex: 1 1 auto/);
+  assert.match(css,/\.kakao-panel-toolbar\s*\{[^}]*flex: 0 0 auto/);
+  assert.match(css,/\.kakao-panel-toolbar button\s*\{[^}]*height: 26px/);
 });
 
 test("both modes use the original left KakaoTalk pane and never move BANDO HUB",()=>{
