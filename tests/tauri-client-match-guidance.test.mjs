@@ -60,3 +60,25 @@ test("unmatched dealer generates one required action, not a second blue notice",
   assert.doesNotMatch(issues.split("#[cfg(test)]")[0],/거래처 자동 연결 근거가 없습니다/);
   assert.match(checks,/b\.detail && b\.detail !== b\.title/);
 });
+
+test("Rust candidate choices live in staff checks and use native dealer edits", () => {
+  const rust=read("src-tauri/src/business_core/catalog_clients/title_clients.rs");
+  const source=read("src/SourceDocument.tsx");
+  const adapter=read("src/native-title-clients.ts");
+  const desk=read("src/OrderDesk.tsx");
+  const hook=read("src/orders/useOrderDesk.tsx");
+  const checks=read("src/StaffChecks.tsx");
+  const css=read("src/styles/patch-v0808.css");
+  assert.match(rust,/fn reception_candidates\(payload:&Value\)/);
+  assert.match(adapter,/"catalog_clients", "reception_client_candidates"/);
+  assert.match(source,/nativeReceptionClientCandidates\(\s*state, chats, raw, activeChatHandle/);
+  assert.match(source,/candidates: suggestions\.candidates/);
+  assert.match(hook,/draft\.clientMatch\?\.candidates\?\.map/);
+  assert.match(desk,/b\.kind === "CLIENT" \|\| b\.kind\?\.startsWith\("CLIENT_MATCH_"\)/);
+  assert.match(desk,/void chooseDealer\(candidate\)/);
+  assert.match(checks,/b\.choices\?\.map/);
+  assert.match(checks,/staff-client-match-info/);
+  assert.match(css,/\.staff-checks \.staff-client-match-info/);
+  assert.doesNotMatch(source,/<KakaoClients|<ClientPicker/);
+  assert.doesNotMatch(source,/setWindows/);
+});

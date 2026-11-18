@@ -748,3 +748,14 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* A confident Rust dealer match is a blue completed-fact notice, without a
+   second confirmation button. Unresolved candidates remain actionable. */
+.staff-checks .staff-client-match-info {
+  border: 1px solid rgba(112, 180, 255, 0.38);
+  background: rgba(39, 89, 142, 0.17);
+  color: #d7e8f7;
+}
+.staff-checks .staff-client-match-info .staff-fact-message > b {
+  color: #70b4ff;
+}

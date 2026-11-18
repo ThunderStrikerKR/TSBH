@@ -17,7 +17,7 @@ import { internalModel } from "./matching";
 import { useOrderDesk, type OrderDeskProps } from "./orders/useOrderDesk";
 import { nativeApproveMissingQuantity, nativeConfirmProposedProduct, nativeReconcileWorkflow } from "./orders/native-rules";
 import { businessCoreCall } from "./tauri-bridge";
-import type { Order } from "./types";
+import type { Client, Order } from "./types";
 import { Field, clone } from "./ui";
 export function OrderDesk(props: OrderDeskProps) {
   auditReactRender("OrderDesk:" + props.viewMode);
@@ -184,6 +184,38 @@ export function OrderDesk(props: OrderDeskProps) {
             (error instanceof Error ? error.message : String(error)), "error");
       });
   };
+  // Manual choice and Rust-suggested candidate buttons share the exact
+  // same guarded native dealer edit, reprice and reconciliation path.
+  const chooseDealer = async (c: Client) => {
+                if (c.id === draft.clientId) return;
+                const sourceDraft = draft;
+                const sourceState = state;
+                // Rust validates historical payment/transfer constraints,
+                // selects the dealer, snapshots old invoices, reprices products
+                // and invalidates the old dealer's freight atomically.
+                const { order: next } = await businessCoreCall<{ order: Order }>(
+                  "rules", "order_edit_rules", {
+                    action: "change_order_client", state: sourceState,
+                    order: sourceDraft, dealerId: c.id,
+                    now: new Date().toISOString(),
+                  },
+                );
+                if (!isCurrentOrderInput(sourceDraft, sourceState))
+                  throw Error("주문 또는 거래처 정보가 변경되었습니다. 다시 선택하세요.");
+                if (saved) {
+                  // Reconciliation is committed once. Read back the SQLite
+                  // authority: useAppModel can intentionally retain a current
+                  // unsaved editor even when an unrelated workflow saves.
+                  await onWorkflowSave(await nativeReconcileWorkflow(sourceState, next));
+                  const persisted = await window.bando!.load();
+                  const committed = persisted.orders.find((row) => row.id === next.id);
+                  if (!committed)
+                    throw Error("저장된 거래처 변경 주문을 다시 확인할 수 없습니다.");
+                  onChange((current) => current === sourceDraft ? committed : current);
+                } else {
+                  onChange(next);
+                }
+  };
   if (draft.orderType === "RETAIL")
     return (
       <>
@@ -274,36 +306,7 @@ export function OrderDesk(props: OrderDeskProps) {
                 setSource(value);
               }}
               onOrder={onChange}
-              onDealer={async (c) => {
-                if (c.id === draft.clientId) return;
-                const sourceDraft = draft;
-                const sourceState = state;
-                // Rust validates historical payment/transfer constraints,
-                // selects the dealer, snapshots old invoices, reprices products
-                // and invalidates the old dealer's freight atomically.
-                const { order: next } = await businessCoreCall<{ order: Order }>(
-                  "rules", "order_edit_rules", {
-                    action: "change_order_client", state: sourceState,
-                    order: sourceDraft, dealerId: c.id,
-                    now: new Date().toISOString(),
-                  },
-                );
-                if (!isCurrentOrderInput(sourceDraft, sourceState))
-                  throw Error("주문 또는 거래처 정보가 변경되었습니다. 다시 선택하세요.");
-                if (saved) {
-                  // Reconciliation is committed once. Read back the SQLite
-                  // authority: useAppModel can intentionally retain a current
-                  // unsaved editor even when an unrelated workflow saves.
-                  await onWorkflowSave(await nativeReconcileWorkflow(sourceState, next));
-                  const persisted = await window.bando!.load();
-                  const committed = persisted.orders.find((row) => row.id === next.id);
-                  if (!committed)
-                    throw Error("저장된 거래처 변경 주문을 다시 확인할 수 없습니다.");
-                  onChange((current) => current === sourceDraft ? committed : current);
-                } else {
-                  onChange(next);
-                }
-              }}
+              onDealer={chooseDealer}
               onSave={onWorkflowSave}
               onSaveState={onSaveState}
               onNotice={onNotice}
@@ -368,6 +371,14 @@ export function OrderDesk(props: OrderDeskProps) {
                       );
                   }}
                   onCandidate={(b, value) => {
+                    if (b.kind === "CLIENT" || b.kind?.startsWith("CLIENT_MATCH_")) {
+                      const candidate = state.clients.find((row) =>
+                        row.id === value && !row.deletedAt && row.active !== false,
+                      );
+                      if (candidate) void chooseDealer(candidate).catch((error) =>
+                        onNotice("거래처 선택 실패: " + String(error), "error"));
+                      return;
+                    }
                     if (b.kind === "OPTION") {
                       const row = draft.recipients.find((r) => r.id === b.recipientId);
                       const item = row?.items.find((i) => i.id === b.itemId);

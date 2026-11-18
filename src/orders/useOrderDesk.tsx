@@ -581,11 +581,15 @@ export function useOrderDesk({
           (b.kind === "APPLIED" ? " × " + item?.quantity : "") +
           (item?.recognitionReason ? " / " + item.recognitionReason : ""),
         choices:
-          b.kind.startsWith("CANDIDATE_")
-            ? r?.candidates
-                ?.filter((c) => c.field === b.kind.slice(10))
-                .map((c) => ({ label: c.label, value: c.value }))
-            : undefined,
+          b.kind === "CLIENT" || b.kind.startsWith("CLIENT_MATCH_")
+            ? draft.clientMatch?.candidates?.map((c) => ({
+                label: c.name, value: c.clientId,
+              }))
+            : b.kind.startsWith("CANDIDATE_")
+              ? r?.candidates
+                  ?.filter((c) => c.field === b.kind.slice(10))
+                  .map((c) => ({ label: c.label, value: c.value }))
+              : undefined,
       };
     });
   const question = (b: StaffBlock) => {

@@ -113,7 +113,8 @@ export function StaffChecks({
                     {approvingQuantity ? "처리 중" : "1개로 잠정 처리"}
                   </button>
                 </>
-              ) : (
+              ) : b.choices?.length &&
+                (b.kind === "CLIENT" || b.kind?.startsWith("CLIENT_MATCH_")) ? null : (
                 <button disabled={unavailable} onClick={() => onSelect(b)}>
                   {b.kind === "UNASSIGNED_EVIDENCE"
                     ? "수동 분류에서 확인"
@@ -158,7 +159,8 @@ export function StaffChecks({
           </details>
         )}
         {others.map((b, n) => (
-          <article className="staff-fact" key={b.issueId ?? n}>
+          <article className={b.kind === "CLIENT_MATCH_EVIDENCE"
+            ? "staff-fact staff-client-match-info" : "staff-fact"} key={b.issueId ?? n}>
             <div className="staff-fact-message">
               <b>{b.kind === "QUANTITY_MISSING" && b.resolution === "PROVISIONALLY_APPROVED"
                 ? "수량 1개 잠정 처리됨"
@@ -168,12 +170,14 @@ export function StaffChecks({
                 <small>1개 발송 예정 안내가 복사용 메시지에 포함됩니다. 실제 수량이 확인되면 수량을 수정하세요.</small>
               )}
             </div>
-            <div className="issue-actions">
-              <button disabled={unavailable} onClick={() => onSelect(b)}>{b.kind === "CLIENT_MATCH_EVIDENCE" ? "거래처 확인" : "입력 위치로 이동"}</button>
-              {b.kind === "QUANTITY_MISSING" && b.resolution === "PROVISIONALLY_APPROVED" && (
-                <button type="button" disabled={unavailable} onClick={() => onCancelApproval?.(b)}>잠정 승인 취소</button>
-              )}
-            </div>
+            {b.kind !== "CLIENT_MATCH_EVIDENCE" && (
+              <div className="issue-actions">
+                <button disabled={unavailable} onClick={() => onSelect(b)}>입력 위치로 이동</button>
+                {b.kind === "QUANTITY_MISSING" && b.resolution === "PROVISIONALLY_APPROVED" && (
+                  <button type="button" disabled={unavailable} onClick={() => onCancelApproval?.(b)}>잠정 승인 취소</button>
+                )}
+              </div>
+            )}
           </article>
         ))}
         </div>
