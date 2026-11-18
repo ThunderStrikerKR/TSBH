@@ -36,6 +36,18 @@ test("preview does not introduce its own selection colors, row labels or a secon
   assert.doesNotMatch(board, /transform:\s*previewLayer/);
 });
 
+test("shipment-list renderer only references its own inPreview argument", () => {
+  const board = source("src/WorkflowBoard.tsx");
+  const start = board.indexOf("const renderShipmentList = (inPreview: boolean)");
+  const end = board.indexOf("const renderGroupCard = (isPreview: boolean)", start);
+  assert.ok(start >= 0 && end > start, "both render helpers must exist");
+  const body = board.slice(start, end);
+  assert.doesNotMatch(body, /\bisPreview\b/, "undefined isPreview crashes expanded order rendering");
+  assert.match(body, /const visuallyChosen = inPreview/);
+  assert.match(body, /const isPreviewed = !inPreview/);
+  assert.match(body, /if \(inPreview\)/);
+});
+
 test("clicking a shipment preview selects it and expands its order card", () => {
   const board = source("src/WorkflowBoard.tsx");
   assert.match(board, /if \(inPreview\) \{[\s\S]*?setManuallyClosedGroup\(undefined\);[\s\S]*?stopStagePreview\(\);[\s\S]*?\}[\s\S]*?onSelect\(\{/);
