@@ -26,6 +26,10 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             payload.get("ids").unwrap_or(&Value::Null),
             "STORE",
         ),
+        "review_export_sender" => export::sender_review(
+            payload.get("state").unwrap_or(&Value::Null),
+            payload.get("ids").unwrap_or(&Value::Null),
+        ),
         "finalize_export" => export_history::finalize(&payload),
         "render_messages" => messages::execute(&payload),
         "render_automatic_request" => automatic_request::execute(&payload),

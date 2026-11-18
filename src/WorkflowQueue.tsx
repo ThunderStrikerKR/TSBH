@@ -13,7 +13,7 @@ import { createStoreWorkbook, type StoreExportPreview } from "./store-export";
 import { nativeFinalizeExport } from "./native-export";
 import { confirmAction } from "./dialogs";
 import { businessCoreCall } from "./tauri-bridge";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { won } from "./domain";
 import { internalModel } from "./matching";
 import type { NoticeSink } from "./shared/notices";
@@ -112,16 +112,32 @@ export function WorkflowQueue({
   const excelListEmpty = scope === "HISTORY"
     ? exportHistoryRows.length === 0 && !hasReplyHistory
     : rows.length === 0 && legacy.length === 0;
-  const companyMissing = chosen.some((id) => {
-    const q = state.workflow?.queue.find((row) => row.id === id),
-      ship = state.workflow?.shipments.find((s) => s.id === q?.shipmentId),
-      order = state.orders.find((o) => o.id === ship?.orderId),
-      sender = q?.snapshot?.sender;
-    return (
-      ["DEALER", "RETAIL"].includes(order?.orderType ?? "") &&
-      (!sender?.name || !sender.address || !(sender.phone || sender.mobile))
-    );
-  });
+  // Sender completeness is the Rust export domain's decision, not a TS
+  // approximation of the business rule. Ignore stale asynchronous responses.
+  const senderSelectionKey = chosen.join("|");
+  const [senderReview, setSenderReview] = useState<{
+    source: State; selection: string; companyMissing: boolean; error: string;
+  }>();
+  const reviewSender = !!onSettings && scope !== "HISTORY" && chosen.length > 0;
+  useEffect(() => {
+    if (!reviewSender) return;
+    let cancelled = false;
+    void businessCoreCall<{ companyMissing: boolean }>(
+      "output", "review_export_sender", { state, ids: chosen },
+    ).then(({ companyMissing }) => {
+      if (!cancelled) setSenderReview({ source: state, selection: senderSelectionKey,
+        companyMissing, error: "" });
+    }).catch((reason) => {
+      if (!cancelled) setSenderReview({ source: state, selection: senderSelectionKey,
+        companyMissing: false, error: String(reason) });
+    });
+    return () => { cancelled = true; };
+  // chosen is recreated by each render; the stable membership key avoids a
+  // redundant native call when only presentation state changes.
+  }, [reviewSender, senderSelectionKey, state]);
+  const currentSenderReview = reviewSender && senderReview?.source === state &&
+    senderReview.selection === senderSelectionKey ? senderReview : undefined;
+  const companyMissing = currentSenderReview?.companyMissing === true;
   return (
     <section className="excel-workspace">
       <PageHeading title="엑셀 관리" actions={<HelpTooltip title="발송 Excel 관리" purpose="공장이나 매장에서 발송할 주문을 모아 배송용 Excel 파일을 만듭니다." when="주문 확인과 입금 처리 후 물품을 발송하기 위한 자료가 필요할 때 사용합니다." steps={["공장 엑셀 대기 또는 매장 발송 대기 탭을 선택합니다.", "발송할 주문을 검색하고 확인합니다.", "대상 주문을 선택합니다.", "아래 Excel 작성 버튼을 눌러 파일을 만듭니다."]} result="선택한 발송 건을 Excel 파일로 저장해 출고 업무에 사용할 수 있습니다." caution="Excel 파일을 만들었다고 실제로 상품이 포장되거나 발송 완료되는 것은 아닙니다." />} />
@@ -405,6 +421,9 @@ export function WorkflowQueue({
       <footer className="excel-fixed-footer">
         {scope !== "HISTORY" && <small className="muted">저장 위치는 Windows 저장 창에서 선택합니다. 파일 작성은 발송 완료가 아닙니다.</small>}
         {companyMissing && onSettings && <button onClick={onSettings}>반도스탠드 정보 설정</button>}
+        {currentSenderReview?.error && <span role="alert" className="form-error">
+          송하인 정보 검사 실패: {currentSenderReview.error}
+        </span>}
         {scope !== "HISTORY" && (
           <div className="excel-footer-actions">
           <button

@@ -18,6 +18,30 @@ fn trimmed(value: &Value, key: &str) -> String {
 fn active(value: &Value, key: &str) -> bool {
     value.get(key).and_then(Value::as_bool).unwrap_or(false)
 }
+fn sender_complete(sender: &Value) -> bool {
+    !trimmed(sender, "name").is_empty()
+        && !trimmed(sender, "address").is_empty()
+        && (!trimmed(sender, "phone").is_empty() || !trimmed(sender, "mobile").is_empty())
+}
+
+/// Read-only sender-completeness projection for the Excel queue settings hint.
+/// The same check is used by the native export transaction boundary.
+pub(super) fn sender_review(state: &Value, ids: &Value) -> Result<Value, String> {
+    let selected = ids.as_array().ok_or("선택한 배송 건을 확인하세요.")?;
+    let queue = state.get("workflow").map(|w| children(w, "queue")).unwrap_or(&[]);
+    let shipments = state.get("workflow").map(|w| children(w, "shipments")).unwrap_or(&[]);
+    let orders = children(state, "orders");
+    let missing = selected.iter().filter_map(Value::as_str).any(|id| {
+        let Some(entry) = find_by_id(queue, id) else { return false };
+        let Some(ship) = find_by_id(shipments, text(entry, "shipmentId")) else { return false };
+        let Some(order) = find_by_id(orders, text(ship, "orderId")) else { return false };
+        if !matches!(text(order, "orderType"), "DEALER" | "RETAIL") {
+            return false;
+        }
+        !sender_complete(&entry["snapshot"]["sender"])
+    });
+    Ok(json!({"companyMissing": missing}))
+}
 fn find_by_id<'a>(items: &'a [Value], id: &str) -> Option<&'a Value> {
     items.iter().find(|item| text(item, "id") == id)
 }
@@ -173,10 +197,7 @@ fn export_row(state: &Value, entry: &Value, origin: &str) -> Result<Value, Strin
     {
         return Err("수취인 성함, 주소, 연락처가 누락되었습니다.".into());
     }
-    if trimmed(sender, "name").is_empty()
-        || trimmed(sender, "address").is_empty()
-        || (trimmed(sender, "phone").is_empty() && trimmed(sender, "mobile").is_empty())
-    {
+    if !sender_complete(sender) {
         return Err("대리발송 송하인의 상호, 주소, 연락처가 누락되었습니다.".into());
     }
     let code = text(snapshot, "freightCode");
@@ -269,4 +290,31 @@ pub(super) fn prepare(state: &Value, ids: &Value, origin: &str) -> Result<Value,
     }
     Ok(json!({ "revision": state.get("revision").and_then(Value::as_i64).unwrap_or(0),
         "ids": ids, "rows": rows }))
+}
+
+#[cfg(test)]
+mod sender_review_tests {
+    use super::sender_review;
+    use serde_json::json;
+
+    #[test]
+    fn sender_hint_uses_native_export_sender_validation() {
+        let mut state = json!({
+            "orders": [{"id":"o1","orderType":"DEALER"}],
+            "workflow": {
+                "shipments":[{"id":"s1","orderId":"o1"}],
+                "queue":[{"id":"q1","shipmentId":"s1","snapshot":{
+                    "sender":{"name":"반도","address":"  ","phone":"02-1234-5678"}
+                }}]
+            }
+        });
+        assert_eq!(sender_review(&state,&json!(["q1"])).unwrap()["companyMissing"],true);
+        state["workflow"]["queue"][0]["snapshot"]["sender"]["address"]=json!("서울특별시 마포구 1");
+        assert_eq!(sender_review(&state,&json!(["q1"])).unwrap()["companyMissing"],false);
+        state["orders"][0]["orderType"]=json!("AGENCY");
+        state["workflow"]["queue"][0]["snapshot"]["sender"]["name"]=json!("");
+        assert_eq!(sender_review(&state,&json!(["q1"])).unwrap()["companyMissing"],false);
+        assert_eq!(sender_review(&state,&json!([])).unwrap()["companyMissing"],false);
+        assert!(sender_review(&state,&json!("bad")).is_err());
+    }
 }
