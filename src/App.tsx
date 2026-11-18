@@ -175,7 +175,6 @@ export function App() {
                   onNew={workspaceNew}
                   onSettings={workspaceSettings}
                   onRawEditDirty={model.setRawEditDirty}
-                  onPendingDraftCount={model.setPendingDraftCount}
                   onRememberSelection={model.setWorkflowSelection}
                   onRegisterOrderLeaveGuard={model.registerOrderLeaveGuard}
                   externalKakao={true}

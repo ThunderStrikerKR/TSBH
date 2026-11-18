@@ -22,7 +22,6 @@ export function useAppModel() {
     [settlementDate, setSettlementDate] = useState(() => seoulDate(new Date().toISOString()));
   const hasPendingChanges = useHasPendingChanges();
   const [rawEditDirty, setRawEditDirty] = useState(false);
-  const [pendingDraftCount, setPendingDraftCount] = useState(0);
   const orderLeaveGuard = useRef<((intent?: OrderLeaveIntent) => Promise<OrderLeaveResult>) | undefined>(undefined);
   const registerOrderLeaveGuard = useCallback((guard?: (intent?: OrderLeaveIntent) => Promise<OrderLeaveResult>) => {
     orderLeaveGuard.current = guard;
@@ -271,23 +270,14 @@ export function useAppModel() {
     setDraft((currentDraft) => currentDraft === sourceDraft ? clone(committedOrder) : currentDraft);
     setNotice(mode === "queue" ? "공장 목록에 추가했습니다." : "주문을 저장했습니다.");
   };
-  // A new reception cannot be saved until the employee confirms the order.
+  // The workflow workspace owns durable unconfirmed reception autosaves.
+  // Never let a fallback navigation discard such a reception.
   const confirmReceptionDraftLeave = async (): Promise<boolean> => {
     if (!draft || !dirty) return true;
     const persisted = state?.orders.find((order) => order.id === draft.id);
-    // Fallback when no workspace leave guard is registered: an unconfirmed
-    // reception cannot be saved to SQLite. Offer retention, not fake saving.
     if (!persisted && !draft.confirmedAt) {
-      const choice = await askSaveChanges(
-        "이 발주서는 주문 확인 완료 전이므로 정식 저장되지 않습니다. 임시 보관하고 이동할까요?",
-        { title: "미완성 발주서 처리", save: "임시 보관하고 이동", discard: "버리고 이동" },
-      );
-      if (choice === "cancel") return false;
-      if (choice === "discard") {
-        setDraft(newReception());
-        setRawEditDirty(false);
-      }
-      return true;
+      setNotice("미확정 발주서 자동 저장 상태를 확인하세요.", "error");
+      return false;
     }
     const choice = await askSaveChanges("접수 화면에 저장하지 않은 변경사항이 있습니다. 어떻게 할까요?");
     if (choice === "cancel") return false;
@@ -457,7 +447,8 @@ export function useAppModel() {
     // A new reception may coexist with the previous unconfirmed receipt
     // in HubWorkspace's local draft overlay. Do not force the employee to
     // discard the first pasted document just to start the second.
-    // Unsaved drafts are NEVER inserted into SQLite by this navigation.
+    // Unconfirmed receptions are already saved in their own SQLite working
+    // table, not the confirmed order ledger. Switching does not discard them.
     if (!state.orders.some((o) => o.id === draft.id) &&
         !draft.confirmedAt && (draft.raw.trim() || draft.clientId || draft.recipients.length || draft.photos?.length)) {
       const leave = await confirmOrderLeave();
@@ -488,13 +479,11 @@ export function useAppModel() {
   };
   const windowAction = async (action: "minimize" | "maximize" | "close") => {
     if (action === "close") {
-      if (pendingDraftCount > 0 && !(await confirmAction(
-        `미확정 접수 ${pendingDraftCount}건이 임시 보관 중입니다. 종료하면 저장되지 않은 주문이 사라집니다. 종료할까요?`,
-        { cancel: "계속 작업", accept: "종료" },
-      ))) return;
+      // Even when closing from another tab, finish pending SQLite autosaves.
+      // Stored unconfirmed receptions are recoverable and require no loss warning.
+      const leave = await confirmOrderLeave("close");
+      if (!leave.proceed) return;
       if (tab === "접수") {
-        const leave = await confirmOrderLeave("close");
-        if (!leave.proceed) return;
         return window.bando!.requestClose(dirty && !leave.handledDraft);
       }
       const leave = await requestPageLeave((message) => setNotice(message, "error"));
