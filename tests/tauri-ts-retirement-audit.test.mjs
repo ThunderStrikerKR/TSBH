@@ -51,6 +51,12 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.ok(output.inventory.some(row=>
     row.module==="src/factory-export.ts"&&row.exists&&row.reachableFromApp),
     "ExcelJS serializer remains a legitimate TS module");
+  for(const name of ["factory-export.ts","store-export.ts"]){
+    const row=output.inventory.find(row=>row.module==="src/"+name);
+    assert.equal(row?.classification,"LIVE_XLSX_SERIALIZER_ONLY",
+      name+" must remain a serializer, not a TypeScript business rule engine");
+  }
+  assert.equal(output.liveSerializersOnly,2);
 });
 test("native reception and issue validation never depend on legacy TS from app",()=>{
   const run=spawnSync(process.execPath,[script,"--guard-native-recognition"],{

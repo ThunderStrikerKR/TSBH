@@ -116,16 +116,27 @@ const rows=targets.map(file=>{
   const exists=existsSync(absolute);
   const testOracle=movedTestOracles.get(file);
   const retired=!exists && testOracle && existsSync(join(root,testOracle));
+  const serializerNames={
+    "factory-export.ts":"createFactoryWorkbook",
+    "store-export.ts":"createStoreWorkbook",
+  };
+  const serializerSource=exists && serializerNames[file] ? readFileSync(absolute,"utf8") : "";
+  const serializerOnly=!!serializerNames[file] && reachable.has(absolute) &&
+    serializerSource.includes("export async function "+serializerNames[file]+"(") &&
+    !/\\b(?:previewFactoryExport|previewStoreExport|recordFactoryExport|recordStoreExport|exportRow|storeRow)\\s*\\(/.test(serializerSource) &&
+    !/\\.status\\s*=\\s*"EXPORTED"/.test(serializerSource);
   return {
     module:"src/"+file,
     exists,
     reachableFromApp:reachable.has(absolute),
+    serializerOnly,
     directRuntimeImporters:importers.filter(x=>reachable.has(join(root,x))),
     directAllImporters:importers,
     testOracle:retired?testOracle:null,
     // Distinguish retired test oracles from still-shipped production code.
     classification:retired?"RETIRED_TO_TEST_ORACLE":
       !exists?"MISSING_UNVERIFIED":
+      serializerOnly?"LIVE_XLSX_SERIALIZER_ONLY":
       reachable.has(absolute)?"LIVE_TS_BUSINESS_DEPENDENCY":"ORACLE_OR_REVIEW_CANDIDATE",
   };
 });
@@ -133,7 +144,8 @@ const report={
   version:1,entry:"src/main.tsx",
   inspectedSourceFiles:all.length,liveReachableSourceFiles:reachable.size,
   trackedLegacyModules:rows.length,
-  reachableLegacyModules:rows.filter(row=>row.reachableFromApp).length,
+  reachableLegacyModules:rows.filter(row=>row.classification==="LIVE_TS_BUSINESS_DEPENDENCY").length,
+  liveSerializersOnly:rows.filter(row=>row.classification==="LIVE_XLSX_SERIALIZER_ONLY").length,
   retiredToTestOracle:rows.filter(row=>row.classification==="RETIRED_TO_TEST_ORACLE").length,
   inventory:rows
 };
@@ -141,10 +153,12 @@ if(process.argv.includes("--json"))console.log(JSON.stringify(report,null,2));
 else{
   console.log("TSBH TypeScript retirement inventory");
   console.log("Entry",report.entry,"| examined",all.length,"source files");
-  console.log("Live legacy modules:",report.reachableLegacyModules,"/",rows.length,
+  console.log("Live legacy candidates:",report.reachableLegacyModules,"/",rows.length,
+    "| verified serialization-only:",report.liveSerializersOnly,
     "| retired to test oracles:",report.retiredToTestOracle);
   for(const row of rows)console.log(
-    row.reachableFromApp?"LIVE  ":"REVIEW ",
+    row.serializerOnly?"SERIAL":
+      row.reachableFromApp?"LIVE  ":"REVIEW ",
     row.module,"| live importers:",row.directRuntimeImporters.length);
   console.log("Read docs/rust-migration/03-ts-retirement-checklist.md before deletions.");
 }
