@@ -26,7 +26,7 @@ test("Registration UI is connected to the real preview and version-checked state
 });
 
 test("Workbook registration validates identity and does not overwrite prices", () => {
-  const workbook = read("src/product-registration-xlsx.ts");
+  const workbook = read("tests/rust-migration/oracles/product-registration-xlsx.ts");
   assert.match(workbook, /REGISTRATION_HEADERS/);
   assert.match(workbook, /existingMatches\(next, product\)/);
   assert.match(workbook, /validateProduct\(product, registeredProducts\(next\.products\)\)/);
@@ -36,7 +36,7 @@ test("Workbook registration validates identity and does not overwrite prices", (
 });
 
 test("Review blocks rows with invalid categories, ambiguous brands, formulas, duplicates", () => {
-  const workbook = read("src/product-registration-xlsx.ts");
+  const workbook = read("tests/rust-migration/oracles/product-registration-xlsx.ts");
   assert.match(workbook, /categoryPath\(all, item\.id\)/);
   assert.match(workbook, /holds\.push\("브랜드/);
   assert.match(workbook, /병합 셀과 수식은 허용하지 않습니다/);

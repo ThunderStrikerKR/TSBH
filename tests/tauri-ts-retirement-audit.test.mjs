@@ -108,3 +108,13 @@ test("product and unified Excel source only transport/serialize Rust-owned busin
   assert.match(unified,/export async function readUnifiedProductWorkbookRows/);
   assert.match(readFileSync(new URL("../tests/rust-migration/oracles/product-unified-workbook.ts",import.meta.url),"utf8"),/export function previewUnifiedProductRows/);
 });
+
+test("live registration workbook remains ExcelJS-only; business preview and apply are Rust-owned",()=>{
+  const live=readFileSync(new URL("../src/product-registration-xlsx.ts",import.meta.url),"utf8");
+  const oracle=readFileSync(new URL("../tests/rust-migration/oracles/product-registration-xlsx.ts",import.meta.url),"utf8");
+  assert.match(live,/export async function exportRegistrationTemplate/);
+  assert.match(live,/export async function exportRegistrationResults/);
+  assert.doesNotMatch(live,/export async function previewRegistrationWorkbook|export function prepareRegistrationCommit/);
+  assert.match(oracle,/export async function previewRegistrationWorkbook/);
+  assert.match(oracle,/export function prepareRegistrationCommit/);
+});

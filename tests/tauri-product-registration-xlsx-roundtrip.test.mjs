@@ -11,26 +11,26 @@ import ExcelJS from "exceljs";
 const read = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 const nodeRequire = createRequire(import.meta.url);
 const exports = {};
-const compiled = ts.transpileModule(read("src/product-registration-xlsx.ts"), {
+const compiled = ts.transpileModule(read("tests/rust-migration/oracles/product-registration-xlsx.ts"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText;
 const execution = vm.runInThisContext(
   "(function(exports,require,crypto,structuredClone){\n" + compiled + "\n})",
-  { filename: "src/product-registration-xlsx.ts" },
+  { filename: "tests/rust-migration/oracles/product-registration-xlsx.ts" },
 );
 const root = { id: "catalog", name: "반도스탠드", parentId: null, active: true };
 const leaf = { id: "leaf", name: "보면대", parentId: "catalog", active: true };
 const normalize = (text) => text.trim().toUpperCase().replace(/\s/g,"");
 const key = (text) => text.normalize("NFKC").trim().toLocaleLowerCase().replace(/\s+/g," ");
 execution(exports, (path) => {
-  if(path === "./category-tree") return {
+  if(path.endsWith("/category-tree")) return {
     categoryPath: (all, id) => id === "leaf" ? [root,leaf] : [root],
   };
-  if(path === "./category-roots") return {
+  if(path.endsWith("/category-roots")) return {
     withCatalogRoots: (categories) => categories,
     catalogFromCategory: (_all, id) => ["catalog","leaf"].includes(id) ? "BANDOSTAND" : undefined,
   };
-  if(path === "./domain") return {
+  if(path.endsWith("/domain")) return {
     normalizeCode:normalize, normalizeColor:(c)=>c.trim(),
     validProductUrl:(url)=> /^https:\/\/(?:www\.)?bandostand\.com\//.test(url),
     validateProduct:(p,products)=>{
@@ -38,17 +38,29 @@ execution(exports, (path) => {
       if(products.some(old=>old.registrationIdentity===p.registrationIdentity)) throw Error("중복 상품");
     },
   };
-  if(path === "./product-models") return {
+  if(path.endsWith("/product-models")) return {
     normalizeModel:(s)=>normalize(s),
     productKey:(p)=>p.registrationIdentity ?? p.code,
     registeredProducts:(products)=>products.filter((p)=>!p.deletedAt && p.active!==false),
   };
-  if(path === "./product-registry") return {
+  if(path.endsWith("/product-registry")) return {
     registryKey:key,
     registryIdentity:(values)=>["최종 등록명","색상","규격","판매 단위"].map(k=>key(values[k]||"")).join("|"),
   };
   return nodeRequire(path);
 }, webcrypto, structuredClone);
+// The historical business oracle stays separate; exported workbooks remain
+// the actual source used in the app.
+const currentCode = ts.transpileModule(read("src/product-registration-xlsx.ts"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+}).outputText;
+const liveExports = {};
+vm.runInThisContext(
+  "(function(exports,require,crypto,structuredClone){\n" + currentCode + "\n})",
+  { filename: "src/product-registration-xlsx.ts" },
+)(liveExports, nodeRequire, webcrypto, structuredClone);
+exports.exportRegistrationTemplate = liveExports.exportRegistrationTemplate;
+exports.exportRegistrationResults = liveExports.exportRegistrationResults;
 
 const state = ()=>({
   revision:8, products:[], deletedProductKeys:[], categories:[root,leaf],
