@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { useEventCallback } from "./shared/useEventCallback";
+import { useReadyContentFade, type ContentFadePhase } from "./shared/useReadyContentFade";
 import { auditReactRender, auditStateTransition } from "./perf-audit";
 import { AuditProfiler } from "./perf-audit-profiler";
 import { createPortal, flushSync } from "react-dom";
@@ -480,6 +481,51 @@ export function HubWorkspace(props: Props) {
         : messageState.workflow?.groups.find((g) =>
             groupShipments(messageState, g.id).some((s) => s.orderId === messageOrder.id),
           )?.id;
+  // All five changing content areas share ONE transition. The source
+  // projection is known here; OrderDesk reports checks and financial data,
+  // and MessageWorkspace reports the matching Rust-generated message.
+  // No section may fade in before all have settled for this exact view.
+  const fadeKey = [
+    receptionOrder.id,
+    detail?.id ?? "",
+    visibleSelection?.shipmentId ?? "",
+  ].join("|");
+  type AsyncSection = "message" | "checks" | "financial";
+  const [fadeReadiness, setFadeReadiness] = useState<{
+    key: string;
+    message?: boolean;
+    checks?: boolean;
+    financial?: boolean;
+  }>({ key: "" });
+  const currentFadeKey = useRef(fadeKey);
+  currentFadeKey.current = fadeKey;
+  const reportFadeReadiness = useCallback((key: string, section: AsyncSection, ready: boolean) => {
+    // Effects from an old order must not reopen or reset the new order.
+    if (currentFadeKey.current !== key) return;
+    setFadeReadiness((previous) => {
+      const current = previous.key === key ? previous : { key };
+      if (current[section] === ready) return current;
+      return { ...current, [section]: ready };
+    });
+  }, []);
+  const sourceSettled = receptionOrder.id === draft.id
+    ? (nativeBase.ready && (draft.clientId ? nativePreview.ready : unassignedDraftPreview.ready)) ||
+      Boolean(nativeBase.error || (draft.clientId ? nativePreview.error : unassignedDraftPreview.error))
+    : nativeBase.ready || Boolean(nativeBase.error);
+  const messageProjectionSettled = messageReady || Boolean(
+    nativeBase.error || (messageOrder.id === draft.id ? nativePreview.error : nativeMessage.error),
+  );
+  const noMessageExpected = messageReady && !messageGroup &&
+    !activeShipments(messageState).some((shipment) => shipment.orderId === messageOrder.id);
+  const allSectionsReady = sourceSettled &&
+    fadeReadiness.key === fadeKey &&
+    fadeReadiness.message === true &&
+    fadeReadiness.checks === true &&
+    fadeReadiness.financial === true;
+  // Once the current view is shown, do not flash again on every edit/IPC refresh.
+  // Switching to a new order or shipment always starts a fresh transition.
+  const sharedFadePhase: ContentFadePhase =
+    useReadyContentFade(fadeKey, allSectionsReady, true);
   // Highlight must reveal the actual content, not just light the section.
   // Run after the hovered order's source/detail portals have rendered.
   useEffect(() => {
@@ -705,6 +751,11 @@ export function HubWorkspace(props: Props) {
               state={messageState}
               order={messageOrder}
               gid={messageReady ? messageGroup : undefined}
+              projectionReady={messageProjectionSettled}
+              noMessageExpected={noMessageExpected}
+              sharedFadePhase={sharedFadePhase}
+              fadeKey={fadeKey}
+              onFadeReadiness={reportFadeReadiness}
               onOrder={changeReceptionLive}
               onSave={saveWorkflowLive}
               onSelect={selectMessageLive}
@@ -721,10 +772,8 @@ export function HubWorkspace(props: Props) {
           persistedOrders={state.orders}
           draft={receptionOrder}
           sharedNativeFlow={receptionOrder === draft ? sharedCurrentDraftFlow : undefined}
-          sourceProjectionReady={receptionOrder.id === draft.id
-            ? (nativeBase.ready && (draft.clientId ? nativePreview.ready : unassignedDraftPreview.ready)) ||
-              Boolean(nativeBase.error || (draft.clientId ? nativePreview.error : unassignedDraftPreview.error))
-            : nativeBase.ready || Boolean(nativeBase.error)}
+          sourceProjectionReady={sourceSettled}
+          coordinatedFadePhase={sharedFadePhase}
           onChange={changeReceptionLive}
           viewMode="reception"
           onNew={createReceptionLive}
@@ -742,6 +791,9 @@ export function HubWorkspace(props: Props) {
           sharedNativeFlow={(detail ?? draft) === draft ? sharedCurrentDraftFlow : undefined}
           suppressPassiveOrderEffects={receptionOrder === draft && (detail ?? draft) === draft}
           viewMode="details"
+          coordinatedFadePhase={sharedFadePhase}
+          fadeKey={fadeKey}
+          onFadeReadiness={reportFadeReadiness}
           onManual={openManual}
           portalTargets={detailTargets}
           linkController={linkController}
