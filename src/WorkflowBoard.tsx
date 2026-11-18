@@ -339,9 +339,6 @@ export function WorkflowBoard({
                 {first.order.orderType !== "RETAIL" && nativeGroup && (
                   <SignalLights step={step} notice={g.needsNotice} />
                 )}
-                {first.order.receptionVersion === 1 && !first.order.confirmedAt && (
-                  <span className="flow-draft-status" title="확인 전 임시 보관 중이며, 앱 종료 시 사라집니다.">미확정</span>
-                )}
               </button>
               <button
                 disabled={!ready || (first.order.receptionVersion === 1 && !first.order.confirmedAt)}
@@ -448,16 +445,16 @@ export function WorkflowBoard({
               <div className="flow-fixed-summary" aria-label="발주서 묶음 금액 요약">
               <div className="flow-summary-compact">
                 <span>배송 {ss.length}건</span>
-                {nativeGroup && (
+                {nativeGroup && vatIncludedCount > 0 && (
                   <span className="flow-summary-vat" title={vatDescription}
                     aria-label={vatDescription}>
                     {mixedVat
                       ? `포함${vatIncludedCount}·별도${vatExcludedCount}`
-                      : vatIncludedCount > 0 ? "부가세 포함" : "부가세 별도"}
+                      : "부가세 포함"}
                   </span>
                 )}
                 <span className="flow-summary-payment"
-                  title={nativeGroup ? vatDescription : "부가세 계산 확인 중"}>
+                  title={!nativeGroup ? "부가세 계산 확인 중" : vatIncludedCount > 0 ? vatDescription : undefined}>
                   {won(nativeGroup?.totals.total ?? null)}
                 </span>
               </div>
