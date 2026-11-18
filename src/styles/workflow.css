@@ -242,6 +242,15 @@
   border-radius: 4px;
   transition: background-color 180ms ease, box-shadow 180ms ease;
 }
+/* Stage 4 highlights only the hovered group's total beside its action
+   button. Both the expanded card and its in-place hover clone use this rule. */
+.hub-slot-3 .workflow-group[data-payment-confirm-preview="true"] .workflow-action-line .flow-summary-payment {
+  background-color: #3b2b1b;
+  color: #ffe4bc;
+  box-shadow: inset 0 0 0 2px #f59e0b;
+  border-radius: 4px;
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
 /* The hovered action must look the same as the unhovered action in the
    normal expanded card, not turn blue solely because this is a preview. */
 .app-v03 .hub-slot-3 .workflow-card-overlay .workflow-progress > .primary:hover:not(:disabled) {

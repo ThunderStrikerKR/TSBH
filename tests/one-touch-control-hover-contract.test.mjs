@@ -15,7 +15,7 @@ test("one-touch preview controls the orange emphasis only while the preview ship
 
 test("only the explicitly requested, editable, order-value controls get orange emphasis", () => {
   const css = source("src/styles/receipt-layout.css");
-  const start = css.indexOf('.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]):not([data-hover-stage="3"]) .hub-panels .compact-review :is(');
+  const start = css.indexOf('.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]):not([data-hover-stage="3"]):not([data-hover-stage="4"]) .hub-panels .compact-review :is(');
   const end = css.indexOf(") {", start);
   assert.ok(start >= 0 && end > start, "Missing precisely scoped one-touch whitelist");
   const selectors = css.slice(start, end);
@@ -70,11 +70,11 @@ test("freight-stage hover highlights only item, quantity, freight input, payment
     ".shipment-vat", ".order-grand-total", ".item-amount,",
     ".staff-checks", ".freight-remote-check", ".payment-message",
   ]) assert.ok(!targets.includes(forbidden), "Unrelated stage-two highlight: " + forbidden);
-  assert.ok(css.includes(':not([data-hover-stage="2"]):not([data-hover-stage="3"]) .hub-panels .compact-review :is('),
+  assert.ok(css.includes(':not([data-hover-stage="2"]):not([data-hover-stage="3"]):not([data-hover-stage="4"]) .hub-panels .compact-review :is('),
     "Other hover stages must retain their existing scope");
   const vatAccent = css.indexOf('.items-freight-panel .shipment-vat label.check > input[type="checkbox"]');
   assert.ok(vatAccent > 0);
-  assert.match(css.slice(Math.max(0, vatAccent - 200), vatAccent), /:not\(\[data-hover-stage="2"\]\):not\(\[data-hover-stage="3"\]\)/);
+  assert.match(css.slice(Math.max(0, vatAccent - 240), vatAccent), /:not\(\[data-hover-stage="2"\]\):not\(\[data-hover-stage="3"\]\):not\(\[data-hover-stage="4"\]\)/);
   const desk = source("src/OrderDesk.tsx");
   assert.match(desk, /const remoteCandidateRecipientId = flowSummaryReady &&/);
   assert.match(desk, /activeShipmentPreview\?\.remoteDelivery\?\.status === "auto"/);
@@ -110,7 +110,7 @@ test("payment-copy stage highlights only two copy buttons, exact account, total 
   assert.match(css, /\[data-hover-stage="3"\] \.messages-pane\[data-payment-copy-ready="true"\] :is\(/);
   assert.match(css, /\.message-copy-actions > button:not\(:disabled\)/);
   assert.match(css, /\.stage-message-preview \.message-payment-emphasis/);
-  assert.match(css, /:not\(\[data-hover-stage="2"\]\):not\(\[data-hover-stage="3"\]\) \.hub-panels \.compact-review :is\(/);
+  assert.match(css, /:not\(\[data-hover-stage="2"\]\):not\(\[data-hover-stage="3"\]\):not\(\[data-hover-stage="4"\]\) \.hub-panels \.compact-review :is\(/);
   assert.match(message, /data-payment-copy-ready=\{paymentCopyReady \? "true" : undefined\}/);
   assert.match(message, /emphasisSpans=\{emphasisSpans\}/);
   assert.match(message, /<footer className="message-copy-actions">[\s\S]*?그대로 복사[\s\S]*?인사말 포함 복사/);
@@ -119,6 +119,28 @@ test("payment-copy stage highlights only two copy buttons, exact account, total 
   assert.doesNotMatch(native, /selectedAccountNumber\?: string/);
   assert.match(workspace, /stageHover\.step === 3[\s\S]*?\.hub-slot-1 \.message-copy-actions/);
   assert.doesNotMatch(css, /\[data-hover-stage="3"\][^\n]*\.items-freight-panel/);
+});
+
+test("payment-confirmation stage highlights only payment text and hovered group total", () => {
+  const css = source("src/styles/receipt-layout.css");
+  const workflowCss = source("src/styles/workflow.css");
+  const board = source("src/WorkflowBoard.tsx");
+  const message = source("src/MessageWorkspace.tsx");
+  const stage4 = '.hub-live-workspace[data-one-touch-hover="true"][data-hover-stage="4"]';
+  const messageSelector = stage4 + ' .messages-pane[data-payment-copy-ready="true"] .stage-message-preview .message-payment-emphasis';
+  assert.ok(css.includes(messageSelector), "Stage 4 must emphasize the rendered payment fields");
+  assert.match(message, /const emphasisSpans = request \? \[\] : paymentMessageHighlights\(/);
+  assert.match(message, /selectedAccountNumberFromSignature\(automatic\.signature\)/);
+  assert.match(board, /data-payment-confirm-preview=\{hovered && stageHover\?\.step === 4 \? "true" : undefined\}/);
+  const totalSelector = '.hub-slot-3 .workflow-group[data-payment-confirm-preview="true"] .workflow-action-line .flow-summary-payment';
+  assert.ok(workflowCss.includes(totalSelector), "Stage 4 must emphasize the hovered group's payment total");
+  assert.match(board, /<span className="flow-summary-payment"[\s\S]*?nativeGroup\?\.totals\.total/);
+  const stage4Rule = css.slice(css.indexOf(messageSelector), css.indexOf("}", css.indexOf(messageSelector)));
+  assert.doesNotMatch(stage4Rule, /message-copy-actions|button|compact-review|items-freight-panel/);
+  const totalRule = workflowCss.slice(workflowCss.indexOf(totalSelector), workflowCss.indexOf("}", workflowCss.indexOf(totalSelector)));
+  assert.doesNotMatch(totalRule, /\.workflow-progress|\.flow-summary-vat|\.shipment-freight|\.workflow-group\s*\{/);
+  assert.ok(css.includes(':not([data-hover-stage="2"]):not([data-hover-stage="3"]):not([data-hover-stage="4"]) .hub-panels .compact-review :is('));
+  assert.match(css, /:not\(\[data-hover-stage="2"\]\):not\(\[data-hover-stage="3"\]\):not\(\[data-hover-stage="4"\]\) \.hub-panels \.compact-review\s+\.items-freight-panel \.shipment-vat/);
 });
 
 test("recipient, product, quantity, money, freight, selected origin and VAT use real controls", () => {

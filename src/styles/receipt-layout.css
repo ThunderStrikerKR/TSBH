@@ -358,10 +358,19 @@
   border-radius: 4px;
   transition: background-color 180ms ease, box-shadow 180ms ease;
 }
+/* Stage 4 ('입금 확인 완료') emphasizes only the payment message's
+   exact Rust-derived account/total/VAT spans, NOT its copy buttons. */
+.hub-live-workspace[data-one-touch-hover="true"][data-hover-stage="4"] .messages-pane[data-payment-copy-ready="true"] .stage-message-preview .message-payment-emphasis {
+  background-color: #3b2b1b !important;
+  color: #ffe4bc !important;
+  box-shadow: inset 0 0 0 2px #f59e0b !important;
+  border-radius: 4px;
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
 /* Other one-touch stages retain their previous exact-control emphasis.
    Never highlight a section, panel, card, dealer picker, message or freight row.
    Linked-source focus remains blue and takes precedence. */
-.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]):not([data-hover-stage="3"]) .hub-panels .compact-review :is(
+.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]):not([data-hover-stage="3"]):not([data-hover-stage="4"]) .hub-panels .compact-review :is(
   .recipient-review .recipient-fields .linked-field:not(.linked-active) .field > input,
   .items-freight-panel .compact-items tbody tr:not(.freight-item-row) .linked-field:not(.linked-active) > button,
   .items-freight-panel .compact-items tbody tr:not(.freight-item-row) .linked-field:not(.linked-active) > input,
@@ -381,7 +390,7 @@
   transition: background-color 180ms ease, box-shadow 180ms ease;
 }
 /* Only the checkbox itself and its compact label, never the full VAT footer. */
-.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]):not([data-hover-stage="3"]) .hub-panels .compact-review
+.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]):not([data-hover-stage="3"]):not([data-hover-stage="4"]) .hub-panels .compact-review
   .items-freight-panel .shipment-vat label.check > input[type="checkbox"] {
   accent-color: #f59e0b;
   box-shadow: 0 0 0 2px #f59e0b !important;
