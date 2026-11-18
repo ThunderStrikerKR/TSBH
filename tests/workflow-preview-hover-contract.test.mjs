@@ -48,6 +48,16 @@ test("shipment-list renderer only references its own inPreview argument", () => 
   assert.match(body, /if \(inPreview\)/);
 });
 
+test("accordion preview preserves the exact card box and heading positions", () => {
+  const css = source("src/styles/workflow.css");
+  assert.match(css, /\.hub-slot-3 \.workflow-group\s*\{[^}]*box-sizing:\s*border-box;[^}]*border-left-width:\s*2px;/s);
+  assert.match(css, /\.hub-slot-3 \.workflow-group\.selected\s*\{[^}]*border-left:\s*2px solid #f59e0b;/s);
+  assert.match(css, /\.hub-slot-3 \.workflow-group \.flow-toggle-icon\s*\{[^}]*flex:\s*0 0 12px;[^}]*width:\s*12px;/s);
+  assert.match(css, /\.workflow-card-anchor\s*\{[^}]*display:\s*flow-root;[^}]*margin-bottom:\s*8px;/s);
+  assert.match(css, /\.hub-slot-3 \.workflow-card-anchor > \.workflow-group\s*\{\s*margin:\s*0;/);
+  assert.match(css, /\.workflow-card-overlay \.workflow-group\s*\{\s*box-sizing:\s*border-box;\s*width:\s*100%;/);
+});
+
 test("clicking a shipment preview selects it and expands its order card", () => {
   const board = source("src/WorkflowBoard.tsx");
   assert.match(board, /if \(inPreview\) \{[\s\S]*?setManuallyClosedGroup\(undefined\);[\s\S]*?stopStagePreview\(\);[\s\S]*?\}[\s\S]*?onSelect\(\{/);
