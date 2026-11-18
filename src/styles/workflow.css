@@ -219,6 +219,19 @@
   width: 100%;
   margin: 0;
 }
+/* A transient preview is blue, never the orange committed-selection state.
+   Keep exactly the same 2px border and padding as the expanded card. */
+.hub-slot-3 .workflow-card-overlay .workflow-group.temporary-preview {
+  border-color: #666;
+  border-left: 2px solid var(--ds-role-border-selected);
+  background: #242424;
+}
+/* Blue highlight belongs to the temporarily displayed recipient row only. */
+.hub-slot-3 .workflow-card-overlay .workflow-shipment.previewed::before {
+  background: color-mix(in srgb, var(--ds-role-border-selected) 20%, transparent);
+  box-shadow: inset 3px 0 0 var(--ds-role-border-selected);
+  animation: none;
+}
 /* The hovered action must look the same as the unhovered action in the
    normal expanded card, not turn blue solely because this is a preview. */
 .app-v03 .hub-slot-3 .workflow-card-overlay .workflow-progress > .primary:hover:not(:disabled) {
