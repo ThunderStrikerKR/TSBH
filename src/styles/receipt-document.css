@@ -78,7 +78,8 @@
 .app-v03 .staff-checks .issue-actions button:hover {
   background: #484848;
 }
-.app-v03 .product-chip-error {
+.app-v03 .product-chip-error,
+.workflow-preview-layer .product-chip-error {
   background: #4b2525;
   border-color: #d96969;
   color: #ffb4b4;
