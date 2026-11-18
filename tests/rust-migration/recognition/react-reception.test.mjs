@@ -293,7 +293,7 @@ test("compiled Rust reception merge exactly matches original TS on all 20 recogn
 
 test("manual row/item mutations in compiled Rust match the original TypeScript draft transforms",async()=>{
   const {newManualRecipient,emptyManualItem}=await tsImport(
-    "../../../src/orders/manual-classification.ts",import.meta.url);
+    "../oracles/manual-classification.ts",import.meta.url);
   const first={...newManualRecipient(),id:"r1",name:"김가상",
     items:[{...emptyManualItem(),id:"i1",name:"709",quantity:2,quantityConfirmed:false}]};
   const second={...newManualRecipient(),id:"r2",name:"박가상"};

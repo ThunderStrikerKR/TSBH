@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { confirmAction } from "./dialogs";
-import type { FactoryReplyPreview } from "./factory-reply-workbook";
+import type { FactoryReplyPreview } from "./factory-reply-types";
 import {
   nativeAnalyzeFactoryReply, nativeApplyFactoryReplyPreview,
 } from "./native-factory-reply";
