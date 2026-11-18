@@ -5,8 +5,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
-const { previewFactoryExport, recordFactoryExportPrepared } = await tsImport("../../../src/factory-export.ts", import.meta.url);
-const { previewStoreExport, recordStoreExportPrepared } = await tsImport("../../../src/store-export.ts", import.meta.url);
+const { previewFactoryExport, recordFactoryExportPrepared } = await tsImport("../oracles/factory-export.ts", import.meta.url);
+const { previewStoreExport, recordStoreExportPrepared } = await tsImport("../oracles/store-export.ts", import.meta.url);
 const { dailySettlement } = await tsImport("../oracles/settlement-report.ts", import.meta.url);
 const { AUTOMATIC_MESSAGE_TEMPLATES, renderAutomaticTemplate, validateAutomaticMessageTemplates } =
   await tsImport("../../../src/automatic-message-templates.ts", import.meta.url);
