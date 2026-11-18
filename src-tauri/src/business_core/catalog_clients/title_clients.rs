@@ -209,6 +209,53 @@ fn reception_candidates(payload:&Value)->Result<Value,String>{
     }
     Ok(json!({"candidates":candidates}))
 }
+
+/* The manual Kakao chooser is advisory; it must never silently select a
+ * client. Keep its historic two-character nickname matching behavior, but
+ * calculate every candidate and remembered mapping in Rust (not React). */
+fn manual_title_matches(title:&str,clients:&[Value])->Vec<Value>{
+    let needle=key(title).replace(' ',"");
+    if needle.is_empty(){return Vec::new();}
+    clients.iter().filter(|client|{
+        let id=s(client,"id");
+        eligible_client(client,id,false) &&
+        client_terms(client).iter().any(|term|{
+            let term=term.replace(' ',"");
+            term.chars().count()>=2 && needle.contains(&term)
+        })
+    }).map(|client|json!({"clientId":s(client,"id")})).collect()
+}
+fn manual_kakao_candidates(payload:&Value)->Result<Value,String>{
+    let state=payload.get("state").ok_or("거래처 데이터를 확인할 수 없습니다.")?;
+    let windows=payload.get("windows").unwrap_or(&Value::Null);
+    let clients=list(state,"clients");
+    let chats=rows(windows).iter().filter(|window|
+        s(window,"kind")=="CHAT" && !s(window,"title").trim().is_empty()
+    ).collect::<Vec<_>>();
+    let result=chats.iter().map(|window|{
+        let normalized=key(s(window,"title"));
+        let duplicated=chats.iter().filter(|other|
+            key(s(other,"title"))==normalized).count()>1;
+        let stored=state.get("settings")
+            .and_then(|settings|settings.get("kakaoTitleMappings"))
+            .and_then(|mappings|mappings.get(&normalized));
+        let remembered=stored.filter(|mapping|!truthy(mapping.get("ambiguous")))
+            .and_then(|mapping|{
+                let id=s(mapping,"clientId");
+                clients.iter().find(|client|eligible_client(client,id,false))
+                    .map(|_|id.to_owned())
+            });
+        let mut matches=manual_title_matches(s(window,"title"),clients);
+        if let Some(id)=remembered.as_ref(){
+            matches.retain(|candidate|s(candidate,"clientId")!=id);
+            matches.insert(0,json!({"clientId":id}));
+        }
+        json!({"handle":s(window,"handle"),"duplicate":duplicated,
+            "rememberedClientId":remembered,"candidates":matches})
+    }).collect::<Vec<_>>();
+    Ok(json!({"chats":result,
+        "search":manual_title_matches(s(payload,"search"),clients)}))
+}
 fn remember(payload:&Value)->Result<Value,String> {
     let state=payload.get("state").ok_or("현재 거래처 데이터가 없습니다.")?;
     let windows=payload.get("windows").ok_or("카카오톡 창 목록이 없습니다.")?;
@@ -246,6 +293,7 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
         "remember_title_client"=>remember(payload),
         "auto_match_reception_client"=>reception_client(payload),
         "reception_client_candidates"=>reception_candidates(payload),
+        "kakao_manual_candidates"=>manual_kakao_candidates(payload),
         _=>Err(format!("지원하지 않는 카카오 거래처 연결 업무: {operation}"))
     }
 }
@@ -253,6 +301,32 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn manual_kakao_candidates_use_native_name_matching_and_preserve_two_character_aliases(){
+        let state=json!({"clients":[
+            {"id":"a","name":"경기악기사","active":true,"shortNames":"경기|경기 악기"},
+            {"id":"b","name":"전남악기사","active":true},
+            {"id":"c","name":"경기지점","active":false}
+        ],"settings":{"kakaoTitleMappings":{"경기 방문":{"clientId":"a","ambiguous":false}}}});
+        let windows=json!([
+            {"kind":"CHAT","handle":"one","title":"경기 방문"},
+            {"kind":"CHAT","handle":"two","title":"전남악기사"},
+            {"kind":"CHAT","handle":"three","title":"경기 방문"}
+        ]);
+        let got=manual_kakao_candidates(&json!({
+            "state":state,"windows":windows,"search":"경기",
+        })).unwrap();
+        assert_eq!(got["chats"][0]["duplicate"],true);
+        assert_eq!(got["chats"][0]["rememberedClientId"],"a");
+        assert_eq!(got["chats"][0]["candidates"][0]["clientId"],"a");
+        assert_eq!(got["chats"][1]["candidates"][0]["clientId"],"b");
+        assert_eq!(got["search"][0]["clientId"],"a");
+        assert_eq!(got["search"].as_array().unwrap().len(),1);
+        let invalid=manual_kakao_candidates(&json!({
+            "state":state,"windows":[],"search":"경기지점",
+        })).unwrap();
+        assert_eq!(invalid["search"].as_array().unwrap().len(),1); // substring on active client
+    }
     #[test]
     fn reception_auto_match_prefers_current_kakao_chat_and_never_guesses_recipient_school(){
         let state=json!({"clients":[
