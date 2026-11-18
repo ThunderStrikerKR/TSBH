@@ -380,7 +380,7 @@ jobs:
   # Reuse the exact same CI Windows EXE artifact. Navigation and modal
   # assertions use actual WebView2/CDP, not a browser-only React mock.
   windows-all-menus-dialogs:
-    name: Real Windows 8 menus, 5 settings tabs, 4 modal top-layer checks
+    name: Real Windows 8 menus, 4 settings tabs, 4 modal top-layer checks
     if: github.event_name == 'pull_request' || github.ref_name == 'main' || github.ref_name == 'integration/final-rust-migration-20261116'
     needs: windows-p1p2-real-exe
     runs-on: windows-latest
