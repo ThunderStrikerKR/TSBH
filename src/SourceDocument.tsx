@@ -20,6 +20,7 @@ export function SourceDocument({
   order,
   text,
   client,
+  clientPending = false,
   contentReady = true,
   coordinatedFadePhase,
   onText,
@@ -35,6 +36,7 @@ export function SourceDocument({
   order: Order;
   text: string;
   client?: Client;
+  clientPending?: boolean;
   contentReady?: boolean;
   coordinatedFadePhase?: import("./shared/useReadyContentFade").ContentFadePhase;
   onText: (text: string) => void;
@@ -355,6 +357,12 @@ export function SourceDocument({
               <button disabled={busy} onClick={() => setDealer(true)}>
                 변경
               </button>
+            </div>
+          ) : clientPending ? (
+            <div className="receipt-client" data-content-fade={sourceFadePhase}
+              aria-busy="true">
+              <small>현재 거래처</small>
+              <b>거래처 확인 중</b>
             </div>
           ) : (
             <div className="source-client-actions" data-content-fade={sourceFadePhase}
