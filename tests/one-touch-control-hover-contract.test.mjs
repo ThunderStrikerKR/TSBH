@@ -15,7 +15,7 @@ test("one-touch preview controls the orange emphasis only while the preview ship
 
 test("only the explicitly requested, editable, order-value controls get orange emphasis", () => {
   const css = source("src/styles/receipt-layout.css");
-  const start = css.indexOf('.hub-live-workspace[data-one-touch-hover="true"] .hub-panels .compact-review :is(');
+  const start = css.indexOf('.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]) .hub-panels .compact-review :is(');
   const end = css.indexOf(") {", start);
   assert.ok(start >= 0 && end > start, "Missing precisely scoped one-touch whitelist");
   const selectors = css.slice(start, end);
@@ -46,6 +46,40 @@ test("only the explicitly requested, editable, order-value controls get orange e
   assert.doesNotMatch(css, /\.hub-live-workspace\[data-hover-stage="1"\]\s+\.hub-slot-2\s+\.review-pane/);
   assert.doesNotMatch(css, /\.hub-live-workspace\[data-hover-stage="2"\]\s+\.freight-input-area/);
   assert.doesNotMatch(css, /\.workflow-payment-hover\s+\.waiting-payment/);
+});
+
+test("freight-stage hover highlights only item, quantity, freight input, payment selector and selected origin", () => {
+  const css = source("src/styles/receipt-layout.css");
+  const selector = '.hub-live-workspace[data-one-touch-hover="true"][data-hover-stage="2"] .hub-panels .compact-review :is(';
+  const start = css.indexOf(selector);
+  const end = css.indexOf(") {", start);
+  assert.ok(start >= 0 && end > start, "Stage two must own its own control whitelist");
+  const targets = css.slice(start, end);
+  for (const required of [
+    '.recipient-review .recipient-fields .linked-field:not(.linked-active) .field > input[data-remote-suspect="true"]',
+    '.items-freight-panel .compact-items tbody tr:not(.freight-item-row) .linked-field:not(.linked-active) > button.item-row-edit:not(.item-amount)',
+    '.items-freight-panel .compact-items tbody tr:not(.freight-item-row) .linked-field:not(.linked-active) > input[type="number"]',
+    '.items-freight-panel .freight-input-area .freight-money > input',
+    '.items-freight-panel .freight-input-area .freight-payment-code > select',
+    '.items-freight-panel .dispatch-origin > button[aria-pressed="true"]',
+  ]) assert.ok(targets.includes(required), "Missing freight-related target: " + required);
+  for (const forbidden of [
+    ".recipient-review .recipient-fields .linked-field:not(.linked-active) .field > input,",
+    "button.item-row-edit,",
+    ".freight-input-area .freight-name",
+    ".shipment-vat", ".order-grand-total", ".item-amount,",
+    ".staff-checks", ".freight-remote-check", ".payment-message",
+  ]) assert.ok(!targets.includes(forbidden), "Unrelated stage-two highlight: " + forbidden);
+  assert.ok(css.includes(':not([data-hover-stage="2"]) .hub-panels .compact-review :is('),
+    "Other hover stages must retain their existing scope");
+  const vatAccent = css.indexOf('.items-freight-panel .shipment-vat label.check > input[type="checkbox"]');
+  assert.ok(vatAccent > 0);
+  assert.match(css.slice(Math.max(0, vatAccent - 150), vatAccent), /:not\(\[data-hover-stage="2"\]\)/);
+  const desk = source("src/OrderDesk.tsx");
+  assert.match(desk, /const remoteCandidateRecipientId = flowSummaryReady &&/);
+  assert.match(desk, /activeShipmentPreview\?\.remoteDelivery\?\.status === "auto"/);
+  assert.match(desk, /activeShipmentPreview\?\.remoteDelivery\?\.status === "review"/);
+  assert.match(desk, /data-remote-suspect=\{remoteCandidateRecipientId === r\.id \? "true" : undefined\}/);
 });
 
 test("recipient, product, quantity, money, freight, selected origin and VAT use real controls", () => {

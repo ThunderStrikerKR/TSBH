@@ -107,6 +107,12 @@ export function OrderDesk(props: OrderDeskProps) {
     (!props.workflowSelection?.shipmentId ||
       props.workflowSelection.shipmentId === lastReadyFreight.current.shipment.id)
       ? lastReadyFreight.current : null;
+  // Only the current, settled Rust shipment preview may mark an address as a
+  // remote-area candidate. Manual unchecking does not erase the locality.
+  const remoteCandidateRecipientId = flowSummaryReady &&
+    (activeShipmentPreview?.remoteDelivery?.status === "auto" ||
+      activeShipmentPreview?.remoteDelivery?.status === "review")
+    ? activeShipment?.recipientId : undefined;
   const delivery = useNativeDeliveryRequirements(draft.recipients, draft.receptionVersion !== 1);
 
   // A new recipient's inputs arrive immediately, but Rust line amounts,
@@ -462,6 +468,7 @@ export function OrderDesk(props: OrderDeskProps) {
                             <Linked linkKey={r.id + ":address"}>
                               <Field label="주소">
                                 <input
+                                  data-remote-suspect={remoteCandidateRecipientId === r.id ? "true" : undefined}
                                   aria-invalid={delivery.ready ? !delivery.byId[r.id]?.address : undefined}
                                   value={r.address}
                                   disabled={exported}

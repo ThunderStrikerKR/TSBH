@@ -329,11 +329,27 @@
 .hub-slot-3 .workflow-group.selected .flow-group-name b {
   color: #60a5fa;
 }
-/* One-touch hover is a precise control whitelist. Do NOT highlight a
-   section/panel/card, dealer picker, message pane, freight row or empty-state.
-   All stages use the same visible shipment controls; the actual selection
-   remains blue/its own state and linked-source focus keeps its blue style. */
-.hub-live-workspace[data-one-touch-hover="true"] .hub-panels .compact-review :is(
+/* Stage 2 ('운임 적용') shows only inputs that affect freight.
+   The Rust locality assessment may additionally reveal the ADDRESS field.
+   No amount, VAT, invoice total, contact, empty-state or whole panel is highlighted. */
+.hub-live-workspace[data-one-touch-hover="true"][data-hover-stage="2"] .hub-panels .compact-review :is(
+  .recipient-review .recipient-fields .linked-field:not(.linked-active) .field > input[data-remote-suspect="true"],
+  .items-freight-panel .compact-items tbody tr:not(.freight-item-row) .linked-field:not(.linked-active) > button.item-row-edit:not(.item-amount),
+  .items-freight-panel .compact-items tbody tr:not(.freight-item-row) .linked-field:not(.linked-active) > input[type="number"],
+  .items-freight-panel .freight-input-area .freight-money > input,
+  .items-freight-panel .freight-input-area .freight-payment-code > select,
+  .items-freight-panel .dispatch-origin > button[aria-pressed="true"]
+) {
+  background-color: #3b2b1b !important;
+  color: #ffe4bc !important;
+  box-shadow: inset 0 0 0 2px #f59e0b !important;
+  border-radius: 4px;
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+/* Other one-touch stages retain their previous exact-control emphasis.
+   Never highlight a section, panel, card, dealer picker, message or freight row.
+   Linked-source focus remains blue and takes precedence. */
+.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]) .hub-panels .compact-review :is(
   .recipient-review .recipient-fields .linked-field:not(.linked-active) .field > input,
   .items-freight-panel .compact-items tbody tr:not(.freight-item-row) .linked-field:not(.linked-active) > button,
   .items-freight-panel .compact-items tbody tr:not(.freight-item-row) .linked-field:not(.linked-active) > input,
@@ -353,7 +369,7 @@
   transition: background-color 180ms ease, box-shadow 180ms ease;
 }
 /* Only the checkbox itself and its compact label, never the full VAT footer. */
-.hub-live-workspace[data-one-touch-hover="true"] .hub-panels .compact-review
+.hub-live-workspace[data-one-touch-hover="true"]:not([data-hover-stage="2"]) .hub-panels .compact-review
   .items-freight-panel .shipment-vat label.check > input[type="checkbox"] {
   accent-color: #f59e0b;
   box-shadow: 0 0 0 2px #f59e0b !important;
