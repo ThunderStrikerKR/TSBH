@@ -27,6 +27,7 @@ mod client_change;
 mod factory_reply;
 mod legacy_migration;
 mod shipping;
+mod remote_delivery;
 mod workflow;
 mod workflow_issues;
 mod workflow_preview;
@@ -84,6 +85,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "shipping_manager_view" => shipping::shipping_manager_view(&payload),
         "apply_shipping_action" => shipping::shipping_action(&payload),
         "shipping_read" => shipping_read::project(&payload),
+        "detect_remote_delivery_area" => remote_delivery::detect(&payload),
         "reconcile_workflow" => reconciliation::reconcile(&payload),
         "calculate_shipping" => shipping::recommend(
             req(&payload, "order")?, req(&payload, "state")?,
