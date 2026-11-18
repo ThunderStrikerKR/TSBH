@@ -41,6 +41,7 @@ export async function requestEditorLeave(
   onError: (message: string) => void,
   options: { autosave?: boolean } = {},
 ): Promise<{ proceed: boolean; handled: boolean }> {
+  let completedInFlightSave = false;
   if (guard.busy?.()) {
     if (!options.autosave) {
       onError("현재 작업의 저장이 끝난 뒤 이동할 수 있습니다.");
@@ -52,6 +53,7 @@ export async function requestEditorLeave(
     try {
       if (guard.waitForIdle) {
         await guard.waitForIdle();
+        completedInFlightSave = true;
       } else {
         for (let i = 0; i < 150 && guard.busy?.(); i++)
           await new Promise<void>((resolve) => setTimeout(resolve, 100));
@@ -62,6 +64,10 @@ export async function requestEditorLeave(
       return { proceed: false, handled: false };
     }
   }
+  // The awaited editor's own save has already committed. Its local React
+  // controls may not have repainted with the new persisted value yet; never
+  // issue the same native write twice solely because render is one tick late.
+  if (completedInFlightSave) return { proceed: true, handled: true };
   if (!guard.hasChanges()) return { proceed: true, handled: false };
   if (options.autosave) {
     try {
