@@ -484,6 +484,24 @@ export function HubWorkspace(props: Props) {
       setReceptionId(id);
     }
   });
+  const deletePendingLive = useEventCallback((id: string) => {
+    // These orders exist only in the temporary React overlay. Never issue
+    // a Rust group deletion or touch the persisted SQLite order ledger.
+    setEdits((previous) => {
+      if (!(id in previous)) return previous;
+      const next = { ...previous };
+      delete next[id];
+      return next;
+    });
+    if (id === draft.id) {
+      const empty = newReception();
+      props.onChange(empty);
+      setReceptionId(empty.id);
+    } else if (receptionId === id) {
+      setReceptionId(draft.id);
+    }
+    setStageHover(undefined);
+  });
   const openManual = useCallback(() => setManual(true), []);
   const receptionTargets = useMemo(() => ({ source, messages }), [source, messages]);
   const detailTargets = useMemo(() => ({ details }), [details]);
@@ -628,6 +646,7 @@ export function HubWorkspace(props: Props) {
               pendingReceptions={pendingWithoutClient}
               selectedPendingOrderId={!selected ? receptionId : undefined}
               onSelectPending={selectPendingLive}
+              onDeletePending={deletePendingLive}
             /></AuditProfiler>
           </section>,
         ]}
