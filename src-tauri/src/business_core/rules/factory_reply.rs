@@ -241,19 +241,20 @@ fn analyze(payload:&Value)->Result<Value,String>{
         // Excel numeric cells are valid for safe, ordinary integer waybills.
         // More than 15 significant decimal digits may already have been
         // rounded by Excel. Such rows require review, not file-wide rejection.
+        let number_format=s(source,"trackingNumberFormat");
+        let zero_padded=number_format.len()>=2 &&
+            number_format.bytes().all(|b|b==b'0') &&
+            number_format.len()>raw_tracking.len();
         let numeric_risk=field(source,"trackingNumeric")==true &&
-            (tracking.len()>15 || !tracking.bytes().all(|b|b.is_ascii_digit()));
+            (raw_tracking.len()>15 || !raw_tracking.bytes().all(|b|b.is_ascii_digit()) || zero_padded);
         let source_issue=s(source,"sourceIssue");
-        let tracking_risk=s(source,"trackingRisk");
         let freight=parse_freight(raw_freight);
         let contacts=[phone,mobile].into_iter().filter(|v|!v.is_empty())
             .collect::<Vec<_>>();
         let issue=if !source_issue.is_empty(){
             Some(source_issue)
-        }else if !tracking_risk.is_empty(){
-            Some(tracking_risk)
         }else if numeric_risk{
-            Some("Q열 숫자형 송장번호가 15자리를 초과하거나 정확한 정수가 아닙니다. 원본 송장번호를 확인하세요.")
+            Some("Q열 숫자형 운송장번호의 정확성을 보장할 수 없습니다. 15자리 초과·정밀도 또는 앞자리 0 손실 가능성이 있으므로 원본을 확인하세요.")
         }else if name.is_empty()||address.is_empty()||contacts.is_empty(){
             Some("수하인 이름, 주소 또는 연락처 누락")
         }else if !valid_tracking(&tracking){
@@ -467,6 +468,17 @@ mod tests {
         duplicate["sourceRows"].as_array_mut().unwrap().push(another);
         duplicate["sourceRowCount"]=json!(2);
         assert_eq!(analyze(&duplicate).unwrap()["held"],2);
+    }
+    #[test] fn numeric_tracking_leading_zero_format_is_reviewed_in_native_rust(){
+        let mut req=input(fixture(),"123456789012","4000");
+        req["sourceRows"][0]["trackingNumeric"]=json!(true);
+        req["sourceRows"][0]["trackingNumberFormat"]=json!("0000000000000");
+        let result=analyze(&req).unwrap();
+        assert_eq!(result["held"],1);
+        assert!(result["rows"][0]["issue"].as_str().unwrap().contains("앞자리 0"));
+        req["sourceRows"][0]["trackingNumberFormat"]=json!("General");
+        let accepted=analyze(&req).unwrap();
+        assert_eq!(accepted["applied"],1);
     }
     #[test] fn conflicts_hold_but_safe_numeric_waybills_are_accepted(){
         let mut s=fixture();

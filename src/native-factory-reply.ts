@@ -38,7 +38,7 @@ export interface FactoryReplySourceRow {
   reservedJ: boolean;
   extraAfterQ: boolean;
   sourceIssue?: string;
-  trackingRisk?: string;
+  trackingNumberFormat: string;
 }
 export interface FactoryReplySource {
   id: string;
@@ -83,21 +83,13 @@ export async function readFactoryReplyCells(file: File): Promise<FactoryReplySou
     const [name, address, phone, mobile, rawFreight, tracking] = values;
     const numeric = row.getCell(17).value;
     const trackingNumeric = typeof numeric === "number";
-    const qFormat = row.getCell(17).numFmt;
-    const zeroPattern = typeof numeric === "number" && /^0{2,}$/.test(qFormat) &&
-      qFormat.length > String(numeric).length;
-    const numericRisk = typeof numeric === "number" && (
-      !Number.isSafeInteger(numeric) || numeric < 0 ||
-      String(numeric).length > 15 || zeroPattern
-    );
-    const trackingRisk = numericRisk
-      ? "Q열 숫자형 운송장번호의 정확성을 보장할 수 없습니다. 15자리 초과·정밀도 또는 앞자리 0 손실 가능성이 있으므로 원본을 확인하세요."
-      : undefined;
+    // Transport the original Excel formatting; Rust decides whether a
+    // numeric waybill has lost precision or leading zeros.
     sourceRows.push({
       row: i, name, address, phone, mobile, rawFreight, tracking,
-      trackingNumeric, reservedJ: false, extraAfterQ: false,
+      trackingNumeric, trackingNumberFormat: row.getCell(17).numFmt ?? "",
+      reservedJ: false, extraAfterQ: false,
       ...(problems.length ? { sourceIssue: `${i}행: ${problems.join("; ")}` } : {}),
-      ...(trackingRisk ? { trackingRisk } : {}),
     });
   }
   return { id, filename: file.name, sourceRowCount: sheet.rowCount - 1, sourceRows };

@@ -44,7 +44,10 @@ test("native validation holds only untrustworthy rows and still enforces safe ma
   assert.match(rust,/source_issue/);
   assert.match(rust,/if !tracking\.is_empty\(\) && s\(row,"issue"\)\.is_empty\(\)/);
   assert.match(native,/problems\.push/);
-  assert.match(native,/String\(numeric\)\.length > 15/);
+  assert.match(rust,/trackingNumberFormat/);
+  assert.match(rust,/zero_padded/);
+  assert.doesNotMatch(native,/const numericRisk|trackingRisk\\s*\\?/);
+  assert.match(native,/trackingNumberFormat: row\\.getCell\\(17\\)\\.numFmt/);
   assert.match(rust,/fn row_matches/);
   assert.match(rust,/ids\.len\(\)!=1/);
   assert.match(rust,/기존 송장 \/ 실제 운임과 충돌합니다/);
