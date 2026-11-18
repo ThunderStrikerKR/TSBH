@@ -4,7 +4,7 @@
 import type { Client, State } from "./types.js";
 import type { WorkflowShipment } from "./workflow-types.js";
 
-export function shipmentContext(state: State, s: WorkflowShipment, client: Client | null | undefined) {
+export function shipmentContext(state: State, s: WorkflowShipment, client?: Client | null) {
   const order = state.orders.find((o) => o.id === s.orderId);
   const recipient = order?.recipients.find((r) => r.id === s.recipientId);
   if (!order || !recipient)
