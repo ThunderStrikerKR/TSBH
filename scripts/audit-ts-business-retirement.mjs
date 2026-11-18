@@ -48,7 +48,7 @@ const targets=[
   "factory-reply-auto.ts","factory-export.ts","store-export.ts",
   "app/order-history.ts","app/settlement-report.ts","client-workbook.ts",
   "product-sync-workbook.ts","product-unified-workbook.ts",
-  "product-registration-xlsx.ts","orders/passive-pricing.ts",
+  "product-registration-xlsx.ts","product-price-xlsx.ts","orders/passive-pricing.ts",
 ];
 function discover(path) {
   return readdirSync(path,{withFileTypes:true}).flatMap(entry=>{

@@ -15,6 +15,8 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.equal(output.entry,"src/main.tsx");
   assert.ok(output.inspectedSourceFiles>100);
   assert.ok(output.trackedLegacyModules>=25);
+  assert.ok(output.inventory.some(row=>row.module==="src/product-price-xlsx.ts" && row.reachableFromApp && row.classification==="LIVE_TS_BUSINESS_DEPENDENCY"),
+    "Price workbook preview still uses TS business logic; must remain an open Rust migration candidate until its real UI path is replaced");
   assert.ok(Number.isInteger(output.reachableLegacyModules));
   assert.ok(output.reachableLegacyModules>=0);
   assert.equal(output.retiredToTestOracle,18,
