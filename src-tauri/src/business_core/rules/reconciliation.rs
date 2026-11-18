@@ -131,6 +131,7 @@ fn signature(order:&Value,recipient:&Value,sender:&Value)->String {
     let selected=remote.as_ref().is_some_and(|v|flag(v,"checked"));
     let manual=remote.as_ref().is_some_and(|v|flag(v,"manual"));
     if selected || manual {recipient_data.push(json!(selected));}
+    let recipient_data=json!(recipient_data);
     let items=rows(field(recipient,"items")).iter().map(|i|json!([
         field(i,"id"),field(i,"productId"),field(i,"variantId"),field(i,"color"),
         field(i,"quantity"),field(i,"quantityConfirmed"),field(i,"unitPrice"),
