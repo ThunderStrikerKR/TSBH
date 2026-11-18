@@ -114,9 +114,12 @@ export function OrderDesk(props: OrderDeskProps) {
   // Once revealed, keep the same recipient interactive through in-place edits;
   // only a recipient/shipment switch starts a new reveal.
   const recipientViewKey = [draft.id, shownRecipient ?? "", props.workflowSelection?.shipmentId ?? ""].join(":");
-  const financialError = Boolean(flowSummaryError || orderLineError || delivery.error);
+  // Delivery-validation failure must not bypass still-pending price/freight.
+  // Failed financial requests instead reveal the existing explicit error UI.
+  const financialError = Boolean(flowSummaryError || orderLineError);
   const recipientReady = !draft.recipients.length ||
-    (financialPreviewReady && delivery.ready) || financialError;
+    (financialPreviewReady && (delivery.ready || Boolean(delivery.error))) ||
+    financialError;
   const [revealedRecipient, setRevealedRecipient] = useState<string>();
   useEffect(() => {
     if (!recipientReady) return;
