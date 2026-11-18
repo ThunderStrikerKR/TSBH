@@ -10,6 +10,7 @@ mod startup_recovery;
 mod backup_manager;
 mod notification_store;
 mod relational_store;
+mod working_receptions;
 mod sale_unit_migration;
 mod product_name_enrichment;
 mod business_core;
@@ -326,6 +327,7 @@ fn initialize_database(path: &Path) -> Result<Connection, String> {
     // Independent notification table: additive, idempotent, and intentionally
     // does not increment or rewrite the business snapshot revision.
     notification_store::initialize(&conn)?;
+    working_receptions::initialize(&conn)?;
     let exists: Option<i64> = conn.query_row("SELECT 1 FROM app_state WHERE id=1", [], |r| r.get(0)).optional().map_err(err)?;
     if exists.is_none() {
         let seed: Value = serde_json::from_str(include_str!("../resources/state-seed.json")).map_err(err)?;
@@ -1320,6 +1322,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             state_load, state_save, business_core_call, settings_patch, price_set, clipboard_write, clipboard_read,
+            working_receptions::working_receptions_load, working_receptions::working_receptions_replace,
             ocr::capture_ocr, ocr::clipboard_ocr, ocr::cancel_ocr,
             order_image_inbox::choose_order_image_inbox_directory,
             order_image_inbox::open_order_image_inbox_directory,
