@@ -386,9 +386,7 @@ export function OrderDesk(props: OrderDeskProps) {
                     if (field === "address") applyNativeAddress(b.recipientId, value);
                   }}
                 />
-                <div className="recipient-body" data-recipient-fade={recipientRevealPhase}
-                  aria-busy={recipientRevealPhase === "pending"}
-                  inert={recipientRevealPhase === "pending"}>
+                <div className="recipient-body">
                   <header className="recipient-section-heading">
                     <h2>수취인별 주문 정보</h2>
                     {exported &&
@@ -410,7 +408,10 @@ export function OrderDesk(props: OrderDeskProps) {
                     {draft.recipients
                       .filter((r) => r.id === shownRecipient)
                       .map((r) => (
-                        <article className="recipient-review" key={r.id}>
+                        <article className="recipient-review" key={r.id}
+                          data-recipient-fade={recipientRevealPhase}
+                          aria-busy={recipientRevealPhase === "pending"}
+                          inert={recipientRevealPhase === "pending"}>
                           <div className="recipient-fields">
                             <Linked linkKey={r.id + ":name"}>
                               <Field label="이름">
@@ -538,7 +539,9 @@ export function OrderDesk(props: OrderDeskProps) {
                         </article>
                       ))}
                     {!!draft.replies?.length && (
-                      <details className="reply-history">
+                      <details className="reply-history"
+                        data-recipient-fade={recipientRevealPhase}
+                        inert={recipientRevealPhase === "pending"}>
                         <summary>최초 주문 이후 회신 {draft.replies.length}건</summary>
                         {draft.replies.map((r) => (
                           <p key={r.id}>{r.raw}</p>
@@ -555,7 +558,10 @@ export function OrderDesk(props: OrderDeskProps) {
                     {draft.recipients
                       .filter((r) => r.id === shownRecipient)
                       .map((r) => (
-                        <article key={r.id}>
+                        <article key={r.id}
+                          data-recipient-fade={recipientRevealPhase}
+                          aria-busy={recipientRevealPhase === "pending"}
+                          inert={recipientRevealPhase === "pending"}>
                           <table className="compact-items">
                             <thead>
                               <tr>
@@ -709,6 +715,7 @@ export function OrderDesk(props: OrderDeskProps) {
                   </div>
                   {(flowSummaryReady && activeShipmentPreview && activeShipment && activeGroupId) || freightEditor ? (
                     <WorkflowFooter
+                      recipientFade={recipientRevealPhase}
                       state={flowState}
                       shipment={flowSummaryReady && activeShipment ? activeShipment : freightEditor!.shipment}
                       vatIncluded={flowSummaryReady && activeShipmentPreview
@@ -731,22 +738,26 @@ export function OrderDesk(props: OrderDeskProps) {
               {orderLineError && (
                 <p role="alert">Rust 품목 금액 조회 오류: {orderLineError}</p>
               )}
-              <div className="order-grand-total" data-recipient-fade={recipientRevealPhase}>
+              <div className="order-grand-total">
                 총 주문 금액{" "}
                 <span className="shipment-count">
                   | 택배{" "}
-                  {orderPreview?.shipmentCount ?? "—"}
+                  <span data-recipient-fade={recipientRevealPhase}>
+                    {orderPreview?.shipmentCount ?? "—"}
+                  </span>
                   건 |
                 </span>
-                <b>
+                <b data-recipient-fade={recipientRevealPhase}>
                   {orderPreview?.total !== null && orderPreview?.total !== undefined
                     ? won(orderPreview.total) : "—"}
                 </b>
                 <small>
                   (
-                  {orderPreview?.vatLabel === "부가세 포함/별도"
-                    ? "부가세 혼합 · 배송별 확인"
-                    : (orderPreview?.vatLabel ?? "—")}
+                  <span data-recipient-fade={recipientRevealPhase}>
+                    {orderPreview?.vatLabel === "부가세 포함/별도"
+                      ? "부가세 혼합 · 배송별 확인"
+                      : (orderPreview?.vatLabel ?? "—")}
+                  </span>
                   )
                 </small>
               </div>
