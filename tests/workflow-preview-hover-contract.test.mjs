@@ -4,36 +4,41 @@ import { test } from "node:test";
 
 const source = (name) => readFileSync(new URL("../" + name, import.meta.url), "utf8");
 
-test("expanded and hovered workflow groups share one shipment table", () => {
-  const board = source("src/WorkflowBoard.tsx");
-  // One pending-reception list plus one shared, expanded/hovered workflow list.
-  assert.equal((board.match(/className="workflow-shipment-list"/g) ?? []).length, 2);
-  assert.match(board, /const renderShipmentList = \(inPreview: boolean\)/);
-  assert.match(board, /\{open && renderShipmentList\(false\)\}/);
-  assert.match(board, /\{renderShipmentList\(true\)\}/);
-  assert.doesNotMatch(board, /workflow-preview-layer-shipment/);
-  assert.match(board, /className="workflow-preview-layer hub-slot-3"/);
-  assert.doesNotMatch(board, /className="app-v03 workflow-preview-layer"/);
-});
-
-test("preview uses natural row height, only scrolls when viewport requires it", () => {
+test("hover shows the SAME complete expanded card over its original card", () => {
   const board = source("src/WorkflowBoard.tsx");
   const css = source("src/styles/workflow.css");
-  assert.match(board, /querySelector<HTMLElement>\(":scope > \.workflow-shipment-list"\)/);
-  assert.match(board, /expandedRect\?\.width \?\? contentWidth/);
-  assert.match(board, /\.querySelector<HTMLElement>\("\.workflow-shipment-list"\)\?\.scrollHeight/);
-  assert.match(board, /maxHeight: availableHeight/);
+  assert.equal((board.match(/className="workflow-shipment-list"/g) ?? []).length, 2);
+  assert.match(board, /const renderShipmentList = \(inPreview: boolean\)/);
+  assert.match(board, /const renderGroupCard = \(isPreview: boolean\) =>/);
+  assert.match(board, /\{renderGroupCard\(false\)\}/);
+  assert.match(board, /\{renderGroupCard\(true\)\}/);
+  assert.match(board, /\{\(open \|\| isPreview\) && renderShipmentList\(isPreview\)\}/);
+  assert.match(board, /className="workflow-preview-stage hub-slot-3"/);
+  assert.match(board, /document\.querySelector\("\.app-v03"\) \?\? document\.body/);
+  assert.doesNotMatch(board, /workflow-preview-layer/);
+  assert.doesNotMatch(board, /createPortal\(\s*<div[^>]*>[\s\S]*?renderShipmentList\(true\)/);
+  assert.match(css, /\.workflow-preview-stage \{/);
+  assert.match(css, /\.workflow-preview-stage \.workflow-group \{/);
+});
+
+test("preview aligns to entire original card and reveals all its content", () => {
+  const board = source("src/WorkflowBoard.tsx");
+  const css = source("src/styles/workflow.css");
+  assert.match(board, /\.closest<HTMLElement>\("\.workflow-group:not\(\.workflow-preview-clone\)"\)/);
+  assert.match(board, /Math\.min\(rect\.width, window\.innerWidth - margin \* 2\)/);
+  assert.match(board, /\.querySelector<HTMLElement>\("\.workflow-preview-clone"\)\?\.scrollHeight/);
+  assert.match(board, /top = Math\.max\(margin, Math\.min\(rect\.top,/);
+  assert.match(board, /maxHeight: previewLayer\.maxHeight/);
+  assert.match(board, /onMouseEnter=\{keepStagePreview\}/);
+  assert.match(board, /onMouseLeave=\{scheduleStagePreviewExit\}/);
   assert.doesNotMatch(board, /height:\s*previewLayer\.height/);
   assert.doesNotMatch(board, /overflowY:\s*"hidden"/);
-  assert.doesNotMatch(board, /maxHeight:\s*expandedRect\s*\?/);
-  assert.match(board, /useLayoutEffect\(\(\) =>/);
   assert.match(board, /resizeObserver\?\.observe\(list\)/);
-  assert.match(board, /hovered && !open && previewLayer\?\.groupId === g\.id/);
-  const layer = css.slice(css.indexOf(".workflow-preview-layer {"),
-    css.indexOf(".workflow-preview-layer .workflow-shipment-list {"));
+  const layer = css.slice(css.indexOf(".workflow-preview-stage {"),
+    css.indexOf(".workflow-preview-stage .workflow-group {"));
+  assert.match(layer, /position:\s*fixed;/);
   assert.match(layer, /padding:\s*0;/);
   assert.match(layer, /border:\s*0;/);
-  assert.match(layer, /box-shadow:\s*none;/);
   assert.match(layer, /overflow-y:\s*auto;/);
 });
 
