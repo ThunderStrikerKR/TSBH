@@ -92,6 +92,7 @@ const api: Api = {
   notificationList: () => invoke("hub_notifications_list"),
   notificationAdd: (notice) => invoke("hub_notifications_add", { notice }),
   notificationMarkRead: (id) => invoke("hub_notifications_mark_read", { id }),
+  notificationDelete: (id) => invoke("hub_notifications_delete", { id }),
   notificationClear: () => invoke("hub_notifications_clear"),
   load: () => {
     auditStateTransition("Rust IPC","state-load-request");
