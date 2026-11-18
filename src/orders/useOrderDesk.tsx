@@ -33,6 +33,12 @@ export type OrderDeskProps = {
   viewMode?: "all" | "reception" | "details";
   /** Readiness of the Rust projection for the currently displayed raw source. */
   sourceProjectionReady?: boolean;
+  /** The single workspace fade phase; only data changes opacity. */
+  coordinatedFadePhase?: import("../shared/useReadyContentFade").ContentFadePhase;
+  fadeKey?: string;
+  onFadeReadiness?: (
+    key: string, section: "message" | "checks" | "financial", ready: boolean,
+  ) => void;
   // Same draft is already reconciled by HubWorkspace. Reuse that exact Rust
   // projection rather than dispatching an identical second/third IPC.
   sharedNativeFlow?: {
