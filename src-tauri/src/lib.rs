@@ -1327,6 +1327,7 @@ pub fn run() {
             notification_store::hub_notifications_list,
             notification_store::hub_notifications_add,
             notification_store::hub_notifications_mark_read,
+            notification_store::hub_notifications_delete,
             notification_store::hub_notifications_clear,
             product_open, catalog_report, catalog_approve, receipt_archive, backup_create, backup_list, backup_restore, choose_excel_directory, open_excel_directory, open_daily_excel_directory,
             factory_reply_watch::choose_factory_reply_directory,
