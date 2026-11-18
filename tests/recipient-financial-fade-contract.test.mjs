@@ -10,8 +10,8 @@ test("recipient reveal waits for current Rust line, order, workflow and delivery
   assert.match(hook, /financialPreviewReady: flowSummaryReady && nativeLines\.ready &&/);
   assert.match(hook, /\(!activeShipment \|\| Boolean\(activeShipmentPreview\)\)/);
   assert.match(hook, /const flowSummaryReady = flowReady && nativeBoard\.ready && nativeOrder\.ready && nativeIssues\.ready/);
-  assert.match(desk, /const recipientReady = !draft\.recipients\.length \|\|[\s\S]*?financialPreviewReady && delivery\.ready/);
-  assert.match(desk, /const financialError = Boolean\(flowSummaryError \|\| orderLineError \|\| delivery\.error\)/);
+  assert.match(desk, /const recipientReady = !draft\.recipients\.length \|\|[\s\S]*?financialPreviewReady && \(delivery\.ready \|\| Boolean\(delivery\.error\)\)/);
+  assert.match(desk, /const financialError = Boolean\(flowSummaryError \|\| orderLineError\)/);
 });
 
 test("one completed transition gates recipient, items, freight and financial footer", () => {
