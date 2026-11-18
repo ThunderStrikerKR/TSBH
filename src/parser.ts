@@ -444,7 +444,15 @@ function parseLegacy(raw: string, selectedClient: Client | undefined, state: Sta
     const addressPrefix = remainder.match(
       /^(?:주소|배송지(?:\s*주소)?|배송주소|받는곳|수취인주소)\s*[:：]\s*/,
     );
-    const found = addressPrefix ? { index: addressPrefix[0].length } : remainder.match(admin);
+    // Keep legacy TS comparison behavior aligned with Rust recognition:
+    // a bracketed postal marker is not part of a labelled street address.
+    const postalPrefix = addressPrefix
+      ? remainder.slice(addressPrefix[0].length)
+          .match(/^(?:\[\d{5,6}\]|\(\d{5,6}\)|\d{5}(?:\s+|$))\s*/)?.[0] ?? ""
+      : "";
+    const found = addressPrefix
+      ? { index: addressPrefix[0].length + postalPrefix.length }
+      : remainder.match(admin);
     if (found && found.index !== undefined) {
       if (
         current?.address &&
