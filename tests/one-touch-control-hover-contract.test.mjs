@@ -105,7 +105,7 @@ test("payment-copy stage highlights only two copy buttons, exact account, total 
   const css = source("src/styles/receipt-layout.css");
   const message = source("src/MessageWorkspace.tsx");
   const linked = source("src/LinkedText.tsx");
-  const rust = source("src-tauri/src/business_core/output/automatic_full.rs");
+  const native = source("src/native-automatic-message.ts");
   const workspace = source("src/HubWorkspace.tsx");
   assert.match(css, /\[data-hover-stage="3"\] \.messages-pane\[data-payment-copy-ready="true"\] :is\(/);
   assert.match(css, /\.message-copy-actions > button:not\(:disabled\)/);
@@ -115,7 +115,8 @@ test("payment-copy stage highlights only two copy buttons, exact account, total 
   assert.match(message, /emphasisSpans=\{emphasisSpans\}/);
   assert.match(message, /<footer className="message-copy-actions">[\s\S]*?그대로 복사[\s\S]*?인사말 포함 복사/);
   assert.match(linked, /data-payment-field=\{s\.kind\}/);
-  assert.match(rust, /"selectedAccountNumber":selected_account_number/);
+  assert.match(message, /selectedAccountNumberFromSignature\(automatic\.signature\)/);
+  assert.doesNotMatch(native, /selectedAccountNumber\?: string/);
   assert.match(workspace, /stageHover\.step === 3[\s\S]*?\.hub-slot-1 \.message-copy-actions/);
   assert.doesNotMatch(css, /\[data-hover-stage="3"\][^\n]*\.items-freight-panel/);
 });

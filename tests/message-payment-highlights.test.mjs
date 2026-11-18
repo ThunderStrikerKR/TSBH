@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { tsImport } from "tsx/esm/api";
 
-const { paymentMessageHighlights } = await tsImport(
+const { paymentMessageHighlights, selectedAccountNumberFromSignature } = await tsImport(
   "../src/message-payment-highlights.ts", import.meta.url,
 );
 const values = (text, account) => paymentMessageHighlights(text, account)
@@ -49,4 +49,15 @@ test("the exact Rust bank number must appear after the VAT summary", () => {
     { kind: "total", text: "22,000원" },
     { kind: "vat", text: "(부가세 별도)" },
   ]);
+});
+
+test("Rust payment signature reveals the already-selected account without another decision", () => {
+  const signature = JSON.stringify({
+    text: "원문과 계좌 정보는 Rust에서 생성",
+    account: { id: "a1", bank: "가상은행", number: "100-200-300", holder: "예금주" },
+    items: [],
+  });
+  assert.equal(selectedAccountNumberFromSignature(signature), "100-200-300");
+  assert.equal(selectedAccountNumberFromSignature(JSON.stringify({ text: "no account" })), "");
+  assert.equal(selectedAccountNumberFromSignature("{invalid"), "");
 });

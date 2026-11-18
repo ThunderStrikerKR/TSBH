@@ -11,8 +11,6 @@ export type NativeAutomaticMessage = {
   paymentIssues: string[];
   signature: string;
   validRequestLinks: string[];
-  /** Number chosen by Rust's account_for, for display-only emphasis. */
-  selectedAccountNumber?: string;
 };
 const accountWire = (state: State) =>
   (state.settings.accounts ?? []).map((account) => ({

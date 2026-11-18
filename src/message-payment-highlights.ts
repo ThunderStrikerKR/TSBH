@@ -10,6 +10,22 @@ export type PaymentHighlightRange = {
   kind: "total" | "vat" | "account";
 };
 
+/** Read the selected account already embedded by Rust in the canonical
+ * payment copy signature. This parses output metadata; it never selects a
+ * business account or changes the original TS-to-Rust response contract. */
+export function selectedAccountNumberFromSignature(signature: string): string {
+  try {
+    const payload: unknown = JSON.parse(signature);
+    if (!payload || typeof payload !== "object") return "";
+    const account = (payload as { account?: unknown }).account;
+    if (!account || typeof account !== "object") return "";
+    const number = (account as { number?: unknown }).number;
+    return typeof number === "string" ? number : "";
+  } catch {
+    return "";
+  }
+}
+
 export function paymentMessageHighlights(
   text: string,
   selectedAccountNumber: string,

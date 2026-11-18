@@ -4,7 +4,7 @@ import { auditReactRender } from "./perf-audit";
 import { nativeAutomaticMessage, nativeDecorateCopyText, type NativeAutomaticMessage } from "./native-automatic-message";
 import { nativeRecordMessageCopy } from "./native-message-audit";
 import { LinkedText, messageSpans } from "./LinkedText";
-import { paymentMessageHighlights } from "./message-payment-highlights";
+import { paymentMessageHighlights, selectedAccountNumberFromSignature } from "./message-payment-highlights";
 import { useReadyContentFade } from "./shared/useReadyContentFade";
 import type { NoticeSink } from "./shared/notices";
 import type { Order, State } from "./types";
@@ -128,8 +128,9 @@ export function MessageWorkspace({
   const localMessageFadePhase = useReadyContentFade(contentKey, bodyReady);
   const messageFadePhase = sharedFadePhase ?? localMessageFadePhase;
   const disabled = busy || !automatic || !text.trim() || (!request && !!automatic.paymentIssues.length);
-  const emphasisSpans = request ? [] :
-    paymentMessageHighlights(text, automatic?.selectedAccountNumber ?? "");
+  const emphasisSpans = request ? [] : paymentMessageHighlights(
+    text, automatic ? selectedAccountNumberFromSignature(automatic.signature) : "",
+  );
   const paymentCopyReady = Boolean(automatic && !request && !disabled);
   const copy = async (greeting: boolean) => {
     if (disabled || !gid) return;
