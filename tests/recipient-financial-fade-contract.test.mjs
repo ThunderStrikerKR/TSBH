@@ -54,7 +54,7 @@ test("workflow footer fades only its content while retaining panel structure", (
   assert.match(desk, /className="order-grand-total">/);
 });
 
-test("shipping count, surrounding labels and VAT parentheses have immutable positions", () => {
+test("shipping count stays aligned and VAT status has no brackets", () => {
   const desk = source("src/OrderDesk.tsx");
   const css = source("src/styles/patch-v0808.css");
   assert.match(desk, /className="shipment-count-label">\| 택배<\/span>/);
@@ -64,9 +64,8 @@ test("shipping count, surrounding labels and VAT parentheses have immutable posi
   assert.match(desk, /className="shipment-count-divider">\|<\/span>/);
   assert.match(desk, /className="order-grand-total-label">총 주문 금액<\/span>/);
   assert.match(desk, /className="order-vat-summary"/);
-  assert.match(desk, /className="order-vat-paren">\(<\/span>/);
+  assert.doesNotMatch(desk, /className="order-vat-paren"/);
   assert.match(desk, /className="order-vat-label" data-recipient-fade=\{recipientRevealPhase\}/);
-  assert.match(desk, /className="order-vat-paren">\)<\/span>/);
   // The layout must not resize based on order amount or which VAT label appears.
   const footer = css.slice(
     css.indexOf(".hub-panels .compact-review > .order-grand-total {"),
@@ -74,9 +73,9 @@ test("shipping count, surrounding labels and VAT parentheses have immutable posi
   );
   assert.match(footer, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+148px;/);
   assert.match(footer, /\.shipment-count-number\s*\{[^}]*flex:\s*0 0 3ch;[^}]*width:\s*3ch;[^}]*text-align:\s*right;[^}]*font-variant-numeric:\s*tabular-nums;/s);
-  assert.match(footer, /\.order-vat-summary\s*\{[^}]*grid-template-columns:\s*8px minmax\(0,\s*1fr\) 8px;[^}]*width:\s*148px;/s);
-  assert.match(footer, /\.order-vat-paren\s*\{/);
-  assert.match(footer, /\.order-vat-label\s*\{/);
+  assert.match(footer, /\.order-vat-summary\s*\{[^}]*width:\s*148px;[^}]*text-align:\s*right;/s);
+  assert.doesNotMatch(footer, /\.order-vat-paren\s*\{/);
+  assert.match(footer, /\.order-vat-label\s*\{[^}]*text-align:\s*right;/s);
   assert.doesNotMatch(footer, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
   // Data is not rounded or capped to 999; three digits is a presentation slot.
   assert.match(desk, /orderPreview\?\.shipmentCount \?\? "—"/);
