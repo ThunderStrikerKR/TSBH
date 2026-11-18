@@ -772,13 +772,11 @@ export function OrderDesk(props: OrderDeskProps) {
                     ? won(orderPreview.total) : "—"}
                 </b>
                 <small className="order-vat-summary">
-                  <span className="order-vat-paren">(</span>
                   <span className="order-vat-label" data-recipient-fade={recipientRevealPhase}>
                     {orderPreview?.vatLabel === "부가세 포함/별도"
                       ? "부가세 혼합 · 배송별 확인"
                       : (orderPreview?.vatLabel ?? "—")}
                   </span>
-                  <span className="order-vat-paren">)</span>
                 </small>
               </div>
             </section>,
