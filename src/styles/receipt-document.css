@@ -420,3 +420,41 @@
   white-space: nowrap;
 }
 
+
+/* Phone numbers have bounded length: keep their inputs compact, and
+   align the mobile field with the same 84px label column as name/address.
+   When the detail pane is narrow, place both contacts on aligned rows
+   instead of squeezing two half-width fields or offsetting the phone label. */
+.hub-panels .compact-review .recipient-phones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 6px 10px;
+}
+.hub-panels .compact-review .recipient-phones > .linked-field {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.hub-panels .compact-review .recipient-phones > .linked-field:first-child .field {
+  grid-template-columns: 84px 150px;
+}
+.hub-panels .compact-review .recipient-phones > .linked-field:last-child .field {
+  grid-template-columns: 32px 130px;
+}
+.hub-panels .compact-review .recipient-phones input {
+  width: 100%;
+  box-sizing: border-box;
+}
+@container (max-width:460px) {
+  .hub-panels .compact-review .recipient-phones {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hub-panels .compact-review .recipient-phones > .linked-field:first-child .field,
+  .hub-panels .compact-review .recipient-phones > .linked-field:last-child .field {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+  .hub-panels .compact-review .recipient-phones input {
+    width: min(100%, 150px);
+  }
+}
