@@ -47,7 +47,7 @@ export function useNativeShipmentRead(state: State, enabled = true) {
   }, [enabled, key]);
   const ready = enabled && resolved?.key === key;
   const shipments = useMemo(() => new Map<string, ShipmentReadRow>(
-    ready ? resolved.result.shipments.map((item) => [item.shipmentId, item] as const) : [],
+    ready ? resolved!.result.shipments.map((item) => [item.shipmentId, item] as const) : [],
   ), [ready, resolved]);
   return {
     ready,
