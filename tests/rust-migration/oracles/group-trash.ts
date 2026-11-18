@@ -1,5 +1,7 @@
-/** Frozen historical TypeScript comparison oracle, NOT runtime application code.
+/** Legacy TypeScript comparison oracle, NOT runtime application code.
  * Retired from src/ after its business operation moved to Rust.
+ * Its imported helpers are still repository code: this is NOT a sealed
+ * historical baseline and must not override newer approved business rules.
  * Do not import from production React components.
  */
 import type { State } from "../../../src/types.js";
