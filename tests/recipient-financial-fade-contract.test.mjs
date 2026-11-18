@@ -21,12 +21,35 @@ test("one completed transition gates recipient, items, freight and financial foo
   assert.match(desk, /if \(!recipientReady\) return;[\s\S]*?requestAnimationFrame\(\(\) => setRevealedRecipient\(recipientViewKey\)\)/);
   assert.match(desk, /return \(\) => cancelAnimationFrame\(frame\)/);
   assert.match(desk, /revealedRecipient === recipientViewKey \? "ready" : "pending"/);
-  assert.match(desk, /className="recipient-body" data-recipient-fade=\{recipientRevealPhase\}/);
+  // Headers, borders, scroll containers and empty-state instructions must
+  // never disappear. Only actual recipient/order data is transition content.
+  assert.match(desk, /<div className="recipient-body">\s*<header className="recipient-section-heading">/);
+  assert.match(desk, /<p className="empty detail-empty">발주 원문을 입력하거나 배송 건을 선택하세요\.<\/p>/);
+  assert.match(desk, /className="recipient-review" key=\{r\.id\}\s*data-recipient-fade=\{recipientRevealPhase\}/);
+  assert.match(desk, /<section className="items-freight-panel">\s*<header className="recipient-section-heading">/);
+  assert.match(desk, /className="items-freight-scroll receipt-panel-content">/);
+  assert.match(desk, /<article key=\{r\.id\}\s*data-recipient-fade=\{recipientRevealPhase\}/);
+  assert.match(desk, /거래처 선택 후 운임과 청구금액을 확인합니다\./);
+  assert.match(desk, /recipientFade=\{recipientRevealPhase\}/);
+  assert.match(desk, /<div className="order-grand-total">\s*총 주문 금액/);
+  assert.match(desk, /<b data-recipient-fade=\{recipientRevealPhase\}>/);
   assert.match(desk, /inert=\{recipientRevealPhase === "pending"\}/);
-  assert.match(desk, /className="order-grand-total" data-recipient-fade=\{recipientRevealPhase\}/);
+  assert.doesNotMatch(desk, /className="recipient-body" data-recipient-fade/);
+  assert.doesNotMatch(desk, /className="order-grand-total" data-recipient-fade/);
   assert.match(css, /\.compact-review \[data-recipient-fade="pending"\] \{[^}]*opacity:\s*0;[^}]*transition:\s*none;/s);
   assert.match(css, /\.compact-review \[data-recipient-fade="ready"\] \{[^}]*opacity:\s*1;[^}]*transition:\s*opacity 260ms ease-out;/s);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+});
+
+test("workflow footer fades only its content while retaining panel structure", () => {
+  const footer = source("src/WorkflowFooter.tsx");
+  const desk = source("src/OrderDesk.tsx");
+  assert.match(footer, /recipientFade\?: "pending" \| "ready"/);
+  assert.match(footer, /className="workflow-footer order-settings" aria-label="발주 설정"/);
+  assert.match(footer, /data-recipient-fade=\{recipientFade\}/);
+  assert.match(desk, /className="items-freight-panel">/);
+  assert.match(desk, /className="recipient-section-heading">\s*<h2>품목 및 운임<\/h2>/);
+  assert.match(desk, /className="order-grand-total">/);
 });
 
 test("recipient reveal does not gate in-place edits on a fixed animation timer", () => {
