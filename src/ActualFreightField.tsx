@@ -38,26 +38,43 @@ export function ActualFreightField({
     if (!controlled) setLocalValue((current) => current === previousSaved.current ? saved : current);
     previousSaved.current = saved;
   }, [saved, shipmentId, origin, controlled]);
-  const save = async (): Promise<boolean> => {
-    if (busy) return false;
-    if (value === saved) return true;
-    setBusy(true);
-    try {
-      await onSave(await nativeRecordActualFreight(state, shipmentId, origin, value));
-      onDraftSaved?.();
-      setError("");
-      return true;
-    } catch (cause) {
-      setError(String(cause));
-      return false;
-    } finally {
-      setBusy(false);
-    }
+  // The ref changes synchronously as a save starts, even before React paints
+  // busy=true. Navigation awaits this exact native write without starting a
+  // second overlapping actual-freight save.
+  const saving = useRef<Promise<boolean> | null>(null);
+  const save = (): Promise<boolean> => {
+    if (saving.current) return saving.current;
+    if (value === saved) return Promise.resolve(true);
+    const task = (async (): Promise<boolean> => {
+      setBusy(true);
+      try {
+        await onSave(await nativeRecordActualFreight(state, shipmentId, origin, value));
+        onDraftSaved?.();
+        setError("");
+        return true;
+      } catch (cause) {
+        setError(String(cause));
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    })();
+    saving.current = task;
+    void task.then(() => {
+      if (saving.current === task) saving.current = null;
+    }, () => {
+      if (saving.current === task) saving.current = null;
+    });
+    return task;
   };
   usePageLeaveGuard({
     label: "실제 출고 운임",
     hasChanges: () => !controlled && value !== saved,
-    busy: () => busy,
+    busy: () => busy || saving.current !== null,
+    waitForIdle: async () => {
+      const task = saving.current;
+      if (task && !(await task)) throw Error("실제 출고 운임 저장이 실패했습니다.");
+    },
     save,
     discard: () => setLocalValue(saved),
   });
