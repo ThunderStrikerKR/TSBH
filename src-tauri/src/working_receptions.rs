@@ -21,8 +21,9 @@ pub(super) fn initialize(conn: &Connection) -> Result<(), String> {
 
 fn confirmed_order_ids(conn: &Connection) -> Result<HashSet<String>, String> {
     let mut stmt = conn.prepare("SELECT id FROM order_index").map_err(err)?;
-    stmt.query_map([], |row| row.get::<_, String>(0)).map_err(err)?
-        .collect::<Result<HashSet<_>, _>>().map_err(err)
+    let mapped = stmt.query_map([], |row| row.get::<_, String>(0)).map_err(err)?;
+    let ids: Result<HashSet<String>, rusqlite::Error> = mapped.collect();
+    ids.map_err(err)
 }
 
 pub(super) fn load(conn: &Connection) -> Result<Vec<Value>, String> {
@@ -96,7 +97,7 @@ mod tests {
         conn
     }
     #[test]
-    fn unconfirmed_receptions_survive_reopen_and_replacement() {
+    fn unconfirmed_receptions_support_atomic_replacement() {
         let mut conn=db();
         let one=json!({"id":"a","receptionVersion":1,"raw":"접수 원문",
             "recipients":[{"id":"r1","items":[]}]});
@@ -105,6 +106,28 @@ mod tests {
         assert_eq!(load(&conn).unwrap().len(),2);
         replace(&mut conn,vec![two.clone()]).unwrap();
         assert_eq!(load(&conn).unwrap(),vec![two]);
+    }
+    #[test]
+    fn sqlite_file_reopen_recovers_the_exact_unconfirmed_working_copy() {
+        let stamp = std::time::SystemTime::now().duration_since(
+            std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "bando-working-reception-{}-{}.sqlite",std::process::id(),stamp));
+        let order = json!({"id":"restored-1","receptionVersion":1,
+            "raw":"원본 한글 발주서","recipients":[{"id":"r1","name":"이가상",
+            "address":"제주특별자치도 서귀포시","items":[{"id":"i1","quantity":2}]}]});
+        {
+            let mut conn = Connection::open(&path).unwrap();
+            conn.execute_batch("CREATE TABLE order_index(id TEXT PRIMARY KEY);").unwrap();
+            initialize(&conn).unwrap();
+            replace(&mut conn, vec![order.clone()]).unwrap();
+        }
+        {
+            let conn = Connection::open(&path).unwrap();
+            initialize(&conn).unwrap();
+            assert_eq!(load(&conn).unwrap(),vec![order]);
+        }
+        let _=std::fs::remove_file(path);
     }
     #[test]
     fn confirmed_order_ids_are_never_reintroduced() {
