@@ -55,6 +55,7 @@ export function OrderDesk(props: OrderDeskProps) {
     flowState,
     flowReady,
     flowSummaryReady,
+    financialPreviewReady,
     staffChecksReady,
     staffChecksActionsReady,
     staffChecksError,
@@ -106,6 +107,26 @@ export function OrderDesk(props: OrderDeskProps) {
       props.workflowSelection.shipmentId === lastReadyFreight.current.shipment.id)
       ? lastReadyFreight.current : null;
   const delivery = useNativeDeliveryRequirements(draft.recipients, draft.receptionVersion !== 1);
+
+  // A new recipient's inputs arrive immediately, but Rust line amounts,
+  // shipment freight and the order total settle independently. Do not fade
+  // in half-calculated content just because a fixed animation timer expired.
+  // Once revealed, keep the same recipient interactive through in-place edits;
+  // only a recipient/shipment switch starts a new reveal.
+  const recipientViewKey = [draft.id, shownRecipient ?? "", props.workflowSelection?.shipmentId ?? ""].join(":");
+  const financialError = Boolean(flowSummaryError || orderLineError || delivery.error);
+  const recipientReady = !draft.recipients.length ||
+    (financialPreviewReady && delivery.ready) || financialError;
+  const [revealedRecipient, setRevealedRecipient] = useState<string>();
+  useEffect(() => {
+    if (!recipientReady) return;
+    // Give the hidden initial state a paint before starting the CSS fade-in.
+    const frame = requestAnimationFrame(() => setRevealedRecipient(recipientViewKey));
+    return () => cancelAnimationFrame(frame);
+  }, [recipientViewKey, recipientReady]);
+  const recipientRevealPhase = !draft.recipients.length ||
+    revealedRecipient === recipientViewKey ? "ready" : "pending";
+
   const addressRequests = useRef<Record<string, number>>({});
   const addressMounted = useRef(true);
   useEffect(() => {
@@ -362,7 +383,8 @@ export function OrderDesk(props: OrderDeskProps) {
                     if (field === "address") applyNativeAddress(b.recipientId, value);
                   }}
                 />
-                <div className="recipient-body">
+                <div className="recipient-body" data-recipient-fade={recipientRevealPhase}
+                  aria-busy={recipientRevealPhase === "pending"}>
                   <header className="recipient-section-heading">
                     <h2>수취인별 주문 정보</h2>
                     {exported &&
@@ -705,7 +727,7 @@ export function OrderDesk(props: OrderDeskProps) {
               {orderLineError && (
                 <p role="alert">Rust 품목 금액 조회 오류: {orderLineError}</p>
               )}
-              <div className="order-grand-total">
+              <div className="order-grand-total" data-recipient-fade={recipientRevealPhase}>
                 총 주문 금액{" "}
                 <span className="shipment-count">
                   | 택배{" "}
