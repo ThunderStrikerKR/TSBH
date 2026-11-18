@@ -68,7 +68,7 @@ export function HubWorkspace(props: Props) {
     [selected, commitSelection] = useState<WorkflowSelection | undefined>(props.workflowSelection),
     [edits, setEdits] = useState<Record<string, Order>>({}),
     [active, setActive] = useState(""),
-    [stageHover, setStageHover] = useState<{ groupId: string; step: number }>();
+    [stageHover, setStageHover] = useState<{ groupId: string; step: number; shipmentId?: string }>();
   useEffect(() => { auditStateTransition("HubWorkspace","portal-ready",{source:!!source,messages:!!messages,details:!!details}); },[source,messages,details]);
   const applySelection = (next: WorkflowSelection | undefined) => {
     if (next) {
@@ -226,7 +226,7 @@ export function HubWorkspace(props: Props) {
   // selected order. This is read-only navigation: persistent selection and
   // unsaved edit ownership stay untouched until the card is clicked.
   const hoverSelection = previewReady
-    ? hoveredWorkflowSelection(preview, stageHover?.groupId, selected)
+    ? hoveredWorkflowSelection(preview, stageHover?.groupId, selected, stageHover?.shipmentId)
     : undefined;
   // A linked token only changes the visible preview, not committed selection.
   const linkedHoverShipment = active && previewReady
