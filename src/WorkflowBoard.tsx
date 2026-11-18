@@ -561,6 +561,7 @@ export function WorkflowBoard({
                   return (
                     <button
                       key={s.id}
+                      data-ui-role="nav-subsection"
                       className={
                         "workflow-shipment" +
                         (s.id === selection?.shipmentId ? " chosen" : "") +
