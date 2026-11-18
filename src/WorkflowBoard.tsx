@@ -474,10 +474,11 @@ export function WorkflowBoard({
                     hoverDelay.current = undefined;
                     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
                     hoverReturnDelay.current = setTimeout(() => {
-                      if (hoveredGroup.current === g.id) {
-                        hoveredGroup.current = undefined;
-                        onStageHover?.(undefined);
-                      }
+                      // If the pointer briefly crossed another button that
+                      // never reached its 120ms enter threshold, clear the
+                      // previous preview as well; never leave a stale hover.
+                      hoveredGroup.current = undefined;
+                      onStageHover?.(undefined);
                       hoverReturnDelay.current = undefined;
                     }, 260);
                   }}
