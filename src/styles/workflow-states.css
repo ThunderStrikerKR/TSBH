@@ -290,7 +290,17 @@
   overflow: hidden;
   padding: 0;
 }
-.stage-message-preview > .linked-text-editor {
+.message-generated-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+/* Do not fade stage-message-preview: its panel frame and scroll slot remain. */
+.stage-message-preview > .linked-text-editor,
+.message-generated-content > .linked-text-editor {
   flex: 1;
   min-height: 0;
   border: 0;
