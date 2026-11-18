@@ -35,7 +35,7 @@ test("Native HTML parser identifies model, options, price and duplicate sources"
   assert.match(rust, /"canApply":can_apply/);
 });
 test("Official import saves only after review, backup and revision validation", () => {
-  const parser = read("src/official-product-import.ts");
+  const parser = read("tests/rust-migration/oracles/official-product-import.ts");
   const component = read("src/ProductImports.tsx");
   assert.match(parser, /state\.revision \?\? 0\) !== preview\.revision/);
   assert.match(parser, /variant\.retail = newPrice/);
