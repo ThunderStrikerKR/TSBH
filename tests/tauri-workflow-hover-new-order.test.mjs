@@ -41,20 +41,19 @@ test("hover retains the current recipient when hovering its own multi-recipient 
     "deleted groups cannot regain focus from transient hover");
 });
 
-test("hover temporarily expands its entire shipment group and restores manually closed group", () => {
-  // Old group is selected and open, another group's one-touch button is hovered.
-  assert.equal(workflowGroupOpen("g1", "g1", "g2"), false);
-  assert.equal(workflowGroupOpen("g2", "g1", "g2"), true);
-  assert.equal(workflowGroupOpen("g1", "g1", undefined), true);
-  assert.equal(workflowGroupOpen("g2", "g1", undefined), false);
-  // A manually closed selected group must return to collapsed after preview.
-  assert.equal(workflowGroupOpen("g1", "g1", "g1", "g1"), true);
-  assert.equal(workflowGroupOpen("g1", "g1", undefined, "g1"), false);
-  // Multi-recipient previews keep the committed shipment unchanged.
+test("one-touch hover leaves accordion heights unchanged while preview can show multiple shipments", () => {
+  // Only an explicit shipment selection or title toggle expands a group.
+  assert.equal(workflowGroupOpen("g1", "g1"), true);
+  assert.equal(workflowGroupOpen("g2", "g1"), false);
+  assert.equal(workflowGroupOpen("g1", "g1", "g1"), false);
+  assert.equal(workflowGroupOpen("g2", "g1", "g1"), false);
+  // Hover picks its own first shipment without mutating the committed selection.
   const state = seeded();
-  const selected = {orderId:"o3",groupId:"g2",shipmentId:"s3"};
-  assert.deepEqual(hoveredWorkflowSelection(state, "g2", selected), selected);
-  assert.equal(state.workflow.shipments.filter(s=>s.groupId==="g2").length, 2);
+  const selected = {orderId:"o1", groupId:"g1", shipmentId:"s1"};
+  assert.deepEqual(hoveredWorkflowSelection(state, "g2", selected),
+    {orderId:"o2", groupId:"g2", shipmentId:"s2"});
+  assert.equal(state.workflow.shipments.filter(s => s.groupId === "g2").length, 2);
+  assert.deepEqual(selected, {orderId:"o1", groupId:"g1", shipmentId:"s1"});
 });
 
 test("hover selects each actual source and detail and scrolls into stage content", () => {
@@ -67,7 +66,7 @@ test("hover selects each actual source and detail and scrolls into stage content
   assert.match(hub,/const detail = visibleSelection/);
   assert.match(hub,/workflowSelection=\{visibleSelection\}/);
   assert.match(hub,/hoveredShipmentId=\{hoverSelection\?\.shipmentId\}/);
-  assert.match(board,/open = workflowGroupOpen\(g\.id, selection\?\.groupId, stageHover\?\.groupId, manuallyClosedGroup\)/);
+  assert.match(board,/open = workflowGroupOpen\(g\.id, selection\?\.groupId, manuallyClosedGroup\)/);
   assert.match(board,/isPreviewed = hovered && hoveredShipmentId === s\.id/);
   assert.match(board,/workflow-preview-indicator">표시 중/);
   assert.match(board,/aria-label=\{"배송 건 " \+ recipient\.name \+ \(isPreviewed \?/);
@@ -75,8 +74,14 @@ test("hover selects each actual source and detail and scrolls into stage content
   assert.match(hub,/stageHover\.step === 2[\s\S]*?\.freight-input-area/);
   assert.match(hub,/stageHover\.step === 3[\s\S]*?\.payment-message/);
   assert.match(hub,/\.scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/);
-  assert.match(board,/onMouseEnter=\{\(\) => \{[\s\S]*?onStageHover\?\.\(\{ groupId: g\.id, step: Math\.min\(step \+ 1, 4\) \}\)/);
-  assert.match(board,/onMouseLeave=\{\(\) => \{[\s\S]*?onStageHover\?\.\(undefined\)/);
+  assert.match(board, /onMouseEnter=\{\(event\) => startStagePreview\(event\.currentTarget, g\.id, step, ss\.length\)\}/);
+  assert.match(board, /createPortal\(/);
+  assert.match(board, /previewLayer\?\.groupId === g\.id/);
+  assert.match(board, /onMouseEnter=\{keepStagePreview\}/);
+  assert.match(board, /"workflow-preview-layer-shipment" \+ \(displayed/);
+  assert.match(board, /onMouseLeave=\{scheduleStagePreviewExit\}/);
+  assert.match(board, /onMouseLeave=\{scheduleStagePreviewExit\}/);
+  assert.match(board, /onClick=\{\(\) => \{[\s\S]*?stopStagePreview\(\);[\s\S]*?onSelect\(\{ orderId: shipment\.orderId/);
 });
 
 test("new order resets stale preview immediately and second click is idempotent", () => {
@@ -153,16 +158,21 @@ test("payment and VAT stay beside each other to the left of right-fixed stage bu
   assert.match(css, /\.workflow-action-line > \.workflow-progress\s*\{[\s\S]*?justify-content: flex-end/);
 });
 
-test("one-touch preview enters at 250ms, restores at 260ms, and action click remains immediate", () => {
+test("one-touch preview enters and restores at 250ms without reflow or delayed click", () => {
   const board = read("src/WorkflowBoard.tsx");
   const css = read("src/styles/workflow.css");
-  assert.match(board, /hoverDelay\.current = setTimeout\(\(\) => \{[\s\S]*?onStageHover\?\.\([\s\S]*?\}, 250\)/);
-  assert.match(board, /onMouseLeave=\{\(\) => \{[\s\S]*?hoverReturnDelay\.current = setTimeout\(\(\) => \{[\s\S]*?onStageHover\?\.\(undefined\);[\s\S]*?\}, 260\)/);
-  assert.match(board, /onMouseEnter=\{\(\) => \{[\s\S]*?clearTimeout\(hoverReturnDelay\.current\)/);
-  assert.match(board, /if \(hoverReturnDelay\.current\) clearTimeout\(hoverReturnDelay\.current\);\s*\}, \[\]\)/);
+  const sel = read("src/workspace-selection.ts");
+  assert.match(board, /hoverDelay\.current = setTimeout\(\(\) => \{[\s\S]*?onStageHover\?\.\(\{ groupId, step: Math\.min\(step \+ 1, 4\) \}\);[\s\S]*?\}, 250\)/);
+  assert.match(board, /hoverReturnDelay\.current = setTimeout\(\(\) => \{[\s\S]*?stopStagePreview\(\);[\s\S]*?\}, 250\)/);
+  assert.match(board, /onMouseEnter=\{keepStagePreview\}/);
+  assert.match(board, /onMouseLeave=\{scheduleStagePreviewExit\}/);
+  assert.match(board, /if \(hoverReturnDelay\.current\) clearTimeout\(hoverReturnDelay\.current\)/);
   assert.match(board, /onClick=\{async \(\) => \{[\s\S]*?nativeApplyWorkflowAction/);
+  assert.match(css, /\.workflow-preview-layer\s*\{[\s\S]*?position: fixed/);
   assert.match(css, /\.workflow-progress > \.primary:hover:not\(:disabled\)/);
   assert.match(css, /--ds-role-surface-emphasized-action-hover/);
-  assert.match(css, /\.workflow-shipment\.previewed::before/);
-  assert.match(css, /--ds-role-border-selected/);
+  assert.match(sel, /return selectedGroupId === groupId && manuallyClosedGroupId !== groupId/);
+  assert.doesNotMatch(sel, /hoveredGroupId/);
+  assert.match(board, /displayed && <span className="workflow-preview-indicator">표시 중<\/span>/);
+
 });

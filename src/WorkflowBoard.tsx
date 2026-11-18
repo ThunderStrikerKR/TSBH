@@ -2,6 +2,7 @@ import { nativePaymentWasCopied } from "./native-automatic-message";
 import { workflowGroupOpen } from "./workspace-selection";
 import { useNativeWorkflowBoard } from "./orders/useNativeWorkflowBoard";
 import { memo, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { auditReactRender } from "./perf-audit";
 import { confirmAction } from "./dialogs";
 import { won } from "./domain";
@@ -107,9 +108,86 @@ export function WorkflowBoard({
   const boardRef = useRef<HTMLDivElement>(null),
     hoveredGroup = useRef<string | undefined>(undefined),
     hoverDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
-    hoverReturnDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // Enter is deliberate (250ms); leaving gets a 260ms grace period so
-  // moving across an adjacent button or shipment row does not flicker.
+    hoverReturnDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
+    previewButton = useRef<HTMLButtonElement | null>(null);
+  const [previewLayer, setPreviewLayer] = useState<{
+    groupId: string; left: number; top: number; width: number; maxHeight: number;
+  }>();
+  // Fixed portal: the hovered group never expands or moves other action buttons.
+  const positionPreview = (button: HTMLButtonElement, groupId: string, shipmentCount: number) => {
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(380, Math.max(180, window.innerWidth - 16));
+    const desiredHeight = Math.min(330, 64 + shipmentCount * 52);
+    const below = window.innerHeight - rect.bottom - 8;
+    const above = rect.top - 8;
+    const showAbove = below < desiredHeight && above > below;
+    const maxHeight = Math.max(80, Math.min(330, (showAbove ? above : below) - 4));
+    const top = showAbove
+      ? Math.max(8, rect.top - Math.min(desiredHeight, maxHeight) - 2)
+      : Math.min(window.innerHeight - 8 - Math.min(desiredHeight, maxHeight), rect.bottom + 2);
+    setPreviewLayer({
+      groupId,
+      left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
+      top: Math.max(8, top),
+      width,
+      maxHeight,
+    });
+  };
+  const stopStagePreview = () => {
+    if (hoverDelay.current) clearTimeout(hoverDelay.current);
+    if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
+    hoverDelay.current = undefined;
+    hoverReturnDelay.current = undefined;
+    hoveredGroup.current = undefined;
+    previewButton.current = null;
+    setPreviewLayer(undefined);
+    onStageHover?.(undefined);
+  };
+  const startStagePreview = (button: HTMLButtonElement, groupId: string, step: number, shipmentCount: number) => {
+    if (hoverDelay.current) clearTimeout(hoverDelay.current);
+    if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
+    hoverDelay.current = undefined;
+    hoverReturnDelay.current = undefined;
+    if (hoveredGroup.current === groupId) return;
+    hoverDelay.current = setTimeout(() => {
+      if (!button.isConnected) return;
+      hoveredGroup.current = groupId;
+      previewButton.current = button;
+      positionPreview(button, groupId, shipmentCount);
+      onStageHover?.({ groupId, step: Math.min(step + 1, 4) });
+      hoverDelay.current = undefined;
+    }, 250);
+  };
+  const scheduleStagePreviewExit = () => {
+    if (hoverDelay.current) clearTimeout(hoverDelay.current);
+    if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
+    hoverDelay.current = undefined;
+    hoverReturnDelay.current = setTimeout(() => {
+      hoverReturnDelay.current = undefined;
+      stopStagePreview();
+    }, 250);
+  };
+  const keepStagePreview = () => {
+    if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
+    hoverReturnDelay.current = undefined;
+  };
+  // Reposition the portal if the scrollable order list or window moves.
+  useEffect(() => {
+    if (!previewLayer) return;
+    const update = () => {
+      const button = previewButton.current;
+      if (button?.isConnected)
+        positionPreview(button, previewLayer.groupId, groupShipments(state, previewLayer.groupId).length);
+      else stopStagePreview();
+    };
+    const board = boardRef.current;
+    board?.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      board?.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [previewLayer?.groupId, state]);
   useEffect(() => () => {
     if (hoverDelay.current) clearTimeout(hoverDelay.current);
     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
@@ -316,7 +394,7 @@ export function WorkflowBoard({
           first = shipmentContext(state, ss[0]),
           selected = selection?.groupId === g.id,
           hovered = stageHover?.groupId === g.id,
-          open = workflowGroupOpen(g.id, selection?.groupId, stageHover?.groupId, manuallyClosedGroup);
+          open = workflowGroupOpen(g.id, selection?.groupId, manuallyClosedGroup);
         const label =
           g.needsNotice && step >= 2
             ? "계좌 재안내 완료"
@@ -458,31 +536,8 @@ export function WorkflowBoard({
                   data-ui-role="action-primary"
                   disabled={!ready || busy || remaining > 0 || ss.some((s) => s.transferred)}
                   aria-label={buttonLabel}
-                  onMouseEnter={() => {
-                    if (hoverDelay.current) clearTimeout(hoverDelay.current);
-                    if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
-                    hoverDelay.current = undefined;
-                    hoverReturnDelay.current = undefined;
-                    if (hoveredGroup.current === g.id) return;
-                    hoverDelay.current = setTimeout(() => {
-                      hoveredGroup.current = g.id;
-                      onStageHover?.({ groupId: g.id, step: Math.min(step + 1, 4) });
-                      hoverDelay.current = undefined;
-                    }, 250);
-                  }}
-                  onMouseLeave={() => {
-                    if (hoverDelay.current) clearTimeout(hoverDelay.current);
-                    hoverDelay.current = undefined;
-                    if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
-                    hoverReturnDelay.current = setTimeout(() => {
-                      // If the pointer briefly crossed another button that
-                      // never reached its 250ms enter threshold, clear the
-                      // previous preview as well; never leave a stale hover.
-                      hoveredGroup.current = undefined;
-                      onStageHover?.(undefined);
-                      hoverReturnDelay.current = undefined;
-                    }, 260);
-                  }}
+                  onMouseEnter={(event) => startStagePreview(event.currentTarget, g.id, step, ss.length)}
+                  onMouseLeave={scheduleStagePreviewExit}
                   onClick={async () => {
                     if (
                       (step === 2 || (g.needsNotice && step >= 2)) &&
@@ -519,6 +574,55 @@ export function WorkflowBoard({
                 >
                   ↶
                 </button>
+                {hovered && previewLayer?.groupId === g.id && typeof document !== "undefined" &&
+                  createPortal(
+                    <div
+                      className="app-v03 workflow-preview-layer"
+                      role="group"
+                      aria-label={(first.client.displayName || first.client.name) + " 배송 건 미리보기"}
+                      style={{
+                        left: previewLayer.left, top: previewLayer.top,
+                        width: previewLayer.width, maxHeight: previewLayer.maxHeight,
+                      }}
+                      onMouseEnter={keepStagePreview}
+                      onMouseLeave={scheduleStagePreviewExit}
+                    >
+                      <div className="workflow-preview-layer-heading">
+                        <b>{first.client.displayName || first.client.name}</b>
+                        <span>배송 {ss.length}건 · 미리보기</span>
+                      </div>
+                      <div className="workflow-preview-layer-list">
+                        {ss.map((shipment) => {
+                          const { recipient } = shipmentContext(state, shipment);
+                          const nativeShipment = nativeGroup?.shipments.find((row) => row.shipmentId === shipment.id);
+                          const displayed = hoveredShipmentId === shipment.id;
+                          const products = recipient.items.map((item) =>
+                            internalModel(item.name) + " × " + (item.quantity ?? "?")).join(", ") || "품목 확인";
+                          return (
+                            <button type="button" data-ui-role="nav-subsection"
+                              key={shipment.id}
+                              className={"workflow-preview-layer-shipment" + (displayed ? " displayed" : "")}
+                              aria-label={"배송 건 " + recipient.name + (displayed ? " 현재 표시 중" : "") + " 선택"}
+                              onClick={() => {
+                                stopStagePreview();
+                                onSelect({ orderId: shipment.orderId, groupId: g.id, shipmentId: shipment.id });
+                              }}
+                            >
+                              <span className="workflow-preview-layer-recipient">
+                                {recipient.name || "수취인 확인"}
+                                {displayed && <span className="workflow-preview-indicator">표시 중</span>}
+                              </span>
+                              <span className="workflow-preview-layer-products" title={products}>{products}</span>
+                              <span className="workflow-preview-layer-freight">
+                                {nativeShipment?.freightCode === "020" ? "착불" : won(nativeShipment?.totals.shipping ?? null)}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>,
+                    document.body,
+                  )}
                 </div>
               )}
             </div>

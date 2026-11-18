@@ -31,18 +31,14 @@ export function onlyDeletedGroups(state: State, orderId: string) {
   return groups.length > 0 && groups.every((g) => !!g.deletedAt);
 }
 
-/** During a stage hover the hovered group temporarily owns the expanded
- * viewport. Once the hover clears, restore the exact committed accordion
- * state, including a manually closed selected group. */
+/** Accordion visibility is controlled only by explicit selection and
+ * title-button toggles. Hover preview is a portal and cannot reflow cards. */
 export function workflowGroupOpen(
   groupId: string,
   selectedGroupId?: string,
-  hoveredGroupId?: string,
   manuallyClosedGroupId?: string,
 ): boolean {
-  return hoveredGroupId
-    ? hoveredGroupId === groupId
-    : selectedGroupId === groupId && manuallyClosedGroupId !== groupId;
+  return selectedGroupId === groupId && manuallyClosedGroupId !== groupId;
 }
 
 /** Resolve the hovered action's own order without changing the committed

@@ -175,8 +175,100 @@
   border-color: var(--ds-role-surface-emphasized-action-hover);
   color: var(--ds-color-primaryInverse);
 }
-/* Hover previews one whole group at a time and restores its prior
-   selected/manually-collapsed state after the 260ms leave grace period. */
+/* The preview is an independent fixed layer, not accordion content.
+   A 250ms exit grace lets the pointer travel from the stage button to this
+   panel without losing the current shipment display. */
+.workflow-preview-layer {
+  position: fixed;
+  box-sizing: border-box;
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  padding: var(--ds-space-8);
+  border: 1px solid var(--ds-role-border-selected);
+  border-radius: var(--ds-controlRadius);
+  background: #242424;
+  color: var(--ds-role-text-primary);
+  box-shadow: 0 8px 26px #0009;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.workflow-preview-layer-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--ds-space-8);
+  padding: var(--ds-space-4) var(--ds-space-8) var(--ds-space-8);
+  border-bottom: 1px solid var(--ds-role-border-divider);
+  background: #242424;
+  font-size: calc(var(--ds-type-subsectionHeading-size) * var(--ui-scale, 1));
+}
+.workflow-preview-layer-heading b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-preview-layer-heading span {
+  flex: 0 0 auto;
+  color: var(--ds-role-text-secondary);
+  font-size: calc(var(--ds-type-metadata-size) * var(--ui-scale, 1));
+}
+.workflow-preview-layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-4);
+}
+.workflow-preview-layer-shipment {
+  display: grid;
+  grid-template-columns: minmax(76px, 1fr) minmax(95px, 1.7fr) auto;
+  align-items: center;
+  gap: var(--ds-space-8);
+  width: 100%;
+  min-height: calc(var(--ds-nav-subsection-height) * var(--ui-scale, 1));
+  padding: var(--ds-space-4) var(--ds-space-8);
+  border: 1px solid transparent;
+  border-radius: var(--ds-controlRadius);
+  background: transparent;
+  color: var(--ds-role-text-primary);
+  font-size: calc(var(--ds-nav-subsection-font-size) * var(--ui-scale, 1));
+  text-align: left;
+  cursor: pointer;
+}
+.workflow-preview-layer-shipment:hover,
+.workflow-preview-layer-shipment:focus-visible {
+  background: var(--ds-role-surface-interactive-hover);
+  border-color: var(--ds-role-border-focus);
+  outline: none;
+}
+.workflow-preview-layer-shipment.displayed {
+  background: color-mix(in srgb, var(--ds-role-border-selected) 16%, #242424);
+  box-shadow: inset 3px 0 0 var(--ds-role-border-selected);
+}
+.workflow-preview-layer-recipient {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-4);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workflow-preview-layer-products {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ds-role-text-secondary);
+}
+.workflow-preview-layer-freight {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* The hover never modifies the accordion's open state or card height. */
 .app-v03 .hub-slot-3 .workflow-group.workflow-preview-group {
   border-color: var(--ds-role-border-selected);
 }
