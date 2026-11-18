@@ -1697,6 +1697,53 @@ mod tests {
             Some("주소: 50034 ".len()));
     }
     #[test]
+    fn bracketed_postcode_is_not_part_of_delivery_address_or_evidence() {
+        // Synthetic recipient and apartment name; preserve the shape of the
+        // reported 5-digit bracketed postcode + Jeju road-name address.
+        let address="제주특별자치도 서귀포시 대정읍 테스트로 23 (대정읍, 가상아파트) 105동 403호";
+        let raw=format!(
+            "안녕하세요 직발송 부탁드립니다.\n\n반도 첼로스탠드 BC-105 1\n수령자 : 김가상\n휴대전화 : 010-0000-0000\n주소 : [63644] {address}"
+        );
+        let expected_start=raw.find(address).unwrap();
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),1,"A postcode must not create another recipient: {result}");
+        assert_eq!(rows[0]["address"],address);
+        assert_eq!(rows[0]["addressKind"],"ROAD");
+        assert_eq!(rows[0]["addressParts"]["province"],"제주특별자치도");
+        assert_eq!(rows[0]["addressParts"]["detail"],
+            "(대정읍, 가상아파트) 105동 403호");
+        let address_evidence=result["candidates"].as_array().unwrap().iter()
+            .find(|item|item["kind"]=="address").unwrap();
+        assert_eq!(address_evidence["value"],address);
+        assert_eq!(address_evidence["text"],address);
+        assert_eq!(address_evidence["start"].as_u64().unwrap() as usize,
+            raw[..expected_start].encode_utf16().count());
+        assert!(!address_evidence["text"].as_str().unwrap().contains("[63644]"));
+    }
+
+    #[test]
+    fn optional_postal_markers_are_skipped_only_at_an_address_boundary() {
+        let address="제주특별자치도 서귀포시 대정읍 테스트로 23 (대정읍, 가상아파트) 105동 403호";
+        for marker in ["[63644]","(63644)","63644","[663644]"] {
+            let line=format!("주소 : {marker} {address}");
+            assert_eq!(address_begin(&line),line.find(address),
+                "Postal marker {marker:?} should not enter the address source span");
+            let out=execute("analyze_order",json!({
+                "raw":format!("수령자: 김가상\n{line}"),"state":state()
+            })).unwrap();
+            assert_eq!(out["recipients"][0]["address"],address,"{marker}");
+        }
+        // Square brackets do not make a standalone address, and apartment
+        // parentheticals must not be mistaken for postal-code delimiters.
+        assert_eq!(address_begin("주소: [63644]"),None);
+        assert_eq!(address_begin("주소: [663644]"),None);
+        let raw=format!("수령자: 김가상\n{address}");
+        let out=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        assert_eq!(out["recipients"][0]["address"],address);
+    }
+
+    #[test]
     fn semantic_conductor_uses_registered_single_sku_only() {
         let state=serde_json::from_str::<Value>(include_str!(
             "../../../resources/state-seed.json"
