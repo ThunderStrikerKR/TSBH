@@ -1,7 +1,8 @@
 import type { NoticeTone } from "../shared/notices";
 
-/** Screen notifications are user-visible, not temporary toast overlays.
- * Factory replies saved to SQLite remain independently available in history. */
+/** The inbox is reserved for explicitly declared critical/action-blocking
+ * application problems. Routine workflow outcomes and factory reply history
+ * belong to their own screens, never to this inbox. */
 export interface HubNotification {
   id: string;
   at: string;
@@ -12,9 +13,19 @@ export interface HubNotification {
   filename?: string;
   issues?: Array<{ row: number; name: string; issue: string; tracking?: string }>;
   read: boolean;
+  /** Legacy notices omit this field and must not reappear as active alerts. */
+  priority?: "critical";
 }
 
-export type NewHubNotification = Omit<HubNotification, "id" | "at" | "read">;
+/** New alerts require explicit classification; tone="error" alone is not enough. */
+export type NewHubNotification =
+  Omit<HubNotification, "id" | "at" | "read" | "priority"> & { priority: "critical" };
+
+export function isActionRequiredNotification(
+  notice: Pick<HubNotification, "priority">,
+): boolean {
+  return notice.priority === "critical";
+}
 
 export function addHubNotification(
   previous: HubNotification[], incoming: NewHubNotification,
