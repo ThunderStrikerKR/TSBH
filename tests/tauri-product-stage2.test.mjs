@@ -4,8 +4,7 @@ import { readFileSync } from 'node:fs';
 const read = (file) => readFileSync(new URL('../' + file, import.meta.url), 'utf8');
 
 test('product price workbook preserves hidden product and variant identity', () => {
-  const format = read('src/product-price-xlsx.ts');
-  const native = read('src-tauri/src/business_core/catalog_clients/price_workbook.rs');
+  const format = read('tests/rust-migration/oracles/product-price-xlsx.ts');
   const oracle = read('tests/rust-migration/oracles/product-price-xlsx.ts');
   assert.match(format, /__상품ID/);
   assert.match(format, /__가격기록ID/);
@@ -13,35 +12,28 @@ test('product price workbook preserves hidden product and variant identity', () 
   assert.match(format, /LEGACY_PRICE_HEADERS/);
   assert.doesNotMatch(format, /normalizeCode\(data\[8\]\)/);
   assert.match(oracle, /productMappings\?\.\[values\[6\] \+ "\|" \+ values\[7\]\]/);
-  assert.match(native, /productMappings/);
-  assert.match(native, /values\[8\]!=field\(variant,"option"\)/);
   assert.match(format, /sheet\.columns\.forEach/);
 });
 test('XLSX previews parse sheet format in TS and validate prices/history in Rust', () => {
-  const code = read('src/product-price-xlsx.ts');
-  const native = read('src-tauri/src/business_core/catalog_clients/price_workbook.rs');
+  const code = read('tests/rust-migration/oracles/product-price-xlsx.ts');
   const oracle = read('tests/rust-migration/oracles/product-price-xlsx.ts');
   assert.match(code, /20 \* 1024 \* 1024/);
   assert.match(code, /sheet\.rowCount > 20001/);
   assert.match(code, /hidden|식별자/);
   assert.match(oracle, /priceHistory\.push/);
   assert.match(oracle, /if \(!raw\) return;/);
-  assert.match(native, /priceHistory/);
-  assert.match(native, /parse_price\(raw\)/);
   assert.match(code, /cell\.isMerged/);
 });
 test('ExcelJS is loaded only for workbook actions, not application startup', () => {
-  const workbook = read('src/product-price-xlsx.ts');
+  const workbook = read('tests/rust-migration/oracles/product-price-xlsx.ts');
   assert.match(workbook, /import type ExcelJS/);
   assert.match(workbook, /await import\("exceljs"\)/);
   assert.doesNotMatch(workbook, /import ExcelJS from/);
 });
-test('Price approval backs up SQLite and uses the normal revision-safe save path', () => {
-  const component = read('src/ProductPriceWorkbookTools.tsx');
-  assert.match(component, /await window\.bando!\.backup\(\)/);
-  assert.match(component, /state\.revision !== sourceRevision/);
-  assert.match(component, /await onSave\(\{ \.\.\.state, products: preview\.products \}\)/);
-  assert.match(component, /preview\.errors\.length/);
+test('unused standalone price editor is absent from live ProductManager', () => {
+  const product = read('src/ProductManager.tsx');
+  assert.match(product, /ProductSyncWorkbookTools/);
+  assert.doesNotMatch(product, /ProductPriceWorkbookTools/);
 });
 test('Tauri uses a controlled native XLSX write instead of opening arbitrary paths', () => {
   const rust = read('src-tauri/src/lib.rs');

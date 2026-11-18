@@ -15,11 +15,11 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.equal(output.entry,"src/main.tsx");
   assert.ok(output.inspectedSourceFiles>100);
   assert.ok(output.trackedLegacyModules>=25);
-  assert.ok(output.inventory.some(row=>row.module==="src/product-price-xlsx.ts" && row.reachableFromApp && row.classification==="LIVE_XLSX_SERIALIZER_ONLY"),
-    "Price workbook preview must remain Rust-owned after XLSX parsing");
+  assert.ok(output.inventory.some(row=>row.module==="src/product-price-xlsx.ts" && !row.exists && row.classification==="RETIRED_TO_TEST_ORACLE"),
+    "Obsolete standalone price workbook must be retired to a comparison-only oracle");
   assert.ok(Number.isInteger(output.reachableLegacyModules));
   assert.ok(output.reachableLegacyModules>=0);
-  assert.equal(output.retiredToTestOracle,18,
+  assert.equal(output.retiredToTestOracle,19,
     "Retired TypeScript business engines must remain outside production src");
   assert.ok(output.inventory.some(row=>
     row.module==="src/shipping.ts" && !row.reachableFromApp),
@@ -46,6 +46,7 @@ test("TypeScript business retirement audit reads actual app source import graph"
     ["app/order-history.ts","order-history.ts"],
     ["app/settlement-report.ts","settlement-report.ts"],
     ["orders/reception.ts","reception.ts"],
+    ["product-price-xlsx.ts","product-price-xlsx.ts"],
   ];
   for(const [name,oracle] of retired){
     assert.equal(existsSync(fileURLToPath(new URL("../src/"+name,import.meta.url))),false,
@@ -56,12 +57,12 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.ok(output.inventory.some(row=>
     row.module==="src/factory-export.ts"&&row.exists&&row.reachableFromApp),
     "ExcelJS serializer remains a legitimate TS module");
-  for(const name of ["factory-export.ts","store-export.ts","product-price-xlsx.ts"]){
+  for(const name of ["factory-export.ts","store-export.ts"]){
     const row=output.inventory.find(row=>row.module==="src/"+name);
     assert.equal(row?.classification,"LIVE_XLSX_SERIALIZER_ONLY",
       name+" must remain a serializer, not a TypeScript business rule engine");
   }
-  assert.equal(output.liveSerializersOnly,3);
+  assert.equal(output.liveSerializersOnly,2);
 });
 test("native reception and issue validation never depend on legacy TS from app",()=>{
   const run=spawnSync(process.execPath,[script,"--guard-native-recognition"],{
