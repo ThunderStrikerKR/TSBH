@@ -1,8 +1,7 @@
 import { nativePaymentWasCopied } from "./native-automatic-message";
 import { workflowGroupOpen } from "./workspace-selection";
 import { useNativeWorkflowBoard } from "./orders/useNativeWorkflowBoard";
-import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { memo, useEffect, useRef, useState } from "react";
 import { auditReactRender } from "./perf-audit";
 import { confirmAction } from "./dialogs";
 import { won } from "./domain";
@@ -105,51 +104,22 @@ export function WorkflowBoard({
     const timer = setTimeout(() => setLeaving(undefined), 330);
     return () => clearTimeout(timer);
   }, [selection?.shipmentId]);
-  const boardRef = useRef<HTMLDivElement>(null),
-    hoveredGroup = useRef<string | undefined>(undefined),
+  const hoveredGroup = useRef<string | undefined>(undefined),
     hoverDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
-    hoverReturnDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
-    previewButton = useRef<HTMLButtonElement | null>(null),
-    previewElement = useRef<HTMLDivElement | null>(null);
-  const [previewLayer, setPreviewLayer] = useState<{
-    groupId: string; left: number; top: number; width: number; maxHeight: number;
-  }>();
-  // The hover preview is a copy of the WHOLE expanded order card, rendered
-  // at that card's original position. A free-floating shipment-only popup
-  // cannot match its headings, action row or dimensions.
-  const positionPreview = (button: HTMLButtonElement, groupId: string, shipmentCount: number) => {
-    const card = button.closest<HTMLElement>(".workflow-group:not(.workflow-preview-clone)");
-    if (!card) return;
-    const rect = card.getBoundingClientRect();
-    const margin = 8;
-    const width = Math.max(0, Math.min(rect.width, window.innerWidth - margin * 2));
-    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
-    // Measure the rendered full-card content. The approximation only applies
-    // during the first paint before the portal element exists.
-    const measuredHeight = previewElement.current
-      ?.querySelector<HTMLElement>(".workflow-preview-clone")?.scrollHeight;
-    const naturalHeight = measuredHeight && measuredHeight > 0
-      ? measuredHeight : rect.height + 26 + shipmentCount * 43;
-    const maxHeight = Math.max(0, window.innerHeight - margin * 2);
-    const top = Math.max(margin, Math.min(rect.top,
-      window.innerHeight - margin - Math.min(naturalHeight, maxHeight)));
-    const next = { groupId, left, top, width, maxHeight };
-    setPreviewLayer((previous) => previous &&
-      Object.keys(next).every((key) =>
-        previous[key as keyof typeof next] === next[key as keyof typeof next])
-      ? previous : next);
-  };
+    hoverReturnDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The preview is anchored in the SAME layout position as the original
+  // card, so viewport coordinates and independent popup sizing are unnecessary.
+  const [previewLayer, setPreviewLayer] = useState<{ groupId: string }>();
   const stopStagePreview = () => {
     if (hoverDelay.current) clearTimeout(hoverDelay.current);
     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
     hoverDelay.current = undefined;
     hoverReturnDelay.current = undefined;
     hoveredGroup.current = undefined;
-    previewButton.current = null;
     setPreviewLayer(undefined);
     onStageHover?.(undefined);
   };
-  const startStagePreview = (button: HTMLButtonElement, groupId: string, step: number, shipmentCount: number) => {
+  const startStagePreview = (button: HTMLButtonElement, groupId: string, step: number) => {
     if (hoverDelay.current) clearTimeout(hoverDelay.current);
     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
     hoverDelay.current = undefined;
@@ -158,8 +128,7 @@ export function WorkflowBoard({
     hoverDelay.current = setTimeout(() => {
       if (!button.isConnected) return;
       hoveredGroup.current = groupId;
-      previewButton.current = button;
-      positionPreview(button, groupId, shipmentCount);
+      setPreviewLayer({ groupId });
       onStageHover?.({ groupId, step: Math.min(step + 1, 4) });
       hoverDelay.current = undefined;
     }, 250);
@@ -177,37 +146,6 @@ export function WorkflowBoard({
     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
     hoverReturnDelay.current = undefined;
   };
-  // Measure the entire expanded card before paint, including wrapped rows.
-  useLayoutEffect(() => {
-    if (!previewLayer || !previewElement.current) return;
-    const button = previewButton.current;
-    if (button?.isConnected)
-      positionPreview(button, previewLayer.groupId, groupShipments(state, previewLayer.groupId).length);
-  }, [previewLayer?.groupId, state]);
-  // Reposition on resize/scroll and whenever the expanded card reflows.
-  useEffect(() => {
-    if (!previewLayer) return;
-    const update = () => {
-      const button = previewButton.current;
-      if (button?.isConnected)
-        positionPreview(button, previewLayer.groupId, groupShipments(state, previewLayer.groupId).length);
-      else stopStagePreview();
-    };
-    const board = boardRef.current;
-    const card = previewButton.current?.closest<HTMLElement>(".workflow-group");
-    const list = previewElement.current?.querySelector<HTMLElement>(".workflow-preview-clone");
-    const resizeObserver = typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(update) : undefined;
-    if (card) resizeObserver?.observe(card);
-    if (list) resizeObserver?.observe(list);
-    board?.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    return () => {
-      resizeObserver?.disconnect();
-      board?.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
-    };
-  }, [previewLayer?.groupId, state]);
   useEffect(() => () => {
     if (hoverDelay.current) clearTimeout(hoverDelay.current);
     if (hoverReturnDelay.current) clearTimeout(hoverReturnDelay.current);
@@ -308,7 +246,7 @@ export function WorkflowBoard({
     })),
   ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return (
-    <div ref={boardRef} className="workflow-board" aria-label="진행 중인 배송 묶음" aria-busy={!ready}>
+    <div className="workflow-board" aria-label="진행 중인 배송 묶음" aria-busy={!ready}>
       {(previewError || native.error) && (
         <p role="alert">업무 미리보기 계산 오류: {previewError || native.error}</p>
       )}
@@ -452,16 +390,19 @@ export function WorkflowBoard({
                 {ss.map((s) => {
                   const { recipient } = shipmentContext(state, s);
                   const nativeShipment = nativeGroup?.shipments.find((row) => row.shipmentId === s.id);
-                  const isPreviewed = hovered && hoveredShipmentId === s.id;
+                  const visuallyChosen = isPreview
+                    ? (selected ? selection?.shipmentId === s.id : ss[0].id === s.id)
+                    : selection?.shipmentId === s.id;
+                  const isPreviewed = !isPreview && hovered && hoveredShipmentId === s.id;
                   return (
                     <button
                       key={s.id}
                       data-ui-role="nav-subsection"
                       className={
                         "workflow-shipment" +
-                        (s.id === selection?.shipmentId ? " chosen" : "") +
+                        (visuallyChosen ? " chosen" : "") +
                         (isPreviewed ? " previewed" : "") +
-                        (s.id === leaving ? " query-leaving" : "") +
+                        (!isPreview && s.id === leaving ? " query-leaving" : "") +
                         (activeKey &&
                         (activeKey.startsWith(recipient.id + ":") ||
                           recipient.items.some((i) => activeKey.startsWith(i.id + ":")))
@@ -521,9 +462,9 @@ export function WorkflowBoard({
             className={
               "workflow-group" +
               (isPreview ? " workflow-preview-clone" : "") +
-              (selected ? " selected" : "") +
-              (hovered ? " workflow-preview-group" : "") +
-              (stageHover?.groupId === g.id && stageHover.step === 4
+              (selected || isPreview ? " selected" : "") +
+              (hovered && !isPreview ? " workflow-preview-group" : "") +
+              (!isPreview && stageHover?.groupId === g.id && stageHover.step === 4
                 ? " workflow-payment-hover"
                 : "")
             }
@@ -641,7 +582,7 @@ export function WorkflowBoard({
                   data-ui-role="action-primary"
                   disabled={!ready || busy || remaining > 0 || ss.some((s) => s.transferred)}
                   aria-label={buttonLabel}
-                  onMouseEnter={isPreview ? keepStagePreview : (event) => startStagePreview(event.currentTarget, g.id, step, ss.length)}
+                  onMouseEnter={isPreview ? keepStagePreview : (event) => startStagePreview(event.currentTarget, g.id, step)}
                   onMouseLeave={isPreview ? undefined : scheduleStagePreviewExit}
                   onClick={async () => {
                     if (isPreview) stopStagePreview();
@@ -715,30 +656,22 @@ export function WorkflowBoard({
             {(open || isPreview) && renderShipmentList(isPreview)}
           </article>
         );
+        const showPreview = hovered && !open && previewLayer?.groupId === g.id;
         return (
-          <Fragment key={g.id}>
+          <div className={"workflow-card-anchor" + (showPreview ? " previewing" : "")} key={g.id}>
             {renderGroupCard(false)}
-            {hovered && !open && previewLayer?.groupId === g.id && typeof document !== "undefined" &&
-              createPortal(
-                <div
-                  ref={previewElement}
-                  className="workflow-preview-stage hub-slot-3"
-                  role="group"
-                  aria-label={(first.client.displayName || first.client.name) + " 펼침 미리보기"}
-                  style={{
-                    left: previewLayer.left,
-                    top: previewLayer.top,
-                    width: previewLayer.width,
-                    maxHeight: previewLayer.maxHeight,
-                  }}
-                  onMouseEnter={keepStagePreview}
-                  onMouseLeave={scheduleStagePreviewExit}
-                >
-                  {renderGroupCard(true)}
-                </div>,
-                document.querySelector(".app-v03") ?? document.body,
-              )}
-          </Fragment>
+            {showPreview && (
+              <div
+                className="workflow-card-overlay"
+                role="group"
+                aria-label={(first.client.displayName || first.client.name) + " 펼침 미리보기"}
+                onMouseEnter={keepStagePreview}
+                onMouseLeave={scheduleStagePreviewExit}
+              >
+                {renderGroupCard(true)}
+              </div>
+            )}
+          </div>
         );
       })}
       {undoDelete && (
