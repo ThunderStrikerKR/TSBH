@@ -254,6 +254,7 @@ export function OrderDesk(props: OrderDeskProps) {
               order={draft}
               text={source}
               client={client}
+              contentReady={props.sourceProjectionReady ?? true}
               onText={(value) => {
                 setSource(value);
               }}
