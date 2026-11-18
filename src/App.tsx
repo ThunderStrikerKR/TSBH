@@ -172,6 +172,7 @@ export function App() {
             <div className="hub-desk-host" hidden={tab !== "접수"}>
               <ScreenBoundary onRetry={model.refresh} onError={model.setNotice}>
                 <HubWorkspace
+                  key={model.restoreEpoch}
                   onNew={workspaceNew}
                   onSettings={workspaceSettings}
                   onRawEditDirty={model.setRawEditDirty}

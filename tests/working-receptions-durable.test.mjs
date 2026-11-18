@@ -52,6 +52,8 @@ test("native SQLite working receipts never alter confirmed order ledger or histo
   assert.match(hub,/setWorkingStoreReady\(true\)/);
   assert.match(hub,/if \(!workingStoreReady\) return;/);
   assert.match(hub,/await workingWriter\.current!\.enqueue\(temporaryReceipts\)/);
+  assert.match(model,/setRestoreEpoch\(\(current\) => current \+ 1\)/);
+  assert.match(source("src/App.tsx"),/key=\{model\.restoreEpoch\}/);
   assert.doesNotMatch(model,/pendingDraftCount|미완성 발주서 처리/);
   assert.match(source("src-tauri/src/business_core/rules/workflow.rs"),/set\(order,"confirmedAt",json!\(now\)\)/);
 });

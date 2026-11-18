@@ -22,6 +22,9 @@ export function useAppModel() {
     [settlementDate, setSettlementDate] = useState(() => seoulDate(new Date().toISOString()));
   const hasPendingChanges = useHasPendingChanges();
   const [rawEditDirty, setRawEditDirty] = useState(false);
+  // A backup restore replaces the whole SQLite database. The old mounted
+  // working-copy overlay must not write its stale snapshot over restored rows.
+  const [restoreEpoch, setRestoreEpoch] = useState(0);
   const orderLeaveGuard = useRef<((intent?: OrderLeaveIntent) => Promise<OrderLeaveResult>) | undefined>(undefined);
   const registerOrderLeaveGuard = useCallback((guard?: (intent?: OrderLeaveIntent) => Promise<OrderLeaveResult>) => {
     orderLeaveGuard.current = guard;
@@ -500,11 +503,13 @@ export function useAppModel() {
   const afterRestore = async () => {
     await refresh();
     setDraft(newReception());
+    setRestoreEpoch((current) => current + 1);
   };
   return {
     state,
     draft,
     startup,
+    restoreEpoch,
     startupBusy,
     retryStartup,
     tab,
