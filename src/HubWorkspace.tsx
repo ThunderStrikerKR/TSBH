@@ -421,7 +421,7 @@ export function HubWorkspace(props: Props) {
     linkHoverOnTimer.current = setTimeout(() => {
       linkHoverOnTimer.current = undefined;
       setActive(key);
-    }, 100);
+    }, 200);
   });
   const clearLinkHoverLive = useEventCallback(() => {
     // Ignore fast pointer passes before the entry timer can activate.
@@ -431,7 +431,7 @@ export function HubWorkspace(props: Props) {
     linkHoverOffTimer.current = setTimeout(() => {
       linkHoverOffTimer.current = undefined;
       setActive("");
-    }, 180);
+    }, 250);
   });
   const linkController = useMemo(() => ({
     active,
