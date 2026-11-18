@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const content = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 const view = content("src/MessageWorkspace.tsx");
-const generator = content("src/automatic-message.ts");
+const generator = content("tests/rust-migration/oracles/automatic-message.ts");
 const css = content("src/styles/patch-v0808.css");
 
 test("optional product link toggle appears next to auto message heading", () => {
