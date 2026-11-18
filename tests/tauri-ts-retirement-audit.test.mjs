@@ -57,6 +57,11 @@ test("TypeScript business retirement audit reads actual app source import graph"
   assert.ok(output.inventory.some(row=>
     row.module==="src/factory-export.ts"&&row.exists&&row.reachableFromApp),
     "ExcelJS serializer remains a legitimate TS module");
+  const clientFile=readFileSync(new URL("../src/client-workbook.ts",import.meta.url),"utf8");
+  assert.doesNotMatch(clientFile,/function (?:createCandidate|collision)|export function previewClientRows|export function applyClientWorkbook/);
+  assert.match(clientFile,/export async function readClientWorkbookRows/);
+  assert.match(readFileSync(new URL("../tests/rust-migration/oracles/client-workbook.ts",import.meta.url),"utf8"),/export function previewClientRows/);
+
   for(const name of ["factory-export.ts","store-export.ts"]){
     const row=output.inventory.find(row=>row.module==="src/"+name);
     assert.equal(row?.classification,"LIVE_XLSX_SERIALIZER_ONLY",

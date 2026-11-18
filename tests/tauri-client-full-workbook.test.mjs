@@ -6,7 +6,7 @@ import ts from "typescript";
 import { webcrypto } from "node:crypto";
 
 const read = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
-const output = ts.transpileModule(read("src/client-workbook.ts"), {
+const output = ts.transpileModule(read("tests/rust-migration/oracles/client-workbook.ts"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const mod = {};

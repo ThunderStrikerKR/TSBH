@@ -24,13 +24,10 @@ export interface ClientWorkbookPreview {
 }
 const MAX_BYTES = 20 * 1024 * 1024;
 const MAX_ROWS = 20000;
-const EMPTY = "[비우기]";
 const tierText: Record<Client["tier"], string> = {
   wholesale: "도매", semi: "반도매", retail: "소매", special: "특수",
 };
 const paymentText = { PREPAID: "선입금", POSTPAID: "후불" } as const;
-const normalize = (value: string) => value.replace(/\s+/g, "").toLocaleLowerCase();
-const phoneKey = (value: string) => value.replace(/\D/g, "");
 
 function workbookText(cell: ExcelJS.Cell): string {
   if (cell.isMerged || cell.type === 6 /* Formula */ ||
@@ -46,36 +43,6 @@ function workbookText(cell: ExcelJS.Cell): string {
   }
   return String(value).trim();
 }
-function optionalString(raw: string, before: string | undefined, isNew: boolean): string {
-  if (raw === EMPTY) return "";
-  if (raw === "" && !isNew) return before ?? "";
-  return raw;
-}
-function tier(raw: string, before: Client["tier"], isNew: boolean): Client["tier"] {
-  if (!raw) return before;
-  const found = (Object.entries(tierText) as [Client["tier"], string][])
-    .find(([key, value]) => raw === key || raw === value);
-  if (!found) throw Error("가격등급은 도매, 반도매, 소매, 특수 중 선택하세요.");
-  return found[0];
-}
-function payment(raw: string, before: Client["payment"]): Client["payment"] {
-  if (!raw) return before;
-  if (raw === "선입금" || raw === "PREPAID") return "PREPAID";
-  if (raw === "후불" || raw === "POSTPAID") return "POSTPAID";
-  throw Error("결제방식은 선입금 또는 후불이어야 합니다.");
-}
-function flag(raw: string, before: boolean): boolean {
-  if (!raw) return before;
-  if (["예", "Y", "TRUE", "true", "1", "적용", "거래중"].includes(raw)) return true;
-  if (["아니오", "N", "FALSE", "false", "0", "미적용", "거래중지"].includes(raw)) return false;
-  throw Error("예 또는 아니오로 입력하세요.");
-}
-const newClient = (): Client => ({
-  id: crypto.randomUUID(), name: "", displayName: "", address: "", postcode: "",
-  phone: "", mobile: "", person: "", contact: "", identifiers: "", shortNames: "",
-  tier: "wholesale", payment: "PREPAID", shippingFeeExcluded: false,
-  defaultApplyVat: false, active: true, overrides: {},
-});
 const rowValues = (client: Client): string[] => [
   client.id, client.name, client.displayName ?? "", client.address ?? "", client.postcode ?? "",
   client.phone ?? "", client.mobile ?? "", client.person ?? "", client.contact,
@@ -147,157 +114,6 @@ export async function exportClientWorkbook(state: State): Promise<number[]> {
   return Array.from(new Uint8Array(buffer as ArrayBuffer));
 }
 
-function createCandidate(original: Client | undefined, cells: string[]): Client {
-  const isNew = !original;
-  const next = original ? structuredClone(original) : newClient();
-  const put = (key: "name" | "displayName" | "address" | "postcode" | "phone" |
-    "mobile" | "person" | "contact" | "shortNames" | "identifiers" | "preferredAccountId", index: number) => {
-    const raw = cells[index] ?? "";
-    if (!raw && !isNew) return;
-    const value = optionalString(raw, next[key], isNew);
-    if (value.length > (key === "address" ? 350 : 250)) throw Error(CLIENT_HEADERS[index] + ": 입력값이 너무 깁니다.");
-    next[key] = value;
-  };
-  put("name", 1);
-  put("displayName", 2);
-  put("address", 3);
-  put("postcode", 4);
-  put("phone", 5);
-  put("mobile", 6);
-  put("person", 7);
-  put("contact", 8);
-  next.tier = tier(cells[9] ?? "", next.tier, isNew);
-  next.payment = payment(cells[10] ?? "", next.payment);
-  next.shippingFeeExcluded = flag(cells[11] ?? "", next.shippingFeeExcluded);
-  if ((cells[12] ?? "") || isNew) {
-    next.defaultApplyVat = flag(cells[12] ?? "", next.defaultApplyVat ?? false);
-  }
-  if ((cells[13] ?? "") === "보관") throw Error("Excel에서 거래처를 삭제하거나 보관 상태로 전환할 수 없습니다.");
-  next.active = flag(cells[13] ?? "", next.active);
-  put("shortNames", 14);
-  put("identifiers", 15);
-  put("preferredAccountId", 16);
-  const archiveStatus = (cells[17] ?? "").trim();
-  const expectedStatus = original?.deletedAt ? "보관" : "사용";
-  if (archiveStatus && archiveStatus !== expectedStatus) {
-    throw Error("보관 상태는 Excel에서 변경할 수 없습니다.");
-  }
-  if (original?.deletedAt && JSON.stringify(next) !== JSON.stringify(original)) {
-    throw Error("보관된 거래처는 Excel에서 수정할 수 없습니다.");
-  }
-  return next;
-}
-
-function changedFields(before: Client, after: Client): string[] {
-  const keys: (keyof Client)[] = [
-    "name", "displayName", "address", "postcode", "phone", "mobile", "person", "contact",
-    "tier", "payment", "shippingFeeExcluded", "defaultApplyVat", "active",
-    "shortNames", "identifiers", "preferredAccountId",
-  ];
-  return keys.filter((key) => JSON.stringify(before[key] ?? "") !== JSON.stringify(after[key] ?? ""))
-    .map((key) => String(key) + ": " + String(before[key] ?? "") + " → " + String(after[key] ?? ""));
-}
-function identityChanged(before: Client | undefined, after: Client): boolean {
-  return !before || normalize(before.name) !== normalize(after.name) ||
-    phoneKey(before.phone ?? "") !== phoneKey(after.phone ?? "") ||
-    phoneKey(before.mobile ?? "") !== phoneKey(after.mobile ?? "");
-}
-function collision(candidate: Client, others: Client[]): string[] {
-  const name = normalize(candidate.name);
-  const phones = [candidate.phone, candidate.mobile].map((s) => phoneKey(s ?? ""))
-    .filter((s) => s.length >= 7);
-  const conflicts: string[] = [];
-  for (const previous of others) {
-    if (previous.id === candidate.id || previous.deletedAt) continue;
-    const sameName = !!name && normalize(previous.name) === name;
-    const otherPhones = [previous.phone, previous.mobile].map((s) => phoneKey(s ?? ""))
-      .filter((s) => s.length >= 7);
-    const samePhone = phones.some((number) => otherPhones.includes(number));
-    if (sameName || samePhone) conflicts.push(previous.name);
-  }
-  return [...new Set(conflicts)];
-}
-
-export function previewClientRows(
-  state: State, sourceRevision: number, input: { row: number; cells: string[] }[],
-): ClientWorkbookPreview {
-  const revision = state.revision ?? 0;
-  if (revision !== sourceRevision) {
-    throw Error("Excel을 내려받은 이후 데이터가 바뀌었습니다. 현재 거래처 목록을 다시 내려받아 주세요.");
-  }
-  if (input.length > MAX_ROWS) throw Error("한 번에 처리할 거래처는 최대 20,000행입니다.");
-  const ids = new Set<string>();
-  const rows: ClientWorkbookRow[] = [];
-  const seenNew: Client[] = [];
-  for (const { row, cells } of input) {
-    if (cells.every((value) => !value.trim())) continue;
-    const id = (cells[0] ?? "").trim();
-    const errors: string[] = [];
-    let status: ClientRowStatus = "ERROR";
-    let candidate: Client | undefined;
-    let changes: string[] = [];
-    const original = id ? state.clients.find((client) => client.id === id) : undefined;
-    try {
-      if (id && ids.has(id)) throw Error("동일한 거래처 ID가 Excel에 두 번 있습니다.");
-      if (id && !original) throw Error("등록되지 않은 거래처 ID입니다. 기존 ID는 수정하면 안 됩니다.");
-      if (id) ids.add(id);
-      candidate = createCandidate(original, cells);
-      changes = original ? changedFields(original, candidate) : ["신규 거래처 등록"];
-      // An untouched historical record may lack fields now required for new
-      // registrations. Keep it unchanged rather than blocking unrelated edits.
-      if (changes.length) {
-        if (!candidate.name.trim() || !candidate.address?.trim() ||
-          !(candidate.phone?.trim() || candidate.mobile?.trim())) {
-          throw Error("거래처명, 주소, 전화번호 또는 휴대폰은 필수입니다.");
-        }
-        if (candidate.preferredAccountId &&
-          !state.settings.accounts.some((account) => account.id === candidate?.preferredAccountId)) {
-          throw Error("등록되지 않은 입금 계좌 ID입니다.");
-        }
-      }
-      if (original?.deletedAt) {
-        status = "UNCHANGED";
-        changes = [];
-      } else {
-        status = original ? (changes.length ? "UPDATE" : "UNCHANGED") : "ADD";
-        if (status !== "UNCHANGED" && identityChanged(original, candidate)) {
-          const conflicts = collision(candidate, [...state.clients, ...seenNew]);
-          if (conflicts.length) {
-            errors.push("동일한 상호 또는 전화번호가 있습니다: " + conflicts.join(", "));
-            status = "HOLD";
-          }
-        }
-      }
-      if (!original) seenNew.push(candidate);
-    } catch (error) {
-      errors.push(String(error instanceof Error ? error.message : error));
-      status = "ERROR";
-    }
-    rows.push({ row, id: id || candidate?.id || "", name: candidate?.name || cells[1] || "",
-      status, changes, errors, client: candidate });
-  }
-  // Duplicate unmodified IDs are detected above. Rows with missing IDs are new,
-  // but they may also collide with edited existing rows within the same workbook.
-  const proposed = rows.filter((row) => row.status === "ADD" || row.status === "UPDATE");
-  for (const row of proposed) {
-    if (!row.client) continue;
-    const previous = state.clients.find((client) => client.id === row.client?.id);
-    if (!identityChanged(previous, row.client)) continue;
-    const peers = proposed.filter((other) => other !== row).flatMap((other) => other.client ? [other.client] : []);
-    const conflicts = collision(row.client, peers);
-    if (conflicts.length) {
-      row.status = "HOLD";
-      row.errors.push("Excel 안에 중복 거래처 후보가 있습니다: " + conflicts.join(", "));
-    }
-  }
-  const listed = new Set(rows.filter((row) => row.id && state.clients.some((c) => c.id === row.id))
-    .map((row) => row.id));
-  return { revision, rows, missing: state.clients.filter((c) => !listed.has(c.id)).length };
-}
-
-/** ExcelJS validates worksheet structure and produces text cells only. The
- * preview decisions can be evaluated by the original TS oracle or native Rust.
- */
 export async function readClientWorkbookRows(state: State, file: File): Promise<{
   sourceRevision: number;
   cells: { row: number; cells: string[] }[];
@@ -343,37 +159,3 @@ export async function readClientWorkbookRows(state: State, file: File): Promise<
 }
 
 /** Original TypeScript preview oracle retained for Rust parity comparisons. */
-export async function previewClientWorkbook(state: State, file: File): Promise<ClientWorkbookPreview> {
-  const { sourceRevision, cells } = await readClientWorkbookRows(state, file);
-  return previewClientRows(state, sourceRevision, cells);
-}
-
-export function applyClientWorkbook(state: State, preview: ClientWorkbookPreview): {
-  next: State; created: number; updated: number;
-} {
-  if ((state.revision ?? 0) !== preview.revision) {
-    throw Error("검토 후 거래처 데이터가 변경되었습니다. Excel을 다시 검증하세요.");
-  }
-  if (preview.rows.some((row) => row.status === "ERROR" || row.status === "HOLD")) {
-    throw Error("중복 또는 오류 항목이 남아 있어 Excel 변경사항을 저장할 수 없습니다.");
-  }
-  const next = structuredClone(state);
-  let created = 0;
-  let updated = 0;
-  for (const row of preview.rows) {
-    if (!row.client || (row.status !== "ADD" && row.status !== "UPDATE")) continue;
-    if (row.status === "ADD") {
-      if (next.clients.some((client) => client.id === row.client?.id)) throw Error("거래처 ID 충돌입니다.");
-      next.clients.push(structuredClone(row.client));
-      created++;
-    } else {
-      const index = next.clients.findIndex((client) => client.id === row.client?.id);
-      if (index < 0 || next.clients[index].deletedAt) throw Error("기존 거래처 정보를 확인할 수 없습니다.");
-      // Existing price overrides, deletedAt and change history were carried
-      // forward when the preview candidate was built.
-      next.clients[index] = structuredClone(row.client);
-      updated++;
-    }
-  }
-  return { next, created, updated };
-}

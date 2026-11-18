@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {tsImport} from "tsx/esm/api";
-const {previewClientRows}=await tsImport("../../../src/client-workbook.ts",import.meta.url);
+const {previewClientRows}=await tsImport("../oracles/client-workbook.ts",import.meta.url);
 const manifest=fileURLToPath(new URL("./Cargo.toml",import.meta.url));
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const base=()=>({

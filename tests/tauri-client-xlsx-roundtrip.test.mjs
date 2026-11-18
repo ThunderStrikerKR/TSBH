@@ -9,19 +9,24 @@ import ts from "typescript";
 import ExcelJS from "exceljs";
 
 const require = createRequire(import.meta.url);
-const code = readFileSync(new URL("../src/client-workbook.ts", import.meta.url), "utf8");
-const cjs = ts.transpileModule(code, { compilerOptions: {
-  module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
-  esModuleInterop: true,
-}}).outputText;
-const exports = {};
-// ExcelJS performs realm-sensitive Array checks when assigning cell values.
-// Evaluate compiled source in the same JS realm as the ExcelJS library.
-const execute = vm.runInThisContext(
-  "(function(exports, require, structuredClone, crypto) {\n" + cjs + "\n})",
-  { filename: "src/client-workbook.ts" },
-);
-execute(exports, require, structuredClone, webcrypto);
+const load = (path) => {
+  const code = readFileSync(new URL("../" + path, import.meta.url), "utf8");
+  const cjs = ts.transpileModule(code, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
+    esModuleInterop: true,
+  }}).outputText;
+  const result = {};
+  // ExcelJS performs realm-sensitive Array checks: use its own JS realm.
+  vm.runInThisContext(
+    "(function(exports, require, structuredClone, crypto) {\n" + cjs + "\n})",
+    { filename: path },
+  )(result, require, structuredClone, webcrypto);
+  return result;
+};
+const oracle = load("tests/rust-migration/oracles/client-workbook.ts");
+const live = load("src/client-workbook.ts");
+const exports = { ...oracle, exportClientWorkbook: live.exportClientWorkbook,
+  readClientWorkbookRows: live.readClientWorkbookRows };
 
 function fixture() {
   return {
