@@ -63,10 +63,13 @@ export function MessageWorkspace({
       });
     return () => { cancelled = true; };
   }, [fingerprint, gid, includeLinks, order.orderType]);
+  // Reset user options only on an actual order switch. During Rust
+  // reconciliation gid can temporarily disappear and reappear; coupling
+  // that transient value to checkbox state triggers duplicate recalculation.
   useLayoutEffect(() => {
     setStatus("");
     setIncludeLinks(false);
-  }, [order.id, order.raw, gid]);
+  }, [order.id]);
   const automatic = resolved?.fingerprint === fingerprint &&
       resolved?.groupId === gid && resolved?.links === includeLinks
       ? resolved.result
@@ -91,7 +94,9 @@ export function MessageWorkspace({
   // fingerprint/group/link-option response is available. Request text edits
   // do not invalidate this key or restart the animation.
   const contentKey = [order.id, gid ?? "", order.orderType ?? "", includeLinks].join(":");
-  const bodyReady = !gid || order.orderType === "RETAIL" || Boolean(automatic);
+  // A missing group is NOT a completed message. It is an intermediate
+  // reconciliation state, so wait for the exact Rust message response.
+  const bodyReady = Boolean(gid && automatic);
   const messageFadePhase = useReadyContentFade(contentKey, bodyReady);
   const disabled = busy || !automatic || !text.trim() || (!request && !!automatic.paymentIssues.length);
   const copy = async (greeting: boolean) => {
