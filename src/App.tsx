@@ -1,9 +1,8 @@
-import { businessCoreCall } from "./tauri-bridge";
-import type { Order, State } from "./types";
+import type { Order } from "./types";
 import { FactoryNotifications } from "./FactoryNotifications";
 import { FactoryReplyWatcher } from "./FactoryReplyWatcher";
 import { usePersistedNotifications } from "./app/usePersistedNotifications";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { AppHeader } from "./app/AppHeader";
 import { StartupRecoveryPanel } from "./app/StartupRecoveryPanel";
 import { DailySettlement } from "./app/DailySettlement";
@@ -45,7 +44,6 @@ const WorkflowQueue = lazy(() =>
 const noopDockReset = () => {};
 export function App() {
   const [notifications, setNotifications] = useState(false);
-  const lastNoticeId = useRef<number | undefined>(undefined);
   const model = useAppModel(),
     { state, draft, tab } = model;
   // Dock/notification repaints must not recreate handlers for live orders.
@@ -62,39 +60,11 @@ export function App() {
     previous ? (typeof value === "function" ? value(previous) : value) : previous,
   ));
   // Wait until the Tauri startup registered the managed SQLite connection.
-  const { inbox, storageError, add: addNotification, markRead, clear } =
+  const { inbox, hiddenCount, storageError, markRead, remove, clear } =
     usePersistedNotifications(Boolean(state && draft));
-  useEffect(() => {
-    const notice = model.notice;
-    if (!notice || lastNoticeId.current === notice.id) return;
-    lastNoticeId.current = notice.id;
-    // System and form messages share one notification center. No short-lived
-    // toast blocks or disappearing errors outside the modal.
-    addNotification({
-      source: "시스템", tone: notice.tone,
-      title: notice.tone === "error" ? "확인 필요" :
-        notice.tone === "success" ? "작업 완료" : "안내",
-      detail: notice.message,
-    });
-  }, [model.notice, addNotification]);
-  const [nativeReviewCount, setNativeReviewCount] = useState<{
-    state: State; count: number;
-  }>();
-  useEffect(() => {
-    if (!state) return;
-    let active = true;
-    void businessCoreCall<{ reviews: { id: string; needsReview: boolean }[] }>(
-      "rules", "factory_reply_review_statuses", { state },
-    ).then(({ reviews }) => {
-      if (active) setNativeReviewCount({
-        state, count: reviews.filter((r) => r.needsReview).length,
-      });
-    }).catch((error) => {
-      if (active) model.setNotice("Rust 공장 회신 알림 조회 실패: " +
-        (error instanceof Error ? error.message : String(error)), "error");
-    });
-    return () => { active = false; };
-  }, [state, model.setNotice]);
+  // The existing model.notice handles ordinary success, validation and error
+  // messages in their own UI; it is not an implicit persistent notification.
+  // Only explicitly classified critical events can enter the inbox.
   if (!state || !draft) {
     if (model.startup.phase === "ERROR" || model.startup.phase === "RETRYING") {
       return (
@@ -124,14 +94,10 @@ export function App() {
           enabled={Boolean(state.settings.factoryReplyDirectory) || Boolean(window.bando?.isTestWorkspace)}
           paused={model.dirty || model.busy}
           onRefresh={model.refresh}
-          onNotification={addNotification}
         />
         <AppHeader
           onNotifications={() => setNotifications(true)}
-          notificationCount={
-            (nativeReviewCount?.state === state ? nativeReviewCount.count : 0) +
-            inbox.filter((entry) => !entry.read).length
-          }
+          notificationCount={inbox.filter((entry) => !entry.read).length}
           notificationError={Boolean(storageError)}
           page={tab}
           onNavigate={model.navigate}
@@ -147,17 +113,13 @@ export function App() {
         )}
         {notifications && (
           <FactoryNotifications
-            state={state}
             notices={inbox}
+            hiddenCount={hiddenCount}
             onRead={(id) => { void markRead(id); }}
+            onDelete={(id) => { void remove(id); }}
             onClear={() => { void clear(); }}
             storageError={storageError}
-            onRefresh={model.refresh}
             onClose={() => setNotifications(false)}
-            onOpen={(id) => {
-              const order = state.orders.find((o) => o.id === id);
-              if (order) void model.open(order);
-            }}
           />
         )}
         <HubShell
