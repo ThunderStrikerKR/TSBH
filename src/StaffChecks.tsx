@@ -45,10 +45,10 @@ export function StaffChecks({
       </h3>
       <div className="staff-check-scroll">
         {error && <p className="form-error" role="alert">Rust 확인 항목 조회 실패: {error}</p>}
-        {!error && !loading && !actions.length &&
-          <p className="staff-empty">필수 확인 사항 없음</p>}
         <div className="staff-check-content" data-content-fade={fadePhase}
           aria-busy={fadePhase === "pending"} inert={fadePhase === "pending"}>
+        {!error && !loading && !actions.length &&
+          <p className="staff-empty">필수 확인 사항 없음</p>}
         {actions.map((b, n) => (
           <article
             className={
