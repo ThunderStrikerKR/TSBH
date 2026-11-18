@@ -563,7 +563,10 @@ export function WorkflowBoard({
               </button>
               <button
                 disabled={!ready || (first.order.receptionVersion === 1 && !first.order.confirmedAt)}
-                onClick={() => setManage(g.id)}
+                onClick={() => {
+                  if (isPreview) stopStagePreview();
+                  setManage(g.id);
+                }}
               >
                 묶음 관리
               </button>
@@ -572,6 +575,7 @@ export function WorkflowBoard({
                 disabled={!ready || (first.order.receptionVersion === 1 && !first.order.confirmedAt)}
                 aria-label={"주문 묶음 삭제 " + first.client.name}
                 onClick={async () => {
+                  if (isPreview) stopStagePreview();
                   if (
                     busy || !ready ||
                     !(await confirmAction(
@@ -640,6 +644,7 @@ export function WorkflowBoard({
                   onMouseEnter={isPreview ? keepStagePreview : (event) => startStagePreview(event.currentTarget, g.id, step, ss.length)}
                   onMouseLeave={isPreview ? undefined : scheduleStagePreviewExit}
                   onClick={async () => {
+                    if (isPreview) stopStagePreview();
                     if (
                       (step === 2 || (g.needsNotice && step >= 2)) &&
                       !(await nativePaymentWasCopied(actionState(g.id), g.id)) &&
@@ -670,8 +675,11 @@ export function WorkflowBoard({
                   disabled={!ready || busy || step === 0 || ss.some((s) => s.transferred)}
                   title="이전 단계 취소"
                   aria-label="이전 단계 취소"
-                  onClick={() => void run(() =>
-                    nativeApplyWorkflowAction(actionState(g.id), "undo_group", { groupId: g.id }))}
+                  onClick={() => {
+                    if (isPreview) stopStagePreview();
+                    void run(() =>
+                      nativeApplyWorkflowAction(actionState(g.id), "undo_group", { groupId: g.id }));
+                  }}
                 >
                   ↶
                 </button>
