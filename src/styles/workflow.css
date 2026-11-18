@@ -20,8 +20,8 @@
   border-left: 2px solid #f59e0b;
   background: #242424;
 }
-/* Two fixed rows: dealer + stage indicators + management / stage controls + totals.
-   Never move the primary action when the stage or payment amount changes. */
+/* Two fixed rows: dealer + stage indicators + management / totals on left,
+   stage controls on right. No stage action shifts when an amount changes. */
 .hub-slot-3 .workflow-group .workflow-action-line {
   display: flex;
   align-items: center;
@@ -33,8 +33,9 @@
   flex: 0 0 177px;
   width: 177px;
   min-width: 177px;
-  margin: 0;
+  margin: 0 0 0 auto;
   gap: 5px;
+  justify-content: flex-end;
 }
 .hub-slot-3 .workflow-group .workflow-action-line > .flow-fixed-summary {
   flex: 1 1 0;
@@ -60,8 +61,18 @@
   font-size: 11px;
   line-height: 1.45;
 }
-.hub-slot-3 .workflow-group .flow-summary-payment {
+.hub-slot-3 .workflow-group .flow-summary-financial {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 5px;
   margin-left: auto;
+  white-space: nowrap;
+}
+.hub-slot-3 .workflow-group .flow-summary-payment {
+  flex: 0 0 auto;
+  min-width: 100px;
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
