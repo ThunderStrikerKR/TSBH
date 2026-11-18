@@ -30,8 +30,8 @@ const load = (path, imports) => {
   return target;
 };
 const legacy = load("tests/rust-migration/oracles/product-sync-workbook.ts", {
-  "./domain": domain,
-  "./product-models": { registeredProducts: (ps) => ps.filter((p) => !p.deletedAt && !p.supersededBy && p.active !== false) },
+  "../../../src/domain": domain,
+  "../../../src/product-models": { registeredProducts: (ps) => ps.filter((p) => !p.deletedAt && !p.supersededBy && p.active !== false) },
 });
 const previous = load("tests/rust-migration/oracles/product-unified-workbook.ts", {
   "./product-sync-workbook": legacy,

@@ -22,7 +22,7 @@ const active = (products) => products.filter((p) => !p.deletedAt && !p.supersede
 const normalizeCode = (code) => code.toUpperCase().replace(/\s/g, "");
 const normalizeColor = (color) => ({ 검정: "Black", 블랙: "Black" }[color] ?? color).trim();
 execute(exports, (path) => {
-  if (path === "./domain") return {
+  if (path.endsWith("/domain")) return {
     normalizeCode, normalizeColor,
     validateProduct: (p, products) => {
       if (!p.id || !p.code || !p.name || !p.variants.length) throw Error("필수 상품 필드 오류");
@@ -34,7 +34,7 @@ execute(exports, (path) => {
       }
     },
   };
-  if (path === "./product-models") return { registeredProducts: active };
+  if (path.endsWith("/product-models")) return { registeredProducts: active };
   return require(path);
 }, webcrypto, structuredClone);
 const seed = JSON.parse(read("src-tauri/resources/state-seed.json"));
