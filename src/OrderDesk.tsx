@@ -9,6 +9,7 @@ import { OrderItemEditor } from "./OrderItemEditor";
 import { ProductSearchDialog } from "./ProductSearchDialog";
 import { SourceDocument } from "./SourceDocument";
 import { StaffChecks } from "./StaffChecks";
+import { useReadyContentFade } from "./shared/useReadyContentFade";
 import { WorkflowFooter, WorkflowFreightRows } from "./WorkflowFooter";
 import { won } from "./domain";
 
@@ -129,6 +130,11 @@ export function OrderDesk(props: OrderDeskProps) {
   }, [recipientViewKey, recipientReady]);
   const recipientRevealPhase = !draft.recipients.length ||
     revealedRecipient === recipientViewKey ? "ready" : "pending";
+  // The checks panel may retain last-settled items during edits, but never
+  // reveal a different shipment's checks before its Rust projection is ready.
+  const checksFadePhase = useReadyContentFade(
+    recipientViewKey, staffChecksReady && recipientRevealPhase === "ready", true,
+  );
 
   const addressRequests = useRef<Record<string, number>>({});
   const addressMounted = useRef(true);
@@ -294,6 +300,7 @@ export function OrderDesk(props: OrderDeskProps) {
               <div className="review-layout">
                 <StaffChecks
                   blocks={shownChecks}
+                  fadePhase={checksFadePhase}
                   loading={!staffChecksReady}
                   interactive={staffChecksActionsReady}
                   error={staffChecksError}
