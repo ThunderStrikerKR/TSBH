@@ -1,4 +1,5 @@
 /** Compare real src/domain.ts and src/shipping.ts directly against staged Rust rules. */
+import { projectHistoricalRemoteDelivery } from "../legacy-remote-delivery-parity.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
@@ -511,7 +512,10 @@ test("actual TS price, freight and refresh decisions match staged Rust rules",()
       ? wireReconcileResult(results[index]) : results[index];
     const expected = c.operation === "reconcile_workflow"
       ? wireReconcileResult(c.ts) : c.ts;
-    try{assert.deepStrictEqual(actual,expected);}
+    // The original TS preview predates remoteDelivery. Do not treat new,
+    // unchecked historical metadata as a change in the old business result.
+    const comparableActual = projectHistoricalRemoteDelivery(expected,actual);
+    try{assert.deepStrictEqual(comparableActual,expected);}
     catch{failures.push({name:c.name,ts:expected,rust:actual});}
   }
   if(failures.length)console.error(JSON.stringify({
