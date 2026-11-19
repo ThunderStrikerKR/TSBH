@@ -78,6 +78,13 @@ pub trait BandoGateway: Send + Sync {
     fn load_business_state(&self) -> Result<Value, String> {
         Err("서버에는 실제 주문 수정 미리보기 계약이 아직 없습니다.".into())
     }
+    /// A production working reception requires a separate, explicitly
+    /// configured native Tauri executable and user action. Never send to an
+    /// unimplemented HTTPS endpoint or silently fall back to direct SQL.
+    fn working_commit_enabled(&self) -> bool { false }
+    fn commit_working_reception(&self, _request: Value) -> Result<Value,String> {
+        Err("운영 미확정 접수 저장 연결이 설정되지 않았습니다.".into())
+    }
     /// The currently open, unconfirmed source in a separate storage domain.
     /// This never creates a confirmed business order.
     fn load_working_source(&self) -> Result<WorkingSource, String>;
@@ -118,6 +125,53 @@ impl BandoGateway for LocalGateway {
     }
     fn load_business_state(&self) -> Result<Value, String> {
         crate::business_state::load()
+    }
+    fn working_commit_enabled(&self) -> bool {
+        std::env::var("BANDO_EGUI_ENABLE_WORKING_COMMIT").ok().as_deref()==Some("1") &&
+        std::env::var_os("BANDO_EGUI_TAURI_HELPER").is_some_and(|p|!p.is_empty()) &&
+        std::env::var_os("BANDO_EGUI_BUSINESS_DB").is_some_and(|p|!p.is_empty())
+    }
+    fn commit_working_reception(&self, request: Value) -> Result<Value,String> {
+        use std::io::Write;
+        use std::process::{Command,Stdio};
+        if !self.working_commit_enabled() {
+            return Err("운영 접수 저장은 Tauri helper, DB 경로 및 명시적 허용 설정이 필요합니다.".into());
+        }
+        let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
+            .ok_or("Tauri 저장 도우미 경로가 없습니다.")?;
+        let path=std::path::Path::new(&helper);
+        if !path.is_file() {
+            return Err("Tauri 저장 도우미 실행 파일을 찾을 수 없습니다.".into());
+        }
+        let request=serde_json::to_vec(&request)
+            .map_err(|_|"운영 접수 요청 형식이 잘못되었습니다.".to_owned())?;
+        if request.len()>2_000_000 {
+            return Err("운영 접수 요청 한도를 초과했습니다.".into());
+        }
+        // No shell and no arbitrary command-line order/contact data.
+        let mut child=Command::new(path)
+            .arg("--bando-egui-reception-commit")
+            .stdin(Stdio::piped()).stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn().map_err(|_|"Tauri 주문 저장 도우미를 실행하지 못했습니다.".to_owned())?;
+        let mut input=child.stdin.take()
+            .ok_or("Tauri 주문 저장 도우미 입력을 열지 못했습니다.")?;
+        input.write_all(&request)
+            .map_err(|_|"Tauri 주문 저장 도우미에 접수 원문을 전달하지 못했습니다.".to_owned())?;
+        drop(input);
+        let output=child.wait_with_output()
+            .map_err(|_|"Tauri 주문 저장 도우미의 결과를 받지 못했습니다.".to_owned())?;
+        if output.stdout.len()>100_000 {
+            return Err("Tauri 저장 결과 크기가 올바르지 않습니다.".into());
+        }
+        let result:Value=serde_json::from_slice(&output.stdout)
+            .map_err(|_|"Tauri 주문 저장 도우미가 올바른 결과를 반환하지 않았습니다.".to_owned())?;
+        if result.get("ok")!=Some(&Value::Bool(true)) || !output.status.success() {
+            return Err(result.get("error").and_then(Value::as_str)
+                .unwrap_or("Tauri 운영 접수 저장에 실패했습니다.").to_owned());
+        }
+        result.get("result").filter(|v|v.is_object()).cloned()
+            .ok_or("Tauri 저장 결과에 미확정 접수 정보가 없습니다.".into())
     }
 
     fn load_working_source(&self) -> Result<WorkingSource, String> {
