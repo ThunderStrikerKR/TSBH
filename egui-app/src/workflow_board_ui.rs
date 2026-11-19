@@ -24,6 +24,8 @@ pub struct BoardUi {
     preview_leave:Option<Instant>,
     preview_rect:Option<Rect>,
     pub preview_shipment:Option<String>,
+    row_pending:Option<(String,Instant)>,
+    row_release:Option<Instant>,
 }
 pub enum Event {
     SelectPending(String),
@@ -38,6 +40,8 @@ impl BoardUi{
         self.preview_leave=None;
         self.preview_rect=None;
         self.preview_shipment=None;
+        self.row_pending=None;
+        self.row_release=None;
     }
     pub fn select(&mut self,selection:Selection){
         self.selection=Some(selection);
@@ -46,6 +50,32 @@ impl BoardUi{
     }
     pub fn active_preview(&self)->Option<&str>{
         self.preview_active.as_deref()
+    }
+    fn update_row_hover(&mut self,incoming:Option<String>,ctx:&egui::Context){
+        let now=Instant::now();
+        if let Some(id)=incoming{
+            self.row_release=None;
+            if self.preview_shipment.as_deref()==Some(id.as_str()){
+                self.row_pending=None;
+            }else if self.row_pending.as_ref().is_some_and(|(pending,at)|
+                pending==&id && now.duration_since(*at)>=Duration::from_millis(100)){
+                self.preview_shipment=Some(id);
+                self.row_pending=None;
+                ctx.request_repaint();
+            }else if self.row_pending.as_ref().is_some_and(|(pending,_)|pending==&id){
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }else{
+                self.row_pending=Some((id,now));
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+        }else{
+            self.row_pending=None;
+            if self.preview_shipment.is_some(){
+                let end=*self.row_release.get_or_insert(now+Duration::from_millis(150));
+                if now>=end{self.preview_shipment=None;self.row_release=None;ctx.request_repaint();}
+                else{ctx.request_repaint_after(Duration::from_millis(150));}
+            }
+        }
     }
     /// Hovering a stage label previews its group after 250ms. The anchored
     /// overlay is part of the hover region and stays for 250ms on exit.
@@ -137,7 +167,8 @@ fn row(ui:&mut Ui,ship:&ShipmentRow,chosen:bool,in_preview:bool)->egui::Response
 }
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
-    open:bool,in_preview:bool,trigger:&mut Option<String>
+    open:bool,in_preview:bool,trigger:&mut Option<String>,
+    hovered_row:&mut Option<String>
 )->Option<Event>{
     let mut event=None;
     theme::nested_frame().show(ui,|ui|{
@@ -194,6 +225,9 @@ fn group_frame(
                     label.rect,Id::new(("workflow-shipment",ship.id.as_str(),in_preview)),
                     egui::Sense::click()
                 );
+                if in_preview && response.hovered(){
+                    *hovered_row=Some(ship.id.clone());
+                }
                 if response.clicked(){
                     event=Some(Event::SelectShipment(Selection{
                         group_id:group.id.clone(),order_id:ship.order_id.clone(),
@@ -267,7 +301,9 @@ pub fn show(
             let open=selected && state.folded.as_deref()!=Some(group.id.as_str());
             let width=ui.available_width();
             let pos=ui.cursor().min;
-            if let Some(value)=group_frame(ui,group,current,open,false,&mut trigger){
+            let mut ignored_row=None;
+            if let Some(value)=group_frame(ui,group,current,open,false,
+                &mut trigger,&mut ignored_row){
                 match value{
                     Event::ToggleGroup(id)=>{
                         state.folded=if open{Some(id)}else{None};
@@ -302,6 +338,7 @@ pub fn show(
     state.update_hover(hovered,ui.ctx());
     if let Some((group,pos,width))=overlay{
         let mut overlay_event=None;
+        let mut hovered_row=None;
         let area=egui::Area::new(Id::new(("workflow-card-overlay",group.id.clone())))
             .order(egui::Order::Foreground)
             .fixed_pos(Pos2::new(pos.x,pos.y));
@@ -310,10 +347,11 @@ pub fn show(
             ui.set_max_width(width);
             let mut ignored_hover=None;
             overlay_event=group_frame(
-                ui,&group,current,true,true,&mut ignored_hover
+                ui,&group,current,true,true,&mut ignored_hover,&mut hovered_row
             );
         });
         state.preview_rect=Some(response.response.rect);
+        state.update_row_hover(hovered_row,ui.ctx());
         if let Some(overlay_event)=overlay_event {
             if let Event::ToggleGroup(id)=overlay_event {
                 state.folded=None;
@@ -326,6 +364,7 @@ pub fn show(
         }
     }else{
         state.preview_rect=None;
+        state.update_row_hover(None,ui.ctx());
     }
     event
 }
