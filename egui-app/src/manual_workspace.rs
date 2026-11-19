@@ -299,8 +299,10 @@ impl ManualWorkspace {
             .id(egui::Id::new("bando-native-manual-classification"))
             .open(&mut open)
             .collapsible(false).resizable(true)
-            .default_width(1050.0).default_height(650.0)
-            .min_width(700.0).min_height(420.0)
+            .default_width((ctx.screen_rect().width()-theme::MANUAL_DIALOG_SIDE_GAP)
+                .min(theme::MANUAL_DIALOG_MAX_WIDTH))
+            .default_height((ctx.screen_rect().height()-theme::MANUAL_DIALOG_VERTICAL_GAP)
+                .max(420.0))
             .show(ctx,|ui|{
                 if let Some(error)=self.error.as_ref() {
                     ui.label(typography::status(error,theme::DANGER));
@@ -319,10 +321,25 @@ impl ManualWorkspace {
                     &format!("미배정 원문 {unassigned}개 · 배송 {}건",rows.len())
                 ));
                 ui.separator();
-                ui.columns(2,|cols|{
-                    cols[0].label(typography::subsection_heading("붙여넣은 내용"));
-                    egui::ScrollArea::vertical().id_salt("manual-source-blocks")
-                        .max_height(465.0).show(&mut cols[0],|ui|{
+                // Match the React manual workspace: source 0.36fr and
+                // shipment sheet 1fr, never the equal egui default columns.
+                ui.horizontal(|ui|{
+                    let width=ui.available_width();
+                    let height=(ui.available_height()
+                        -theme::ACTION_STANDARD_HEIGHT-theme::SPACE_24).max(200.0);
+                    let source_width=(width*theme::MANUAL_SOURCE_SHARE)
+                        .max(theme::MANUAL_SOURCE_MIN_WIDTH)
+                        .min((width-theme::MANUAL_SHEET_MIN_WIDTH
+                            -theme::MANUAL_COLUMN_GAP)
+                            .max(theme::MANUAL_SOURCE_MIN_WIDTH));
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(source_width,height),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |source_ui|{
+                            source_ui.label(typography::subsection_heading("붙여넣은 내용"));
+                            egui::ScrollArea::vertical().id_salt("manual-source-blocks")
+                                .max_height((height-theme::SECTION_HEADER_HEIGHT).max(0.0))
+                                .show(source_ui,|ui|{
                             // Display the ENTIRE original in native source
                             // order, including text Rust did not classify.
                             // Only exact UTF-16 bounded native blocks become
@@ -384,9 +401,15 @@ impl ManualWorkspace {
                                     "Rust가 분리한 원문 블록이 없습니다. 직접 입력으로 수정할 수 있습니다."
                                 ));
                             }
-                        });
-                    cols[1].label(typography::subsection_heading("배송 정보 구성표"));
-                    cols[1].horizontal(|ui|{
+                                });
+                        },
+                    );
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(),height),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |sheet_ui|{
+                            sheet_ui.label(typography::subsection_heading("배송 정보 구성표"));
+                            sheet_ui.horizontal(|ui|{
                         if theme::action(ui,"배송 추가",ButtonRole::Standard,
                             !busy && rows.len()<100).clicked() {
                             chosen=Some(("resize_manual_rows".into(),json!({
@@ -395,8 +418,9 @@ impl ManualWorkspace {
                             })));
                         }
                     });
-                    egui::ScrollArea::vertical().id_salt("manual-recipients-list")
-                        .max_height(445.0).show(&mut cols[1],|ui|{
+                            egui::ScrollArea::vertical().id_salt("manual-recipients-list")
+                                .max_height((height-theme::SECTION_HEADER_HEIGHT).max(0.0))
+                                .show(sheet_ui,|ui|{
                             for (index,row) in rows.iter().enumerate() {
                                 let title=format!("배송 {} · {}",
                                     index+1,if text(row,"name").is_empty(){
@@ -488,7 +512,7 @@ impl ManualWorkspace {
                                     }else{self.selected_field.as_str()};
                                     ui.label(typography::caption(label));
                                     ui.add(egui::TextEdit::singleline(&mut self.edit_text)
-                                        .desired_width(225.0));
+                                        .desired_width(theme::MANUAL_INPUT_WIDTH));
                                     if theme::action(ui,"입력 반영",ButtonRole::Standard,
                                         !busy && self.edit_text!=self.current_value()
                                     ).clicked(){submit_direct=true;}
@@ -501,7 +525,9 @@ impl ManualWorkspace {
                                 }
                                 ui.separator();
                             }
-                        });
+                                });
+                        },
+                    );
                 });
                 ui.separator();
                 ui.horizontal(|ui|{
