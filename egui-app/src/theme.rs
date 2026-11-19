@@ -118,6 +118,21 @@ pub fn nested_frame() -> Frame {
 }
 
 pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
+    action_with_min_width(ui, label, role, enabled, 0.0)
+}
+
+/// Reuse the exact same action design, filling only the column assigned by a
+/// shared button-group component. The surrounding pane geometry is untouched.
+pub fn action_full_width(
+    ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool,
+) -> Response {
+    let width = ui.available_width();
+    action_with_min_width(ui, label, role, enabled, width)
+}
+
+fn action_with_min_width(
+    ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool, min_width: f32,
+) -> Response {
     let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
         ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, Color32::from_rgb(238, 238, 238), BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32, BORDER)),
@@ -157,7 +172,7 @@ pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Resp
             .fill(fill)
             .stroke(stroke)
             .corner_radius(CornerRadius::same(radius))
-            .min_size(Vec2::new(0.0, height));
+            .min_size(Vec2::new(min_width, height));
         ui.add_enabled(enabled, button)
     }).inner
 }
