@@ -652,7 +652,7 @@ impl ManualWorkspace {
             self.remove_recipient_pending.is_some() ||
             self.reset_pending || self.confirm_discard {
             components::modal_backdrop(
-                ctx,work_area,"manual-nested-modal-backdrop",true
+                ctx,"manual-nested-modal-backdrop",true
             );
         }
         let product_event=self.product_search.as_mut().and_then(|search|
