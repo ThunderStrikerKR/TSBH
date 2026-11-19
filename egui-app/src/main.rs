@@ -16,6 +16,8 @@ mod source_autosave;
 mod clipboard_intake;
 mod client_directory;
 mod client_chooser;
+mod business_state;
+mod native_order_change;
 mod kakao_context;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
@@ -103,6 +105,12 @@ struct VerticalSplitDrag {
     available_height: f32,
 }
 
+struct PendingClientChange {
+    order_id: String,
+    source_raw: String,
+    receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
+}
+
 struct BandoEgui {
     brand_texture: Option<egui::TextureHandle>,
     gateway: Arc<dyn gateway::BandoGateway>,
@@ -132,6 +140,7 @@ struct BandoEgui {
     source_autosave: Option<source_autosave::SourceAutosave>,
     source_save_error: Option<String>,
     client_chooser: Option<ClientChooser>,
+    client_change: Option<PendingClientChange>,
     analysis: Option<reception_service::ReceptionAnalysis>,
     analysis_error: Option<String>,
     selected_recipient: usize,
@@ -172,6 +181,7 @@ impl Default for BandoEgui {
             source_autosave: None,
             source_save_error: None,
             client_chooser: None,
+            client_change: None,
             analysis: None,
             analysis_error: None,
             selected_recipient: 0,
@@ -197,6 +207,7 @@ impl BandoEgui {
                 active.analysis_raw = None;
                 active.analysis_evidence = None;
                 active.client_match = None;
+                active.pricing_preview = None;
                 // Source changes revoke only automatic dealer assignment.
                 // A deliberate employee selection stays with this receipt.
                 if active.client_selection.as_deref() == Some("AUTO") {
@@ -265,6 +276,7 @@ impl BandoEgui {
                     item.analysis_raw = None;
                     item.analysis_evidence = None;
                     item.client_match = None;
+                    item.pricing_preview = None;
                     if item.client_selection.as_deref() != Some("MANUAL") {
                         item.client_id = None;
                         item.client_selection = None;
@@ -301,24 +313,80 @@ impl BandoEgui {
     // path. This is ONLY a preview edit until the complete native Rust order
     // mutation and revision-checked production save are connected.
     fn apply_manual_client(&mut self, client_id: &str, ctx: &egui::Context) {
-        let Some(id) = self.active_id.as_deref() else { return; };
-        let Some(row) = self.drafts.iter_mut().find(|row| row.id == id) else { return; };
-        if row.client_id.as_deref() == Some(client_id) &&
-           row.client_selection.as_deref() == Some("MANUAL") {
+        if self.client_change.is_some() {
+            self.source_save_error = Some("이전 거래처 변경 계산이 끝난 뒤 다시 선택하세요.".into());
             return;
         }
-        row.client_id = Some(client_id.to_owned());
-        row.client_selection = Some("MANUAL".into());
-        // Native recognition must be rerun for the newly selected dealer.
-        row.analysis_raw = None;
-        row.analysis_evidence = None;
-        row.client_match = None;
-        self.clear_source_analysis();
-        if !self.raw_source.trim().is_empty() {
-            self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
-            ctx.request_repaint_after(Duration::from_millis(260));
+        let Some(id) = self.active_id.as_deref() else { return; };
+        let Some(row) = self.drafts.iter().find(|row| row.id == id).cloned() else { return; };
+        if row.client_id.as_deref() == Some(client_id) {
+            return; // No surprise AUTO -> MANUAL rewrite.
         }
-        self.queue_source_save();
+        if row.analysis_raw.as_deref() != Some(row.raw.as_str()) ||
+            row.analysis_evidence.is_none() {
+            self.source_save_error = Some(
+                "현재 발주원문 인식이 끝난 뒤 거래처를 다시 선택하세요.".into()
+            );
+            return;
+        }
+        let target=client_id.to_owned();
+        let order_id=row.id.clone();
+        let source_raw=row.raw.clone();
+        let gateway=Arc::clone(&self.gateway);
+        let (sender,receiver)=mpsc::channel();
+        self.client_change=Some(PendingClientChange {
+            order_id,source_raw,receiver,
+        });
+        self.source_save_error=None;
+        std::thread::spawn(move || {
+            let result=native_order_change::prepare(gateway.as_ref(),&row,&target);
+            let _=sender.send(result);
+        });
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+
+    fn poll_client_change(&mut self, ctx:&egui::Context) {
+        let value=self.client_change.as_ref().map(|p|p.receiver.try_recv());
+        let result=match value {
+            Some(Ok(value))=>Some(value),
+            Some(Err(mpsc::TryRecvError::Disconnected))=>
+                Some(Err("Rust 주문 변경 계산이 중단되었습니다.".into())),
+            _=>None,
+        };
+        if let Some(result)=result {
+            let Some(pending)=self.client_change.take() else {return;};
+            // Another order or edited original may never inherit an old
+            // calculation, regardless of asynchronous completion order.
+            if self.active_id.as_deref()!=Some(&pending.order_id) ||
+               self.raw_source!=pending.source_raw {
+                return;
+            }
+            match result {
+                Ok(result)=>{
+                    if let Some(row)=self.drafts.iter_mut().find(|r|
+                        r.id==pending.order_id && r.raw==pending.source_raw
+                    ) {
+                        row.client_id=Some(result.client_id);
+                        row.client_selection=Some("MANUAL".into());
+                        row.pricing_preview=Some(result.pricing_preview);
+                        row.analysis_raw=None;
+                        row.analysis_evidence=None;
+                        row.client_match=None;
+                    }
+                    self.clear_source_analysis();
+                    if !self.raw_source.trim().is_empty() {
+                        self.analysis_due_at=Some(Instant::now()+Duration::from_millis(250));
+                        ctx.request_repaint_after(Duration::from_millis(260));
+                    }
+                    self.queue_source_save();
+                }
+                Err(error)=>{
+                    self.source_save_error=Some(format!("거래처 변경 확인 실패: {error}"));
+                }
+            }
+        } else if self.client_change.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
     }
 
     fn open_client_chooser(&mut self, ctx: &egui::Context) {
@@ -384,7 +452,7 @@ impl BandoEgui {
             order_type: OrderType::Agency.as_str().to_owned(),
             analysis_raw: None, analysis_evidence: None, client_match: None,
             chat_handle: None, chat_title: None,
-            client_id: None, client_selection: None,
+            client_id: None, client_selection: None, pricing_preview: None,
         });
         self.select_reception(&id, ctx);
     }
@@ -1815,6 +1883,7 @@ impl BandoEgui {
 impl eframe::App for BandoEgui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_source_analysis();
+        self.poll_client_change(ctx);
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
         if self.page == Page::Reception {
