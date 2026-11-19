@@ -93,6 +93,24 @@ impl BandoGateway for LocalGateway {
     }
 
     fn load_catalog(&self) -> Result<Value, String> {
+        // When a live master DB is explicitly selected, recognition must use
+        // the same product IDs, variants and aliases as the native price
+        // engine. Never parse against a possibly stale embedded seed and
+        // calculate prices against a different production catalog.
+        if std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .is_some_and(|value| !value.is_empty())
+        {
+            let full = crate::business_state::load()?;
+            let (clients, settings) = crate::client_directory::project_index(&full)?;
+            return Ok(serde_json::json!({
+                "products":full.get("products"),
+                "aliases":full.get("aliases"),
+                "brands":full.get("brands"),
+                "categories":full.get("categories"),
+                "clients":clients,
+                "settings":settings,
+            }));
+        }
         crate::client_directory::attach(PreviewStore::initialize()?.load_catalog()?)
     }
     fn load_business_state(&self) -> Result<Value, String> {
