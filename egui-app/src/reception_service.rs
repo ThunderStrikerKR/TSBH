@@ -46,7 +46,7 @@ pub fn analyze_raw(gateway: &dyn BandoGateway, raw: &str) -> Result<ReceptionAna
     if raw.trim().is_empty() {
         return Err("발주원문을 먼저 입력하세요.".to_owned());
     }
-    let state = gateway.load_state()?;
+    let state = gateway.load_catalog()?;
     let analysis = gateway.execute(ReadOperation::AnalyzeOrder, json!({
         "raw": raw,
         "state": state,
