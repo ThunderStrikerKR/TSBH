@@ -15,6 +15,7 @@ mod preview_store;
 mod source_autosave;
 mod clipboard_intake;
 mod client_directory;
+mod client_chooser;
 mod kakao_context;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
@@ -22,6 +23,7 @@ use theme::{ButtonRole, WindowControl};
 use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
 use preview_store::{WorkingReception, WorkingSource};
 use kakao_context::{ChatWindow, KakaoTracker};
+use client_chooser::{ClientChooser, Choice};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::{self, Receiver},
@@ -129,6 +131,7 @@ struct BandoEgui {
     pending_replace: Option<PendingReplace>,
     source_autosave: Option<source_autosave::SourceAutosave>,
     source_save_error: Option<String>,
+    client_chooser: Option<ClientChooser>,
     analysis: Option<reception_service::ReceptionAnalysis>,
     analysis_error: Option<String>,
     selected_recipient: usize,
@@ -168,6 +171,7 @@ impl Default for BandoEgui {
             pending_replace: None,
             source_autosave: None,
             source_save_error: None,
+            client_chooser: None,
             analysis: None,
             analysis_error: None,
             selected_recipient: 0,
@@ -290,22 +294,65 @@ impl BandoEgui {
             self.source_save_error = Some("Rust 후보 목록에 없는 거래처는 적용할 수 없습니다.".into());
             return;
         }
+        self.apply_manual_client(client_id, ctx);
+    }
+
+    // All-client changes and Rust suggestion clicks share one selection
+    // path. This is ONLY a preview edit until the complete native Rust order
+    // mutation and revision-checked production save are connected.
+    fn apply_manual_client(&mut self, client_id: &str, ctx: &egui::Context) {
         let Some(id) = self.active_id.as_deref() else { return; };
-        if let Some(row) = self.drafts.iter_mut().find(|row| row.id == id) {
-            row.client_id = Some(client_id.to_owned());
-            row.client_selection = Some("MANUAL".into());
-            // The selected client may affect aliases. Re-run native
-            // recognition and never retain stale product evidence.
-            row.analysis_raw = None;
-            row.analysis_evidence = None;
-            row.client_match = None;
+        let Some(row) = self.drafts.iter_mut().find(|row| row.id == id) else { return; };
+        if row.client_id.as_deref() == Some(client_id) &&
+           row.client_selection.as_deref() == Some("MANUAL") {
+            return;
         }
+        row.client_id = Some(client_id.to_owned());
+        row.client_selection = Some("MANUAL".into());
+        // Native recognition must be rerun for the newly selected dealer.
+        row.analysis_raw = None;
+        row.analysis_evidence = None;
+        row.client_match = None;
         self.clear_source_analysis();
         if !self.raw_source.trim().is_empty() {
             self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
             ctx.request_repaint_after(Duration::from_millis(260));
         }
         self.queue_source_save();
+    }
+
+    fn open_client_chooser(&mut self, ctx: &egui::Context) {
+        let Some(order_id) = &self.active_id else { return; };
+        self.client_chooser = Some(ClientChooser::new(
+            order_id.clone(), Arc::clone(&self.gateway), ctx.clone()
+        ));
+    }
+
+    fn show_client_chooser(&mut self, ctx: &egui::Context) {
+        // The chooser belongs to one reception, not a global selection.
+        if self.client_chooser.as_ref().is_some_and(|chooser|
+            self.active_id.as_deref() != Some(chooser.order_id.as_str())
+        ) {
+            self.client_chooser = None;
+            return;
+        }
+        let current_id = self.active_id.as_deref()
+            .and_then(|id| self.drafts.iter().find(|row| row.id == id))
+            .and_then(|row| row.client_id.as_deref())
+            .map(str::to_owned);
+        let event = self.client_chooser.as_mut().and_then(|chooser|
+            chooser.show(ctx, Arc::clone(&self.gateway), current_id.as_deref())
+        );
+        match event {
+            Some(Choice::Selected(id)) => {
+                let verified = self.client_chooser.as_ref()
+                    .is_some_and(|chooser| chooser.contains(&id));
+                self.client_chooser = None;
+                if verified { self.apply_manual_client(&id, ctx); }
+            }
+            Some(Choice::Closed) => { self.client_chooser = None; }
+            None => {}
+        }
     }
 
     fn new_reception(&mut self, ctx: &egui::Context) {
@@ -1239,6 +1286,7 @@ impl BandoEgui {
         let mut begin_input = false;
         let mut begin_new_order = false;
         let mut start_clipboard = None;
+        let mut open_client_chooser = false;
         let can_receive_clipboard =
             self.clipboard_monitor.kind().has_intake() && !self.clipboard_busy;
         let ocr_processing = self.ocr_processing;
@@ -1268,7 +1316,7 @@ impl BandoEgui {
                         card_rect,
                         theme::CONTROL_RADIUS as f32,
                         theme::INPUT,
-                        Stroke::new(1.0, theme::BORDER),
+                        egui::Stroke::new(1.0, theme::BORDER),
                         egui::StrokeKind::Inside,
                     );
                     let client_name = self.active_id.as_deref()
@@ -1292,7 +1340,18 @@ impl BandoEgui {
                         |card| {
                             card.set_clip_rect(card_rect);
                             card.label(typography::caption("현재 거래처"));
-                            card.label(typography::body(status));
+                            card.horizontal(|line| {
+                                line.label(typography::body(status));
+                                line.with_layout(Layout::right_to_left(Align::Center), |right| {
+                                    let label = if client_name.is_some() {
+                                        "변경"
+                                    } else { "거래처 찾기" };
+                                    if theme::action(right, label, ButtonRole::Standard, true)
+                                        .clicked() {
+                                        open_client_chooser = true;
+                                    }
+                                });
+                            });
                         },
                     );
                 }
@@ -1392,6 +1451,9 @@ impl BandoEgui {
         });
         if begin_new_order {
             self.new_reception(ui.ctx());
+        }
+        if open_client_chooser {
+            self.open_client_chooser(ui.ctx());
         }
         if begin_input {
             if self.active_id.is_none() {
@@ -1772,6 +1834,9 @@ impl eframe::App for BandoEgui {
         }
         self.show_ocr_review(ctx);
         self.show_replacement_confirmation(ctx);
+        if self.page == Page::Reception {
+            self.show_client_chooser(ctx);
+        }
         self.frameless_resize(ctx);
     }
 }
