@@ -269,7 +269,7 @@ pub fn nested_frame() -> Frame {
 }
 
 pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
-    action_with_min_width(ui, label, role, enabled, 0.0)
+    action_with_min_width(ui, label, role, enabled, 0.0, false)
 }
 
 /// Reuse the exact same action design, filling only the column assigned by a
@@ -278,11 +278,21 @@ pub fn action_full_width(
     ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool,
 ) -> Response {
     let width = ui.available_width();
-    action_with_min_width(ui, label, role, enabled, width)
+    action_with_min_width(ui, label, role, enabled, width, false)
+}
+
+/// Keep the existing white primary-action geometry but render its caption
+/// in regular type only inside the processing-order workflow board.
+pub fn action_full_width_regular(
+    ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool,
+) -> Response {
+    let width = ui.available_width();
+    action_with_min_width(ui, label, role, enabled, width, true)
 }
 
 fn action_with_min_width(
-    ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool, min_width: f32,
+    ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool,
+    min_width: f32, regular_text: bool,
 ) -> Response {
     let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
         ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, Color32::from_rgb(238, 238, 238), BRIGHT_TEXT, Stroke::NONE),
@@ -322,7 +332,7 @@ fn action_with_min_width(
         ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 4,
         _ => CONTROL_RADIUS,
     };
-    let important = matches!(
+    let important = !regular_text && matches!(
         role,
         ButtonRole::Primary | ButtonRole::Danger |
         ButtonRole::ActiveNavigation | ButtonRole::ActiveManagementTab |
