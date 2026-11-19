@@ -228,3 +228,12 @@ GitHub `main`에는 소스 코드가 반영되었지만 이 환경에서 `cargo 
 - 기존 `working_source.raw`는 원본 데이터를 삭제하지 않고 `legacy-working-source` 식별자로 승계한다. 다음 수정 시 `drafts_json` 목록과 선택 상태를 동일 SQLite 트랜잭션에서 저장한다.
 - `BandoGateway`의 revision-checked 저장 계약이 전체 접수 목록을 받아 저장하도록 바뀌었다. 미래 서버에는 `activeId` 및 `drafts`를 함께 구현해야 하고, 서버 구현 전에는 HTTP 모드를 실제 운영에 사용하지 않는다.
 - Windows 실제 빌드·GUI 동작 검증은 아직 수행하지 않았다. 기존 React/Tauri 운영 데이터베이스는 이번 변경 대상에서 제외했다.
+
+## 거래처 자동 매칭 및 발주서별 Rust 근거 연결 (2026-11-20)
+
+- 접수 분석 서비스가 기존 Rust `catalog_clients/title_clients.rs`의 `auto_match_reception_client`, `reception_client_candidates`를 호출한다. egui 화면에 별도 업체명 매칭 로직을 구현하지 않는다.
+- 거래처 이름 인덱스는 opt-in `BANDO_EGUI_CLIENT_INDEX` 파일에서만 로드하며, 민감한 배송·연락처·가격 정보는 제외한다. 프로젝트 내장 시드에는 거래처가 0건이므로 연결하지 않으면 자동 인식은 대기 상태다.
+- 접수마다 원문에 결합된 `analysisRaw`, `analysisEvidence`, `clientMatch`를 저장한다. 입력이 바뀌면 이전 근거를 무효화하고 분석 완료 응답이 현재 선택 접수에만 붙도록 보장한다.
+- `확인할 내용`에는 거래처 명단 미연결, 자동 인식된 거래처, 매칭 충돌 또는 직접 확인 필요 상태를 표시한다. 단순 수취인 주소/학교를 발주 거래처로 간주하지 않는다.
+- 현 단계는 **읽기 전용 거래처 자동 매칭 의견**이며, 카카오톡 창 탐색과 실제 거래처 지정·확정·운임/단가 반영은 미구현이다. 기존 4열/패널 비율과 확정 버튼·업무 전환 흐름은 바꾸지 않았다.
+- GitHub 코드 업데이트만 완료했다. Windows Cargo 컴파일 및 실제 GUI 동작 검증은 아직 수행하지 않았다.
