@@ -1,4 +1,4 @@
-# Targeted Windows compile: split Kakao ad footer, conditional outer scroll, shared workspace border.
+# Targeted Windows compile: egui native WorkflowBoard read-only groups, selection and hover UI.
 name: Tauri native CLI executable compile check
 on:
   push:
