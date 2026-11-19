@@ -192,16 +192,21 @@ impl ProductSearch{
                             });
                     });
                 }
-                if let Some(error)=&self.error{
-                    ui.label(typography::status(error,theme::DANGER));
-                }
-                if self.receiver.is_some(){
-                    ui.label(typography::caption("상품 검색 중"));
-                }else{
-                    egui::ScrollArea::vertical()
-                        .id_salt("manual-product-search-results")
-                        .max_height(theme::MANUAL_SEARCH_RESULTS_HEIGHT)
-                        .show(ui,|ui|{
+                // Always allocate one result viewport. The search state
+                // changes inside it, never shrinking or jumping the modal.
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(),theme::MANUAL_SEARCH_RESULTS_HEIGHT),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |pane|{
+                        egui::ScrollArea::vertical()
+                            .id_salt("manual-product-search-results")
+                            .max_height(theme::MANUAL_SEARCH_RESULTS_HEIGHT)
+                            .show(pane,|ui|{
+                                if let Some(error)=&self.error {
+                                    ui.label(typography::status(error,theme::DANGER));
+                                } else if self.receiver.is_some() {
+                                    ui.label(typography::caption("상품 검색 중"));
+                                } else {
                             for row in &self.products{
                                 let name=field(row,"name");
                                 let name=if name.is_empty(){field(row,"code")}else{name};
@@ -241,11 +246,14 @@ impl ProductSearch{
                                 });
                                 components::soft_divider(ui);
                             }
-                            if self.products.is_empty()&&self.error.is_none(){
-                                ui.label(typography::caption("검색 결과가 없습니다."));
-                            }
-                        });
-                }
+
+                                    if self.products.is_empty() {
+                                        ui.label(typography::caption("검색 결과가 없습니다."));
+                                    }
+                                }
+                            });
+                    },
+                );
             });
         if changed{self.reload(gateway,ctx.clone());}
         if let Some(row)=chosen{return Some(Event::Chosen(row));}
