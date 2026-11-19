@@ -8,6 +8,32 @@ pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 pub const TABLE_ROW_HEIGHT: f32 = 42.0;
 pub const TABLE_HEADER_HEIGHT: f32 = 36.0;
 
+/// A compact KakaoTalk identity mark, used only as a visual menu prefix.
+/// The native Kakao HWND and order-matching logic remain unchanged.
+pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
+    let side=theme::KAKAO_MENU_ICON_SIZE;
+    let (rect,response)=ui.allocate_exact_size(Vec2::splat(side),Sense::hover());
+    let painter=ui.painter();
+    painter.rect_filled(rect,4.0,theme::KAKAO_ICON_YELLOW);
+    let bubble=Rect::from_min_max(
+        egui::pos2(rect.left()+3.6,rect.top()+4.7),
+        egui::pos2(rect.right()-3.6,rect.bottom()-5.8),
+    );
+    painter.rect_filled(bubble,5.0,theme::KAKAO_ICON_INK);
+    painter.add(egui::Shape::convex_polygon(vec![
+        egui::pos2(rect.left()+6.0,rect.bottom()-6.5),
+        egui::pos2(rect.left()+5.3,rect.bottom()-3.0),
+        egui::pos2(rect.left()+9.2,rect.bottom()-6.3),
+    ],theme::KAKAO_ICON_INK,Stroke::NONE));
+    for dx in [-2.8,0.0,2.8] {
+        painter.circle_filled(
+            egui::pos2(rect.center().x+dx,rect.center().y-0.8),
+            0.75,theme::KAKAO_ICON_YELLOW
+        );
+    }
+    response.on_hover_text("카카오톡")
+}
+
 /// Keep paired reception actions at their content widths. Available pane
 /// space stays empty rather than stretching two buttons to the pane edges.
 /// The row wraps only if Korean labels cannot fit without clipping.
