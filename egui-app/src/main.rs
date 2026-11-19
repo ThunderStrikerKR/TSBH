@@ -385,18 +385,21 @@ impl BandoEgui {
     }
 
     fn kakao_pane(&mut self, ui: &mut Ui) {
-        Frame::new()
-            .fill(theme::PANEL)
-            .stroke(Stroke::new(1.0, theme::BORDER))
-            .inner_margin(theme::SECTION_PADDING)
-            .show(ui, |ui| {
-                ui.set_min_height((ui.available_height() - 2.0 * theme::SECTION_PADDING).max(100.0));
-                ui.vertical_centered(|ui| {
-                    let button_height = theme::ACTION_EMPHASIZED_HEIGHT;
-                    ui.add_space(((ui.available_height() - button_height) / 2.0).max(0.0));
-                    theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, false);
-                });
+        // A pane must occupy the exact rectangle allocated by the 4-column
+        // splitter. The previous content-driven Frame ended too early.
+        let pane_width = ui.available_width();
+        let pane_height = ui.available_height();
+        theme::section_frame().show(ui, |ui| {
+            let inner_width = (pane_width - 2.0 * theme::SECTION_PADDING - 2.0).max(1.0);
+            let inner_height = (pane_height - 2.0 * theme::SECTION_PADDING - 2.0).max(1.0);
+            ui.set_min_size(Vec2::new(inner_width, inner_height));
+            ui.vertical_centered(|ui| {
+                ui.add_space(
+                    ((inner_height - theme::ACTION_EMPHASIZED_HEIGHT) / 2.0).max(0.0)
+                );
+                theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, false);
             });
+        });
     }
 
     fn reception(&mut self, ctx: &egui::Context) {
@@ -624,19 +627,25 @@ impl BandoEgui {
             let mut include_link = false;
             ui.add_enabled(false, egui::Checkbox::new(&mut include_link, "링크 포함"));
         }, |ui| {
-            // section_with_header already owns the title-to-content gap.
-            Frame::new().fill(theme::INPUT)
-                .corner_radius(theme::CONTROL_RADIUS)
-                .inner_margin(theme::NESTED_PADDING)
-                .show(ui, |ui| {
-                    ui.set_min_height((ui.available_height() - 85.0).max(80.0));
-
-                });
-            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                ui.horizontal(|ui| {
-                    theme::action(ui, "그대로 복사", ButtonRole::Standard, false);
-                    theme::action(ui, "인사말 포함 복사", ButtonRole::Standard, false);
-                });
+            // Empty egui Frames shrink to their contents. Allocate the real
+            // message rectangle explicitly so it fills the available width
+            // instead of appearing as a narrow vertical stripe.
+            let bottom_controls =
+                theme::ACTION_STANDARD_HEIGHT + theme::SPACE_8;
+            let field_height = (ui.available_height() - bottom_controls).max(48.0);
+            let (field_rect, _) = ui.allocate_exact_size(
+                Vec2::new(ui.available_width(), field_height),
+                Sense::hover(),
+            );
+            ui.painter().rect_filled(
+                field_rect,
+                theme::CONTROL_RADIUS as f32,
+                theme::INPUT,
+            );
+            ui.add_space(theme::SPACE_8);
+            ui.horizontal(|ui| {
+                theme::action(ui, "그대로 복사", ButtonRole::Standard, false);
+                theme::action(ui, "인사말 포함 복사", ButtonRole::Standard, false);
             });
         });
     }
@@ -730,40 +739,72 @@ impl BandoEgui {
 
         let remaining = ui.available_height().max(230.0);
         Self::section(ui, "품목 및 운임", remaining, |ui| {
-            if let Some(recipient) = selected {
-                if let Some(items) = recipient.get("items").and_then(serde_json::Value::as_array) {
-                    egui::ScrollArea::vertical()
-                        .id_salt("recognized-items")
-                        .max_height((ui.available_height() - 115.0).max(90.0))
-                        .show(ui, |ui| {
-                            for item in items {
-                                ui.horizontal(|ui| {
-                                    ui.label(theme::body(&reception_service::item_title(item)));
-                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        ui.label(theme::caption(&reception_service::item_quantity(item)));
-                                    });
-                                });
-                                if let Some(issues) = item.get("issues").and_then(serde_json::Value::as_array) {
-                                    for issue in issues.iter().take(3) {
-                                        if let Some(message) = issue.as_str() {
-                                            ui.colored_label(theme::SELECTED_ORDER, message);
+            // Reserve the bottom summary from the pane geometry, not from
+            // the current text height. This keeps the summary at the bottom
+            // even when there are no products.
+            let section_chrome = theme::SECTION_PADDING * 2.0
+                + theme::SECTION_HEADER_HEIGHT
+                + theme::SECTION_CONTENT_GAP
+                + theme::SOFT_DIVIDER_WIDTH
+                + theme::SPACE_4;
+            let item_area_height =
+                (remaining - section_chrome - theme::SUMMARY_STRIP_HEIGHT)
+                    .max(0.0);
+            ui.allocate_ui_with_layout(
+                Vec2::new(ui.available_width(), item_area_height),
+                Layout::top_down(Align::Min),
+                |items_ui| {
+                    items_ui.set_min_height(item_area_height);
+                    if let Some(recipient) = selected {
+                        if let Some(items) =
+                            recipient.get("items").and_then(serde_json::Value::as_array)
+                        {
+                            egui::ScrollArea::vertical()
+                                .id_salt("recognized-items")
+                                .max_height(item_area_height)
+                                .auto_shrink([false, false])
+                                .show(items_ui, |ui| {
+                                    for item in items {
+                                        ui.horizontal(|ui| {
+                                            ui.label(theme::body(
+                                                &reception_service::item_title(item)
+                                            ));
+                                            ui.with_layout(
+                                                Layout::right_to_left(Align::Center),
+                                                |ui| {
+                                                    ui.label(theme::caption(
+                                                        &reception_service::item_quantity(item)
+                                                    ));
+                                                },
+                                            );
+                                        });
+                                        if let Some(issues) = item.get("issues")
+                                            .and_then(serde_json::Value::as_array)
+                                        {
+                                            for issue in issues.iter().take(3) {
+                                                if let Some(message) = issue.as_str() {
+                                                    ui.colored_label(
+                                                        theme::SELECTED_ORDER, message
+                                                    );
+                                                }
+                                            }
                                         }
+                                        components::soft_divider(ui);
                                     }
-                                }
-                                components::soft_divider(ui);
-                            }
-                        });
-                }
-            }
-            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                components::summary_strip(ui, "총 주문", "—", "");
-            });
+                                });
+                        }
+                    }
+                },
+            );
+            components::summary_strip(ui, "총 주문", "—", "");
         });
     }
 
     fn orders_pane(&mut self, ui: &mut Ui) {
-        ui.label(theme::section_heading("처리 중인 주문"));
-        theme::divider(ui);
+        // Same section frame, header inset and divider as the other panes.
+        // Do not replace an empty order list with invented placeholder text.
+        let height = ui.available_height();
+        Self::section(ui, "처리 중인 주문", height, |_| {});
     }
 
     fn other_page(&mut self, ctx: &egui::Context) {
