@@ -324,13 +324,9 @@ impl ManualWorkspace {
         let mut discard_confirmed=false;
         let mut submit_direct=false;
         let mut lookup:Option<(String,String)>=None;
-        components::modal_window("수동 분류","bando-native-manual-classification")
+        components::modal_window("수동 분류","bando-native-manual-classification",work_area)
             .open(&mut open)
             .resizable(true)
-            .default_pos(egui::pos2(
-                work_area.left()+theme::MODAL_VIEWPORT_GUTTER,
-                work_area.top()+theme::MODAL_VIEWPORT_GUTTER
-            ))
             .default_width((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
                 .min(theme::MANUAL_DIALOG_MAX_WIDTH).max(0.0))
             .default_height((work_area.height()-theme::MANUAL_DIALOG_VERTICAL_GAP)
@@ -652,6 +648,13 @@ impl ManualWorkspace {
                 ));
             }
         }
+        if self.product_search.is_some() ||
+            self.remove_recipient_pending.is_some() ||
+            self.reset_pending || self.confirm_discard {
+            components::modal_backdrop(
+                ctx,work_area,"manual-nested-modal-backdrop",true
+            );
+        }
         let product_event=self.product_search.as_mut().and_then(|search|
             search.show(ctx,Arc::clone(&self.gateway),work_area)
         );
@@ -713,7 +716,7 @@ impl ManualWorkspace {
         if let Some(target)=self.remove_recipient_pending.clone(){
             let mut confirm=false;
             let mut cancel=false;
-            components::decision_window("배송 건수 줄이기","manual-shipment-removal")
+            components::decision_window("배송 건수 줄이기","manual-shipment-removal",work_area)
                 .constrain_to(work_area)
                 .show(ctx,|ui|{
                     ui.label("마지막 배송 건의 입력값과 원문 배정을 제거할까요?");
@@ -745,7 +748,7 @@ impl ManualWorkspace {
         if self.reset_pending {
             let mut confirm=false;
             let mut cancel=false;
-            components::decision_window("전체 초기화","manual-reset-confirm")
+            components::decision_window("전체 초기화","manual-reset-confirm",work_area)
                 .constrain_to(work_area)
                 .show(ctx,|ui|{
                     ui.label("구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.");
@@ -785,7 +788,7 @@ impl ManualWorkspace {
         }
         if self.confirm_discard {
             let mut confirm=true;
-            components::decision_window("수동 분류 변경 취소","manual-discard-prompt")
+            components::decision_window("수동 분류 변경 취소","manual-discard-prompt",work_area)
                 .constrain_to(work_area)
                 .open(&mut confirm)
                 .show(ctx,|ui|{
