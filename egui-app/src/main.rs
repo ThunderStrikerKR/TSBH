@@ -602,72 +602,179 @@ impl BandoEgui {
 
     fn details_and_freight(&mut self, ui: &mut Ui) {
         let full_height = ui.available_height();
+        let has_result = self.analysis.is_some();
+        let selected = self.analysis.as_ref().and_then(|analysis| {
+            native_engine::recipients(analysis).get(self.selected_recipient)
+        });
+        let count = self.analysis.as_ref().map(|analysis| {
+            native_engine::recipients(analysis).len()
+        }).unwrap_or(0);
+
         Self::section_with_header(ui, "확인할 내용", (full_height * 0.27).max(150.0), |ui| {
-            ui.label(theme::caption("조치 0건 / 안내 0건"));
-        }, |ui| {
-            ui.label(theme::caption(if self.sample {
-                "샘플 UI에는 실제 Rust 분석 결과가 없습니다."
+            ui.label(theme::caption(if has_result {
+                "Rust 원문 분석 완료"
+            } else if self.analysis_pending {
+                "Rust 원문 분석 중"
             } else {
-                "Rust 분석 결과 미연결"
+                "분석 대기"
             }));
+        }, |ui| {
+            if let Some(error) = &self.analysis_error {
+                ui.colored_label(theme::DANGER, format!("인식 오류: {error}"));
+            } else if self.analysis_pending {
+                ui.label(theme::body("기존 Rust 인식 엔진이 발주원문을 분석하고 있습니다."));
+            } else if let Some(analysis) = &self.analysis {
+                ui.label(theme::body(&format!("수취인 {count}건 인식")));
+                let unidentified = analysis.get("unassigned")
+                    .and_then(serde_json::Value::as_array)
+                    .map(Vec::len).unwrap_or(0);
+                let candidates = analysis.get("candidates")
+                    .and_then(serde_json::Value::as_array)
+                    .map(Vec::len).unwrap_or(0);
+                if unidentified > 0 || candidates > 0 {
+                    ui.colored_label(theme::SELECTED_ORDER,
+                        format!("미분류 근거 {unidentified}건 · 추가 후보 {candidates}건"));
+                }
+                let issue_count: usize = native_engine::recipients(analysis).iter()
+                    .flat_map(|recipient| recipient.get("items")
+                        .and_then(serde_json::Value::as_array)
+                        .into_iter().flatten())
+                    .map(|item| item.get("issues")
+                        .and_then(serde_json::Value::as_array)
+                        .map(Vec::len).unwrap_or(0))
+                    .sum();
+                if issue_count > 0 {
+                    ui.colored_label(theme::SELECTED_ORDER,
+                        format!("상품 인식 검토 사항 {issue_count}건"));
+                }
+                ui.label(theme::caption("인식 결과만 표시 · 주문 확정·가격·운임 검증은 아직 미연결"));
+            } else if self.sample {
+                ui.label(theme::caption("샘플 화면입니다. 발주원문을 입력하면 실제 Rust 분석 결과가 표시됩니다."));
+            } else {
+                ui.label(theme::caption("발주원문을 입력하고 분석하면 수취인·상품 인식 결과가 여기에 나타납니다."));
+            }
         });
         ui.add_space(PANEL_GAP);
-        Self::section(ui, "수취인별 주문 정보", (full_height * 0.22).max(145.0), |ui| {
-            if self.sample {
-                // Disabled controls exercise the exact common input geometry.
-                // No sample values are persisted or sent to the business engine.
+
+        let mut next_recipient = None;
+        Self::section(ui, "수취인별 주문 정보", (full_height * 0.22).max(180.0), |ui| {
+            if let Some(analysis) = &self.analysis {
+                let recipients = native_engine::recipients(analysis);
+                if recipients.len() > 1 {
+                    egui::ScrollArea::horizontal()
+                        .id_salt("analyzed-recipients")
+                        .drag_to_scroll(false)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                for (index, recipient) in recipients.iter().enumerate() {
+                                    let name = native_engine::text(recipient, "name");
+                                    let label = if name.is_empty() {
+                                        format!("수취인 {}", index + 1)
+                                    } else {
+                                        format!("{} · {}", index + 1, name)
+                                    };
+                                    let role = if index == self.selected_recipient {
+                                        ButtonRole::ActiveNavigation
+                                    } else {
+                                        ButtonRole::Quiet
+                                    };
+                                    if theme::action(ui, &label, role, true).clicked() {
+                                        next_recipient = Some(index);
+                                    }
+                                }
+                            });
+                        });
+                }
+                if let Some(recipient) = recipients.get(self.selected_recipient) {
+                    ui.spacing_mut().item_spacing.y = 4.0;
+                    let mut name = native_engine::text(recipient, "name").to_owned();
+                    let mut address = native_engine::text(recipient, "address").to_owned();
+                    let mut mobile = native_engine::text(recipient, "mobile").to_owned();
+                    let mut phone = native_engine::text(recipient, "phone").to_owned();
+                    let mut note = native_engine::text(recipient, "note").to_owned();
+                    components::labeled_field(ui, "이름", &mut name, components::FieldKind::Text, false);
+                    components::labeled_field(ui, "주소", &mut address, components::FieldKind::Address, false);
+                    components::labeled_field(ui, "휴대전화", &mut mobile, components::FieldKind::Telephone, false);
+                    if !phone.trim().is_empty() {
+                        components::labeled_field(ui, "전화", &mut phone, components::FieldKind::Telephone, false);
+                    }
+                    components::labeled_field(ui, "요청 메시지", &mut note, components::FieldKind::Text, false);
+                } else {
+                    ui.label(theme::caption("인식된 수취인 정보가 없습니다."));
+                }
+            } else if self.sample {
                 let mut name = String::from("샘플수취인");
                 let mut address = String::from("샘플시 샘플로 123");
                 let mut phone = String::from("010-0000-0000");
                 let mut note = String::from("없음");
+                ui.spacing_mut().item_spacing.y = 4.0;
                 components::labeled_field(ui, "이름", &mut name, components::FieldKind::Text, false);
                 components::labeled_field(ui, "주소", &mut address, components::FieldKind::Address, false);
                 components::labeled_field(ui, "휴대전화", &mut phone, components::FieldKind::Telephone, false);
                 components::labeled_field(ui, "요청 메시지", &mut note, components::FieldKind::Text, false);
             } else {
-                ui.label(theme::caption("발주 원문을 입력하거나 배송 건을 선택하세요."));
+                ui.label(theme::caption("발주원문을 입력하고 분석하면 인식된 수취인 정보가 표시됩니다."));
             }
         });
+        if let Some(index) = next_recipient {
+            self.selected_recipient = index;
+        }
         ui.add_space(PANEL_GAP);
+
         let remaining = ui.available_height().max(230.0);
         Self::section(ui, "품목 및 운임", remaining, |ui| {
-            if self.sample {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("품목").size(13.0).color(theme::SECONDARY));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(theme::caption("금액"));
-                        ui.add_space(68.0);
-                        ui.label(theme::caption("수량"));
-                    });
-                });
-                theme::divider(ui);
-                ui.horizontal(|ui| {
-                    ui.label(theme::body("709-1 / 블랙 / 비타공 상판"));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(theme::body("59,000원"));
-                        ui.add_space(30.0);
-                        ui.label(theme::body("1개"));
-                    });
-                });
-                theme::divider(ui);
-                ui.horizontal(|ui| {
-                    ui.label(theme::body("운임"));
-                    ui.label(theme::body("3,000원 (선불)"));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        theme::action(ui, "공장에 운임 문의", ButtonRole::Quiet, false);
-                    });
-                });
-                ui.add_space(12.0);
-                theme::action(ui, "+ 상품 추가", ButtonRole::Standard, false);
+            if let Some(recipient) = selected {
+                if let Some(items) = recipient.get("items").and_then(serde_json::Value::as_array) {
+                    if items.is_empty() {
+                        ui.label(theme::caption("인식된 상품이 없습니다. 원문과 상품 등록 정보를 확인하세요."));
+                    }
+                    egui::ScrollArea::vertical()
+                        .id_salt("recognized-items")
+                        .max_height((ui.available_height() - 115.0).max(90.0))
+                        .show(ui, |ui| {
+                            for item in items {
+                                ui.horizontal(|ui| {
+                                    ui.label(theme::body(&native_engine::item_title(item)));
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        ui.label(theme::caption(&native_engine::item_quantity(item)));
+                                    });
+                                });
+                                let issues = item.get("issues").and_then(serde_json::Value::as_array);
+                                if let Some(issues) = issues {
+                                    for issue in issues.iter().take(3) {
+                                        if let Some(message) = issue.as_str() {
+                                            ui.colored_label(theme::SELECTED_ORDER, message);
+                                        }
+                                    }
+                                }
+                                components::soft_divider(ui);
+                            }
+                        });
+                } else {
+                    ui.label(theme::caption("상품 인식 결과가 없습니다."));
+                }
+                ui.add_space(8.0);
+                ui.label(theme::caption("운임·단가 미연결 · 인식 결과는 주문으로 저장되지 않습니다."));
+            } else if self.sample {
+                ui.label(theme::body("709-1 / 블랙 / 비타공 상판 · 1개"));
+                components::soft_divider(ui);
+                ui.label(theme::body("운임 3,000원 (선불) · 샘플 표시"));
+                ui.label(theme::caption("샘플은 실제 Rust 인식 결과와 구별됩니다."));
             } else {
-                ui.label(theme::caption("거래처 선택 후 운임과 청구금액을 확인합니다."));
+                ui.label(theme::caption("분석 후 인식된 품목을 확인할 수 있습니다."));
             }
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                 components::summary_strip(
                     ui,
                     "총 주문",
-                    if self.sample { "62,000원" } else { "—" },
-                    if self.sample { "택배 1건 · 부가세 별도" } else { "택배 0건 · 부가세 별도" },
+                    if self.sample && !has_result { "62,000원 (샘플)" } else { "—" },
+                    if has_result {
+                        "청구·부가세·운임 계산 미연결"
+                    } else if self.sample {
+                        "택배 1건 · 샘플 금액"
+                    } else {
+                        "업무 엔진 계산 연결 전"
+                    },
                 );
             });
         });
