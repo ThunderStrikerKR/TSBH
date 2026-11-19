@@ -548,6 +548,14 @@ impl ClientManager {
                     });
                 });
             });
+        if ctx.input(|input|input.key_pressed(egui::Key::Escape)) {
+            if self.confirm_delete || self.confirm_discard {
+                self.confirm_delete=false;
+                self.confirm_discard=false;
+            } else {
+                close=true;
+            }
+        }
         self.draft=Some(draft);
         if save {self.mutate(Arc::clone(&gateway),ctx,"upsert_client");}
         if delete {self.confirm_delete=true;}
