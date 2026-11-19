@@ -236,16 +236,16 @@ impl BandoEgui {
             // they contain an action. Prevent controls from moving when
             // the section switches between empty and populated states.
             ui.allocate_ui_with_layout(
-                Vec2::new(ui.available_width(), 38.0),
+                Vec2::new(ui.available_width(), theme::SECTION_HEADER_HEIGHT),
                 Layout::left_to_right(Align::Center),
                 |header| {
-                    header.set_min_height(38.0);
+                    header.set_min_height(theme::SECTION_HEADER_HEIGHT);
                     header.label(theme::section_heading(title));
                     header.with_layout(Layout::right_to_left(Align::Center), header_right);
                 },
             );
             components::soft_divider(ui);
-            ui.add_space(8.0);
+            ui.add_space(theme::SECTION_CONTENT_GAP);
             content(ui);
         });
     }
