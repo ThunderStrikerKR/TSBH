@@ -205,12 +205,34 @@ impl BandoEgui {
         }
     }
 
+    fn handle_header_drag(
+        ctx: &egui::Context,
+        response: &egui::Response,
+        maximized: bool,
+    ) {
+        if response.drag_started() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
+        if response.double_clicked() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+        }
+    }
+
     fn top_bar(&mut self, ctx: &egui::Context) {
         let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
         egui::TopBottomPanel::top("global_navigation")
             .exact_height(theme::HEADER_HEIGHT)
-            .frame(Frame::new().fill(Color32::from_rgb(27, 27, 27)).inner_margin(8.0))
+            .frame(Frame::new().fill(Color32::from_rgb(27, 27, 27))
+                .inner_margin(egui::Margin::symmetric(8, 0)))
             .show(ctx, |ui| {
+                // Fixed blank strip gives frameless windows a native
+                // drag target even when the navigation fills the header.
+                // Logo and wordmark are below the strip and inert.
+                let top_drag = ui.allocate_response(
+                    Vec2::new(ui.available_width(), 8.0),
+                    Sense::click_and_drag(),
+                );
+                Self::handle_header_drag(ctx, &top_drag, maximized);
                 ui.horizontal_centered(|ui| {
                     ui.add_space(8.0);
                     // Brand identity is deliberately inert: no hover
@@ -261,16 +283,7 @@ impl BandoEgui {
                                 Vec2::new(free_width, 28.0),
                                 Sense::click_and_drag(),
                             );
-                            if drag.drag_started() {
-                                ctx.send_viewport_cmd(
-                                    egui::ViewportCommand::StartDrag
-                                );
-                            }
-                            if drag.double_clicked() {
-                                ctx.send_viewport_cmd(
-                                    egui::ViewportCommand::Maximized(!maximized)
-                                );
-                            }
+                            Self::handle_header_drag(ctx, &drag, maximized);
                         }
                     });
                 });
