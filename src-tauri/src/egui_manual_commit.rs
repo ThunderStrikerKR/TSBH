@@ -41,8 +41,11 @@ fn submit_id(order_id:&str,v:&Value)->Result<String,String>{
     Ok(scoped(order_id,id))
 }
 fn client_field<'a>(row:&'a Value,key:&str)->Result<&'a str,String>{
-    row.get(key).and_then(Value::as_str).ok_or_else(||
-        format!("수취인 {key} 입력값 오류"))
+    match row.get(key) {
+        Some(Value::String(value))=>Ok(value),
+        Some(Value::Null)|None=>Ok(""),
+        _=>Err(format!("수취인 {key} 입력값 형식 오류")),
+    }
 }
 fn apply_step(
     action:&str,m:&mut Value,keys:&mut Vec<String>,extra:Value
@@ -92,14 +95,26 @@ fn canonical_rows(
     let old_len=old.len();
     // Existing Rust-recognized shipment rows may only be removed from the
     // end; arbitrary reordering of same-name recipients is never guessed.
-    for (idx,row) in requested.iter().enumerate().take(old_len){
-        if submit_id(order_id,&row["id"])?!=s(&old[idx],"id") {
+    let employee_reset=submit_id(order_id,&requested[0]["id"])?!=s(&old[0],"id");
+    let base_len=if employee_reset {
+        let first=submit_id(order_id,&requested[0]["id"])?;
+        if !valid_new_id(&first){
+            return Err("전체 초기화 후 새 수취인 ID가 잘못되었습니다.".into());
+        }
+        apply_step("reset_manual_rows",native,keys,json!({
+            "recipientId":first
+        }))?;
+        1
+    }else{old_len};
+    for (idx,row) in requested.iter().enumerate().take(base_len){
+        if submit_id(order_id,&row["id"])?
+            !=s(&list(native,"rows")?[idx],"id") {
             return Err("배송 건의 원본 소속 또는 순서가 변경됐습니다.".into());
         }
     }
-    if requested.len()!=old_len{
-        let extra=if requested.len()>old_len{
-            requested.iter().skip(old_len).map(|row|{
+    if requested.len()!=base_len{
+        let extra=if requested.len()>base_len{
+            requested.iter().skip(base_len).map(|row|{
                 let id=submit_id(order_id,&row["id"])?;
                 if !valid_new_id(&id){return Err("추가 배송 건의 식별자가 잘못됐습니다.".into());}
                 Ok(id)
