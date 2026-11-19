@@ -1,4 +1,4 @@
-# Targeted Windows compile: native egui settings tabs and original Rust settings_patch bridge.
+# Targeted Windows compile: full egui SettingsView including native Tauri audit and backup/restore bridges.
 name: Tauri native CLI executable compile check
 on:
   push:
