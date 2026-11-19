@@ -69,6 +69,7 @@ struct VerticalSplitDrag {
 }
 
 struct BandoEgui {
+    brand_texture: Option<egui::TextureHandle>,
     gateway: Arc<dyn gateway::BandoGateway>,
     page: Page,
     notifications_open: bool,
@@ -91,6 +92,7 @@ struct BandoEgui {
 impl Default for BandoEgui {
     fn default() -> Self {
         Self {
+            brand_texture: None,
             gateway: Arc::new(gateway::LocalGateway),
             page: Page::Reception,
             notifications_open: false,
@@ -211,19 +213,18 @@ impl BandoEgui {
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.add_space(8.0);
-                    // Frameless window: the brand acts as the title-bar drag
-                    // region. Buttons/tabs remain fully interactive.
-                    let brand = ui.add(
-                        egui::Label::new(
-                            RichText::new("BANDO HUB").size(20.0).strong().color(theme::TEXT)
-                        ).sense(Sense::click_and_drag())
+                    // Brand identity is deliberately inert: no hover
+                    // affordance, click action, drag handler or double-click.
+                    // Reuse the existing Tauri application icon pixels.
+                    if let Some(texture) = &self.brand_texture {
+                        ui.add(egui::Image::new((
+                            texture.id(), Vec2::new(30.0, 26.0)
+                        )));
+                    }
+                    ui.label(
+                        RichText::new("BANDO HUB")
+                            .size(16.0).strong().color(theme::TEXT)
                     );
-                    if brand.drag_started() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                    }
-                    if brand.double_clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
-                    }
                     ui.add_space(12.0);
                     for page in Page::ALL {
                         let role = if self.page == page {
@@ -241,9 +242,8 @@ impl BandoEgui {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                         if theme::action(
-                            ui, if maximized { "❐" } else { "□" },
-                            ButtonRole::Quiet, true
-                        ).on_hover_text(if maximized { "이전 크기" } else { "최대화" }).clicked() {
+                            ui, "□", ButtonRole::Quiet, true
+                        ).on_hover_text("창 최대화 또는 복원").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                         }
                         if theme::action(ui, "−", ButtonRole::Quiet, true)
@@ -257,6 +257,25 @@ impl BandoEgui {
                             RichText::new("TEST / 격리 DB / 외부 발송 금지")
                                 .size(11.0).color(theme::SELECTED_ORDER)
                         );
+                        // Only unused header space is a drag region. Never
+                        // overlap logo, wordmark, menus or window controls.
+                        let free_width = ui.available_width();
+                        if free_width > 8.0 {
+                            let drag = ui.allocate_response(
+                                Vec2::new(free_width, 28.0),
+                                Sense::click_and_drag(),
+                            );
+                            if drag.drag_started() {
+                                ctx.send_viewport_cmd(
+                                    egui::ViewportCommand::StartDrag
+                                );
+                            }
+                            if drag.double_clicked() {
+                                ctx.send_viewport_cmd(
+                                    egui::ViewportCommand::Maximized(!maximized)
+                                );
+                            }
+                        }
                     });
                 });
             });
@@ -774,8 +793,24 @@ fn main() -> eframe::Result<()> {
             std::process::exit(2);
         }
     };
+    // Both the taskbar icon and the static left wordmark derive from the
+    // original Tauri icon, not a re-created/re-designed logo.
+    let existing_icon = match eframe::icon_data::from_png_bytes(
+        include_bytes!("../../src-tauri/icons/icon.png")
+    ) {
+        Ok(icon) => icon,
+        Err(error) => {
+            eprintln!("[BANDO HUB] 원본 로고 파일 오류: {error}");
+            std::process::exit(2);
+        }
+    };
+    let brand_image = egui::ColorImage::from_rgba_unmultiplied(
+        [existing_icon.width as usize, existing_icon.height as usize],
+        &existing_icon.rgba,
+    );
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_icon(existing_icon)
             .with_inner_size([1600.0, 900.0])
             .with_min_inner_size([1150.0, 720.0])
             .with_title("BANDO HUB")
@@ -788,12 +823,18 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(move |cc| {
             theme::install(&cc.egui_ctx);
+            let brand_texture = cc.egui_ctx.load_texture(
+                "bando-original-brand",
+                brand_image,
+                egui::TextureOptions::LINEAR,
+            );
             let autosave = source_autosave::SourceAutosave::new(
                 Arc::clone(&backend), restored.revision, cc.egui_ctx.clone()
             );
             let source_editing = !restored.raw.is_empty();
             if source_editing { cc.egui_ctx.request_repaint_after(Duration::from_millis(260)); }
             Ok(Box::new(BandoEgui {
+                brand_texture: Some(brand_texture),
                 gateway: backend,
                 raw_source: restored.raw,
                 source_editing,
