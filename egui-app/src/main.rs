@@ -1658,7 +1658,7 @@ impl BandoEgui {
                                     if let Some(pointer)=scroll_ui.input(|i|i.pointer.hover_pos()) {
                                         let cursor=output.galley.cursor_from_pos(
                                             pointer-output.galley_pos
-                                        ).ccursor.index;
+                                        ).index;
                                         hovered_link=spans.iter().find(|span|
                                             span.start_char<=cursor && cursor<span.end_char
                                         ).map(|span|span.key.clone());
