@@ -180,6 +180,16 @@ pub fn section_frame() -> Frame {
         .inner_margin(SECTION_PADDING)
 }
 
+/// Outer workspace surface: no dark 6pt moat between navigation, the
+/// four panes and window edges. One shared thin frame joins the existing
+/// splitter strokes; all internal pane proportions and hit regions stay put.
+pub fn workspace_shell_frame() -> Frame {
+    Frame::new()
+        .fill(CANVAS)
+        .stroke(Stroke::new(SOFT_DIVIDER_WIDTH, DIVIDER))
+        .inner_margin(SOFT_DIVIDER_WIDTH as i8)
+}
+
 /// Only for docked reception work panes. Neighboring panel edges belong to
 /// the splitter, so there is no individual perimeter stroke or rounding.
 /// Regular RecordCard, input, button, modal and independent section styles
