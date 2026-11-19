@@ -8,7 +8,7 @@ import { tsImport } from "tsx/esm/api";
  * P01 parser.ts person() bare name; P02 preserve administrative address tokens;
  * P03 address trailing token; E04 standalone institution; E05 parenthesis;
  * E06 labelled name; E07 two-part honorific; E08 product-row remainder;
- * E09 bare name + phone; E10 phone-adjacent name; D11 legacy name fallback.
+ * E09 bare name + phone; E10 phone-adjacent name; D11 old-format input via current evidence parsing.
  * Synthetic samples were authored afresh, never created by replacing words
  * inside real customer orders. Test failure records an unresolved defect.
  * This suite does not test OCR, product master matching, or freight.
@@ -16,7 +16,6 @@ import { tsImport } from "tsx/esm/api";
 const state=JSON.parse(readFileSync(
   new URL("../src-tauri/resources/state-seed.json",import.meta.url),"utf8"));
 const {parseEvidence}=await tsImport("../src/parser.ts",import.meta.url);
-const {parseLegacy:parseLegacyDomain}=await tsImport("../src/domain.ts",import.meta.url);
 const dealer={id:"name11-dealer",name:"합성 거래처",tier:"wholesale",
   active:true,payment:"PREPAID",overrides:{},identifiers:"",
   shippingFeeExcluded:false};
@@ -241,7 +240,7 @@ const fixtures=[
       "석촌호수로 162"
     ],
     "legacy": true,
-    "source": "src/domain.ts"
+    "source": "src/parser.ts"
   },
   {
     "id": "D11-B",
@@ -254,7 +253,7 @@ const fixtures=[
       "석촌호수로 162"
     ],
     "legacy": true,
-    "source": "src/domain.ts"
+    "source": "src/parser.ts"
   },
 {
   "id": "P03-C",
@@ -298,9 +297,9 @@ assert.deepEqual(coreIds,[
 ].sort(),"The 11 audited conditions must be covered");
 for(const fixture of fixtures){
   test("NAME11_"+fixture.id+" "+fixture.label,()=>{
-    const recipients=fixture.legacy
-      ? parseLegacyDomain(fixture.raw,dealer,state)
-      : parseEvidence(fixture.raw,dealer,state).recipients;
+    // The removed parseLegacy API was never part of the active Rust path.
+    // Retain the D11 business-shaped fixtures via the current evidence parser.
+    const recipients=parseEvidence(fixture.raw,dealer,state).recipients;
     const result={
       id:fixture.id,source:fixture.source,
       expectedDeliveries:fixture.names.length,
