@@ -128,7 +128,7 @@ fn workflow_card<R>(
         .fill(if selected{theme::WORKFLOW_SELECTED_BG}else{theme::WORKFLOW_CARD_BG})
         .stroke(egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,
             theme::WORKFLOW_CARD_BORDER))
-        .corner_radius(theme::WORKFLOW_CARD_RADIUS)
+        .corner_radius(egui::CornerRadius::same(theme::WORKFLOW_CARD_RADIUS))
         .inner_margin(egui::Margin::symmetric(
             theme::WORKFLOW_CARD_PADDING_X as i8,
             theme::WORKFLOW_CARD_PADDING_Y as i8
@@ -195,29 +195,74 @@ fn stage_name(step:usize,notice:bool)->&'static str{
 fn money(amount:Option<i64>)->String{
     amount.map(components::display_won).unwrap_or_else(||"—".to_owned())
 }
-fn row(ui:&mut Ui,ship:&ShipmentRow,chosen:bool,in_preview:bool)->egui::Response{
-    ui.scope(|ui|{
-        let active=if chosen{theme::SELECTED_ORDER}else if in_preview{
-            theme::SELECTION
-        }else{theme::DIVIDER};
-        Frame::new().fill(theme::INPUT)
-            .stroke(egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,active))
-            .inner_margin(theme::SPACE_4)
-            .show(ui,|ui|{
-                let title=if ship.recipient_name.is_empty(){
-                    "수취인 확인"
-                }else{ship.recipient_name.as_str()};
-                ui.label(typography::field_label(title));
-                ui.horizontal_wrapped(|ui|{
-                    ui.spacing_mut().item_spacing.x=theme::SPACE_4;
-                    for product in &ship.products{
-                        ui.label(typography::caption(product));
+/// React .workflow-shipment uses a 64 / flexible / 68 three-column row.
+/// No secondary boxed cards: selection is a subtle background plus a thin
+/// accent stripe, not an extra input-style border around every recipient.
+fn shipment_line(
+    ui:&mut Ui,name:&str,products:&[String],freight:&str,
+    chosen:bool,previewed:bool
+)->egui::Response{
+    let fill=if chosen{
+        theme::SELECTED_ORDER.linear_multiply(0.14)
+    }else if previewed{
+        theme::SELECTION.linear_multiply(0.14)
+    }else{egui::Color32::TRANSPARENT};
+    let outer=ui.available_width();
+    let response=Frame::new()
+        .fill(fill)
+        .inner_margin(egui::Margin::symmetric(
+            theme::SPACE_4 as i8,theme::SPACE_4 as i8
+        ))
+        .show(ui,|row|{
+            let inside=(outer-theme::SPACE_8).max(0.0);
+            row.set_min_width(inside);
+            row.horizontal(|cols|{
+                cols.spacing_mut().item_spacing.x=theme::SPACE_4;
+                let name_width=theme::WORKFLOW_RECIPIENT_COL.min(inside*0.25);
+                let freight_width=theme::WORKFLOW_FREIGHT_COL.min(inside*0.24);
+                let product_width=(inside-name_width-freight_width
+                    -theme::SPACE_8).max(0.0);
+                cols.add_sized(
+                    [name_width,theme::WORKFLOW_TITLE_HEIGHT],
+                    egui::Label::new(typography::body(name)).truncate()
+                );
+                cols.allocate_ui_with_layout(
+                    Vec2::new(product_width,theme::WORKFLOW_TITLE_HEIGHT),
+                    Layout::top_down(Align::Min),|product_col|{
+                        product_col.set_width(product_width);
+                        product_col.horizontal_wrapped(|chips|{
+                            chips.spacing_mut().item_spacing.x=theme::SPACE_4;
+                            for product in products{
+                                chips.label(typography::table_cell(product));
+                            }
+                        });
                     }
-                    let freight=if ship.collect{"착불".to_owned()}else{money(ship.freight)};
-                    ui.label(typography::quantity(&freight));
+                );
+                cols.with_layout(Layout::right_to_left(Align::Center),|freight_col|{
+                    freight_col.add_sized(
+                        [freight_width,theme::WORKFLOW_TITLE_HEIGHT],
+                        egui::Label::new(typography::quantity(freight)).truncate()
+                    );
                 });
             });
-    }).response
+        });
+    if chosen || previewed{
+        let color=if chosen{theme::SELECTED_ORDER}else{theme::SELECTION};
+        let rect=response.response.rect;
+        ui.painter().rect_filled(Rect::from_min_max(
+            Pos2::new(rect.left(),rect.top()),
+            Pos2::new(rect.left()+theme::WORKFLOW_SELECTED_STRIPE,
+                rect.bottom())
+        ),0.0,color);
+    }
+    response.response
+}
+fn row(ui:&mut Ui,ship:&ShipmentRow,chosen:bool,in_preview:bool)->egui::Response{
+    let name=if ship.recipient_name.is_empty(){
+        "수취인 확인"
+    }else{ship.recipient_name.as_str()};
+    let freight=if ship.collect{"착불".to_owned()}else{money(ship.freight)};
+    shipment_line(ui,name,&ship.products,&freight,chosen,in_preview)
 }
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
@@ -264,11 +309,7 @@ fn group_frame(
         if label.hovered() && !in_preview{*trigger=Some(group.id.clone());}
         if open || in_preview{
             components::soft_divider(ui);
-            ui.horizontal(|ui|{
-                ui.label(typography::table_header("수취인"));
-                ui.label(typography::table_header("상품"));
-                ui.label(typography::table_header("운임"));
-            });
+            workflow_table_header(ui);
             for ship in &group.shipments{
                 let chosen=selected.is_some_and(|s|s.shipment_id==ship.id);
                 let label=row(ui,ship,chosen,in_preview && !chosen);
