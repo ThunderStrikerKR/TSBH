@@ -457,7 +457,6 @@ impl BandoEgui {
             "clientId":&client_id,
             "expectedAuthorityRevision":authority_revision,
             "expectedWorkingVersion":source.working_version,
-            "at":chrono::Utc::now().to_rfc3339(),
         });
         let (sender,receiver)=mpsc::channel();
         let gateway=Arc::clone(&self.gateway);
