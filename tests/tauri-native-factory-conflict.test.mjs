@@ -13,12 +13,13 @@ test("native factory conflict IPC is wired through both review surfaces", () => 
   assert.match(nativeReview, /"rules", "factory_conflict_confirmation"/);
   assert.match(lib,/factory_conflict::approve_factory_conflict/);
   assert.match(bridge,/invoke<void>\("approve_factory_conflict", \{ id, row, expectedRevision \}\)/);
-  for(const ui of [history,notification]) {
-    assert.match(ui,/nativeFactoryConflictConfirmation\(/);
-    assert.match(ui,/approveFactoryConflict\(/);
-    assert.doesNotMatch(ui,/await onSave\(next\)/);
-    assert.doesNotMatch(ui,/await window\.bando!\.backup\(\)/);
-  }
+  assert.match(history,/nativeFactoryConflictConfirmation\(/);
+  assert.match(history,/approveFactoryConflict\(/);
+  assert.doesNotMatch(history,/await onSave\(next\)/);
+  assert.doesNotMatch(history,/await window\.bando!\.backup\(\)/);
+  // The current global modal is critical-only, not a second approval surface.
+  assert.match(notification,/isActionRequiredNotification/);
+  assert.doesNotMatch(notification,/nativeFactoryConflictConfirmation|approveFactoryConflict/);
   assert.match(rust,/fn correct_state\(/);
   assert.match(rust,/verified_original\(/);
   assert.match(rust,/backup_before_correction\(/);
