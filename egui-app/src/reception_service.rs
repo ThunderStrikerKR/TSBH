@@ -7,7 +7,7 @@
 
 use serde_json::{json, Value};
 use std::ops::Deref;
-use crate::gateway::{BandoGateway, ReadOperation};
+use crate::{gateway::{BandoGateway, ReadOperation}, source_highlight};
 
 #[derive(Debug)]
 pub struct PriceReference {
@@ -35,6 +35,8 @@ pub struct ReceptionAnalysis {
     pub matched_client_name: Option<String>,
     pub chosen_client_name: Option<String>,
     pub directory_count: usize,
+    /// Rust-owned UTF-16 source locations, projected once per analysis.
+    pub linked_spans: Vec<source_highlight::LinkedSpan>,
 }
 
 impl Deref for ReceptionAnalysis {
@@ -99,6 +101,7 @@ pub fn analyze_raw(
     let analysis = gateway.execute(ReadOperation::AnalyzeOrder, json!({
         "raw": raw, "state": &state, "client": recognition_client,
     }))?;
+    let linked_spans=source_highlight::collect(raw,&analysis);
     let reference = recipients(&analysis).iter()
         .map(|recipient| recipient_reference(gateway, recipient, &state))
         .collect();
@@ -110,6 +113,7 @@ pub fn analyze_raw(
         matched_client_name,
         chosen_client_name,
         directory_count,
+        linked_spans,
     })
 }
 
