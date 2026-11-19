@@ -8,12 +8,7 @@
 
 use serde_json::{json, Value};
 use std::ops::Deref;
-use std::sync::OnceLock;
-
-#[path = "../../src-tauri/src/business_core/recognition/mod.rs"]
-mod recognition;
-#[path = "../../src-tauri/src/business_core/rules/mod.rs"]
-mod rules;
+use crate::gateway::{BandoGateway, ReadOperation};
 
 #[derive(Debug)]
 pub struct PriceReference {
@@ -45,39 +40,30 @@ impl Deref for NativeAnalysis {
     }
 }
 
-fn bundled_state() -> Result<&'static Value, String> {
-    static SEED: OnceLock<Result<Value, String>> = OnceLock::new();
-    SEED.get_or_init(|| {
-        serde_json::from_str(include_str!(
-            "../../src-tauri/resources/state-seed.json"
-        )).map_err(|error| format!("기본 상품 데이터 파싱 실패: {error}"))
-    }).as_ref().map_err(Clone::clone)
-}
-
 /// Analyze a source, then derive separate *read-only* references using the
 /// same pure-Rust rules that React's Tauri bridge calls. Build all results in
 /// the existing worker thread; never run these computations every UI frame.
-pub fn analyze_raw(raw: &str) -> Result<NativeAnalysis, String> {
+pub fn analyze_raw(gateway: &dyn BandoGateway, raw: &str) -> Result<NativeAnalysis, String> {
     if raw.trim().is_empty() {
         return Err("발주원문을 먼저 입력하세요.".to_owned());
     }
-    let state = bundled_state()?;
-    let analysis = recognition::execute("analyze_order", json!({
+    let state = gateway.load_state()?;
+    let analysis = gateway.execute(ReadOperation::AnalyzeOrder, json!({
         "raw": raw,
         "state": state,
     }))?;
     let reference = recipients(&analysis).iter()
-        .map(|recipient| recipient_reference(recipient, state))
+        .map(|recipient| recipient_reference(gateway, recipient, &state))
         .collect();
     Ok(NativeAnalysis { recognition: analysis, reference })
 }
 
-fn recipient_reference(recipient: &Value, state: &Value) -> RecipientReference {
+fn recipient_reference(gateway: &dyn BandoGateway, recipient: &Value, state: &Value) -> RecipientReference {
     let address = text(recipient, "address");
     let (remote, remote_error) = if address.trim().is_empty() {
         (None, None)
     } else {
-        match rules::execute("detect_remote_delivery_area", json!({
+        match gateway.execute(ReadOperation::DetectRemoteDeliveryArea, json!({
             "address": address,
         })) {
             Ok(result) => (Some(result), None),
@@ -86,12 +72,12 @@ fn recipient_reference(recipient: &Value, state: &Value) -> RecipientReference {
     };
 
     let item_prices = recipient.get("items").and_then(Value::as_array)
-        .map(|items| items.iter().map(|item| retail_reference(item, state)).collect())
+        .map(|items| items.iter().map(|item| retail_reference(gateway, item, state)).collect())
         .unwrap_or_default();
     RecipientReference { remote, remote_error, item_prices }
 }
 
-fn retail_reference(item: &Value, state: &Value) -> PriceReference {
+fn retail_reference(gateway: &dyn BandoGateway, item: &Value, state: &Value) -> PriceReference {
     let product_id = text(item, "productId");
     let variant_id = text(item, "variantId");
     if product_id.is_empty() || variant_id.is_empty() {
@@ -108,7 +94,7 @@ fn retail_reference(item: &Value, state: &Value) -> PriceReference {
     // The pure Rust rule requires a nonempty client ID to resolve a price.
     // This explicitly synthetic identity is NEVER saved and only requests
     // the seed's retail-tier reference, not an actual client's billing tier.
-    match rules::execute("resolve_unit_price", json!({
+    match gateway.execute(ReadOperation::ResolveRetailUnitPrice, json!({
         "product": product,
         "variantId": variant_id,
         "client": { "id": "__egui_readonly_retail_reference__", "tier": "retail" },
