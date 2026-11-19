@@ -365,9 +365,6 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
             }
             analysis_bytes=analysis_bytes.checked_add(manual.to_string().len())
                 .ok_or("수동 분류 작업본 크기 초과")?;
-            if draft.working_synced {
-                return Err("운영 저장 후 수동 분류 변경사항을 먼저 다시 저장해야 합니다.".into());
-            }
         }
         if let Some(price)=&draft.pricing_preview {
             let keys=["sourceRaw","orderId","orderType","clientId","authorityRevision",
