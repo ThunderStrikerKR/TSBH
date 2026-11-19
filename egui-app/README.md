@@ -361,3 +361,13 @@ $env:BANDO_EGUI_ENABLE_WORKING_COMMIT = "1"
 - **React/Tauri 기준 재수정:** `src/HubShell.tsx`의 연결 전 단일 버튼, 연결 후 상단 `함께 보기 / 나누어 보기 / 카카오톡 연결 해제`를 egui에 이전했다. 외부 카카오톡 창은 버튼 **아래** 영역에만 배치한다. `src/app/useAppModel.ts`처럼 연결 시 CHAT → MAIN 순서로 선택하고, 대화방 선택 목록은 추가하지 않는다.
 - 이전 egui가 잘못 사용한 카카오톡 칼럼 200pt 최소 폭을 React 392px 기준으로 복원하고, 카카오톡 창을 왼쪽 칼럼 전체에 덮어놓던 배치 및 `패널 너비를 넓혀 주세요` 임의 오류를 제거했다. 함께 보기는 Tauri의 기본창 광고 숨김, 나누어 보기는 기본창 최소 높이·하단 배너를 기준으로 실제 대화창을 배치한다. 모든 연결 해제는 기존 OS 창 위치·스타일을 복구한다.
 - **미검증 경계:** Windows 컴파일 검사와 별개로 실제 카카오톡 창의 다중 대화방, 모니터/DPI, 최소화/복원 동작은 실화면 검증이 필요하다.
+
+## 50차: 실제 처리 중인 발주묶음 egui 1차 이전 (2026-11-20)
+
+- 원본 기준: `src/WorkflowBoard.tsx`, `src/HubWorkspace.tsx`, `src/orders/useNativeWorkflowBoard.ts`, `src/orders/useNativeShipmentRead.ts`, `src/workspace-selection.ts`. 선택과 임시 단계 미리보기는 구분한다.
+- `workflow_board.rs`: 사용자가 명시한 `BANDO_EGUI_BUSINESS_DB`의 운영 v2 DB를 **읽기 전용**으로 조회한다. 기존 Rust `rules/preview_workflow`, `rules/read_shipments`, `rules/preview_order` 및 `output/render_automatic_message`를 게이트웨이로 재사용한다. 업무 단계·운임·단가·총액을 egui에서 재계산하지 않는다.
+- `workflow_board_ui.rs`: 실제 발주묶음·배송건 표시, 선택 묶음 자동 펼침·타 묶음 접기·제목 재클릭 접기, 단계 호버 진입/복귀 250ms, 미리보기 배송행 진입 100ms·복귀 150ms, 카드 좌표를 밀지 않는 임시 오버레이. 실제 선택·미리보기는 분리한다.
+- `main.rs`: 발주묶음에서 선택/호버한 배송건의 실제 발주원문, Rust 자동 메시지, 수취인, 품목 및 운임을 같은 기존 고정 섹션 Rect에 **읽기 전용**으로 표시한다. 원래 선택한 egui 작업본과 자동저장 데이터는 바꾸지 않으며, 원문/상세 스크롤은 주문·배송 식별자로 격리한다. `총 주문`은 그룹 합계가 아닌 기존 Rust `preview_order`의 발주서 합계다.
+- 기존 격리 미확정 발주서 목록은 유지한다. 명시적 운영 DB 연결이 없으면 실제 업무 묶음이나 금액을 지어내지 않고 격리 발주서만 표시한다. 현재 egui 격리 미확정 발주서를 운영 Rust 재조정하여 즉시 새로운 실무 묶음으로 표시하는 경로는 별도로 미이전이다.
+- **미이전/검증 대기:** 단계 진행·취소·묶음 관리·삭제/복구 및 회계·이력·송장에 영향을 주는 **감사·revision 검사·SQLite 저장 경로**, 자동 메시지의 실제 복사/이력 저장, React 세부 디자인/하이라이트 동등성, Windows 실제 마우스/호버/다중 DPI 동작. 이를 구현 완료라고 보고하지 않는다. 기존 React/Tauri 업무 경로와 UI 레이아웃 비율은 변경하지 않았다.
+- Windows 대상 컴파일은 별도 GitHub Actions 실행별로 추적하며, 컴파일만으로 GUI 동작 합격을 판정하지 않는다. 전체 회귀 테스트는 요청에 따라 실행하지 않는다.
