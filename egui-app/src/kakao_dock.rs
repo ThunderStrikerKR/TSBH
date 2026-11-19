@@ -31,14 +31,12 @@ impl KakaoDock {
             let session=self.session.as_mut().ok_or("카카오톡이 연결되지 않았습니다.")?;
             if session.mode==mode {return Ok(());}
             let previous=session.mode;
-            let previous_footer=session.overlap_footer;
             session.mode=mode;
-            // The previously measured footer is invalid after a mode switch.
-            session.overlap_footer=None;
+            // The footer belongs to the Kakao MAIN HWND, not to the view
+            // mode. Re-measuring the already extended HWND would inflate it.
             session.last_sync=None;
             if let Err(reason)=session.sync(rect,scale) {
                 session.mode=previous;
-                session.overlap_footer=previous_footer;
                 session.last_sync=None;
                 // The previous valid mode remains connected.
                 if session.sync(rect,scale).is_err(){self.disconnect();}
@@ -717,9 +715,10 @@ mod native {
             ).collect::<Vec<_>>();
             let base=self.windows.iter().find(|w|w.main && w.alive())
                 .map(|w|w.hwnd);
-            // Cache while the main window is still visible and unextended;
-            // never infer footer height from a previously offscreen HWND.
-            if self.mode==super::DockMode::Together && self.overlap_footer.is_none() {
+            // The ad offset is measured before the initial Together layout
+            // extends the MAIN HWND. Preserve it on Split/Together switches:
+            // reading already extended offscreen DWM bounds is not stable.
+            if self.overlap_footer.is_none() {
                 self.overlap_footer=base.map(measure_footer_extension).transpose()?;
             }
             let chats=self.windows.iter().filter(|w|
@@ -742,7 +741,17 @@ mod native {
                     if unsafe{IsIconic(window.hwnd)}!=0 {continue;}
                     let target=if window.main {
                         if self.mode==super::DockMode::Split {
-                            main_target
+                            // Keep the established MAIN/CHAT dividing line:
+                            // only MAIN extends beneath the chat, concealing
+                            // its bottom advertisement just as in Together.
+                            // Do not extend the active CHAT input composer.
+                            if chats.is_empty(){
+                                main_target
+                            }else{
+                                overlap_main_target(
+                                    main_target,self.overlap_footer.unwrap_or(160)
+                                )
+                            }
                         }else{
                             overlap_main_target(region,self.overlap_footer.unwrap_or(160))
                         }
