@@ -18,6 +18,7 @@ mod client_directory;
 mod client_chooser;
 mod business_state;
 mod native_order_change;
+mod source_highlight;
 mod kakao_context;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
@@ -156,6 +157,8 @@ struct BandoEgui {
     analysis: Option<reception_service::ReceptionAnalysis>,
     analysis_error: Option<String>,
     selected_recipient: usize,
+    source_hover: Option<source_highlight::LinkKey>,
+    link_hover: source_highlight::HoverState,
     analysis_request: u64,
     analysis_pending: bool,
     analysis_due_at: Option<Instant>,
@@ -199,6 +202,8 @@ impl Default for BandoEgui {
             analysis: None,
             analysis_error: None,
             selected_recipient: 0,
+            source_hover: None,
+            link_hover: source_highlight::HoverState::default(),
             analysis_request: 0,
             analysis_pending: false,
             analysis_due_at: None,
@@ -685,6 +690,8 @@ impl BandoEgui {
         self.analysis = None;
         self.analysis_error = None;
         self.selected_recipient = 0;
+        self.source_hover=None;
+        self.link_hover.clear();
         self.analysis_due_at = None;
     }
 
