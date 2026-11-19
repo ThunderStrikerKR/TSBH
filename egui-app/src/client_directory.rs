@@ -79,7 +79,7 @@ fn load_business_from_connection(conn: &rusqlite::Connection) -> Result<(Value, 
         let text: String = row.get(0)
             .map_err(|_| "거래처 자료가 손상됐습니다.".to_owned())?;
         size = size.checked_add(text.len()).ok_or("거래처 목록 크기를 확인할 수 없습니다.")?;
-        if size > MAX_CLIENT_INDEX_BYTES {
+        if size > MAX_CLIENT_INDEX_BYTES as usize {
             return Err("거래처 목록이 최대 2MB를 초과했습니다.".into());
         }
         clients.push(serde_json::from_str::<Value>(&text)
