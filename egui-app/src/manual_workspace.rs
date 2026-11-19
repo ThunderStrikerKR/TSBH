@@ -374,10 +374,21 @@ impl ManualWorkspace {
                     );
                 });
                 ui.separator();
-                // Match React's .manual-workspace override: 34% source and
-                // 66% shipment sheet, not the equal egui default columns.
-                ui.horizontal(|ui|{
-                    let width=ui.available_width();
+                // Match React's 34:66 columns. On narrow windows keep
+                // both minimum widths and scroll the workspace horizontally
+                // instead of letting one panel clip or move the footer.
+                let content_width=ui.available_width().max(
+                    theme::MANUAL_SOURCE_MIN_WIDTH+
+                    theme::MANUAL_SHEET_MIN_WIDTH+
+                    theme::MANUAL_COLUMN_GAP
+                );
+                egui::ScrollArea::horizontal()
+                    .id_salt("manual-columns-horizontal-scroll")
+                    .auto_shrink([false,false])
+                    .show(ui,|outer|{
+                        outer.set_min_width(content_width);
+                        outer.horizontal(|ui|{
+                    let width=content_width;
                     let height=(ui.available_height()
                         -theme::ACTION_STANDARD_HEIGHT-theme::SPACE_24).max(200.0);
                     let source_width=(width*theme::MANUAL_SOURCE_SHARE)
@@ -593,7 +604,8 @@ impl ManualWorkspace {
                             });
                         },
                     );
-                });
+                        });
+                    });
                 ui.separator();
                 ui.horizontal(|footer|{
                     // React manual footer: status stays left; close, then
