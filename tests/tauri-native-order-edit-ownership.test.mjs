@@ -46,9 +46,10 @@ test("selected dealer, waiver and pending freight at save are native results",()
 test("dealer change is one native mutation and cannot reapply stale React draft after save",()=>{
   const view=read("src/OrderDesk.tsx");
   const rules=read("src-tauri/src/business_core/rules/order_edit.rs");
-  const start=view.indexOf("              onDealer={async");
-  assert.ok(start>=0);
-  const change=view.slice(start,view.indexOf("              onSave={onWorkflowSave}",start));
+  const start=view.indexOf("  const chooseDealer = async (c: Client) => {");
+  assert.ok(start>=0,"The native dealer mutation must use a shared guarded handler");
+  const change=view.slice(start,view.indexOf("  if (draft.orderType ===",start));
+  assert.match(view,/onDealer=\{chooseDealer\}/);
   assert.match(change,/action: "change_order_client"/);
   assert.match(change,/if \(!isCurrentOrderInput\(sourceDraft, sourceState\)\)/);
   assert.match(change,/if \(saved\) \{[\s\S]*?await onWorkflowSave\(await nativeReconcileWorkflow/);
