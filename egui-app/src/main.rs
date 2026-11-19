@@ -202,13 +202,13 @@ impl BandoEgui {
             return;
         };
         if self.active_id.as_deref() == Some(id) {
-            self.source_editing = true;
             return;
         }
         self.active_id = Some(item.id);
         self.raw_source = item.raw;
         self.order_type = OrderType::parse(&item.order_type).unwrap_or_default();
-        self.source_editing = true;
+        // Blank receipts show clipboard/type choices; direct input is explicit.
+        self.source_editing = !self.raw_source.is_empty();
         self.clear_source_analysis();
         if !self.raw_source.trim().is_empty() {
             self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
@@ -223,7 +223,11 @@ impl BandoEgui {
         if self.active_id.as_deref().and_then(|id|
             self.drafts.iter().find(|item| item.id == id)
         ).is_some_and(|item| item.raw.trim().is_empty()) {
-            self.source_editing = true;
+            self.source_editing = false;
+            return;
+        }
+        if self.drafts.len() >= 1000 {
+            self.source_save_error = Some("미확정 접수 1,000건을 초과할 수 없습니다.".into());
             return;
         }
         use std::sync::atomic::AtomicU64;
@@ -1530,7 +1534,7 @@ fn main() -> eframe::Result<()> {
             let autosave = source_autosave::SourceAutosave::new(
                 Arc::clone(&backend), restored.revision, cc.egui_ctx.clone()
             );
-            let source_editing = restored.active_id.is_some();
+            let source_editing = !restored.raw.is_empty();
             let saved_type = match OrderType::parse(&restored.order_type) {
                 Ok(kind) => kind,
                 Err(error) => {
