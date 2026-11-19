@@ -50,7 +50,9 @@ pub const WORKFLOW_CHIP_PAD_Y: i8 = 2;
 pub const WORKFLOW_CONTROL_WIDTH: f32 = 140.0;
 pub const WORKFLOW_MANAGE_WIDTH: f32 = 82.0;
 pub const WORKFLOW_TRASH_WIDTH: f32 = 34.0;
-pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = 34.0;
+pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = 42.0;
+pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 18.0;
+pub const WORKFLOW_SUMMARY_LINE_HEIGHT: f32 = 18.0;
 pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
 pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const BRIGHT: Color32 = Color32::WHITE;
@@ -237,11 +239,25 @@ pub fn docked_pane_frame() -> Frame {
 /// Kakao's native HWND uses the whole slot below its toolbar, without the
 /// 16pt work-pane content inset. React's native region has no such padding.
 pub fn kakao_slot_frame() -> Frame {
+    // The outer workspace and 6pt splitters own the Kakao boundary.
+    // Drawing a second perimeter (and reserving a 1pt inset) created a
+    // darker boxed panel unlike the three adjacent docked sections.
     Frame::new()
         .fill(PANEL)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
+        .stroke(Stroke::NONE)
         .corner_radius(CornerRadius::same(0))
-        .inner_margin(1)
+        .inner_margin(0)
+}
+
+/// Border and rounding belong to the reusable source-document surface.
+/// The editor's own frame is disabled so its square corners cannot cover
+/// the approved rounded rect below the dealer card.
+pub fn source_document_frame() -> Frame {
+    Frame::new()
+        .fill(INPUT)
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
+        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
+        .inner_margin(SPACE_4)
 }
 
 pub fn nested_frame() -> Frame {
