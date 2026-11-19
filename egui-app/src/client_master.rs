@@ -1,12 +1,12 @@
 //! egui-only client master. The production customer database is NEVER edited
 //! through this store. Existing Rust catalog client validation owns mutations.
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{params,Connection,TransactionBehavior};
 use serde_json::{json, Value};
 use std::{path::PathBuf, time::Duration};
 use crate::preview_store::PreviewStore;
 
-#[path = "../../src-tauri/src/business_core/catalog_clients.rs"]
-mod native_catalog_clients;
+#[path = "../../src-tauri/src/business_core/catalog_clients/client_mutation.rs"]
+mod native_client_mutation;
 
 const CLIENT_LIMIT: usize = 5000;
 const PAYLOAD_LIMIT: usize = 2 * 1024 * 1024;
@@ -115,7 +115,16 @@ pub fn mutate(expected:u64,action:&str,client:Value)->Result<Value,String> {
         json!({"state":state,"clientId":client.get("id").and_then(Value::as_str)
             .unwrap_or(""),"at":chrono::Utc::now().to_rfc3339()})
     };
-    let transition=native_catalog_clients::execute(action,request)?;
+    let transition=if action=="upsert_client" {
+        native_client_mutation::validate_client(&state,&client)?;
+        native_client_mutation::upsert(&state,&client,"clients")?
+    } else {
+        native_client_mutation::archive_client(
+            &state,
+            client.get("id").and_then(Value::as_str).unwrap_or(""),
+            request.get("at").and_then(Value::as_str).unwrap_or("")
+        )?
+    };
     let next=transition.get("state").ok_or("Rust 거래처 변경 결과가 없습니다.")?;
     let next_clients=next.get("clients").ok_or("거래처 목록이 없습니다.")?;
     validate(next_clients)?;
