@@ -69,6 +69,7 @@ pub fn load() -> Result<Value,String> {
             "revision":state.get("revision").and_then(Value::as_u64).unwrap_or(0),
             "clients":state.get("clients").cloned().unwrap_or_else(||json!([])),
             "products":state.get("products").cloned().unwrap_or_else(||json!([])),
+            "aliases":state.get("aliases").cloned().unwrap_or_else(||json!([])),
             "settings":{"accounts":state.pointer("/settings/accounts").cloned()
                 .unwrap_or_else(||json!([]))},
             "readOnly":true,
@@ -78,7 +79,7 @@ pub fn load() -> Result<Value,String> {
         let catalog=crate::client_directory::attach(json!({}))?;
         return Ok(json!({
             "revision":0,"clients":catalog.get("clients").cloned().unwrap_or_else(||json!([])),
-            "products":[],"settings":{"accounts":[]},"readOnly":true,
+            "products":[],"aliases":[],"settings":{"accounts":[]},"readOnly":true,
         }));
     }
     let conn=connection()?;
@@ -87,6 +88,7 @@ pub fn load() -> Result<Value,String> {
     Ok(json!({
         "revision":revision,"clients":clients,
         "products":catalog.get("products").cloned().unwrap_or_else(||json!([])),
+        "aliases":catalog.get("aliases").cloned().unwrap_or_else(||json!([])),
         "settings":{"accounts":[]},"readOnly":false,
     }))
 }
