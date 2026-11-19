@@ -66,7 +66,6 @@ pub const NAV_HEIGHT: f32 = 38.0;
 pub const MANUAL_DIALOG_MAX_WIDTH: f32 = 1760.0;
 pub const MANUAL_DIALOG_SIDE_GAP: f32 = 36.0;
 pub const MANUAL_DIALOG_VERTICAL_GAP: f32 = 44.0;
-pub const MANUAL_DIALOG_MIN_HEIGHT: f32 = 420.0;
 pub const MANUAL_SOURCE_SHARE: f32 = 0.34;
 pub const MANUAL_SOURCE_MIN_WIDTH: f32 = 300.0;
 pub const MANUAL_SHEET_MIN_WIDTH: f32 = 500.0;
@@ -94,7 +93,6 @@ pub const MANUAL_TABLE_QUANTITY_COL: f32 = 96.0;
 pub const MANUAL_TABLE_ACTION_COL: f32 = 120.0;
 pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
 pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
-pub const MANUAL_SOURCE_ACTIVE_BG: Color32 = Color32::from_rgb(43, 77, 112);
 
 #[derive(Clone, Copy)]
 pub enum ButtonRole {
