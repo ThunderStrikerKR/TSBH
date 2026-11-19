@@ -777,13 +777,13 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1600.0, 900.0])
             .with_min_inner_size([1150.0, 720.0])
-            .with_title("BANDO HUB · egui UI Preview")
+            .with_title("BANDO HUB")
             .with_decorations(false)
             .with_resizable(true),
         ..Default::default()
     };
     eframe::run_native(
-        "BANDO HUB · egui UI Preview",
+        "BANDO HUB",
         options,
         Box::new(move |cc| {
             theme::install(&cc.egui_ctx);
