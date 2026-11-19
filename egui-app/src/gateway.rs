@@ -4,9 +4,9 @@
 //! import native Rust modules, reqwest, Tauri, or a database connection.
 //! Local and future HTTPS adapters preserve the same JSON business contract.
 //!
-//! This preview explicitly allows ONLY the read-only operations enumerated
-//! here; it has no order-saving API. There is never a silent HTTP->local
-//! fallback.
+//! Business operations remain an explicit read-only allowlist. The gateway
+//! also saves *one preview editor source* with revision checking; this is not
+//! a production order nor a confirmation workflow. No HTTP->local fallback.
 
 use serde_json::Value;
 use std::sync::Arc;
