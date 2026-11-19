@@ -253,10 +253,6 @@ impl BandoEgui {
                         if theme::action(ui, "알림", ButtonRole::Standard, self.source_save_error.is_some()).clicked() {
                             self.notifications_open = !self.notifications_open;
                         }
-                        ui.label(
-                            RichText::new("TEST / 격리 DB / 외부 발송 금지")
-                                .size(11.0).color(theme::SELECTED_ORDER)
-                        );
                         // Only unused header space is a drag region. Never
                         // overlap logo, wordmark, menus or window controls.
                         let free_width = ui.available_width();
