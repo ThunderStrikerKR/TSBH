@@ -462,8 +462,11 @@ mod native {
             right:rect.right.min(client_right),
             bottom:rect.bottom.min(client_bottom),
         };
-        if rect.width()<200||rect.height()<250{
-            return Err("카카오톡 배치 영역이 너무 작습니다.".into());
+        // Tauri dock_region_native accepts a region from 100x100 upward.
+        // The shell owns the actual React-sized Kakao minimum; do not add an
+        // unrelated native "resize the pane" requirement.
+        if rect.width()<100||rect.height()<100{
+            return Err("카카오톡 배치 영역을 확인하지 못했습니다.".into());
         }
         Ok(rect)
     }
@@ -485,9 +488,6 @@ mod native {
             let focused=unsafe{GetForegroundWindow()};
             let pid=chosen.pid;
             let current=found.into_iter().filter(|c|c.pid==pid).collect::<Vec<_>>();
-            if !current.iter().any(|c|unsafe{IsIconic(c.hwnd)}==0) {
-                return Err("카카오톡 창이 최소화되어 있습니다. 창을 복원하고 다시 연결하세요.".into());
-            }
             let mut tracked=Vec::new();
             for c in current.iter().take(32){
                 tracked.push(Tracked::new(c)?);
