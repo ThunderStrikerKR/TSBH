@@ -544,11 +544,36 @@ mod native {
             let before=self.windows.iter().filter_map(|w|
                 outer(w.hwnd).ok().map(|rect|(w.hwnd,rect))
             ).collect::<Vec<_>>();
+            let base=self.windows.iter().find(|w|w.main && w.alive())
+                .map(|w|w.hwnd);
+            let chats=self.windows.iter().filter(|w|
+                !w.main && w.alive() && unsafe{IsIconic(w.hwnd)}==0
+            ).map(|w|w.hwnd).collect::<Vec<_>>();
             let layout=(||->Result<(),String>{
-                for w in &self.windows {
-                    if unsafe{IsIconic(w.hwnd)}!=0{continue;}
-                    w.unframe();
-                    move_visual(w.hwnd,region)?;
+                for window in &self.windows {
+                    if unsafe{IsIconic(window.hwnd)}==0{window.unframe();}
+                }
+                // Mirror Tauri native::sync_related: each mode uses a
+                // different MAIN/CHAT geometry, not overlapping every HWND
+                // over the same complete rectangle.
+                let (main_target,chat_target)=if self.mode==super::DockMode::Split {
+                    if let Some(base)=base {
+                        if unsafe{IsIconic(base)}!=0 {(region,region)}
+                        else {stack_targets(region,base,&chats)?}
+                    } else {(region,region)}
+                }else {(region,region)};
+                for window in &self.windows {
+                    if unsafe{IsIconic(window.hwnd)}!=0 {continue;}
+                    let target=if window.main {
+                        if self.mode==super::DockMode::Split {
+                            main_target
+                        }else{
+                            offscreen_main_target(self.hub,window.hwnd,region)?
+                        }
+                    }else if self.mode==super::DockMode::Split && base.is_some(){
+                        chat_target
+                    }else{region};
+                    move_visual(window.hwnd,target)?;
                 }
                 Ok(())
             })();
@@ -567,18 +592,20 @@ mod native {
             let foreground_pid=pid(foreground);
             if foreground_pid==unsafe{GetCurrentProcessId()} ||
                 foreground_pid==self.pid {
-                let top=self.active_chat.or_else(||
-                    self.windows.iter().find(|w|w.main).map(|w|w.hwnd)
+                let visible_chat=self.active_chat.filter(|chat|
+                    chats.contains(chat) && unsafe{IsIconic(*chat)}==0
                 );
-                if let Some(top)=top {
-                    // Keep the active Kakao chat above the hub and other Kakao
-                    // windows. SWP_NOACTIVATE prevents focus theft.
-                    unsafe{
-                        SetWindowPos(top,0,0,0,0,0,
-                            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
-                        SetWindowPos(self.hub,top,0,0,0,0,
-                            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+                if let (Some(base),Some(chat))=(base,visible_chat) {
+                    if base!=chat {
+                        unsafe{SetWindowPos(base,chat,0,0,0,0,
+                            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);}
                     }
+                }
+                if let Some(top)=base.or(visible_chat) {
+                    // Match Tauri: hub immediately behind Kakao, never
+                    // globally HWND_TOPMOST above unrelated applications.
+                    unsafe{SetWindowPos(self.hub,top,0,0,0,0,
+                        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);}
                 }
             }
             Ok(())
