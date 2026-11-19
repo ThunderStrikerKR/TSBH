@@ -316,7 +316,7 @@ impl BandoEgui {
                 .resizable(false)
                 .show(ctx, |ui| {
                     if let Some(error) = &self.source_save_error {
-                        ui.colored_label(theme::DANGER, error);
+                        ui.label(typography::status(error, theme::DANGER));
                     }
                 });
         }
@@ -755,7 +755,7 @@ impl BandoEgui {
                 pane.set_height(review_rect.height());
                 Self::section(pane, "확인할 내용", review_height, |ui| {
                     if let Some(error) = &self.analysis_error {
-                        ui.colored_label(theme::DANGER, error);
+                        ui.label(typography::status(error, theme::DANGER));
                     } else if let Some(analysis) = &self.analysis {
                         let unidentified = analysis.get("unassigned")
                             .and_then(serde_json::Value::as_array)
@@ -764,8 +764,10 @@ impl BandoEgui {
                             .and_then(serde_json::Value::as_array)
                             .map(Vec::len).unwrap_or(0);
                         if unidentified > 0 || candidates > 0 {
-                            ui.colored_label(theme::SELECTED_ORDER,
-                                format!("미분류 {unidentified}건 · 확인 후보 {candidates}건"));
+                            ui.label(typography::status(
+                                &format!("미분류 {unidentified}건 · 확인 후보 {candidates}건"),
+                                theme::SELECTED_ORDER,
+                            ));
                         }
                         let issue_count: usize = reception_service::recipients(analysis).iter()
                             .flat_map(|recipient| recipient.get("items")
@@ -776,8 +778,10 @@ impl BandoEgui {
                                 .map(Vec::len).unwrap_or(0))
                             .sum();
                         if issue_count > 0 {
-                            ui.colored_label(theme::SELECTED_ORDER,
-                                format!("상품 확인 {issue_count}건"));
+                            ui.label(typography::status(
+                                &format!("상품 확인 {issue_count}건"),
+                                theme::SELECTED_ORDER,
+                            ));
                         }
                     }
                 });
@@ -890,7 +894,7 @@ impl BandoEgui {
                                                     ui.with_layout(
                                                         Layout::right_to_left(Align::Center),
                                                         |ui| {
-                                                            ui.label(typography::caption(
+                                                            ui.label(typography::quantity(
                                                                 &reception_service::item_quantity(item)
                                                             ));
                                                         },
@@ -901,9 +905,7 @@ impl BandoEgui {
                                                 {
                                                     for issue in issues.iter().take(3) {
                                                         if let Some(message) = issue.as_str() {
-                                                            ui.colored_label(
-                                                                theme::SELECTED_ORDER, message
-                                                            );
+                                                            ui.label(typography::status(message, theme::SELECTED_ORDER));
                                                         }
                                                     }
                                                 }
