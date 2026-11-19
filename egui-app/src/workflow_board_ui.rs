@@ -173,10 +173,10 @@ fn group_heading(
         );
         // Reserve the four 18pt circles and their gaps BEFORE laying out
         // the dealer name. Without the reservation they overflow the card.
-        // Keep dealer names readable on the minimum 350pt right pane.
-        // Full-size 18pt lights remain on wider cards; the compact 12pt
-        // variant frees space for Korean company names on narrower cards.
-        let signal_size=if header.available_width()<200.0 {
+        // Reserve roughly ten Korean characters at the 350pt pane minimum.
+        // Use compact signals below the width at which the original four
+        // 18pt circles would truncate the dealer name unnecessarily.
+        let signal_size=if header.available_width()<250.0 {
             theme::WORKFLOW_SIGNAL_COMPACT_SIZE
         }else{
             theme::WORKFLOW_SIGNAL_SIZE
@@ -184,11 +184,18 @@ fn group_heading(
         let lights_width=STEP_NAMES.len() as f32*signal_size
             +(STEP_NAMES.len()-1) as f32*theme::WORKFLOW_SIGNAL_GAP;
         let width=(header.available_width()-lights_width-theme::SPACE_4).max(0.0);
-        header.add_sized(
-            [width,theme::WORKFLOW_TITLE_HEIGHT],
-            egui::Label::new(typography::section_heading(title))
-                .truncate().sense(egui::Sense::hover())
-        ).on_hover_text(title);
+        header.allocate_ui_with_layout(
+            Vec2::new(width,theme::WORKFLOW_TITLE_HEIGHT),
+            Layout::left_to_right(Align::Center),
+            |title_ui|{
+                title_ui.set_min_width(width);
+                title_ui.add_sized(
+                    [width,theme::WORKFLOW_TITLE_HEIGHT],
+                    egui::Label::new(typography::section_heading(title))
+                        .truncate().sense(egui::Sense::hover()),
+                ).on_hover_text(title);
+            },
+        );
         lights(header,step,notice,signal_size);
     });
     let response=ui.interact(
