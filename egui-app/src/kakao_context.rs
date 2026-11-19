@@ -164,7 +164,7 @@ mod native {
     }
 
     pub fn probe() -> (Vec<ChatWindow>, Option<String>) {
-        let mut windows = Vec::new();
+        let mut windows: Vec<ChatWindow> = Vec::new();
         unsafe { EnumWindows(Some(collect), &mut windows as *mut _ as isize); }
         let foreground = checked(unsafe { GetForegroundWindow() })
             .and_then(|focus| windows.iter()
