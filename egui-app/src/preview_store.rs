@@ -19,6 +19,12 @@ pub struct WorkingReception {
     pub analysis_evidence: Option<Value>,
     /// Advisory Rust dealer decision, never a confirmed client assignment.
     pub client_match: Option<Value>,
+    /// Verified on each use against the current native chat list.
+    pub chat_handle: Option<String>,
+    pub chat_title: Option<String>,
+    /// Isolated preview selection; never a confirmed order-client edit.
+    pub client_id: Option<String>,
+    pub client_selection: Option<String>, // AUTO or MANUAL
 }
 
 #[derive(Clone, Debug)]
@@ -217,6 +223,10 @@ impl PreviewStore {
             drafts.push(WorkingReception {
                 id: id.to_owned(), raw: source.to_owned(), order_type: kind.to_owned(),
                 analysis_raw, analysis_evidence, client_match,
+                chat_handle: row.get("chatHandle").and_then(Value::as_str).map(str::to_owned),
+                chat_title: row.get("chatTitle").and_then(Value::as_str).map(str::to_owned),
+                client_id: row.get("clientId").and_then(Value::as_str).map(str::to_owned),
+                client_selection: row.get("clientSelection").and_then(Value::as_str).map(str::to_owned),
             });
         }
         // Preserve a previous single-source editing session without changing
@@ -226,6 +236,8 @@ impl PreviewStore {
                 id: "legacy-working-source".into(),
                 raw: raw.clone(), order_type: order_type.clone(),
                 analysis_raw: None, analysis_evidence: None, client_match: None,
+                chat_handle: None, chat_title: None,
+                client_id: None, client_selection: None,
             });
         }
         let active_id = if !active.is_empty() {
@@ -252,6 +264,10 @@ impl PreviewStore {
             "analysisRaw": item.analysis_raw,
             "analysisEvidence": item.analysis_evidence,
             "clientMatch": item.client_match,
+            "chatHandle": item.chat_handle,
+            "chatTitle": item.chat_title,
+            "clientId": item.client_id,
+            "clientSelection": item.client_selection,
         })).collect());
         let encoded = payload.to_string();
         let mut conn = self.open_connection()?;
@@ -294,6 +310,18 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
         }
         bytes = bytes.checked_add(draft.raw.len())
             .ok_or("접수 원문 총 크기가 너무 큽니다.")?;
+        // A new/cleared selection must not masquerade as a confirmed customer.
+        if draft.chat_handle.is_some() != draft.chat_title.is_some() ||
+           draft.chat_handle.as_deref().is_some_and(|x| x.trim().is_empty()) ||
+           draft.chat_title.as_deref().is_some_and(|x| x.trim().is_empty()) {
+            return Err("대화창 연결 정보가 올바르지 않습니다.".into());
+        }
+        match (draft.client_id.as_deref(), draft.client_selection.as_deref()) {
+            (None, None) => {}
+            (Some(id), Some(source)) if !id.trim().is_empty() &&
+                matches!(source, "AUTO" | "MANUAL") => {}
+            _ => return Err("거래처 선택 상태가 올바르지 않습니다.".into()),
+        }
         match (&draft.analysis_raw, &draft.analysis_evidence, &draft.client_match) {
             (None, None, None) => {}
             (Some(raw), Some(evidence), Some(match_result)) if raw == &draft.raw &&
