@@ -543,20 +543,47 @@ impl BandoEgui {
                     Layout::left_to_right(Align::Center),
                     |bar| {
                         bar.spacing_mut().item_spacing.x = theme::SPACE_8;
-                        // Keep the visible mark and wordmark on ONE centered
-                        // baseline. Their private 2pt gap must not inherit
-                        // the wider global navigation button spacing.
-                        // Brand remains display-only (not a drag/click target).
-                        bar.horizontal_centered(|brand| {
-                            brand.spacing_mut().item_spacing.x = theme::SPACE_4 / 2.0;
-                            if let Some(texture) = &self.brand_texture {
-                                brand.add(egui::Image::new((
-                                    texture.id(),
-                                    Vec2::splat(theme::BRAND_ICON_SIZE),
-                                )));
-                            }
-                            brand.label(typography::brand_heading("BANDO HUB"));
-                        });
+                        // The nested horizontal_centered row used the font
+                        // line box for layout, leaving the visible capitals
+                        // above the icon's optical center. Allocate ONE fixed
+                        // brand slot and paint both elements against its
+                        // explicit vertical center; no click/hover/drag area.
+                        let wordmark = typography::brand_galley(bar, "BANDO HUB");
+                        let icon_and_gap = if self.brand_texture.is_some() {
+                            theme::BRAND_ICON_SIZE + theme::SPACE_4 / 2.0
+                        } else {
+                            0.0
+                        };
+                        let (_, brand_slot) = bar.allocate_space(Vec2::new(
+                            icon_and_gap + wordmark.size().x,
+                            theme::HEADER_HEIGHT,
+                        ));
+                        if let Some(texture) = &self.brand_texture {
+                            let icon_rect = Rect::from_center_size(
+                                egui::pos2(
+                                    brand_slot.left() + theme::BRAND_ICON_SIZE / 2.0,
+                                    brand_slot.center().y,
+                                ),
+                                Vec2::splat(theme::BRAND_ICON_SIZE),
+                            );
+                            bar.painter().image(
+                                texture.id(),
+                                icon_rect,
+                                Rect::from_min_max(
+                                    egui::Pos2::ZERO, egui::pos2(1.0, 1.0),
+                                ),
+                                egui::Color32::WHITE,
+                            );
+                        }
+                        bar.painter().galley(
+                            egui::pos2(
+                                brand_slot.left() + icon_and_gap,
+                                brand_slot.center().y - wordmark.size().y / 2.0
+                                    + typography::BRAND_OPTICAL_CENTER_Y,
+                            ),
+                            wordmark,
+                            theme::TEXT,
+                        );
                         bar.add_space(theme::SPACE_12);
                         for page in Page::ALL {
                             let role = if self.page == page {
