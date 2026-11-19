@@ -470,7 +470,7 @@ mod native {
     pub struct Session{
         hub:Hwnd,pid:u32,windows:Vec<Tracked>,active_chat:Option<Hwnd>,
         pub(super) mode:super::DockMode,
-        last_region:Option<Rect>,last_sync:Option<Instant>,
+        last_region:Option<Rect>,pub(super) last_sync:Option<Instant>,
     }
     impl Session{
         pub fn connect()->Result<Self,String>{
