@@ -540,13 +540,19 @@ impl BandoEgui {
                 Ok(result)=>{
                     let version=result.get("workingVersion")
                         .and_then(serde_json::Value::as_u64);
+                    let confirmed_revision=result.get("authorityRevision")
+                        .and_then(serde_json::Value::as_u64);
                     let valid=version.is_some_and(|v|v>0) &&
                         result.get("orderId").and_then(serde_json::Value::as_str)
                             ==Some(pending.order_id.as_str()) &&
                         result.get("clientId").and_then(serde_json::Value::as_str)
                             ==Some(pending.client_id.as_str()) &&
-                        result.get("authorityRevision").and_then(serde_json::Value::as_u64)
-                            ==Some(pending.authority_revision);
+                        confirmed_revision.is_some() &&
+                        pending.authority_revision.is_none_or(|rev|
+                            confirmed_revision==Some(rev)) &&
+                        result.get("manualApplied").and_then(serde_json::Value::as_bool)
+                            ==Some(pending.submitted_manual.is_some()) &&
+                        result.get("linePrices").and_then(serde_json::Value::as_array).is_some();
                     if !valid {
                         self.working_sync_error=Some(
                             "운영 주문이 저장됐을 수 있지만 확인 응답이 일치하지 않습니다. 다시 저장하지 말고 작업본을 확인하세요.".into()
@@ -564,27 +570,31 @@ impl BandoEgui {
                     row.working_version=version;
                     let same_input=row.raw==pending.source_raw &&
                         row.order_type==pending.order_type &&
-                        row.client_id.as_deref()==Some(pending.client_id.as_str());
-                    row.working_synced=same_input && row.pricing_preview.as_ref()
-                        .is_some_and(|quote|
-                            quote.get("sourceRaw").and_then(serde_json::Value::as_str)
-                                ==Some(pending.source_raw.as_str()) &&
-                            quote.get("authorityRevision")
-                                .and_then(serde_json::Value::as_u64)
-                                ==Some(pending.authority_revision)
-                        );
-                    if row.working_synced {
-                        if let Some(quote)=row.pricing_preview.as_mut() {
-                            for (source,target) in [
-                                ("subtotal","subtotal"),("shippingFee","shippingFee"),
-                                ("vatAmount","vatAmount"),("total","total")
-                            ] {
-                                if let Some(amount)=result.get(source) {
-                                    quote[target]=amount.clone();
-                                }
-                            }
-                        }
-                    } else {
+                        row.client_id.as_deref()==Some(pending.client_id.as_str()) &&
+                        row.manual_model==pending.submitted_manual;
+                    if same_input {
+                        // The Tauri helper's output is the only authoritative
+                        // price/freight quote for the employee's manual draft.
+                        // The UI never reproduces native calculation rules.
+                        row.pricing_preview=Some(serde_json::json!({
+                            "sourceRaw":pending.source_raw,
+                            "orderId":pending.order_id,
+                            "orderType":pending.order_type,
+                            "clientId":pending.client_id,
+                            "authorityRevision":confirmed_revision,
+                            "status":"REVIEW",
+                            "shippingFee":result.get("shippingFee"),
+                            "shippingVersion":result.get("shippingVersion"),
+                            "vatAmount":result.get("vatAmount"),
+                            "subtotal":result.get("subtotal"),
+                            "total":result.get("total"),
+                            "notified":false,
+                            "paid":false,
+                            "linePrices":result.get("linePrices"),
+                        }));
+                    }
+                    row.working_synced=same_input && row.pricing_preview.is_some();
+                    if !same_input {
                         self.working_sync_error=Some(
                             "운영 작업본은 저장됐지만 이후 수정한 내용은 반영되지 않았습니다.".into()
                         );
