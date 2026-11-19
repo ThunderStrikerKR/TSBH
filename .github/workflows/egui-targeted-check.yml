@@ -1,3 +1,4 @@
+# Manual working-reception bridge: final Windows compile and native replay tests.
 name: Egui native targeted compile check
 on:
   push:
