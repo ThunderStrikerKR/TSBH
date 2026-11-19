@@ -81,8 +81,10 @@ test("native Rust pricing/shipping effects protect persisted records and explici
   assert.doesNotMatch(source, /recommendShipping\(previous, state\)/,
     "React must not silently revert to TypeScript tariff computation");
   const orderDesk = readFileSync(new URL("../src/OrderDesk.tsx", import.meta.url), "utf8");
-  assert.match(orderDesk, /onDealer=\{async \(c\) => \{[\s\S]*?action: "change_order_client"/,
-    "Dealer change must call the compiled Rust price and invoice reducer");
+  assert.match(orderDesk,/const chooseDealer = async \(c: Client\) => \{/);
+  assert.match(orderDesk,/action: "change_order_client"/);
+  assert.match(orderDesk,/onDealer=\{chooseDealer\}/,
+    "Dealer choice must use the shared guarded native price and invoice reducer");
   assert.match(orderDesk, /nativeReconcileWorkflow\(sourceState, next\)/,
     "Saved dealer edits must run Rust workflow reconciliation");
 });
