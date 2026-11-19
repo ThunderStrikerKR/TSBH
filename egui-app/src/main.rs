@@ -1967,6 +1967,7 @@ impl BandoEgui {
 
         let mut client_choice: Option<String> = None;
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
+        let mut manual_clicked=false;
         let mut sync_clicked=false;
         let mut refresh_price:Option<String>=None;
         ui.scope_builder(
@@ -2014,6 +2015,19 @@ impl BandoEgui {
                                     }
                                 }
                             }
+                        }
+                    }
+                    if self.active_id.as_deref().and_then(|id|
+                        self.drafts.iter().find(|row|row.id==id)
+                    ).is_some_and(|row|
+                        row.analysis_raw.as_deref()==Some(self.raw_source.as_str()) &&
+                        row.analysis_evidence.is_some()
+                    ) {
+                        if theme::action(ui,"수동 분류",ButtonRole::Standard,
+                            self.manual_workspace.is_none() &&
+                            self.client_change.is_none() && self.working_sync.is_none()
+                        ).clicked() {
+                            manual_clicked=true;
                         }
                     }
                     if let Some(error) = &self.analysis_error {
@@ -2103,6 +2117,9 @@ impl BandoEgui {
         }
         if sync_clicked {
             self.start_working_sync(ui.ctx());
+        }
+        if manual_clicked {
+            self.open_manual_workspace(ui.ctx());
         }
         components::paint_dock_splitter(ui, first_sep, false, false);
 
@@ -2382,6 +2399,7 @@ impl eframe::App for BandoEgui {
         self.show_replacement_confirmation(ctx);
         if self.page == Page::Reception {
             self.show_client_chooser(ctx);
+            self.show_manual_workspace(ctx);
         }
         self.frameless_resize(ctx);
     }
