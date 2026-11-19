@@ -2374,12 +2374,12 @@
         "egui-app/src/theme.rs"
       ],
       "gates": {
-        "patch": "SOURCE_UPDATED: Rust board and cross-pane integration through 6fd1d2f; UI visual corrections 84c46c8, 57aa735, d4c60b9, 621c777, 80107f4, 57a2c80, 9a26bd7, 8639683, d84cb57, 9eb596f; new controls disabled pending audited write",
+        "patch": "SOURCE_UPDATED: Rust board and cross-pane integration through 6fd1d2f; UI visual corrections 84c46c8, 57aa735, d4c60b9, 621c777, 80107f4, 57a2c80, 9a26bd7, 8639683, d84cb57, 9eb596f; new controls disabled pending audited write; exact React 18px staged signal parity f90b8b8 + 484052d",
         "unit": "NOT_EXECUTED: no new broad regression suite; focused workflow_board formatting test added but not executed",
         "differential": "CODE REVIEW: React JSX and workflow.css/workflow-states.css geometry and colors contrasted, code patched; screenshots NOT matched",
         "action": "NOT EXECUTED: real Windows GUI card width, click, fold, hover, scroll and mixed-draft presentation not yet observed",
-        "ci": "PASS for prior target c258426 on Windows build run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44627406251; latest color/preview patch awaiting final compile",
-        "windows": "NOT EXECUTED: same-window/DPI React vs egui screenshot not compared; functional migration remains incomplete"
+        "ci": "PASS: Windows Tauri cargo check and standalone egui cargo check on final patch source 961fd381, https://github.com/ThunderStrikerKR/TSBH/actions/runs/44627971857",
+        "windows": "NOT EXECUTED: Windows GUI launch, actual screenshot overlay/click/hover, same-size React comparison still needed; source+compile is not visual parity"
       }
     }
   ],
