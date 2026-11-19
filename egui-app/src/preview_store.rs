@@ -25,6 +25,9 @@ pub struct WorkingReception {
     /// Isolated preview selection; never a confirmed order-client edit.
     pub client_id: Option<String>,
     pub client_selection: Option<String>, // AUTO or MANUAL
+    /// Small, source-bound pricing/freight result of the real Rust rules.
+    /// Never store the native Order or the full live client/state here.
+    pub pricing_preview: Option<Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -227,6 +230,7 @@ impl PreviewStore {
                 chat_title: row.get("chatTitle").and_then(Value::as_str).map(str::to_owned),
                 client_id: row.get("clientId").and_then(Value::as_str).map(str::to_owned),
                 client_selection: row.get("clientSelection").and_then(Value::as_str).map(str::to_owned),
+                pricing_preview: row.get("pricingPreview").filter(|v| !v.is_null()).cloned(),
             });
         }
         // Preserve a previous single-source editing session without changing
@@ -237,7 +241,7 @@ impl PreviewStore {
                 raw: raw.clone(), order_type: order_type.clone(),
                 analysis_raw: None, analysis_evidence: None, client_match: None,
                 chat_handle: None, chat_title: None,
-                client_id: None, client_selection: None,
+                client_id: None, client_selection: None, pricing_preview: None,
             });
         }
         let active_id = if !active.is_empty() {
@@ -268,6 +272,7 @@ impl PreviewStore {
             "chatTitle": item.chat_title,
             "clientId": item.client_id,
             "clientSelection": item.client_selection,
+            "pricingPreview": item.pricing_preview,
         })).collect());
         let encoded = payload.to_string();
         let mut conn = self.open_connection()?;
@@ -321,6 +326,30 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
             (Some(id), Some(source)) if !id.trim().is_empty() &&
                 matches!(source, "AUTO" | "MANUAL") => {}
             _ => return Err("거래처 선택 상태가 올바르지 않습니다.".into()),
+        }
+        if let Some(price)=&draft.pricing_preview {
+            let keys=["sourceRaw","orderId","clientId","authorityRevision",
+                "status","shippingFee","shippingVersion","vatAmount",
+                "notified","paid","linePrices"];
+            let map=price.as_object()
+                .ok_or("Rust 가격 계산 결과는 JSON 객체여야 합니다.")?;
+            if map.keys().any(|key|!keys.contains(&key.as_str())) ||
+               price.get("sourceRaw").and_then(Value::as_str)!=Some(draft.raw.as_str()) ||
+               price.get("orderId").and_then(Value::as_str)!=Some(draft.id.as_str()) ||
+               price.get("clientId").and_then(Value::as_str)!=draft.client_id.as_deref() ||
+               price.get("authorityRevision").and_then(Value::as_u64).is_none() ||
+               price.get("linePrices").and_then(Value::as_array).is_none() {
+                return Err("Rust 주문 가격 근거가 원문 또는 거래처와 일치하지 않습니다.".into());
+            }
+            for line in price["linePrices"].as_array().into_iter().flatten() {
+                let allowed=["itemId","productId","variantId","quantity","unitPrice"];
+                let fields=line.as_object().ok_or("Rust 주문 품목 가격 결과 오류")?;
+                if fields.keys().any(|key|!allowed.contains(&key.as_str())) {
+                    return Err("Rust 계산 결과에 허용하지 않은 개인정보가 포함됐습니다.".into());
+                }
+            }
+            analysis_bytes=analysis_bytes.checked_add(price.to_string().len())
+                .ok_or("Rust 계산 결과 총 크기 초과")?;
         }
         match (&draft.analysis_raw, &draft.analysis_evidence, &draft.client_match) {
             (None, None, None) => {}
