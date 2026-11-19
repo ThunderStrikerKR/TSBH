@@ -15,11 +15,14 @@ test("factory reply status cannot be invalidated by an unrelated order change",(
   const rust=read("src-tauri/src/business_core/rules/factory_reply.rs");
   const part=rust.slice(rust.indexOf("fn review_list("),rust.indexOf("pub(super) fn execute("));
   assert.match(part,/rows\(state,"factoryReplies"\)/);
-  for(const path of ["src/FactoryReplyHistory.tsx","src/FactoryNotifications.tsx"]){
-    const src=read(path);
-    assert.match(src,/factoryReplies: state.factoryReplies/);
-    assert.match(src,/\[state.factoryReplies\]/);
-    assert.match(src,/nativeReview\?\.source === reviewSource/);
-    assert.match(src,/"factory_reply_review_statuses", \{ state: reviewSource/);
-  }
+  const history=read("src/FactoryReplyHistory.tsx");
+  assert.match(history,/factoryReplies: state.factoryReplies/);
+  assert.match(history,/\[state.factoryReplies\]/);
+  assert.match(history,/nativeReview\?\.source === reviewSource/);
+  assert.match(history,/"factory_reply_review_statuses", \{ state: reviewSource/);
+  // Global notifications now show critical infrastructure errors only,
+  // never a second, stale copy of factory reply review projections.
+  const modal=read("src/FactoryNotifications.tsx");
+  assert.doesNotMatch(modal,/factory_reply_review_statuses|factoryReplies: state.factoryReplies/);
+  assert.match(modal,/isActionRequiredNotification/);
 });
