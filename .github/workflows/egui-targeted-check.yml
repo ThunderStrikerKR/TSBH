@@ -1,4 +1,4 @@
-# Final Windows compile: Kakao HWND positioning in allocated slot and click-only notices.
+# Targeted Windows compile: Kakao identity icon, compact three-action toolbar and dock body alignment.
 name: Tauri native CLI executable compile check
 on:
   push:
