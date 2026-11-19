@@ -14,11 +14,13 @@ mod preview_store;
 mod source_autosave;
 mod clipboard_intake;
 mod client_directory;
+mod kakao_context;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
 use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
 use preview_store::{WorkingReception, WorkingSource};
+use kakao_context::{ChatWindow, KakaoTracker};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::{self, Receiver},
@@ -77,10 +79,12 @@ struct OcrReview {
     texture: egui::TextureHandle,
     width: usize,
     height: usize,
+    chat: Option<ChatWindow>,
 }
 struct PendingReplace {
     text: String,
     order_type: OrderType,
+    chat: Option<ChatWindow>,
 }
 
 /// A drag always measures displacement from the initial pane widths.
@@ -110,6 +114,10 @@ struct BandoEgui {
     source_editing: bool,
     order_type: OrderType,
     clipboard_monitor: ClipboardMonitor,
+    kakao_tracker: KakaoTracker,
+    kakao_connected: bool,
+    kakao_choice: Option<String>,
+    clipboard_chat: Option<ChatWindow>,
     clipboard_busy: bool,
     ocr_processing: bool,
     clipboard_cancel: Arc<AtomicBool>,
@@ -145,6 +153,10 @@ impl Default for BandoEgui {
             source_editing: false,
             order_type: OrderType::Agency,
             clipboard_monitor: ClipboardMonitor::default(),
+            kakao_tracker: KakaoTracker::default(),
+            kakao_connected: false,
+            kakao_choice: None,
+            clipboard_chat: None,
             clipboard_busy: false,
             ocr_processing: false,
             clipboard_cancel: Arc::new(AtomicBool::new(false)),
@@ -247,6 +259,8 @@ impl BandoEgui {
             id: id.clone(), raw: String::new(),
             order_type: OrderType::Agency.as_str().to_owned(),
             analysis_raw: None, analysis_evidence: None, client_match: None,
+            chat_handle: None, chat_title: None,
+            client_id: None, client_selection: None,
         });
         self.select_reception(&id, ctx);
     }
@@ -284,10 +298,26 @@ impl BandoEgui {
         self.analysis = None;
         self.analysis_error = None;
         self.analysis_pending = true;
+        let association = self.active_id.as_deref()
+            .and_then(|id| self.drafts.iter().find(|item| item.id == id));
+        // A persisted HWND is never trusted without a current verified
+        // handle+title pair. A reused HWND cannot silently select a dealer.
+        let chat_handle = association.and_then(|draft| {
+            let handle = draft.chat_handle.as_deref()?;
+            let title = draft.chat_title.as_deref()?;
+            self.kakao_tracker.verified(handle)
+                .filter(|chat| chat.title == title).map(|_| handle.to_owned())
+        });
+        let (windows, active_chat_handle) = self.kakao_tracker.context(chat_handle.as_deref());
+        let manual_client_id = association.filter(|draft|
+            draft.client_selection.as_deref() == Some("MANUAL")
+        ).and_then(|draft| draft.client_id.clone());
         let (sender, receiver) = mpsc::channel();
         self.analysis_receiver = Some(receiver);
         std::thread::spawn(move || {
-            let result = reception_service::analyze_raw(gateway.as_ref(), &source);
+            let result = reception_service::analyze_raw(
+                gateway.as_ref(), &source, windows, active_chat_handle, manual_client_id
+            );
             let _ = sender.send((request, result));
             context.request_repaint();
         });
@@ -329,6 +359,13 @@ impl BandoEgui {
                             item.analysis_raw = Some(self.raw_source.clone());
                             item.analysis_evidence = Some(analysis.recognition.clone());
                             item.client_match = Some(analysis.client_match.clone());
+                            if item.client_selection.as_deref() != Some("MANUAL") {
+                                item.client_id = analysis.client_match.get("clientId")
+                                    .and_then(serde_json::Value::as_str)
+                                    .map(str::to_owned);
+                                item.client_selection =
+                                    item.client_id.as_ref().map(|_| "AUTO".to_owned());
+                            }
                             changed_snapshot = true;
                         }
                     }
