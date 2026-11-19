@@ -12,6 +12,7 @@ mod notification_store;
 mod relational_store;
 mod working_receptions;
 mod egui_reception_bridge;
+mod egui_manual_commit;
 mod sale_unit_migration;
 mod product_name_enrichment;
 mod business_core;
