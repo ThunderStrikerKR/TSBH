@@ -58,10 +58,10 @@ pub fn install(ctx: &egui::Context) {
     style.visuals.widgets.inactive.bg_fill = RAISED;
     style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(53, 53, 53);
     style.visuals.widgets.active.bg_fill = Color32::from_rgb(61, 61, 61);
-    style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, BORDER);
-    style.visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, BORDER);
+    style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, BORDER);
+    style.visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER);
     style.visuals.selection.bg_fill = SELECTION.linear_multiply(0.3);
-    style.visuals.selection.stroke = Stroke::new(1.0, SELECTION);
+    style.visuals.selection.stroke = Stroke::new(1.0_f32, SELECTION);
     style.spacing.item_spacing = Vec2::new(SPACING, SPACING);
     style.spacing.button_padding = Vec2::new(12.0, 8.0);
     style.text_styles.insert(TextStyle::Heading, FontId::proportional(20.0));
@@ -90,7 +90,7 @@ pub fn install(ctx: &egui::Context) {
 pub fn section_frame() -> Frame {
     Frame::new()
         .fill(PANEL)
-        .stroke(Stroke::new(1.0, BORDER))
+        .stroke(Stroke::new(1.0_f32, BORDER))
         .corner_radius(CornerRadius::same(PANEL_RADIUS))
         .inner_margin(SECTION_PADDING)
 }
@@ -98,7 +98,7 @@ pub fn section_frame() -> Frame {
 pub fn nested_frame() -> Frame {
     Frame::new()
         .fill(INPUT)
-        .stroke(Stroke::new(1.0, DIVIDER))
+        .stroke(Stroke::new(1.0_f32, DIVIDER))
         .corner_radius(CornerRadius::same(CONTROL_RADIUS))
         .inner_margin(12.0)
 }
@@ -120,9 +120,9 @@ pub fn caption(text: &str) -> RichText {
 }
 
 pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
-    let (height, fill, color, stroke) = match role {
+    let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
         ButtonRole::Primary => (36.0, Color32::from_rgb(238, 238, 238), BRIGHT_TEXT, Stroke::NONE),
-        ButtonRole::Standard => (34.0, RAISED, TEXT, Stroke::new(1.0, BORDER)),
+        ButtonRole::Standard => (34.0, RAISED, TEXT, Stroke::new(1.0_f32, BORDER)),
         ButtonRole::Emphasized => (34.0, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Quiet => (32.0, PANEL, SECONDARY, Stroke::NONE),
         ButtonRole::Danger => (34.0, Color32::from_rgb(84, 44, 48), DANGER, Stroke::NONE),
