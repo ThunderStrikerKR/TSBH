@@ -126,6 +126,31 @@ pub fn flexible_text_field(
     ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
 }
 
+/// Shared compact spreadsheet cell. Selection is an inset border;
+/// hovered cells do not resize the row, and a selected cell does not
+/// borrow the main navigation style.
+pub fn manual_table_cell(ui:&mut Ui,value:&str,width:f32,selected:bool)->Response {
+    let label=if value.trim().is_empty(){"미입력"}else{value};
+    let border=if selected {
+        Stroke::new(2.0,theme::SELECTED_ORDER)
+    }else{
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    };
+    ui.add_sized(
+        Vec2::new(width,theme::MANUAL_TABLE_ROW_HEIGHT),
+        egui::Button::new(typography::body(label))
+            .fill(if selected{theme::RAISED}else{theme::INPUT})
+            .stroke(border)
+            .corner_radius(0),
+    )
+}
+pub fn manual_table_heading(ui:&mut Ui,label:&str,width:f32){
+    ui.add_sized(
+        Vec2::new(width,theme::MANUAL_TABLE_HEADER_HEIGHT),
+        egui::Label::new(typography::field_label(label)),
+    );
+}
+
 /// A field group's label and editor share the same baseline and label width.
 pub fn labeled_field(
     ui: &mut Ui,
