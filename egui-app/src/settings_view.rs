@@ -644,24 +644,180 @@ impl SettingsView{
             }
         });
     }
-    fn show_data(&mut self,ui:&mut Ui){
-        section(ui,"접수 원문 감사 보관함",|area|{
-            area.label(typography::caption(
-                "운영 접수 원문과 정정 이력은 원본 감사 저장소에서 관리됩니다."
-            ));
+    fn show_data(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
+        let business=self.source.get("mode").and_then(Value::as_str)==Some("business");
+        let reading=self.data_request.is_some()||self.loading.is_some();
+        section(ui,"접수 원문 감사 보관함",|panel|{
+            if theme::action(panel,
+                if self.data_request.as_ref().is_some_and(|(op,_)|op=="archive"){
+                    "기록 조회 중…"
+                }else{"감사 기록 열기"},ButtonRole::Standard,
+                business&&!reading
+            ).clicked(){
+                self.data_action("archive",None,Arc::clone(&gateway),panel.ctx().clone());
+            }
         });
         ui.add_space(theme::SPACE_12);
-        section(ui,"데이터 백업 및 복구",|area|{
-            area.label(typography::caption(
-                "주문과 감사 기록을 포함하는 운영 데이터 백업은 기존 Tauri 백업 저장소에서 관리됩니다."
-            ));
+        section(ui,"데이터 백업 및 복구",|panel|{
+            panel.horizontal_wrapped(|actions|{
+                if theme::action(actions,"지금 백업",ButtonRole::Standard,
+                    business&&!self.read_only()&&!reading).clicked(){
+                    self.data_action(
+                        "backup",None,Arc::clone(&gateway),actions.ctx().clone()
+                    );
+                }
+                if theme::action(actions,"백업 목록",ButtonRole::Standard,
+                    business&&!reading).clicked(){
+                    self.data_action(
+                        "backups",None,Arc::clone(&gateway),actions.ctx().clone()
+                    );
+                }
+            });
+            for filename in self.backups.clone(){
+                components::soft_divider(panel);
+                let name=std::path::Path::new(&filename).file_name()
+                    .and_then(|p|p.to_str()).unwrap_or(&filename);
+                let policy=if name.starts_with("monthly-"){
+                    "월간 최초 자동 백업 (영구 보관)"
+                }else if name.starts_with("auto-"){
+                    "일반 자동 백업 (30일 보관)"
+                }else if name.starts_with("pre-restore-"){
+                    "복원 직전 안전 백업 (영구 보관)"
+                }else if name.starts_with("manual-"){
+                    "수동 백업 (영구 보관)"
+                }else{
+                    "기존 백업 (자동 삭제 안 함)"
+                };
+                panel.horizontal_wrapped(|row|{
+                    row.vertical(|name_column|{
+                        name_column.label(typography::body(name));
+                        name_column.label(typography::caption(policy));
+                    });
+                    if theme::action(row,"이 백업으로 복구",
+                        ButtonRole::Standard,
+                        !self.read_only()&&!reading).clicked(){
+                        self.restore_target=Some(filename.clone());
+                    }
+                });
+            }
         });
         ui.add_space(theme::SPACE_12);
-        section(ui,"업무 데이터 저장",|area|{
-            area.label(typography::body(
-                "Windows AppData의 com.bandostand.bandohub.tauri / bando-hub-v001.sqlite"
-            ));
+        section(ui,"업무 데이터 저장",|panel|{
+            if business{
+                panel.label(typography::body(
+                    "Windows AppData / com.bandostand.bandohub.tauri / bando-hub-v001.sqlite"
+                ));
+            }else if let Ok(store)=crate::preview_store::PreviewStore::initialize(){
+                panel.label(typography::body(
+                    &store.path().to_string_lossy()
+                ));
+            }
         });
+    }
+    pub fn has_data_modal(&self)->bool{
+        self.archive_open||self.restore_target.is_some()
+    }
+    pub fn show_data_modals(
+        &mut self,ctx:&Context,area:egui::Rect,gateway:Arc<dyn BandoGateway>
+    ){
+        if self.archive_open{
+            components::modal_backdrop(ctx,"settings-audit-backdrop",false);
+            let mut open=true;
+            components::modal_window(
+                "접수 원문 감사 보관함","settings-audit-records",area
+            ).open(&mut open).resizable(true)
+              .default_width(720.0).show(ctx,|ui|{
+                components::flexible_text_field(
+                    ui,&mut self.archive_query,ui.available_width(),
+                    "원문 / 담당자 / 주문 ID 검색"
+                );
+                let matches=self.archive.as_ref().into_iter().flatten()
+                    .filter(|row|self.archive_query.trim().is_empty() ||
+                        row.to_string().to_lowercase().contains(
+                            &self.archive_query.trim().to_lowercase()
+                        )).collect::<Vec<_>>();
+                ui.label(typography::caption(&format!("{}건 조회",matches.len())));
+                egui::ScrollArea::vertical().id_salt("settings-audit-records-scroll")
+                    .max_height(area.height()*0.62)
+                    .show(ui,|entries|{
+                        for row in matches{
+                            let id=field(row,"id");
+                            let order_id=field(row,"orderId");
+                            let record=&row["record"];
+                            let at=field(record,"at");
+                            let actor=record.get("actor").and_then(Value::as_str)
+                                .filter(|v|!v.is_empty()).unwrap_or("담당자 미확인");
+                            let correction=id.starts_with("correction:")||
+                                id.starts_with("legacy-correction:");
+                            let unverified=record.get("verified")==Some(&Value::Bool(false));
+                            let title=format!(
+                                "{} / {} / {} / {}{}",
+                                order_id,at,actor,
+                                if correction{"원문 정정"}else{"최초 접수"},
+                                if unverified{" (과거 자료 / 독립 감사 미확인)"}else{""}
+                            );
+                            entries.collapsing(title,|detail|{
+                                if correction{
+                                    detail.label(typography::field_label(
+                                        "정정 전 작업용 원문"
+                                    ));
+                                    detail.add(egui::Label::new(typography::body(
+                                        &field(record,"before")
+                                    )).selectable(true));
+                                    detail.label(typography::field_label(
+                                        "정정 후 작업용 원문"
+                                    ));
+                                    detail.add(egui::Label::new(typography::body(
+                                        &field(record,"after")
+                                    )).selectable(true));
+                                    detail.label(typography::caption(&format!(
+                                        "정정 사유: {}",
+                                        record.get("reason").and_then(Value::as_str)
+                                            .filter(|v|!v.is_empty())
+                                            .unwrap_or("과거 기록 / 사유 미확인")
+                                    )));
+                                }else{
+                                    detail.label(typography::field_label(
+                                        "최초 접수 원문"
+                                    ));
+                                    detail.add(egui::Label::new(typography::body(
+                                        &field(record,"original")
+                                    )).selectable(true));
+                                }
+                            });
+                        }
+                    });
+                if theme::action(ui,"닫기",ButtonRole::Standard,true).clicked(){
+                    self.archive_open=false;
+                }
+              });
+            if !open{self.archive_open=false;}
+        }
+        if let Some(filename)=self.restore_target.clone(){
+            components::modal_backdrop(ctx,"settings-restore-backdrop",false);
+            components::decision_window(
+                "데이터 복구 확인","settings-restore-confirm",area
+            ).show(ctx,|ui|{
+                ui.label(typography::body(
+                    "선택한 시점의 전체 데이터베이스로 복원할까요? 현재 데이터는 먼저 안전 백업으로 보관합니다. 주문과 감사 기록도 선택한 시점으로 되돌아갑니다."
+                ));
+                ui.add_space(theme::SPACE_12);
+                ui.horizontal(|actions|{
+                    if theme::action(actions,"취소",ButtonRole::Standard,
+                        !self.busy()).clicked(){
+                        self.restore_target=None;
+                    }
+                    if theme::action(actions,"이 백업으로 복구",ButtonRole::Primary,
+                        !self.read_only()&&!self.busy()).clicked(){
+                        self.restore_target=None;
+                        self.data_action(
+                            "restore",Some(filename),
+                            Arc::clone(&gateway),ctx.clone()
+                        );
+                    }
+                });
+            });
+        }
     }
     fn show_system(&mut self,ui:&mut Ui){
         section(ui,"프로그램 정보",|area|{
