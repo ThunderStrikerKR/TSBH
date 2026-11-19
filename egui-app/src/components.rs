@@ -60,22 +60,59 @@ impl FieldKind {
     }
 }
 
-/// All native edit/search windows inherit the same modal frame,
-/// title role and controls. Only true workspace-specific dimensions belong
-/// to the calling feature's layout.
-pub fn modal_window(title:&str,id:&'static str) -> egui::Window<'static> {
+/// Native modal geometry belongs here, not to individual screens.
+/// `work_area` excludes the externally foregrounded KakaoTalk dock.
+pub fn modal_window(
+    title:&str,id:&'static str,work_area:egui::Rect
+) -> egui::Window<'static> {
     egui::Window::new(typography::modal_title(title))
         .id(egui::Id::new(id))
         .order(egui::Order::Foreground)
+        .pivot(egui::Align2::CENTER_CENTER)
+        .fixed_pos(work_area.center())
+        .constrain_to(work_area)
+        .max_size(work_area.size())
         .collapsible(false)
         .frame(theme::modal_frame())
 }
 
-pub fn decision_window(title:&str,id:&'static str) -> egui::Window<'static> {
-    modal_window(title,id)
+pub fn decision_window(
+    title:&str,id:&'static str,work_area:egui::Rect
+) -> egui::Window<'static> {
+    modal_window(title,id,work_area)
         .resizable(false)
-        .default_width(theme::MODAL_DECISION_MAX_WIDTH
-            .min(theme::MANUAL_SEARCH_DIALOG_WIDTH))
+        .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))
+}
+
+/// A separate foreground layer draws the dim and consumes background input.
+/// It is intentionally clipped to the actual workspace, never over KakaoTalk.
+/// Render the backdrop before the corresponding modal(s); render a second one
+/// before a nested confirmation to keep only the top dialog interactive.
+pub fn modal_backdrop(
+    ctx:&egui::Context,work_area:egui::Rect,id:&'static str,nested:bool
+) {
+    let alpha=if nested {
+        theme::MODAL_NESTED_BACKDROP_ALPHA
+    } else {
+        theme::MODAL_BACKDROP_ALPHA
+    };
+    let area=egui::Area::new(egui::Id::new(id))
+        .order(egui::Order::Foreground)
+        .fixed_pos(work_area.min)
+        .interactable(true)
+        .sense(egui::Sense::click_and_drag());
+    // egui's modal focus barrier also blocks keyboard input in the toolbar,
+    // while the visual dim and pointer blocker stay clear of the Kakao dock.
+    let layer=area.layer();
+    ctx.memory_mut(|memory|memory.set_modal_layer(layer));
+    area.show(ctx,|ui|{
+        let (rect,_)=ui.allocate_exact_size(
+            work_area.size(),egui::Sense::click_and_drag()
+        );
+        ui.painter().rect_filled(
+            rect,0.0,egui::Color32::from_black_alpha(alpha)
+        );
+    });
 }
 
 pub fn modal_actions(ui:&mut Ui, cancel:&str, proceed:&str,
