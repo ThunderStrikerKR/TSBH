@@ -587,25 +587,33 @@ mod native {
                 }
                 return Err(e);
             }
-            // Relative ordering only: do not make KakaoTalk globally TOPMOST
-            // over unrelated applications. The chat remains above the hub.
+            // Keep the BANDO HUB HWND's z-order entirely untouched. The
+            // old call SetWindowPos(self.hub, kakao_hwnd, ...) moved the HUB
+            // *down* to KakaoTalk's previous layer; when that layer was behind
+            // other apps, clicking Connect buried the entire BANDO HUB window.
+            // Instead, when BANDO HUB or KakaoTalk is the foreground owner,
+            // raise the selected KakaoTalk window within the normal (non-
+            // topmost) z-order group, then position its messenger behind it.
+            // An unrelated foreground app must never be overtaken by sync.
             let foreground_pid=pid(foreground);
             if foreground_pid==unsafe{GetCurrentProcessId()} ||
                 foreground_pid==self.pid {
                 let visible_chat=self.active_chat.filter(|chat|
                     chats.contains(chat) && unsafe{IsIconic(*chat)}==0
                 );
-                if let (Some(base),Some(chat))=(base,visible_chat) {
-                    if base!=chat {
-                        unsafe{SetWindowPos(base,chat,0,0,0,0,
-                            SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);}
+                if let Some(top)=visible_chat.or(base) {
+                    if unsafe{SetWindowPos(top,0,0,0,0,0,
+                        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
+                        return Err(os("카카오톡 창 표시 순서 변경 실패"));
                     }
-                }
-                if let Some(top)=base.or(visible_chat) {
-                    // Match Tauri: hub immediately behind Kakao, never
-                    // globally HWND_TOPMOST above unrelated applications.
-                    unsafe{SetWindowPos(self.hub,top,0,0,0,0,
-                        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);}
+                    if let (Some(base),Some(chat))=(base,visible_chat) {
+                        if base!=chat && unsafe{IsIconic(base)}==0 {
+                            if unsafe{SetWindowPos(base,chat,0,0,0,0,
+                                SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
+                                return Err(os("카카오톡 기본창 표시 순서 변경 실패"));
+                            }
+                        }
+                    }
                 }
             }
             Ok(())
