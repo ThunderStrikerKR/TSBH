@@ -83,6 +83,8 @@ pub struct ManualWorkspace {
     selected_recipient:usize,
     selected_item:Option<String>,
     selected_field:String,
+    edit_text:String,
+    confirm_discard:bool,
     receiver:Option<Receiver<Result<Outcome,String>>>,
     error:Option<String>,
     dirty:bool,
@@ -122,6 +124,7 @@ impl ManualWorkspace {
             client_id:source.client_id,gateway,base_order:None,model:None,
             assignment_order:Vec::new(),selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
+            edit_text:String::new(),confirm_discard:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
         }
     }
@@ -134,6 +137,7 @@ impl ManualWorkspace {
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
                 self.receiver=None;
+                self.edit_text=self.current_value();
             }
             Some(Ok(Ok(Outcome::Updated{model,assignment_order})))=>{
                 self.model=Some(model);
@@ -141,6 +145,7 @@ impl ManualWorkspace {
                 self.dirty=true;
                 self.error=None;
                 self.receiver=None;
+                self.edit_text=self.current_value();
             }
             Some(Ok(Ok(Outcome::Applied{order,model,assignment_order})))=>{
                 self.model=Some(model);
@@ -159,6 +164,24 @@ impl ManualWorkspace {
             _=>{}
         }
     }
+    fn current_value(&self)->String {
+        let Some(model)=self.model.as_ref() else{return String::new()};
+        let Some(row)=list(model,"rows").get(self.selected_recipient) else {
+            return String::new();
+        };
+        if let Some(id)=&self.selected_item {
+            let Some(item)=list(row,"items").iter().find(|v|text(v,"id")==id)
+                else{return String::new()};
+            return if self.selected_field=="quantity" {
+                item.get("quantity").and_then(Value::as_i64)
+                    .map(|n|n.to_string()).unwrap_or_default()
+            } else {
+                text(item,"name").to_owned()
+            };
+        }
+        text(row,&self.selected_field).to_owned()
+    }
+
     fn action(&mut self,action:&str,extra:Value,ctx:&Context) {
         if self.busy(){return;}
         let Some(model)=self.model.clone() else{return};
@@ -189,12 +212,25 @@ impl ManualWorkspace {
                     payload["state"]=state;
                     payload["candidateIds"]=json!((0..20).map(|_|unique_id()).collect::<Vec<_>>());
                 }
-                let result=rule(service.as_ref(),payload)?;
+                let result=if action=="native_confirm_quantity" {
+                    let first=rule(service.as_ref(),json!({
+                        "action":"set_manual_quantity_draft",
+                        "model":&model,"cell":extra.get("cell"),
+                        "value":extra.get("value")
+                    }))?;
+                    rule(service.as_ref(),json!({
+                        "action":"confirm_manual_quantity",
+                        "model":first.get("model"),"cell":extra.get("cell"),
+                        "assignmentOrder":keys
+                    }))?
+                }else{
+                    rule(service.as_ref(),payload)?
+                };
                 let next=result.get("model").filter(|v|v.is_object())
                     .ok_or("Rust 수동 분류 변경 결과가 올바르지 않습니다.")?.clone();
                 let assignment_order=result.get("assignmentOrder")
                     .and_then(Value::as_array).map(|v|v.iter().filter_map(|s|s.as_str()
-                        .map(str::to_owned)).collect()).unwrap_or_default();
+                        .map(str::to_owned)).collect()).unwrap_or_else(||keys.clone());
                 Ok(Outcome::Updated{model:next,assignment_order})
             })();
             let _=tx.send(result);
@@ -249,6 +285,7 @@ impl ManualWorkspace {
         let mut chosen:Option<(String,Value)>=None;
         let mut apply=false;
         let mut discard=false;
+        let mut submit_direct=false;
         egui::Window::new("수동 분류")
             .id(egui::Id::new("bando-native-manual-classification"))
             .open(&mut open)
@@ -345,6 +382,7 @@ impl ManualWorkspace {
                                     self.selected_recipient=index;
                                     self.selected_item=None;
                                     self.selected_field="name".into();
+                                    self.edit_text=self.current_value();
                                 }
                                 if index!=self.selected_recipient {continue;}
                                 for (field,label) in [
@@ -360,6 +398,7 @@ impl ManualWorkspace {
                                         }else{ButtonRole::Quiet},true).clicked(){
                                             self.selected_item=None;
                                             self.selected_field=field.into();
+                                            self.edit_text=self.current_value();
                                         }
                                         ui.label(typography::body(
                                             if text(row,field).is_empty(){
@@ -377,6 +416,7 @@ impl ManualWorkspace {
                                         }else{ButtonRole::Quiet},true).clicked(){
                                             self.selected_item=Some(item_id.into());
                                             self.selected_field="product".into();
+                                            self.edit_text=self.current_value();
                                         }
                                         ui.label(typography::body(
                                             if text(item,"name").is_empty(){
@@ -389,6 +429,7 @@ impl ManualWorkspace {
                                         }else{ButtonRole::Quiet},true).clicked(){
                                             self.selected_item=Some(item_id.into());
                                             self.selected_field="quantity".into();
+                                            self.edit_text=self.current_value();
                                         }
                                         let quantity=item.get("quantity")
                                             .and_then(Value::as_i64).map(|x|x.to_string())
@@ -396,6 +437,19 @@ impl ManualWorkspace {
                                         ui.label(typography::quantity(&quantity));
                                     });
                                 }
+                                ui.separator();
+                                ui.label(typography::caption("선택한 필드 직접 입력"));
+                                ui.horizontal(|ui|{
+                                    let label=if self.selected_item.is_some() {
+                                        if self.selected_field=="quantity"{"수량"}else{"상품명"}
+                                    }else{self.selected_field.as_str()};
+                                    ui.label(typography::caption(label));
+                                    ui.add(egui::TextEdit::singleline(&mut self.edit_text)
+                                        .desired_width(225.0));
+                                    if theme::action(ui,"입력 반영",ButtonRole::Standard,
+                                        !busy && self.edit_text!=self.current_value()
+                                    ).clicked(){submit_direct=true;}
+                                });
                                 if theme::action(ui,"상품 추가",ButtonRole::Standard,!busy)
                                     .clicked(){
                                     chosen=Some(("add_manual_item".into(),json!({
@@ -423,11 +477,63 @@ impl ManualWorkspace {
                     ));
                 });
             });
-        if let Some((action,payload))=chosen {
-            self.action(&action,payload,ctx);
+        if submit_direct {
+            let rid=self.model.as_ref().and_then(|m|list(m,"rows")
+                .get(self.selected_recipient)).and_then(|r|r.get("id"))
+                .and_then(Value::as_str).map(str::to_owned);
+            if let Some(id)=rid {
+                let mut cell=json!({"recipientId":id,"field":self.selected_field});
+                if let Some(item)=self.selected_item.as_ref() {
+                    cell["itemId"]=json!(item);
+                }
+                let value=self.edit_text.clone();
+                let action=if self.selected_field=="quantity" {
+                    "native_confirm_quantity"
+                }else if self.selected_field=="product"{
+                    "set_manual_product"
+                }else{
+                    "set_manual_recipient_field"
+                };
+                chosen=Some((action.into(),json!({"cell":cell,"value":value})));
+            }
         }
-        if apply{self.apply(ctx);}
-        if discard || !open {return Some(Event::Closed);}
+        if let Some((action,payload))=chosen {
+            if self.edit_text!=self.current_value() && !submit_direct {
+                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
+            }else{
+                self.action(&action,payload,ctx);
+            }
+        }
+        if apply {
+            if self.edit_text!=self.current_value() {
+                self.error=Some("아직 반영되지 않은 입력 내용이 있습니다.".into());
+            }else{
+                self.apply(ctx);
+            }
+        }
+        if discard || !open {
+            if self.dirty {
+                self.confirm_discard=true;
+            } else {
+                return Some(Event::Closed);
+            }
+        }
+        if self.confirm_discard {
+            let mut confirm=true;
+            egui::Window::new("수동 분류 변경 취소")
+                .id(egui::Id::new("manual-discard-prompt"))
+                .open(&mut confirm)
+                .collapsible(false).resizable(false)
+                .show(ctx,|ui|{
+                    ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
+                    ui.horizontal(|ui|{
+                        if ui.button("변경 취소").clicked(){discard=true;}
+                        if ui.button("계속 편집").clicked(){self.confirm_discard=false;}
+                    });
+                });
+            if discard && self.confirm_discard {return Some(Event::Closed);}
+            if !confirm {self.confirm_discard=false;}
+        }
         None
     }
 }
