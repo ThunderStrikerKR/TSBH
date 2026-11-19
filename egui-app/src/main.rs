@@ -3,8 +3,9 @@
 //! commands, or dock KakaoTalk. Existing React + Tauri remains untouched.
 
 mod theme;
+mod layout;
 
-use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Stroke, Ui, Vec2};
+use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, PANEL_GAP};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -50,6 +51,11 @@ struct BandoEgui {
     sample: bool,
     notifications_open: bool,
     order_expanded: [bool; 2],
+    layout: layout::LayoutState,
+    dragging_split: Option<usize>,
+    split_last_delta: f32,
+    dragging_vertical: bool,
+    vertical_last_delta: f32,
 }
 
 impl Default for BandoEgui {
@@ -59,6 +65,11 @@ impl Default for BandoEgui {
             sample: false,
             notifications_open: false,
             order_expanded: [true, false],
+            layout: layout::LayoutState::load(),
+            dragging_split: None,
+            split_last_delta: 0.0,
+            dragging_vertical: false,
+            vertical_last_delta: 0.0,
         }
     }
 }
@@ -133,46 +144,173 @@ impl BandoEgui {
         });
     }
 
-    fn reception(&mut self, ctx: &egui::Context) {
-        // Dedicated resizable left / right panes. No fake business actions.
-        egui::SidePanel::left("kakao_pane")
-            .resizable(true)
-            .default_width(335.0)
-            .width_range(250.0..=470.0)
-            .frame(Frame::new().fill(theme::PANEL).stroke(Stroke::new(1.0, theme::BORDER)).inner_margin(10.0))
-            .show(ctx, |ui| {
+    fn kakao_pane(&mut self, ui: &mut Ui) {
+        Frame::new()
+            .fill(theme::PANEL)
+            .stroke(Stroke::new(1.0, theme::BORDER))
+            .inner_margin(10.0)
+            .show(ui, |ui| {
+                ui.set_min_height((ui.available_height() - 20.0).max(100.0));
                 ui.vertical_centered(|ui| {
                     ui.add_space((ui.available_height() * 0.44).max(20.0));
                     theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, false)
-                        .on_disabled_hover_text("카카오톡 Windows 도킹은 아직 이 프리뷰에 연결되지 않았습니다.");
-                });
-            });
-
-        egui::SidePanel::right("orders_pane")
-            .resizable(true)
-            .default_width(360.0)
-            .width_range(310.0..=550.0)
-            .frame(Frame::new().fill(theme::CANVAS).inner_margin(6.0))
-            .show(ctx, |ui| {
-                self.orders_pane(ui);
-            });
-
-        egui::CentralPanel::default()
-            .frame(Frame::new().fill(theme::CANVAS).inner_margin(6.0))
-            .show(ctx, |ui| {
-                // A common 2-column grid, maintaining the four logical areas
-                // of the React screen; draggable inner split follows in phase 2.
-                ui.columns(2, |columns| {
-                    self.source_and_message(&mut columns[0]);
-                    self.details_and_freight(&mut columns[1]);
+                        .on_disabled_hover_text("카카오톡 Windows 도킹은 아직 UI 프리뷰에 연결되지 않았습니다.");
                 });
             });
     }
 
+    fn reception(&mut self, ctx: &egui::Context) {
+        egui::CentralPanel::default()
+            .frame(Frame::new().fill(theme::CANVAS).inner_margin(6.0))
+            .show(ctx, |ui| {
+                let viewport_width = ui.available_width();
+                let content_width = viewport_width.max(layout::LayoutState::minimum_width());
+                let content_height = ui.available_height().max(1.0);
+
+                // Exactly four column rectangles are allocated before drawing
+                // any business content. Hover/folding a card cannot shift the
+                // coordinates of splitters or other panels.
+                egui::ScrollArea::horizontal()
+                    .id_salt("reception_four_columns")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let widths = self.layout.widths(content_width);
+                        let (_, all) = ui.allocate_space(Vec2::new(content_width, content_height));
+                        let mut x = all.left();
+                        for index in 0..layout::PANEL_COUNT {
+                            let rect = Rect::from_min_size(
+                                egui::pos2(x, all.top()),
+                                Vec2::new(widths[index], all.height()),
+                            );
+                            // Each pane has a stable independent rectangle.
+                            ui.scope_builder(
+                                UiBuilder::new()
+                                    .id_salt(("reception-pane", index))
+                                    .max_rect(rect)
+                                    .layout(Layout::top_down(Align::Min)),
+                                |pane| {
+                                    pane.set_clip_rect(rect);
+                                    pane.set_width(rect.width());
+                                    pane.set_height(rect.height());
+                                    match index {
+                                        0 => self.kakao_pane(pane),
+                                        1 => self.source_and_message(pane),
+                                        2 => self.details_and_freight(pane),
+                                        _ => self.orders_pane(pane),
+                                    }
+                                },
+                            );
+                            x += widths[index];
+
+                            if index < layout::PANEL_COUNT - 1 {
+                                let splitter = Rect::from_min_size(
+                                    egui::pos2(x, all.top()),
+                                    Vec2::new(layout::SPLITTER, all.height()),
+                                );
+                                let id = ui.make_persistent_id(("horizontal-splitter", index));
+                                let response = ui.interact(splitter, id, Sense::click_and_drag());
+                                if response.hovered() || response.dragged() {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                                }
+                                ui.painter().rect_filled(
+                                    splitter, 0.0,
+                                    if response.hovered() || response.dragged() {
+                                        theme::BORDER
+                                    } else {
+                                        theme::DIVIDER
+                                    },
+                                );
+                                if response.drag_started() {
+                                    self.dragging_split = Some(index);
+                                    self.split_last_delta = 0.0;
+                                }
+                                if response.dragged() && self.dragging_split == Some(index) {
+                                    let step = response.drag_delta().x - self.split_last_delta;
+                                    self.layout.resize_pair(widths, index, step);
+                                    self.split_last_delta = response.drag_delta().x;
+                                }
+                                if response.drag_stopped() && self.dragging_split == Some(index) {
+                                    self.dragging_split = None;
+                                    self.split_last_delta = 0.0;
+                                    let _ = self.layout.save();
+                                }
+                                if response.double_clicked() {
+                                    self.layout.reset();
+                                    let _ = self.layout.save();
+                                }
+                                x += layout::SPLITTER;
+                            }
+                        }
+                    });
+            });
+    }
+
     fn source_and_message(&mut self, ui: &mut Ui) {
-        let full_height = ui.available_height();
-        let source_height = (full_height * 0.50 - PANEL_GAP).max(280.0);
-        Self::section_with_header(ui, "발주 원문", source_height, |ui| {
+        let height = ui.available_height().max(1.0);
+        let width = ui.available_width();
+        let (source_height, message_height) = self.layout.vertical_heights(height);
+        let (_, all) = ui.allocate_space(Vec2::new(width, height));
+        let source_rect = Rect::from_min_size(all.min, Vec2::new(width, source_height));
+        let splitter_rect = Rect::from_min_size(
+            egui::pos2(all.left(), source_rect.bottom()),
+            Vec2::new(width, layout::SPLITTER),
+        );
+        let message_rect = Rect::from_min_size(
+            egui::pos2(all.left(), splitter_rect.bottom()),
+            Vec2::new(width, message_height),
+        );
+
+        ui.scope_builder(
+            UiBuilder::new().id_salt("source-top").max_rect(source_rect),
+            |child| {
+                child.set_width(source_rect.width());
+                child.set_height(source_rect.height());
+                self.source_section(child, source_height);
+            },
+        );
+
+        let response = ui.interact(
+            splitter_rect, ui.make_persistent_id("source-message-splitter"),
+            Sense::click_and_drag(),
+        );
+        if response.hovered() || response.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        }
+        ui.painter().rect_filled(
+            splitter_rect, 0.0,
+            if response.hovered() || response.dragged() { theme::BORDER } else { theme::DIVIDER },
+        );
+        if response.drag_started() {
+            self.dragging_vertical = true;
+            self.vertical_last_delta = 0.0;
+        }
+        if response.dragged() && self.dragging_vertical {
+            let step = response.drag_delta().y - self.vertical_last_delta;
+            self.layout.resize_vertical(source_height, step, height);
+            self.vertical_last_delta = response.drag_delta().y;
+        }
+        if response.drag_stopped() && self.dragging_vertical {
+            self.dragging_vertical = false;
+            self.vertical_last_delta = 0.0;
+            let _ = self.layout.save();
+        }
+        if response.double_clicked() {
+            self.layout.reset_vertical();
+            let _ = self.layout.save();
+        }
+
+        ui.scope_builder(
+            UiBuilder::new().id_salt("message-bottom").max_rect(message_rect),
+            |child| {
+                child.set_width(message_rect.width());
+                child.set_height(message_rect.height());
+                self.message_section(child, message_height);
+            },
+        );
+    }
+
+    fn source_section(&mut self, ui: &mut Ui, height: f32) {
+        Self::section_with_header(ui, "발주 원문", height, |ui| {
             theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false)
                 .on_disabled_hover_text("주문 생성은 Rust 업무 엔진 연결 이후 활성화됩니다.");
         }, |ui| {
@@ -209,9 +347,10 @@ impl BandoEgui {
                 ui.label(theme::caption("설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."));
             }
         });
-        ui.add_space(PANEL_GAP);
-        let message_height = (ui.available_height() - PANEL_GAP).max(220.0);
-        Self::section_with_header(ui, "복사용 자동 메시지", message_height, |ui| {
+    }
+
+    fn message_section(&mut self, ui: &mut Ui, height: f32) {
+        Self::section_with_header(ui, "복사용 자동 메시지", height, |ui| {
             let mut include_link = false;
             ui.add_enabled(false, egui::Checkbox::new(&mut include_link, "링크 포함"));
         }, |ui| {
