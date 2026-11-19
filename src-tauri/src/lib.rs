@@ -1236,6 +1236,70 @@ fn start_automatic_backup(app: tauri::AppHandle) {
 /// the very same native Rust rules and the Tauri working-reception table; it
 /// does not start a WebView or invoke any unrelated startup/migration path.
 /// The environment variables intentionally require explicit local consent.
+/// One-shot data-management bridge. Uses the ORIGINAL Tauri audit and
+/// backup manager; never makes a separate, incomplete egui archive writer.
+/// Archive and backup listing are read-only. Backup/restore additionally
+/// require explicit operator permission AND React-equivalent UI confirmation.
+pub fn run_egui_settings_data() -> i32 {
+    use std::io::{Read,Write};
+    let result=(|| -> Result<Value,String> {
+        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .filter(|p|!p.is_empty()).map(PathBuf::from)
+            .ok_or("운영 DB 파일 경로가 설정되지 않았습니다.")?;
+        if !path.is_file(){return Err("운영 DB 파일이 없습니다.".into());}
+        let base=path.parent().ok_or("운영 DB 보관 폴더가 없습니다.")?;
+        let mut input=Vec::new();
+        std::io::stdin().take(16_385).read_to_end(&mut input).map_err(err)?;
+        if input.is_empty() || input.len()>16_384 {
+            return Err("데이터 관리 요청이 허용 범위를 초과했습니다.".into());
+        }
+        let request:Value=serde_json::from_slice(&input)
+            .map_err(|_|"데이터 관리 요청 JSON이 올바르지 않습니다.".to_owned())?;
+        let operation=request.get("operation").and_then(Value::as_str)
+            .ok_or("데이터 관리 명령이 없습니다.")?;
+        let write=matches!(operation,"backup"|"restore");
+        if write && std::env::var("BANDO_EGUI_ENABLE_SETTINGS_WRITE")
+            .ok().as_deref()!=Some("1"){
+            return Err("운영 데이터 백업·복원에는 명시적 변경 권한이 필요합니다.".into());
+        }
+        let flags=if write{rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE}
+            else{rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY};
+        let mut conn=Connection::open_with_flags(&path,flags)
+            .map_err(|_|"데이터 관리 DB를 열지 못했습니다.".to_owned())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(err)?;
+        if !write{conn.execute_batch("PRAGMA query_only=ON;").map_err(err)?;}
+        let version:i64=conn.query_row(
+            "SELECT version FROM core_schema WHERE key='business-core'",
+            [],|row|row.get(0),
+        ).map_err(|_|"DB 스키마 버전을 확인할 수 없습니다.".to_owned())?;
+        if version!=2{return Err("지원하지 않는 업무 DB 버전입니다.".into());}
+        match operation{
+            "archive"=>receipt_archive_from_conn(&conn),
+            "backups"=>Ok(json!(backup_manager::list_backups(base)?)),
+            "backup"=>Ok(json!(backup_manager::manual_backup(&conn,base)?)),
+            "restore"=>{
+                let filename=request.get("filename").and_then(Value::as_str)
+                    .filter(|name|!name.is_empty())
+                    .ok_or("복원할 백업 파일을 선택하세요.")?;
+                backup_manager::restore_backup(&mut conn,base,filename)?;
+                Ok(json!({"restored":true}))
+            }
+            _=>Err("허용하지 않은 데이터 관리 명령입니다.".into())
+        }
+    })();
+    let response=match &result{
+        Ok(payload)=>json!({"ok":true,"result":payload}),
+        Err(message)=>json!({"ok":false,"error":message}),
+    };
+    // Preserve strict machine-readable stdout and reject huge archive output.
+    let bytes=response.to_string();
+    let output=if bytes.len()>16_000_000 {
+        json!({"ok":false,"error":"감사 기록 응답이 16MB를 초과했습니다."}).to_string()
+    }else{bytes};
+    let _=std::io::stdout().write_all(output.as_bytes());
+    if result.is_ok() && output==response.to_string(){0}else{2}
+}
+
 /// An explicitly authorized one-shot settings patch for native egui.
 /// Calls the EXISTING settings_patch transaction/validation code, never
 /// bypasses client/account checks or writes to an inferred database.
