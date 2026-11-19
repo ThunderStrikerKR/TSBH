@@ -576,9 +576,12 @@ impl BandoEgui {
                 let verified = self.client_chooser.as_ref()
                     .is_some_and(|chooser| chooser.contains(&id));
                 self.client_chooser = None;
-                // Selecting the currently assigned client only closes the
-                // chooser; it must not rewrite an AUTO claim as MANUAL.
-                if verified && current_id.as_deref() != Some(id.as_str()) {
+                // Re-selecting the same dealer is harmless unless raw
+                // changes require a fresh native price calculation.
+                let refresh=self.active_id.as_deref()
+                    .and_then(|active|self.drafts.iter().find(|row|row.id==active))
+                    .is_some_and(|row|row.pricing_preview.is_none());
+                if verified && (current_id.as_deref()!=Some(id.as_str()) || refresh) {
                     self.apply_manual_client(&id, ctx);
                 }
             }
@@ -1768,6 +1771,8 @@ impl BandoEgui {
         );
 
         let mut client_choice: Option<String> = None;
+        let mut sync_clicked=false;
+        let mut refresh_price:Option<String>=None;
         ui.scope_builder(
             UiBuilder::new().id_salt("details-review").max_rect(review_rect)
                 .layout(Layout::top_down(Align::Min)),
@@ -1781,6 +1786,40 @@ impl BandoEgui {
                         .max_height(components::docked_section_body_height(review_height))
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
+                    if let Some(message)=&self.working_sync_error {
+                        ui.label(typography::status(message,theme::DANGER));
+                    }
+                    if let Some(row)=self.active_id.as_deref()
+                        .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+                    {
+                        if row.working_version.is_some() {
+                            ui.label(typography::caption(if row.working_synced {
+                                "운영 미확정 작업본 저장됨 · 주문 확인 완료 전"
+                            } else {
+                                "운영 작업본 저장 후 변경사항 있음 · 다시 저장 필요"
+                            }));
+                        }
+                        if self.gateway.working_commit_enabled() {
+                            if self.working_sync.is_some() {
+                                ui.label(typography::caption("운영 작업본 저장 중"));
+                            } else if row.client_id.is_some() && !row.raw.trim().is_empty() {
+                                if row.pricing_preview.is_some() {
+                                    if theme::action(
+                                        ui,"운영 작업본 저장",ButtonRole::Standard,
+                                        !row.working_synced
+                                    ).clicked() {
+                                        sync_clicked=true;
+                                    }
+                                } else if let Some(client_id)=&row.client_id {
+                                    if theme::action(
+                                        ui,"Rust 금액 다시 계산",ButtonRole::Quiet,true
+                                    ).clicked() {
+                                        refresh_price=Some(client_id.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if let Some(error) = &self.analysis_error {
                         ui.label(typography::status(error, theme::DANGER));
                     } else if let Some(analysis) = &self.analysis {
@@ -1862,6 +1901,12 @@ impl BandoEgui {
         );
         if let Some(client_id) = client_choice {
             self.select_client_candidate(&client_id, ui.ctx());
+        }
+        if let Some(client_id)=refresh_price {
+            self.apply_manual_client(&client_id,ui.ctx());
+        }
+        if sync_clicked {
+            self.start_working_sync(ui.ctx());
         }
         components::paint_dock_splitter(ui, first_sep, false, false);
 
