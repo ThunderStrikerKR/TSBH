@@ -8,6 +8,20 @@ pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 pub const TABLE_ROW_HEIGHT: f32 = 42.0;
 pub const TABLE_HEADER_HEIGHT: f32 = 36.0;
 
+/// The actual content space in a fixed-height docked section. Reserve
+/// exactly the existing top/bottom frame padding, title, divider and gaps.
+/// Section widgets must not impose independent minimums that can spill
+/// across the source/message splitter.
+pub fn docked_section_body_height(section_height: f32) -> f32 {
+    let chrome = theme::SECTION_PADDING * 2.0
+        + theme::SECTION_HEADER_HEIGHT
+        + theme::SECTION_CONTENT_GAP
+        + theme::SOFT_DIVIDER_WIDTH
+        + theme::SPACE_4;
+    (section_height - chrome).max(0.0)
+}
+
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FieldKind {
     Text,
