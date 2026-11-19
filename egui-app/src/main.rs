@@ -348,7 +348,11 @@ impl BandoEgui {
                 let verified = self.client_chooser.as_ref()
                     .is_some_and(|chooser| chooser.contains(&id));
                 self.client_chooser = None;
-                if verified { self.apply_manual_client(&id, ctx); }
+                // Selecting the currently assigned client only closes the
+                // chooser; it must not rewrite an AUTO claim as MANUAL.
+                if verified && current_id.as_deref() != Some(id.as_str()) {
+                    self.apply_manual_client(&id, ctx);
+                }
             }
             Some(Choice::Closed) => { self.client_chooser = None; }
             None => {}
