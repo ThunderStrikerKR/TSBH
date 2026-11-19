@@ -672,12 +672,25 @@ impl BandoEgui {
 
     fn details_and_freight(&mut self, ui: &mut Ui) {
         let full_height = ui.available_height();
+        // The center-line between the second and third columns is shared.
+        // Independent 27% + 22% measurements used to put the lower third
+        // column divider 1–2 physical pixels above the source/message divider.
+        let (shared_upper_height, _) = self.layout.vertical_heights(full_height);
+        let upper_budget = (shared_upper_height - layout::SPLITTER).max(0.0);
+        let review_height = if upper_budget >= 330.0 {
+            (full_height * 0.27).clamp(150.0, upper_budget - 180.0)
+        } else {
+            // Keep the boundary aligned on smaller windows even when the
+            // preferred per-section minimum heights cannot both be met.
+            upper_budget * (150.0 / 330.0)
+        };
+        let recipient_height = (upper_budget - review_height).max(0.0);
         // Independent vertical sections use the same 6-point gap as the
         // source/message and horizontal panel splitters. Only section bodies
         // use the normal 8-point item spacing.
         ui.spacing_mut().item_spacing.y = 0.0;
 
-        Self::section(ui, "확인할 내용", (full_height * 0.27).max(150.0), |ui| {
+        Self::section(ui, "확인할 내용", review_height, |ui| {
             if let Some(error) = &self.analysis_error {
                 ui.colored_label(theme::DANGER, error);
             } else if let Some(analysis) = &self.analysis {
@@ -708,7 +721,7 @@ impl BandoEgui {
         components::docked_separator(ui);
 
         let mut next_recipient = None;
-        Self::section(ui, "수취인별 주문 정보", (full_height * 0.22).max(180.0), |ui| {
+        Self::section(ui, "수취인별 주문 정보", recipient_height, |ui| {
             if let Some(analysis) = &self.analysis {
                 let recipients = reception_service::recipients(analysis);
                 if recipients.len() > 1 {
