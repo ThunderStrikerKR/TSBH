@@ -2331,6 +2331,25 @@
         "ci": "NOT_EXECUTED",
         "windows": "Windows dev executable compiled successfully; runtime connection UNVERIFIED; original running executable not replaced"
       }
+    },
+    {
+      "id": "LIVE-20261120-KAKAO-OWNER-FOCUS",
+      "scope": "egui 카카오톡 소유 창 연동과 활성화/해제 순서",
+      "status": "PATCHED_WINDOWS_UNVERIFIED",
+      "description": "기존 Z-order 틱 복구 외에 WinEvent foreground 복구 및 독립 최상위 Kakao HWND만 GWLP_HWNDPARENT로 HUB 임시 소유자로 지정. 원래 owner가 있는 Kakao 자체 창은 수정하지 않고 fallback 유지. 정상 연결 해제 및 eframe on_exit에서 소유 관계를 먼저 제거하고 원위치/스타일 복원. 강제 종료·UIPI 거부·타 앱 내부 창 생성·사용자 실제 Windows 조작 결과는 미검증.",
+      "evidence": [
+        "egui-app/src/kakao_dock.rs",
+        "egui-app/src/main.rs",
+        ".github/workflows/egui-targeted-check.yml"
+      ],
+      "gates": {
+        "patch": "SOURCE_UPDATED: eed270f, dc74b35, 94e8efb, fe7f22e",
+        "unit": "NOT_EXECUTED: Win32 behavior requires real Windows session",
+        "differential": "NOT_APPLICABLE: native window ownership path",
+        "action": "NOT_EXECUTED: HUB click/Kakao click/third party switch/disconnect/normal close",
+        "ci": "QUEUED: https://github.com/ThunderStrikerKR/TSBH/actions/runs/44619026480",
+        "windows": "NOT_EXECUTED: requires accessible Windows KakaoTalk UI and fresh binary"
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
