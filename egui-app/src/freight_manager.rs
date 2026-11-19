@@ -259,22 +259,24 @@ impl FreightManager {
         if self.tab==FreightTab::Groups {
             let area=ui.max_rect();
             let ctx=ui.ctx();
+            let mut close_rename=false;
+            let mut close_delete=false;
             if let Some((id,name))=self.rename_target.as_mut(){
                 components::modal_backdrop(ctx,"freight-rename-backdrop",false);
                 components::decision_window("배송 그룹명","freight-rename",area)
                     .show(ctx,|modal|{
                         components::field(modal,name,components::FieldKind::Text,enabled);
                         modal.add_space(theme::SPACE_12);
-                        let (cancel,confirm)=components::modal_actions(
-                            modal,"취소","이름 수정",theme::ButtonRole::Primary,
-                            enabled&&!name.trim().is_empty()
-                        );
-                        if cancel {self.rename_target=None;}
-                        else if confirm {
-                            action=Some(("rename_group".into(),json!({
-                                "groupId":id,"name":name.trim()
-                            })));
-                        }
+                        modal.horizontal(|controls|{
+                            if theme::action(controls,"취소",theme::ButtonRole::Quiet,enabled)
+                                .clicked(){close_rename=true;}
+                            if theme::action(controls,"이름 수정",theme::ButtonRole::Primary,
+                                enabled&&!name.trim().is_empty()).clicked(){
+                                action=Some(("rename_group".into(),json!({
+                                    "groupId":id,"name":name.trim()
+                                })));
+                            }
+                        });
                     });
             }else if let Some(id)=self.delete_target.as_ref(){
                 let linked=products.iter().filter(|p|text(p,"shippingGroupId")==id).count();
@@ -289,19 +291,22 @@ impl FreightManager {
                             "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
                         }));
                         modal.add_space(theme::SPACE_12);
-                        let (cancel,confirm)=components::modal_actions(
-                            modal,"취소",if linked>0 {
+                        modal.horizontal(|controls|{
+                            if theme::action(controls,"취소",theme::ButtonRole::Quiet,enabled)
+                                .clicked(){close_delete=true;}
+                            if theme::action(controls,if linked>0{
                                 "상품 연결을 미지정으로 변경하고 삭제"
-                            }else{"그룹 삭제"},theme::ButtonRole::Danger,enabled
-                        );
-                        if cancel{self.delete_target=None;}
-                        else if confirm{
-                            action=Some(("delete_group".into(),json!({
-                                "groupId":id,"detach":linked>0
-                            })));
-                        }
+                            }else{"그룹 삭제"},theme::ButtonRole::Danger,enabled)
+                                .clicked(){
+                                action=Some(("delete_group".into(),json!({
+                                    "groupId":id,"detach":linked>0
+                                })));
+                            }
+                        });
                     });
             }
+            if close_rename{self.rename_target=None;}
+            if close_delete{self.delete_target=None;}
         }
         if let Some((kind,data))=action {
             self.write(kind,data,ui.ctx().clone());
@@ -363,7 +368,7 @@ impl FreightManager {
                 egui::ComboBox::from_id_salt("freight-group-filter")
                     .selected_text(if group_filter.is_empty() {
                         "전체 상품"
-                    } else if group_filter == "none" {
+                    } else if group_filter.as_str() == "none" {
                         "그룹 미지정"
                     } else { group_name(groups,group_filter) })
                     .show_ui(tools, |combo| {
@@ -383,9 +388,9 @@ impl FreightManager {
                     text(p,"subtitle"),text(p,"category")]
                     .iter().any(|s|s.to_lowercase().contains(&needle)))
                 && (group_filter.is_empty()
-                    || (group_filter=="none" && !groups.iter().any(|g|
+                    || (group_filter.as_str()=="none" && !groups.iter().any(|g|
                         text(g,"id")==text(p,"shippingGroupId")))
-                    || text(p,"shippingGroupId")==group_filter)
+                    || text(p,"shippingGroupId")==group_filter.as_str())
             }).collect();
             section.horizontal_wrapped(|tools|{
                 let mut all=!filtered.is_empty()
@@ -488,8 +493,8 @@ impl FreightManager {
                 });
             let mut assignments=serde_json::Map::new();
             for (id,group) in pending.iter(){
-                if let Some(product)=products.iter().find(|p|text(p,"id")==id){
-                    if text(product,"shippingGroupId")!=group{
+                if let Some(product)=products.iter().find(|p|text(p,"id")==id.as_str()){
+                    if text(product,"shippingGroupId")!=group.as_str(){
                         assignments.insert(id.clone(),json!(group));
                     }
                 }
