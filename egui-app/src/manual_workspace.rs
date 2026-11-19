@@ -285,6 +285,7 @@ impl ManualWorkspace {
         let mut chosen:Option<(String,Value)>=None;
         let mut apply=false;
         let mut discard=false;
+        let mut discard_confirmed=false;
         let mut submit_direct=false;
         egui::Window::new("수동 분류")
             .id(egui::Id::new("bando-native-manual-classification"))
@@ -527,11 +528,11 @@ impl ManualWorkspace {
                 .show(ctx,|ui|{
                     ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
                     ui.horizontal(|ui|{
-                        if ui.button("변경 취소").clicked(){discard=true;}
+                        if ui.button("변경 취소").clicked(){discard_confirmed=true;}
                         if ui.button("계속 편집").clicked(){self.confirm_discard=false;}
                     });
                 });
-            if discard && self.confirm_discard {return Some(Event::Closed);}
+            if discard_confirmed {return Some(Event::Closed);}
             if !confirm {self.confirm_discard=false;}
         }
         None
