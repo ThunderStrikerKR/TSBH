@@ -108,6 +108,9 @@ pub trait BandoGateway: Send + Sync {
     fn patch_settings(&self,_changes:Value,_expected:Value)->Result<Value,String>{
         Err("이 연결은 설정 저장을 지원하지 않습니다.".into())
     }
+    fn settings_data(&self,_operation:&str,_filename:Option<&str>)->Result<Value,String>{
+        Err("이 연결은 업무 감사 기록·백업을 지원하지 않습니다.".into())
+    }
     /// Full v2 business snapshot for native rules only, from an explicitly
     /// configured read-only operational DB. This must never mutate SQLite.
     fn load_business_state(&self) -> Result<Value, String> {
@@ -181,6 +184,9 @@ impl BandoGateway for LocalGateway {
     }
     fn patch_settings(&self,changes:Value,expected:Value)->Result<Value,String>{
         crate::settings_store::patch(changes,expected)
+    }
+    fn settings_data(&self,operation:&str,filename:Option<&str>)->Result<Value,String>{
+        crate::settings_store::data(operation,filename)
     }
     fn load_business_state(&self) -> Result<Value, String> {
         crate::business_state::load()
