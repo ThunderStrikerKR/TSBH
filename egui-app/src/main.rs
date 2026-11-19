@@ -285,6 +285,20 @@ impl BandoEgui {
     /// Bind only an OS-verified KakaoTalk chat to the ACTIVE unconfirmed
     /// reception. A changed/closed handle is not reused as evidence.
     fn bind_chat_to_active(&mut self, chat: ChatWindow, ctx: &egui::Context) {
+        // A different chat can imply a different dealer. Preserve an
+        // employee-approved manual model rather than silently discarding it.
+        if self.active_id.as_deref().and_then(|id|
+            self.drafts.iter().find(|row|row.id==id)
+        ).is_some_and(|row|
+            row.manual_model.is_some() &&
+            (row.chat_handle.as_deref()!=Some(chat.handle.as_str()) ||
+             row.chat_title.as_deref()!=Some(chat.title.as_str()))
+        ) {
+            self.source_save_error=Some(
+                "수동 분류한 발주서는 대화창을 변경하기 전에 분류 내역을 확인해야 합니다.".into()
+            );
+            return;
+        }
         if self.kakao_tracker.verified(&chat.handle)
             .is_none_or(|current| current.title != chat.title) {
             return;
