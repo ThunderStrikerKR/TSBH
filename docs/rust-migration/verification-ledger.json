@@ -2379,7 +2379,7 @@
         "unit": "NOT_EXECUTED: no new broad regression suite; focused workflow_board formatting test added but not executed",
         "differential": "PASS SOURCE REVIEW for this scoped header: left-aligned label, separate stage lamps with original 18pt, no inner heading border, two-row folded layout, same 34pt Standard management button. Actual graphics not tested.",
         "action": "NOT EXECUTED: real Windows GUI card width, click, fold, hover, scroll and mixed-draft presentation not yet observed",
-        "ci": "IN_PROGRESS: Windows Tauri + egui compile https://github.com/ThunderStrikerKR/TSBH/actions/runs/44637012138",
+        "ci": "PASS: Windows Tauri and standalone egui cargo check on corrected dealer left-align + 18pt independent lamps + 관리 action: https://github.com/ThunderStrikerKR/TSBH/actions/runs/44637012138, commit a99d6b20",
         "windows": "NOT RUN PER USER REQUEST, and not required for this code patch."
       }
     }
