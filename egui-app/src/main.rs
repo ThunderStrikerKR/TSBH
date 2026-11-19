@@ -357,7 +357,7 @@ impl BandoEgui {
             let Some(pending)=self.client_change.take() else {return;};
             // Another order or edited original may never inherit an old
             // calculation, regardless of asynchronous completion order.
-            if self.active_id.as_deref()!=Some(&pending.order_id) ||
+            if self.active_id.as_deref()!=Some(pending.order_id.as_str()) ||
                self.raw_source!=pending.source_raw {
                 return;
             }
