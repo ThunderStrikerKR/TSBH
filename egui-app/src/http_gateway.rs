@@ -95,12 +95,18 @@ impl BandoGateway for HttpGateway {
             .to_owned();
         let revision = value.get("revision").and_then(Value::as_u64)
             .ok_or("서버 원문 응답에 revision 숫자가 없습니다.")?;
-        Ok(WorkingSource { raw, revision })
+        let order_type = value.get("orderType").and_then(Value::as_str)
+            .ok_or("서버 접수 원문 응답에 orderType이 없습니다.")?
+            .to_owned();
+        crate::clipboard_intake::OrderType::parse(&order_type)?;
+        Ok(WorkingSource { raw, order_type, revision })
     }
 
-    fn save_working_source(&self, raw: &str, revision: u64) -> Result<u64, String> {
+    fn save_working_source(&self, raw: &str, order_type: &str, revision: u64) -> Result<u64, String> {
+        crate::clipboard_intake::OrderType::parse(order_type)?;
         let body = json!({
             "raw": raw,
+            "orderType": order_type,
             "expectedRevision": revision,
         });
         let response = self.client.put(self.endpoint("working-source"))
