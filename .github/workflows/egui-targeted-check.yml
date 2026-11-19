@@ -1,4 +1,4 @@
-# Targeted native compile check: Tauri CLI and egui client manager after final UI/source sync.
+# Targeted native compile check: Win32 KakaoTalk docking integration and Tauri CLI (49th session).
 name: Tauri native CLI executable compile check
 on:
   push:
