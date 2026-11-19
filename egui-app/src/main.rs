@@ -2499,6 +2499,13 @@ impl eframe::App for BandoEgui {
         self.poll_working_sync(ctx);
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
+        if self.page==Page::Reception &&
+            self.client_manager.as_mut().is_some_and(|manager|manager.take_changed()) &&
+            !self.raw_source.trim().is_empty() {
+            // A registered/edited/deleted client changes the same native
+            // matching index that reception must see on its next frame.
+            self.analysis_due_at=Some(Instant::now());
+        }
         if self.page == Page::Reception {
             self.kakao_tracker.refresh();
             ctx.request_repaint_after(Duration::from_millis(450));
