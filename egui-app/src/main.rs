@@ -145,7 +145,6 @@ struct BandoEgui {
     order_type: OrderType,
     clipboard_monitor: ClipboardMonitor,
     kakao_tracker: KakaoTracker,
-    kakao_connected: bool,
     kakao_dock: kakao_dock::KakaoDock,
     kakao_dock_error: Option<String>,
     clipboard_chat: Option<ChatWindow>,
@@ -193,7 +192,6 @@ impl Default for BandoEgui {
             order_type: OrderType::Agency,
             clipboard_monitor: ClipboardMonitor::default(),
             kakao_tracker: KakaoTracker::default(),
-            kakao_connected: false,
             kakao_dock: kakao_dock::KakaoDock::default(),
             kakao_dock_error: None,
             clipboard_chat: None,
@@ -641,7 +639,7 @@ impl BandoEgui {
     }
 
     /// The only coordinate owner for every reception modal. KakaoTalk is an
-    /// external always-on-top Windows surface: never place any modal under it.
+    /// externally owned Windows surface: keep modal bodies outside its area.
     fn modal_work_area(&self,ctx:&egui::Context)->Rect {
         let viewport=ctx.screen_rect();
         let gutter=theme::MODAL_VIEWPORT_GUTTER;
@@ -952,7 +950,7 @@ impl BandoEgui {
         if self.clipboard_busy || !self.clipboard_monitor.kind().has_intake() {
             return;
         }
-        self.clipboard_chat = if self.kakao_connected {
+        self.clipboard_chat = if self.kakao_dock.connected() {
             // Existing contract: observe the actual KakaoTalk conversation
             // when an order is pasted, not when a user presses Connect.
             // A recently focused, OS-verified chat is the strongest source.
@@ -1560,25 +1558,19 @@ impl BandoEgui {
         if disconnect {
             self.kakao_dock_error=None;
             self.kakao_dock.disconnect();
-            self.kakao_connected=false;
             return;
         }
         if connect {
             self.kakao_dock_error=None;
             // The dock receives the future connected BODY rectangle on the
             // first click, not the larger placeholder rectangle.
-            match self.kakao_dock.connect(region,scale){
-                Ok(())=>self.kakao_connected=true,
-                Err(reason)=>{
-                    self.kakao_connected=false;
-                    eprintln!("[BANDO HUB] 카카오톡 연결 실패: {reason}");
-                    self.kakao_dock_error=Some(reason);
-                }
+            if let Err(reason)=self.kakao_dock.connect(region,scale){
+                eprintln!("[BANDO HUB] 카카오톡 연결 실패: {reason}");
+                self.kakao_dock_error=Some(reason);
             }
             return;
         }
         if !connected {
-            self.kakao_connected=false;
             return;
         }
         let result=if let Some(mode)=next_mode {
@@ -1586,13 +1578,9 @@ impl BandoEgui {
         }else{
             self.kakao_dock.sync(region,scale)
         };
-        match result {
-            Ok(())=>self.kakao_connected=self.kakao_dock.connected(),
-            Err(reason)=>{
-                self.kakao_connected=self.kakao_dock.connected();
-                eprintln!("[BANDO HUB] 카카오톡 배치 실패: {reason}");
-                self.kakao_dock_error=Some(reason);
-            }
+        if let Err(reason)=result {
+            eprintln!("[BANDO HUB] 카카오톡 배치 실패: {reason}");
+            self.kakao_dock_error=Some(reason);
         }
     }
 
@@ -2661,12 +2649,10 @@ impl eframe::App for BandoEgui {
         self.poll_working_sync(ctx);
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
-        // Keep geometry scanning at 350ms, but guard the Z-order on the next
-        // frame when the employee clicks either BANDO HUB or KakaoTalk.
-        // Background apps stay unmodified and use the slower idle repaint.
+        // HWND ownership now handles HUB activation. Only the 350ms
+        // geometry/new-conversation refresh remains; no 32ms focus polling.
         if self.kakao_dock.connected() {
-            let interval=if self.kakao_dock.foreground_related() {32}else{350};
-            ctx.request_repaint_after(Duration::from_millis(interval));
+            ctx.request_repaint_after(Duration::from_millis(350));
         }
         if self.page==Page::Reception &&
             self.client_manager.as_mut().is_some_and(|manager|manager.take_changed()) &&
