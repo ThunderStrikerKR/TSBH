@@ -357,66 +357,25 @@ impl ManualWorkspace {
                             egui::ScrollArea::vertical().id_salt("manual-source-blocks")
                                 .max_height((height-theme::SECTION_HEADER_HEIGHT).max(0.0))
                                 .show(source_ui,|ui|{
-                            // Display the ENTIRE original in native source
-                            // order, including text Rust did not classify.
-                            // Only exact UTF-16 bounded native blocks become
-                            // selectable; omitted text is never reclassified
-                            // heuristically in egui.
-                            let mut cursor=0usize;
-                            for block in &blocks {
-                                let (Some(a),Some(b))=(
-                                    block.get("start").and_then(Value::as_u64),
-                                    block.get("end").and_then(Value::as_u64)
-                                )else{continue};
-                                let (Some((begin,_)),Some((end,_)))=(
-                                    crate::source_highlight::boundary(&self.raw,a as usize),
-                                    crate::source_highlight::boundary(&self.raw,b as usize)
-                                )else{continue};
-                                if begin<cursor || end<=begin || end>self.raw.len() ||
-                                   &self.raw[begin..end]!=text(block,"text") {
-                                    continue;
-                                }
-                                if cursor<begin {
-                                    ui.label(typography::body(&self.raw[cursor..begin]));
-                                }
-                                let id=text(block,"id");
-                                let fragment=text(block,"text");
-                                let assigned=assignments.get(id).is_some();
-                                let prefix=if assigned {"배정됨"} else {"미배정"};
-                                let label=format!("{prefix} · {}",
-                                    if fragment.is_empty(){"(빈 원문)"}else{fragment});
-                                if theme::action(ui,&label,if assigned {
-                                    ButtonRole::ActiveNavigation
-                                }else{ButtonRole::Quiet},!busy).clicked() {
-                                    if assigned {
-                                        chosen=Some(("release_manual_block".into(),json!({
-                                            "id":id,"clear":true
-                                        })));
-                                    }else{
-                                        let recipient=rows.get(self.selected_recipient);
-                                        if let Some(row)=recipient {
-                                            let mut cell=json!({
-                                                "recipientId":row.get("id"),
-                                                "field":self.selected_field
-                                            });
-                                            if let Some(item_id)=self.selected_item.as_ref() {
-                                                cell["itemId"]=json!(item_id);
-                                            }
-                                            chosen=Some(("assign_manual_block".into(),json!({
-                                                "id":id,"cell":cell
-                                            })));
-                                        }
+                            if let Some(id)=crate::manual_source_view::source_document(
+                                ui,&self.raw,&blocks,&assignments,!busy
+                            ){
+                                if assignments.get(&id).is_some() {
+                                    chosen=Some(("release_manual_block".into(),json!({
+                                        "id":id,"clear":true
+                                    })));
+                                }else if let Some(row)=rows.get(self.selected_recipient){
+                                    let mut cell=json!({
+                                        "recipientId":row.get("id"),
+                                        "field":self.selected_field
+                                    });
+                                    if let Some(item)=self.selected_item.as_ref() {
+                                        cell["itemId"]=json!(item);
                                     }
+                                    chosen=Some(("assign_manual_block".into(),json!({
+                                        "id":id,"cell":cell
+                                    })));
                                 }
-                                cursor=end;
-                            }
-                            if cursor<self.raw.len() {
-                                ui.label(typography::body(&self.raw[cursor..]));
-                            }
-                            if blocks.is_empty(){
-                                ui.label(typography::caption(
-                                    "분류할 원문 항목이 없습니다."
-                                ));
                             }
                                 });
                         },
