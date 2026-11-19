@@ -88,7 +88,7 @@ fn text<'a>(value:&'a Value,key:&str)->&'a str {
 
 /// Return byte and char index only on exact UTF-16 boundaries. This rejects
 /// offsets that cut a supplementary-plane emoji or non-ASCII character.
-fn boundary(raw:&str, units:usize)->Option<(usize,usize)> {
+pub(crate) fn boundary(raw:&str, units:usize)->Option<(usize,usize)> {
     let mut used=0;
     let mut chars=0;
     for (byte,ch) in raw.char_indices() {
