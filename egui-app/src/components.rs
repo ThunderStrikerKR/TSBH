@@ -71,23 +71,6 @@ pub fn soft_divider(ui: &mut Ui) {
     );
 }
 
-/// A 6pt dock separator owns its single visual boundary. Panels on either
-/// side do not paint individual borders, preventing doubled or rounded edges.
-pub fn docked_separator(ui: &mut Ui) {
-    let (slot, _) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), theme::PANEL_GAP),
-        Sense::hover(),
-    );
-    // Draw against the pane's fixed rectangle, not the variable cursor
-    // position left behind by differently sized section contents.
-    let bounds = ui.max_rect();
-    let full_width = Rect::from_min_max(
-        egui::pos2(bounds.left(), slot.top()),
-        egui::pos2(bounds.right(), slot.bottom()),
-    );
-    paint_dock_splitter(ui, full_width, false, false);
-}
-
 /// A single coordinate and pixel-snapping rule owns all vertical and
 /// horizontal dock lines. Visual thickness is snapped to physical pixels,
 /// while the full 6pt hit-area rectangle stays unchanged.
