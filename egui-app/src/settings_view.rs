@@ -107,10 +107,13 @@ fn edit_input(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
     }
 }
 fn section(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
+    crate::settings_help::heading(ui,title);
+    ui.add_space(theme::SPACE_8);
+    body(ui);
+}
+fn card(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
     theme::section_frame().show(ui,|content|{
-        crate::settings_help::heading(content,title);
-        content.add_space(theme::SPACE_8);
-        body(content);
+        section(content,title,body);
     });
 }
 fn account_display(account:&Value)->String{
@@ -463,6 +466,9 @@ impl SettingsView{
     }
     fn show_basic(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>){
         ui.add_enabled_ui(editable,|form|{
+            // React uses ONE settings.card around basic section content.
+            // Do not create a border around every nested settings heading.
+            theme::section_frame().show(form,|form|{
             let available=form.available_width();
             if available>600.0{
                 form.columns(2,|cells|{
@@ -507,6 +513,7 @@ impl SettingsView{
             form.add_space(theme::SPACE_12);
             section(form,"입금 계좌",|content|{
                 self.show_accounts(content);
+            });
             });
         });
         self.save_bar(ui,gateway);
@@ -624,9 +631,12 @@ impl SettingsView{
             ("orderImageInboxDirectory","발주 이미지 자동 수신 폴더",
               "미설정: 이미지 폴더 자동 수신 중지","수신 폴더 선택"),
         ];
+        // React files tab has ONE section.card with three consecutive
+        // information groups separated by whitespace, not three boxes.
+        theme::section_frame().show(ui,|form|{
         for (index,(key,title,empty,button)) in sections.iter().enumerate(){
-            if index>0{ui.add_space(theme::SPACE_12);}
-            section(ui,title,|area|{
+            if index>0{form.add_space(theme::SPACE_12);}
+            section(form,title,|area|{
                 let value=field(&self.draft,key);
                 area.label(typography::body(
                     if value.is_empty(){empty}else{&value}
@@ -654,6 +664,7 @@ impl SettingsView{
                 });
             });
         }
+        });
         self.save_bar(ui,gateway);
     }
     fn save_bar(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
@@ -670,7 +681,7 @@ impl SettingsView{
     fn show_data(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
         let business=self.source.get("mode").and_then(Value::as_str)==Some("business");
         let reading=self.data_request.is_some()||self.loading.is_some();
-        section(ui,"접수 원문 감사 보관함",|panel|{
+        card(ui,"접수 원문 감사 보관함",|panel|{
             if theme::action(panel,
                 if self.data_request.as_ref().is_some_and(|(op,_)|op=="archive"){
                     "기록 조회 중…"
@@ -681,7 +692,7 @@ impl SettingsView{
             }
         });
         ui.add_space(theme::SPACE_12);
-        section(ui,"데이터 백업 및 복구",|panel|{
+        card(ui,"데이터 백업 및 복구",|panel|{
             panel.horizontal_wrapped(|actions|{
                 if theme::action(actions,"지금 백업",ButtonRole::Standard,
                     business&&!self.read_only()&&!reading).clicked(){
@@ -727,7 +738,7 @@ impl SettingsView{
         ui.add_space(theme::SPACE_12);
         // React shows the heading and its on-demand help, not a filesystem
         // debug path in the regular settings body.
-        section(ui,"업무 데이터 저장",|_panel|{});
+        card(ui,"업무 데이터 저장",|_panel|{});
     }
     pub fn has_data_modal(&self)->bool{
         self.archive_open||self.restore_target.is_some()
@@ -835,7 +846,7 @@ impl SettingsView{
         }
     }
     fn show_system(&mut self,ui:&mut Ui){
-        section(ui,"프로그램 정보",|area|{
+        card(ui,"프로그램 정보",|area|{
             let config:Value=serde_json::from_str(
                 include_str!("../../src-tauri/tauri.conf.json")
             ).unwrap_or(Value::Null);
