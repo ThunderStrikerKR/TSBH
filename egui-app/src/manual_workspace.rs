@@ -394,13 +394,6 @@ impl ManualWorkspace {
                                 "newRecipientIds":[unique_id()]
                             })));
                         }
-                        if theme::action(ui,"마지막 배송 제거",ButtonRole::Quiet,
-                            !busy && rows.len()>1).clicked() {
-                            // A destructive operation is never implicit.
-                            self.error=Some(
-                                "배송 제거는 입력 내용 확인 기능을 이전한 뒤 사용할 수 있습니다.".into()
-                            );
-                        }
                     });
                     egui::ScrollArea::vertical().id_salt("manual-recipients-list")
                         .max_height(445.0).show(&mut cols[1],|ui|{
@@ -577,8 +570,12 @@ impl ManualWorkspace {
                 .show(ctx,|ui|{
                     ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
                     ui.horizontal(|ui|{
-                        if ui.button("변경 취소").clicked(){discard_confirmed=true;}
-                        if ui.button("계속 편집").clicked(){self.confirm_discard=false;}
+                        if theme::action(ui,"변경 취소",ButtonRole::Standard,true).clicked(){
+                            discard_confirmed=true;
+                        }
+                        if theme::action(ui,"계속 편집",ButtonRole::Quiet,true).clicked(){
+                            self.confirm_discard=false;
+                        }
                     });
                 });
             if discard_confirmed {return Some(Event::Closed);}
