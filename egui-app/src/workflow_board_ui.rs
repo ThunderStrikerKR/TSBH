@@ -173,6 +173,62 @@ fn group_heading(
     ui.interact(heading.response.rect,Id::new(("workflow-header",id)),
         egui::Sense::click())
 }
+/// React header: title and lights occupy the flexible left slot;
+/// its existing manage/delete controls retain their fixed right slots.
+/// Until the native audited writer is available, preserve their visible
+/// roles disabled rather than wiring destructive fake operations.
+fn workflow_header(ui:&mut Ui,id:&str,title:&str,step:usize,notice:bool)
+    ->egui::Response {
+    let width=ui.available_width();
+    let title_width=(width-theme::WORKFLOW_MANAGE_WIDTH
+        -theme::WORKFLOW_TRASH_WIDTH-theme::SPACE_8).max(0.0);
+    let mut title_response=None;
+    ui.horizontal(|bar|{
+        bar.spacing_mut().item_spacing.x=theme::SPACE_4;
+        bar.allocate_ui_with_layout(
+            Vec2::new(title_width,theme::WORKFLOW_TITLE_HEIGHT),
+            Layout::top_down(Align::Min),|left|{
+                left.set_min_width(title_width);
+                title_response=Some(group_heading(left,id,title,step,notice));
+            }
+        );
+        bar.allocate_ui_with_layout(
+            Vec2::new(theme::WORKFLOW_MANAGE_WIDTH,theme::WORKFLOW_TITLE_HEIGHT),
+            Layout::top_down(Align::Min),|manage|{
+                theme::action_full_width(manage,"묶음 관리",
+                    theme::ButtonRole::Standard,false);
+            }
+        );
+        // A small disabled trash control, drawn as line art as in React.
+        // It must never delete a native workflow group without an audited
+        // write + undo transaction.
+        let (rect,_)=bar.allocate_exact_size(
+            Vec2::new(theme::WORKFLOW_TRASH_WIDTH,
+                theme::WORKFLOW_TITLE_HEIGHT),
+            egui::Sense::hover(),
+        );
+        let paint=bar.painter();
+        paint.rect_filled(rect,theme::CONTROL_RADIUS as f32,theme::RAISED);
+        let c=rect.center();
+        let ink=egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::SECONDARY);
+        paint.line_segment([
+            Pos2::new(c.x-7.0,c.y-5.0),Pos2::new(c.x+7.0,c.y-5.0)
+        ],ink);
+        paint.line_segment([
+            Pos2::new(c.x-4.0,c.y-8.0),Pos2::new(c.x+4.0,c.y-8.0)
+        ],ink);
+        for (x1,y1,x2,y2) in [
+            (-5.0,-3.0,-4.0,8.0),(5.0,-3.0,4.0,8.0),
+            (-4.0,8.0,4.0,8.0),(-1.5,-1.0,-1.5,5.0),
+            (1.5,-1.0,1.5,5.0)
+        ]{
+            paint.line_segment([
+                Pos2::new(c.x+x1,c.y+y1),Pos2::new(c.x+x2,c.y+y2)
+            ],ink);
+        }
+    });
+    title_response.expect("workflow header always renders a clickable title")
+}
 fn lights(ui:&mut Ui,step:usize,notice:bool){
     ui.horizontal(|row|{
         row.spacing_mut().item_spacing.x=theme::SPACE_4;
@@ -311,7 +367,7 @@ fn group_frame(
     workflow_card(ui,active && !in_preview,|ui|{
         let title=format!("{}  {}",if open || in_preview{"▾"}else{"▸"},
             group.dealer_name);
-        let btn=group_heading(ui,&group.id,&title,group.step,group.needs_notice);
+        let btn=workflow_header(ui,&group.id,&title,group.step,group.needs_notice);
             if btn.clicked(){
                 if active {
                     event=Some(Event::ToggleGroup(group.id.clone()));
@@ -381,7 +437,7 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
                 .and_then(|m|m.get("name")).and_then(|n|n.as_str())
                 .filter(|n|!n.trim().is_empty()).unwrap_or("거래처 확인").to_owned()
         };
-        if group_heading(ui,&draft.id,
+        if workflow_header(ui,&draft.id,
             &format!("{}  {}",if open{"▾"}else{"▸"},title),0,false
         ).clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
