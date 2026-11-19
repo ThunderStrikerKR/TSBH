@@ -82,7 +82,8 @@ pub fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
 /// Pixel-exact axis line within a gutter rectangle. A 6-*physical*-pixel
 /// gutter has a center between two pixels, so its normal line must occupy
 /// the middle TWO pixels. A one-pixel line can only sit to one side.
-/// Odd-width gutters get a single centered pixel. Hover adds two pixels.
+/// Odd-width gutters use a single centered pixel. Hover uses the shared
+/// 2pt token, adjusted only when necessary for symmetrical pixel margins.
 pub fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     let scale = ui.ctx().pixels_per_point().max(1.0);
     let (low, high) = if vertical {
