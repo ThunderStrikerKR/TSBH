@@ -1157,7 +1157,7 @@ impl BandoEgui {
 
         if self.discard_ocr_confirm {
             components::modal_backdrop(
-                ctx,work_area,"ocr-discard-nested-backdrop",true
+                ctx,"ocr-discard-nested-backdrop",true
             );
             components::decision_window(
                 "변경사항 확인","ocr-review-discard-confirm",work_area
@@ -2488,7 +2488,7 @@ impl eframe::App for BandoEgui {
             (self.page==Page::Reception &&
                 (self.client_chooser.is_some() || self.manual_workspace.is_some())) {
             components::modal_backdrop(
-                ctx,work_area,"bando-workspace-modal-backdrop",false
+                ctx,"bando-workspace-modal-backdrop",false
             );
         }
         self.show_ocr_review(ctx,work_area);
