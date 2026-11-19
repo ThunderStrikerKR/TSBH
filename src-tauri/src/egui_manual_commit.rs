@@ -228,7 +228,7 @@ fn assign_selected(
             "candidateIds":[]
         }))?;
     }
-    if keys!=order_keys.iter().filter_map(Value::as_str)
+    if *keys!=order_keys.iter().filter_map(Value::as_str)
         .map(str::to_owned).collect::<Vec<_>>() {
         return Err("Rust가 확정한 배정 순서가 제출된 순서와 다릅니다.".into());
     }
