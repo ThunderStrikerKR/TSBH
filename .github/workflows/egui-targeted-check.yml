@@ -1,4 +1,4 @@
-# Targeted native compile check: React-parity Kakao Together/Split/Disconnect modes (49th).
+# Targeted Win32 compile: React shell Kakao dock persists across tabs, two modes, explicit disconnect (49th).
 name: Tauri native CLI executable compile check
 on:
   push:
