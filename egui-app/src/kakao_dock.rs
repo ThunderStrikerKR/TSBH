@@ -218,8 +218,16 @@ mod native {
         if unsafe{SetWindowPos(
             hwnd,0,x,y,w,h,SWP_NOACTIVATE|SWP_NOZORDER
         )}==0{
-            Err(os("카카오톡 창 배치 실패"))
-        }else{Ok(())}
+            return Err(os("카카오톡 창 배치 실패"));
+        }
+        let actual=visual(hwnd)?;
+        // Win32 may silently expand an app to its enforced minimum size.
+        // Report failure instead of covering reception UI outside the dock.
+        if actual.left<desired.left-4 || actual.top<desired.top-4 ||
+            actual.right>desired.right+4 || actual.bottom>desired.bottom+4 {
+            return Err("카카오톡 창이 왼쪽 배치 영역보다 큽니다. 패널 너비를 넓혀 주세요.".into());
+        }
+        Ok(())
     }
     #[derive(Clone,Copy)]
     struct Tracked{
@@ -328,6 +336,9 @@ mod native {
                 }).ok_or("카카오톡이 여러 개 실행 중입니다. 연결할 대화창을 활성화한 뒤 다시 연결하세요.")?;
             let pid=chosen.pid;
             let current=found.into_iter().filter(|c|c.pid==pid).collect::<Vec<_>>();
+            if !current.iter().any(|c|unsafe{IsIconic(c.hwnd)}==0) {
+                return Err("카카오톡 창이 최소화되어 있습니다. 창을 복원하고 다시 연결하세요.".into());
+            }
             let mut tracked=Vec::new();
             for c in current.iter().take(32){
                 tracked.push(Tracked::new(c)?);
