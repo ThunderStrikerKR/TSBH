@@ -1,4 +1,4 @@
-# Final targeted Windows check: React Kakao toolbar, persistent dock, and removed ad-hoc notices (49th).
+# Targeted Windows compile: fix Kakao HWND_TOP z-order regression without moving BANDO HUB.
 name: Tauri native CLI executable compile check
 on:
   push:
