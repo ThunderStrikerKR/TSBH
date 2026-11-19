@@ -330,7 +330,7 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
         if let Some(price)=&draft.pricing_preview {
             let keys=["sourceRaw","orderId","clientId","authorityRevision",
                 "status","shippingFee","shippingVersion","vatAmount",
-                "notified","paid","linePrices"];
+                "subtotal","total","notified","paid","linePrices"];
             let map=price.as_object()
                 .ok_or("Rust 가격 계산 결과는 JSON 객체여야 합니다.")?;
             if map.keys().any(|key|!keys.contains(&key.as_str())) ||
