@@ -3,7 +3,7 @@
 //! tracking, line-height, contrast and numeric alignment. Panels, spacing,
 //! colors and business decisions keep their existing owners.
 //!
-//! The approved 34pt wordmark is an intentional egui override. No font
+//! The wordmark has an explicit optical size and alignment. No font
 //! binaries are bundled or redistributed.
 
 use eframe::egui::{
