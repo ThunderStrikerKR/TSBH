@@ -175,6 +175,11 @@ impl BandoEgui {
                 self.source_save_error = Some("활성 발주서를 찾을 수 없습니다.".to_owned());
                 return;
             };
+            if active.raw != self.raw_source {
+                active.analysis_raw = None;
+                active.analysis_evidence = None;
+                active.client_match = None;
+            }
             active.raw.clone_from(&self.raw_source);
             active.order_type = self.order_type.as_str().to_owned();
         }
@@ -240,6 +245,7 @@ impl BandoEgui {
         self.drafts.push(WorkingReception {
             id: id.clone(), raw: String::new(),
             order_type: OrderType::Agency.as_str().to_owned(),
+            analysis_raw: None, analysis_evidence: None, client_match: None,
         });
         self.select_reception(&id, ctx);
     }
@@ -313,6 +319,17 @@ impl BandoEgui {
             self.analysis_pending = false;
             match result {
                 Ok(analysis) => {
+                    // Attach the exact Rust analysis to ONLY the still-active
+                    // reception. A switched/new order invalidates this worker.
+                    if let Some(active_id) = self.active_id.as_deref() {
+                        if let Some(item) = self.drafts.iter_mut()
+                            .find(|item| item.id == active_id) {
+                            item.analysis_raw = Some(self.raw_source.clone());
+                            item.analysis_evidence = Some(analysis.recognition.clone());
+                            item.client_match = Some(analysis.client_match.clone());
+                            self.queue_source_save();
+                        }
+                    }
                     self.analysis = Some(analysis);
                     self.analysis_error = None;
                     self.selected_recipient = 0;
