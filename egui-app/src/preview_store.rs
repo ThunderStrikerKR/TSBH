@@ -4,16 +4,25 @@
 
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde_json::{json, Value};
-use std::{fs, path::PathBuf, time::Duration};
+use std::{collections::HashSet, fs, path::PathBuf, time::Duration};
 
 const SIGNATURE: &str = "bando-hub-egui-preview-v1";
 const SOURCE_LIMIT_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Clone, Debug)]
+pub struct WorkingReception {
+    pub id: String,
+    pub raw: String,
+    pub order_type: String,
+}
 
 #[derive(Clone, Debug)]
 pub struct WorkingSource {
     pub raw: String,
     pub order_type: String,
     pub revision: u64,
+    pub active_id: Option<String>,
+    pub drafts: Vec<WorkingReception>,
 }
 
 pub struct PreviewStore {
@@ -70,6 +79,8 @@ impl PreviewStore {
                      order_type TEXT NOT NULL DEFAULT 'AGENCY'
                        CHECK(order_type IN ('AGENCY','DEALER')),
                      revision INTEGER NOT NULL CHECK(revision >= 0),
+                     active_id TEXT NOT NULL DEFAULT '',
+                     drafts_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(drafts_json)),
                      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                  );"
                 ).map_err(|e| e.to_string())?;
@@ -123,6 +134,16 @@ impl PreviewStore {
                  CHECK(order_type IN ('AGENCY','DEALER'))"
             ).map_err(|e| format!("egui 접수 유형 마이그레이션 실패: {e}"))?;
         }
+        if !columns.iter().any(|name| name == "active_id") {
+            conn.execute_batch(
+                "ALTER TABLE working_source ADD COLUMN active_id TEXT NOT NULL DEFAULT ''"
+            ).map_err(|e| format!("egui 활성 접수 마이그레이션 실패: {e}"))?;
+        }
+        if !columns.iter().any(|name| name == "drafts_json") {
+            conn.execute_batch(
+                "ALTER TABLE working_source ADD COLUMN drafts_json TEXT NOT NULL DEFAULT '[]'"
+            ).map_err(|e| format!("egui 접수 목록 마이그레이션 실패: {e}"))?;
+        }
         Ok(store)
     }
 
@@ -154,47 +175,122 @@ impl PreviewStore {
 
     pub fn load_source(&self) -> Result<WorkingSource, String> {
         let conn = self.open_connection()?;
-        let (raw, order_type, rev): (String, String, i64) = conn.query_row(
-            "SELECT raw,order_type,revision FROM working_source WHERE id=1",
-            [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        ).map_err(|e| format!("egui 접수 원문을 복원하지 못했습니다: {e}"))?;
+        let (raw, order_type, rev, active, encoded): (String, String, i64, String, String) =
+            conn.query_row(
+                "SELECT raw,order_type,revision,active_id,drafts_json
+                 FROM working_source WHERE id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            ).map_err(|e| format!("egui 접수 원문을 복원하지 못했습니다: {e}"))?;
         if !matches!(order_type.as_str(), "AGENCY" | "DEALER") {
             return Err("egui 저장된 접수 유형이 잘못되었습니다.".into());
         }
         let revision = u64::try_from(rev)
             .map_err(|_| "egui 저장 revision이 잘못되었습니다.".to_owned())?;
-        Ok(WorkingSource { raw, order_type, revision })
+        let values: Value = serde_json::from_str(&encoded)
+            .map_err(|e| format!("egui 접수 목록 형식 오류: {e}"))?;
+        let rows = values.as_array()
+            .ok_or("egui 접수 목록은 JSON 배열이어야 합니다.")?;
+        let mut drafts = Vec::with_capacity(rows.len());
+        for row in rows {
+            let id = row.get("id").and_then(Value::as_str)
+                .filter(|id| !id.trim().is_empty())
+                .ok_or("저장된 접수 ID가 잘못되었습니다.")?;
+            let source = row.get("raw").and_then(Value::as_str)
+                .ok_or("저장된 접수 원문이 잘못되었습니다.")?;
+            let kind = row.get("orderType").and_then(Value::as_str)
+                .ok_or("저장된 접수 유형이 잘못되었습니다.")?;
+            if !matches!(kind, "AGENCY" | "DEALER") {
+                return Err("저장된 접수 유형이 잘못되었습니다.".into());
+            }
+            drafts.push(WorkingReception {
+                id: id.to_owned(), raw: source.to_owned(), order_type: kind.to_owned(),
+            });
+        }
+        // Preserve a previous single-source editing session without changing
+        // its SQLite row. A subsequent explicit edit migrates it atomically.
+        if drafts.is_empty() && !raw.is_empty() {
+            drafts.push(WorkingReception {
+                id: "legacy-working-source".into(),
+                raw: raw.clone(), order_type: order_type.clone(),
+            });
+        }
+        let active_id = if !active.is_empty() {
+            Some(active)
+        } else {
+            drafts.first().map(|item| item.id.clone())
+        };
+        let result = WorkingSource { raw, order_type, revision, active_id, drafts };
+        validate_source(&result)?;
+        Ok(result)
     }
 
-    /// Revision-checked write to prevent two preview windows silently
-    /// overwriting each other's source. Does NOT create a confirmed order.
-    pub fn save_source(&self, raw: &str, order_type: &str, revision: u64)
-        -> Result<u64, String>
-    {
-        if !matches!(order_type, "AGENCY" | "DEALER") {
-            return Err("접수 유형은 대리발송 또는 대리점 납품이어야 합니다.".into());
-        }
-        if raw.len() > SOURCE_LIMIT_BYTES {
-            return Err("egui 발주원문은 최대 2MB까지 저장할 수 있습니다.".into());
-        }
-        let expected = i64::try_from(revision)
+    /// Atomically persist the complete unconfirmed reception workspace.
+    /// This never changes the Tauri ledger or marks a receipt confirmed.
+    pub fn save_source(&self, source: &WorkingSource) -> Result<u64, String> {
+        validate_source(source)?;
+        let expected = i64::try_from(source.revision)
             .map_err(|_| "egui 접수 저장 revision 범위를 초과했습니다.".to_owned())?;
-        let next = expected.checked_add(1)
-            .ok_or("egui 접수 revision 한도 초과")?;
+        let next = expected.checked_add(1).ok_or("egui 접수 revision 한도 초과")?;
+        let payload = Value::Array(source.drafts.iter().map(|item| json!({
+            "id": item.id,
+            "raw": item.raw,
+            "orderType": item.order_type,
+        })).collect());
+        let encoded = payload.to_string();
         let mut conn = self.open_connection()?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         let affected = tx.execute(
-            "UPDATE working_source
-             SET raw=?1,order_type=?2,revision=?3,updated_at=CURRENT_TIMESTAMP
-             WHERE id=1 AND revision=?4",
-            params![raw, order_type, next, expected],
-        ).map_err(|e| format!("egui 원문 저장 실패: {e}"))?;
+            "UPDATE working_source SET raw=?1,order_type=?2,revision=?3,
+             active_id=?4,drafts_json=?5,updated_at=CURRENT_TIMESTAMP
+             WHERE id=1 AND revision=?6",
+            params![
+                source.raw, source.order_type, next,
+                source.active_id.as_deref().unwrap_or(""), encoded, expected
+            ],
+        ).map_err(|e| format!("egui 접수 목록 저장 실패: {e}"))?;
         if affected != 1 {
             return Err("다른 egui 창에서 원문이 변경됐습니다. 저장을 덮어쓰지 않았습니다.".into());
         }
-        tx.commit().map_err(|e| format!("egui 원문 저장 확정 실패: {e}"))?;
+        tx.commit().map_err(|e| format!("egui 접수 목록 저장 확정 실패: {e}"))?;
         Ok(next as u64)
     }
 
     pub fn path(&self) -> &std::path::Path { &self.path }
+}
+
+fn validate_source(source: &WorkingSource) -> Result<(), String> {
+    if !matches!(source.order_type.as_str(), "AGENCY" | "DEALER") {
+        return Err("접수 유형은 대리발송 또는 대리점 납품이어야 합니다.".into());
+    }
+    let mut ids = HashSet::new();
+    if source.drafts.len() > 1000 {
+        return Err("egui 미확정 접수는 최대 1,000건까지 보관할 수 있습니다.".into());
+    }
+    let mut bytes = 0usize;
+    for draft in &source.drafts {
+        if draft.id.trim().is_empty() || !ids.insert(draft.id.as_str()) {
+            return Err("접수 ID가 비었거나 중복되었습니다.".into());
+        }
+        if !matches!(draft.order_type.as_str(), "AGENCY" | "DEALER") {
+            return Err("저장할 접수 유형이 잘못되었습니다.".into());
+        }
+        bytes = bytes.checked_add(draft.raw.len())
+            .ok_or("접수 원문 총 크기가 너무 큽니다.")?;
+    }
+    if bytes > SOURCE_LIMIT_BYTES {
+        return Err("egui 접수 원문 전체는 최대 2MB까지 저장할 수 있습니다.".into());
+    }
+    match &source.active_id {
+        Some(active_id) => {
+            let active = source.drafts.iter().find(|row| &row.id == active_id)
+                .ok_or("활성 접수 ID를 찾지 못했습니다.")?;
+            if active.raw != source.raw || active.order_type != source.order_type {
+                return Err("활성 접수와 저장할 원문이 일치하지 않습니다.".into());
+            }
+        }
+        None if source.drafts.is_empty() && source.raw.is_empty() => {}
+        None => return Err("활성 접수 ID가 없습니다.".into()),
+    }
+    Ok(())
 }
