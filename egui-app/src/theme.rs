@@ -33,7 +33,6 @@ pub const WORKFLOW_CARD_GAP: f32 = 8.0;
 pub const WORKFLOW_TITLE_HEIGHT: f32 = 34.0;
 pub const WORKFLOW_SIGNAL_WIDTH: f32 = 82.0;
 pub const WORKFLOW_SIGNAL_SIZE: f32 = 18.0;
-pub const WORKFLOW_SIGNAL_COMPACT_SIZE: f32 = 10.0;
 pub const WORKFLOW_SIGNAL_GAP: f32 = 3.0;
 pub const WORKFLOW_SIGNAL_DONE: Color32 = Color32::from_rgb(73, 166, 106);
 pub const WORKFLOW_SIGNAL_DONE_BORDER: Color32 = Color32::from_rgb(105, 198, 136);
