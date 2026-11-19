@@ -95,7 +95,9 @@ fn canonical_rows(
     let old_len=old.len();
     // Existing Rust-recognized shipment rows may only be removed from the
     // end; arbitrary reordering of same-name recipients is never guessed.
-    let employee_reset=submit_id(order_id,&requested[0]["id"])?!=s(&old[0],"id");
+    let employee_reset=old.first().is_none_or(|row|
+        submit_id(order_id,&requested[0]["id"]).ok().as_deref()!=Some(s(row,"id"))
+    );
     let base_len=if employee_reset {
         let first=submit_id(order_id,&requested[0]["id"])?;
         if !valid_new_id(&first){
