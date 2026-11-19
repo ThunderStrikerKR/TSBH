@@ -1,7 +1,8 @@
 //! BANDO HUB egui — first native visual implementation.
 //! UI preview only: uses existing read-only Rust business decisions and
-//! a separate egui-preview.sqlite3 for source continuity. It NEVER opens the
-//! production Tauri database or docks KakaoTalk. Existing React/Tauri stays.
+//! a separate egui-preview.sqlite3 for source continuity. Existing React/Tauri
+//! stays untouched. A production client master may be read ONLY by explicit
+//! read-only opt-in; KakaoTalk windows are inspected, never docked or moved.
 
 mod theme;
 mod typography;
