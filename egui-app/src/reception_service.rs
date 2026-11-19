@@ -29,6 +29,11 @@ pub struct RecipientReference {
 pub struct ReceptionAnalysis {
     pub recognition: Value,
     pub reference: Vec<RecipientReference>,
+    /// Advisory until an actual order-client change is committed in Rust.
+    pub client_match: Value,
+    pub client_candidates: Vec<Value>,
+    pub matched_client_name: Option<String>,
+    pub directory_count: usize,
 }
 
 impl Deref for ReceptionAnalysis {
@@ -47,15 +52,49 @@ pub fn analyze_raw(gateway: &dyn BandoGateway, raw: &str) -> Result<ReceptionAna
         return Err("발주원문을 먼저 입력하세요.".to_owned());
     }
     let state = gateway.load_catalog()?;
+    let directory = state.get("clients").and_then(Value::as_array);
+    let directory_count = directory.map(Vec::len).unwrap_or(0);
+
+    // The same Rust matcher used by Tauri owns all client-selection logic.
+    // egui has no connected KakaoTalk HWND yet, so it never fabricates
+    // a window title or infers an ordering dealer from a recipient address.
+    let context = json!({"state": &state, "raw": raw, "windows": []});
+    let client_match = gateway.execute(
+        ReadOperation::AutoMatchReceptionClient, context.clone()
+    )?;
+    let candidates = gateway.execute(
+        ReadOperation::ReceptionClientCandidates, context
+    )?;
+    let client_candidates = candidates.get("candidates").and_then(Value::as_array)
+        .cloned().unwrap_or_default();
+
+    let selected = client_match.get("clientId").and_then(Value::as_str)
+        .and_then(|id| directory?.iter().find(|client|
+            text(client, "id") == id &&
+            client.get("deletedAt").is_none_or(Value::is_null) &&
+            client.get("active") != Some(&Value::Bool(false))
+        ));
+    let matched_client_name = selected.map(|client| text(client, "name").to_owned());
+
+    // Matched client is passed to the existing Rust recognition logic only
+    // when the native matcher established a unique, active customer identity.
+    // This is still unconfirmed preview data; no order or client is saved.
     let analysis = gateway.execute(ReadOperation::AnalyzeOrder, json!({
-        "raw": raw,
-        "state": state,
+        "raw": raw, "state": &state, "client": selected,
     }))?;
     let reference = recipients(&analysis).iter()
         .map(|recipient| recipient_reference(gateway, recipient, &state))
         .collect();
-    Ok(ReceptionAnalysis { recognition: analysis, reference })
+    Ok(ReceptionAnalysis {
+        recognition: analysis,
+        reference,
+        client_match,
+        client_candidates,
+        matched_client_name,
+        directory_count,
+    })
 }
+
 
 fn recipient_reference(gateway: &dyn BandoGateway, recipient: &Value, state: &Value) -> RecipientReference {
     let address = text(recipient, "address");
