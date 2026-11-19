@@ -126,6 +126,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
     let price_summary=json!({
         "sourceRaw":source.raw,
         "orderId":source.id,
+        "orderType":source.order_type,
         "clientId":target_id,
         "authorityRevision":authority_revision,
         "status":order.get("status"),
