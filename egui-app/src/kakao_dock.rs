@@ -3,6 +3,13 @@
 //! Dealer recognition is NOT performed here and there is no chat-picker UI.
 use eframe::egui;
 
+#[derive(Clone,Copy,Debug,PartialEq,Eq,Default)]
+pub enum DockMode {
+    #[default]
+    Together,
+    Split,
+}
+
 #[derive(Default)]
 pub struct KakaoDock {
     #[cfg(windows)]
@@ -13,18 +20,43 @@ impl KakaoDock {
         #[cfg(windows)] {self.session.is_some()}
         #[cfg(not(windows))] {false}
     }
+    pub fn mode(&self)->DockMode {
+        #[cfg(windows)] {self.session.as_ref().map(|s|s.mode).unwrap_or_default()}
+        #[cfg(not(windows))] {DockMode::Together}
+    }
+    pub fn set_mode(
+        &mut self,mode:DockMode,rect:egui::Rect,scale:f32
+    )->Result<(),String>{
+        #[cfg(windows)] {
+            let session=self.session.as_mut().ok_or("카카오톡이 연결되지 않았습니다.")?;
+            if session.mode==mode {return Ok(());}
+            let previous=session.mode;
+            session.mode=mode;
+            session.last_sync=None;
+            if let Err(reason)=session.sync(rect,scale) {
+                session.mode=previous;
+                session.last_sync=None;
+                // The previous valid mode remains connected.
+                if session.sync(rect,scale).is_err(){self.disconnect();}
+                return Err(reason);
+            }
+        }
+        #[cfg(not(windows))] {let _=(mode,rect,scale);
+            return Err("카카오톡 도킹은 Windows 전용입니다.".into());}
+        Ok(())
+    }
     pub fn connect(
-        &mut self,preferred_chat:Option<&str>,rect:egui::Rect,scale:f32
+        &mut self,rect:egui::Rect,scale:f32
     )->Result<(),String>{
         #[cfg(windows)] {
             if self.session.is_some(){return Ok(());}
-            let mut session=native::Session::connect(preferred_chat)?;
+            let mut session=native::Session::connect()?;
             session.sync(rect,scale)?;
             self.session=Some(session);
             Ok(())
         }
         #[cfg(not(windows))] {
-            let _=(preferred_chat,rect,scale);
+            let _=(rect,scale);
             Err("카카오톡 창 도킹은 Windows 전용 기능입니다.".into())
         }
     }
@@ -311,29 +343,20 @@ mod native {
     }
     pub struct Session{
         hub:Hwnd,pid:u32,windows:Vec<Tracked>,active_chat:Option<Hwnd>,
+        pub(super) mode:super::DockMode,
         last_region:Option<Rect>,last_sync:Option<Instant>,
     }
     impl Session{
-        pub fn connect(preferred_chat:Option<&str>)->Result<Self,String>{
+        pub fn connect()->Result<Self,String>{
             let hub=hwnd_of_hub()?;
             let found=candidates();
-            if found.is_empty(){
-                return Err("실행 중인 카카오톡 창이 없습니다.".into());
-            }
+            // React useAppModel::docking: CHAT first, then MAIN, then first.
+            // Do not put a chat/dealer-selection step between Connect and dock.
+            let chosen=found.iter().find(|c|!c.main)
+                .or_else(||found.iter().find(|c|c.main))
+                .or_else(||found.first()).cloned()
+                .ok_or("실행 중인 카카오톡 창이 없습니다.")?;
             let focused=unsafe{GetForegroundWindow()};
-            let chosen=preferred_chat.and_then(|id|{
-                found.iter().find(|c|
-                    format!("{:016X}",c.hwnd as usize)==id
-                )
-            }).or_else(||found.iter().find(|c|c.hwnd==focused))
-                .or_else(||{
-                    let roots=found.iter().filter(|c|c.main).collect::<Vec<_>>();
-                    if roots.len()==1{Some(roots[0])}else{None}
-                }).or_else(||{
-                    let pids=found.iter().map(|c|c.pid)
-                        .collect::<std::collections::HashSet<_>>();
-                    if pids.len()==1{found.first()}else{None}
-                }).cloned().ok_or("카카오톡이 여러 개 실행 중입니다. 연결할 대화창을 활성화한 뒤 다시 연결하세요.")?;
             let pid=chosen.pid;
             let current=found.into_iter().filter(|c|c.pid==pid).collect::<Vec<_>>();
             if !current.iter().any(|c|unsafe{IsIconic(c.hwnd)}==0) {
@@ -351,6 +374,7 @@ mod native {
             };
             Ok(Self{
                 hub,pid,windows:tracked,active_chat,
+                mode:super::DockMode::Together,
                 last_region:None,last_sync:None,
             })
         }
