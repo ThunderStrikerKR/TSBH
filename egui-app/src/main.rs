@@ -1428,6 +1428,11 @@ impl BandoEgui {
                 pane.set_width(review_rect.width());
                 pane.set_height(review_rect.height());
                 Self::section(pane, "확인할 내용", review_height, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("reception-review-content-scroll")
+                        .max_height(components::docked_section_body_height(review_height))
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
                     if let Some(error) = &self.analysis_error {
                         ui.label(typography::status(error, theme::DANGER));
                     } else if let Some(analysis) = &self.analysis {
@@ -1503,6 +1508,7 @@ impl BandoEgui {
                             ));
                         }
                     }
+                        });
                 });
             },
         );
