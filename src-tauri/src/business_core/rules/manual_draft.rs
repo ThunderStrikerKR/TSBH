@@ -255,7 +255,14 @@ fn release(payload:&Value)->Result<Value,String>{
 pub(super) fn execute(payload:&Value)->Result<Value,String>{
     match required_str(payload,"action")?{
         "initial_manual"=>initial(payload),
-        "set_manual_product"=>set_item(payload,required_str(payload,"value")?),
+        "set_manual_product"=>{
+            // Clearing a wrong manual product is deliberate and valid.
+            // set_item already handles the empty string as an unknown item;
+            // required_str incorrectly rejected that supported branch.
+            let value=payload.get("value").and_then(Value::as_str)
+                .ok_or("상품 셀의 입력값은 문자열이어야 합니다.")?;
+            set_item(payload,value)
+        },
         "assign_manual_block"=>assign(payload),
         "release_manual_block"=>release(payload),
         action=>Err(format!("수동 분류 초안 명령이 없습니다: {action}"))
