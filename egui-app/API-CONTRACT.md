@@ -196,3 +196,15 @@ $env:BANDO_EGUI_BUSINESS_DB = "C:\\path\\to\\bando-hub-v001.sqlite"
 - **중요한 잔여 범위:** 이 경로는 실제 Rust 주문 수정 규칙과 실제 마스터 값을 사용해 **미확정 주문의 참고 견적을 준비**하지만, 운영 `app_state/core_orders/reception_working_orders`를 **갱신하지 않는다**. 영구 운영 주문 변경을 완료하려면 기존 Tauri `write_snapshot/state_save`의 검증, workflow reconcile, revision 및 감사 이력 처리를 동일 저장 트랜잭션으로 호출하는 **명시적 전용 게이트웨이**가 추가로 필요하다. 임의 직접 SQL `UPDATE core_orders/client_id`는 절대 수행하지 않는다.
 - 원문 하이라이트와 수취인 수동 분류는 다음 단계이며, 카카오톡 창 연결 문제는 독립 Issue #42에서 계속 추적한다.
 - 실제 Windows Cargo 컴파일/GUI 확인은 아직 하지 않았고 대규모 회귀 테스트도 실행하지 않았다.
+
+## 11. Tauri 미확정 접수 작업본의 명시적 저장 (2026-11-20)
+
+- 앞선 §10까지는 읽기 전용 견적 단계다. 이 절부터는 **사용자 클릭과 별도 환경 설정이 모두 있는 경우에 한해** 운영 DB의 `reception_working_orders`에 저장할 수 있다. 정식 주문 원장 `core_orders` 및 `app_state`는 그대로 둔다.
+- 경로: egui `BandoGateway::commit_working_reception` → 사용자가 지정한 최신 Tauri EXE `--bando-egui-reception-commit` → `egui_reception_bridge::commit_file` → SQLite 즉시 트랜잭션. 인증 없는 HTTP 포트·브라우저 IPC는 추가하지 않았다.
+- CLI 입력 표준입력 JSON: `orderId`, `sourceRaw`, `orderType`, `clientId`, `at`, `expectedAuthorityRevision`, `expectedWorkingVersion`(초기 null). 반환: `{ok:true,result:{orderId,clientId,workingVersion,authorityRevision,status,subtotal,shippingFee,vatAmount,total}}` 또는 `{ok:false,error}`. 송하인/수취인 개인정보, 계좌, 주문 원장 전체를 응답하지 않는다.
+- 재계산: SQLite v2 관계형 전체 snapshot을 트랜잭션 안에서 다시 읽고, `business_core`가 `new_reception` 또는 `replace_reception`, `analyze_order`, `change_order_client`, `merge_reception_analysis`, `reprice_order`, `calculate_price`를 순서대로 실행한다. 운영 주문 ID 중복 및 이미 확인 완료된 주문은 거부한다.
+- 기존 egui 작업본에 `_eguiBridgeVersion`, `_eguiBridgeAuthorityRevision`, `_eguiBridgePayloadHash`를 저장해 작업본 변경 감지와 CAS 갱신을 한다. 기존 React/Tauri `working_receptions::replace`는 누락되거나 버전이 다른 egui 작업본을 발견하면 저장을 거부한다.
+- egui 격리 DB에는 `workingVersion`(CAS 토큰), `workingSynced`(현재 원문·유형·거래처의 마지막 저장 반영 여부)가 추가된다. 작업본 제출/수정은 자동 저장이 아니라 **운영 작업본 저장** 버튼의 명시적 클릭으로만 수행한다.
+- 연동은 `BANDO_EGUI_BUSINESS_DB`, `BANDO_EGUI_TAURI_HELPER`, `BANDO_EGUI_ENABLE_WORKING_COMMIT=1` 세 설정이 모두 필요한 opt-in 방식이며, 설정이 없으면 기존 읽기 전용 미리보기가 유지된다.
+- 이 단계는 `주문 확인 완료`로 정식 원장에 반영하는 `write_snapshot/state_save`가 아니다. 원문의 자동 분류 및 실제 단가 계산과 별개로 최종 검수, 수취인 수동 분류, 정식 확정과 배송 흐름은 아직 이어서 이전해야 한다.
+- Windows Cargo 빌드, 격리 DB에서 동시 실행 검증은 미실시. Tauri 네이티브 단건 보관을 외부 운영 환경에 배포하기 전 수동 검증이 필요하다. 카카오톡 연결은 Issue #42에 남긴다.
