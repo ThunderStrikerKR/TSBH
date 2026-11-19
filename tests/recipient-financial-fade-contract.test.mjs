@@ -33,7 +33,7 @@ test("one completed transition gates recipient, items, freight and financial foo
   assert.match(desk, /<article key=\{r\.id\}\s*data-recipient-fade=\{recipientRevealPhase\}/);
   assert.match(desk, /거래처 선택 후 운임과 청구금액을 확인합니다\./);
   assert.match(desk, /recipientFade=\{recipientRevealPhase\}/);
-  assert.match(desk, /<div className="order-grand-total">\s*총 주문 금액/);
+  assert.match(desk, /<div className="order-grand-total">\s*<span className="order-grand-total-label">총 주문<\/span>/);
   assert.match(desk, /<b data-recipient-fade=\{recipientRevealPhase\}>/);
   assert.match(desk, /inert=\{recipientRevealPhase === "pending"\}/);
   assert.doesNotMatch(desk, /className="recipient-body" data-recipient-fade/);
@@ -62,7 +62,7 @@ test("shipping count stays aligned and VAT status has no brackets", () => {
   assert.match(desk, /className="shipment-count-value"/);
   assert.match(desk, /className="shipment-count-unit">건<\/span>/);
   assert.match(desk, /className="shipment-count-divider">\|<\/span>/);
-  assert.match(desk, /className="order-grand-total-label">총 주문 금액<\/span>/);
+  assert.match(desk, /className="order-grand-total-label">총 주문<\/span>/);
   assert.match(desk, /className="order-vat-summary"/);
   assert.doesNotMatch(desk, /className="order-vat-paren"/);
   assert.match(desk, /className="order-vat-label" data-recipient-fade=\{recipientRevealPhase\}/);
