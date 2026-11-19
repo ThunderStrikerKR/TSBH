@@ -260,7 +260,7 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
             "quantity":item.get("quantity"),
             "unitPrice":item.get("unitPrice"),
         })).collect::<Vec<_>>();
-    Ok(json!({
+    let mut acknowledgement=json!({
         "orderId":order_id,
         "clientId":client_id,
         "workingVersion":working_version,
@@ -273,7 +273,14 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
         "total":totals.get("total"),
         "linePrices":lines,
         "manualApplied":manual.is_some()
-    }))
+    });
+    // The one-shot CLI has a deliberately bounded stdout contract. Truncate
+    // no individual quote: if its full list is too large, return totals
+    // and an empty detail list rather than losing the commit acknowledgement.
+    if serde_json::to_vec(&acknowledgement).map_err(err)?.len()>90_000 {
+        acknowledgement["linePrices"]=json!([]);
+    }
+    Ok(acknowledgement)
 }
 
 pub(super) fn commit_file(path: &Path, request: Value) -> Result<Value, String> {
