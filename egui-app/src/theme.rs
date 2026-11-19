@@ -8,6 +8,7 @@ use eframe::egui::{
 };
 
 pub const CANVAS: Color32 = Color32::from_rgb(16, 16, 16);
+pub const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
 pub const PANEL: Color32 = Color32::from_rgb(32, 32, 32);
 pub const INPUT: Color32 = Color32::from_rgb(41, 41, 41);
 pub const RAISED: Color32 = Color32::from_rgb(48, 48, 48);
@@ -36,6 +37,12 @@ pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 pub const FONT_BRAND: f32 = 19.0;
+pub const FONT_PAGE_HEADING: f32 = 20.0;
+pub const FONT_SECTION_HEADING: f32 = 16.0;
+pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
+pub const FONT_BODY: f32 = 14.0;
+pub const FONT_FIELD_LABEL: f32 = 13.0;
+pub const FONT_METADATA: f32 = 12.0;
 pub const FONT_MAIN_NAV: f32 = 16.0;
 pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
@@ -44,6 +51,10 @@ pub const SOFT_DIVIDER_WIDTH: f32 = 1.0;
 pub const CONTROL_RADIUS: u8 = 6;
 pub const PANEL_RADIUS: u8 = 9;
 pub const INPUT_HEIGHT: f32 = 36.0;
+pub const ACTION_PRIMARY_HEIGHT: f32 = 36.0;
+pub const ACTION_STANDARD_HEIGHT: f32 = 34.0;
+pub const ACTION_EMPHASIZED_HEIGHT: f32 = 34.0;
+pub const ACTION_QUIET_HEIGHT: f32 = 32.0;
 pub const HEADER_HEIGHT: f32 = 54.0;
 pub const NAV_HEIGHT: f32 = 38.0;
 
@@ -77,10 +88,10 @@ pub fn install(ctx: &egui::Context) {
     style.spacing.item_spacing = Vec2::new(SPACING, SPACING);
     // Per-role horizontal padding is applied by action() below.
     style.spacing.button_padding = Vec2::new(SPACE_12, SPACE_8);
-    style.text_styles.insert(TextStyle::Heading, FontId::proportional(20.0));
-    style.text_styles.insert(TextStyle::Body, FontId::proportional(14.0));
+    style.text_styles.insert(TextStyle::Heading, FontId::proportional(FONT_PAGE_HEADING));
+    style.text_styles.insert(TextStyle::Body, FontId::proportional(FONT_BODY));
     style.text_styles.insert(TextStyle::Button, FontId::proportional(13.0));
-    style.text_styles.insert(TextStyle::Small, FontId::proportional(12.0));
+    style.text_styles.insert(TextStyle::Small, FontId::proportional(FONT_METADATA));
     ctx.set_style(style);
 
     // The default egui font does not cover Korean. Read an installed system
@@ -117,29 +128,29 @@ pub fn nested_frame() -> Frame {
 }
 
 pub fn section_heading(text: &str) -> RichText {
-    RichText::new(text).size(16.0).strong().color(TEXT)
+    RichText::new(text).size(FONT_SECTION_HEADING).strong().color(TEXT)
 }
 
 pub fn subsection_heading(text: &str) -> RichText {
-    RichText::new(text).size(14.0).strong().color(TEXT)
+    RichText::new(text).size(FONT_SUBSECTION_HEADING).strong().color(TEXT)
 }
 
 pub fn body(text: &str) -> RichText {
-    RichText::new(text).size(14.0).color(TEXT)
+    RichText::new(text).size(FONT_BODY).color(TEXT)
 }
 
 pub fn caption(text: &str) -> RichText {
-    RichText::new(text).size(12.0).color(SECONDARY)
+    RichText::new(text).size(FONT_METADATA).color(SECONDARY)
 }
 
 pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
     let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
-        ButtonRole::Primary => (36.0, Color32::from_rgb(238, 238, 238), BRIGHT_TEXT, Stroke::NONE),
-        ButtonRole::Standard => (34.0, RAISED, TEXT, Stroke::new(1.0_f32, BORDER)),
-        ButtonRole::Emphasized => (34.0, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
-        ButtonRole::Quiet => (32.0, PANEL, SECONDARY, Stroke::NONE),
+        ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, Color32::from_rgb(238, 238, 238), BRIGHT_TEXT, Stroke::NONE),
+        ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32, BORDER)),
+        ButtonRole::Emphasized => (ACTION_EMPHASIZED_HEIGHT, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
+        ButtonRole::Quiet => (ACTION_QUIET_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::Danger => (34.0, Color32::from_rgb(84, 44, 48), DANGER, Stroke::NONE),
-        ButtonRole::Navigation => (NAV_HEIGHT, CANVAS, SECONDARY, Stroke::NONE),
+        ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, Color32::from_rgb(41, 72, 92), TEXT, Stroke::NONE),
     };
     let font_size = match role {
@@ -185,7 +196,7 @@ pub fn divider(ui: &mut Ui) {
 
 pub fn label_value(ui: &mut Ui, label: &str, value: &str) {
     ui.horizontal(|ui| {
-        ui.add_sized([FIELD_LABEL_WIDTH, INPUT_HEIGHT], egui::Label::new(RichText::new(label).size(13.0).color(SECONDARY)));
+        ui.add_sized([FIELD_LABEL_WIDTH, INPUT_HEIGHT], egui::Label::new(RichText::new(label).size(FONT_FIELD_LABEL).color(SECONDARY)));
         ui.label(body(value));
     });
 }
