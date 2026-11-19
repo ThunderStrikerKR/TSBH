@@ -68,9 +68,9 @@ GET /api/v1/working-source
 PUT /api/v1/working-source
 ```
 
-GET 응답: `{"raw":"텍스트 원문","orderType":"AGENCY","revision":7}`. `orderType`은 `AGENCY`(대리발송) 또는 `DEALER`(대리점 납품)만 허용한다.
+GET 응답: `{"raw":"현재 선택 원문","orderType":"AGENCY","activeId":"egui-1","drafts":[{"id":"egui-1","raw":"현재 선택 원문","orderType":"AGENCY"}],"revision":7}`. `orderType`은 `AGENCY`(대리발송) 또는 `DEALER`(대리점 납품)만 허용한다. `activeId`는 목록 안의 ID 또는 `null`이어야 한다. 빈 작업 목록은 `activeId: null`, `drafts: []`, `raw: ""`로 표현한다.
 
-PUT 요청: `{"raw":"편집된 원문","orderType":"DEALER","expectedRevision":7}`; 성공 응답은 `{"revision":8}`이다. 서버는 SQLite 트랜잭션/조건부 revision 비교로 동시 편집 충돌을 검증하고, 최신 상태가 다르면 HTTP `409 Conflict`를 반환해야 한다. 프리뷰 편집기 원문은 업무용 주문 확인 완료나 주문내역 이전을 의미하지 않는다. 민감한 주소·연락처를 취급하므로 저장 위치와 접근 제어에 주의한다. 해당 서버 라우트는 아직 **구현되지 않았다.**
+PUT 요청: `{"raw":"편집된 원문","orderType":"DEALER","activeId":"egui-1","drafts":[{"id":"egui-1","raw":"편집된 원문","orderType":"DEALER"}],"expectedRevision":7}`; 성공 응답은 `{"revision":8}`이다. 서버는 SQLite 트랜잭션/조건부 revision 비교로 동시 편집 충돌을 검증하고, 최신 상태가 다르면 HTTP `409 Conflict`를 반환해야 한다. 프리뷰 편집기 원문은 업무용 주문 확인 완료나 주문내역 이전을 의미하지 않는다. 민감한 주소·연락처를 취급하므로 저장 위치와 접근 제어에 주의한다. 해당 서버 라우트는 아직 **구현되지 않았다.**
 
 **(3) 읽기 전용 Rust 계산**
 
@@ -120,11 +120,11 @@ POST /api/v1/business-core
 
 - Windows: `%LOCALAPPDATA%\\BANDO-HUB-egui-preview\\egui-preview.sqlite3`
 - 홈 디렉터리 기반 환경: `~/.config/BANDO-HUB-egui-preview/egui-preview.sqlite3`
-- SQLite 테이블: `preview_meta`(DB 식별자), `catalog_snapshot`(상품·별칭·브랜드), `working_source`(현재 편집기 원문·접수 유형·revision).
+- SQLite 테이블: `preview_meta`(DB 식별자), `catalog_snapshot`(상품·별칭·브랜드), `working_source`(현재 편집기 원문·접수 유형·revision과 전체 미확정 접수 목록 `drafts_json`·선택 ID `active_id`).
 - 카탈로그는 **처음 생성 시** 공식 내장 시드에서 넣는다. 이 원본 시드는 실제 운영 DB에서 최신 거래처·상품을 자동 수집한 것이 아니다.
 - 저장소가 다른 구조이거나 DB 식별자가 다르면 마이그레이션하거나 덮어쓰지 않고 시작 오류로 종료한다.
-- 원문은 입력 중 별도 스레드에서 debounce 후 SQLite에 저장하고, 정상 종료 때 마지막 대기 저장을 마무리한다. 충돌 및 저장 오류는 UI 하단에 표시한다.
-- **중요:** 이 저장 영역은 프로토타입의 편집기 지속성만 제공한다. 거래처·주문내역·결제·운임·발주서별 처리 상태가 완성됐다는 의미가 아니다.
+- 원문·접수 유형·선택 ID·전체 미확정 접수 목록을 하나의 revision-checked SQLite 트랜잭션으로 저장한다. 입력은 별도 스레드에서 debounce 처리하고, 정상 종료 때 마지막 대기 저장을 마무리한다. 충돌 및 저장 오류는 UI 하단에 표시한다.
+- **중요:** 이 저장 영역은 프로토타입의 여러 미확정 발주원문 보존과 선택 복원만 제공한다. 거래처·주문내역·결제·운임·발주서별 실제 처리 상태가 완성됐다는 의미가 아니다.
 
 ## 7. 클립보드 접수 타입 및 OCR 경계 (2026-11-19)
 
@@ -135,4 +135,5 @@ POST /api/v1/business-core
 - 클립보드에 유효한 텍스트/이미지가 없을 때 두 버튼은 비활성화된다. 400ms 간격의 상태 갱신과 Win32 시퀀스 번호로 반복 이미지 디코딩을 줄인다.
 - 이미 존재하는 원문과 다르면 React 원본에서 쓰던 교체 확인을 적용하며, 사용자 승인 없는 덮어쓰기는 하지 않는다.
 - HTTP 서버 구현체는 아직 없다. 향후 `working-source` 계약 구현 시 `orderType`을 함께 처리해야 하며, 필드 누락을 임의로 AGENCY로 기본 처리하지 않는다.
-- **제한:** 현재 저장소는 격리 egui 작업 원문 1건이다. 여러 발주서, 거래처 자동 연결, 영구 주문 내역, 공장 전달 등 실운영 업무 이전 완료로 취급하지 않는다.
+- **2026-11-20 반영:** 격리 egui에서 여러 미확정 발주원문을 각각 독립 ID로 유지한다. `+ 새 주문`으로 빈 접수를 열고, 오른쪽 `처리 중인 주문`에서 선택하면 해당 원문을 복원하여 Rust 분석을 다시 실행한다. 기존 단일 원문은 `legacy-working-source` ID로 메모리상 승계한 뒤 다음 사용자 변경 시 새 구조로 비파괴 저장한다.
+- **제한:** 거래처 자동 연결, 주문별 확인·수정·확정, 실제 운영 주문 상태, 공장 전달 등은 아직 이전되지 않았다. 오른쪽 목록은 egui 전용 미확정 접수 목록이지 기존 React/Tauri 운영 주문 목록이 아니다.
