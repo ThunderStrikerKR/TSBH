@@ -33,8 +33,17 @@ impl FieldKind {
 /// Disabled preview controls cannot edit business data.
 pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
     let width = kind.preferred_width().min(ui.available_width().max(60.0));
+    let editor_font = match kind {
+        FieldKind::Money | FieldKind::Quantity => {
+            egui::FontSelection::FontId(typography::numeric_editor_font())
+        }
+        // Preserve the regular Korean body face for names, addresses,
+        // telephone and free-form text. Only explicitly numeric data
+        // fields use the Consolas / monospace family.
+        _ => egui::FontSelection::Style(egui::TextStyle::Body),
+    };
     let field = egui::TextEdit::singleline(value)
-        .font(egui::TextStyle::Body)
+        .font(editor_font)
         .vertical_align(Align::Center)
         .margin(egui::Margin::symmetric(8, 2))
         .desired_width(width);
