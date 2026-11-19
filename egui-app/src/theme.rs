@@ -19,6 +19,20 @@ pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
 pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
+// Workflow cards: original React workflow.css card, not generic navigation tiles.
+// The selected stroke color follows the shared selection role.
+pub const WORKFLOW_CARD_BG: Color32 = PANEL;
+pub const WORKFLOW_SELECTED_BG: Color32 = Color32::from_rgb(36, 36, 36);
+pub const WORKFLOW_CARD_BORDER: Color32 = Color32::from_rgb(83, 83, 83);
+pub const WORKFLOW_CARD_PADDING_X: f32 = 9.0;
+pub const WORKFLOW_CARD_PADDING_Y: f32 = 8.0;
+pub const WORKFLOW_CARD_RADIUS: u8 = 7;
+pub const WORKFLOW_SELECTED_STRIPE: f32 = 2.0;
+pub const WORKFLOW_CARD_GAP: f32 = 8.0;
+pub const WORKFLOW_TITLE_HEIGHT: f32 = 34.0;
+pub const WORKFLOW_SIGNAL_WIDTH: f32 = 82.0;
+pub const WORKFLOW_RECIPIENT_COL: f32 = 64.0;
+pub const WORKFLOW_FREIGHT_COL: f32 = 68.0;
 pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
 pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const BRIGHT: Color32 = Color32::WHITE;
