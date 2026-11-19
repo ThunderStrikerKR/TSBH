@@ -22,6 +22,7 @@ function moduleFor(path) {
     { filename: path + ".ts" });
   evaluate(out, (name) => {
     if (name === "exceljs") return ExcelJS;
+    if (name === "../../../src/app/seoul-date") return moduleFor("seoul-date");
     if (name.startsWith("./")) return moduleFor(name.slice(2).replace(/\.js$/, ""));
     if (name === "../../../src/domain") return {
       orderClient: (o, state) => state.clients.find((c) => c.id === o.clientId) ?? o.clientSnapshot,
