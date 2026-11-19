@@ -1230,6 +1230,51 @@ fn start_automatic_backup(app: tauri::AppHandle) {
 /// the very same native Rust rules and the Tauri working-reception table; it
 /// does not start a WebView or invoke any unrelated startup/migration path.
 /// The environment variables intentionally require explicit local consent.
+/// An explicitly authorized one-shot settings patch for native egui.
+/// Calls the EXISTING settings_patch transaction/validation code, never
+/// bypasses client/account checks or writes to an inferred database.
+pub fn run_egui_settings_patch() -> i32 {
+    use std::io::{Read,Write};
+    let result=(|| -> Result<Value,String> {
+        if std::env::var("BANDO_EGUI_ENABLE_SETTINGS_WRITE").ok().as_deref()!=Some("1"){
+            return Err("운영 설정 저장에는 별도의 명시적 허용이 필요합니다.".into());
+        }
+        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .filter(|p|!p.is_empty()).map(PathBuf::from)
+            .ok_or("운영 DB 파일 경로가 설정되지 않았습니다.")?;
+        if !path.is_file(){return Err("운영 DB 파일을 찾지 못했습니다.".into());}
+        let mut input=Vec::new();
+        std::io::stdin().take(524_289).read_to_end(&mut input).map_err(err)?;
+        if input.is_empty() || input.len()>524_288 {
+            return Err("설정 수정 요청 크기가 허용 범위를 초과했습니다.".into());
+        }
+        let request:Value=serde_json::from_slice(&input)
+            .map_err(|_|"설정 수정 요청 JSON이 잘못되었습니다.".to_owned())?;
+        let changes=request.get("changes").ok_or("변경 설정이 없습니다.")?;
+        let expected=request.get("expected").ok_or("설정 비교 기준이 없습니다.")?;
+        let mut conn=Connection::open_with_flags(
+            &path,rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+        ).map_err(|_|"운영 설정 DB를 열지 못했습니다.".to_owned())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(err)?;
+        let version:i64=conn.query_row(
+            "SELECT version FROM core_schema WHERE key='business-core'",
+            [],|row|row.get(0),
+        ).map_err(|_|"운영 DB 스키마 버전 확인에 실패했습니다.".to_owned())?;
+        if version!=2{return Err("지원하지 않는 업무 DB 버전입니다.".into());}
+        let updated=apply_settings_patch(&mut conn,false,changes,expected)?;
+        Ok(json!({
+            "settings":updated.get("settings"),
+            "revision":updated.get("revision"),
+        }))
+    })();
+    let response=match &result{
+        Ok(payload)=>json!({"ok":true,"result":payload}),
+        Err(message)=>json!({"ok":false,"error":message}),
+    };
+    let _=std::io::stdout().write_all(response.to_string().as_bytes());
+    if result.is_ok(){0}else{2}
+}
+
 pub fn run_egui_reception_commit() -> i32 {
     use std::io::{Read, Write};
     let result=(|| -> Result<Value,String> {
