@@ -330,7 +330,12 @@ impl ManualWorkspace {
             .default_height((ctx.screen_rect().height()-theme::MANUAL_DIALOG_VERTICAL_GAP)
                 .max(theme::MANUAL_DIALOG_MIN_HEIGHT))
             .show(ctx,|ui|{
-                ui.set_enabled(self.product_search.is_none() && self.remove_recipient_pending.is_none());
+                // Prompts and asynchronous native mutations own input while
+                // open. The background worksheet remains visible but inert.
+                ui.set_enabled(!self.busy() &&
+                    self.product_search.is_none() &&
+                    self.remove_recipient_pending.is_none() &&
+                    !self.confirm_discard);
                 if let Some(error)=self.error.as_ref() {
                     ui.label(typography::status(error,theme::DANGER));
                 }
@@ -690,7 +695,13 @@ impl ManualWorkspace {
             }
         }
         if discard || !open {
-            if self.dirty {
+            // Dirty typed text is just as important as a completed Rust edit.
+            // A parent close cannot destroy an active modal/async operation.
+            if self.busy() || self.product_search.is_some() ||
+               self.remove_recipient_pending.is_some() {
+                return None;
+            }
+            if self.dirty || self.edit_text!=self.current_value() {
                 self.confirm_discard=true;
             } else {
                 return Some(Event::Closed);
