@@ -22,6 +22,7 @@ mod source_highlight;
 mod manual_workspace;
 mod catalog_query_bridge;
 mod manual_product_search;
+mod manual_source_view;
 mod kakao_context;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
