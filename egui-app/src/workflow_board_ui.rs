@@ -121,11 +121,11 @@ impl BoardUi{
 /// shrink-to-content nested Frame or a blue navigation-button tile.
 /// Reserve exactly the pane width for BOTH expanded and folded cards.
 fn workflow_card<R>(
-    ui:&mut Ui,selected:bool,body:impl FnOnce(&mut Ui)->R
+    ui:&mut Ui,selected:bool,preview:bool,body:impl FnOnce(&mut Ui)->R
 )->R{
     let outer=ui.available_width();
     let frame=Frame::new()
-        .fill(if selected{theme::WORKFLOW_SELECTED_BG}else{theme::WORKFLOW_CARD_BG})
+        .fill(if selected || preview{theme::WORKFLOW_SELECTED_BG}else{theme::WORKFLOW_CARD_BG})
         .stroke(egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,
             theme::WORKFLOW_CARD_BORDER))
         .corner_radius(egui::CornerRadius::same(theme::WORKFLOW_CARD_RADIUS))
@@ -140,7 +140,7 @@ fn workflow_card<R>(
         );
         body(card)
     });
-    if selected{
+    if selected || preview{
         let r=response.response.rect;
         ui.painter().rect_filled(
             Rect::from_min_max(
@@ -148,7 +148,7 @@ fn workflow_card<R>(
                 Pos2::new(r.left()+theme::WORKFLOW_SELECTED_STRIPE,
                     r.bottom()-theme::SOFT_DIVIDER_WIDTH),
             ),
-            0.0,theme::SELECTED_ORDER
+            0.0,if preview{theme::SELECTION}else{theme::WORKFLOW_SELECTED_BORDER}
         );
     }
     response.inner
@@ -363,7 +363,7 @@ fn shipment_line(
     chosen:bool,previewed:bool
 )->egui::Response{
     let fill=if chosen{
-        theme::SELECTED_ORDER.linear_multiply(0.14)
+        theme::WORKFLOW_SELECTED_BORDER.linear_multiply(0.20)
     }else if previewed{
         theme::SELECTION.linear_multiply(0.14)
     }else{egui::Color32::TRANSPARENT};
@@ -407,7 +407,7 @@ fn shipment_line(
             });
         });
     if chosen || previewed{
-        let color=if chosen{theme::SELECTED_ORDER}else{theme::SELECTION};
+        let color=if chosen{theme::WORKFLOW_SELECTED_BORDER}else{theme::SELECTION};
         let rect=response.response.rect;
         ui.painter().rect_filled(Rect::from_min_max(
             Pos2::new(rect.left(),rect.top()),
@@ -431,7 +431,7 @@ fn group_frame(
 )->Option<Event>{
     let mut event=None;
     let active=selected.is_some_and(|s|s.group_id==group.id);
-    workflow_card(ui,active && !in_preview,|ui|{
+    workflow_card(ui,active && !in_preview,in_preview,|ui|{
         let title=format!("{}  {}",if open || in_preview{"▾"}else{"▸"},
             group.dealer_name);
         let btn=workflow_header(ui,&group.id,&title,group.step,group.needs_notice);
@@ -486,7 +486,7 @@ fn group_frame(
 }
 fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Option<Event>{
     let mut event=None;
-    workflow_card(ui,selected,|ui|{
+    workflow_card(ui,selected,false,|ui|{
         let title=if draft.client_id.is_none(){
             "미확인 거래처".to_owned()
         }else {
