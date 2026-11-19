@@ -108,7 +108,7 @@ fn edit_input(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
 }
 fn section(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
     theme::section_frame().show(ui,|content|{
-        content.label(typography::section_heading(title));
+        crate::settings_help::heading(content,title);
         content.add_space(theme::SPACE_8);
         body(content);
     });
