@@ -272,6 +272,35 @@ impl BandoEgui {
         }
     }
 
+    /// The employee may select ONLY candidates returned by the Rust
+    /// matcher, and the choice applies to this isolated preview order only.
+    fn select_client_candidate(&mut self, client_id: &str, ctx: &egui::Context) {
+        let allowed = self.analysis.as_ref().is_some_and(|analysis|
+            analysis.client_candidates.iter().any(|candidate|
+                reception_service::text(candidate, "clientId") == client_id
+            ));
+        if !allowed {
+            self.source_save_error = Some("Rust 후보 목록에 없는 거래처는 적용할 수 없습니다.".into());
+            return;
+        }
+        let Some(id) = self.active_id.as_deref() else { return; };
+        if let Some(row) = self.drafts.iter_mut().find(|row| row.id == id) {
+            row.client_id = Some(client_id.to_owned());
+            row.client_selection = Some("MANUAL".into());
+            // The selected client may affect aliases. Re-run native
+            // recognition and never retain stale product evidence.
+            row.analysis_raw = None;
+            row.analysis_evidence = None;
+            row.client_match = None;
+        }
+        self.clear_source_analysis();
+        if !self.raw_source.trim().is_empty() {
+            self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
+            ctx.request_repaint_after(Duration::from_millis(260));
+        }
+        self.queue_source_save();
+    }
+
     fn new_reception(&mut self, ctx: &egui::Context) {
         // An already-open empty receipt is the new order. Do not multiply
         // empty records when the user clicks "+ 새 주문" repeatedly.
@@ -1390,6 +1419,7 @@ impl BandoEgui {
             ),
         );
 
+        let mut client_choice: Option<String> = None;
         ui.scope_builder(
             UiBuilder::new().id_salt("details-review").max_rect(review_rect)
                 .layout(Layout::top_down(Align::Min)),
@@ -1401,29 +1431,49 @@ impl BandoEgui {
                     if let Some(error) = &self.analysis_error {
                         ui.label(typography::status(error, theme::DANGER));
                     } else if let Some(analysis) = &self.analysis {
+                        let manually_selected = self.active_id.as_deref()
+                            .and_then(|id| self.drafts.iter().find(|row| row.id == id))
+                            .is_some_and(|row| row.client_selection.as_deref() == Some("MANUAL"));
                         if analysis.directory_count == 0 {
                             ui.label(typography::status(
                                 "거래처 명단 미연결 · 자동 매칭 확인 필요",
                                 theme::SELECTED_ORDER,
                             ));
+                        } else if manually_selected {
+                            if let Some(name) = &analysis.chosen_client_name {
+                                ui.label(typography::body(
+                                    &format!("거래처 직접 선택 · {name}")
+                                ));
+                            } else {
+                                ui.label(typography::status(
+                                    "선택한 거래처를 현재 명단에서 찾지 못했습니다.",
+                                    theme::DANGER,
+                                ));
+                            }
                         } else if let Some(name) = &analysis.matched_client_name {
                             ui.label(typography::body(
                                 &format!("거래처 자동 인식 · {name}")
-                            ));
-                        } else if reception_service::text(&analysis.client_match, "source") == "CONFLICT" {
-                            ui.label(typography::status(
-                                reception_service::text(&analysis.client_match, "detail"),
-                                theme::DANGER,
                             ));
                         } else {
                             ui.label(typography::status(
                                 "거래처 확인 필요", theme::SELECTED_ORDER
                             ));
-                            if !analysis.client_candidates.is_empty() {
-                                ui.label(typography::caption(&format!(
-                                    "거래처 후보 {}건 · 자동 적용하지 않음",
-                                    analysis.client_candidates.len()
-                                )));
+                        }
+                        if reception_service::text(&analysis.client_match, "source") == "CONFLICT" {
+                            ui.label(typography::status(
+                                reception_service::text(&analysis.client_match, "detail"),
+                                theme::DANGER,
+                            ));
+                        }
+                        if !analysis.client_candidates.is_empty() {
+                            ui.label(typography::caption("거래처 후보 선택"));
+                            for candidate in &analysis.client_candidates {
+                                let id = reception_service::text(candidate, "clientId");
+                                let name = reception_service::text(candidate, "name");
+                                if !id.is_empty() && !name.is_empty() &&
+                                    theme::action(ui, name, ButtonRole::Quiet, true).clicked() {
+                                    client_choice = Some(id.to_owned());
+                                }
                             }
                         }
                         let unidentified = analysis.get("unassigned")
@@ -1456,6 +1506,9 @@ impl BandoEgui {
                 });
             },
         );
+        if let Some(client_id) = client_choice {
+            self.select_client_candidate(&client_id, ui.ctx());
+        }
         components::paint_dock_splitter(ui, first_sep, false, false);
 
         let mut next_recipient = None;
