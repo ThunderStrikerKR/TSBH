@@ -4,7 +4,8 @@
 //! No business decisions, DB writes or Tauri dependency live here.
 
 use std::{
-    fs, io::Write, path::PathBuf, process::{Command, Stdio},
+    fs, path::PathBuf, process::{Command, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use arboard::Clipboard;
@@ -121,8 +122,9 @@ pub fn read() -> Result<ClipboardPayload, String> {
 /// Returns text for an existing React-compatible OCR *review* step.
 /// The image stays in the caller's buffer, never in the DB.
 #[cfg(windows)]
-pub fn recognize_image(image: &ClipboardImage) -> Result<String, String> {
+pub fn recognize_image(image: &ClipboardImage, cancelled: &AtomicBool) -> Result<String, String> {
     use std::os::windows::process::CommandExt;
+    if cancelled.load(Ordering::Acquire) { return Err("OCR_CANCELLED".into()); }
     let runtime_dir = if let Some(dir) = std::env::var_os("BANDO_OCR_RUNTIME_DIR") {
         PathBuf::from(dir)
     } else {
@@ -161,6 +163,10 @@ pub fn recognize_image(image: &ClipboardImage) -> Result<String, String> {
     let mut child = command.spawn().map_err(|e| format!("PaddleOCR 실행 실패: {e}"))?;
     let started = Instant::now();
     let status = loop {
+        if cancelled.load(Ordering::Acquire) {
+            let _ = child.kill(); let _ = child.wait();
+            return Err("OCR_CANCELLED".into());
+        }
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? { break status; }
         if started.elapsed() > Duration::from_secs(180) {
             let _ = child.kill(); let _ = child.wait();
@@ -168,6 +174,7 @@ pub fn recognize_image(image: &ClipboardImage) -> Result<String, String> {
         }
         std::thread::sleep(Duration::from_millis(150));
     };
+    if cancelled.load(Ordering::Acquire) { return Err("OCR_CANCELLED".into()); }
     let out = String::from_utf8_lossy(&fs::read(&stdout).unwrap_or_default()).into_owned();
     if !status.success() {
         let err = String::from_utf8_lossy(&fs::read(&stderr).unwrap_or_default()).into_owned();
@@ -191,7 +198,9 @@ pub fn recognize_image(image: &ClipboardImage) -> Result<String, String> {
 }
 
 #[cfg(not(windows))]
-pub fn recognize_image(_image: &ClipboardImage) -> Result<String, String> {
+pub fn recognize_image(_image: &ClipboardImage, _cancelled: &AtomicBool)
+    -> Result<String, String>
+{
     Err("이미지 OCR 접수는 Windows에서 지원합니다.".into())
 }
 
