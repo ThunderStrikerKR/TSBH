@@ -637,7 +637,7 @@ mod native {
         focus_hook:WinEventHook,
     }
     impl Session{
-        fn attach_independent_windows(&mut self){
+        pub(super) fn attach_independent_windows(&mut self){
             for window in &mut self.windows{
                 if let Err(reason)=window.try_own(self.hub){
                     // Ownership can be denied by UIPI / another Kakao owner.
