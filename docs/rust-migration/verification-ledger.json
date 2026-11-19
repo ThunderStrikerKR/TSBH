@@ -2354,9 +2354,9 @@
     },
     {
       "id": "LIVE-20261120-EGUI-WORKFLOW-BOARD",
-      "scope": "50차 egui 처리 중인 발주묶음 및 배송건 선택·호버 UI 이전",
-      "status": "PATCHED_WINDOWS_UNVERIFIED",
-      "description": "React WorkflowBoard.tsx/HubWorkspace.tsx의 처리 중인 주문 그룹을 실제 Rust preview_workflow/read_shipments/preview_order와 output/render_automatic_message에 연결했다. 사용자 명시 BANDO_EGUI_BUSINESS_DB v2 SQLite를 읽기 전용으로 조회하여 운영 발주묶음·배송건을 보여주고, 격리 미확정 접수 목록은 별도로 보존. 묶음 제목 클릭·다시 접기, 다른 묶음 자동 접기, 배송건 선택, 단계 호버 250ms 진입/250ms 복귀, 미리보기 배송행 100ms/150ms, 앵커 오버레이 및 원문·메시지·수취인·품목·운임 읽기 전용 연계 코드를 반영했다. 운영 업무 상태 전환/단계 되돌리기/묶음 관리/삭제/복원/자동메시지 복사·기록은 원래 Rust 감사·revision-checked SQLite 저장 통합 전이므로 미이전. 선택한 실제 그룹의 원문 연결 하이라이트 상세 동등성도 별도 미완료. DB 미연결 시 운영 묶음을 가상 생성하지 않음. Windows 실제 GUI 행동은 미검증.",
+      "scope": "50차 egui 처리 중인 발주묶음: React 카드 구조 정렬 및 단계 미리보기",
+      "status": "PATCHED_VISUAL_RECHECK_REQUIRED",
+      "description": "React WorkflowBoard.tsx/HubWorkspace.tsx의 처리 중인 주문 그룹을 실제 Rust preview_workflow/read_shipments/preview_order와 output/render_automatic_message에 연결했다. 사용자 명시 BANDO_EGUI_BUSINESS_DB v2 SQLite를 읽기 전용으로 조회하여 운영 발주묶음·배송건을 보여주고, 격리 미확정 접수 목록은 별도로 보존. 묶음 제목 클릭·다시 접기, 다른 묶음 자동 접기, 배송건 선택, 단계 호버 250ms 진입/250ms 복귀, 미리보기 배송행 100ms/150ms, 앵커 오버레이 및 원문·메시지·수취인·품목·운임 읽기 전용 연계 코드를 반영했다. 운영 업무 상태 전환/단계 되돌리기/묶음 관리/삭제/복원/자동메시지 복사·기록은 원래 Rust 감사·revision-checked SQLite 저장 통합 전이므로 미이전. 선택한 실제 그룹의 원문 연결 하이라이트 상세 동등성도 별도 미완료. DB 미연결 시 운영 묶음을 가상 생성하지 않음. Windows 실제 GUI 행동은 미검증. 2026-11-20 사용자 스크린샷에서 원본과 크게 다른 카드 너비·파란 활성 버튼·누락된 관리/삭제/단계 슬롯을 확인했다. 실제 React WorkflowBoard.tsx와 workflow.css/workflow-states.css 기준으로 모든 카드 전체 폭, 7px radius/8-9px 패딩, 상단 제목+상태등 전체 클릭 영역, 오른쪽 관리 및 삭제 슬롯, 140px 단계+34px 이전 버튼의 고정 동작 행, 배송 64/가변/68 삼열, 제품 칩을 수정했다. Rust 저장 전 단계/관리/삭제 버튼은 기존 자리를 보이되 비활성화하였다. 활성 선택은 React #f59e0b 주황, 임시 프리뷰는 #70b4ff 파랑으로 구분하고 미리보기 카드 오프패널 그리기를 제한하였다. 원본과 실제 화면 픽셀 비교 전까지 시각적 PASS 불가.",
       "evidence": [
         "src/WorkflowBoard.tsx",
         "src/HubWorkspace.tsx",
@@ -2368,15 +2368,18 @@
         "egui-app/src/workflow_board_ui.rs",
         "egui-app/src/gateway.rs",
         "egui-app/src/main.rs",
-        "egui-app/README.md"
+        "egui-app/README.md",
+        "src/styles/workflow.css",
+        "src/styles/workflow-states.css",
+        "egui-app/src/theme.rs"
       ],
       "gates": {
-        "patch": "SOURCE_UPDATED: code through 6fd1d2f, documentation 4586e9e; native worker, cards, hover, read-only cross-pane bindings committed main",
+        "patch": "SOURCE_UPDATED: Rust board and cross-pane integration through 6fd1d2f; UI visual corrections 84c46c8, 57aa735, d4c60b9, 621c777, 80107f4, 57a2c80, 9a26bd7, 8639683, d84cb57, 9eb596f; new controls disabled pending audited write",
         "unit": "NOT_EXECUTED: no new broad regression suite; focused workflow_board formatting test added but not executed",
-        "differential": "SOURCE_CONTRACT_REVIEW_ONLY: React event/read path compared; action and visual parity NOT VERIFIED",
-        "action": "NOT_EXECUTED: actual user click/hover and SQLite read snapshot not exercised in GUI",
-        "ci": "PASS: Windows cargo check for Tauri and standalone egui app https://github.com/ThunderStrikerKR/TSBH/actions/runs/44624871909 (code commit bd534593)",
-        "windows": "NOT_EXECUTED: real Windows GUI mouse/DPI behavior, display with opt-in operational DB, shutdown/restore not verified"
+        "differential": "CODE REVIEW: React JSX and workflow.css/workflow-states.css geometry and colors contrasted, code patched; screenshots NOT matched",
+        "action": "NOT EXECUTED: real Windows GUI card width, click, fold, hover, scroll and mixed-draft presentation not yet observed",
+        "ci": "PASS for prior target c258426 on Windows build run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44627406251; latest color/preview patch awaiting final compile",
+        "windows": "NOT EXECUTED: same-window/DPI React vs egui screenshot not compared; functional migration remains incomplete"
       }
     }
   ],
