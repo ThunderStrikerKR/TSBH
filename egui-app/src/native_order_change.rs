@@ -30,12 +30,9 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
     if target_id.trim().is_empty() {
         return Err("변경할 거래처가 없습니다.".into());
     }
-    let evidence=source.analysis_evidence.as_ref()
-        .filter(|_|source.analysis_raw.as_deref()==Some(source.raw.as_str()))
-        .ok_or("현재 원문의 Rust 분석이 완료된 뒤 거래처를 선택하세요.")?;
-    if !evidence.get("recipients").is_some_and(Value::is_array) ||
-       !evidence.get("candidates").is_some_and(Value::is_array) {
-        return Err("발주원문 분석 근거가 유효하지 않습니다.".into());
+    if source.analysis_raw.as_deref()!=Some(source.raw.as_str()) ||
+       source.analysis_evidence.is_none() {
+        return Err("현재 원문의 Rust 분석이 완료된 뒤 거래처를 선택하세요.".into());
     }
 
     // Never use the name-only client index or the embedded retail seed to
@@ -43,6 +40,12 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
     let state=gateway.load_business_state()?;
     let authority_revision=state.get("revision").and_then(Value::as_u64)
         .ok_or("운영 DB revision이 유효하지 않습니다.")?;
+    if state.get("orders").and_then(Value::as_array).is_some_and(|orders|
+        orders.iter().any(|order|
+            order.get("id").and_then(Value::as_str)==Some(source.id.as_str())
+        )) {
+        return Err("운영 DB에 이미 존재하는 주문은 egui 미확정 발주서로 수정할 수 없습니다.".into());
+    }
     if let Some(old)=&source.pricing_preview {
         // A stored price quote must never survive a changed master revision
         // when the employee is proposing a subsequent client edit.
@@ -59,6 +62,16 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         ))
         .ok_or("운영 거래처 명단에서 선택한 거래처를 확인할 수 없습니다.")?;
     let now=Utc::now().to_rfc3339();
+    // Client-specific product aliases can change the recognized product IDs.
+    // Re-recognize using the SELECTED full master client and catalog before
+    // merging, instead of repricing stale evidence from another dealer.
+    let evidence=gateway.execute(ReadOperation::AnalyzeOrder,json!({
+        "raw":source.raw, "state":state, "client":client,
+    }))?;
+    if !evidence.get("recipients").is_some_and(Value::is_array) ||
+       !evidence.get("candidates").is_some_and(Value::is_array) {
+        return Err("선택한 거래처 기준 Rust 발주 인식 결과가 잘못되었습니다.".into());
+    }
 
     // Establish a real Rust Order shape; an egui WorkingReception is NOT a
     // full business Order and cannot be passed directly to change_client.
