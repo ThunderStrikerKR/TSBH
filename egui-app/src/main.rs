@@ -2650,6 +2650,11 @@ impl BandoEgui {
 }
 
 impl eframe::App for BandoEgui {
+    fn on_exit(&mut self,_gl:Option<&eframe::glow::Context>){
+        // eframe invokes this before the native HUB HWND is destroyed.
+        // Kakao must lose its temporary owner BEFORE HUB teardown.
+        self.kakao_dock.disconnect();
+    }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_source_analysis();
         self.poll_client_change(ctx);
