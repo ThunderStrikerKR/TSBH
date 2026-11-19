@@ -60,6 +60,34 @@ impl FieldKind {
     }
 }
 
+/// All native edit/search windows inherit the same modal frame,
+/// title role and controls. Only true workspace-specific dimensions belong
+/// to the calling feature's layout.
+pub fn modal_window(title:&str,id:&'static str) -> egui::Window<'static> {
+    egui::Window::new(title.to_owned())
+        .id(egui::Id::new(id))
+        .collapsible(false)
+        .frame(theme::modal_frame())
+}
+
+pub fn decision_window(title:&str,id:&'static str) -> egui::Window<'static> {
+    modal_window(title,id)
+        .resizable(false)
+        .default_width(theme::MODAL_DECISION_MAX_WIDTH
+            .min(theme::MANUAL_SEARCH_DIALOG_WIDTH))
+}
+
+pub fn modal_actions(ui:&mut Ui, cancel:&str, proceed:&str,
+    proceed_role:theme::ButtonRole, enabled:bool) -> (bool,bool) {
+    let mut cancelled=false;
+    let mut submitted=false;
+    ui.horizontal(|ui|{
+        cancelled=theme::action(ui,cancel,theme::ButtonRole::Quiet,true).clicked();
+        submitted=theme::action(ui,proceed,proceed_role,enabled).clicked();
+    });
+    (cancelled,submitted)
+}
+
 /// Uses the same height, font and focus styling for every single-line field.
 /// Disabled preview controls cannot edit business data.
 pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
