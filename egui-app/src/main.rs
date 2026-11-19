@@ -152,6 +152,45 @@ impl BandoEgui {
         }
     }
 
+    fn frameless_resize(&self, ctx: &egui::Context) {
+        // Windows borderless windows have no OS titlebar resize grip.
+        // Provide 6-point hit regions without covering any interior controls.
+        if ctx.input(|input| input.viewport().maximized.unwrap_or(false)) {
+            return;
+        }
+        let Some(pointer) = ctx.input(|input| input.pointer.hover_pos()) else { return; };
+        let bounds = ctx.screen_rect();
+        let edge = 6.0;
+        let left = pointer.x <= bounds.left() + edge;
+        let right = pointer.x >= bounds.right() - edge;
+        let top = pointer.y <= bounds.top() + edge;
+        let bottom = pointer.y >= bounds.bottom() - edge;
+        use egui::viewport::ResizeDirection as Direction;
+        let direction = match (left, right, top, bottom) {
+            (true, _, true, _) => Some(Direction::NorthWest),
+            (_, true, true, _) => Some(Direction::NorthEast),
+            (true, _, _, true) => Some(Direction::SouthWest),
+            (_, true, _, true) => Some(Direction::SouthEast),
+            (true, _, _, _) => Some(Direction::West),
+            (_, true, _, _) => Some(Direction::East),
+            (_, _, true, _) => Some(Direction::North),
+            (_, _, _, true) => Some(Direction::South),
+            _ => None,
+        };
+        if let Some(direction) = direction {
+            let cursor = match direction {
+                Direction::NorthWest | Direction::SouthEast => egui::CursorIcon::ResizeNwSe,
+                Direction::NorthEast | Direction::SouthWest => egui::CursorIcon::ResizeNeSw,
+                Direction::North | Direction::South => egui::CursorIcon::ResizeVertical,
+                _ => egui::CursorIcon::ResizeHorizontal,
+            };
+            ctx.set_cursor_icon(cursor);
+            if ctx.input(|input| input.pointer.primary_pressed()) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(direction));
+            }
+        }
+    }
+
     fn section(
         ui: &mut Ui,
         title: &str,
@@ -586,6 +625,7 @@ impl eframe::App for BandoEgui {
         } else {
             self.other_page(ctx);
         }
+        self.frameless_resize(ctx);
     }
 }
 
