@@ -61,6 +61,7 @@ pub const BRIGHT: Color32 = Color32::WHITE;
 pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
 pub const SPACE_4: f32 = 4.0;
 pub const SPACE_8: f32 = 8.0;
+pub const SETTINGS_HELP_ICON_SIZE: f32 = 22.0;
 pub const SPACE_12: f32 = 12.0;
 pub const SPACE_16: f32 = 16.0;
 pub const SPACE_24: f32 = 24.0;
