@@ -72,6 +72,12 @@ impl KakaoDock {
         #[cfg(not(windows))] {let _=(rect,scale);}
         Ok(())
     }
+    pub fn foreground_related(&self)->bool {
+        #[cfg(windows)] {
+            self.session.as_ref().is_some_and(native::Session::foreground_related)
+        }
+        #[cfg(not(windows))] {false}
+    }
     pub fn disconnect(&mut self){
         #[cfg(windows)] {self.session.take();}
     }
@@ -123,6 +129,7 @@ mod native {
     const SWP_NOZORDER:u32=0x0004;
     const SWP_NOACTIVATE:u32=0x0010;
     const SWP_FRAMECHANGED:u32=0x0020;
+    const GW_HWNDPREV:u32=3;
     const HWND_TOP:Hwnd=0;
     const HWND_TOPMOST:Hwnd=-1;
     const HWND_NOTOPMOST:Hwnd=-2;
@@ -143,6 +150,7 @@ mod native {
         fn GetWindowTextW(hwnd:Hwnd,buffer:*mut u16,len:i32)->i32;
         fn GetWindowThreadProcessId(hwnd:Hwnd,pid:*mut u32)->u32;
         fn GetForegroundWindow()->Hwnd;
+        fn GetWindow(hwnd:Hwnd,command:u32)->Hwnd;
         fn IsWindow(hwnd:Hwnd)->i32;
         fn IsWindowVisible(hwnd:Hwnd)->i32;
         fn IsIconic(hwnd:Hwnd)->i32;
@@ -220,6 +228,18 @@ mod native {
         let mut list=Vec::new();
         unsafe{EnumWindows(Some(collect),&mut list as *mut _ as isize);}
         list
+    }
+    // Find whether 'window' is behind 'reference' in the current Z-order.
+    // Avoid constant SetWindowPos calls if the correct order already holds.
+    fn below(window:Hwnd,reference:Hwnd)->bool {
+        if window==0 || reference==0 || window==reference {return false;}
+        let mut cursor=window;
+        for _ in 0..512 {
+            cursor=unsafe{GetWindow(cursor,GW_HWNDPREV)};
+            if cursor==0{return false;}
+            if cursor==reference{return true;}
+        }
+        false
     }
     fn hwnd_of_hub()->Result<Hwnd,String>{
         unsafe extern "system" fn collect(hwnd:Hwnd,param:isize)->i32{
@@ -505,6 +525,50 @@ mod native {
                 last_region:None,last_sync:None,
             })
         }
+        pub fn foreground_related(&self)->bool {
+            let foreground=unsafe{GetForegroundWindow()};
+            if foreground==0 || unsafe{IsIconic(self.hub)}!=0 {return false;}
+            let owner_pid=pid(foreground);
+            owner_pid==unsafe{GetCurrentProcessId()} || owner_pid==self.pid
+        }
+        /// Keep docked Kakao HWNDs above the app after the user clicks
+        /// BANDO HUB. This check must not share the 350ms geometry throttle.
+        /// No HWND_TOPMOST and no reordering of the BANDO HUB HWND.
+        fn restore_relative_z_order(&mut self)->Result<(),String> {
+            if !self.foreground_related(){return Ok(());}
+            let base=self.windows.iter().find(|window|
+                window.main && window.alive() &&
+                unsafe{IsIconic(window.hwnd)}==0
+            ).map(|window|window.hwnd);
+            let foreground=unsafe{GetForegroundWindow()};
+            if self.windows.iter().any(|window|
+                !window.main && window.alive() && window.hwnd==foreground
+            ){
+                self.active_chat=Some(foreground);
+            }
+            let chat=self.active_chat.filter(|hwnd|
+                self.windows.iter().any(|window|
+                    !window.main && window.alive() &&
+                    window.hwnd==*hwnd && unsafe{IsIconic(*hwnd)}==0
+                )
+            );
+            let Some(top)=chat.or(base) else {return Ok(())};
+            if (below(top,self.hub) ||
+                base.is_some_and(|main|
+                    chat.is_some_and(|active|main!=active && below(active,main))))
+                && unsafe{SetWindowPos(top,HWND_TOP,0,0,0,0,
+                    SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
+                return Err(os("카카오톡 창 표시 순서 복원 실패"));
+            }
+            if let (Some(main),Some(active))=(base,chat) {
+                if main!=active && (below(main,self.hub) || below(active,main))
+                    && unsafe{SetWindowPos(main,active,0,0,0,0,
+                        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
+                    return Err(os("카카오톡 기본창 표시 순서 복원 실패"));
+                }
+            }
+            Ok(())
+        }
         pub fn sync(&mut self,rect:egui::Rect,scale:f32)->Result<(),String>{
             if unsafe{IsWindow(self.hub)}==0 ||
                 pid(self.hub)!=unsafe{GetCurrentProcessId()} {
@@ -518,7 +582,9 @@ mod native {
             if unsafe{IsIconic(self.hub)}!=0{return Ok(());}
             if self.last_region==Some(region) &&
                 self.last_sync.is_some_and(|t|t.elapsed()<Duration::from_millis(350)){
-                return Ok(());
+                // The geometry can remain stable while a click raises HUB
+                // in front of the dock's Kakao windows.
+                return self.restore_relative_z_order();
             }
             self.last_region=Some(region);
             self.last_sync=Some(Instant::now());
@@ -588,36 +654,7 @@ mod native {
                 }
                 return Err(e);
             }
-            // Keep the BANDO HUB HWND's z-order entirely untouched. The
-            // old call SetWindowPos(self.hub, kakao_hwnd, ...) moved the HUB
-            // *down* to KakaoTalk's previous layer; when that layer was behind
-            // other apps, clicking Connect buried the entire BANDO HUB window.
-            // Instead, when BANDO HUB or KakaoTalk is the foreground owner,
-            // raise the selected KakaoTalk window within the normal (non-
-            // topmost) z-order group, then position its messenger behind it.
-            // An unrelated foreground app must never be overtaken by sync.
-            let foreground_pid=pid(foreground);
-            if foreground_pid==unsafe{GetCurrentProcessId()} ||
-                foreground_pid==self.pid {
-                let visible_chat=self.active_chat.filter(|chat|
-                    chats.contains(chat) && unsafe{IsIconic(*chat)}==0
-                );
-                if let Some(top)=visible_chat.or(base) {
-                    if unsafe{SetWindowPos(top,HWND_TOP,0,0,0,0,
-                        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
-                        return Err(os("카카오톡 창 표시 순서 변경 실패"));
-                    }
-                    if let (Some(base),Some(chat))=(base,visible_chat) {
-                        if base!=chat && unsafe{IsIconic(base)}==0 {
-                            if unsafe{SetWindowPos(base,chat,0,0,0,0,
-                                SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
-                                return Err(os("카카오톡 기본창 표시 순서 변경 실패"));
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(())
+            self.restore_relative_z_order()
         }
     }
     impl Drop for Session {
