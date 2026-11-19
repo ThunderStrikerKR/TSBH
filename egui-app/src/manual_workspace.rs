@@ -301,7 +301,7 @@ impl ManualWorkspace {
             ctx.request_repaint();
         });
     }
-    pub fn show(&mut self,ctx:&Context)->Option<Event> {
+    pub fn show(&mut self,ctx:&Context,work_area:egui::Rect)->Option<Event> {
         self.poll();
         if let Some(order)=self.applied.take() {
             if order.get("id").and_then(Value::as_str)!=Some(self.order_id.as_str()) ||
@@ -325,10 +325,15 @@ impl ManualWorkspace {
         components::modal_window("수동 분류","bando-native-manual-classification")
             .open(&mut open)
             .resizable(true)
-            .default_width((ctx.screen_rect().width()-theme::MANUAL_DIALOG_SIDE_GAP)
-                .min(theme::MANUAL_DIALOG_MAX_WIDTH))
-            .default_height((ctx.screen_rect().height()-theme::MANUAL_DIALOG_VERTICAL_GAP)
-                .max(theme::MANUAL_DIALOG_MIN_HEIGHT))
+            .default_pos(egui::pos2(
+                work_area.left()+theme::MODAL_VIEWPORT_GUTTER,
+                work_area.top()+theme::MODAL_VIEWPORT_GUTTER
+            ))
+            .default_width((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
+                .min(theme::MANUAL_DIALOG_MAX_WIDTH).max(0.0))
+            .default_height((work_area.height()-theme::MANUAL_DIALOG_VERTICAL_GAP)
+                .max(0.0))
+            .constrain_to(work_area)
             .show(ctx,|ui|{
                 // Prompts and asynchronous native mutations own input while
                 // open. The background worksheet remains visible but inert.
@@ -599,7 +604,7 @@ impl ManualWorkspace {
             }
         }
         let product_event=self.product_search.as_mut().and_then(|search|
-            search.show(ctx,Arc::clone(&self.gateway))
+            search.show(ctx,Arc::clone(&self.gateway),work_area)
         );
         if let Some(event)=product_event {
             let search=self.product_search.take();
@@ -660,6 +665,7 @@ impl ManualWorkspace {
             let mut confirm=false;
             let mut cancel=false;
             components::decision_window("배송 건수 줄이기","manual-shipment-removal")
+                .constrain_to(work_area)
                 .show(ctx,|ui|{
                     ui.label("마지막 배송 건의 입력값과 원문 배정을 제거할까요?");
                     ui.horizontal(|ui|{
@@ -710,6 +716,7 @@ impl ManualWorkspace {
         if self.confirm_discard {
             let mut confirm=true;
             components::decision_window("수동 분류 변경 취소","manual-discard-prompt")
+                .constrain_to(work_area)
                 .open(&mut confirm)
                 .show(ctx,|ui|{
                     ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
