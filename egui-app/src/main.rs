@@ -758,7 +758,8 @@ impl BandoEgui {
         });
         let (windows, active_chat_handle) = self.kakao_tracker.context(chat_handle.as_deref());
         let manual_client_id = association.filter(|draft|
-            draft.client_selection.as_deref() == Some("MANUAL")
+            draft.client_selection.as_deref() == Some("MANUAL") ||
+            draft.manual_model.is_some()
         ).and_then(|draft| draft.client_id.clone());
         let manual_receipt=association.filter(|draft|
             draft.manual_model.is_some()
@@ -843,7 +844,8 @@ impl BandoEgui {
                             item.analysis_raw = Some(self.raw_source.clone());
                             item.analysis_evidence = Some(analysis.recognition.clone());
                             item.client_match = Some(analysis.client_match.clone());
-                            if item.client_selection.as_deref() != Some("MANUAL") {
+                            if item.client_selection.as_deref() != Some("MANUAL") &&
+                               item.manual_model.is_none() {
                                 item.client_id = analysis.client_match.get("clientId")
                                     .and_then(serde_json::Value::as_str)
                                     .map(str::to_owned);
