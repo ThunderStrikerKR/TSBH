@@ -48,6 +48,7 @@ pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
 pub const PANEL_GAP: f32 = 6.0;
 pub const SOFT_DIVIDER_WIDTH: f32 = 1.0;
+pub const FRAME_STROKE_WIDTH: f32 = 1.0;
 pub const CONTROL_RADIUS: u8 = 6;
 pub const PANEL_RADIUS: u8 = 9;
 pub const INPUT_HEIGHT: f32 = 36.0;
@@ -116,7 +117,7 @@ pub fn install(ctx: &egui::Context) {
 pub fn section_frame() -> Frame {
     Frame::new()
         .fill(PANEL)
-        .stroke(Stroke::new(1.0_f32, BORDER))
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
         .corner_radius(CornerRadius::same(PANEL_RADIUS))
         .inner_margin(SECTION_PADDING)
 }
