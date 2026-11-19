@@ -109,20 +109,13 @@ pub fn mutate(expected:u64,action:&str,client:Value)->Result<Value,String> {
     }
     let state=json!({"revision":revision,"clients":clients,
         "settings":{"accounts":[]},"orders":[],"products":[]});
-    let request=if action=="upsert_client" {
-        json!({"state":state,"client":client})
-    } else {
-        json!({"state":state,"clientId":client.get("id").and_then(Value::as_str)
-            .unwrap_or(""),"at":chrono::Utc::now().to_rfc3339()})
-    };
     let transition=if action=="upsert_client" {
         native_client_mutation::validate_client(&state,&client)?;
         native_client_mutation::upsert(&state,&client,"clients")?
     } else {
+        let at=chrono::Utc::now().to_rfc3339();
         native_client_mutation::archive_client(
-            &state,
-            client.get("id").and_then(Value::as_str).unwrap_or(""),
-            request.get("at").and_then(Value::as_str).unwrap_or("")
+            &state,client.get("id").and_then(Value::as_str).unwrap_or(""),&at
         )?
     };
     let next=transition.get("state").ok_or("Rust 거래처 변경 결과가 없습니다.")?;
