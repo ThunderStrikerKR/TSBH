@@ -548,15 +548,13 @@ impl BandoEgui {
     }
 
     fn source_section(&mut self, ui: &mut Ui, height: f32) {
-        let mut new_reception = false;
         let mut begin_input = false;
         let mut analyze_requested = false;
         Self::section_with_header(ui, "발주 원문", height, |ui| {
-            if theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, true)
-                .on_hover_text("프리뷰: 입력한 원문과 분석 결과만 초기화합니다.")
-                .clicked() {
-                new_reception = true;
-            }
+            theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false)
+                .on_disabled_hover_text(
+                    "복수 작업 주문을 보존할 저장 구조가 연결되기 전까지 새 주문 생성을 비활성화합니다."
+                );
         }, |ui| {
             if self.source_editing || !self.raw_source.is_empty() {
                 ui.label(theme::caption("직접 입력 · 공통 업무 서비스 · 주문 저장 안 함"));
@@ -623,12 +621,7 @@ impl BandoEgui {
                 ui.label(theme::caption("설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."));
             }
         });
-        if new_reception {
-            self.raw_source.clear();
-            self.clear_source_analysis();
-            self.queue_source_save();
-            self.source_editing = false;
-        } else if begin_input {
+        if begin_input {
             // Never mix example cards or example money with actual Rust
             // recognition output once an employee opens a real source.
             self.sample = false;
