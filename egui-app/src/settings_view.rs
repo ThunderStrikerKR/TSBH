@@ -343,7 +343,7 @@ impl SettingsView{
                 let editable=!self.read_only() && !self.busy();
                 match self.tab{
                     SettingsTab::Basic=>self.show_basic(scroll,editable,Arc::clone(&gateway)),
-                    SettingsTab::Files=>self.show_files(scroll,editable),
+                    SettingsTab::Files=>self.show_files(scroll,editable,Arc::clone(&gateway)),
                     SettingsTab::Data=>self.show_data(scroll),
                     SettingsTab::System=>self.show_system(scroll),
                 }
@@ -503,7 +503,7 @@ impl SettingsView{
             self.draft["brandAccounts"][key]=json!(selected);
         }
     }
-    fn show_files(&mut self,ui:&mut Ui,editable:bool){
+    fn show_files(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>){
         let sections=[
             ("excelDirectory","Excel 보관함 위치",
               "설정되지 않음","보관함 폴더 선택"),
@@ -542,7 +542,7 @@ impl SettingsView{
                 });
             });
         }
-        self.save_bar(ui,Arc::new(crate::gateway::LocalGateway));
+        self.save_bar(ui,gateway);
     }
     fn save_bar(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
         ui.add_space(theme::SPACE_12);
