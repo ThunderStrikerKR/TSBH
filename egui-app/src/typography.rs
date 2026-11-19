@@ -153,6 +153,12 @@ pub fn table_cell(text: &str) -> RichText { render(text, Role::TableCell) }
 pub fn summary_value(text: &str) -> RichText { render(text, Role::SummaryValue) }
 pub fn quantity(text: &str) -> RichText { render(text, Role::Quantity) }
 
+/// Explicit numeric input typography: use Consolas (or system monospace
+/// fallback) for editable money and quantity fields as well as display.
+pub fn numeric_editor_font() -> FontId {
+    FontId::monospace(FONT_BODY)
+}
+
 pub fn status(text: &str, color: Color32) -> RichText {
     render(text, Role::Status).color(color)
 }
