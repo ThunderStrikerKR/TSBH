@@ -2036,11 +2036,15 @@ impl BandoEgui {
                     let mut did_scroll=false;
                     let editor = ui.scope(|editor_ui| {
                         editor_ui.set_clip_rect(clip);
-                        egui::ScrollArea::vertical()
+                        theme::source_document_frame().show(editor_ui, |document_ui| {
+                            egui::ScrollArea::vertical()
                             .id_salt("source-editor-vertical-scroll")
-                            .max_height(editor_height)
+                            // The frame border/padding occupies the outer
+                            // editor slot; only the text contents scroll.
+                            .max_height((editor_height-theme::SPACE_8
+                                -2.0*theme::FRAME_STROKE_WIDTH).max(0.0))
                             .auto_shrink([false, false])
-                            .show(editor_ui, |scroll_ui| {
+                            .show(document_ui, |scroll_ui| {
                                 // Keep the source/message splitter fixed. Only
                                 // this scroll area grows its internal content.
                                 let lines=self.raw_source.lines().count().max(8).min(1000);
@@ -2055,6 +2059,7 @@ impl BandoEgui {
                                     lay_ui.fonts_mut(|fonts|fonts.layout_job(job))
                                 };
                                 let output=egui::TextEdit::multiline(&mut self.raw_source)
+                                    .frame(false)
                                     .font(egui::TextStyle::Body)
                                     .desired_rows(lines)
                                     .desired_width(scroll_ui.available_width())
@@ -2087,6 +2092,7 @@ impl BandoEgui {
                                 }
                                 output.response
                             }).inner
+                        }).inner
                     }).inner;
                     self.source_hover=hovered_link;
                     if did_scroll {self.link_hover.scroll_to=None;}
