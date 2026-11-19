@@ -92,13 +92,14 @@ pub fn labeled_field(
     enabled: bool,
 ) -> Response {
     ui.horizontal(|ui| {
-        ui.add_sized(
+        let title=ui.add_sized(
             Vec2::new(LABEL_WIDTH, theme::INPUT_HEIGHT),
             egui::Label::new(typography::field_label(label)),
         );
-        // egui horizontal layout already supplies the shared item gap.
-        // Avoid doubling it and unnecessarily shrinking long address fields.
-        field(ui, value, kind, enabled)
+        // The whole field row (including its label) is a single hover
+        // target for exact source linking. No geometry is modified.
+        let input=field(ui, value, kind, enabled);
+        title.union(input)
     }).inner
 }
 
