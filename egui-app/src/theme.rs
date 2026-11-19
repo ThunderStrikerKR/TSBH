@@ -80,6 +80,9 @@ pub const MODAL_PANEL_PADDING_Y: f32 = 16.0;
 pub const MODAL_DECISION_MAX_WIDTH: f32 = 560.0;
 pub const MODAL_DEFAULT_MAX_WIDTH: f32 = 880.0;
 pub const MODAL_VIEWPORT_GUTTER: f32 = 18.0;
+// One shared dim role for the modal stack; a stacked confirmation is lighter.
+pub const MODAL_BACKDROP_ALPHA: u8 = 144;
+pub const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 pub const MANUAL_TABLE_MIN_WIDTH: f32 = 1180.0;
 pub const MANUAL_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANUAL_TABLE_ROW_HEIGHT: f32 = 42.0;
