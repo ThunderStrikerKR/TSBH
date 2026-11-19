@@ -84,7 +84,7 @@ pub fn decision_window(
         .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))
 }
 
-/// A separate foreground layer draws the dim and consumes background input.
+/// A layered backdrop draws the dim; egui's modal focus barrier blocks input.
 /// It is intentionally clipped to the actual workspace, never over KakaoTalk.
 /// Render the backdrop before the corresponding modal(s); render a second one
 /// before a nested confirmation to keep only the top dialog interactive.
@@ -97,17 +97,18 @@ pub fn modal_backdrop(
         theme::MODAL_BACKDROP_ALPHA
     };
     let area=egui::Area::new(egui::Id::new(id))
-        .order(egui::Order::Foreground)
+        .order(if nested {egui::Order::Foreground}else{egui::Order::Middle})
         .fixed_pos(work_area.min)
-        .interactable(true)
-        .sense(egui::Sense::click_and_drag());
+        // The backdrop cannot rise above the dialog after an outside click.
+        .interactable(false)
+        .sense(egui::Sense::hover());
     // egui's modal focus barrier also blocks keyboard input in the toolbar,
     // while the visual dim and pointer blocker stay clear of the Kakao dock.
     let layer=area.layer();
     ctx.memory_mut(|memory|memory.set_modal_layer(layer));
     area.show(ctx,|ui|{
         let (rect,_)=ui.allocate_exact_size(
-            work_area.size(),egui::Sense::click_and_drag()
+            work_area.size(),egui::Sense::hover()
         );
         ui.painter().rect_filled(
             rect,0.0,egui::Color32::from_black_alpha(alpha)
