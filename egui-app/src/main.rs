@@ -1501,10 +1501,13 @@ impl BandoEgui {
                         toolbar.set_clip_rect(toolbar_rect);
                         toolbar.spacing_mut().item_spacing.x=theme::SPACE_4;
                         toolbar.add_space(theme::KAKAO_TOOLBAR_PAD_X);
+                        // Explicit KakaoTalk menu prefix: icon and all three
+                        // controls form ONE compact left-aligned row.
+                        components::kakao_menu_icon(toolbar);
                         let mode_role=|active|if active{
                             ButtonRole::ActiveKakaoControl
                         }else{ButtonRole::KakaoControl};
-                        if theme::action(toolbar,"함께 보기",
+                        if theme::action(toolbar,"겹쳐 보기",
                             mode_role(current_mode==kakao_dock::DockMode::Together),true
                         ).clicked(){
                             next_mode=Some(kakao_dock::DockMode::Together);
@@ -1514,16 +1517,11 @@ impl BandoEgui {
                         ).clicked(){
                             next_mode=Some(kakao_dock::DockMode::Split);
                         }
-                        toolbar.with_layout(
-                            Layout::right_to_left(Align::Center),|right|{
-                                right.add_space(theme::KAKAO_TOOLBAR_PAD_X);
-                                if theme::action(right,"카카오톡 연결 해제",
-                                    ButtonRole::KakaoControl,true
-                                ).clicked(){
-                                    disconnect=true;
-                                }
-                            }
-                        );
+                        if theme::action(toolbar,"연결 해제",
+                            ButtonRole::KakaoControl,true
+                        ).clicked(){
+                            disconnect=true;
+                        }
                     },
                 );
                 let line_y=slot.top()+theme::KAKAO_TOOLBAR_HEIGHT;
