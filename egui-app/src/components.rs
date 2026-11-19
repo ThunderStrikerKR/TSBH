@@ -2,7 +2,7 @@
 //! while colors, sizes and alignment are owned by the shared UI layer.
 
 use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, RichText, Sense, Stroke, Ui, Vec2};
-use crate::theme;
+use crate::{theme, typography};
 
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 pub const TABLE_ROW_HEIGHT: f32 = 42.0;
@@ -52,7 +52,7 @@ pub fn labeled_field(
     ui.horizontal(|ui| {
         ui.add_sized(
             Vec2::new(LABEL_WIDTH, theme::INPUT_HEIGHT),
-            egui::Label::new(theme::field_label(label)),
+            egui::Label::new(typography::field_label(label)),
         );
         // egui horizontal layout already supplies the shared item gap.
         // Avoid doubling it and unnecessarily shrinking long address fields.
@@ -133,13 +133,13 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
         soft_divider(ui);
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|ui| {
-            ui.label(theme::field_label(label));
+            ui.label(typography::field_label(label));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(value).size(theme::FONT_SECTION_HEADING).strong().color(theme::TEXT));
+                ui.label(RichText::new(value).size(typography::FONT_SECTION_HEADING).strong().color(theme::TEXT));
             });
         });
         if !footnote.trim().is_empty() {
-            ui.label(RichText::new(footnote).size(theme::FONT_METADATA).color(theme::SECONDARY));
+            ui.label(RichText::new(footnote).size(typography::FONT_METADATA).color(theme::SECONDARY));
         }
     });
 }
@@ -194,7 +194,7 @@ pub fn table_header(ui: &mut Ui, columns: &[(&str, f32)]) {
                     ui.add_sized(
                         Vec2::new(*width, TABLE_HEADER_HEIGHT - 8.0),
                         egui::Label::new(
-                            theme::field_label(title),
+                            typography::field_label(title),
                         ),
                     );
                 }
@@ -207,7 +207,7 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
         for (value, width) in columns {
             ui.add_sized(
                 Vec2::new(*width, TABLE_ROW_HEIGHT),
-                egui::Label::new(RichText::new(*value).size(theme::FONT_FIELD_LABEL).color(theme::TEXT)),
+                egui::Label::new(RichText::new(*value).size(typography::FONT_FIELD_LABEL).color(theme::TEXT)),
             );
         }
     });
