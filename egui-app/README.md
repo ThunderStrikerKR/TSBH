@@ -257,3 +257,14 @@ GitHub `main`에는 소스 코드가 반영되었지만 이 환경에서 `cargo 
 - **2단계 미완료:** 실제 Tauri 주문의 거래처 변경은 Rust `order_edit_rules/change_order_client`의 주문 상태·가격·운임 조정과 운영 DB revision 비교 저장을 함께 연결해야 한다. 데이터 전체 권한 없이 `clientId`만 운영 주문에 덮어쓰지 않는다.
 - **다음 이후 단계:** 원문 연결 하이라이트 → 수취인 수동 분류. 카카오톡 연결 문제는 별도 GitHub [#42](https://github.com/ThunderStrikerKR/TSBH/issues/42)에서 추적하며 이번 단계에서 수정하지 않는다.
 - 코드 반영만 완료했다. Windows 실제 컴파일/화면 검증 및 대규모 회귀 테스트는 수행하지 않았다.
+
+## 거래처 수동 변경 2단계: 기존 Rust 단가·운임 계산 연결 (2026-11-20)
+
+- `native_order_change.rs`: UI의 고객 ID 덮어쓰기를 차단하고, 기존 Rust의 `new_reception → analyze_order(실제 선택 거래처) → change_order_client → merge_reception_analysis → reprice_order → calculate_price` 순서로 업무 판정을 실행한다. Rust가 가격/운임/상태 제한을 판정하며, 실패하면 기존 거래처를 유지한다.
+- `business_state.rs`: `BANDO_EGUI_BUSINESS_DB` 경로로 사용자가 명시한 Tauri v2 SQLite를 **한 번의 읽기 전용 트랜잭션**에서 관계형 상품·옵션·거래처·주문·수취인·품목 및 설정/업무 상태로 복원한다. 운영 DB에 쓰기·스키마 변경·마이그레이션을 수행하지 않는다.
+- 접수 인식도 운영 DB를 명시한 경우 같은 실제 상품/별칭 마스터 기준으로 수행한다. 단순 이름 인덱스 또는 예전 내장 상품 시드에 근거한 실거래처별 가격 계산은 허용하지 않는다.
+- 성공 결과에서 전화번호·주소·계좌·고객 전체 스냅샷·운영 주문내역을 제거하고, 원문/거래처/마스터 revision에 연결된 `pricingPreview`(품목 단가·운임·부가세·총액)만 격리 작업본에 보존한다. `총 주문` 기존 표시 영역은 Rust 계산값이 완성된 경우만 참고액으로 표시하고 **운영 주문 저장 전** 상태를 명시한다.
+- 다른 발주서 선택 또는 원문 수정으로 진행 중 계산이 무효화되면 결과를 적용하지 않는다. 원문 수정 시 미확정 견적도 무효화한다.
+- **아직 운영 저장은 미완료:** Tauri `write_snapshot/state_save`와 workflow 정합성 검증을 동일 트랜잭션으로 재사용하지 않는 직접 SQL 수정은 금지한다. `core_orders`와 운영 주문 상태를 실제로 변경하지 않았으며, 현재 저장 대상은 `egui-preview.sqlite3`다. 운영 저장 연결은 별도 게이트웨이 과제로 남는다.
+- 카카오톡 연결 Issue [#42](https://github.com/ThunderStrikerKR/TSBH/issues/42)는 이번 작업에서 변경하지 않았다. 원문 하이라이트와 수취인 수동 분류도 아직 이전하지 않았다.
+- 코드 반영 후 Windows Cargo 컴파일/화면 동작 검증은 아직 수행하지 않았다. 전체 회귀 테스트도 실행하지 않았다.
