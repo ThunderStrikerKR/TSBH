@@ -196,8 +196,8 @@ impl ManualWorkspace {
         thread::spawn(move||{
             let result=(||->Result<Outcome,String>{
                 let mut payload=json!({
-                    "action":action,"model":model,"assignmentOrder":keys,
-                    "order":order
+                    "action":action.clone(),"model":model.clone(),
+                    "assignmentOrder":keys.clone(),"order":order.clone()
                 });
                 if let Some(fields)=extra.as_object() {
                     for (key,value) in fields {
@@ -229,7 +229,7 @@ impl ManualWorkspace {
                     rule(service.as_ref(),json!({
                         "action":"confirm_manual_quantity",
                         "model":first.get("model"),"cell":extra.get("cell"),
-                        "assignmentOrder":keys
+                        "assignmentOrder":keys.clone()
                     }))?
                 }else{
                     rule(service.as_ref(),payload)?
@@ -258,14 +258,14 @@ impl ManualWorkspace {
         thread::spawn(move||{
             let result=(||->Result<Outcome,String>{
                 let quantity=rule(service.as_ref(),json!({
-                    "action":"manual_quantity_status","model":model
+                    "action":"manual_quantity_status","model":model.clone()
                 }))?;
                 if quantity.get("pending").and_then(Value::as_bool)==Some(true) {
                     return Err("선택한 상품의 수량을 먼저 확정하세요.".into());
                 }
                 let applied=rule(service.as_ref(),json!({
-                    "action":"apply_manual","order":order,
-                    "model":model,"assignmentOrder":keys
+                    "action":"apply_manual","order":order.clone(),
+                    "model":model.clone(),"assignmentOrder":keys.clone()
                 }))?;
                 let order=applied.get("order").filter(|v|v.is_object())
                     .ok_or("Rust 수동 분류 적용 결과가 올바르지 않습니다.")?.clone();
