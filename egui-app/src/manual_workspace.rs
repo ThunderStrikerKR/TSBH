@@ -436,7 +436,9 @@ impl ManualWorkspace {
                                         .iter().any(|field|!text(last,field).is_empty()) ||
                                         list(last,"items").iter().any(|item|
                                             !text(item,"name").is_empty() ||
+                                            !text(item,"raw").is_empty() ||
                                             item.get("productId").is_some_and(|v|!v.is_null()) ||
+                                            item.get("variantId").is_some_and(|v|!v.is_null()) ||
                                             item.get("quantity").is_some_and(|v|!v.is_null())
                                         ) ||
                                         assignments.as_object().is_some_and(|map|
@@ -631,8 +633,8 @@ impl ManualWorkspace {
                 );
                 if exists && !self.busy(){
                     let title=if text(&product,"name").is_empty(){
-                        text(&product,"code")
-                    }else{text(&product,"name")};
+                        text(&product,"code").to_owned()
+                    }else{text(&product,"name").to_owned()};
                     self.action("set_manual_product",json!({
                         "cell":{"recipientId":search.recipient_id,
                             "itemId":search.item_id,"field":"product"},
