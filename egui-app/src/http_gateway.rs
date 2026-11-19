@@ -112,7 +112,12 @@ impl BandoGateway for HttpGateway {
             let kind = record.get("orderType").and_then(Value::as_str)
                 .ok_or("서버 접수 유형이 없습니다.")?.to_owned();
             crate::clipboard_intake::OrderType::parse(&kind)?;
-            drafts.push(WorkingReception { id, raw: source, order_type: kind });
+            drafts.push(WorkingReception {
+                id, raw: source, order_type: kind,
+                analysis_raw: record.get("analysisRaw").and_then(Value::as_str).map(str::to_owned),
+                analysis_evidence: record.get("analysisEvidence").filter(|v| !v.is_null()).cloned(),
+                client_match: record.get("clientMatch").filter(|v| !v.is_null()).cloned(),
+            });
         }
         let active_id = match value.get("activeId") {
             Some(Value::String(id)) if !id.is_empty() => Some(id.clone()),
@@ -125,6 +130,8 @@ impl BandoGateway for HttpGateway {
     fn save_working_source(&self, source: &WorkingSource) -> Result<u64, String> {
         let drafts: Vec<Value> = source.drafts.iter().map(|item| json!({
             "id": item.id, "raw": item.raw, "orderType": item.order_type,
+            "analysisRaw": item.analysis_raw, "analysisEvidence": item.analysis_evidence,
+            "clientMatch": item.client_match,
         })).collect();
         let body = json!({
             "raw": source.raw,
