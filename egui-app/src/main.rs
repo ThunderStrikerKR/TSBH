@@ -1313,6 +1313,14 @@ impl BandoEgui {
                                 // dispose of an unsaved client draft.
                                 if !self.client_manager.as_ref()
                                     .is_some_and(|manager|manager.has_modal()) {
+                                    if self.page==Page::Reception &&
+                                        page!=Page::Reception {
+                                        // The Kakao dock exists only in the
+                                        // reception column. Restore external
+                                        // windows before another page owns it.
+                                        self.kakao_dock.disconnect();
+                                        self.kakao_connected=false;
+                                    }
                                     self.page = page;
                                 }
                             }
