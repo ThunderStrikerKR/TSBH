@@ -419,12 +419,6 @@ impl SettingsView{
             return;
         }
         if self.source.is_null(){return;}
-        if self.read_only() && self.tab!=SettingsTab::System{
-            ui.label(typography::caption(
-                "현재 연결된 운영 설정은 읽기 전용입니다."
-            ));
-            ui.add_space(theme::SPACE_8);
-        }
         egui::ScrollArea::vertical()
             .id_salt(("settings-view",self.tab.label()))
             .auto_shrink([false,false])
@@ -702,17 +696,9 @@ impl SettingsView{
             }
         });
         ui.add_space(theme::SPACE_12);
-        section(ui,"업무 데이터 저장",|panel|{
-            if business{
-                panel.label(typography::body(
-                    "Windows AppData / com.bandostand.bandohub.tauri / bando-hub-v001.sqlite"
-                ));
-            }else if let Ok(store)=crate::preview_store::PreviewStore::initialize(){
-                panel.label(typography::body(
-                    &store.path().to_string_lossy()
-                ));
-            }
-        });
+        // React shows the heading and its on-demand help, not a filesystem
+        // debug path in the regular settings body.
+        section(ui,"업무 데이터 저장",|_panel|{});
     }
     pub fn has_data_modal(&self)->bool{
         self.archive_open||self.restore_target.is_some()
