@@ -31,6 +31,7 @@ mod kakao_context;
 mod kakao_dock;
 mod settings_store;
 mod settings_view;
+mod settings_help;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
