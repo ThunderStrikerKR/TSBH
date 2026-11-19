@@ -400,10 +400,18 @@ impl ManualWorkspace {
                         egui::vec2(source_width,height),
                         egui::Layout::top_down(egui::Align::Min),
                         |source_ui|{
-                            source_ui.label(typography::subsection_heading("붙여넣은 내용"));
-                            egui::ScrollArea::vertical().id_salt("manual-source-blocks")
-                                .max_height((height-theme::SECTION_HEADER_HEIGHT).max(0.0))
-                                .show(source_ui,|ui|{
+                            theme::modal_nested_frame().show(source_ui,|panel|{
+                                panel.set_min_width(
+                                    (source_width-2.0*theme::SPACE_8).max(0.0)
+                                );
+                                panel.set_min_height(
+                                    (height-2.0*theme::SPACE_8).max(0.0)
+                                );
+                                panel.label(typography::subsection_heading("붙여넣은 내용"));
+                                egui::ScrollArea::vertical().id_salt("manual-source-blocks")
+                                    .max_height((height-theme::SECTION_HEADER_HEIGHT
+                                        -2.0*theme::SPACE_8).max(0.0))
+                                    .show(panel,|ui|{
                             if let Some(id)=crate::manual_source_view::source_document(
                                 ui,&self.raw,&blocks,&assignments,!busy
                             ){
@@ -424,15 +432,20 @@ impl ManualWorkspace {
                                     })));
                                 }
                             }
-                                });
+                                    });
+                            });
                         },
                     );
                     ui.allocate_ui_with_layout(
                         egui::vec2(ui.available_width(),height),
                         egui::Layout::top_down(egui::Align::Min),
                         |sheet_ui|{
-                            sheet_ui.label(typography::subsection_heading("배송 정보 구성표"));
-                            sheet_ui.horizontal(|ui|{
+                            theme::modal_nested_frame().show(sheet_ui,|panel|{
+                                panel.set_min_height(
+                                    (height-2.0*theme::SPACE_8).max(0.0)
+                                );
+                                panel.label(typography::subsection_heading("배송 정보 구성표"));
+                                panel.horizontal(|ui|{
                                 ui.label(typography::field_label("배송 건수"));
                                 if theme::action(ui,"−",ButtonRole::Standard,
                                     !busy && rows.len()>1).clicked(){
@@ -476,7 +489,7 @@ impl ManualWorkspace {
                                     -theme::ACTION_STANDARD_HEIGHT
                                     -theme::SPACE_24)
                                     .max(3.0*theme::MANUAL_TABLE_ROW_HEIGHT))
-                                .show(sheet_ui,|ui|{
+                                .show(panel,|ui|{
                                     // The React source displays ALL shipments
                                     // as a spreadsheet with six stable
                                     // recipient columns and product subrows.
@@ -583,7 +596,7 @@ impl ManualWorkspace {
                                 });
                             // Single selected-field editor; never repeat it
                             // under every shipment or change the panel height.
-                            sheet_ui.horizontal(|ui|{
+                            panel.horizontal(|ui|{
                                 let label=if self.selected_item.is_some(){
                                     if self.selected_field=="quantity"{"수량"}else{"상품명"}
                                 } else {
@@ -601,6 +614,7 @@ impl ManualWorkspace {
                                 if theme::action(ui,"입력 반영",ButtonRole::Standard,
                                     !busy && self.edit_text!=self.current_value()
                                 ).clicked(){submit_direct=true;}
+                            });
                             });
                         },
                     );
