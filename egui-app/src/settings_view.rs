@@ -29,7 +29,7 @@ pub struct SettingsView{
     loaded:bool,
     loading:Option<Pending>,
     saving:Option<(SaveKind,Pending)>,
-    folder_picker:Option<(String,Receiver<Option<String>>)>,
+    folder_picker:Option<(String,Receiver<Result<Option<String>,String>>)>,
     data_request:Option<(String,Pending)>,
     archive:Option<Vec<Value>>,
     archive_query:String,
@@ -281,8 +281,12 @@ impl SettingsView{
         }
         if let Some((key,rx))=self.folder_picker.as_ref(){
             match rx.try_recv(){
-                Ok(selected)=>{
+                Ok(Ok(selected))=>{
                     if let Some(path)=selected{self.draft[key]=json!(path);}
+                    self.folder_picker=None;
+                }
+                Ok(Err(error))=>{
+                    self.error=Some(error);
                     self.folder_picker=None;
                 }
                 Err(mpsc::TryRecvError::Disconnected)=>{
@@ -370,11 +374,36 @@ impl SettingsView{
         self.folder_picker=Some((key,rx));
         thread::spawn(move||{
             #[cfg(target_os="windows")]
-            let picked=rfd::FileDialog::new()
-                .set_title("폴더 선택").pick_folder()
-                .map(|path|path.to_string_lossy().into_owned());
+            let picked=(||->Result<Option<String>,String>{
+                let Some(path)=rfd::FileDialog::new()
+                    .set_title("폴더 선택").pick_folder() else{
+                    return Ok(None);
+                };
+                let path=std::fs::canonicalize(&path)
+                    .map_err(|_|"선택한 폴더에 접근할 수 없습니다.".to_owned())?;
+                if !path.is_dir(){
+                    return Err("파일이 아닌 폴더를 선택해야 합니다.".into());
+                }
+                if key=="excelDirectory"{
+                    // The original Tauri choose_excel_directory creates
+                    // these five top-level business folders when accepted.
+                    for name in [
+                        "공장 발송","매장 발송","공장 회신","상품 관리","거래처 관리"
+                    ]{
+                        let child=path.join(name);
+                        std::fs::create_dir_all(&child)
+                            .map_err(|e|format!("{name} 보관 폴더 생성 실패: {e}"))?;
+                        let resolved=std::fs::canonicalize(&child)
+                            .map_err(|_|"보관함 폴더를 확인할 수 없습니다.".to_owned())?;
+                        if !resolved.starts_with(&path){
+                            return Err("Excel 하위 폴더가 보관함 밖에 있습니다.".into());
+                        }
+                    }
+                }
+                Ok(Some(path.to_string_lossy().into_owned()))
+            })();
             #[cfg(not(target_os="windows"))]
-            let picked:Option<String>=None;
+            let picked:Result<Option<String>,String>=Ok(None);
             let _=tx.send(picked);
             ctx.request_repaint();
         });
