@@ -1743,12 +1743,10 @@ impl BandoEgui {
                             }
                         }
 
-                        // Draw the visible dock rules once in the common
-                        // coordinate system. A panel-clipped horizontal line
-                        // otherwise stops at the edge of a 6pt vertical
-                        // gutter and cannot reach its centered stroke.
-                        // The overlays only paint; interaction rectangles,
-                        // widths and drag behavior remain unchanged.
+                        // One common parent owns the entire splitter drawing
+                        // topology. Both endpoints of each horizontal bridge
+                        // are connected at the same snapped coordinates.
+                        // Input hit areas and resizable pane geometry stay put.
                         if splitter_visuals.len() == layout::PANEL_COUNT - 1 {
                             let shared_upper = self.layout.vertical_heights(all.height()).0;
                             let (review_upper, _) =
@@ -1757,49 +1755,14 @@ impl BandoEgui {
                                 all.top() + shared_upper + layout::SPLITTER / 2.0;
                             let review_y =
                                 all.top() + review_upper + layout::SPLITTER / 2.0;
-                            for (left, right, center_y) in [
-                                (0, 1, shared_y),
-                                (1, 2, review_y),
-                                (1, 2, shared_y),
-                            ] {
-                                let line_area = Rect::from_min_max(
-                                    egui::pos2(
-                                        splitter_visuals[left].0.center().x,
-                                        center_y - layout::SPLITTER / 2.0,
-                                    ),
-                                    egui::pos2(
-                                        splitter_visuals[right].0.center().x,
-                                        center_y + layout::SPLITTER / 2.0,
-                                    ),
-                                );
-                                components::paint_dock_axis_line(
-                                    ui, line_area, false, false,
-                                );
-                            }
-                            // Paint the vertical strokes and all three
-                            // intersections in this ONE parent paint layer.
-                            // Child panes clip their horizontal separators:
-                            // without these center joins the 6pt gutter shows
-                            // a dark gap between perpendicular rules.
-                            for (splitter, highlighted) in &splitter_visuals {
-                                components::paint_dock_axis_line(
-                                    ui, *splitter, true, *highlighted,
-                                );
-                            }
-                            for (index, center_y) in [
-                                (0usize, shared_y),
-                                (1usize, review_y),
-                                (1usize, shared_y),
-                            ] {
-                                let gutter=splitter_visuals[index].0;
-                                let joint=Rect::from_center_size(
-                                    egui::pos2(gutter.center().x,center_y),
-                                    Vec2::splat(layout::SPLITTER),
-                                );
-                                components::paint_dock_junction(
-                                    ui,joint,splitter_visuals[index].1,
-                                );
-                            }
+                            components::paint_dock_network(
+                                ui, &splitter_visuals,
+                                &[
+                                    (0, 1, shared_y),
+                                    (1, 2, review_y),
+                                    (1, 2, shared_y),
+                                ],
+                            );
                         }
                     };
                 if content_width > viewport_width + 0.5 {
