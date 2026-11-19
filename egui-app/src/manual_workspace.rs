@@ -358,7 +358,7 @@ impl ManualWorkspace {
                     assignments.get(text(b,"id")).is_none()).count();
                 ui.horizontal(|toolbar|{
                     toolbar.label(typography::caption(
-                        &format!("미배정 원문 {unassigned}개 · 배송 {}건",rows.len())
+                        &format!("미배정됨: {unassigned}개")
                     ));
                     toolbar.with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),
@@ -627,7 +627,7 @@ impl ManualWorkspace {
                     // React manual footer: status stays left; close, then
                     // primary apply stay together at the right edge.
                     footer.label(typography::caption(
-                        &format!("미배정됨: {unassigned}개")
+                        "정식 접수는 주문 확인 완료"
                     ));
                     footer.with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),
