@@ -230,7 +230,7 @@ fn workflow_header(
             Vec2::new(theme::WORKFLOW_MANAGE_WIDTH,theme::WORKFLOW_TITLE_HEIGHT),
             Layout::top_down(Align::Min),|manage|{
                 theme::action_full_width(
-                    manage,"묶음 관리",theme::ButtonRole::Standard,false
+                    manage,"관리",theme::ButtonRole::Standard,false
                 );
             }
         );
