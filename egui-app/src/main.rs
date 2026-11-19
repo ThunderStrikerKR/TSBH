@@ -12,7 +12,7 @@ mod http_gateway;
 mod preview_store;
 mod source_autosave;
 
-use eframe::egui::{self, Align, Frame, Layout, RichText, Rect, Sense, Ui, UiBuilder, Vec2};
+use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::ButtonRole;
 use std::sync::{mpsc::{self, Receiver}, Arc};
 use std::time::{Duration, Instant};
@@ -257,10 +257,7 @@ impl BandoEgui {
                                 Vec2::splat(theme::BRAND_ICON_SIZE),
                             )));
                         }
-                        bar.label(
-                            RichText::new("BANDO HUB")
-                                .size(theme::FONT_BRAND).strong().color(theme::TEXT)
-                        );
+                        bar.label(theme::brand_heading("BANDO HUB"));
                         bar.add_space(theme::SPACE_12);
                         for page in Page::ALL {
                             let role = if self.page == page {
@@ -933,7 +930,7 @@ impl BandoEgui {
         egui::CentralPanel::default()
             .frame(Frame::new().fill(theme::CANVAS).inner_margin(theme::SPACE_16))
             .show(ctx, |ui| {
-                ui.label(RichText::new(self.page.label()).size(theme::FONT_PAGE_HEADING).strong());
+                ui.label(theme::page_heading(self.page.label()));
             });
     }
 }
