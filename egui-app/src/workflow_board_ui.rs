@@ -153,12 +153,12 @@ fn workflow_card<R>(
     }
     response.inner
 }
-/// The narrow workflow column cannot fit dealer name, four stage lamps,
-/// management and delete controls on one line. Keep the React order of
-/// information, but give the title a generous first row and put progress
-/// lights in the summary row below. Every card uses the same geometry.
+/// Compact two-row folded card: the first row contains the dealer title,
+/// its four signal lamps, and the existing management/delete slots. The
+/// second row contains one-line shipping/amount summary and native actions.
+
 fn group_heading(
-    ui:&mut Ui,id:&str,title:&str,open:bool
+    ui:&mut Ui,id:&str,title:&str,open:bool,step:usize,notice:bool
 )->egui::Response{
     let head=ui.horizontal(|header|{
         header.spacing_mut().item_spacing.x=theme::SPACE_4;
@@ -171,11 +171,17 @@ fn group_heading(
             if open {components::WorkflowIcon::Expanded}
             else {components::WorkflowIcon::Collapsed},theme::SECONDARY
         );
-        let width=header.available_width();
+        // Reserve the four 18pt circles and their gaps BEFORE laying out
+        // the dealer name. Without the reservation they overflow the card.
+        let lights_width=STEP_NAMES.len() as f32*theme::WORKFLOW_SIGNAL_SIZE
+            +(STEP_NAMES.len()-1) as f32*theme::WORKFLOW_SIGNAL_GAP;
+        let width=(header.available_width()-lights_width-theme::SPACE_4).max(0.0);
         header.add_sized(
             [width,theme::WORKFLOW_TITLE_HEIGHT],
-            egui::Label::new(typography::section_heading(title)).truncate()
-        );
+            egui::Label::new(typography::section_heading(title))
+                .truncate().sense(egui::Sense::hover())
+        ).on_hover_text(title);
+        lights(header,step,notice);
     });
     let response=ui.interact(
         head.response.rect,Id::new(("workflow-header",id)),egui::Sense::click()
@@ -200,10 +206,10 @@ fn group_heading(
     }
     response
 }
-/// Header top row: the full clickable title and both original management
-/// controls. Stage dots move to the next line to prevent Korean title
-/// truncation in the 22.4%-width right-hand column.
-fn workflow_header(ui:&mut Ui,id:&str,title:&str,open:bool)
+/// First and only header row: dealer name followed by progress dots, then
+/// the original management/delete controls (fixed-width slots).
+fn workflow_header(ui:&mut Ui,id:&str,title:&str,open:bool,
+    step:usize,notice:bool)
     ->egui::Response {
     let width=ui.available_width();
     let title_width=(width-theme::WORKFLOW_MANAGE_WIDTH
@@ -215,7 +221,7 @@ fn workflow_header(ui:&mut Ui,id:&str,title:&str,open:bool)
             Vec2::new(title_width,theme::WORKFLOW_TITLE_HEIGHT),
             Layout::top_down(Align::Min),|left|{
                 left.set_min_width(title_width);
-                title_response=Some(group_heading(left,id,title,open));
+                title_response=Some(group_heading(left,id,title,open,step,notice));
             }
         );
         bar.allocate_ui_with_layout(
@@ -276,14 +282,13 @@ fn stage_name(step:usize,notice:bool)->&'static str{
 fn money(amount:Option<i64>)->String{
     amount.map(components::display_won).unwrap_or_else(||"—".to_owned())
 }
-/// Original React workflow-action-line: a fixed summary slot on the left,
-/// 140px primary action and a 34px back-stage slot on the right. The stage
-/// action remains disabled until the audited Rust mutation is implemented,
-/// but its 250ms read-only hover preview is still available.
+/// Second and last row while folded: a SINGLE shipping/amount line on the
+/// left, the existing 140pt primary action and 34pt undo control on the
+/// right. VAT detail is preserved in a tooltip, not a third line.
+
 fn workflow_action_line(
     ui:&mut Ui,id:&str,shipments:usize,total:Option<i64>,
-    vat:Option<&str>,button_text:&str,enabled:bool,
-    step:usize,notice:bool
+    vat:Option<&str>,button_text:&str,enabled:bool
 )->(bool,bool){
     let width=ui.available_width();
     let actions=theme::WORKFLOW_CONTROL_WIDTH
@@ -292,33 +297,17 @@ fn workflow_action_line(
     let mut stage_button=None;
     ui.horizontal(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-        bar.allocate_ui_with_layout(
-            Vec2::new(summary_width,theme::WORKFLOW_ACTION_ROW_HEIGHT),
-            Layout::top_down(Align::Min),|summary|{
-                summary.set_max_width(summary_width);
-                summary.spacing_mut().item_spacing.y=0.0;
-                summary.horizontal(|line|{
-                    line.spacing_mut().item_spacing.x=theme::SPACE_4;
-                    lights(line,step,notice);
-                    line.with_layout(Layout::right_to_left(Align::Center),|right|{
-                        right.label(typography::caption(&format!("배송 {shipments}건")));
-                    });
-                });
-                let detail=match total{
-                    Some(amount)=>{
-                        let amount=money(Some(amount));
-                        if let Some(vat)=vat{
-                            format!("{vat} · {amount}")
-                        }else{amount}
-                    }
-                    None=>"금액 미확정".to_owned(),
-                };
-                summary.add_sized(
-                    [summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT],
-                    egui::Label::new(typography::quantity(&detail)).truncate()
-                );
-            }
-        );
+        // No nested horizontal or vertical summary rows. The compact
+        // description stays on ONE line even at the minimum pane width.
+        let amount=total.map(components::display_won)
+            .unwrap_or_else(||"금액 미확정".to_owned());
+        let compact=format!("배송 {shipments}건 · {amount}");
+        let full=vat.map(|vat|format!("{compact} · {vat}"))
+            .unwrap_or_else(||compact.clone());
+        bar.add_sized(
+            [summary_width,theme::WORKFLOW_ACTION_ROW_HEIGHT],
+            egui::Label::new(typography::caption(&compact)).truncate()
+        ).on_hover_text(full);
         bar.allocate_ui_with_layout(
             Vec2::new(theme::WORKFLOW_CONTROL_WIDTH,
                 theme::WORKFLOW_ACTION_ROW_HEIGHT),
@@ -462,7 +451,8 @@ fn group_frame(
     let active=selected.is_some_and(|s|s.group_id==group.id);
     workflow_card(ui,active && !in_preview,in_preview,|ui|{
         let btn=workflow_header(
-            ui,&group.id,&group.dealer_name,open || in_preview
+            ui,&group.id,&group.dealer_name,open || in_preview,
+            group.step,group.needs_notice
         );
             if btn.clicked(){
                 if active {
@@ -481,8 +471,7 @@ fn group_frame(
         }else{"부가세 별도".to_owned()};
         let (_,stage_hovered)=workflow_action_line(
             ui,&group.id,group.shipments.len(),group.total,
-            Some(&vat),stage_name(group.step,group.needs_notice),false,
-            group.step,group.needs_notice
+            Some(&vat),stage_name(group.step,group.needs_notice),false
         );
         if stage_hovered && !in_preview{
             *trigger=Some(group.id.clone());
@@ -524,7 +513,7 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
                 .and_then(|m|m.get("name")).and_then(|n|n.as_str())
                 .filter(|n|!n.trim().is_empty()).unwrap_or("거래처 확인").to_owned()
         };
-        if workflow_header(ui,&draft.id,&title,open).clicked(){
+        if workflow_header(ui,&draft.id,&title,open,0,false).clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
                 else{Event::SelectPending(draft.id.clone())});
         }
@@ -535,7 +524,7 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
         }else{&[]};
         let (clicked,_)=workflow_action_line(
             ui,&draft.id,recipients.len(),None,None,"거래처 확인",
-            draft.client_id.is_none(),0,false
+            draft.client_id.is_none()
         );
         if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
         if open{
