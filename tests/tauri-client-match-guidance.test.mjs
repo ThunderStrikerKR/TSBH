@@ -38,8 +38,12 @@ test("staff review shows both evidence and conflict without a second notificatio
 test("stage-one signal hover highlights dealer identity alongside order review", () => {
   const css = read("src/styles/receipt-layout.css");
   const board = read("src/WorkflowBoard.tsx");
-  assert.match(css, /data-hover-stage="1"\] \.hub-slot-1 \.source-top \.receipt-client/);
-  assert.match(css, /data-hover-stage="1"\] \.hub-slot-1 \.source-top \.source-client-actions/);
+  // The approved one-touch highlight is confined to exact editable fields;
+  // it must not emphasize a dealer picker or the whole dealer panel.
+  assert.doesNotMatch(css, /data-hover-stage="1"\] \.hub-slot-1 \.source-top \.receipt-client/);
+  assert.doesNotMatch(css, /data-hover-stage="1"\] \.hub-slot-1 \.source-top \.source-client-actions/);
+  assert.match(css, /data-one-touch-hover="true"/);
+  assert.match(css, /\.recipient-review \.recipient-fields \.linked-field/);
   assert.match(board, /onMouseEnter/);
   assert.match(board, /onStageHover/);
 });
