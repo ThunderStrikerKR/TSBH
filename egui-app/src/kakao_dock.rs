@@ -590,6 +590,16 @@ mod native {
                 }
             });
         }
+        fn sync_active_from_hook(&mut self){
+            if self.focus_hook==0{return;}
+            let selected=ACTIVE_DOCK.with(|state|state.try_borrow().ok()
+                .and_then(|current|current.as_ref().and_then(|dock|dock.active_chat)));
+            if let Some(hwnd)=selected{
+                if self.windows.iter().any(|w|!w.main && w.hwnd==hwnd && w.alive()){
+                    self.active_chat=Some(hwnd);
+                }
+            }
+        }
         pub(super) fn start_focus_hook(&mut self)->Result<(),String>{
             let hook=unsafe{SetWinEventHook(
                 EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_FOREGROUND,0,
@@ -651,6 +661,7 @@ mod native {
         /// clicks inside an already foreground BANDO HUB (no new WinEvent).
         fn restore_relative_z_order(&mut self)->Result<(),String>{
             if !self.foreground_related(){return Ok(());}
+            self.sync_active_from_hook();
             let foreground=unsafe{GetForegroundWindow()};
             if self.windows.iter().any(|w|!w.main && w.hwnd==foreground){
                 self.active_chat=Some(foreground);
@@ -691,6 +702,7 @@ mod native {
             if self.windows.is_empty(){
                 return Err("연결된 카카오톡 창이 종료됐습니다.".into());
             }
+            self.sync_active_from_hook();
             let foreground=unsafe{GetForegroundWindow()};
             if self.windows.iter().any(|w|!w.main && w.hwnd==foreground){
                 self.active_chat=Some(foreground);
