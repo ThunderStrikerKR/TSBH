@@ -18,6 +18,8 @@ mod recognition;
 mod rules;
 #[path = "../../src-tauri/src/business_core/catalog_clients/title_clients.rs"]
 mod native_title_clients;
+#[path = "../../src-tauri/src/business_core/catalog_clients/client_search.rs"]
+mod native_client_search;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ReadOperation {
@@ -26,6 +28,7 @@ pub enum ReadOperation {
     DetectRemoteDeliveryArea,
     AutoMatchReceptionClient,
     ReceptionClientCandidates,
+    ClientCandidates,
 }
 
 impl ReadOperation {
@@ -33,7 +36,8 @@ impl ReadOperation {
         match self {
             Self::AnalyzeOrder => "recognition",
             Self::ResolveRetailUnitPrice | Self::DetectRemoteDeliveryArea => "rules",
-            Self::AutoMatchReceptionClient | Self::ReceptionClientCandidates => "catalog_clients",
+            Self::AutoMatchReceptionClient | Self::ReceptionClientCandidates
+            | Self::ClientCandidates => "catalog_clients",
         }
     }
 
@@ -44,6 +48,7 @@ impl ReadOperation {
             Self::DetectRemoteDeliveryArea => "detect_remote_delivery_area",
             Self::AutoMatchReceptionClient => "auto_match_reception_client",
             Self::ReceptionClientCandidates => "reception_client_candidates",
+            Self::ClientCandidates => "client_candidates",
         }
     }
 }
@@ -96,6 +101,9 @@ impl BandoGateway for LocalGateway {
             ReadOperation::AutoMatchReceptionClient
             | ReadOperation::ReceptionClientCandidates => {
                 native_title_clients::execute(operation.operation(), &payload)
+            }
+            ReadOperation::ClientCandidates => {
+                native_client_search::execute(&payload)
             }
         }
     }
