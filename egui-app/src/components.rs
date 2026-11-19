@@ -93,9 +93,19 @@ pub fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     let start_px = (low * scale).round() as i32;
     let end_px = (high * scale).round() as i32;
     let span_px = (end_px - start_px).max(1);
-    let center_width_px = if span_px % 2 == 0 { 2 } else { 1 };
-    let line_width_px = (center_width_px + if active { 2 } else { 0 })
-        .min(span_px);
+    // Honor the 1pt / 2pt design tokens where they can be truly centered.
+    // For a 6px gutter, a requested 1px rule must expand to the middle 2px.
+    let logical_width = if active {
+        theme::DOCK_SPLITTER_HOVER_LINE
+    } else {
+        theme::DOCK_SPLITTER_LINE
+    };
+    let mut line_width_px = ((logical_width * scale).round() as i32)
+        .clamp(1, span_px);
+    if (span_px - line_width_px) % 2 != 0 {
+        // Match slot-width parity so left/right margins are always equal.
+        line_width_px += if line_width_px < span_px { 1 } else { -1 };
+    }
     let line_start = start_px + (span_px - line_width_px) / 2;
     let line_end = line_start + line_width_px;
 
