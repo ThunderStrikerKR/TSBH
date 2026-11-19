@@ -53,6 +53,7 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
         .ok_or("운영 DB revision이 누락됐습니다.")?;
     let expected_working_version = request.get("expectedWorkingVersion")
         .and_then(Value::as_u64);
+    let manual = request.get("manualModel").filter(|v|!v.is_null());
     if (!order_id.starts_with("egui-") && order_id!="legacy-working-source") ||
        order_id.len() > 180 {
         return Err("egui에서 생성한 미확정 접수 ID만 이 경로로 저장할 수 있습니다.".into());
@@ -122,6 +123,11 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
                 .is_some_and(|value| !value.is_empty()) {
                 return Err("이미 확인 완료된 주문은 이 경로로 변경할 수 없습니다.".into());
             }
+            if manual.is_none() &&
+               existing.get("manualClassification").is_some_and(|v|!v.is_null()) &&
+               existing.get("raw").and_then(Value::as_str)==Some(raw) {
+                return Err("수동 분류 작업본을 자동 인식 결과로 덮어쓸 수 없습니다.".into());
+            }
             existing
         }
         None => {
@@ -142,7 +148,15 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
     }
     // Only the existing Rust reception transition is allowed to reset and
     // replace a changed raw source; never patch the Order fields by hand.
-    let previous=if previous.get("raw").and_then(Value::as_str)!=Some(raw){
+    let previous=if manual.is_some(){
+        // The employee's approved source-bound manual model is replayed
+        // against fresh native recognition from an empty reception. The
+        // persisted receipt is still used above for CAS and tamper checks.
+        order_from(rule("apply_reception_action",json!({
+            "action":"new_reception","id":order_id,
+            "orderType":kind,"clientId":"","now":at
+        }))?)?
+    }else if previous.get("raw").and_then(Value::as_str)!=Some(raw){
         order_from(rule("apply_reception_action",json!({
             "action":"replace_reception","order":previous,
             "raw":raw,"now":at
@@ -170,10 +184,31 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
         "raw":raw, "clientId":client_id,
         "client":selected_client, "state":&state, "at":at
     }))?)?;
+    let merged=if let Some(manual_model)=manual {
+        super::egui_manual_commit::verify_apply(
+            &merged,&state,selected_client,manual_model
+        )?
+    }else{merged};
     let mut next = order_from(rule("reprice_order", json!({
         "order":merged, "state":&state, "client":selected_client,
         "explicitEdit":true, "persistedOrders":[]
     }))?)?;
+    if manual.is_some(){
+        // Manual row counts, addresses, product quantities and factory
+        // origins may change the shipping quote. Never retain the automatic
+        // freight computed for the pre-manual set of recipients.
+        let freight=rule("calculate_shipping",json!({
+            "order":&next,"state":&state
+        }))?;
+        next["shippingFee"]=if selected_client.get("shippingFeeExcluded")
+            ==Some(&Value::Bool(true)) {
+            json!(0)
+        }else{
+            freight.get("total").cloned().unwrap_or(Value::Null)
+        };
+        next["shippingVersion"]=freight.get("version")
+            .cloned().unwrap_or(Value::Null);
+    }
     if !same_id(&next, order_id) ||
        next.get("raw").and_then(Value::as_str) != Some(raw) ||
        next.get("clientId").and_then(Value::as_str) != Some(client_id) ||
@@ -215,6 +250,16 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
     tx.commit().map_err(err)?;
     // The CLI never returns contact details, recipients, account information,
     // customer snapshots, or full order history to the egui UI.
+    let lines=next.get("recipients").and_then(Value::as_array)
+        .into_iter().flatten().flat_map(|row|
+            row.get("items").and_then(Value::as_array).into_iter().flatten()
+        ).map(|item|json!({
+            "itemId":item.get("id"),
+            "productId":item.get("productId"),
+            "variantId":item.get("variantId"),
+            "quantity":item.get("quantity"),
+            "unitPrice":item.get("unitPrice"),
+        })).collect::<Vec<_>>();
     Ok(json!({
         "orderId":order_id,
         "clientId":client_id,
@@ -223,8 +268,11 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
         "status":"WORKING",
         "subtotal":totals.get("subtotal"),
         "shippingFee":next.get("shippingFee"),
+        "shippingVersion":next.get("shippingVersion"),
         "vatAmount":totals.get("vat"),
-        "total":totals.get("total")
+        "total":totals.get("total"),
+        "linePrices":lines,
+        "manualApplied":manual.is_some()
     }))
 }
 
