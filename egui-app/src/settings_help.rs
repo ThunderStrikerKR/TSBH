@@ -171,7 +171,7 @@ pub fn heading(ui:&mut Ui,title:&str){
         let key_or_scroll=ctx.input(|i|{
             i.events.iter().any(|event|matches!(
                 event,egui::Event::Key{..}|egui::Event::Text(_)
-            ))||i.smooth_scroll_delta!=Vec2::ZERO
+            ))||(i.smooth_scroll_delta!=Vec2::ZERO && !inside_popup)
         });
         if outside_pressed || key_or_scroll {
             state.pinned=false;
