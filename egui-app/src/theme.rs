@@ -62,11 +62,11 @@ pub const SUMMARY_STRIP_HEIGHT: f32 = 58.0;
 pub const HEADER_HEIGHT: f32 = 62.0;
 pub const NAV_HEIGHT: f32 = 38.0;
 // Original React manual workspace: max 1760, viewport side gap 36,
-// source-to-sheet columns 0.36:1 (not egui's default equal halves).
+// source-to-sheet columns 34:66 (.manual-workspace .manual-columns).
 pub const MANUAL_DIALOG_MAX_WIDTH: f32 = 1760.0;
 pub const MANUAL_DIALOG_SIDE_GAP: f32 = 36.0;
 pub const MANUAL_DIALOG_VERTICAL_GAP: f32 = 44.0;
-pub const MANUAL_SOURCE_SHARE: f32 = 0.36 / 1.36;
+pub const MANUAL_SOURCE_SHARE: f32 = 0.34;
 pub const MANUAL_SOURCE_MIN_WIDTH: f32 = 300.0;
 pub const MANUAL_SHEET_MIN_WIDTH: f32 = 500.0;
 pub const MANUAL_COLUMN_GAP: f32 = SPACE_12;
