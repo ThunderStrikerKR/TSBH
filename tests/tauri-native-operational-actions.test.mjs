@@ -164,17 +164,18 @@ test("manual classification final approved order is produced by native Rust, nev
 });
 
 
-test("factory notifications and history use native review status and exact confirmation copy", () => {
+test("factory history owns native review and correction; critical alert modal never duplicates it", () => {
   const notice = source("src/FactoryNotifications.tsx");
   const history = source("src/FactoryReplyHistory.tsx");
   const adapter = source("src/native-factory-conflict-review.ts");
   const rust = source("src-tauri/src/business_core/rules/factory_reply.rs");
-  for (const component of [notice, history]) {
-    assert.match(component, /"rules", "factory_reply_review_statuses"/);
-    assert.match(component, /nativeFactoryConflictConfirmation\(/);
-    assert.doesNotMatch(component, /\breplyNeedsReview\(/);
-    assert.doesNotMatch(component, /(?<!native)factoryConflictConfirmation\(/);
-  }
+  assert.match(history, /"rules", "factory_reply_review_statuses"/);
+  assert.match(history, /nativeReview\?\.source === reviewSource/);
+  assert.match(history, /nativeFactoryConflictConfirmation\(/);
+  assert.match(history, /approveFactoryConflict\(/);
+  assert.doesNotMatch(history, /\breplyNeedsReview\(/);
+  assert.match(notice, /const critical = notices\.filter\(isActionRequiredNotification\)/);
+  assert.doesNotMatch(notice, /"factory_reply_review_statuses"|nativeFactoryConflictConfirmation|approveFactoryConflict/);
   assert.match(adapter, /"rules", "factory_conflict_confirmation"/);
   assert.match(rust, /fn resolved_row\(/);
   assert.match(rust, /fn conflict_confirmation\(/);
@@ -216,13 +217,15 @@ test("OCR, pasted and cleared reception drafts use Rust, never the old TS reduce
 });
 
 
-test("global factory alert badge is native and ignores stale reply projections", () => {
+test("global badge counts unread critical alerts; pending factory reviews stay in history", () => {
   const app = source("src/App.tsx");
+  const header = source("src/app/AppHeader.tsx");
+  const history = source("src/FactoryReplyHistory.tsx");
   const native = source("src-tauri/src/business_core/rules/factory_reply.rs");
-  assert.match(app, /"rules", "factory_reply_review_statuses"/);
-  assert.match(app, /nativeReviewCount\?\.state === state/);
-  assert.match(app, /reviews\.filter\(\(r\) => r\.needsReview\)\.length/);
-  assert.doesNotMatch(app, /replyNeedsReview\(state, r\)/);
-  assert.doesNotMatch(app, /state\.factoryReplies\?\.length \?\? 0/);
+  assert.match(app, /notificationCount=\{inbox\.filter\(\(entry\) => !entry\.read\)\.length\}/);
+  assert.match(app, /priority: "critical"/);
+  assert.doesNotMatch(app, /"factory_reply_review_statuses"|replyNeedsReview\(/);
+  assert.match(history, /"rules", "factory_reply_review_statuses"/);
+  assert.match(header, /notificationCount/);
   assert.match(native, /fn review_list\(/);
 });
