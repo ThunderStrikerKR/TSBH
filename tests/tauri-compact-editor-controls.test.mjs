@@ -37,7 +37,10 @@ test("freight controls spread out without width changes between factory and stor
   assert.match(block(".items-freight-panel .freight-line > .freight-amount-code"), /gap: 3px;/);
   assert.match(block(".items-freight-panel .freight-payment-code > select"), /width: 66px;/);
   assert.match(block(".items-freight-panel .freight-money > input"), /width: 84px;/);
-  assert.match(block(".items-freight-panel .freight-line > .freight-inquiry"), /margin-left: auto;/);
+  // The remote-area checkbox is the flexible spacer; the factory-only
+  // inquiry stays at its stable width for both dispatch origins.
+  assert.match(block(".items-freight-panel .freight-line > .freight-remote-check"), /margin-left: auto;/);
+  assert.match(block(".items-freight-panel .freight-line > .freight-inquiry"), /margin-left: 0;/);
   assert.match(freight, /visibility: origin === "FACTORY" \? "visible" : "hidden"/);
 });
 
