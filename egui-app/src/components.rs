@@ -1,7 +1,7 @@
 //! Reusable egui controls. A screen specifies business purpose and data,
 //! while colors, sizes and alignment are owned by the shared UI layer.
 
-use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, RichText, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, Stroke, Ui, Vec2};
 use crate::{theme, typography};
 
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
@@ -35,6 +35,8 @@ pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) ->
     let width = kind.preferred_width().min(ui.available_width().max(60.0));
     let field = egui::TextEdit::singleline(value)
         .font(egui::TextStyle::Body)
+        .vertical_align(Align::Center)
+        .margin(egui::Margin::symmetric(8, 2))
         .desired_width(width);
     ui.add_enabled_ui(enabled, |ui| {
         ui.add_sized(Vec2::new(width, theme::INPUT_HEIGHT), field)
@@ -135,11 +137,11 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
         ui.horizontal(|ui| {
             ui.label(typography::field_label(label));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(value).size(typography::FONT_SECTION_HEADING).strong().color(theme::TEXT));
+                ui.label(typography::summary_value(value));
             });
         });
         if !footnote.trim().is_empty() {
-            ui.label(RichText::new(footnote).size(typography::FONT_METADATA).color(theme::SECONDARY));
+            ui.label(typography::caption(footnote));
         }
     });
 }
@@ -194,7 +196,7 @@ pub fn table_header(ui: &mut Ui, columns: &[(&str, f32)]) {
                     ui.add_sized(
                         Vec2::new(*width, TABLE_HEADER_HEIGHT - 8.0),
                         egui::Label::new(
-                            typography::field_label(title),
+                            typography::table_header(title),
                         ),
                     );
                 }
@@ -207,7 +209,7 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
         for (value, width) in columns {
             ui.add_sized(
                 Vec2::new(*width, TABLE_ROW_HEIGHT),
-                egui::Label::new(RichText::new(*value).size(typography::FONT_FIELD_LABEL).color(theme::TEXT)),
+                egui::Label::new(typography::table_cell(value)),
             );
         }
     });
