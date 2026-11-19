@@ -244,8 +244,8 @@ mod native {
             })
         }
         fn alive(self)->bool{
-            unsafe{IsWindow(self.hwnd)}!=0 &&
-                pid(self.hwnd)==self.pid && kakao_process(self.pid)
+            (unsafe{IsWindow(self.hwnd)}!=0)
+                && pid(self.hwnd)==self.pid && kakao_process(self.pid)
         }
         fn restore(self){
             if !self.alive(){return;}
@@ -333,7 +333,7 @@ mod native {
                     let pids=found.iter().map(|c|c.pid)
                         .collect::<std::collections::HashSet<_>>();
                     if pids.len()==1{found.first()}else{None}
-                }).ok_or("카카오톡이 여러 개 실행 중입니다. 연결할 대화창을 활성화한 뒤 다시 연결하세요.")?;
+                }).cloned().ok_or("카카오톡이 여러 개 실행 중입니다. 연결할 대화창을 활성화한 뒤 다시 연결하세요.")?;
             let pid=chosen.pid;
             let current=found.into_iter().filter(|c|c.pid==pid).collect::<Vec<_>>();
             if !current.iter().any(|c|unsafe{IsIconic(c.hwnd)}==0) {
