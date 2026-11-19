@@ -1,4 +1,4 @@
-# Targeted Win32 compile: React shell Kakao dock persists across tabs, two modes, explicit disconnect (49th).
+# Final targeted Windows check: React Kakao toolbar, persistent dock, and removed ad-hoc notices (49th).
 name: Tauri native CLI executable compile check
 on:
   push:
