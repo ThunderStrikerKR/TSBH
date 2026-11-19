@@ -14,6 +14,11 @@ pub struct WorkingReception {
     pub id: String,
     pub raw: String,
     pub order_type: String,
+    /// Rust evidence is valid only for this exact source string.
+    pub analysis_raw: Option<String>,
+    pub analysis_evidence: Option<Value>,
+    /// Advisory Rust dealer decision, never a confirmed client assignment.
+    pub client_match: Option<Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -203,8 +208,15 @@ impl PreviewStore {
             if !matches!(kind, "AGENCY" | "DEALER") {
                 return Err("저장된 접수 유형이 잘못되었습니다.".into());
             }
+            let analysis_raw = row.get("analysisRaw").and_then(Value::as_str)
+                .map(str::to_owned);
+            let analysis_evidence = row.get("analysisEvidence")
+                .filter(|value| !value.is_null()).cloned();
+            let client_match = row.get("clientMatch")
+                .filter(|value| !value.is_null()).cloned();
             drafts.push(WorkingReception {
                 id: id.to_owned(), raw: source.to_owned(), order_type: kind.to_owned(),
+                analysis_raw, analysis_evidence, client_match,
             });
         }
         // Preserve a previous single-source editing session without changing
@@ -213,6 +225,7 @@ impl PreviewStore {
             drafts.push(WorkingReception {
                 id: "legacy-working-source".into(),
                 raw: raw.clone(), order_type: order_type.clone(),
+                analysis_raw: None, analysis_evidence: None, client_match: None,
             });
         }
         let active_id = if !active.is_empty() {
@@ -236,6 +249,9 @@ impl PreviewStore {
             "id": item.id,
             "raw": item.raw,
             "orderType": item.order_type,
+            "analysisRaw": item.analysis_raw,
+            "analysisEvidence": item.analysis_evidence,
+            "clientMatch": item.client_match,
         })).collect());
         let encoded = payload.to_string();
         let mut conn = self.open_connection()?;
@@ -268,6 +284,7 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
         return Err("egui 미확정 접수는 최대 1,000건까지 보관할 수 있습니다.".into());
     }
     let mut bytes = 0usize;
+    let mut analysis_bytes = 0usize;
     for draft in &source.drafts {
         if draft.id.trim().is_empty() || !ids.insert(draft.id.as_str()) {
             return Err("접수 ID가 비었거나 중복되었습니다.".into());
@@ -277,6 +294,22 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
         }
         bytes = bytes.checked_add(draft.raw.len())
             .ok_or("접수 원문 총 크기가 너무 큽니다.")?;
+        match (&draft.analysis_raw, &draft.analysis_evidence, &draft.client_match) {
+            (None, None, None) => {}
+            (Some(raw), Some(evidence), Some(match_result)) if raw == &draft.raw &&
+                evidence.get("recipients").is_some_and(Value::is_array) &&
+                evidence.get("candidates").is_some_and(Value::is_array) &&
+                evidence.get("unassigned").is_some_and(Value::is_array) &&
+                match_result.is_object() => {
+                analysis_bytes = analysis_bytes.checked_add(evidence.to_string().len())
+                    .and_then(|size| size.checked_add(match_result.to_string().len()))
+                    .ok_or("접수 분석 근거 총 크기가 너무 큽니다.")?;
+            }
+            _ => return Err("현재 발주원문과 분석 근거가 일치하지 않습니다.".into()),
+        }
+    }
+    if analysis_bytes > 8 * 1024 * 1024 {
+        return Err("접수 분석 근거 전체는 최대 8MB까지 저장할 수 있습니다.".into());
     }
     if bytes > SOURCE_LIMIT_BYTES {
         return Err("egui 접수 원문 전체는 최대 2MB까지 저장할 수 있습니다.".into());
