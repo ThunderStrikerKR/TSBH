@@ -15,7 +15,7 @@ mod source_autosave;
 mod clipboard_intake;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
-use theme::ButtonRole;
+use theme::{ButtonRole, WindowControl};
 use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
 use std::sync::{mpsc::{self, Receiver}, Arc};
 use std::time::{Duration, Instant};
@@ -533,23 +533,25 @@ impl BandoEgui {
                             }
                         }
                         bar.with_layout(Layout::right_to_left(Align::Center), |actions| {
-                            if theme::action(actions, "×", ButtonRole::Quiet, true)
+                            actions.spacing_mut().item_spacing.x = theme::SPACE_4;
+                            if theme::window_control(actions, WindowControl::Close)
                                 .on_hover_text("닫기").clicked()
                             {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                             }
-                            if theme::action(actions, "□", ButtonRole::Quiet, true)
+                            if theme::window_control(actions, WindowControl::Maximize)
                                 .on_hover_text("창 최대화 또는 복원").clicked()
                             {
                                 ctx.send_viewport_cmd(
                                     egui::ViewportCommand::Maximized(!maximized)
                                 );
                             }
-                            if theme::action(actions, "−", ButtonRole::Quiet, true)
+                            if theme::window_control(actions, WindowControl::Minimize)
                                 .on_hover_text("최소화").clicked()
                             {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                             }
+                            actions.add_space(theme::SPACE_8);
                             if theme::action(
                                 actions, "알림", ButtonRole::Standard,
                                 self.source_save_error.is_some() || self.clipboard_error.is_some(),
