@@ -242,8 +242,8 @@ mod native {
         false
     }
 
-    // Owner-linked Kakao HWNDs already follow the HUB. Only unowned
-    // windows need this occasional, foreground-scoped Z-order fallback.
+    // Owner-linked Kakao HWNDs already follow the HUB. This periodic check
+    // only repairs unowned HWND layering and main/chat relative order.
     #[derive(Clone,Copy)]
     struct DockedHandle{hwnd:Hwnd,main:bool}
     fn restore_docked_order(
@@ -602,7 +602,7 @@ mod native {
         hub:Hwnd,pid:u32,windows:Vec<Tracked>,active_chat:Option<Hwnd>,
         pub(super) mode:super::DockMode,
         last_region:Option<Rect>,pub(super) last_sync:Option<Instant>,
-        overlap_footer:Option<i32>,
+        pub(super) overlap_footer:Option<i32>,
     }
     impl Session{
         pub(super) fn attach_independent_windows(&mut self){
@@ -661,8 +661,8 @@ mod native {
             let owner_pid=pid(foreground);
             owner_pid==unsafe{GetCurrentProcessId()} || owner_pid==self.pid
         }
-        /// Preserve the pre-existing repaint repair path as a fallback for
-        /// clicks inside an already foreground BANDO HUB (no new WinEvent).
+        /// Throttled fallback for unowned windows and conversation ordering.
+        /// Native owner-linked windows require no per-click event hook.
         fn restore_relative_z_order(&mut self)->Result<(),String>{
             if !self.foreground_related(){return Ok(());}
             let foreground=unsafe{GetForegroundWindow()};
