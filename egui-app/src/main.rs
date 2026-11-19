@@ -559,6 +559,82 @@ impl BandoEgui {
         }
     }
 
+    fn open_manual_workspace(&mut self,ctx:&egui::Context) {
+        if self.manual_workspace.is_some() {return;}
+        if self.client_change.is_some() || self.working_sync.is_some() {
+            self.source_save_error=Some("진행 중인 Rust 주문 작업이 끝난 뒤 수동 분류를 여세요.".into());
+            return;
+        }
+        let Some(row)=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id)).cloned()
+            else{return};
+        if row.raw.trim().is_empty() ||
+           row.analysis_raw.as_deref()!=Some(row.raw.as_str()) ||
+           row.analysis_evidence.is_none() {
+            self.source_save_error=Some("원문 인식이 완료된 뒤 수동 분류를 시작하세요.".into());
+            return;
+        }
+        self.manual_workspace=Some(manual_workspace::ManualWorkspace::new(
+            row,Arc::clone(&self.gateway),ctx.clone()
+        ));
+    }
+
+    fn show_manual_workspace(&mut self,ctx:&egui::Context) {
+        if self.manual_workspace.as_ref().is_some_and(|workspace|
+            self.active_id.as_deref()!=Some(workspace.order_id.as_str())
+        ) {
+            // A manual editor may never cross between two reception IDs.
+            self.manual_workspace=None;
+            return;
+        }
+        let result=self.manual_workspace.as_mut().and_then(|editor|editor.show(ctx));
+        match result {
+            Some(manual_workspace::Event::Closed)=>{
+                self.manual_workspace=None;
+            }
+            Some(manual_workspace::Event::Applied {
+                order_id,raw,order_type,client_id,model,assignment_order,order
+            })=>{
+                self.manual_workspace=None;
+                if self.active_id.as_deref()!=Some(order_id.as_str()) ||
+                   self.raw_source!=raw ||
+                   self.order_type.as_str()!=order_type ||
+                   self.active_id.as_deref().and_then(|id|
+                       self.drafts.iter().find(|row|row.id==id)
+                   ).and_then(|row|row.client_id.as_deref()) !=client_id.as_deref() {
+                    self.source_save_error=Some(
+                        "수동 분류 중 원문·접수 유형·거래처가 변경되어 적용하지 않았습니다.".into()
+                    );
+                    return;
+                }
+                if let Some(recips)=order.get("recipients").filter(|v|v.is_array()) {
+                    if let Some(row)=self.drafts.iter_mut()
+                        .find(|row|row.id==order_id) {
+                        row.manual_model=Some(serde_json::json!({
+                            "sourceRaw":raw,"orderType":order_type,
+                            "clientId":client_id,"model":model,
+                            "assignmentOrder":assignment_order
+                        }));
+                        row.pricing_preview=None;
+                        row.working_synced=false;
+                    }
+                    if let Some(analysis)=self.analysis.as_mut() {
+                        analysis.recognition["recipients"]=recips.clone();
+                        analysis.linked_spans=source_highlight::collect(
+                            &self.raw_source,&analysis.recognition
+                        );
+                    }
+                    self.queue_source_save();
+                }else{
+                    self.source_save_error=Some(
+                        "Rust 수동 분류 결과에 배송 정보가 없어 적용하지 않았습니다.".into()
+                    );
+                }
+            }
+            None=>{}
+        }
+    }
+
     fn open_client_chooser(&mut self, ctx: &egui::Context) {
         let Some(order_id) = &self.active_id else { return; };
         self.client_chooser = Some(ClientChooser::new(
