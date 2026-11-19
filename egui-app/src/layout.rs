@@ -27,6 +27,34 @@ impl LayoutState {
         MIN_WIDTHS.iter().sum::<f32>() + SPLITTER * (PANEL_COUNT as f32 - 1.0)
     }
 
+    fn preview_layout_path() -> Option<std::path::PathBuf> {
+        // Use a separate location. NEVER read or overwrite the production
+        // Tauri/SQLite database or the React application's settings.
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            return Some(std::path::PathBuf::from(local)
+                .join("BANDO-HUB-egui-preview").join("layout.txt"));
+        }
+        std::env::var_os("HOME").map(|home| {
+            std::path::PathBuf::from(home)
+                .join(".config").join("bando-hub-egui-preview").join("layout.txt")
+        })
+    }
+
+    pub fn load() -> Self {
+        let path = Self::preview_layout_path();
+        Self::from_string(path.and_then(|p| std::fs::read_to_string(p).ok()))
+    }
+
+    pub fn save(&self) -> std::io::Result<()> {
+        if let Some(path) = Self::preview_layout_path() {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(path, self.as_string())?;
+        }
+        Ok(())
+    }
+
     pub fn reset(&mut self) {
         *self = Self::default();
     }
