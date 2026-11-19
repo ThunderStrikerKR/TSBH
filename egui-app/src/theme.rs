@@ -86,7 +86,7 @@ pub const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 // Shared management list roles; the client page does not invent row geometry.
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
-pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 760.0;
+pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
 pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
 // Width reserved for the two original client-list actions on one toolbar row.
 pub const MANAGEMENT_TOOLBAR_ACTIONS_WIDTH: f32 = 276.0;
@@ -115,6 +115,8 @@ pub enum ButtonRole {
     Danger,
     Navigation,
     ActiveNavigation,
+    ManagementTab,
+    ActiveManagementTab,
 }
 
 pub fn install(ctx: &egui::Context) {
@@ -212,9 +214,13 @@ fn action_with_min_width(
         ButtonRole::Danger => (34.0, Color32::from_rgb(84, 44, 48), DANGER, Stroke::NONE),
         ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, Color32::from_rgb(41, 72, 92), TEXT, Stroke::NONE),
+        ButtonRole::ManagementTab => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
+        ButtonRole::ActiveManagementTab => (NAV_HEIGHT, RAISED, TEXT, Stroke::new(1.0,BORDER)),
     };
     let font_size = match role {
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => typography::FONT_MAIN_NAV,
+        ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab =>
+            typography::FONT_STANDARD_ACTION,
         ButtonRole::Primary => typography::FONT_PRIMARY_ACTION,
         _ => typography::FONT_STANDARD_ACTION,
     };
@@ -223,16 +229,19 @@ fn action_with_min_width(
     let padding_x = match role {
         ButtonRole::Primary => 14.0,
         ButtonRole::Quiet => 8.0,
-        ButtonRole::Navigation | ButtonRole::ActiveNavigation => 12.0,
+        ButtonRole::Navigation | ButtonRole::ActiveNavigation |
+        ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 12.0,
         _ => 12.0,
     };
     let radius = match role {
-        ButtonRole::Navigation | ButtonRole::ActiveNavigation => 5,
+        ButtonRole::Navigation | ButtonRole::ActiveNavigation |
+        ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 5,
         _ => CONTROL_RADIUS,
     };
     let important = matches!(
         role,
-        ButtonRole::Primary | ButtonRole::Danger | ButtonRole::ActiveNavigation
+        ButtonRole::Primary | ButtonRole::Danger |
+        ButtonRole::ActiveNavigation | ButtonRole::ActiveManagementTab
     );
     ui.scope(|ui| {
         ui.spacing_mut().button_padding = Vec2::new(padding_x, 6.0);
