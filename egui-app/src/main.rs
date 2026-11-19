@@ -138,6 +138,7 @@ impl BandoEgui {
                 source_autosave::SaveStatus::Saved(revision) => {
                     let _ = revision;
                     self.source_save_error = None;
+                    self.notifications_open = false;
                 }
                 source_autosave::SaveStatus::Failed(error) => {
                     self.source_save_error = Some(error);
@@ -260,7 +261,7 @@ impl BandoEgui {
                 });
             });
 
-        if self.notifications_open {
+        if self.notifications_open && self.source_save_error.is_some() {
             egui::Window::new("알림")
                 .id(egui::Id::new("native_ui_preview_notifications"))
                 .collapsible(false)
