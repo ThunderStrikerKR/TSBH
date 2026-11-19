@@ -113,6 +113,13 @@ pub trait BandoGateway: Send + Sync {
     fn settings_data(&self,_operation:&str,_filename:Option<&str>)->Result<Value,String>{
         Err("이 연결은 업무 감사 기록·백업을 지원하지 않습니다.".into())
     }
+    /// Opt-in, revision-checked operational freight write through Tauri's
+    /// existing Rust rule/SQLite transaction. Never writes the preview DB.
+    fn shipping_write_enabled(&self) -> bool { false }
+    fn mutate_shipping(&self,_revision:u64,_action:&str,_data:Value)
+        -> Result<Value,String> {
+        Err("이 연결에서는 운영 운임 변경을 지원하지 않습니다.".into())
+    }
     /// Full v2 business snapshot for native rules only, from an explicitly
     /// configured read-only operational DB. This must never mutate SQLite.
     fn load_business_state(&self) -> Result<Value, String> {
@@ -192,6 +199,60 @@ impl BandoGateway for LocalGateway {
     }
     fn load_business_state(&self) -> Result<Value, String> {
         crate::business_state::load()
+    }
+    fn shipping_write_enabled(&self) -> bool {
+        std::env::var("BANDO_EGUI_ENABLE_SHIPPING_WRITE")
+            .ok().as_deref()==Some("1") &&
+        std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .is_some_and(|v|!v.is_empty()) &&
+        std::env::var_os("BANDO_EGUI_TAURI_HELPER")
+            .is_some_and(|v|!v.is_empty())
+    }
+    fn mutate_shipping(&self,revision:u64,action:&str,data:Value)
+        -> Result<Value,String> {
+        use std::io::Write;
+        use std::process::{Command,Stdio};
+        if !self.shipping_write_enabled() {
+            return Err("운영 운임을 변경할 수 있는 연결이 아닙니다.".into());
+        }
+        let path=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
+            .ok_or("Tauri 업무 저장 도우미가 없습니다.")?;
+        if !std::path::Path::new(&path).is_file(){
+            return Err("Tauri 업무 저장 도우미 파일이 없습니다.".into());
+        }
+        let request=serde_json::json!({
+            "expectedRevision":revision,"action":action,"data":data
+        }).to_string();
+        if request.len()>2_000_000 {
+            return Err("운임 변경 요청이 허용 크기를 초과했습니다.".into());
+        }
+        let mut child=Command::new(path)
+            .arg("--bando-egui-shipping-patch")
+            .stdin(Stdio::piped()).stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn().map_err(|_|"운임 저장 도우미 실행 실패".to_owned())?;
+        let mut stdin=child.stdin.take().ok_or("운임 변경 입력을 열지 못했습니다.")?;
+        stdin.write_all(request.as_bytes()).map_err(|e|e.to_string())?;
+        drop(stdin);
+        let output=child.wait_with_output().map_err(|e|e.to_string())?;
+        if output.stdout.len()>65536{
+            return Err("운임 저장 응답이 허용 범위를 초과했습니다.".into());
+        }
+        let reply:Value=serde_json::from_slice(&output.stdout)
+            .map_err(|_|"운임 저장 응답 형식 오류".to_owned())?;
+        if !output.status.success() || reply["ok"]!=true {
+            return Err(reply["error"].as_str()
+                .unwrap_or("운임 변경을 저장하지 못했습니다.").to_owned());
+        }
+        // Re-read the authoritative state after commit, never optimistic UI
+        // state or a second SQLite write performed by egui.
+        let state=self.load_business_state()?;
+        let shipping=state.get("shipping").ok_or("최신 운임 조회 실패")?;
+        let projection=self.execute(
+            ReadOperation::ShippingManagerView,
+            serde_json::json!({"state":state,"shipping":shipping})
+        )?;
+        Ok(serde_json::json!({"state":state,"projection":projection}))
     }
     fn working_commit_enabled(&self) -> bool {
         std::env::var("BANDO_EGUI_ENABLE_WORKING_COMMIT").ok().as_deref()==Some("1") &&
