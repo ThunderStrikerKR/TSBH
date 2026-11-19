@@ -59,6 +59,7 @@ pub struct ClientManager {
     searching:bool,
     error:Option<String>,
     notice:Option<String>,
+    changed:bool,
     draft:Option<Value>,
     original:Option<Value>,
     confirm_delete:bool,
@@ -78,12 +79,15 @@ impl ClientManager {
         Self {
             state:Value::Null,ready:false,loading:Some(rx),saving:None,
             saving_action:None,search_rx:None,generation:0,matches:Vec::new(),search:String::new(),
-            searching:false,error:None,notice:None,
+            searching:false,error:None,notice:None,changed:false,
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
         }
     }
     pub fn has_modal(&self)->bool {self.draft.is_some()}
+    pub fn take_changed(&mut self)->bool {
+        std::mem::take(&mut self.changed)
+    }
     fn editable(&self)->bool {
         self.state.is_object() &&
         self.state.get("readOnly")!=Some(&Value::Bool(true))
@@ -157,6 +161,7 @@ impl ClientManager {
                 self.state=state;self.saving=None;
                 self.draft=None;self.original=None;self.confirm_delete=false;
                 self.confirm_discard=false;self.error=None;
+                self.changed=true;
                 self.notice=Some(if self.saving_action.take().as_deref()
                     ==Some("archive_client") {
                     "거래처를 삭제하고 기존 주문 기록을 보존했습니다.".into()
