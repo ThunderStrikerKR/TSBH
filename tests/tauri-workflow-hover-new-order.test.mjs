@@ -67,7 +67,7 @@ test("hover selects each actual source and detail and scrolls into stage content
   assert.match(hub,/workflowSelection=\{visibleSelection\}/);
   assert.match(hub,/hoveredShipmentId=\{hoverSelection\?\.shipmentId\}/);
   assert.match(board,/open = workflowGroupOpen\(g\.id, selection\?\.groupId, manuallyClosedGroup\)/);
-  assert.match(board,/isPreviewed = hovered && hoveredShipmentId === s\.id/);
+  assert.match(board,/isPreviewed = inPreview && hovered && hoveredShipmentId === s\.id/);
   assert.match(board,/workflow-preview-indicator">표시 중/);
   assert.match(board,/aria-label=\{"배송 건 " \+ recipient\.name \+ \(isPreviewed \?/);
   assert.match(hub,/stageHover\.step === 1[\s\S]*?\.recipient-review/);
@@ -173,7 +173,7 @@ test("one-touch preview enters and restores at 250ms without reflow or delayed c
   assert.match(css, /\.workflow-card-anchor\s*\{\s*position: relative;/);
   assert.match(css, /\.workflow-card-overlay\s*\{\s*position: absolute;/);
   assert.doesNotMatch(css, /\.workflow-preview-layer\s*\{/);
-  assert.match(css, /\.workflow-progress > \.primary:hover:not\(:disabled\)/);
+  assert.match(css, /\.workflow-progress > \.primary:is\(:hover, \[data-preview-hover-active="true"\]\):not\(:disabled\)/);
   assert.match(css, /--ds-role-surface-emphasized-action-hover/);
   assert.match(sel, /return selectedGroupId === groupId && manuallyClosedGroupId !== groupId/);
   assert.doesNotMatch(sel, /hoveredGroupId/);
