@@ -13,10 +13,10 @@ use crate::theme::{MUTED, SECONDARY, TEXT};
 
 // Caps height is visually close to the 38pt brand icon (whose bitmap
 // includes transparent margins). Do not alter overall header geometry.
-pub const FONT_BRAND: f32 = 34.0;
+pub const FONT_BRAND: f32 = 28.0;
 /// Glyph centering differs from the typographic box. Pixel-based optical
 /// correction is isolated here, not scattered through header view code.
-pub const BRAND_OPTICAL_CENTER_Y: f32 = 2.0;
+pub const BRAND_OPTICAL_CENTER_Y: f32 = 1.0;
 pub const FONT_PAGE_HEADING: f32 = 20.0;
 pub const FONT_SECTION_HEADING: f32 = 16.0;
 pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
@@ -70,7 +70,7 @@ enum Role {
 fn spec(role: Role) -> TypeSpec {
     match role {
         Role::Brand => TypeSpec {
-            size: FONT_BRAND, line: 42.0, tracking: -0.60,
+            size: FONT_BRAND, line: 34.0, tracking: -0.35,
             color: TEXT, weight: Weight::Emphasis,
         },
         Role::Page => TypeSpec {
@@ -159,7 +159,9 @@ pub fn brand_galley(ui: &egui::Ui, text: &str) -> std::sync::Arc<egui::Galley> {
         ),
         color: role.color,
         extra_letter_spacing: role.tracking,
-        line_height: Some(role.line),
+        // Use actual font metrics for measured vertical centering; a forced
+        // 42pt line box placed the visible capitals off-center against the icon.
+        line_height: None,
         ..Default::default()
     };
     let job = egui::text::LayoutJob::single_section(text.to_owned(), format);
