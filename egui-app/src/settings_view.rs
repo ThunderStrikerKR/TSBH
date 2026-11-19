@@ -1,0 +1,591 @@
+//! React SettingsView + SettingsPanel native UI. Controls, field keys,
+ //! section order, dirty-tab guard and CAS saves match the original React
+ //! implementation. The shared theme/components own visual tokens.
+use crate::{components, gateway::BandoGateway, settings_store, theme::{self,ButtonRole}, typography};
+use eframe::egui::{self,Align,Context,Layout,Ui,Vec2};
+use serde_json::{json,Map,Value};
+use std::{sync::{mpsc::{self,Receiver},Arc},thread};
+
+#[derive(Copy,Clone,Eq,PartialEq)]
+pub enum SettingsTab { Basic, Files, Data, System }
+impl SettingsTab{
+    const ALL:[Self;4]=[Self::Basic,Self::Files,Self::Data,Self::System];
+    fn label(self)->&'static str {
+        match self {
+            Self::Basic=>"기본 설정",Self::Files=>"파일 관리",
+            Self::Data=>"데이터 관리",Self::System=>"시스템"
+        }
+    }
+}
+
+#[derive(Clone,Copy,Eq,PartialEq)]
+enum SaveKind{Regular,Scale}
+type Pending=Receiver<Result<Value,String>>;
+
+pub struct SettingsView{
+    tab:SettingsTab,
+    source:Value,
+    draft:Value,
+    loaded:bool,
+    loading:Option<Pending>,
+    saving:Option<(SaveKind,Pending)>,
+    folder_picker:Option<(String,Receiver<Option<String>>)>,
+    requested_tab:Option<SettingsTab>,
+    switch_after_save:bool,
+    pub error:Option<String>,
+    notice:Option<String>,
+}
+fn settings(state:&Value)->&Value{
+    state.get("settings").unwrap_or(&Value::Null)
+}
+fn field(value:&Value,key:&str)->String{
+    value.get(key).and_then(Value::as_str).unwrap_or("").to_owned()
+}
+fn canonical(key:&str,value:Option<&Value>)->Value{
+    match key{
+        "uiScale"=>json!(value.and_then(Value::as_u64).unwrap_or(100)),
+        "accounts"=>value.filter(|v|v.is_array())
+            .cloned().unwrap_or_else(||json!([])),
+        "brandAccounts"=>json!({
+            "BANDOSTAND":value.and_then(|v|v.get("BANDOSTAND"))
+                .and_then(Value::as_str).unwrap_or(""),
+            "BANDOMALL":value.and_then(|v|v.get("BANDOMALL"))
+                .and_then(Value::as_str).unwrap_or(""),
+        }),
+        "senderName"=>{
+            let value=value.and_then(Value::as_str).filter(|v|!v.is_empty())
+                .unwrap_or("반도스탠드");
+            json!(value)
+        },
+        _=>json!(value.and_then(Value::as_str).unwrap_or("")),
+    }
+}
+const EDIT_KEYS:[&str;13]=[
+    "uiScale","operatorName","senderName","senderAddress","senderPostcode",
+    "senderPhone","senderMobile","accounts","defaultAccountId","brandAccounts",
+    "excelDirectory","factoryReplyDirectory","orderImageInboxDirectory"
+];
+fn diff(saved:&Value,edited:&Value,only_scale:bool)->(Value,Value){
+    let mut changes=Map::new();
+    let mut expected=Map::new();
+    for key in EDIT_KEYS{
+        if only_scale && key!="uiScale"{continue;}
+        let before=canonical(key,saved.get(key));
+        let after=canonical(key,edited.get(key));
+        if before==after{continue;}
+        changes.insert(key.to_owned(),after);
+        expected.insert(key.to_owned(),saved.get(key).cloned().unwrap_or(Value::Null));
+    }
+    (Value::Object(changes),Value::Object(expected))
+}
+fn changed(saved:&Value,edited:&Value)->bool{
+    !diff(saved,edited,false).0.as_object().is_none_or(Map::is_empty)
+}
+fn account_complete(account:&Value)->bool {
+    ["bank","number","holder"].iter().all(|field|
+        account.get(field).and_then(Value::as_str)
+            .is_some_and(|value|!value.trim().is_empty())
+    )
+}
+fn edit_input(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
+    ui.label(typography::field_label(label));
+    let mut current=if key=="senderName"{
+        canonical(key,draft.get(key)).as_str().unwrap_or("").to_owned()
+    }else{field(draft,key)};
+    if components::flexible_text_field(
+        ui,&mut current,ui.available_width(),""
+    ).changed(){
+        draft[key]=json!(current);
+    }
+}
+fn section(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
+    theme::section_frame().show(ui,|content|{
+        content.label(typography::section_heading(title));
+        content.add_space(theme::SPACE_8);
+        body(content);
+    });
+}
+fn account_display(account:&Value)->String{
+    format!("{} {} {}",field(account,"bank"),field(account,"number"),field(account,"holder"))
+}
+impl SettingsView{
+    pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self{
+        let (sender,receiver)=mpsc::channel();
+        thread::spawn(move||{
+            let result=gateway.load_settings();
+            let _=sender.send(result);
+            ctx.request_repaint();
+        });
+        Self{
+            tab:SettingsTab::Basic,source:Value::Null,draft:Value::Null,
+            loaded:false,loading:Some(receiver),saving:None,
+            folder_picker:None,requested_tab:None,switch_after_save:false,
+            error:None,notice:None
+        }
+    }
+    pub fn dirty(&self)->bool{
+        self.loaded && changed(settings(&self.source),&self.draft)
+    }
+    pub fn busy(&self)->bool{
+        self.loading.is_some()||self.saving.is_some()||self.folder_picker.is_some()
+    }
+    pub fn read_only(&self)->bool {
+        self.source.get("readOnly").and_then(Value::as_bool).unwrap_or(true)
+    }
+    pub fn discard(&mut self){
+        self.draft=settings(&self.source).clone();
+        self.error=None;
+        self.requested_tab=None;
+        self.switch_after_save=false;
+    }
+    pub fn poll(&mut self,ctx:&Context){
+        if let Some(rx)=self.loading.as_ref(){
+            match rx.try_recv(){
+                Ok(Ok(state))=>{
+                    self.draft=settings(&state).clone();
+                    self.source=state;
+                    self.loading=None;self.loaded=true;self.error=None;
+                    self.apply_scale(ctx);
+                }
+                Ok(Err(error))=>{
+                    self.error=Some(error);self.loading=None;self.loaded=true;
+                }
+                Err(mpsc::TryRecvError::Disconnected)=>{
+                    self.error=Some("설정 조회가 중단되었습니다.".into());
+                    self.loading=None;self.loaded=true;
+                }
+                Err(mpsc::TryRecvError::Empty)=>{}
+            }
+        }
+        if let Some((kind,rx))=self.saving.as_ref(){
+            match rx.try_recv(){
+                Ok(Ok(state))=>{
+                    let was_scale=*kind==SaveKind::Scale;
+                    // A scale-only save may run while unrelated draft fields
+                    // are dirty. Keep those employee edits untouched.
+                    if was_scale{
+                        self.source=state;
+                        self.draft["uiScale"]=settings(&self.source)["uiScale"].clone();
+                    }else{
+                        self.source=state;
+                        self.draft=settings(&self.source).clone();
+                    }
+                    self.saving=None;self.error=None;
+                    self.notice=Some("설정을 저장했습니다.".into());
+                    self.apply_scale(ctx);
+                    if self.switch_after_save{
+                        if let Some(next)=self.requested_tab.take(){self.tab=next;}
+                        self.switch_after_save=false;
+                    }
+                }
+                Ok(Err(error))=>{
+                    self.saving=None;self.error=Some(error);
+                    self.switch_after_save=false;
+                }
+                Err(mpsc::TryRecvError::Disconnected)=>{
+                    self.saving=None;
+                    self.error=Some("설정 저장 연결이 중단되었습니다.".into());
+                    self.switch_after_save=false;
+                }
+                Err(mpsc::TryRecvError::Empty)=>{}
+            }
+        }
+        if let Some((key,rx))=self.folder_picker.as_ref(){
+            match rx.try_recv(){
+                Ok(selected)=>{
+                    if let Some(path)=selected{self.draft[key]=json!(path);}
+                    self.folder_picker=None;
+                }
+                Err(mpsc::TryRecvError::Disconnected)=>{
+                    self.error=Some("폴더 선택을 완료하지 못했습니다.".into());
+                    self.folder_picker=None;
+                }
+                Err(mpsc::TryRecvError::Empty)=>{}
+            }
+        }
+    }
+    fn apply_scale(&self,ctx:&Context){
+        if let Some(scale)=settings(&self.source).get("uiScale").and_then(Value::as_u64){
+            if matches!(scale,90|100|110|125){
+                ctx.set_zoom_factor(scale as f32/100.0);
+            }
+        }
+    }
+    pub fn save(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context){
+        self.save_keys(gateway,ctx,SaveKind::Regular);
+    }
+    fn save_keys(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context,kind:SaveKind){
+        if !self.loaded || self.busy() || self.read_only(){return;}
+        let (changes,expected)=diff(
+            settings(&self.source),&self.draft,kind==SaveKind::Scale
+        );
+        if changes.as_object().is_none_or(Map::is_empty){
+            if self.switch_after_save{
+                if let Some(tab)=self.requested_tab.take(){self.tab=tab;}
+                self.switch_after_save=false;
+            }
+            return;
+        }
+        let (tx,rx)=mpsc::channel();
+        self.saving=Some((kind,rx));
+        self.error=None;
+        self.notice=None;
+        thread::spawn(move||{
+            let result=gateway.patch_settings(changes,expected);
+            let _=tx.send(result);
+            ctx.request_repaint();
+        });
+    }
+    pub fn request_tab(&mut self,next:SettingsTab){
+        if self.tab==next || self.busy(){return;}
+        if self.dirty(){self.requested_tab=Some(next);}
+        else{self.tab=next;}
+    }
+    pub fn has_tab_confirmation(&self)->bool{
+        self.requested_tab.is_some()
+    }
+    pub fn show_tab_confirmation(
+        &mut self,ctx:&Context,area:egui::Rect,gateway:Arc<dyn BandoGateway>
+    ){
+        if self.requested_tab.is_none(){return;}
+        components::modal_backdrop(ctx,"settings-tab-changes-backdrop",false);
+        components::decision_window(
+            "저장하지 않은 변경사항","settings-tab-unsaved",area
+        ).show(ctx,|ui|{
+            ui.label(typography::body(
+                "현재 탭에서 수정한 설정이 있습니다. 변경사항을 저장할까요?"
+            ));
+            ui.add_space(theme::SPACE_12);
+            ui.horizontal(|actions|{
+                if theme::action(actions,"취소",ButtonRole::Standard,
+                    !self.busy()).clicked(){
+                    self.requested_tab=None;
+                }
+                if theme::action(actions,"저장 안 함",ButtonRole::Standard,
+                    !self.busy()).clicked(){
+                    self.draft=settings(&self.source).clone();
+                    if let Some(next)=self.requested_tab.take(){self.tab=next;}
+                }
+                if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
+                    !self.busy() && !self.read_only()).clicked(){
+                    self.switch_after_save=true;
+                    self.save(gateway.clone(),ctx.clone());
+                }
+            });
+        });
+    }
+    fn choose_folder(&mut self,key:&str,ctx:Context){
+        if self.folder_picker.is_some()||self.saving.is_some()||self.read_only(){return;}
+        let key=key.to_owned();
+        let (tx,rx)=mpsc::channel();
+        self.folder_picker=Some((key,rx));
+        thread::spawn(move||{
+            #[cfg(target_os="windows")]
+            let picked=rfd::FileDialog::new()
+                .set_title("폴더 선택").pick_folder()
+                .map(|path|path.to_string_lossy().into_owned());
+            #[cfg(not(target_os="windows"))]
+            let picked:Option<String>=None;
+            let _=tx.send(picked);
+            ctx.request_repaint();
+        });
+    }
+    fn open_folder(&mut self,path:&str){
+        if !std::path::Path::new(path).is_dir(){
+            self.error=Some("설정된 보관함 폴더를 찾을 수 없습니다.".into());
+            return;
+        }
+        #[cfg(target_os="windows")]
+        {
+            if std::process::Command::new("explorer").arg(path)
+                .spawn().is_err(){
+                self.error=Some("보관함 폴더를 열 수 없습니다.".into());
+            }
+        }
+        #[cfg(not(target_os="windows"))]
+        {self.error=Some("폴더 열기는 Windows 환경에서 사용할 수 있습니다.".into());}
+    }
+    pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
+        self.poll(ui.ctx());
+        ui.label(typography::page_heading("설정"));
+        ui.add_space(theme::SPACE_12);
+        if let Some(tab)=components::management_tabs(ui,&[
+            ("기본 설정",self.tab==SettingsTab::Basic,true),
+            ("파일 관리",self.tab==SettingsTab::Files,true),
+            ("데이터 관리",self.tab==SettingsTab::Data,true),
+            ("시스템",self.tab==SettingsTab::System,true),
+        ]) {
+            self.request_tab(SettingsTab::ALL[tab]);
+        }
+        ui.add_space(theme::SPACE_12);
+        if let Some(error)=self.error.as_deref(){
+            ui.label(typography::status(error,theme::DANGER));
+            ui.add_space(theme::SPACE_8);
+        }else if let Some(notice)=self.notice.as_deref(){
+            ui.label(typography::status(notice,theme::SUCCESS));
+            ui.add_space(theme::SPACE_8);
+        }
+        if !self.loaded{
+            ui.label(typography::caption("설정을 불러오는 중입니다."));
+            return;
+        }
+        if self.source.is_null(){return;}
+        if self.read_only() && self.tab!=SettingsTab::System{
+            ui.label(typography::caption(
+                "현재 연결된 운영 설정은 읽기 전용입니다."
+            ));
+            ui.add_space(theme::SPACE_8);
+        }
+        egui::ScrollArea::vertical()
+            .id_salt(("settings-view",self.tab.label()))
+            .auto_shrink([false,false])
+            .show(ui,|scroll|{
+                let editable=!self.read_only() && !self.busy();
+                match self.tab{
+                    SettingsTab::Basic=>self.show_basic(scroll,editable,Arc::clone(&gateway)),
+                    SettingsTab::Files=>self.show_files(scroll,editable),
+                    SettingsTab::Data=>self.show_data(scroll),
+                    SettingsTab::System=>self.show_system(scroll),
+                }
+            });
+    }
+    fn show_basic(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>){
+        ui.add_enabled_ui(editable,|form|{
+            let available=form.available_width();
+            if available>600.0{
+                form.columns(2,|cells|{
+                    section(&mut cells[0],"화면 글자 크기",|cell|{
+                        self.scale_selector(cell,Arc::clone(&gateway));
+                    });
+                    section(&mut cells[1],"작업 이력",|cell|{
+                        edit_input(cell,&mut self.draft,"operatorName","작업자 이름");
+                    });
+                });
+            }else{
+                section(form,"화면 글자 크기",|cell|{
+                    self.scale_selector(cell,Arc::clone(&gateway));
+                });
+                form.add_space(theme::SPACE_12);
+                section(form,"작업 이력",|cell|{
+                    edit_input(cell,&mut self.draft,"operatorName","작업자 이름");
+                });
+            }
+            form.add_space(theme::SPACE_12);
+            section(form,"반도스탠드 정보",|content|{
+                let width=content.available_width();
+                if width>680.0{
+                    content.columns(3,|cols|{
+                        edit_input(&mut cols[0],&mut self.draft,"senderName","상호명");
+                        edit_input(&mut cols[1],&mut self.draft,"senderAddress","주소");
+                        edit_input(&mut cols[2],&mut self.draft,"senderPostcode","우편번호");
+                    });
+                    content.add_space(theme::SPACE_8);
+                    content.columns(2,|cols|{
+                        edit_input(&mut cols[0],&mut self.draft,"senderPhone","전화번호");
+                        edit_input(&mut cols[1],&mut self.draft,"senderMobile","휴대폰 번호");
+                    });
+                }else{
+                    edit_input(content,&mut self.draft,"senderName","상호명");
+                    edit_input(content,&mut self.draft,"senderAddress","주소");
+                    edit_input(content,&mut self.draft,"senderPostcode","우편번호");
+                    edit_input(content,&mut self.draft,"senderPhone","전화번호");
+                    edit_input(content,&mut self.draft,"senderMobile","휴대폰 번호");
+                }
+            });
+            form.add_space(theme::SPACE_12);
+            section(form,"입금 계좌",|content|{
+                self.show_accounts(content);
+            });
+        });
+        self.save_bar(ui,gateway);
+    }
+    fn scale_selector(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
+        ui.label(typography::field_label("전체 UI 크기"));
+        let mut scale=self.draft.get("uiScale").and_then(Value::as_u64)
+            .unwrap_or(100);
+        egui::ComboBox::from_id_salt("settings-ui-scale")
+            .selected_text(format!("{scale}%"))
+            .show_ui(ui,|choices|{
+                for candidate in [90u64,100,110,125]{
+                    choices.selectable_value(
+                        &mut scale,candidate,format!("{candidate}%")
+                    );
+                }
+            });
+        if self.draft.get("uiScale").and_then(Value::as_u64)!=Some(scale){
+            self.draft["uiScale"]=json!(scale);
+            // React persists only uiScale immediately. Unrelated edits
+            // remain dirty, and the per-field CAS is preserved.
+            self.save_keys(gateway,ui.ctx().clone(),SaveKind::Scale);
+        }
+        if self.dirty(){
+            ui.label(typography::caption("저장하지 않은 설정이 있습니다."));
+        }
+    }
+    fn show_accounts(&mut self,ui:&mut Ui){
+        let mut accounts=self.draft.get("accounts")
+            .and_then(Value::as_array).cloned().unwrap_or_default();
+        let mut delete=None;
+        for (index,account) in accounts.iter_mut().enumerate(){
+            ui.horizontal(|line|{
+                line.label(typography::field_label(
+                    &format!("계좌 {}",index+1)
+                ));
+                line.with_layout(Layout::right_to_left(Align::Center),|right|{
+                    if theme::action(right,"계좌 삭제",ButtonRole::Danger,true).clicked(){
+                        delete=Some(index);
+                    }
+                });
+            });
+            ui.columns(3,|cols|{
+                edit_input(&mut cols[0],account,"bank","은행명");
+                edit_input(&mut cols[1],account,"number","계좌번호");
+                edit_input(&mut cols[2],account,"holder","예금주");
+            });
+            ui.add_space(theme::SPACE_8);
+            components::soft_divider(ui);
+        }
+        if let Some(index)=delete{
+            let id=field(&accounts[index],"id");
+            let used=self.source.get("usedAccounts")
+                .and_then(Value::as_array)
+                .is_some_and(|ids|ids.iter().any(|v|v.as_str()==Some(id.as_str())));
+            if used{
+                self.error=Some("이 계좌를 사용하는 거래처가 있습니다. 거래처 설정을 변경한 후 삭제하세요.".into());
+            }else{
+                accounts.remove(index);
+                let brand=self.draft.get_mut("brandAccounts");
+                if let Some(map)=brand.and_then(Value::as_object_mut){
+                    for key in ["BANDOSTAND","BANDOMALL"]{
+                        if map.get(key).and_then(Value::as_str)==Some(id.as_str()){
+                            map.insert(key.into(),json!(""));
+                        }
+                    }
+                }
+                if field(&self.draft,"defaultAccountId")==id{
+                    self.draft["defaultAccountId"]=json!("");
+                }
+            }
+        }
+        if theme::action(ui,"＋ 계좌 추가",ButtonRole::Standard,true).clicked(){
+            accounts.push(json!({
+                "id":settings_store::new_account_id(),
+                "bank":"","number":"","holder":""
+            }));
+        }
+        self.draft["accounts"]=json!(accounts);
+        ui.add_space(theme::SPACE_12);
+        for (key,label) in [
+            ("BANDOSTAND","반도스탠드 추천 계좌"),
+            ("BANDOMALL","반도몰 추천 계좌"),
+        ]{
+            ui.label(typography::field_label(label));
+            let mut selected=self.draft.pointer(&format!("/brandAccounts/{key}"))
+                .and_then(Value::as_str).unwrap_or("").to_owned();
+            let options=self.draft.get("accounts").and_then(Value::as_array)
+                .cloned().unwrap_or_default();
+            let preview=options.iter().find(|a|field(a,"id")==selected)
+                .map(account_display).unwrap_or_else(||"계좌 선택".to_owned());
+            egui::ComboBox::from_id_salt(("settings-recommendation",key))
+                .selected_text(preview).show_ui(ui,|choices|{
+                    choices.selectable_value(&mut selected,String::new(),"계좌 선택");
+                    for account in &options{
+                        if account_complete(account){
+                            choices.selectable_value(
+                                &mut selected,field(account,"id"),account_display(account)
+                            );
+                        }
+                    }
+                });
+            if !self.draft.get("brandAccounts").is_some_and(Value::is_object){
+                self.draft["brandAccounts"]=json!({"BANDOSTAND":"","BANDOMALL":""});
+            }
+            self.draft["brandAccounts"][key]=json!(selected);
+        }
+    }
+    fn show_files(&mut self,ui:&mut Ui,editable:bool){
+        let sections=[
+            ("excelDirectory","Excel 보관함 위치",
+              "설정되지 않음","보관함 폴더 선택"),
+            ("factoryReplyDirectory","공장 회신 자동 수신 폴더",
+              "미설정: 수동 Excel 업로드만 사용","수신 폴더 선택"),
+            ("orderImageInboxDirectory","발주 이미지 자동 수신 폴더",
+              "미설정: 이미지 폴더 자동 수신 중지","수신 폴더 선택"),
+        ];
+        for (index,(key,title,empty,button)) in sections.iter().enumerate(){
+            if index>0{ui.add_space(theme::SPACE_12);}
+            section(ui,title,|area|{
+                let value=field(&self.draft,key);
+                area.label(typography::body(
+                    if value.is_empty(){empty}else{&value}
+                ));
+                area.add_space(theme::SPACE_8);
+                area.horizontal_wrapped(|buttons|{
+                    if theme::action(
+                        buttons,button,ButtonRole::Standard,
+                        editable&&self.folder_picker.is_none()
+                    ).clicked(){
+                        self.choose_folder(key,buttons.ctx().clone());
+                    }
+                    if index==0 && !value.is_empty(){
+                        if theme::action(
+                            buttons,"보관함 열기",ButtonRole::Standard,true
+                        ).clicked(){
+                            self.open_folder(&value);
+                        }
+                    }else if index>0 && !value.is_empty(){
+                        if theme::action(buttons,"자동 수신 중지",
+                            ButtonRole::Quiet,editable).clicked(){
+                            self.draft[*key]=json!("");
+                        }
+                    }
+                });
+            });
+        }
+        self.save_bar(ui,Arc::new(crate::gateway::LocalGateway));
+    }
+    fn save_bar(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
+        ui.add_space(theme::SPACE_12);
+        ui.horizontal(|bar|{
+            if theme::action(
+                bar,if self.saving.is_some(){"저장 중…"}else{"설정 저장"},
+                ButtonRole::Primary,!self.read_only()&&!self.busy()
+            ).clicked(){
+                self.save(gateway.clone(),bar.ctx().clone());
+            }
+        });
+    }
+    fn show_data(&mut self,ui:&mut Ui){
+        section(ui,"접수 원문 감사 보관함",|area|{
+            area.label(typography::caption(
+                "운영 접수 원문과 정정 이력은 원본 감사 저장소에서 관리됩니다."
+            ));
+        });
+        ui.add_space(theme::SPACE_12);
+        section(ui,"데이터 백업 및 복구",|area|{
+            area.label(typography::caption(
+                "주문과 감사 기록을 포함하는 운영 데이터 백업은 기존 Tauri 백업 저장소에서 관리됩니다."
+            ));
+        });
+        ui.add_space(theme::SPACE_12);
+        section(ui,"업무 데이터 저장",|area|{
+            area.label(typography::body(
+                "Windows AppData의 com.bandostand.bandohub.tauri / bando-hub-v001.sqlite"
+            ));
+        });
+    }
+    fn show_system(&mut self,ui:&mut Ui){
+        section(ui,"프로그램 정보",|area|{
+            let config:Value=serde_json::from_str(
+                include_str!("../../src-tauri/tauri.conf.json")
+            ).unwrap_or(Value::Null);
+            let version=config.get("version").and_then(Value::as_str)
+                .unwrap_or("확인 불가");
+            area.label(typography::body(&format!("현재 버전: v{version}")));
+            area.label(typography::body(&format!(
+                "빌드 ID: {}",
+                option_env!("BANDO_BUILD_ID").unwrap_or("미지정")
+            )));
+        });
+    }
+}
