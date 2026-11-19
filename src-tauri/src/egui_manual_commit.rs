@@ -376,6 +376,34 @@ mod tests{
         assert!(trusted_blocks(&real,&forged).is_err());
     }
     #[test]
+    fn canonical_native_manual_fields_can_be_replayed_without_trusting_ui_prices(){
+        let rid="egui-example:recognition:recipient:0";
+        let order=json!({
+            "id":"egui-example","raw":"김가상","analysisRaw":"김가상",
+            "orderType":"AGENCY","clientId":"c",
+            "recipients":[{"id":rid,"name":"김가상",
+                "address":"","phone":"","mobile":"","note":"",
+                "items":[],"sources":[{"id":"name:0:3","field":"name",
+                    "start":0,"end":3,"text":"김가상",
+                    "targetId":rid,"recipientId":rid}]}],
+            "analysisEvidence":[]
+        });
+        let initial=rule("initial_manual",json!({"order":order})).unwrap();
+        let mut model=initial["model"].clone();
+        model["rows"][0]["address"]=json!("서울특별시 강남구 테헤란로 10");
+        let submitted=json!({
+            "sourceRaw":"김가상","orderType":"AGENCY","clientId":"c",
+            "model":model,"assignmentOrder":initial["assignmentOrder"]
+        });
+        let result=verify_apply(
+            &order,&json!({"products":[],"aliases":[],"clients":[{"id":"c"}]}),
+            &json!({"id":"c"}),&submitted
+        ).unwrap();
+        assert_eq!(result["recipients"][0]["address"],
+            "서울특별시 강남구 테헤란로 10");
+        assert!(result["manualClassification"]["blocks"].is_array());
+    }
+    #[test]
     fn only_new_employee_ids_bypass_existing_scoped_ids(){
         assert_eq!(scoped("egui-1","recognition:recipient:0"),
             "egui-1:recognition:recipient:0");
