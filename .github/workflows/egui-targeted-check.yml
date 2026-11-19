@@ -1,4 +1,4 @@
-# Targeted Windows compile: Kakao native body rectangle alignment and no extra popup.
+# Final Windows compile: Kakao HWND positioning in allocated slot and click-only notices.
 name: Tauri native CLI executable compile check
 on:
   push:
