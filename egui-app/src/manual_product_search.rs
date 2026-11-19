@@ -131,7 +131,7 @@ impl ProductSearch{
                 work_area.center().y-theme::MANUAL_SEARCH_RESULTS_HEIGHT/2.0
             ))
             .default_width(theme::MANUAL_SEARCH_DIALOG_WIDTH
-                .min(work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP))
+                .min((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP).max(0.0)))
             .constrain_to(work_area)
             .open(&mut open)
             .show(ctx,|ui|{
