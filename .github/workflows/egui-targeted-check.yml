@@ -1,4 +1,4 @@
-# Targeted Windows compile: owner-only Kakao focus, bounded ad footer, stable visual alignment.
+# Targeted Windows compile: Kakao cached footer visibility and owner-only dock cleanup.
 name: Tauri native CLI executable compile check
 on:
   push:
