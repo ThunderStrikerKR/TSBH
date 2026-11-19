@@ -33,3 +33,5 @@ jobs:
           workspaces: src-tauri -> target
       - name: Compile native Tauri Rust library only
         run: cargo check --manifest-path src-tauri/Cargo.toml --lib
+      - name: Verify only manual bridge trust-boundary unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib egui_manual_commit::tests -- --nocapture
