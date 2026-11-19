@@ -685,12 +685,40 @@ impl BandoEgui {
             upper_budget * (150.0 / 330.0)
         };
         let recipient_height = (upper_budget - review_height).max(0.0);
-        // Independent vertical sections use the same 6-point gap as the
-        // source/message and horizontal panel splitters. Only section bodies
-        // use the normal 8-point item spacing.
-        ui.spacing_mut().item_spacing.y = 0.0;
+        // Fix the third column to the SAME upper/lower boundary as column
+        // two. Section content must never be allowed to move the divider.
+        let full_width = ui.available_width();
+        let (_, bounds) = ui.allocate_space(Vec2::new(full_width, full_height));
+        let review_rect = Rect::from_min_size(
+            bounds.min, Vec2::new(full_width, review_height),
+        );
+        let first_sep = Rect::from_min_size(
+            egui::pos2(bounds.left(), review_rect.bottom()),
+            Vec2::new(full_width, layout::SPLITTER),
+        );
+        let recipient_rect = Rect::from_min_size(
+            egui::pos2(bounds.left(), first_sep.bottom()),
+            Vec2::new(full_width, recipient_height),
+        );
+        let second_sep = Rect::from_min_size(
+            egui::pos2(bounds.left(), recipient_rect.bottom()),
+            Vec2::new(full_width, layout::SPLITTER),
+        );
+        let bottom_rect = Rect::from_min_size(
+            egui::pos2(bounds.left(), second_sep.bottom()),
+            Vec2::new(
+                full_width, (bounds.bottom() - second_sep.bottom()).max(0.0)
+            ),
+        );
 
-        Self::section(ui, "확인할 내용", review_height, |ui| {
+        ui.scope_builder(
+            UiBuilder::new().id_salt("details-review").max_rect(review_rect)
+                .layout(Layout::top_down(Align::Min)),
+            |pane| {
+                pane.set_clip_rect(review_rect);
+                pane.set_width(review_rect.width());
+                pane.set_height(review_rect.height());
+                Self::section(pane, "확인할 내용", review_height, |ui| {
             if let Some(error) = &self.analysis_error {
                 ui.colored_label(theme::DANGER, error);
             } else if let Some(analysis) = &self.analysis {
@@ -717,11 +745,20 @@ impl BandoEgui {
                         format!("상품 확인 {issue_count}건"));
                 }
             }
-        });
-        components::docked_separator(ui);
+                });
+            },
+        );
+        components::paint_dock_splitter(ui, first_sep, false, false);
 
         let mut next_recipient = None;
-        Self::section(ui, "수취인별 주문 정보", recipient_height, |ui| {
+        ui.scope_builder(
+            UiBuilder::new().id_salt("details-recipient")
+                .max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
+            |pane| {
+                pane.set_clip_rect(recipient_rect);
+                pane.set_width(recipient_rect.width());
+                pane.set_height(recipient_rect.height());
+                Self::section(pane, "수취인별 주문 정보", recipient_height, |ui| {
             if let Some(analysis) = &self.analysis {
                 let recipients = reception_service::recipients(analysis);
                 if recipients.len() > 1 {
@@ -765,17 +802,26 @@ impl BandoEgui {
                     components::labeled_field(ui, "요청 메시지", &mut note, components::FieldKind::Text, false);
                 }
             }
-        });
+                });
+            },
+        );
         if let Some(index) = next_recipient {
             self.selected_recipient = index;
         }
         let selected = self.analysis.as_ref().and_then(|analysis| {
             reception_service::recipients(analysis).get(self.selected_recipient)
         });
-        components::docked_separator(ui);
+        components::paint_dock_splitter(ui, second_sep, false, false);
 
-        let remaining = ui.available_height().max(230.0);
-        Self::section(ui, "품목 및 운임", remaining, |ui| {
+        let remaining = bottom_rect.height();
+        ui.scope_builder(
+            UiBuilder::new().id_salt("details-items").max_rect(bottom_rect)
+                .layout(Layout::top_down(Align::Min)),
+            |pane| {
+                pane.set_clip_rect(bottom_rect);
+                pane.set_width(bottom_rect.width());
+                pane.set_height(bottom_rect.height());
+                Self::section(pane, "품목 및 운임", remaining, |ui| {
             // Reserve the bottom summary from the pane geometry, not from
             // the current text height. This keeps the summary at the bottom
             // even when there are no products.
@@ -834,7 +880,9 @@ impl BandoEgui {
                 },
             );
             components::summary_strip(ui, "총 주문", "—", "");
-        });
+                });
+            },
+        );
     }
 
     fn orders_pane(&mut self, ui: &mut Ui) {
