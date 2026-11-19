@@ -64,7 +64,7 @@ impl FieldKind {
 /// title role and controls. Only true workspace-specific dimensions belong
 /// to the calling feature's layout.
 pub fn modal_window(title:&str,id:&'static str) -> egui::Window<'static> {
-    egui::Window::new(title.to_owned())
+    egui::Window::new(typography::modal_title(title))
         .id(egui::Id::new(id))
         .order(egui::Order::Foreground)
         .collapsible(false)
