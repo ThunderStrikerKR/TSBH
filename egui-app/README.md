@@ -308,9 +308,9 @@ $env:BANDO_EGUI_ENABLE_WORKING_COMMIT = "1"
 - 직원이 배송 건·필드(이름/주소/휴대전화/전화/배송 요청) 또는 상품·수량 칸을 선택한 뒤 원문 블록을 누르면, 기존 Rust `assign_manual_block`/`release_manual_block`가 배정/해제를 판단한다. 배정된 블록을 다시 클릭하면 해당 입력값도 Rust를 통해 해제한다.
 - `배송 추가`, `상품 추가`, 직접 입력의 `set_manual_recipient_field`, `set_manual_product`, 수량의 `set_manual_quantity_draft → confirm_manual_quantity`도 Rust 규칙을 호출한다. 직접 입력은 **입력 반영**을 누르기 전에는 모델을 변경하지 않으며, 다른 셀로 이동해 입력을 조용히 잃지 않도록 막는다.
 - **초안에 적용**은 Rust의 `manual_quantity_status` 및 `apply_manual`을 순서대로 실행한다. 처리 도중 원문·접수 유형·거래처·발주서 ID가 바뀌었다면 결과를 버린다. 결과의 `recipients`는 현재 egui 분석 상세 및 원문 하이라이트에 적용된다.
-- `manualModel`(`model`, `assignmentOrder`, `sourceRaw`, `orderType`, `clientId`)은 **격리 egui SQLite 미확정 접수**에만 보존한다. 화면 재진입 또는 재실행 이후 Rust `apply_manual`을 다시 실행하여 수동 배정을 표시한다. 전체 운영 주문의 거래처/입금 정보와 Tauri 원장은 egui에 복제하지 않는다.
-- 수동 분류 이후 기존 가격 재분석이 임의로 수동 분류를 삭제하거나 기존 `운영 작업본 저장` CLI가 수취인을 자동 재인식해 덮어쓰지 않도록 우선 **운영 동기화를 차단**했다. Tauri 작업본까지 수동 분류를 반영하는 새 저장 계약은 다음 단계에서 보완해야 한다.
-- 아직 미이전: 배송 건수 감소 시 입력값 손실 확인, 개별 상품 삭제 및 전체 초기화, 상품 선택 검색창, 원본 UI 키보드 표 이동/되돌리기, 수동 분류를 포함한 Tauri 저장, 실제 Windows 빌드·화면 검증. 지원하지 않는 삭제 버튼은 실수로 동작하지 않도록 안내한다.
+- `manualModel`(`model`, `assignmentOrder`, `sourceRaw`, `orderType`, `clientId`)은 egui SQLite 초안에 보존한다. 화면 재진입 시 Rust로 재적용하며, 별도의 명시적 저장을 누른 경우에만 **검증된 수동 분류 결과**가 Tauri `reception_working_orders`에도 저장된다. 정식 주문 원장은 변경하지 않는다.
+- **이전 단계의 제한을 4차에서 해제:** `운영 작업본 저장`은 Rust가 원문 블록·배정·상품 ID를 최신 마스터와 비교하고 분류 변경을 원본 Rust reducer로 재현·재가격한 뒤, SQLite CAS 트랜잭션으로 기록한다. 자동 재인식 결과로 수동 분류를 덮어쓰지 않는다.
+- 배송 건수 감소·개별 상품 삭제·전체 초기화·상품 검색창은 후속 2차 패치에서 이식했다. 남은 확인 범위는 키보드 표 이동/되돌리기, 수동 분류 저장을 포함한 최신 Windows 컴파일/DB 실제 작업 흐름, 정식 주문 확인 완료와 실제 UI 화면 검수다.
 - 이 작업은 기존 Rust 비즈니스 규칙을 재사용하고 별도 TypeScript 분류 로직이나 새 분류 알고리즘을 만들지 않았다. 대규모 회귀 테스트는 실행하지 않았다. 카카오톡 연결은 Issue #42에서 별도 추적한다.
 
 ## 수취인 수동 분류 2차: 상품 검색·행 삭제 및 UI 계약 보정 (2026-11-20)
