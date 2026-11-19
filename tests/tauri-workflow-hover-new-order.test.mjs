@@ -68,7 +68,9 @@ test("hover selects each actual source and detail and scrolls into stage content
   assert.match(hub,/hoveredShipmentId=\{hoverSelection\?\.shipmentId\}/);
   assert.match(board,/open = workflowGroupOpen\(g\.id, selection\?\.groupId, manuallyClosedGroup\)/);
   assert.match(board,/isPreviewed = inPreview && hovered && hoveredShipmentId === s\.id/);
-  assert.match(board,/workflow-preview-indicator">표시 중/);
+  // The current in-place overlay announces its active recipient through the
+  // shipment accessible label rather than an obsolete inline status badge.
+  assert.match(board,/aria-label=\{"배송 건 " \+ recipient\.name \+ \(isPreviewed \? " \(미리보기 표시 중\)"/);
   assert.match(board,/aria-label=\{"배송 건 " \+ recipient\.name \+ \(isPreviewed \?/);
   assert.match(hub,/stageHover\.step === 1[\s\S]*?\.recipient-review/);
   assert.match(hub,/stageHover\.step === 2[\s\S]*?\.freight-input-area/);
@@ -177,6 +179,7 @@ test("one-touch preview enters and restores at 250ms without reflow or delayed c
   assert.match(css, /--ds-role-surface-emphasized-action-hover/);
   assert.match(sel, /return selectedGroupId === groupId && manuallyClosedGroupId !== groupId/);
   assert.doesNotMatch(sel, /hoveredGroupId/);
-  assert.match(board, /displayed && <span className="workflow-preview-indicator">표시 중<\/span>/);
+  assert.match(board, /aria-label=\{"배송 건 " \+ recipient\.name \+ \(isPreviewed \? " \(미리보기 표시 중\)"/);
+  assert.match(css, /\.workflow-card-overlay \.workflow-shipment\.previewed::before/);
 
 });
