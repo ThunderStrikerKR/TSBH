@@ -21,6 +21,8 @@ mod client_chooser;
 mod business_state;
 mod native_order_change;
 mod source_highlight;
+mod workflow_board;
+mod workflow_board_ui;
 mod manual_workspace;
 mod catalog_query_bridge;
 mod manual_product_search;
@@ -169,6 +171,11 @@ struct BandoEgui {
     selected_recipient: usize,
     source_hover: Option<source_highlight::LinkKey>,
     link_hover: source_highlight::HoverState,
+    workflow_snapshot: Option<workflow_board::BoardSnapshot>,
+    workflow_error: Option<String>,
+    workflow_receiver: Option<Receiver<Result<workflow_board::BoardSnapshot,String>>>,
+    workflow_last_fetch: Option<Instant>,
+    workflow_ui: workflow_board_ui::BoardUi,
     analysis_request: u64,
     analysis_pending: bool,
     analysis_due_at: Option<Instant>,
@@ -216,6 +223,11 @@ impl Default for BandoEgui {
             selected_recipient: 0,
             source_hover: None,
             link_hover: source_highlight::HoverState::default(),
+            workflow_snapshot: None,
+            workflow_error: None,
+            workflow_receiver: None,
+            workflow_last_fetch: None,
+            workflow_ui: workflow_board_ui::BoardUi::default(),
             analysis_request: 0,
             analysis_pending: false,
             analysis_due_at: None,
@@ -270,6 +282,60 @@ impl BandoEgui {
 
     // Every reception has its own source. Selecting an existing one never
     // replaces the text of a different order or merges their evidence.
+    /// A strictly read-only lookup against an explicitly chosen Tauri v2
+    /// database. Calculations come from Rust preview_workflow/read_shipments,
+    /// never from UI arithmetic or fabricated placeholder workflow groups.
+    fn poll_workflow_board(&mut self,ctx:&egui::Context){
+        if let Some(receiver)=self.workflow_receiver.as_ref(){
+            match receiver.try_recv(){
+                Ok(Ok(snapshot))=>{
+                    self.workflow_receiver=None;
+                    if self.workflow_ui.selection.as_ref().is_some_and(|selected|
+                        !snapshot.groups.iter().any(|group|
+                            group.id==selected.group_id &&
+                            group.shipments.iter().any(|ship|
+                                ship.id==selected.shipment_id &&
+                                ship.order_id==selected.order_id)))
+                    {
+                        self.workflow_ui.selection=None;
+                        self.workflow_ui.folded=None;
+                        self.workflow_ui.stop_preview();
+                    }
+                    self.workflow_snapshot=Some(snapshot);
+                    self.workflow_error=None;
+                    ctx.request_repaint();
+                }
+                Ok(Err(error))=>{
+                    self.workflow_receiver=None;
+                    self.workflow_error=Some(error);
+                    ctx.request_repaint();
+                }
+                Err(mpsc::TryRecvError::Disconnected)=>{
+                    self.workflow_receiver=None;
+                    self.workflow_error=Some(
+                        "발주묶음 Rust 조회 작업이 중단되었습니다.".to_owned()
+                    );
+                }
+                Err(mpsc::TryRecvError::Empty)=>{}
+            }
+        }
+        if self.page!=Page::Reception || self.workflow_receiver.is_some() ||
+            !std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+                .is_some_and(|p|!p.is_empty()) {return;}
+        if self.workflow_last_fetch.is_some_and(|at|
+            at.elapsed()<Duration::from_secs(5)){return;}
+        self.workflow_last_fetch=Some(Instant::now());
+        let gateway=Arc::clone(&self.gateway);
+        let (sender,receiver)=mpsc::channel();
+        self.workflow_receiver=Some(receiver);
+        let context=ctx.clone();
+        std::thread::spawn(move||{
+            let result=workflow_board::load(gateway.as_ref());
+            let _=sender.send(result);
+            context.request_repaint();
+        });
+    }
+
     fn select_reception(&mut self, id: &str, ctx: &egui::Context) {
         let Some(item) = self.drafts.iter().find(|item| item.id == id).cloned() else {
             self.source_save_error = Some("선택한 발주서를 찾을 수 없습니다.".to_owned());
@@ -2512,36 +2578,33 @@ impl BandoEgui {
     }
 
     fn orders_pane(&mut self, ui: &mut Ui) {
-        let height = ui.available_height();
-        let active = self.active_id.clone();
-        let rows: Vec<(String, String)> = self.drafts.iter().rev().map(|item| {
-            let kind = if item.order_type == "DEALER" { "대리점 납품" } else { "대리발송" };
-            let title = item.raw.lines().find(|line| !line.trim().is_empty())
-                .unwrap_or("새 발주서").trim();
-            let excerpt: String = title.chars().take(40).collect();
-            (item.id.clone(), format!("{kind} · {excerpt}"))
-        }).collect();
-        let mut select = None;
-        Self::section(ui, "처리 중인 주문", height, |ui| {
+        let height=ui.available_height();
+        let mut event=None;
+        Self::section(ui,"처리 중인 주문",height,|ui|{
+            if let Some(error)=self.workflow_error.as_deref(){
+                ui.label(typography::status(error,theme::DANGER));
+            }
             egui::ScrollArea::vertical()
                 .id_salt("working-receptions-list")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for (id, title) in &rows {
-                        let role = if active.as_deref() == Some(id.as_str()) {
-                            ButtonRole::ActiveNavigation
-                        } else {
-                            ButtonRole::Quiet
-                        };
-                        if theme::action(ui, title, role, true).clicked() {
-                            select = Some(id.clone());
-                        }
-                        components::soft_divider(ui);
-                    }
+                .auto_shrink([false,false])
+                .show(ui,|ui|{
+                    event=workflow_board_ui::show(
+                        ui,self.workflow_snapshot.as_ref(),&self.drafts,
+                        self.active_id.as_deref(),&mut self.workflow_ui
+                    );
                 });
         });
-        if let Some(id) = select {
-            self.select_reception(&id, ui.ctx());
+        match event{
+            Some(workflow_board_ui::Event::SelectPending(id))=>{
+                self.workflow_ui.selection=None;
+                self.workflow_ui.folded=None;
+                self.workflow_ui.stop_preview();
+                self.select_reception(&id,ui.ctx());
+            }
+            Some(workflow_board_ui::Event::SelectShipment(selection))=>{
+                self.workflow_ui.select(selection);
+            }
+            _=>{}
         }
     }
 
@@ -2658,6 +2721,7 @@ impl eframe::App for BandoEgui {
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_source_analysis();
+        self.poll_workflow_board(ctx);
         self.poll_client_change(ctx);
         self.poll_working_sync(ctx);
         self.poll_source_saves();
