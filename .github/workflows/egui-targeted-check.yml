@@ -1,4 +1,4 @@
-# Targeted Windows compile: retry after owned folder-picker key fix; final Settings GUI and Tauri rules.
+# Targeted Windows compile: source-equivalent Settings single-card layout and 1:1.4/sender address grid.
 name: Tauri native CLI executable compile check
 on:
   push:
