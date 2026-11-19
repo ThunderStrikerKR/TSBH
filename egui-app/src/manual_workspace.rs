@@ -8,7 +8,7 @@
 use std::{sync::{Arc,mpsc::{self,Receiver}},thread,time::{SystemTime,UNIX_EPOCH},sync::atomic::{AtomicU64,Ordering}};
 use eframe::egui::{self,Context};
 use serde_json::{json,Value};
-use crate::{gateway::{BandoGateway,ReadOperation},preview_store::WorkingReception,theme::{self,ButtonRole},typography,manual_product_search::{ProductSearch,Event as ProductEvent}};
+use crate::{gateway::{BandoGateway,ReadOperation},preview_store::WorkingReception,theme::{self,ButtonRole},typography,components,manual_product_search::{ProductSearch,Event as ProductEvent}};
 
 fn text<'a>(value:&'a Value,key:&str)->&'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
@@ -564,8 +564,10 @@ impl ManualWorkspace {
                                         if self.selected_field=="quantity"{"수량"}else{"상품명"}
                                     }else{self.selected_field.as_str()};
                                     ui.label(typography::caption(label));
-                                    ui.add(egui::TextEdit::singleline(&mut self.edit_text)
-                                        .desired_width(theme::MANUAL_INPUT_WIDTH));
+                                    components::flexible_text_field(
+                                        ui,&mut self.edit_text,
+                                        theme::MANUAL_INPUT_WIDTH,""
+                                    );
                                     if theme::action(ui,"입력 반영",ButtonRole::Standard,
                                         !busy && self.edit_text!=self.current_value()
                                     ).clicked(){submit_direct=true;}
