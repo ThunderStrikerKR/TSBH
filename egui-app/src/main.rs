@@ -1,6 +1,7 @@
 //! BANDO HUB egui — first native visual implementation.
-//! UI preview only: it does not open production SQLite, call Rust business
-//! commands, or dock KakaoTalk. Existing React + Tauri remains untouched.
+//! UI preview only: uses existing read-only Rust business decisions and
+//! a separate egui-preview.sqlite3 for source continuity. It NEVER opens the
+//! production Tauri database or docks KakaoTalk. Existing React/Tauri stays.
 
 mod theme;
 mod layout;
@@ -557,7 +558,7 @@ impl BandoEgui {
                 );
         }, |ui| {
             if self.source_editing || !self.raw_source.is_empty() {
-                ui.label(theme::caption("직접 입력 · 공통 업무 서비스 · 주문 저장 안 함"));
+                ui.label(theme::caption("직접 입력 · 격리 DB 원문 자동저장 · 주문 확인 완료 기능 미연결"));
                 let editor_height = (ui.available_height() - 62.0).max(120.0);
                 let editor = ui.add_sized(
                     Vec2::new(ui.available_width(), editor_height),
@@ -578,7 +579,7 @@ impl BandoEgui {
                     ).clicked() {
                         analyze_requested = true;
                     }
-                    ui.label(theme::caption("공통 Gateway · 주문 저장 비활성"));
+                    ui.label(theme::caption("공통 Gateway · 주문 확정/결제 미연결"));
                 });
             } else if self.sample {
                 theme::nested_frame().show(ui, |ui| {
