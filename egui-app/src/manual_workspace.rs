@@ -208,7 +208,15 @@ impl ManualWorkspace {
                 // customer pricing context as the main intake, not UI rules.
                 if ["assign_manual_block","release_manual_block","set_manual_product"]
                     .contains(&action.as_str()) {
-                    let state=service.load_catalog()?;
+                    // A real dealer-specific manual product decision must
+                    // see the complete operational price tier and overrides.
+                    // Never price from the read-only name search projection.
+                    let state=if std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+                        .is_some_and(|value|!value.is_empty()) {
+                        service.load_business_state()?
+                    }else{
+                        service.load_catalog()?
+                    };
                     payload["state"]=state;
                     payload["candidateIds"]=json!((0..20).map(|_|unique_id()).collect::<Vec<_>>());
                 }
@@ -380,10 +388,14 @@ impl ManualWorkspace {
                                     if index==self.selected_recipient{
                                         ButtonRole::ActiveNavigation
                                     }else{ButtonRole::Quiet},true).clicked(){
-                                    self.selected_recipient=index;
-                                    self.selected_item=None;
-                                    self.selected_field="name".into();
-                                    self.edit_text=self.current_value();
+                                    if self.edit_text==self.current_value() {
+                                        self.selected_recipient=index;
+                                        self.selected_item=None;
+                                        self.selected_field="name".into();
+                                        self.edit_text=self.current_value();
+                                    } else {
+                                        self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
+                                    }
                                 }
                                 if index!=self.selected_recipient {continue;}
                                 for (field,label) in [
@@ -397,9 +409,13 @@ impl ManualWorkspace {
                                         if theme::action(ui,label,if active{
                                             ButtonRole::ActiveNavigation
                                         }else{ButtonRole::Quiet},true).clicked(){
-                                            self.selected_item=None;
-                                            self.selected_field=field.into();
-                                            self.edit_text=self.current_value();
+                                            if self.edit_text==self.current_value() {
+                                                self.selected_item=None;
+                                                self.selected_field=field.into();
+                                                self.edit_text=self.current_value();
+                                            } else {
+                                                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
+                                            }
                                         }
                                         ui.label(typography::body(
                                             if text(row,field).is_empty(){
@@ -415,9 +431,13 @@ impl ManualWorkspace {
                                             .as_deref()==Some(item_id)&&self.selected_field=="product" {
                                             ButtonRole::ActiveNavigation
                                         }else{ButtonRole::Quiet},true).clicked(){
-                                            self.selected_item=Some(item_id.into());
-                                            self.selected_field="product".into();
-                                            self.edit_text=self.current_value();
+                                            if self.edit_text==self.current_value() {
+                                                self.selected_item=Some(item_id.into());
+                                                self.selected_field="product".into();
+                                                self.edit_text=self.current_value();
+                                            } else {
+                                                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
+                                            }
                                         }
                                         ui.label(typography::body(
                                             if text(item,"name").is_empty(){
@@ -428,9 +448,13 @@ impl ManualWorkspace {
                                             .as_deref()==Some(item_id)&&self.selected_field=="quantity" {
                                             ButtonRole::ActiveNavigation
                                         }else{ButtonRole::Quiet},true).clicked(){
-                                            self.selected_item=Some(item_id.into());
-                                            self.selected_field="quantity".into();
-                                            self.edit_text=self.current_value();
+                                            if self.edit_text==self.current_value() {
+                                                self.selected_item=Some(item_id.into());
+                                                self.selected_field="quantity".into();
+                                                self.edit_text=self.current_value();
+                                            } else {
+                                                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
+                                            }
                                         }
                                         let quantity=item.get("quantity")
                                             .and_then(Value::as_i64).map(|x|x.to_string())
