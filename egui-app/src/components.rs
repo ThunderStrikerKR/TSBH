@@ -288,6 +288,68 @@ pub fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     );
 }
 
+/// Shared management tab roles (content width, no full-page stretching).
+pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
+    let mut pressed=None;
+    ui.horizontal(|bar|{
+        bar.spacing_mut().item_spacing.x=theme::SPACE_4;
+        for (index,(title,active,enabled)) in labels.iter().enumerate() {
+            let role=if *active {theme::ButtonRole::ActiveNavigation}
+                else {theme::ButtonRole::Navigation};
+            if theme::action(bar,title,role,*enabled).clicked() {
+                pressed=Some(index);
+            }
+        }
+    });
+    pressed
+}
+
+/// One common table row, with content-based secondary text. Percentages are
+/// supplied by the table's layout role, never overridden per record.
+pub fn management_row(
+    ui:&mut Ui,columns:[(&str,&str);3],heading:bool
+) -> Response {
+    let width=ui.available_width().max(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+    let height=if heading {theme::MANAGEMENT_TABLE_HEADER_HEIGHT}
+        else {theme::MANAGEMENT_TABLE_ROW_HEIGHT};
+    let (rect,response)=ui.allocate_exact_size(
+        Vec2::new(width,height),if heading {Sense::hover()} else {Sense::click()}
+    );
+    let bg=if heading {theme::RAISED}
+        else if response.hovered() {theme::INPUT} else {theme::PANEL};
+    ui.painter().rect_filled(rect,0.0,bg);
+    ui.painter().line_segment(
+        [rect.left_bottom(),rect.right_bottom()],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    let mut x=rect.left();
+    for (i,(primary,secondary)) in columns.iter().enumerate() {
+        let col_width=rect.width()*theme::MANAGEMENT_CLIENT_COLS[i];
+        let cell=Rect::from_min_size(
+            egui::pos2(x+theme::SPACE_12,rect.top()+theme::SPACE_8),
+            Vec2::new((col_width-theme::SPACE_24).max(1.0),
+                (height-theme::SPACE_8).max(1.0))
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new().id_salt(("management-row-column",i,rect.top().to_bits()))
+                .max_rect(cell).layout(Layout::top_down(Align::Min)),
+            |inner|{
+                inner.set_clip_rect(cell);
+                inner.label(if heading {
+                    typography::table_header(primary)
+                } else {
+                    typography::table_cell(primary)
+                });
+                if !secondary.is_empty() {
+                    inner.label(typography::caption(secondary));
+                }
+            }
+        );
+        x+=col_width;
+    }
+    response
+}
+
 /// Display-only won formatting. No business price or rounding decisions live
 /// in the UI layer; amounts are supplied by the Rust business engine.
 pub fn display_won(amount: i64) -> String {
