@@ -8,6 +8,8 @@ mod components;
 mod reception_service;
 mod gateway;
 mod http_gateway;
+mod preview_store;
+mod source_autosave;
 
 use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, PANEL_GAP};
@@ -75,6 +77,9 @@ struct BandoEgui {
     dragging_vertical: Option<VerticalSplitDrag>,
     raw_source: String,
     source_editing: bool,
+    source_autosave: Option<source_autosave::SourceAutosave>,
+    source_save_status: String,
+    source_save_error: Option<String>,
     analysis: Option<reception_service::ReceptionAnalysis>,
     analysis_error: Option<String>,
     selected_recipient: usize,
@@ -96,6 +101,9 @@ impl Default for BandoEgui {
             dragging_vertical: None,
             raw_source: String::new(),
             source_editing: false,
+            source_autosave: None,
+            source_save_status: "원문 없음".to_owned(),
+            source_save_error: None,
             analysis: None,
             analysis_error: None,
             selected_recipient: 0,
@@ -109,6 +117,39 @@ impl Default for BandoEgui {
 impl BandoEgui {
     // Run parsing outside the egui frame loop. Any changed source invalidates
     // the previous result and its request sequence, so stale replies are ignored.
+    fn queue_source_save(&mut self) {
+        self.source_save_status = "격리 DB 저장 중".to_owned();
+        self.source_save_error = None;
+        if let Some(worker) = &self.source_autosave {
+            if let Err(error) = worker.queue(self.raw_source.clone()) {
+                self.source_save_error = Some(error);
+            }
+        } else {
+            self.source_save_error = Some("격리 원문 저장소가 초기화되지 않았습니다.".to_owned());
+        }
+    }
+
+    fn poll_source_saves(&mut self) {
+        let mut events = Vec::new();
+        if let Some(worker) = &self.source_autosave {
+            while let Some(status) = worker.try_status() {
+                events.push(status);
+            }
+        }
+        for event in events {
+            match event {
+                source_autosave::SaveStatus::Saved(revision) => {
+                    self.source_save_status = format!("격리 DB 자동저장 완료 · r{revision}");
+                    self.source_save_error = None;
+                }
+                source_autosave::SaveStatus::Failed(error) => {
+                    self.source_save_status = "격리 DB 저장 실패".to_owned();
+                    self.source_save_error = Some(error);
+                }
+            }
+        }
+    }
+
     fn start_source_analysis(&mut self, context: egui::Context) {
         self.analysis_request = self.analysis_request.wrapping_add(1);
         let request = self.analysis_request;
@@ -528,6 +569,7 @@ impl BandoEgui {
                 );
                 if editor.changed() {
                     self.clear_source_analysis();
+                    self.queue_source_save();
                 }
                 ui.horizontal(|ui| {
                     if theme::action(
@@ -584,6 +626,7 @@ impl BandoEgui {
         if new_reception {
             self.raw_source.clear();
             self.clear_source_analysis();
+            self.queue_source_save();
             self.source_editing = false;
         } else if begin_input {
             // Never mix example cards or example money with actual Rust
@@ -924,13 +967,22 @@ impl BandoEgui {
 impl eframe::App for BandoEgui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_source_analysis();
+        self.poll_source_saves();
         self.top_bar(ctx);
         egui::TopBottomPanel::bottom("preview_mode")
             .exact_height(36.0)
             .frame(Frame::new().fill(theme::PANEL).inner_margin(4.0))
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
-                    ui.label(theme::caption("egui UI 재구축 · 별도 실행 · 주문 쓰기 비활성"));
+                    if let Some(error) = &self.source_save_error {
+                        ui.colored_label(theme::DANGER,
+                            format!("원문 자동저장 오류: {error}"));
+                    } else {
+                        ui.label(theme::caption(&format!(
+                            "egui 프리뷰 · {} · 운영 주문/결제 저장 비활성",
+                            self.source_save_status
+                        )));
+                    }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if theme::action(
                             ui,
@@ -960,6 +1012,13 @@ fn main() -> eframe::Result<()> {
             std::process::exit(2);
         }
     };
+    let restored = match backend.load_working_source() {
+        Ok(saved) => saved,
+        Err(error) => {
+            eprintln!("[BANDO HUB] 격리 접수 원문 복원 실패: {error}");
+            std::process::exit(2);
+        }
+    };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1600.0, 900.0])
@@ -974,7 +1033,18 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(move |cc| {
             theme::install(&cc.egui_ctx);
-            Ok(Box::new(BandoEgui { gateway: backend, ..BandoEgui::default() }))
+            let autosave = source_autosave::SourceAutosave::new(
+                Arc::clone(&backend), restored.revision, cc.egui_ctx.clone()
+            );
+            let source_editing = !restored.raw.is_empty();
+            Ok(Box::new(BandoEgui {
+                gateway: backend,
+                raw_source: restored.raw,
+                source_editing,
+                source_autosave: Some(autosave),
+                source_save_status: "격리 DB 원문 복원 완료".to_owned(),
+                ..BandoEgui::default()
+            }))
         }),
     )
 }
