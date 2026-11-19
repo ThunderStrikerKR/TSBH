@@ -224,7 +224,7 @@ pub fn heading(ui:&mut Ui,title:&str){
                         .stroke(Stroke::new(
                             theme::SOFT_DIVIDER_WIDTH,theme::BORDER
                         ))
-                        .corner_radius(theme::CONTROL_RADIUS)
+                        .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
                         .inner_margin(egui::Margin::symmetric(
                             theme::SPACE_16 as i8,theme::SPACE_12 as i8
                         ))
