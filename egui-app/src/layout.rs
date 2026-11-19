@@ -10,7 +10,9 @@ pub const SPLITTER: f32 = 6.0;
 // The previous last-pane 420pt minimum forced it to ~25.4% on this screen
 // despite a reference width of only 22.4%. 350pt clears that clamp while
 // retaining a readable minimum on smaller windows.
-pub const MIN_WIDTHS: [f32; PANEL_COUNT] = [200.0, 250.0, 250.0, 350.0];
+// React HubShell's Kakao minimum is 392 CSS px at 100% UI scale.
+// Do not reserve only 200pt then ask the employee to resize Kakao manually.
+pub const MIN_WIDTHS: [f32; PANEL_COUNT] = [392.0, 250.0, 250.0, 350.0];
 pub const DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.9, 28.4, 28.3, 22.4];
 const LEGACY_DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.0, 29.0, 29.0, 22.0];
 // Original review section: ~262 / 994 screen-content pixels.
