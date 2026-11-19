@@ -2379,8 +2379,8 @@
         "unit": "NOT_EXECUTED: no new broad regression suite; focused workflow_board formatting test added but not executed",
         "differential": "SOURCE CONTRACT REVIEW: JSX/source code and egui show(): folded group/pending has one workflow_header plus one workflow_action_line; details only under `if open` / `if open || in_preview`. No desktop GUI comparison requested.",
         "action": "NOT EXECUTED: real Windows GUI card width, click, fold, hover, scroll and mixed-draft presentation not yet observed",
-        "ci": "RUNNING: targeted Windows Rust cargo check at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44633034213 for c4a8e4c",
-        "windows": "SKIPPED_BY_USER_REQUEST: no Windows GUI test or screenshot verification; not a blocker for scoped code implementation."
+        "ci": "PASS: targeted Windows Tauri Rust cargo check and standalone egui Rust cargo check at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44633034213, source c4a8e4cf",
+        "windows": "SKIPPED_BY_USER_REQUEST: no Windows GUI execution or screenshots; not a required gate for scoped source refactor"
       }
     }
   ],
