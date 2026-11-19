@@ -69,7 +69,14 @@ pub fn modal_window(
         .id(egui::Id::new(id))
         .order(egui::Order::Foreground)
         .pivot(egui::Align2::CENTER_CENTER)
-        .fixed_pos(work_area.center())
+        .fixed_pos(egui::pos2(
+            work_area.center().x,
+            // The work area starts below the 62pt header; its geometric
+            // midpoint is therefore lower than the viewport's visual center.
+            // Keep the Kakao-safe horizontal center, but center vertically
+            // against the full application window.
+            work_area.center().y - theme::HEADER_HEIGHT / 2.0,
+        ))
         .constrain_to(work_area)
         .max_size(work_area.size())
         .collapsible(false)
