@@ -179,6 +179,17 @@ impl ManualWorkspace {
             _=>{}
         }
     }
+    fn select_cell(&mut self,row:usize,item:Option<String>,field:&str) {
+        if self.edit_text!=self.current_value() {
+            self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
+            return;
+        }
+        self.selected_recipient=row;
+        self.selected_item=item;
+        self.selected_field=field.to_owned();
+        self.edit_text=self.current_value();
+    }
+
     fn current_value(&self)->String {
         let Some(model)=self.model.as_ref() else{return String::new()};
         let Some(row)=list(model,"rows").get(self.selected_recipient) else {
@@ -421,127 +432,140 @@ impl ManualWorkspace {
                                     })));
                                 }
                             });
-                            egui::ScrollArea::vertical().id_salt("manual-recipients-list")
-                                .max_height((height-theme::SECTION_HEADER_HEIGHT).max(0.0))
+                            egui::ScrollArea::both()
+                                .id_salt("manual-recipients-table")
+                                .auto_shrink([false,false])
+                                .max_height((height-theme::SECTION_HEADER_HEIGHT
+                                    -theme::INPUT_HEIGHT
+                                    -theme::ACTION_STANDARD_HEIGHT
+                                    -theme::SPACE_24)
+                                    .max(3.0*theme::MANUAL_TABLE_ROW_HEIGHT))
                                 .show(sheet_ui,|ui|{
-                            for (index,row) in rows.iter().enumerate() {
-                                let title=format!("배송 {} · {}",
-                                    index+1,if text(row,"name").is_empty(){
-                                        "수취인 미지정"
-                                    }else{text(row,"name")});
-                                if theme::action(ui,&title,
-                                    if index==self.selected_recipient{
-                                        ButtonRole::ActiveNavigation
-                                    }else{ButtonRole::Quiet},true).clicked(){
-                                    if self.edit_text==self.current_value() {
-                                        self.selected_recipient=index;
-                                        self.selected_item=None;
-                                        self.selected_field="name".into();
-                                        self.edit_text=self.current_value();
-                                    } else {
-                                        self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
-                                    }
-                                }
-                                if index!=self.selected_recipient {continue;}
-                                for (field,label) in [
-                                    ("name","이름"),("address","주소"),
-                                    ("mobile","휴대전화"),("phone","전화"),
-                                    ("note","배송 요청")
-                                ] {
-                                    ui.horizontal(|ui|{
-                                        let active=self.selected_item.is_none() &&
-                                            self.selected_field==field;
-                                        if theme::action(ui,label,if active{
-                                            ButtonRole::ActiveNavigation
-                                        }else{ButtonRole::Quiet},true).clicked(){
-                                            if self.edit_text==self.current_value() {
-                                                self.selected_item=None;
-                                                self.selected_field=field.into();
-                                                self.edit_text=self.current_value();
-                                            } else {
-                                                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
-                                            }
-                                        }
-                                        ui.label(typography::body(
-                                            if text(row,field).is_empty(){
-                                                "미입력"
-                                            }else{text(row,field)}
-                                        ));
-                                    });
-                                }
-                                for item in list(row,"items") {
-                                    let item_id=text(item,"id");
-                                    ui.horizontal_wrapped(|ui|{
-                                        if theme::action(ui,"상품",if self.selected_item
-                                            .as_deref()==Some(item_id)&&self.selected_field=="product" {
-                                            ButtonRole::ActiveNavigation
-                                        }else{ButtonRole::Quiet},true).clicked(){
-                                            if self.edit_text==self.current_value() {
-                                                self.selected_item=Some(item_id.into());
-                                                self.selected_field="product".into();
-                                                self.edit_text=self.current_value();
-                                            } else {
-                                                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
-                                            }
-                                        }
-                                        ui.label(typography::body(
-                                            if text(item,"name").is_empty(){
-                                                "미지정 상품"
-                                            }else{text(item,"name")}
-                                        ));
-                                        if theme::action(ui,"수량",if self.selected_item
-                                            .as_deref()==Some(item_id)&&self.selected_field=="quantity" {
-                                            ButtonRole::ActiveNavigation
-                                        }else{ButtonRole::Quiet},true).clicked(){
-                                            if self.edit_text==self.current_value() {
-                                                self.selected_item=Some(item_id.into());
-                                                self.selected_field="quantity".into();
-                                                self.edit_text=self.current_value();
-                                            } else {
-                                                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
-                                            }
-                                        }
-                                        let quantity=item.get("quantity")
-                                            .and_then(Value::as_i64).map(|x|x.to_string())
-                                            .unwrap_or_else(||"미확정".into());
-                                        ui.label(typography::quantity(&quantity));
-                                        if theme::action(ui,"검색",ButtonRole::Quiet,!busy).clicked(){
-                                            lookup=Some((
-                                                text(row,"id").to_owned(),item_id.to_owned()
-                                            ));
-                                        }
-                                        if theme::action(ui,"상품 제거",ButtonRole::Quiet,!busy).clicked(){
-                                            chosen=Some(("remove_manual_item".into(),json!({
-                                                "recipientId":row.get("id"),
-                                                "itemId":item_id
+                                    // The React source displays ALL shipments
+                                    // as a spreadsheet with six stable
+                                    // recipient columns and product subrows.
+                                    ui.set_min_width(theme::MANUAL_TABLE_MIN_WIDTH);
+                                    for (index,row) in rows.iter().enumerate() {
+                                        let rid=text(row,"id");
+                                        egui::Grid::new(("manual-delivery",rid))
+                                            .spacing(egui::Vec2::ZERO)
+                                            .show(ui,|grid|{
+                                                for (label,width) in [
+                                                    ("배송",theme::MANUAL_TABLE_DELIVERY_COL),
+                                                    ("이름",theme::MANUAL_TABLE_NAME_COL),
+                                                    ("주소",theme::MANUAL_TABLE_ADDRESS_COL),
+                                                    ("휴대폰",theme::MANUAL_TABLE_PHONE_COL),
+                                                    ("전화",theme::MANUAL_TABLE_PHONE_COL),
+                                                    ("배송 요청",theme::MANUAL_TABLE_NOTE_COL)
+                                                ] {
+                                                    components::manual_table_heading(grid,label,width);
+                                                }
+                                                grid.end_row();
+                                                let summary=format!("배송 {}",index+1);
+                                                if components::manual_table_cell(
+                                                    grid,&summary,theme::MANUAL_TABLE_DELIVERY_COL,
+                                                    index==self.selected_recipient
+                                                ).clicked(){
+                                                    self.select_cell(index,None,"name");
+                                                }
+                                                for (field,width) in [
+                                                    ("name",theme::MANUAL_TABLE_NAME_COL),
+                                                    ("address",theme::MANUAL_TABLE_ADDRESS_COL),
+                                                    ("mobile",theme::MANUAL_TABLE_PHONE_COL),
+                                                    ("phone",theme::MANUAL_TABLE_PHONE_COL),
+                                                    ("note",theme::MANUAL_TABLE_NOTE_COL)
+                                                ] {
+                                                    let selected=index==self.selected_recipient &&
+                                                        self.selected_item.is_none() &&
+                                                        self.selected_field==field;
+                                                    if components::manual_table_cell(
+                                                        grid,text(row,field),width,selected
+                                                    ).clicked(){
+                                                        self.select_cell(index,None,field);
+                                                    }
+                                                }
+                                                grid.end_row();
+                                            });
+                                        ui.label(typography::field_label("상품"));
+                                        egui::Grid::new(("manual-products",rid))
+                                            .spacing(egui::Vec2::ZERO)
+                                            .show(ui,|grid|{
+                                                components::manual_table_heading(
+                                                    grid,"상품",theme::MANUAL_TABLE_PRODUCT_COL
+                                                );
+                                                components::manual_table_heading(
+                                                    grid,"수량",theme::MANUAL_TABLE_QUANTITY_COL
+                                                );
+                                                components::manual_table_heading(
+                                                    grid,"행 동작",theme::MANUAL_TABLE_ACTION_COL*2.0
+                                                );
+                                                grid.end_row();
+                                                for item in list(row,"items"){
+                                                    let item_id=text(item,"id");
+                                                    let selected=index==self.selected_recipient &&
+                                                        self.selected_item.as_deref()==Some(item_id);
+                                                    if components::manual_table_cell(
+                                                        grid,text(item,"name"),
+                                                        theme::MANUAL_TABLE_PRODUCT_COL,
+                                                        selected && self.selected_field=="product"
+                                                    ).clicked() {
+                                                        self.select_cell(index,Some(item_id.into()),"product");
+                                                    }
+                                                    let quantity=item.get("quantity")
+                                                        .and_then(Value::as_i64)
+                                                        .map(|n|n.to_string()).unwrap_or_default();
+                                                    if components::manual_table_cell(
+                                                        grid,&quantity,
+                                                        theme::MANUAL_TABLE_QUANTITY_COL,
+                                                        selected && self.selected_field=="quantity"
+                                                    ).clicked() {
+                                                        self.select_cell(index,Some(item_id.into()),"quantity");
+                                                    }
+                                                    grid.horizontal(|actions|{
+                                                        if theme::action(actions,"검색",
+                                                            ButtonRole::Standard,!busy).clicked(){
+                                                            lookup=Some((rid.to_owned(),item_id.to_owned()));
+                                                        }
+                                                        if theme::action(actions,"상품 제거",
+                                                            ButtonRole::Quiet,!busy).clicked(){
+                                                            chosen=Some(("remove_manual_item".into(),json!({
+                                                                "recipientId":rid,"itemId":item_id
+                                                            })));
+                                                        }
+                                                    });
+                                                    grid.end_row();
+                                                }
+                                            });
+                                        if theme::action(ui,"상품 추가",ButtonRole::Standard,
+                                            !busy).clicked(){
+                                            chosen=Some(("add_manual_item".into(),json!({
+                                                "recipientId":rid,"itemId":unique_id()
                                             })));
                                         }
-                                    });
-                                }
-                                ui.separator();
-                                ui.label(typography::caption("선택한 필드 직접 입력"));
-                                ui.horizontal(|ui|{
-                                    let label=if self.selected_item.is_some() {
-                                        if self.selected_field=="quantity"{"수량"}else{"상품명"}
-                                    }else{self.selected_field.as_str()};
-                                    ui.label(typography::caption(label));
-                                    components::flexible_text_field(
-                                        ui,&mut self.edit_text,
-                                        theme::MANUAL_INPUT_WIDTH,""
-                                    );
-                                    if theme::action(ui,"입력 반영",ButtonRole::Standard,
-                                        !busy && self.edit_text!=self.current_value()
-                                    ).clicked(){submit_direct=true;}
+                                        components::soft_divider(ui);
+                                    }
                                 });
-                                if theme::action(ui,"상품 추가",ButtonRole::Standard,!busy)
-                                    .clicked(){
-                                    chosen=Some(("add_manual_item".into(),json!({
-                                        "recipientId":row.get("id"),"itemId":unique_id()
-                                    })));
-                                }
-                                ui.separator();
-                            }
-                                });
+                            // Single selected-field editor; never repeat it
+                            // under every shipment or change the panel height.
+                            sheet_ui.horizontal(|ui|{
+                                let label=if self.selected_item.is_some(){
+                                    if self.selected_field=="quantity"{"수량"}else{"상품명"}
+                                } else {
+                                    match self.selected_field.as_str() {
+                                        "name"=>"이름","address"=>"주소",
+                                        "mobile"=>"휴대폰","phone"=>"전화",
+                                        "note"=>"배송 요청",_=>"이름"
+                                    }
+                                };
+                                ui.label(typography::field_label(label));
+                                components::flexible_text_field(
+                                    ui,&mut self.edit_text,
+                                    theme::MANUAL_INPUT_WIDTH,""
+                                );
+                                if theme::action(ui,"입력 반영",ButtonRole::Standard,
+                                    !busy && self.edit_text!=self.current_value()
+                                ).clicked(){submit_direct=true;}
+                            });
                         },
                     );
                 });
