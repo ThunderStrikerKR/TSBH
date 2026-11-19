@@ -24,6 +24,7 @@ pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
 pub const WORKFLOW_CARD_BG: Color32 = PANEL;
 pub const WORKFLOW_SELECTED_BG: Color32 = Color32::from_rgb(36, 36, 36);
 pub const WORKFLOW_CARD_BORDER: Color32 = Color32::from_rgb(83, 83, 83);
+pub const WORKFLOW_SELECTED_BORDER: Color32 = Color32::from_rgb(245, 158, 11);
 pub const WORKFLOW_CARD_PADDING_X: f32 = 9.0;
 pub const WORKFLOW_CARD_PADDING_Y: f32 = 8.0;
 pub const WORKFLOW_CARD_RADIUS: u8 = 7;
