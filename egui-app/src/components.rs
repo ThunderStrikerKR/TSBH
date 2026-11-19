@@ -294,8 +294,8 @@ pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
     ui.horizontal(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
         for (index,(title,active,enabled)) in labels.iter().enumerate() {
-            let role=if *active {theme::ButtonRole::ActiveNavigation}
-                else {theme::ButtonRole::Navigation};
+            let role=if *active {theme::ButtonRole::ActiveManagementTab}
+                else {theme::ButtonRole::ManagementTab};
             if theme::action(bar,title,role,*enabled).clicked() {
                 pressed=Some(index);
             }
