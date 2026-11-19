@@ -212,11 +212,20 @@ impl BandoEgui {
         theme::section_frame().show(ui, |ui| {
             ui.set_min_width((width - 2.0 * theme::SECTION_PADDING).max(60.0));
             ui.set_min_height((minimum_height - 2.0 * theme::SECTION_PADDING).max(48.0));
-            ui.horizontal(|ui| {
-                ui.label(theme::section_heading(title));
-                ui.with_layout(Layout::right_to_left(Align::Center), header_right);
-            });
-            theme::divider(ui);
+            // All section headers occupy the same height whether or not
+            // they contain an action. Prevent controls from moving when
+            // the section switches between empty and populated states.
+            ui.allocate_ui_with_layout(
+                Vec2::new(ui.available_width(), 38.0),
+                Layout::left_to_right(Align::Center),
+                |header| {
+                    header.set_min_height(38.0);
+                    header.label(theme::section_heading(title));
+                    header.with_layout(Layout::right_to_left(Align::Center), header_right);
+                },
+            );
+            components::soft_divider(ui);
+            ui.add_space(8.0);
             content(ui);
         });
     }
