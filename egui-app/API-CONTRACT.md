@@ -4,7 +4,7 @@
 
 ## 1. 의존성 방향
 
-\`\`\`text
+```text
 egui UI (main.rs)
     ↓
 reception_service.rs   — 결과 조합·표시용 읽기 전용 모델
@@ -13,12 +13,12 @@ BandoGateway (gateway.rs)  — load_state() / execute(ReadOperation, JSON)
     ├── LocalGateway  → 기존 src-tauri/src/business_core/recognition, rules
     │                  → 빌드 포함 state-seed.json (운영 DB 아님)
     └── HttpGateway   → HTTPS JSON API (명시적 선택시에만 사용)
-\`\`\`
+```
 
 - UI는 비즈니스 Rust 함수, SQLite, Tauri IPC, HTTP 라이브러리를 직접 호출하지 않는다.
 - 기존 Rust 알고리즘과 JSON 요청/응답은 **단일 출처**로 유지한다.
-- \`ReadOperation\` enum은 현재 프리뷰가 호출할 수 있는 세 연산만 허용한다:
-  \`recognition/analyze_order\`, \`rules/resolve_unit_price\`, \`rules/detect_remote_delivery_area\`.
+- `ReadOperation` enum은 현재 프리뷰가 호출할 수 있는 세 연산만 허용한다:
+  `recognition/analyze_order`, `rules/resolve_unit_price`, `rules/detect_remote_delivery_area`.
 - read-only 연산만 연결했으며 결제·송장·주문 확정·DB 저장·삭제·업무 상태 변경 명령은 존재하지 않는다.
 - 새 기능은 UI가 아니라 Gateway 인터페이스 및 전용 서비스에 구현한다. 외부 Windows 창·카카오톡 도킹은 네트워크 업무 API와 별개의 로컬 어댑터 책임이다.
 
@@ -26,22 +26,22 @@ BandoGateway (gateway.rs)  — load_state() / execute(ReadOperation, JSON)
 
 기본 실행 (환경변수 미설정):
 
-\`\`\`powershell
+```powershell
 cargo run --manifest-path egui-app/Cargo.toml
-\`\`\`
+```
 
-이 경우 \`BANDO_HUB_GATEWAY=local\`과 같다. 기존 로컬 Rust 분석 결과를 사용하고 어떤 네트워크 요청도 발생하지 않는다.
+이 경우 `BANDO_HUB_GATEWAY=local`과 같다. 기존 로컬 Rust 분석 결과를 사용하고 어떤 네트워크 요청도 발생하지 않는다.
 
 **서버 구현·배포 후에만 사용할 설정 예시:**
 
-\`\`\`powershell
+```powershell
 $env:BANDO_HUB_GATEWAY = "http"
 $env:BANDO_HUB_API_BASE_URL = "https://api.example.invalid"
 $env:BANDO_HUB_API_TOKEN = "<서버 발급 토큰>"
 cargo run --manifest-path egui-app/Cargo.toml
-\`\`\`
+```
 
-- \`example.invalid\`은 실행 가능한 서비스가 아닌 설명용 예시이다.
+- `example.invalid`은 실행 가능한 서비스가 아닌 설명용 예시이다.
 - HTTPS가 필수다. 단, 개발용 localhost 및 loopback에서는 HTTP를 허용한다.
 - 토큰은 소스, 원문 데이터, URL 쿼리, DB 또는 Git에 저장하지 않는다. 실제 운영 시 OS 자격증명 저장소와 토큰 갱신 방식을 별도로 설계한다.
 - 서버 모드를 선택했는데 URL/인증 설정이 없거나 잘못되면 시작 오류가 나며 **몰래 로컬 모드로 돌아가지 않는다.**
@@ -49,27 +49,27 @@ cargo run --manifest-path egui-app/Cargo.toml
 
 ## 3. 제안된 HTTP 계약 (미구현 서버 사양)
 
-공통: \`Authorization: Bearer <token>\`, \`Content-Type: application/json\`.
+공통: `Authorization: Bearer <token>`, `Content-Type: application/json`.
 
 **(1) 읽기 전용 상태**
 
-\`\`\`http
+```http
 GET /api/v1/state
-\`\`\`
+```
 
-응답: 기존 반도허브 JSON \`State\` 스냅샷 전체 (최소 \`products\`와 \`aliases\` 배열 필수).
+응답: 기존 반도허브 JSON `State` 스냅샷 전체 (최소 `products`와 `aliases` 배열 필수).
 
 현 단계에서는 상품과 별칭 조회용이다. 이 스냅샷에 비공개 거래처·개인정보·단가가 포함될 수 있으므로 서버는 역할별로 필요한 필드만 공개하도록 개선해야 한다.
 
 **(2) 읽기 전용 Rust 계산**
 
-\`\`\`http
+```http
 POST /api/v1/business-core
-\`\`\`
+```
 
 요청 예시:
 
-\`\`\`json
+```json
 {
   "domain": "recognition",
   "operation": "analyze_order",
@@ -78,15 +78,15 @@ POST /api/v1/business-core
     "state": {"products": [], "aliases": []}
   }
 }
-\`\`\`
+```
 
 응답 예시:
 
-\`\`\`json
+```json
 {"result": {"recipients": [], "candidates": [], "unassigned": []}}
-\`\`\`
+```
 
-서버는 \`ReadOperation\`에 해당하는 허용 목록만 처리해야 한다. 클라이언트가 보낸 \`domain\`과 \`operation\`을 아무 제한 없이 내부 관리자/변경 명령으로 전달해서는 안 된다. 실제 결과와 오류는 기존 Rust 코어의 JSON 계약을 따른다.
+서버는 `ReadOperation`에 해당하는 허용 목록만 처리해야 한다. 클라이언트가 보낸 `domain`과 `operation`을 아무 제한 없이 내부 관리자/변경 명령으로 전달해서는 안 된다. 실제 결과와 오류는 기존 Rust 코어의 JSON 계약을 따른다.
 
 이 API는 현재 **설계된 클라이언트 계약일 뿐**, GitHub 저장소에 서버 라우터나 인증 서비스가 만들어졌다는 뜻이 아니다.
 
@@ -101,6 +101,6 @@ POST /api/v1/business-core
 
 ## 5. 검증 및 롤백
 
-- 기존 백업 브랜치: \`backup/main-before-egui-20261119\`.
+- 기존 백업 브랜치: `backup/main-before-egui-20261119`.
 - 이전 React + Tauri 파일과 운영 SQLite는 수정하지 않는다.
 - 로컬 egui 프리뷰의 실제 컴파일과 Windows 화면 동작은 별도 확인이 필요하다. 문서 및 GitHub 소스 커밋만으로 빌드 성공이라고 판정하지 않는다.
