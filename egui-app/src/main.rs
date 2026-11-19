@@ -719,32 +719,32 @@ impl BandoEgui {
                 pane.set_width(review_rect.width());
                 pane.set_height(review_rect.height());
                 Self::section(pane, "확인할 내용", review_height, |ui| {
-            if let Some(error) = &self.analysis_error {
-                ui.colored_label(theme::DANGER, error);
-            } else if let Some(analysis) = &self.analysis {
-                let unidentified = analysis.get("unassigned")
-                    .and_then(serde_json::Value::as_array)
-                    .map(Vec::len).unwrap_or(0);
-                let candidates = analysis.get("candidates")
-                    .and_then(serde_json::Value::as_array)
-                    .map(Vec::len).unwrap_or(0);
-                if unidentified > 0 || candidates > 0 {
-                    ui.colored_label(theme::SELECTED_ORDER,
-                        format!("미분류 {unidentified}건 · 확인 후보 {candidates}건"));
-                }
-                let issue_count: usize = reception_service::recipients(analysis).iter()
-                    .flat_map(|recipient| recipient.get("items")
-                        .and_then(serde_json::Value::as_array)
-                        .into_iter().flatten())
-                    .map(|item| item.get("issues")
-                        .and_then(serde_json::Value::as_array)
-                        .map(Vec::len).unwrap_or(0))
-                    .sum();
-                if issue_count > 0 {
-                    ui.colored_label(theme::SELECTED_ORDER,
-                        format!("상품 확인 {issue_count}건"));
-                }
-            }
+                    if let Some(error) = &self.analysis_error {
+                        ui.colored_label(theme::DANGER, error);
+                    } else if let Some(analysis) = &self.analysis {
+                        let unidentified = analysis.get("unassigned")
+                            .and_then(serde_json::Value::as_array)
+                            .map(Vec::len).unwrap_or(0);
+                        let candidates = analysis.get("candidates")
+                            .and_then(serde_json::Value::as_array)
+                            .map(Vec::len).unwrap_or(0);
+                        if unidentified > 0 || candidates > 0 {
+                            ui.colored_label(theme::SELECTED_ORDER,
+                                format!("미분류 {unidentified}건 · 확인 후보 {candidates}건"));
+                        }
+                        let issue_count: usize = reception_service::recipients(analysis).iter()
+                            .flat_map(|recipient| recipient.get("items")
+                                .and_then(serde_json::Value::as_array)
+                                .into_iter().flatten())
+                            .map(|item| item.get("issues")
+                                .and_then(serde_json::Value::as_array)
+                                .map(Vec::len).unwrap_or(0))
+                            .sum();
+                        if issue_count > 0 {
+                            ui.colored_label(theme::SELECTED_ORDER,
+                                format!("상품 확인 {issue_count}건"));
+                        }
+                    }
                 });
             },
         );
@@ -759,49 +759,49 @@ impl BandoEgui {
                 pane.set_width(recipient_rect.width());
                 pane.set_height(recipient_rect.height());
                 Self::section(pane, "수취인별 주문 정보", recipient_height, |ui| {
-            if let Some(analysis) = &self.analysis {
-                let recipients = reception_service::recipients(analysis);
-                if recipients.len() > 1 {
-                    egui::ScrollArea::horizontal()
-                        .id_salt("analyzed-recipients")
-                        .drag_to_scroll(false)
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                for (index, recipient) in recipients.iter().enumerate() {
-                                    let name = reception_service::text(recipient, "name");
-                                    let label = if name.is_empty() {
-                                        format!("수취인 {}", index + 1)
-                                    } else {
-                                        format!("{} · {}", index + 1, name)
-                                    };
-                                    let role = if index == self.selected_recipient {
-                                        ButtonRole::ActiveNavigation
-                                    } else {
-                                        ButtonRole::Quiet
-                                    };
-                                    if theme::action(ui, &label, role, true).clicked() {
-                                        next_recipient = Some(index);
-                                    }
-                                }
-                            });
-                        });
-                }
-                if let Some(recipient) = recipients.get(self.selected_recipient) {
-                    ui.spacing_mut().item_spacing.y = theme::SPACE_4;
-                    let mut name = reception_service::text(recipient, "name").to_owned();
-                    let mut address = reception_service::text(recipient, "address").to_owned();
-                    let mut mobile = reception_service::text(recipient, "mobile").to_owned();
-                    let mut phone = reception_service::text(recipient, "phone").to_owned();
-                    let mut note = reception_service::text(recipient, "note").to_owned();
-                    components::labeled_field(ui, "이름", &mut name, components::FieldKind::Text, false);
-                    components::labeled_field(ui, "주소", &mut address, components::FieldKind::Address, false);
-                    components::labeled_field(ui, "휴대전화", &mut mobile, components::FieldKind::Telephone, false);
-                    if !phone.trim().is_empty() {
-                        components::labeled_field(ui, "전화", &mut phone, components::FieldKind::Telephone, false);
+                    if let Some(analysis) = &self.analysis {
+                        let recipients = reception_service::recipients(analysis);
+                        if recipients.len() > 1 {
+                            egui::ScrollArea::horizontal()
+                                .id_salt("analyzed-recipients")
+                                .drag_to_scroll(false)
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        for (index, recipient) in recipients.iter().enumerate() {
+                                            let name = reception_service::text(recipient, "name");
+                                            let label = if name.is_empty() {
+                                                format!("수취인 {}", index + 1)
+                                            } else {
+                                                format!("{} · {}", index + 1, name)
+                                            };
+                                            let role = if index == self.selected_recipient {
+                                                ButtonRole::ActiveNavigation
+                                            } else {
+                                                ButtonRole::Quiet
+                                            };
+                                            if theme::action(ui, &label, role, true).clicked() {
+                                                next_recipient = Some(index);
+                                            }
+                                        }
+                                    });
+                                });
+                        }
+                        if let Some(recipient) = recipients.get(self.selected_recipient) {
+                            ui.spacing_mut().item_spacing.y = theme::SPACE_4;
+                            let mut name = reception_service::text(recipient, "name").to_owned();
+                            let mut address = reception_service::text(recipient, "address").to_owned();
+                            let mut mobile = reception_service::text(recipient, "mobile").to_owned();
+                            let mut phone = reception_service::text(recipient, "phone").to_owned();
+                            let mut note = reception_service::text(recipient, "note").to_owned();
+                            components::labeled_field(ui, "이름", &mut name, components::FieldKind::Text, false);
+                            components::labeled_field(ui, "주소", &mut address, components::FieldKind::Address, false);
+                            components::labeled_field(ui, "휴대전화", &mut mobile, components::FieldKind::Telephone, false);
+                            if !phone.trim().is_empty() {
+                                components::labeled_field(ui, "전화", &mut phone, components::FieldKind::Telephone, false);
+                            }
+                            components::labeled_field(ui, "요청 메시지", &mut note, components::FieldKind::Text, false);
+                        }
                     }
-                    components::labeled_field(ui, "요청 메시지", &mut note, components::FieldKind::Text, false);
-                }
-            }
                 });
             },
         );
@@ -822,64 +822,64 @@ impl BandoEgui {
                 pane.set_width(bottom_rect.width());
                 pane.set_height(bottom_rect.height());
                 Self::section(pane, "품목 및 운임", remaining, |ui| {
-            // Reserve the bottom summary from the pane geometry, not from
-            // the current text height. This keeps the summary at the bottom
-            // even when there are no products.
-            let section_chrome = theme::SECTION_PADDING * 2.0
-                + theme::SECTION_HEADER_HEIGHT
-                + theme::SECTION_CONTENT_GAP
-                + theme::SOFT_DIVIDER_WIDTH
-                + theme::SPACE_4;
-            let item_area_height =
-                (remaining - section_chrome - theme::SUMMARY_STRIP_HEIGHT)
-                    .max(0.0);
-            ui.allocate_ui_with_layout(
-                Vec2::new(ui.available_width(), item_area_height),
-                Layout::top_down(Align::Min),
-                |items_ui| {
-                    items_ui.set_min_height(item_area_height);
-                    if let Some(recipient) = selected {
-                        if let Some(items) =
-                            recipient.get("items").and_then(serde_json::Value::as_array)
-                        {
-                            egui::ScrollArea::vertical()
-                                .id_salt("recognized-items")
-                                .max_height(item_area_height)
-                                .auto_shrink([false, false])
-                                .show(items_ui, |ui| {
-                                    for item in items {
-                                        ui.horizontal(|ui| {
-                                            ui.label(theme::body(
-                                                &reception_service::item_title(item)
-                                            ));
-                                            ui.with_layout(
-                                                Layout::right_to_left(Align::Center),
-                                                |ui| {
-                                                    ui.label(theme::caption(
-                                                        &reception_service::item_quantity(item)
+                    // Reserve the bottom summary from the pane geometry, not from
+                    // the current text height. This keeps the summary at the bottom
+                    // even when there are no products.
+                    let section_chrome = theme::SECTION_PADDING * 2.0
+                        + theme::SECTION_HEADER_HEIGHT
+                        + theme::SECTION_CONTENT_GAP
+                        + theme::SOFT_DIVIDER_WIDTH
+                        + theme::SPACE_4;
+                    let item_area_height =
+                        (remaining - section_chrome - theme::SUMMARY_STRIP_HEIGHT)
+                            .max(0.0);
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(ui.available_width(), item_area_height),
+                        Layout::top_down(Align::Min),
+                        |items_ui| {
+                            items_ui.set_min_height(item_area_height);
+                            if let Some(recipient) = selected {
+                                if let Some(items) =
+                                    recipient.get("items").and_then(serde_json::Value::as_array)
+                                {
+                                    egui::ScrollArea::vertical()
+                                        .id_salt("recognized-items")
+                                        .max_height(item_area_height)
+                                        .auto_shrink([false, false])
+                                        .show(items_ui, |ui| {
+                                            for item in items {
+                                                ui.horizontal(|ui| {
+                                                    ui.label(theme::body(
+                                                        &reception_service::item_title(item)
                                                     ));
-                                                },
-                                            );
-                                        });
-                                        if let Some(issues) = item.get("issues")
-                                            .and_then(serde_json::Value::as_array)
-                                        {
-                                            for issue in issues.iter().take(3) {
-                                                if let Some(message) = issue.as_str() {
-                                                    ui.colored_label(
-                                                        theme::SELECTED_ORDER, message
+                                                    ui.with_layout(
+                                                        Layout::right_to_left(Align::Center),
+                                                        |ui| {
+                                                            ui.label(theme::caption(
+                                                                &reception_service::item_quantity(item)
+                                                            ));
+                                                        },
                                                     );
+                                                });
+                                                if let Some(issues) = item.get("issues")
+                                                    .and_then(serde_json::Value::as_array)
+                                                {
+                                                    for issue in issues.iter().take(3) {
+                                                        if let Some(message) = issue.as_str() {
+                                                            ui.colored_label(
+                                                                theme::SELECTED_ORDER, message
+                                                            );
+                                                        }
+                                                    }
                                                 }
+                                                components::soft_divider(ui);
                                             }
-                                        }
-                                        components::soft_divider(ui);
-                                    }
-                                });
-                        }
-                    }
-                },
-            );
-            components::summary_strip(ui, "총 주문", "—", "");
+                                        });
+                                }
+                            }
+                        },
+                    );
+                    components::summary_strip(ui, "총 주문", "—", "");
                 });
             },
         );
