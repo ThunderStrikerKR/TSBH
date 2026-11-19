@@ -2356,7 +2356,7 @@
       "id": "LIVE-20261120-EGUI-WORKFLOW-BOARD",
       "scope": "50차 egui 처리 중인 발주묶음: React 카드 구조 정렬 및 단계 미리보기",
       "status": "PATCHED_VISUAL_RECHECK_REQUIRED",
-      "description": "React WorkflowBoard.tsx/HubWorkspace.tsx의 처리 중인 주문 그룹을 실제 Rust preview_workflow/read_shipments/preview_order와 output/render_automatic_message에 연결했다. 사용자 명시 BANDO_EGUI_BUSINESS_DB v2 SQLite를 읽기 전용으로 조회하여 운영 발주묶음·배송건을 보여주고, 격리 미확정 접수 목록은 별도로 보존. 묶음 제목 클릭·다시 접기, 다른 묶음 자동 접기, 배송건 선택, 단계 호버 250ms 진입/250ms 복귀, 미리보기 배송행 100ms/150ms, 앵커 오버레이 및 원문·메시지·수취인·품목·운임 읽기 전용 연계 코드를 반영했다. 운영 업무 상태 전환/단계 되돌리기/묶음 관리/삭제/복원/자동메시지 복사·기록은 원래 Rust 감사·revision-checked SQLite 저장 통합 전이므로 미이전. 선택한 실제 그룹의 원문 연결 하이라이트 상세 동등성도 별도 미완료. DB 미연결 시 운영 묶음을 가상 생성하지 않음. Windows 실제 GUI 행동은 미검증. 2026-11-20 사용자 스크린샷에서 원본과 크게 다른 카드 너비·파란 활성 버튼·누락된 관리/삭제/단계 슬롯을 확인했다. 실제 React WorkflowBoard.tsx와 workflow.css/workflow-states.css 기준으로 모든 카드 전체 폭, 7px radius/8-9px 패딩, 상단 제목+상태등 전체 클릭 영역, 오른쪽 관리 및 삭제 슬롯, 140px 단계+34px 이전 버튼의 고정 동작 행, 배송 64/가변/68 삼열, 제품 칩을 수정했다. Rust 저장 전 단계/관리/삭제 버튼은 기존 자리를 보이되 비활성화하였다. 활성 선택은 React #f59e0b 주황, 임시 프리뷰는 #70b4ff 파랑으로 구분하고 미리보기 카드 오프패널 그리기를 제한하였다. 원본과 실제 화면 픽셀 비교 전까지 시각적 PASS 불가. 2026-11-20 추가 사용성 보정: 단계 표시등을 작업 요약 줄로 이동해 좁은 헤더의 거래처명·관리 버튼 겹침을 해소하고, 접기/펼치기·이전 단계·삭제를 글꼴 독립 벡터 아이콘으로 통일했다. 발주원문 편집창에 dealer 카드와 동일한 공통 모서리 반경(6)을 적용하고, 카카오톡 예약 영역의 별도 사각 테두리를 제거했다. 분할선 간격은 유지하되 부모 패널의 세 연결 지점에서 교차선을 그려 몰딩 이음새를 정렬한다. 최신 요청에 따라 Windows 실제 GUI 검증은 수행하지 않으며 컴파일/정적 경로 검증만 실시한다.",
+      "description": "React WorkflowBoard.tsx/HubWorkspace.tsx의 처리 중인 주문 그룹을 실제 Rust preview_workflow/read_shipments/preview_order와 output/render_automatic_message에 연결했다. 사용자 명시 BANDO_EGUI_BUSINESS_DB v2 SQLite를 읽기 전용으로 조회하여 운영 발주묶음·배송건을 보여주고, 격리 미확정 접수 목록은 별도로 보존. 묶음 제목 클릭·다시 접기, 다른 묶음 자동 접기, 배송건 선택, 단계 호버 250ms 진입/250ms 복귀, 미리보기 배송행 100ms/150ms, 앵커 오버레이 및 원문·메시지·수취인·품목·운임 읽기 전용 연계 코드를 반영했다. 운영 업무 상태 전환/단계 되돌리기/묶음 관리/삭제/복원/자동메시지 복사·기록은 원래 Rust 감사·revision-checked SQLite 저장 통합 전이므로 미이전. 선택한 실제 그룹의 원문 연결 하이라이트 상세 동등성도 별도 미완료. DB 미연결 시 운영 묶음을 가상 생성하지 않음. Windows 실제 GUI 행동은 미검증. 2026-11-20 사용자 스크린샷에서 원본과 크게 다른 카드 너비·파란 활성 버튼·누락된 관리/삭제/단계 슬롯을 확인했다. 실제 React WorkflowBoard.tsx와 workflow.css/workflow-states.css 기준으로 모든 카드 전체 폭, 7px radius/8-9px 패딩, 상단 제목+상태등 전체 클릭 영역, 오른쪽 관리 및 삭제 슬롯, 140px 단계+34px 이전 버튼의 고정 동작 행, 배송 64/가변/68 삼열, 제품 칩을 수정했다. Rust 저장 전 단계/관리/삭제 버튼은 기존 자리를 보이되 비활성화하였다. 활성 선택은 React #f59e0b 주황, 임시 프리뷰는 #70b4ff 파랑으로 구분하고 미리보기 카드 오프패널 그리기를 제한하였다. 원본과 실제 화면 픽셀 비교 전까지 시각적 PASS 불가. 2026-11-20 추가 사용성 보정: 단계 표시등을 작업 요약 줄로 이동해 좁은 헤더의 거래처명·관리 버튼 겹침을 해소하고, 접기/펼치기·이전 단계·삭제를 글꼴 독립 벡터 아이콘으로 통일했다. 발주원문 편집창에 dealer 카드와 동일한 공통 모서리 반경(6)을 적용하고, 카카오톡 예약 영역의 별도 사각 테두리를 제거했다. 분할선 간격은 유지하되 부모 패널의 세 연결 지점에서 교차선을 그려 몰딩 이음새를 정렬한다. 최신 요청에 따라 Windows 실제 GUI 검증은 수행하지 않으며 컴파일/정적 경로 검증만 실시한다. 추가 승인: 접힌 발주묶음 카드를 반드시 2행으로 제한(헤더: 거래처명 우측 신호등 및 관리·삭제, 하단: 배송·금액 단일 텍스트 및 기존 원터치/이전 단계 버튼). 좁은 패널에서는 12pt 신호등으로 적응하고 넓은 패널은 원래 18pt 유지. 금액 및 VAT 전체 내용은 해당 행의 호버 도움말로 확인한다. 펼친 경우에만 수취인/품목 상세를 렌더한다.",
       "evidence": [
         "src/WorkflowBoard.tsx",
         "src/HubWorkspace.tsx",
@@ -2375,12 +2375,12 @@
         "egui-app/src/components.rs"
       ],
       "gates": {
-        "patch": "SOURCE_UPDATED: workflow vector controls and responsive card header 26fcfa9; shared source/Kakao frame fe66a7e; document rounding dd1f1e2; parent-painted T junctions 4e8f96c; source static-review PASS",
+        "patch": "SOURCE_UPDATED: egui workflow board two-row structure a571f2a; compact action row e3ba8a9; adaptive progress 13a0fa5/542b24f; design contract 858dcbb/6d7d2f7",
         "unit": "NOT_EXECUTED: no new broad regression suite; focused workflow_board formatting test added but not executed",
-        "differential": "SOURCE_REVIEW: React workflow CSS and shared egui design contract referenced; dynamic graphical equivalence not asserted",
+        "differential": "SOURCE CONTRACT REVIEW: JSX/source code and egui show(): folded group/pending has one workflow_header plus one workflow_action_line; details only under `if open` / `if open || in_preview`. No desktop GUI comparison requested.",
         "action": "NOT EXECUTED: real Windows GUI card width, click, fold, hover, scroll and mixed-draft presentation not yet observed",
-        "ci": "PASS: Windows Tauri cargo check + standalone egui cargo check on patch commit 64f5b3c, https://github.com/ThunderStrikerKR/TSBH/actions/runs/44631300076",
-        "windows": "SKIPPED_BY_USER_REQUEST: no GUI launch/screenshots; not required for this scoped UI refinement. No unsupported visual PASS claim."
+        "ci": "RUNNING: targeted Windows Rust cargo check at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44633034213 for c4a8e4c",
+        "windows": "SKIPPED_BY_USER_REQUEST: no Windows GUI test or screenshot verification; not a blocker for scoped code implementation."
       }
     }
   ],
