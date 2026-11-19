@@ -328,7 +328,7 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
             _ => return Err("거래처 선택 상태가 올바르지 않습니다.".into()),
         }
         if let Some(price)=&draft.pricing_preview {
-            let keys=["sourceRaw","orderId","clientId","authorityRevision",
+            let keys=["sourceRaw","orderId","orderType","clientId","authorityRevision",
                 "status","shippingFee","shippingVersion","vatAmount",
                 "subtotal","total","notified","paid","linePrices"];
             let map=price.as_object()
@@ -336,6 +336,7 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
             if map.keys().any(|key|!keys.contains(&key.as_str())) ||
                price.get("sourceRaw").and_then(Value::as_str)!=Some(draft.raw.as_str()) ||
                price.get("orderId").and_then(Value::as_str)!=Some(draft.id.as_str()) ||
+               price.get("orderType").and_then(Value::as_str)!=Some(draft.order_type.as_str()) ||
                price.get("clientId").and_then(Value::as_str)!=draft.client_id.as_deref() ||
                price.get("authorityRevision").and_then(Value::as_u64).is_none() ||
                price.get("linePrices").and_then(Value::as_array).is_none() {
