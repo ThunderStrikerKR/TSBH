@@ -201,7 +201,7 @@ $env:BANDO_EGUI_BUSINESS_DB = "C:\\path\\to\\bando-hub-v001.sqlite"
 
 - 앞선 §10까지는 읽기 전용 견적 단계다. 이 절부터는 **사용자 클릭과 별도 환경 설정이 모두 있는 경우에 한해** 운영 DB의 `reception_working_orders`에 저장할 수 있다. 정식 주문 원장 `core_orders` 및 `app_state`는 그대로 둔다.
 - 경로: egui `BandoGateway::commit_working_reception` → 사용자가 지정한 최신 Tauri EXE `--bando-egui-reception-commit` → `egui_reception_bridge::commit_file` → SQLite 즉시 트랜잭션. 인증 없는 HTTP 포트·브라우저 IPC는 추가하지 않았다.
-- CLI 입력 표준입력 JSON: `orderId`, `sourceRaw`, `orderType`, `clientId`, `at`, `expectedAuthorityRevision`, `expectedWorkingVersion`(초기 null). 반환: `{ok:true,result:{orderId,clientId,workingVersion,authorityRevision,status,subtotal,shippingFee,vatAmount,total}}` 또는 `{ok:false,error}`. 송하인/수취인 개인정보, 계좌, 주문 원장 전체를 응답하지 않는다.
+- CLI 입력 표준입력 JSON: `orderId`, `sourceRaw`, `orderType`, `clientId`, `expectedAuthorityRevision`, `expectedWorkingVersion`(초기 null). 변경 시각은 Tauri 네이티브 프로세스가 직접 생성한다. 반환: `{ok:true,result:{orderId,clientId,workingVersion,authorityRevision,status,subtotal,shippingFee,vatAmount,total}}` 또는 `{ok:false,error}`. 송하인/수취인 개인정보, 계좌, 주문 원장 전체를 응답하지 않는다.
 - 재계산: SQLite v2 관계형 전체 snapshot을 트랜잭션 안에서 다시 읽고, `business_core`가 `new_reception` 또는 `replace_reception`, `analyze_order`, `change_order_client`, `merge_reception_analysis`, `reprice_order`, `calculate_price`를 순서대로 실행한다. 운영 주문 ID 중복 및 이미 확인 완료된 주문은 거부한다.
 - 기존 egui 작업본에 `_eguiBridgeVersion`, `_eguiBridgeAuthorityRevision`, `_eguiBridgePayloadHash`를 저장해 작업본 변경 감지와 CAS 갱신을 한다. 기존 React/Tauri `working_receptions::replace`는 누락되거나 버전이 다른 egui 작업본을 발견하면 저장을 거부한다.
 - egui 격리 DB에는 `workingVersion`(CAS 토큰), `workingSynced`(현재 원문·유형·거래처의 마지막 저장 반영 여부)가 추가된다. 작업본 제출/수정은 자동 저장이 아니라 **운영 작업본 저장** 버튼의 명시적 클릭으로만 수행한다.
