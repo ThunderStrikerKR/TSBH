@@ -117,14 +117,22 @@ impl ProductSearch{
             }
         }
     }
-    pub fn show(&mut self,ctx:&Context,gateway:Arc<dyn BandoGateway>)->Option<Event>{
+    pub fn show(&mut self,ctx:&Context,gateway:Arc<dyn BandoGateway>,
+        work_area:egui::Rect)->Option<Event>{
         self.poll();
         let mut open=true;
         let mut chosen=None;
         let mut changed=false;
         components::modal_window("상품 검색","native-manual-product-search")
             .resizable(true)
-            .default_width(theme::MANUAL_SEARCH_DIALOG_WIDTH)
+            .default_pos(egui::pos2(
+                work_area.center().x-
+                    (theme::MANUAL_SEARCH_DIALOG_WIDTH/2.0).min(work_area.width()/2.0),
+                work_area.center().y-theme::MANUAL_SEARCH_RESULTS_HEIGHT/2.0
+            ))
+            .default_width(theme::MANUAL_SEARCH_DIALOG_WIDTH
+                .min(work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP))
+            .constrain_to(work_area)
             .open(&mut open)
             .show(ctx,|ui|{
                 let width=ui.available_width();
