@@ -2387,7 +2387,7 @@
       "id": "LIVE-20261120-EGUI-SETTINGS-FOUR-TABS",
       "scope": "51차 React SettingsView / SettingsPanel 네이티브 egui 설정 이전",
       "status": "PARTIAL_SOURCE_PATCHED",
-      "description": "React SettingsView.tsx/SettingsPanel.tsx/AccountPicker.tsx/ReceiptArchive.tsx/ManagementUI.BackupPanel 및 management-layout.css 기준 4탭(기본 설정/파일 관리/데이터 관리/시스템), 자동 저장되는 uiScale, 발송인·작업자 정보, 계좌 추가/삭제·추천 계좌, 폴더 관리, 실제 감사 기록 및 백업·복구 확인, 프로그램 버전·실제 빌드 ID를 egui에 반영. 원본 Tauri settings_patch와 같은 Rust 함수 apply_settings_patch로 필드별 기준값 비교, 계좌 ID 및 거래처 사용 확인, SQLite revision-checked commit, 실제 계좌정보 연결. 격리 egui SQLite에 새 egui_settings 추가; 명시적 운영 DB는 기본 RO, BANDO_EGUI_BUSINESS_DB + BANDO_EGUI_TAURI_HELPER + BANDO_EGUI_ENABLE_SETTINGS_WRITE=1 조건에서만 원샷 설정 쓰기. 데이터 탭도 실제 Tauri receipt_archive 및 backup_manager 함수 공유; 복원 직전 안전 백업·복구 후 egui 캐시 무효화. Excel 폴더 선택 시 기존 5개 업무 폴더 생성. 화면에서 임의 기술 상태 문구 제거. 남음: 원본 HelpTooltip 의 mouse 500ms/클릭 고정/취소, 별도 egui 프로세스의 실제 공장 회신/발주 이미지 수신 감시 및 OCR/업무 적용, React 필드 비율·정렬의 세부 정적 동등성. 이 부분들을 이전 완료로 보고하지 않음.",
+      "description": "React SettingsView.tsx/SettingsPanel.tsx/AccountPicker.tsx/ReceiptArchive.tsx/ManagementUI.BackupPanel 및 management-layout.css 기준 4탭(기본 설정/파일 관리/데이터 관리/시스템), 자동 저장되는 uiScale, 발송인·작업자 정보, 계좌 추가/삭제·추천 계좌, 폴더 관리, 실제 감사 기록 및 백업·복구 확인, 프로그램 버전·실제 빌드 ID를 egui에 반영. 원본 Tauri settings_patch와 같은 Rust 함수 apply_settings_patch로 필드별 기준값 비교, 계좌 ID 및 거래처 사용 확인, SQLite revision-checked commit, 실제 계좌정보 연결. 격리 egui SQLite에 새 egui_settings 추가; 명시적 운영 DB는 기본 RO, BANDO_EGUI_BUSINESS_DB + BANDO_EGUI_TAURI_HELPER + BANDO_EGUI_ENABLE_SETTINGS_WRITE=1 조건에서만 원샷 설정 쓰기. 데이터 탭도 실제 Tauri receipt_archive 및 backup_manager 함수 공유; 복원 직전 안전 백업·복구 후 egui 캐시 무효화. Excel 폴더 선택 시 기존 5개 업무 폴더 생성. 화면에서 임의 기술 상태 문구 제거. 남음: 원본 HelpTooltip 의 mouse 500ms/클릭 고정/취소, 별도 egui 프로세스의 실제 공장 회신/발주 이미지 수신 감시 및 OCR/업무 적용, React 필드 비율·정렬의 세부 정적 동등성. 이 부분들을 이전 완료로 보고하지 않음. 추가 보정: Tauri와 격리 egui 모두 단일 business_core/rules/settings_accounts.rs 검증 함수를 사용하도록 통합(계좌 참조 조건과 오류 문구 일치). 설정 모든 원본 '?' 도움말 내용 및 22pt 원형 아이콘, 마우스 진입 500ms, 이탈 180ms, 클릭 고정, 바깥 입력 해제를 settings_help.rs 공통 위젯으로 이식. 원본 도움말 자체 스크롤에서는 닫히지 않도록 제어한다.",
       "evidence": [
         "src/app/SettingsView.tsx",
         "src/SettingsPanel.tsx",
@@ -2405,15 +2405,19 @@
         "egui-app/src/gateway.rs",
         "egui-app/src/main.rs",
         "egui-app/build.rs",
-        "egui-app/README.md"
+        "egui-app/README.md",
+        "src/ui/HelpTooltip.tsx",
+        "src/styles/help-tooltip.css",
+        "src-tauri/src/business_core/rules/settings_accounts.rs",
+        "egui-app/src/settings_help.rs"
       ],
       "gates": {
-        "patch": "SOURCE_UPDATED on main through 340ec2b, four-tab settings and safe native Tauri data/settings bridges",
-        "differential": "STATIC CODE REVIEW: React key names and Tauri settings_patch/account validation/archive/backup functions reused; original HelpTooltip/watchers and some exact geometry pending",
+        "patch": "SOURCE_UPDATED: full 4-tab settings, Rust Tauri shared data/settings CLI, isolated settings CAS, original account-reference rule, native 500ms/180ms mouse-help, Excel folder validation and true Git build ID, through 7cd9f476.",
+        "differential": "STATIC REVIEW: React TSX+CSS tab labels/fields/help content, Rust account and settings validation, backup/archive and CAS routed; backend watcher and precise grid proportions remain separate tasks.",
         "action": "NOT RUN: no actual GUI or local database functional sequence; user excludes Windows GUI",
-        "ci": "PASS: initial settings screen targeted Tauri and egui cargo check run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44638374312; final data/Excel/build-ID patch pending focused run",
+        "ci": "IN_PROGRESS: focused Windows Tauri+egui cargo check https://github.com/ThunderStrikerKR/TSBH/actions/runs/44640578237 (source b676b0f before last help scroll fix)",
         "windows": "EXCLUDED_BY_USER_REQUEST: no real Windows GUI execution/screenshots required",
-        "status": "PARTIAL: base settings + Tauri data archive/backups wired, watcher/help behavior not fully migrated"
+        "status": "PARTIAL: settings/backup/help code wired; egui standalone watchers are not migrated."
       }
     }
   ],
