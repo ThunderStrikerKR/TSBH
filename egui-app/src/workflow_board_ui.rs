@@ -561,6 +561,11 @@ pub fn show(
     let mut overlay=None;
     let selected=state.selection.clone();
     let current=selected.as_ref();
+    if drafts.is_empty() && snapshot.is_none_or(|view|view.groups.is_empty()){
+        ui.label(typography::caption(
+            "거래처와 발주 원문을 입력하면 수취인별 배송 건이 생성됩니다."
+        ));
+    }
     if let Some(snapshot)=snapshot{
         for group in &snapshot.groups {
             let selected=current.is_some_and(|s|s.group_id==group.id);
