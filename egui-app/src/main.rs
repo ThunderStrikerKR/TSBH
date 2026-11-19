@@ -17,7 +17,11 @@ mod clipboard_intake;
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
 use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
-use std::sync::{mpsc::{self, Receiver}, Arc};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc::{self, Receiver},
+    Arc,
+};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -103,6 +107,7 @@ struct BandoEgui {
     order_type: OrderType,
     clipboard_monitor: ClipboardMonitor,
     clipboard_busy: bool,
+    clipboard_cancel: Arc<AtomicBool>,
     clipboard_receiver: Option<Receiver<(OrderType, Result<ClipboardReceipt, String>)>>,
     clipboard_error: Option<String>,
     ocr_review: Option<OcrReview>,
@@ -134,6 +139,7 @@ impl Default for BandoEgui {
             order_type: OrderType::Agency,
             clipboard_monitor: ClipboardMonitor::default(),
             clipboard_busy: false,
+            clipboard_cancel: Arc::new(AtomicBool::new(false)),
             clipboard_receiver: None,
             clipboard_error: None,
             ocr_review: None,
@@ -253,6 +259,8 @@ impl BandoEgui {
         }
         self.clipboard_busy = true;
         self.clipboard_error = None;
+        self.clipboard_cancel.store(false, Ordering::Release);
+        let cancelled = Arc::clone(&self.clipboard_cancel);
         let (tx, rx) = mpsc::channel();
         self.clipboard_receiver = Some(rx);
         // Clipboard image decoding and PaddleOCR never block the UI thread.
@@ -260,7 +268,7 @@ impl BandoEgui {
             let result = clipboard_intake::read().and_then(|value| match value {
                 ClipboardPayload::Text(text) => Ok(ClipboardReceipt::Text(text)),
                 ClipboardPayload::Image(image) => {
-                    let text = clipboard_intake::recognize_image(&image)?;
+                    let text = clipboard_intake::recognize_image(&image, &cancelled)?;
                     Ok(ClipboardReceipt::Ocr { text, image })
                 }
             });
@@ -304,6 +312,11 @@ impl BandoEgui {
             Some(Ok((order_type, result))) => {
                 self.clipboard_receiver = None;
                 self.clipboard_busy = false;
+                if self.clipboard_cancel.swap(false, Ordering::AcqRel) {
+                    // User cancellation wins even if a completed OCR result
+                    // raced with the Cancel click. Never open the review.
+                    return;
+                }
                 match result {
                     Ok(ClipboardReceipt::Text(text)) => {
                         self.accept_clipboard_text(text, order_type, ctx);
@@ -331,6 +344,7 @@ impl BandoEgui {
                             height: image.height,
                         });
                     }
+                    Err(error) if error == "OCR_CANCELLED" => {}
                     Err(error) => {
                         self.clipboard_error = Some(error);
                         self.notifications_open = true;
@@ -340,6 +354,9 @@ impl BandoEgui {
             Some(Err(mpsc::TryRecvError::Disconnected)) => {
                 self.clipboard_receiver = None;
                 self.clipboard_busy = false;
+                if self.clipboard_cancel.swap(false, Ordering::AcqRel) {
+                    return;
+                }
                 self.clipboard_error = Some("클립보드 접수 작업이 중단되었습니다.".into());
                 self.notifications_open = true;
             }
