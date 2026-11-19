@@ -98,6 +98,17 @@ mod native {
     struct Point{x:i32,y:i32}
     #[repr(C)]
     #[derive(Clone,Copy,Default)]
+    struct MinMaxInfo{
+        reserved:Point,max_size:Point,max_position:Point,
+        min_track:Point,max_track:Point,
+    }
+    #[repr(C)]
+    #[derive(Clone,Copy,Default)]
+    struct MonitorInfo{
+        size:u32,monitor:Rect,work:Rect,flags:u32,
+    }
+    #[repr(C)]
+    #[derive(Clone,Copy,Default)]
     struct Placement{
         length:u32, flags:u32, show_cmd:u32,
         min_pos:Point,max_pos:Point,normal:Rect
@@ -116,9 +127,18 @@ mod native {
     const HWND_NOTOPMOST:Hwnd=-2;
     const PROCESS_QUERY_LIMITED_INFORMATION:u32=0x1000;
     const DWMWA_EXTENDED_FRAME_BOUNDS:u32=9;
+    const WM_GETMINMAXINFO:u32=0x24;
+    const SMTO_ABORTIFHUNG:u32=0x2;
     #[link(name="user32")]
     unsafe extern "system" {
         fn EnumWindows(cb:Option<unsafe extern "system" fn(Hwnd,isize)->i32>,data:isize)->i32;
+        fn EnumChildWindows(hwnd:Hwnd,cb:Option<unsafe extern "system" fn(Hwnd,isize)->i32>,
+            data:isize)->i32;
+        fn SendMessageTimeoutW(hwnd:Hwnd,msg:u32,wparam:usize,lparam:isize,
+            flags:u32,timeout:u32,result:*mut usize)->isize;
+        fn GetDpiForWindow(hwnd:Hwnd)->u32;
+        fn MonitorFromWindow(hwnd:Hwnd,flags:u32)->Handle;
+        fn GetMonitorInfoW(handle:Handle,info:*mut MonitorInfo)->i32;
         fn GetWindowTextW(hwnd:Hwnd,buffer:*mut u16,len:i32)->i32;
         fn GetWindowThreadProcessId(hwnd:Hwnd,pid:*mut u32)->u32;
         fn GetForegroundWindow()->Hwnd;
@@ -252,14 +272,120 @@ mod native {
         )}==0{
             return Err(os("카카오톡 창 배치 실패"));
         }
-        let actual=visual(hwnd)?;
-        // Win32 may silently expand an app to its enforced minimum size.
-        // Report failure instead of covering reception UI outside the dock.
-        if actual.left<desired.left-4 || actual.top<desired.top-4 ||
-            actual.right>desired.right+4 || actual.bottom>desired.bottom+4 {
-            return Err("카카오톡 창이 왼쪽 배치 영역보다 큽니다. 패널 너비를 넓혀 주세요.".into());
-        }
+        // Match Tauri's set_visible_rect: Win32 minimum sizing is handled by
+        // the selected layout, not an arbitrary egui overflow warning.
         Ok(())
+    }
+    fn min_visible_height(hwnd:Hwnd)->Result<i32,String>{
+        let mut info=MinMaxInfo::default();
+        let mut result=0usize;
+        let ok=unsafe{SendMessageTimeoutW(
+            hwnd,WM_GETMINMAXINFO,0,&mut info as *mut _ as isize,
+            SMTO_ABORTIFHUNG,500,&mut result
+        )};
+        if ok==0 || info.min_track.y<=0{
+            return Err("카카오톡 창 최소 높이 조회 실패".into());
+        }
+        let out=outer(hwnd)?;
+        let shown=visual(hwnd)?;
+        Ok((info.min_track.y-(out.height()-shown.height())).max(1))
+    }
+    unsafe extern "system" fn banner_child(hwnd:Hwnd,param:isize)->i32{
+        let (reference,dpi,found)=unsafe{
+            &mut *(param as *mut (Rect,u32,Vec<i32>))
+        };
+        if unsafe{IsWindowVisible(hwnd)}==0 {return 1;}
+        if let Ok(child)=outer(hwnd){
+            let tolerance=((3.0*(*dpi as f64)/96.0).ceil() as i32).max(2);
+            if child.width() as f64>=reference.width() as f64*0.8
+                && child.height() as f64>=24.0*(*dpi as f64)/96.0
+                && child.height() as f64<=reference.height() as f64*0.35
+                && (child.bottom-reference.bottom).abs()<=tolerance{
+                found.push(child.top);
+            }
+        }
+        1
+    }
+    fn banner_top(hwnd:Hwnd,reference:Rect)->i32{
+        let dpi=unsafe{GetDpiForWindow(hwnd)}.max(96);
+        let mut query=(reference,dpi,Vec::<i32>::new());
+        unsafe{EnumChildWindows(hwnd,Some(banner_child),&mut query as *mut _ as isize);}
+        query.2.into_iter().min().unwrap_or(reference.bottom)
+    }
+    fn offscreen_main_target(hub:Hwnd,main:Hwnd,area:Rect)->Result<Rect,String>{
+        // React/Tauri OVERLAP: keep the conversation visible, move the MAIN
+        // footer advertisement below the monitor. The chat composer stays in
+        // the reserved pane.
+        let handle=unsafe{MonitorFromWindow(hub,2)};
+        if handle==0 {return Err("카카오톡 모니터를 확인할 수 없습니다.".into());}
+        let mut monitor=MonitorInfo{
+            size:std::mem::size_of::<MonitorInfo>() as u32,
+            ..Default::default()
+        };
+        if unsafe{GetMonitorInfoW(handle,&mut monitor)}==0 {
+            return Err(os("모니터 크기 조회 실패"));
+        }
+        let dpi=unsafe{GetDpiForWindow(main)}.max(96);
+        let extra=((160.0*dpi as f64/96.0).ceil() as i32).clamp(160,400);
+        Ok(Rect{bottom:area.bottom.max(monitor.monitor.bottom)
+            .saturating_add(extra),..area})
+    }
+    fn stack_targets(area:Rect,main:Hwnd,chats:&[Hwnd])
+        ->Result<(Rect,Rect),String>{
+        // Same geometry as Tauri's Stack mode, not a fixed 50/50 split.
+        if chats.is_empty(){
+            let old=visual(main)?;
+            let height=if old.height()>=100 && old.height()<area.height(){
+                old.height()
+            }else{area.height()};
+            return Ok((Rect{
+                left:area.left,top:area.top,right:area.right,
+                bottom:area.top+height
+            },area));
+        }
+        let old=outer(main)?;
+        let work=(||->Result<(Rect,Rect),String>{
+            let previous=visual(main)?;
+            move_visual(main,Rect{
+                left:area.left,top:area.top,right:area.right,
+                bottom:area.top+previous.height()
+            })?;
+            let minimum=min_visible_height(main)?;
+            if minimum>=area.height()-100{
+                return Err("카카오톡 기본창과 대화창을 나누어 표시할 공간이 부족합니다.".into());
+            }
+            let upper=Rect{
+                left:area.left,top:area.top,right:area.right,
+                bottom:area.top+minimum
+            };
+            move_visual(main,upper)?;
+            let actual=visual(main)?;
+            let chat_top=banner_top(main,actual)
+                .clamp(area.top+1,area.bottom);
+            let lower=Rect{
+                left:area.left,top:chat_top,
+                right:area.right,bottom:area.bottom
+            };
+            if lower.height()<100 {
+                return Err("카카오톡 대화창 영역이 부족합니다.".into());
+            }
+            for chat in chats{
+                let old=visual(*chat)?;
+                move_visual(*chat,Rect{
+                    left:area.left,top:chat_top,right:area.right,
+                    bottom:chat_top+old.height()
+                })?;
+                if min_visible_height(*chat)?>lower.height(){
+                    return Err("카카오톡 대화창 최소 높이를 확보할 수 없습니다.".into());
+                }
+            }
+            Ok((upper,lower))
+        })();
+        if work.is_err(){
+            unsafe{SetWindowPos(main,0,old.left,old.top,
+                old.width(),old.height(),SWP_NOZORDER|SWP_NOACTIVATE);}
+        }
+        work
     }
     #[derive(Clone,Copy)]
     struct Tracked{
