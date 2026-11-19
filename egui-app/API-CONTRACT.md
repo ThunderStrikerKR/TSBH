@@ -9,7 +9,7 @@ egui UI (main.rs)
     ↓
 reception_service.rs   — 결과 조합·표시용 읽기 전용 모델
     ↓
-BandoGateway (gateway.rs)  — load_state() / execute(ReadOperation, JSON)
+BandoGateway (gateway.rs)  — load_catalog() / execute(ReadOperation, JSON)
     ├── LocalGateway  → 기존 src-tauri/src/business_core/recognition, rules
     │                  → 빌드 포함 state-seed.json (운영 DB 아님)
     └── HttpGateway   → HTTPS JSON API (명시적 선택시에만 사용)
@@ -51,15 +51,15 @@ cargo run --manifest-path egui-app/Cargo.toml
 
 공통: `Authorization: Bearer <token>`, `Content-Type: application/json`.
 
-**(1) 읽기 전용 상태**
+**(1) 읽기 전용 상품 카탈로그**
 
 ```http
-GET /api/v1/state
+GET /api/v1/catalog
 ```
 
-응답: 기존 반도허브 JSON `State` 스냅샷 전체 (최소 `products`와 `aliases` 배열 필수).
+응답: `products`, `aliases`, `brands` 배열을 가진 최소 카탈로그 JSON. 주문 내역, 수취인, 거래처 상세, 결제 및 워크플로 데이터는 포함하지 않는다.
 
-현 단계에서는 상품과 별칭 조회용이다. 이 스냅샷에 비공개 거래처·개인정보·단가가 포함될 수 있으므로 서버는 역할별로 필요한 필드만 공개하도록 개선해야 한다.
+상품의 가격·원가 등 비공개 정보도 카탈로그에 포함될 수 있으므로 서버에서 사용자 역할별 상품 필드와 단가를 제한해야 한다. 전체 운영 DB 스냅샷을 그대로 반환하지 않는다.
 
 **(2) 읽기 전용 Rust 계산**
 
@@ -75,7 +75,7 @@ POST /api/v1/business-core
   "operation": "analyze_order",
   "payload": {
     "raw": "708-1 1개",
-    "state": {"products": [], "aliases": []}
+    "state": {"products": [], "aliases": [], "brands": []}
   }
 }
 ```
@@ -95,7 +95,7 @@ POST /api/v1/business-core
 1. **인증과 접근 제어:** 거래처·매장·공장·관리자 역할을 서버에서 검증하고 최소 데이터만 보낸다.
 2. **버전 및 충돌 제어:** 상태 스냅샷에 revision 또는 ETag를 부여하고 주문 변경은 서버에서 조건부 트랜잭션으로 처리한다.
 3. **저장 작업 분리:** 순수 업무 판단 결과를 받았다는 이유로 저장이 완료된 것으로 처리하지 않는다. 승인·감사 이력·중복 요청 방지 키가 필요하다.
-4. **인식 호출 최적화:** 현재 서비스는 분석 1회 + 수취인별 주소 조회 + 상품별 가격 조회를 각각 수행한다. 서버로 이전하면 데이터 전송량과 지연이 늘 수 있으므로 묶음 조회/서버 측 조합을 추가할 계획이다. UI 변경 없이 서비스·Gateway만 조정한다.
+4. **인식 호출 최적화:** 현재 서비스는 카탈로그 조회 1회 + 분석 1회 + 수취인별 주소 조회 + 상품별 가격 조회를 수행한다. 서버로 이전하면 데이터 전송량과 지연이 늘 수 있으므로 묶음 조회/서버 측 조합을 추가할 계획이다. UI 변경 없이 서비스·Gateway만 조정한다.
 5. **오프라인 정책:** 서버 연결 실패 시 로컬 결과로 자동 대체하거나 무단으로 큐잉하지 않는다. 향후 명시적 오프라인 동작을 정할 때만 추가한다.
 6. **개인정보 보호:** 실제 발주원문/주소/전화번호가 서버로 전송되므로 서버·보안·보존 정책 승인 이전에 원격 모드를 운영에 사용하지 않는다.
 
