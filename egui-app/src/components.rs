@@ -139,7 +139,8 @@ pub fn manual_table_cell(ui:&mut Ui,value:&str,width:f32,selected:bool)->Respons
     };
     ui.add_sized(
         Vec2::new(width,theme::MANUAL_TABLE_ROW_HEIGHT),
-        egui::Button::new(typography::body(label))
+        egui::Button::new(typography::table_cell(label))
+            .truncate()
             .fill(if selected{theme::RAISED}else{theme::INPUT})
             .stroke(border)
             .corner_radius(0),
