@@ -1530,7 +1530,7 @@ fn main() -> eframe::Result<()> {
             let autosave = source_autosave::SourceAutosave::new(
                 Arc::clone(&backend), restored.revision, cc.egui_ctx.clone()
             );
-            let source_editing = !restored.raw.is_empty();
+            let source_editing = restored.active_id.is_some();
             let saved_type = match OrderType::parse(&restored.order_type) {
                 Ok(kind) => kind,
                 Err(error) => {
