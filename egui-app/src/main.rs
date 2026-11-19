@@ -361,9 +361,10 @@ impl BandoEgui {
         theme::section_frame().show(ui, |ui| {
             ui.set_min_width((width - 2.0 * theme::SECTION_PADDING).max(60.0));
             ui.set_min_height((minimum_height - 2.0 * theme::SECTION_PADDING).max(48.0));
-            // All section headers occupy the same height whether or not
-            // they contain an action. Prevent controls from moving when
-            // the section switches between empty and populated states.
+            // The section header owns its vertical rhythm. Eguis implicit
+            // item spacing must not be added on top of explicit gaps.
+            let body_item_spacing = ui.spacing().item_spacing.y;
+            ui.spacing_mut().item_spacing.y = 0.0;
             ui.allocate_ui_with_layout(
                 Vec2::new(ui.available_width(), theme::SECTION_HEADER_HEIGHT),
                 Layout::left_to_right(Align::Center),
@@ -373,9 +374,13 @@ impl BandoEgui {
                     header.with_layout(Layout::right_to_left(Align::Center), header_right);
                 },
             );
-            components::soft_divider(ui);
             ui.add_space(theme::SECTION_CONTENT_GAP);
-            content(ui);
+            components::soft_divider(ui);
+            ui.add_space(theme::SPACE_4);
+            ui.scope(|body| {
+                body.spacing_mut().item_spacing.y = body_item_spacing;
+                content(body);
+            });
         });
     }
 
@@ -387,7 +392,8 @@ impl BandoEgui {
             .show(ui, |ui| {
                 ui.set_min_height((ui.available_height() - 2.0 * theme::SECTION_PADDING).max(100.0));
                 ui.vertical_centered(|ui| {
-                    ui.add_space((ui.available_height() * 0.44).max(20.0));
+                    let button_height = 34.0;
+                    ui.add_space(((ui.available_height() - button_height) / 2.0).max(0.0));
                     theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, false);
                 });
             });
