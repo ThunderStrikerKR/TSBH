@@ -252,13 +252,20 @@ impl BandoEgui {
                     Layout::left_to_right(Align::Center),
                     |bar| {
                         bar.spacing_mut().item_spacing.x = theme::SPACE_8;
-                        if let Some(texture) = &self.brand_texture {
-                            bar.add(egui::Image::new((
-                                texture.id(),
-                                Vec2::splat(theme::BRAND_ICON_SIZE),
-                            )));
-                        }
-                        bar.label(typography::brand_heading("BANDO HUB"));
+                        // Keep the visible mark and wordmark on ONE centered
+                        // baseline. Their private 2pt gap must not inherit
+                        // the wider global navigation button spacing.
+                        // Brand remains display-only (not a drag/click target).
+                        bar.horizontal_centered(|brand| {
+                            brand.spacing_mut().item_spacing.x = theme::SPACE_4 / 2.0;
+                            if let Some(texture) = &self.brand_texture {
+                                brand.add(egui::Image::new((
+                                    texture.id(),
+                                    Vec2::splat(theme::BRAND_ICON_SIZE),
+                                )));
+                            }
+                            brand.label(typography::brand_heading("BANDO HUB"));
+                        });
                         bar.add_space(theme::SPACE_12);
                         for page in Page::ALL {
                             let role = if self.page == page {
