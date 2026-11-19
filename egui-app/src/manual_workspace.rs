@@ -13,7 +13,7 @@ use crate::{gateway::{BandoGateway,ReadOperation},preview_store::WorkingReceptio
 fn text<'a>(value:&'a Value,key:&str)->&'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
 }
-fn list(value:&Value,key:&str)->&[Value] {
+fn list<'a>(value:&'a Value,key:&str)->&'a [Value] {
     value.get(key).and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[])
 }
 fn unique_id()->String {
