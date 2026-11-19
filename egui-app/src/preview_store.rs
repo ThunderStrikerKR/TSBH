@@ -53,7 +53,8 @@ impl PreviewStore {
                 return Err("egui 전용 DB 식별자가 다릅니다. 자동 마이그레이션하지 않습니다.".into());
             }
         } else {
-            conn.execute_batch(
+            let initialization = (|| {
+                conn.execute_batch(
                 "BEGIN IMMEDIATE;
                  CREATE TABLE preview_meta (
                      key TEXT PRIMARY KEY, value TEXT NOT NULL
@@ -68,8 +69,7 @@ impl PreviewStore {
                      revision INTEGER NOT NULL CHECK(revision >= 0),
                      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                  );"
-            ).map_err(|e| e.to_string())?;
-            let initial = (|| {
+                ).map_err(|e| e.to_string())?;
                 let full: Value = serde_json::from_str(
                     include_str!("../../src-tauri/resources/state-seed.json")
                 ).map_err(|e| format!("내장 상품 시드가 손상되었습니다: {e}"))?;
@@ -93,13 +93,17 @@ impl PreviewStore {
                     "INSERT INTO working_source(id,raw,revision) VALUES(1,'',0)",
                     [],
                 ).map_err(|e| e.to_string())?;
+                conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
                 Ok::<_, String>(())
             })();
-            if let Err(error) = initial {
+            if let Err(error) = initialization {
                 let _ = conn.execute_batch("ROLLBACK;");
+                drop(conn);
+                // Only a file that did NOT exist before this initialization
+                // can be discarded. Never remove an existing database.
+                let _ = fs::remove_file(&store.path);
                 return Err(error);
             }
-            conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
         }
         Ok(store)
     }
