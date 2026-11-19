@@ -122,7 +122,8 @@ struct PendingWorkingSync {
     source_raw: String,
     order_type: String,
     client_id: String,
-    authority_revision: u64,
+    authority_revision: Option<u64>,
+    submitted_manual: Option<serde_json::Value>,
     receiver: Receiver<Result<serde_json::Value,String>>,
 }
 
@@ -456,35 +457,35 @@ impl BandoEgui {
         let Some(source)=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row| row.id==id)).cloned()
         else{return};
-        if source.manual_model.is_some() {
-            self.working_sync_error=Some(
-                "수동 분류는 egui 미확정 초안에 보존됐습니다. 운영 저장은 수동 분류 안전 연동 후 사용하세요.".into()
-            );
-            return;
-        }
         let Some(client_id)=source.client_id.clone() else{
             self.working_sync_error=Some("거래처를 먼저 선택하세요.".into());
             return;
         };
-        let Some(quote)=source.pricing_preview.as_ref() else {
-            self.working_sync_error=Some("거래처 변경 창에서 Rust 금액을 재계산한 뒤 저장하세요.".into());
-            return;
-        };
-        if quote.get("sourceRaw").and_then(serde_json::Value::as_str)
-            !=Some(source.raw.as_str()) ||
-           quote.get("orderType").and_then(serde_json::Value::as_str)
-            !=Some(source.order_type.as_str()) ||
-           quote.get("clientId").and_then(serde_json::Value::as_str)
-            !=Some(client_id.as_str()) {
-            self.working_sync_error=Some("발주서 또는 거래처의 계산 근거가 달라졌습니다.".into());
-            return;
-        }
-        let Some(authority_revision)=quote.get("authorityRevision")
-            .and_then(serde_json::Value::as_u64) else {
-            self.working_sync_error=Some("Rust 운영 데이터 기준 버전이 누락되었습니다.".into());
-            return;
-        };
-        let request=serde_json::json!({
+        let manual=source.manual_model.clone();
+        let authority_revision=if manual.is_none(){
+            let Some(quote)=source.pricing_preview.as_ref() else{
+                self.working_sync_error=Some(
+                    "거래처 변경 창에서 Rust 금액을 재계산한 뒤 저장하세요.".into()
+                );
+                return;
+            };
+            if quote.get("sourceRaw").and_then(serde_json::Value::as_str)
+                !=Some(source.raw.as_str()) ||
+               quote.get("orderType").and_then(serde_json::Value::as_str)
+                !=Some(source.order_type.as_str()) ||
+               quote.get("clientId").and_then(serde_json::Value::as_str)
+                !=Some(client_id.as_str()) {
+                self.working_sync_error=Some("발주서 또는 거래처의 계산 근거가 달라졌습니다.".into());
+                return;
+            }
+            let Some(revision)=quote.get("authorityRevision")
+                .and_then(serde_json::Value::as_u64) else{
+                self.working_sync_error=Some("Rust 운영 데이터 기준 버전이 누락되었습니다.".into());
+                return;
+            };
+            Some(revision)
+        }else{None};
+        let mut request=serde_json::json!({
             "orderId":&source.id,
             "sourceRaw":&source.raw,
             "orderType":&source.order_type,
@@ -492,6 +493,9 @@ impl BandoEgui {
             "expectedAuthorityRevision":authority_revision,
             "expectedWorkingVersion":source.working_version,
         });
+        if let Some(model)=manual.as_ref(){
+            request["manualModel"]=model.clone();
+        }
         let (sender,receiver)=mpsc::channel();
         let gateway=Arc::clone(&self.gateway);
         self.working_sync=Some(PendingWorkingSync {
@@ -500,10 +504,24 @@ impl BandoEgui {
             order_type:source.order_type,
             client_id,
             authority_revision,
+            submitted_manual:manual,
             receiver,
         });
         std::thread::spawn(move || {
-            let _=sender.send(gateway.commit_working_reception(request));
+            let result=(||->Result<serde_json::Value,String>{
+                if request.get("manualModel").is_some(){
+                    // A draft without a quote receives a fresh read-only
+                    // master revision inside this worker. The native helper
+                    // compares it again within its IMMEDIATE transaction.
+                    let state=gateway.load_business_state()?;
+                    let revision=state.get("revision").and_then(
+                        serde_json::Value::as_u64
+                    ).ok_or("운영 DB revision을 확인하지 못했습니다.")?;
+                    request["expectedAuthorityRevision"]=serde_json::json!(revision);
+                }
+                gateway.commit_working_reception(request)
+            })();
+            let _=sender.send(result);
         });
         ctx.request_repaint_after(Duration::from_millis(100));
     }
