@@ -108,6 +108,7 @@ struct VerticalSplitDrag {
 struct PendingClientChange {
     order_id: String,
     source_raw: String,
+    order_type: String,
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
 }
 
@@ -203,7 +204,8 @@ impl BandoEgui {
                 self.source_save_error = Some("활성 발주서를 찾을 수 없습니다.".to_owned());
                 return;
             };
-            if active.raw != self.raw_source {
+            if active.raw != self.raw_source ||
+               active.order_type != self.order_type.as_str() {
                 active.analysis_raw = None;
                 active.analysis_evidence = None;
                 active.client_match = None;
@@ -332,10 +334,11 @@ impl BandoEgui {
         let target=client_id.to_owned();
         let order_id=row.id.clone();
         let source_raw=row.raw.clone();
+        let order_type=row.order_type.clone();
         let gateway=Arc::clone(&self.gateway);
         let (sender,receiver)=mpsc::channel();
         self.client_change=Some(PendingClientChange {
-            order_id,source_raw,receiver,
+            order_id,source_raw,order_type,receiver,
         });
         self.source_save_error=None;
         std::thread::spawn(move || {
@@ -358,7 +361,8 @@ impl BandoEgui {
             // Another order or edited original may never inherit an old
             // calculation, regardless of asynchronous completion order.
             if self.active_id.as_deref()!=Some(pending.order_id.as_str()) ||
-               self.raw_source!=pending.source_raw {
+               self.raw_source!=pending.source_raw ||
+               self.order_type.as_str()!=pending.order_type {
                 return;
             }
             match result {
