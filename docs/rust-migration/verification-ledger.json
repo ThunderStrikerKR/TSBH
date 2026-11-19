@@ -2379,8 +2379,8 @@
         "unit": "NOT_EXECUTED: no new broad regression suite; focused workflow_board formatting test added but not executed",
         "differential": "STATIC SOURCE REVIEW: React workflow action labels/VAT condition and egui button styles checked. Same common Emphasized role as New Order; all white button text Regular. No live UI claim.",
         "action": "NOT EXECUTED: real Windows GUI card width, click, fold, hover, scroll and mixed-draft presentation not yet observed",
-        "ci": "RUNNING: focused Windows Rust cargo check https://github.com/ThunderStrikerKR/TSBH/actions/runs/44635191975 for source ffc5b4d; later 82pt numeric style token not included in that run.",
-        "windows": "SKIPPED_BY_USER_REQUEST: Windows GUI inspection not required; source/compile only."
+        "ci": "PASS: Windows Tauri cargo check and standalone egui cargo check on workflow/CTA/VAT/product changes at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44635191975 (ffc5b4da); later restored workflow manage 82pt token is numeric-only and not part of that compile snapshot.",
+        "windows": "SKIPPED_BY_USER_REQUEST: no live Windows visual test; cannot claim exact rendered text fit."
       }
     }
   ],
