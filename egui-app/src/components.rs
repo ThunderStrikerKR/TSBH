@@ -4,7 +4,7 @@
 use eframe::egui::{self, Align, Color32, Frame, Layout, Response, RichText, Stroke, Ui, Vec2};
 use crate::theme;
 
-pub const LABEL_WIDTH: f32 = 84.0;
+pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 pub const FIELD_GAP: f32 = 8.0;
 pub const TABLE_ROW_HEIGHT: f32 = 42.0;
 pub const TABLE_HEADER_HEIGHT: f32 = 36.0;
@@ -55,7 +55,8 @@ pub fn labeled_field(
             Vec2::new(LABEL_WIDTH, theme::INPUT_HEIGHT),
             egui::Label::new(RichText::new(label).size(13.0).color(theme::SECONDARY)),
         );
-        ui.add_space(FIELD_GAP);
+        // egui horizontal layout already supplies the shared item gap.
+        // Avoid doubling it and unnecessarily shrinking long address fields.
         field(ui, value, kind, enabled)
     }).inner
 }
@@ -67,7 +68,7 @@ pub fn soft_divider(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 1.0), egui::Sense::hover());
     ui.painter().line_segment(
         [rect.left_top(), rect.right_top()],
-        Stroke::new(1.0, theme::DIVIDER),
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER),
     );
 }
 
@@ -90,7 +91,7 @@ pub fn record_card(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
         .fill(theme::PANEL)
         .stroke(Stroke::new(1.0, theme::BORDER))
         .corner_radius(theme::PANEL_RADIUS)
-        .inner_margin(12.0)
+        .inner_margin(theme::CARD_PADDING)
         .show(ui, content);
 }
 
