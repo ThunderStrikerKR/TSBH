@@ -1,4 +1,4 @@
-# Targeted Windows compile: Kakao owner attach access fix, WinEvent fallback, and early on_exit detach.
+# Targeted Windows compile: owner-only Kakao focus, bounded ad footer, stable visual alignment.
 name: Tauri native CLI executable compile check
 on:
   push:
