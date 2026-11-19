@@ -33,7 +33,7 @@ pub const HEADER_PADDING_X: i8 = 16;
 pub const BRAND_ICON_SIZE: f32 = 38.0;
 // Optical alignment of the visible red glyph within the PNG canvas.
 // Keep text and navigation on the original header centerline.
-pub const BRAND_ICON_OPTICAL_CENTER_Y: f32 = 3.0;
+pub const BRAND_ICON_OPTICAL_CENTER_Y: f32 = 2.0;
 // A small positive gap keeps the wordmark visually separate from the logo.
 // This affects only the brand slot, not navigation or header geometry.
 pub const BRAND_WORDMARK_GAP: f32 = 3.0;
