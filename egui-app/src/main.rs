@@ -305,7 +305,7 @@ impl BandoEgui {
                         self.accept_clipboard_text(text, order_type, ctx);
                     }
                     Ok(ClipboardReceipt::Ocr { text, image }) => {
-                        if text.len() > 20_000 {
+                        if text.chars().count() > 20_000 {
                             self.clipboard_error = Some(
                                 "발주 원문은 최대 20,000자까지 입력할 수 있습니다.".into()
                             );
@@ -348,7 +348,7 @@ impl BandoEgui {
     /// to SQLite or sent to the Rust business engine before acceptance.
     fn show_ocr_review(&mut self, ctx: &egui::Context) {
         let mut close = false;
-        let mut apply: Option<(String, OrderType)> = None;
+        let mut apply: Option<(String, OrderType, bool)> = None;
         if let Some(review) = self.ocr_review.as_mut() {
             let mut open = true;
             egui::Window::new("OCR 문자 인식 검토")
@@ -384,26 +384,35 @@ impl BandoEgui {
                             close = true;
                         }
                         let can_apply = !review.edited_text.trim().is_empty()
-                            && review.edited_text.len() <= 20_000;
+                            && review.edited_text.chars().count() <= 20_000;
                         if theme::action(ui, "원문에 추가", ButtonRole::Standard, can_apply).clicked() {
                             let appended = if self.raw_source.trim().is_empty() {
                                 review.edited_text.trim().to_owned()
                             } else {
                                 format!("{}\n{}", self.raw_source.trim_end(), review.edited_text.trim())
                             };
-                            apply = Some((appended, review.order_type));
+                            apply = Some((appended, review.order_type, false));
                         }
                         if theme::action(ui, "원문 교체", ButtonRole::Primary, can_apply).clicked() {
-                            apply = Some((review.edited_text.trim().to_owned(), review.order_type));
+                            apply = Some((
+                                review.edited_text.trim().to_owned(),
+                                review.order_type, true
+                            ));
                         }
                     });
                 });
             if !open { close = true; }
         }
-        if let Some((raw, kind)) = apply {
+        if let Some((raw, kind, replacing)) = apply {
             self.ocr_review = None;
             self.discard_ocr_confirm = false;
-            self.accept_clipboard_text(raw, kind, ctx);
+            if replacing {
+                self.accept_clipboard_text(raw, kind, ctx);
+            } else {
+                // Append preserves the original React behavior: no redundant
+                // replacement confirmation because the old source remains.
+                self.apply_intake_text(raw, kind, ctx);
+            }
         } else if close {
             if self.ocr_review.as_ref().is_some_and(|review|
                 review.edited_text != review.original_text
