@@ -52,7 +52,7 @@ pub fn labeled_field(
     ui.horizontal(|ui| {
         ui.add_sized(
             Vec2::new(LABEL_WIDTH, theme::INPUT_HEIGHT),
-            egui::Label::new(RichText::new(label).size(theme::FONT_FIELD_LABEL).color(theme::SECONDARY)),
+            egui::Label::new(theme::field_label(label)),
         );
         // egui horizontal layout already supplies the shared item gap.
         // Avoid doubling it and unnecessarily shrinking long address fields.
@@ -133,7 +133,7 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
         soft_divider(ui);
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(label).size(theme::FONT_FIELD_LABEL).color(theme::SECONDARY));
+            ui.label(theme::field_label(label));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(RichText::new(value).size(theme::FONT_SECTION_HEADING).strong().color(theme::TEXT));
             });
@@ -194,7 +194,7 @@ pub fn table_header(ui: &mut Ui, columns: &[(&str, f32)]) {
                     ui.add_sized(
                         Vec2::new(*width, TABLE_HEADER_HEIGHT - 8.0),
                         egui::Label::new(
-                            RichText::new(*title).size(theme::FONT_FIELD_LABEL).strong().color(theme::SECONDARY),
+                            theme::field_label(title),
                         ),
                     );
                 }
