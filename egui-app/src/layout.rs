@@ -148,6 +148,20 @@ impl LayoutState {
         (first, space - first)
     }
 
+    /// Partition the upper half of the details column. Its lower edge is
+    /// derived from the same vertical_heights() result as the adjacent
+    /// source/message pane, so their shared horizontal rule cannot drift.
+    pub fn detail_upper_heights(&self, available: f32) -> (f32, f32) {
+        let (shared_upper, _) = self.vertical_heights(available);
+        let budget = (shared_upper - SPLITTER).max(0.0);
+        let review = if budget >= 330.0 {
+            (available * 0.27).clamp(150.0, budget - 180.0)
+        } else {
+            budget * (150.0 / 330.0)
+        };
+        (review, (budget - review).max(0.0))
+    }
+
     pub fn resize_vertical(&mut self, current_first: f32, delta: f32, available: f32) {
         let space = (available - SPLITTER).max(SOURCE_MIN + MESSAGE_MIN);
         let first = (current_first + delta).clamp(SOURCE_MIN, space - MESSAGE_MIN);
