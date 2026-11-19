@@ -29,6 +29,8 @@ mod manual_product_search;
 mod manual_source_view;
 mod kakao_context;
 mod kakao_dock;
+mod settings_store;
+mod settings_view;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
@@ -162,6 +164,9 @@ struct BandoEgui {
     source_save_error: Option<String>,
     client_chooser: Option<ClientChooser>,
     client_manager: Option<client_manager::ClientManager>,
+    settings_view: Option<settings_view::SettingsView>,
+    settings_pending_page: Option<Page>,
+    settings_pending_save: bool,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
     client_change: Option<PendingClientChange>,
     working_sync: Option<PendingWorkingSync>,
@@ -214,6 +219,9 @@ impl Default for BandoEgui {
             source_save_error: None,
             client_chooser: None,
             client_manager: None,
+            settings_view: None,
+            settings_pending_page: None,
+            settings_pending_save: false,
             manual_workspace: None,
             client_change: None,
             working_sync: None,
@@ -1380,10 +1388,17 @@ impl BandoEgui {
                                 // dispose of an unsaved client draft.
                                 if !self.client_manager.as_ref()
                                     .is_some_and(|manager|manager.has_modal()) {
-                                    // React HubShell keeps the Kakao dock
-                                    // outside the per-tab content. Navigation
-                                    // must NOT disconnect an OS window.
-                                    self.page = page;
+                                    // Same page-leave guard as React SettingsView:
+                                    // a modified settings draft is never lost
+                                    // by clicking another global navigation tab.
+                                    if self.page==Page::Settings && page!=Page::Settings &&
+                                        self.settings_view.as_ref().is_some_and(|view|view.dirty()){
+                                        self.settings_pending_page=Some(page);
+                                        self.settings_pending_save=false;
+                                    }else{
+                                        // Kakao HWND ownership survives tab changes.
+                                        self.page=page;
+                                    }
                                 }
                             }
                         }
@@ -2760,9 +2775,59 @@ impl BandoEgui {
         }
     }
 
+    fn show_settings_leave_guard(&mut self,ctx:&egui::Context,work_area:Rect){
+        let Some(next)=self.settings_pending_page else{return;};
+        let Some(view)=self.settings_view.as_mut() else{
+            self.settings_pending_page=None;
+            return;
+        };
+        if self.settings_pending_save{
+            if view.busy(){return;}
+            if !view.dirty(){
+                self.page=next;
+                self.settings_pending_page=None;
+                self.settings_pending_save=false;
+                return;
+            }
+            // A failed save keeps the editor open and the user's draft.
+            self.settings_pending_save=false;
+        }
+        components::modal_backdrop(ctx,"settings-page-leave-backdrop",false);
+        components::decision_window(
+            "저장하지 않은 변경사항","settings-global-leave",work_area
+        ).show(ctx,|ui|{
+            ui.label(typography::body(
+                "설정에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
+            ));
+            ui.add_space(theme::SPACE_12);
+            ui.horizontal(|actions|{
+                if theme::action(actions,"취소",ButtonRole::Standard,
+                    !view.busy()).clicked(){
+                    self.settings_pending_page=None;
+                }
+                if theme::action(actions,"저장 안 함",ButtonRole::Standard,
+                    !view.busy()).clicked(){
+                    view.discard();
+                    self.page=next;
+                    self.settings_pending_page=None;
+                }
+                if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
+                    !view.busy()&&!view.read_only()).clicked(){
+                    self.settings_pending_save=true;
+                    view.save(Arc::clone(&self.gateway),ctx.clone());
+                }
+            });
+        });
+    }
+
     fn other_page(&mut self, ctx: &egui::Context) {
         if self.page==Page::Clients && self.client_manager.is_none() {
             self.client_manager=Some(client_manager::ClientManager::new(
+                Arc::clone(&self.gateway),ctx.clone()
+            ));
+        }
+        if self.page==Page::Settings && self.settings_view.is_none(){
+            self.settings_view=Some(settings_view::SettingsView::new(
                 Arc::clone(&self.gateway),ctx.clone()
             ));
         }
@@ -2842,12 +2907,18 @@ impl BandoEgui {
                                 main.set_width(right.width());
                                 main.set_height(right.height());
                                 Frame::new().inner_margin(theme::SPACE_16).show(main,|page|{
-                                    if self.page==Page::Clients {
-                                        if let Some(manager)=self.client_manager.as_mut() {
-                                            manager.show_page(page,Arc::clone(&self.gateway));
+                                    match self.page{
+                                        Page::Clients=>{
+                                            if let Some(manager)=self.client_manager.as_mut(){
+                                                manager.show_page(page,Arc::clone(&self.gateway));
+                                            }
                                         }
-                                    }else{
-                                        page.label(typography::page_heading(self.page.label()));
+                                        Page::Settings=>{
+                                            if let Some(settings)=self.settings_view.as_mut(){
+                                                settings.show_page(page,Arc::clone(&self.gateway));
+                                            }
+                                        }
+                                        _=>{page.label(typography::page_heading(self.page.label()));}
                                     }
                                 });
                             }
@@ -2922,6 +2993,13 @@ impl eframe::App for BandoEgui {
         if self.page == Page::Reception {
             self.show_client_chooser(ctx,work_area);
             self.show_manual_workspace(ctx,work_area);
+        } else if self.page==Page::Settings {
+            if let Some(settings)=self.settings_view.as_mut(){
+                settings.show_tab_confirmation(
+                    ctx,work_area,Arc::clone(&self.gateway)
+                );
+            }
+            self.show_settings_leave_guard(ctx,work_area);
         } else if self.page==Page::Clients {
             if let Some(manager)=self.client_manager.as_mut() {
                 if manager.has_modal() {
