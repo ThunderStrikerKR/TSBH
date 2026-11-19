@@ -9,6 +9,7 @@ mod native_engine;
 
 use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, PANEL_GAP};
+use std::sync::mpsc::{self, Receiver};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
@@ -74,6 +75,9 @@ struct BandoEgui {
     analysis: Option<serde_json::Value>,
     analysis_error: Option<String>,
     selected_recipient: usize,
+    analysis_request: u64,
+    analysis_pending: bool,
+    analysis_receiver: Option<Receiver<(u64, Result<serde_json::Value, String>)>>,
 }
 
 impl Default for BandoEgui {
@@ -91,11 +95,64 @@ impl Default for BandoEgui {
             analysis: None,
             analysis_error: None,
             selected_recipient: 0,
+            analysis_request: 0,
+            analysis_pending: false,
+            analysis_receiver: None,
         }
     }
 }
 
 impl BandoEgui {
+    // Run parsing outside the egui frame loop. Any changed source invalidates
+    // the previous result and its request sequence, so stale replies are ignored.
+    fn start_source_analysis(&mut self, context: egui::Context) {
+        self.analysis_request = self.analysis_request.wrapping_add(1);
+        let request = self.analysis_request;
+        let source = self.raw_source.clone();
+        self.analysis = None;
+        self.analysis_error = None;
+        self.analysis_pending = true;
+        let (sender, receiver) = mpsc::channel();
+        self.analysis_receiver = Some(receiver);
+        std::thread::spawn(move || {
+            let result = native_engine::analyze_raw(&source);
+            let _ = sender.send((request, result));
+            context.request_repaint();
+        });
+    }
+
+    fn clear_source_analysis(&mut self) {
+        self.analysis_request = self.analysis_request.wrapping_add(1);
+        self.analysis_receiver = None;
+        self.analysis_pending = false;
+        self.analysis = None;
+        self.analysis_error = None;
+        self.selected_recipient = 0;
+    }
+
+    fn poll_source_analysis(&mut self) {
+        let complete = self.analysis_receiver.as_ref()
+            .and_then(|receiver| receiver.try_recv().ok());
+        if let Some((request, result)) = complete {
+            self.analysis_receiver = None;
+            if request != self.analysis_request {
+                return;
+            }
+            self.analysis_pending = false;
+            match result {
+                Ok(analysis) => {
+                    self.analysis = Some(analysis);
+                    self.analysis_error = None;
+                    self.selected_recipient = 0;
+                }
+                Err(error) => {
+                    self.analysis = None;
+                    self.analysis_error = Some(error);
+                }
+            }
+        }
+    }
+
     fn top_bar(&mut self, ctx: &egui::Context) {
         let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
         egui::TopBottomPanel::top("global_navigation")
@@ -439,6 +496,7 @@ impl BandoEgui {
     fn source_section(&mut self, ui: &mut Ui, height: f32) {
         let mut new_reception = false;
         let mut begin_input = false;
+        let mut analyze_requested = false;
         Self::section_with_header(ui, "발주 원문", height, |ui| {
             if theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, true)
                 .on_hover_text("프리뷰: 입력한 원문과 분석 결과만 초기화합니다.")
@@ -456,29 +514,18 @@ impl BandoEgui {
                         .hint_text("발주서 원문을 여기에 입력하거나 붙여넣으세요."),
                 );
                 if editor.changed() {
-                    // Do not display the previous order's stale recognition.
-                    self.analysis = None;
-                    self.analysis_error = None;
-                    self.selected_recipient = 0;
+                    self.clear_source_analysis();
                 }
                 ui.horizontal(|ui| {
                     if theme::action(
-                        ui, "원문 분석", ButtonRole::Emphasized,
-                        !self.raw_source.trim().is_empty(),
+                        ui,
+                        if self.analysis_pending { "분석 중…" } else { "원문 분석" },
+                        ButtonRole::Emphasized,
+                        !self.analysis_pending && !self.raw_source.trim().is_empty(),
                     ).clicked() {
-                        match native_engine::analyze_raw(&self.raw_source) {
-                            Ok(result) => {
-                                self.analysis = Some(result);
-                                self.analysis_error = None;
-                                self.selected_recipient = 0;
-                            }
-                            Err(error) => {
-                                self.analysis = None;
-                                self.analysis_error = Some(error);
-                            }
-                        }
+                        analyze_requested = true;
                     }
-                    ui.label(theme::caption("결과는 메모리에만 보관 · 주문 저장 안 함"));
+                    ui.label(theme::caption("기존 Rust 인식 엔진 · 운영 DB 미사용"));
                 });
             } else if self.sample {
                 theme::nested_frame().show(ui, |ui| {
@@ -523,12 +570,13 @@ impl BandoEgui {
         });
         if new_reception {
             self.raw_source.clear();
-            self.analysis = None;
-            self.analysis_error = None;
-            self.selected_recipient = 0;
+            self.clear_source_analysis();
             self.source_editing = false;
         } else if begin_input {
             self.source_editing = true;
+        }
+        if analyze_requested {
+            self.start_source_analysis(ui.ctx().clone());
         }
     }
 
@@ -704,6 +752,7 @@ impl BandoEgui {
 
 impl eframe::App for BandoEgui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_source_analysis();
         self.top_bar(ctx);
         egui::TopBottomPanel::bottom("preview_mode")
             .exact_height(36.0)
