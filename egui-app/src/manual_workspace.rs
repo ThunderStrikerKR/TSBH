@@ -323,7 +323,28 @@ impl ManualWorkspace {
                     cols[0].label(typography::subsection_heading("붙여넣은 내용"));
                     egui::ScrollArea::vertical().id_salt("manual-source-blocks")
                         .max_height(465.0).show(&mut cols[0],|ui|{
+                            // Display the ENTIRE original in native source
+                            // order, including text Rust did not classify.
+                            // Only exact UTF-16 bounded native blocks become
+                            // selectable; omitted text is never reclassified
+                            // heuristically in egui.
+                            let mut cursor=0usize;
                             for block in &blocks {
+                                let (Some(a),Some(b))=(
+                                    block.get("start").and_then(Value::as_u64),
+                                    block.get("end").and_then(Value::as_u64)
+                                )else{continue};
+                                let (Some((begin,_)),Some((end,_)))=(
+                                    crate::source_highlight::boundary(&self.raw,a as usize),
+                                    crate::source_highlight::boundary(&self.raw,b as usize)
+                                )else{continue};
+                                if begin<cursor || end<=begin || end>self.raw.len() ||
+                                   &self.raw[begin..end]!=text(block,"text") {
+                                    continue;
+                                }
+                                if cursor<begin {
+                                    ui.label(typography::body(&self.raw[cursor..begin]));
+                                }
                                 let id=text(block,"id");
                                 let fragment=text(block,"text");
                                 let assigned=assignments.get(id).is_some();
@@ -353,10 +374,14 @@ impl ManualWorkspace {
                                         }
                                     }
                                 }
+                                cursor=end;
+                            }
+                            if cursor<self.raw.len() {
+                                ui.label(typography::body(&self.raw[cursor..]));
                             }
                             if blocks.is_empty(){
                                 ui.label(typography::caption(
-                                    "Rust가 분리한 원문 블록이 없습니다."
+                                    "Rust가 분리한 원문 블록이 없습니다. 직접 입력으로 수정할 수 있습니다."
                                 ));
                             }
                         });
