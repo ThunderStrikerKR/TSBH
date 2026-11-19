@@ -1462,64 +1462,94 @@ impl BandoEgui {
     }
 
     fn kakao_pane(&mut self, ui: &mut Ui) {
-        // Direct port of React HubShell's Kakao area:
-        // Connect when idle; Together / Split / Disconnect when connected.
-        // The OS windows belong ONLY below the visible control toolbar.
-        // Dealer matching still occurs separately upon intake.
-        let pane_width=ui.available_width();
-        let pane_height=ui.available_height();
+        // React HubShell owns a FULL Kakao slot, with only a one-point
+        // border. The former docked_pane_frame() added 16pt on all sides and
+        // calculated different Connect and connected HWND regions. Neither
+        // is compatible with the exact native rectangle used by React.
         let scale=ui.ctx().pixels_per_point();
         let connected=self.kakao_dock.connected();
         let current_mode=self.kakao_dock.mode();
-        let mut region=ui.available_rect_before_wrap();
+        let mut region=ui.max_rect();
         let mut connect=false;
         let mut disconnect=false;
         let mut next_mode=None;
-        theme::docked_pane_frame().show(ui,|pane|{
-            let inset=2.0*theme::SECTION_PADDING;
-            let inner_width=(pane_width-inset).max(1.0);
-            let inner_height=(pane_height-inset).max(1.0);
-            pane.set_min_size(Vec2::new(inner_width,inner_height));
+        theme::kakao_slot_frame().show(ui,|pane|{
+            let slot=pane.max_rect();
+            pane.set_min_size(slot.size());
+            // Match .kakao-panel-toolbar (34px) and its 1px bottom border.
+            // The same target is used on the Connect click and every later
+            // sync, so an external HWND never shifts between those frames.
+            region=Rect::from_min_max(
+                egui::pos2(
+                    slot.left(),
+                    (slot.top()+theme::KAKAO_TOOLBAR_HEIGHT
+                        +theme::SOFT_DIVIDER_WIDTH).min(slot.bottom())
+                ),
+                slot.max,
+            );
             if connected {
-                pane.horizontal(|toolbar|{
-                    toolbar.spacing_mut().item_spacing.x=theme::SPACE_4;
-                    let mode_role=|active|if active{
-                        ButtonRole::ActiveManagementTab
-                    }else{ButtonRole::ManagementTab};
-                    if theme::action(toolbar,"함께 보기",
-                        mode_role(current_mode==kakao_dock::DockMode::Together),true
-                    ).clicked(){
-                        next_mode=Some(kakao_dock::DockMode::Together);
-                    }
-                    if theme::action(toolbar,"나누어 보기",
-                        mode_role(current_mode==kakao_dock::DockMode::Split),true
-                    ).clicked(){
-                        next_mode=Some(kakao_dock::DockMode::Split);
-                    }
-                    toolbar.with_layout(Layout::right_to_left(Align::Center),|right|{
-                        if theme::action(right,"카카오톡 연결 해제",
-                            ButtonRole::Quiet,true
-                        ).on_hover_text("카카오톡 창을 원래 위치로 복원").clicked(){
-                            disconnect=true;
+                let toolbar_rect=Rect::from_min_size(
+                    slot.min,Vec2::new(slot.width(),theme::KAKAO_TOOLBAR_HEIGHT)
+                );
+                pane.scope_builder(
+                    UiBuilder::new().id_salt("kakao-native-toolbar")
+                        .max_rect(toolbar_rect)
+                        .layout(Layout::left_to_right(Align::Center)),
+                    |toolbar|{
+                        toolbar.set_clip_rect(toolbar_rect);
+                        toolbar.spacing_mut().item_spacing.x=theme::SPACE_4;
+                        toolbar.add_space(theme::KAKAO_TOOLBAR_PAD_X);
+                        let mode_role=|active|if active{
+                            ButtonRole::ActiveKakaoControl
+                        }else{ButtonRole::KakaoControl};
+                        if theme::action(toolbar,"함께 보기",
+                            mode_role(current_mode==kakao_dock::DockMode::Together),true
+                        ).clicked(){
+                            next_mode=Some(kakao_dock::DockMode::Together);
                         }
-                    });
-                });
-                components::soft_divider(pane);
-                // The Win32 surface must never obscure the three actions.
-                region=pane.available_rect_before_wrap();
-                pane.allocate_rect(region,Sense::hover());
+                        if theme::action(toolbar,"나누어 보기",
+                            mode_role(current_mode==kakao_dock::DockMode::Split),true
+                        ).clicked(){
+                            next_mode=Some(kakao_dock::DockMode::Split);
+                        }
+                        toolbar.with_layout(
+                            Layout::right_to_left(Align::Center),|right|{
+                                right.add_space(theme::KAKAO_TOOLBAR_PAD_X);
+                                if theme::action(right,"카카오톡 연결 해제",
+                                    ButtonRole::KakaoControl,true
+                                ).clicked(){
+                                    disconnect=true;
+                                }
+                            }
+                        );
+                    },
+                );
+                let line_y=slot.top()+theme::KAKAO_TOOLBAR_HEIGHT;
+                pane.painter().line_segment(
+                    [egui::pos2(slot.left(),line_y),
+                        egui::pos2(slot.right(),line_y)],
+                    egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+                );
             }else{
-                region=pane.available_rect_before_wrap();
-                pane.vertical_centered(|center|{
-                    center.add_space(
-                        ((inner_height-theme::ACTION_EMPHASIZED_HEIGHT)/2.0).max(0.0)
-                    );
-                    if theme::action(center,"카카오톡 연결",
-                        ButtonRole::Emphasized,true
-                    ).clicked(){
-                        connect=true;
-                    }
-                });
+                // The unconnected React slot has no toolbar, and its single
+                // Connect control stays centered in the actual slot.
+                pane.scope_builder(
+                    UiBuilder::new().id_salt("kakao-native-connect")
+                        .max_rect(slot)
+                        .layout(Layout::top_down(Align::Center)),
+                    |center|{
+                        center.set_clip_rect(slot);
+                        center.add_space(
+                            ((slot.height()-theme::ACTION_EMPHASIZED_HEIGHT)/2.0)
+                                .max(0.0)
+                        );
+                        if theme::action(center,"카카오톡 연결",
+                            ButtonRole::Emphasized,true
+                        ).clicked(){
+                            connect=true;
+                        }
+                    },
+                );
             }
         });
         if disconnect {
@@ -1528,17 +1558,12 @@ impl BandoEgui {
             return;
         }
         if connect {
-            // Original React useAppModel::docking uses OS-verified CHAT or
-            // MAIN directly. No chat chooser or status-only connection.
+            // The dock receives the future connected BODY rectangle on the
+            // first click, not the larger placeholder rectangle.
             match self.kakao_dock.connect(region,scale){
-                Ok(())=>{
-                    self.kakao_connected=true;
-                        }
+                Ok(())=>self.kakao_connected=true,
                 Err(reason)=>{
                     self.kakao_connected=false;
-                    // The React dock has no Kakao-specific alert popup.
-                    // Preserve the failure in diagnostic output only; the
-                    // actual connection stays inactive.
                     eprintln!("[BANDO HUB] 카카오톡 연결 실패: {reason}");
                 }
             }
@@ -1554,9 +1579,7 @@ impl BandoEgui {
             self.kakao_dock.sync(region,scale)
         };
         match result {
-            Ok(())=>{
-                self.kakao_connected=self.kakao_dock.connected();
-                }
+            Ok(())=>self.kakao_connected=self.kakao_dock.connected(),
             Err(reason)=>{
                 self.kakao_connected=self.kakao_dock.connected();
                 eprintln!("[BANDO HUB] 카카오톡 배치 실패: {reason}");
