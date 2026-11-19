@@ -1,4 +1,4 @@
-# Targeted Windows compile: latest SettingsView native archive/backup, Excel directory, git build ID, account store.
+# Targeted Windows compile: shared native settings account validator and React-equivalent mouse-help popovers.
 name: Tauri native CLI executable compile check
 on:
   push:
