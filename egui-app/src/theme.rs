@@ -177,6 +177,67 @@ fn action_with_min_width(
     }).inner
 }
 
+/// Frameless Windows controls share a single 32pt hit area and precise
+/// vector marks. Unicode "-", "□" and "×" had different font baselines.
+#[derive(Clone, Copy)]
+pub enum WindowControl {
+    Minimize,
+    Maximize,
+    Close,
+}
+
+pub fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
+    let response = ui.scope(|ui| {
+        ui.spacing_mut().button_padding = Vec2::ZERO;
+        ui.add(
+            egui::Button::new("")
+                .fill(Color32::TRANSPARENT)
+                .stroke(Stroke::NONE)
+                .min_size(Vec2::splat(ACTION_QUIET_HEIGHT))
+        )
+    }).inner;
+    if response.hovered() {
+        ui.painter().rect_filled(response.rect, 4.0, RAISED);
+    }
+    let center = response.rect.center();
+    let ink = if response.hovered() { TEXT } else { SECONDARY };
+    let line = Stroke::new(1.35, ink);
+    let painter = ui.painter();
+    match control {
+        WindowControl::Minimize => {
+            painter.line_segment(
+                [egui::pos2(center.x - 5.0, center.y),
+                 egui::pos2(center.x + 5.0, center.y)], line
+            );
+        }
+        WindowControl::Maximize => {
+            let left = center.x - 5.0;
+            let right = center.x + 5.0;
+            let top = center.y - 5.0;
+            let bottom = center.y + 5.0;
+            for (a, b) in [
+                (egui::pos2(left, top), egui::pos2(right, top)),
+                (egui::pos2(right, top), egui::pos2(right, bottom)),
+                (egui::pos2(right, bottom), egui::pos2(left, bottom)),
+                (egui::pos2(left, bottom), egui::pos2(left, top)),
+            ] {
+                painter.line_segment([a, b], line);
+            }
+        }
+        WindowControl::Close => {
+            painter.line_segment(
+                [egui::pos2(center.x - 5.0, center.y - 5.0),
+                 egui::pos2(center.x + 5.0, center.y + 5.0)], line
+            );
+            painter.line_segment(
+                [egui::pos2(center.x + 5.0, center.y - 5.0),
+                 egui::pos2(center.x - 5.0, center.y + 5.0)], line
+            );
+        }
+    }
+    response
+}
+
 pub fn divider(ui: &mut Ui) {
     ui.add_space(4.0);
     let (rect, _) = ui.allocate_exact_size(
