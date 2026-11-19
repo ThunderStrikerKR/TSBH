@@ -359,8 +359,10 @@ impl BandoEgui {
     ) {
         let width = ui.available_width();
         theme::section_frame().show(ui, |ui| {
-            ui.set_min_width((width - 2.0 * theme::SECTION_PADDING).max(60.0));
-            ui.set_min_height((minimum_height - 2.0 * theme::SECTION_PADDING).max(48.0));
+            let frame_inset =
+                2.0 * (theme::SECTION_PADDING + theme::FRAME_STROKE_WIDTH);
+            ui.set_min_width((width - frame_inset).max(60.0));
+            ui.set_min_height((minimum_height - frame_inset).max(48.0));
             // The section header owns its vertical rhythm. Eguis implicit
             // item spacing must not be added on top of explicit gaps.
             let body_item_spacing = theme::SPACING;
@@ -390,8 +392,10 @@ impl BandoEgui {
         let pane_width = ui.available_width();
         let pane_height = ui.available_height();
         theme::section_frame().show(ui, |ui| {
-            let inner_width = (pane_width - 2.0 * theme::SECTION_PADDING - 2.0).max(1.0);
-            let inner_height = (pane_height - 2.0 * theme::SECTION_PADDING - 2.0).max(1.0);
+            let frame_inset =
+                2.0 * (theme::SECTION_PADDING + theme::FRAME_STROKE_WIDTH);
+            let inner_width = (pane_width - frame_inset).max(1.0);
+            let inner_height = (pane_height - frame_inset).max(1.0);
             ui.set_min_size(Vec2::new(inner_width, inner_height));
             ui.vertical_centered(|ui| {
                 ui.add_space(
