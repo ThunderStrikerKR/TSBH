@@ -75,12 +75,12 @@ struct BandoEgui {
     dragging_vertical: Option<VerticalSplitDrag>,
     raw_source: String,
     source_editing: bool,
-    analysis: Option<reception_service::NativeAnalysis>,
+    analysis: Option<reception_service::ReceptionAnalysis>,
     analysis_error: Option<String>,
     selected_recipient: usize,
     analysis_request: u64,
     analysis_pending: bool,
-    analysis_receiver: Option<Receiver<(u64, Result<reception_service::NativeAnalysis, String>)>>,
+    analysis_receiver: Option<Receiver<(u64, Result<reception_service::ReceptionAnalysis, String>)>>,
 }
 
 impl Default for BandoEgui {
@@ -791,7 +791,7 @@ impl BandoEgui {
                                 if let Some(price) = price_reference {
                                     if let Some(retail) = price.retail {
                                         ui.label(theme::caption(&format!(
-                                            "기본 시드 소매가 참고: {} · 청구금액 아님",
+                                            "소매가 참고: {} · 청구금액 아님",
                                             reception_service::display_won(retail)
                                         )));
                                     } else if let Some(error) = &price.error {
@@ -799,7 +799,7 @@ impl BandoEgui {
                                             format!("기본 소매가 조회 오류: {error}"));
                                     } else {
                                         ui.label(theme::caption(
-                                            "기본 시드 가격 없음 또는 상품·옵션 미확정"
+                                            "소매가 정보 없음 또는 상품·옵션 미확정"
                                         ));
                                     }
                                 }
