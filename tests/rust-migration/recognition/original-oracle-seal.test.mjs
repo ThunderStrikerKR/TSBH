@@ -20,7 +20,7 @@ test("shipping oracle is exact original pre-migration Git blob", () => {
 });
 test("frozen November 6 shipping documents the removed historical check", () => {
   assert.match(shipping, /r\.packable === false && q > 1/);
-  const currentShipping = readFileSync(new URL("../../../src/shipping.ts", import.meta.url), "utf8");
+  const currentShipping = readFileSync(new URL("../oracles/legacy-shipping.ts", import.meta.url), "utf8");
   const rustShipping = readFileSync(new URL("../../../src-tauri/src/business_core/rules/shipping.rs", import.meta.url), "utf8");
   assert.doesNotMatch(currentShipping, /r\.packable/);
   assert.doesNotMatch(rustShipping, /field\(rule,"packable"\)/);

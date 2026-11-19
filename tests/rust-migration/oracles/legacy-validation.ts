@@ -1,7 +1,8 @@
-import { contactProblem, validContact } from "./contact.js";
-import { deliveryRequirements } from "./delivery-requirements.js";
-import { internalModel } from "./matching.js";
-import type { IssueResolution, Item, Order, Recipient, ValidationIssue } from "./types.js";
+/** Archived TypeScript comparison oracle. Never imported by the operational app. */
+import { contactProblem, validContact } from "../../../src/contact.js";
+import { deliveryRequirements } from "../../../src/delivery-requirements.js";
+import { internalModel } from "../../../src/matching.js";
+import type { IssueResolution, Item, Order, Recipient, ValidationIssue } from "../../../src/types.js";
 export const issueId = (o: Order, r: Recipient | undefined, kind: string, item?: Item) =>
   ["issue", o.id, r?.id ?? "order", item?.id ?? "recipient", kind].join(":");
 

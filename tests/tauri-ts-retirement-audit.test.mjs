@@ -19,7 +19,7 @@ test("TypeScript business retirement audit reads actual app source import graph"
     "Obsolete standalone price workbook must be retired to a comparison-only oracle");
   assert.ok(Number.isInteger(output.reachableLegacyModules));
   assert.ok(output.reachableLegacyModules>=0);
-  assert.equal(output.retiredToTestOracle,19,
+  assert.equal(output.retiredToTestOracle,25,
     "Retired TypeScript business engines must remain outside production src");
   assert.ok(output.inventory.some(row=>
     row.module==="src/shipping.ts" && !row.reachableFromApp),
@@ -28,6 +28,12 @@ test("TypeScript business retirement audit reads actual app source import graph"
     row.module==="src/automatic-message.ts"&&!row.exists&&!row.reachableFromApp),
     "Historical message generator must no longer exist in production src");
   const retired=[
+    ["parser.ts","legacy-parser.ts"],
+    ["validation.ts","legacy-validation.ts"],
+    ["workflow.ts","legacy-workflow.ts"],
+    ["shipping.ts","legacy-shipping.ts"],
+    ["hub-messages.ts","legacy-hub-messages.ts"],
+    ["receipt.ts","legacy-receipt.ts"],
     ["automatic-message.ts","automatic-message.ts"],
     ["message-model.ts","message-model.ts"],
     ["group-trash.ts","group-trash.ts"],

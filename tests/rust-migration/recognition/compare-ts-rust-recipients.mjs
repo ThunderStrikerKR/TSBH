@@ -4,7 +4,7 @@
  * stdin {phase:"prepare"|"compare",state,client,cases:[{id,raw,rust?,order?,rustReanalyzed?}]}
  */
 import { tsImport } from "tsx/esm/api";
-const { parseEvidence,reanalyzeWithAliases }=await tsImport("../../../src/parser.ts",import.meta.url);
+const { parseEvidence,reanalyzeWithAliases }=await tsImport("../oracles/legacy-parser.ts",import.meta.url);
 let text="";
 for await(const chunk of process.stdin)text+=chunk;
 const data=JSON.parse(text);

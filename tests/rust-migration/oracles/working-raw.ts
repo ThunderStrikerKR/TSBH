@@ -2,8 +2,8 @@
  * No application React module may import this implementation.
  */
 import type { Order, State } from "../../../src/types.js";
-import { orderIssues } from "../../../src/validation.js";
-import { applyOrderRawEdit } from "../../../src/workflow.js";
+import { orderIssues } from "./legacy-validation.js";
+import { applyOrderRawEdit } from "./legacy-workflow.js";
 const rawCorrectionIssueKinds = new Set([
   "NAME", "ADDRESS", "CONTACT", "CONTACT_INVALID",
   "MODEL", "QUANTITY_MISSING", "QUANTITY_INVALID", "ITEM", "UNASSIGNED_EVIDENCE",

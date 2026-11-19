@@ -6,7 +6,7 @@ import { companyClient, companyParty } from "../../../src/order-types.js";
 import { retailIssues } from "./retail-validation.js";
 import { blankOrder } from "../../../src/seed.js";
 import type { Order, State, OrderType } from "../../../src/types.js";
-import { stageIssues } from "../../../src/workflow.js";
+import { stageIssues } from "./legacy-workflow.js";
 
 export function newReception(clientId = "", orderType: OrderType = "AGENCY"): Order {
   return { ...blankOrder(clientId), orderType, receptionVersion: 1 };

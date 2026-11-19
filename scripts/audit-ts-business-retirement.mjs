@@ -17,6 +17,12 @@ const root=fileURLToPath(new URL("../",import.meta.url));
 const src=join(root,"src");
 const liveEntry=join(src,"main.tsx");
 const movedTestOracles=new Map([
+  ["parser.ts","tests/rust-migration/oracles/legacy-parser.ts"],
+  ["validation.ts","tests/rust-migration/oracles/legacy-validation.ts"],
+  ["workflow.ts","tests/rust-migration/oracles/legacy-workflow.ts"],
+  ["shipping.ts","tests/rust-migration/oracles/legacy-shipping.ts"],
+  ["hub-messages.ts","tests/rust-migration/oracles/legacy-hub-messages.ts"],
+  ["receipt.ts","tests/rust-migration/oracles/legacy-receipt.ts"],
   ["automatic-message.ts","tests/rust-migration/oracles/automatic-message.ts"],
   ["message-model.ts","tests/rust-migration/oracles/message-model.ts"],
   ["group-trash.ts","tests/rust-migration/oracles/group-trash.ts"],
@@ -44,7 +50,7 @@ const targets=[
   "order-evidence.ts","validation.ts","issue-actions.ts","corrections.ts",
   "working-raw.ts","orders/retail.ts","orders/manual-classification.ts",
   "orders/reception.ts","replies.ts","automatic-message.ts",
-  "hub-messages.ts","message-model.ts","automatic-message-templates.ts",
+  "hub-messages.ts","receipt.ts","message-model.ts","automatic-message-templates.ts",
   "customer-questions.ts","factory-replies.ts","factory-reply-workbook.ts",
   "factory-reply-auto.ts","factory-export.ts","store-export.ts",
   "app/order-history.ts","app/settlement-report.ts","client-workbook.ts",

@@ -10,7 +10,7 @@ import {tsImport} from "tsx/esm/api";
 
 const {orderClient,repriceOrder}=await tsImport("../../../src/domain.ts",import.meta.url);
 const {billingSnapshot}=await tsImport("../oracles/replies.ts",import.meta.url);
-const {recommendShipping}=await tsImport("../../../src/shipping.ts",import.meta.url);
+const {recommendShipping}=await tsImport("../oracles/legacy-shipping.ts",import.meta.url);
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const manifest=fileURLToPath(new URL("../integration/Cargo.toml",import.meta.url));
 const now="2026-11-15T11:00:00.000Z";

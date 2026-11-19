@@ -2,12 +2,12 @@
  * This module is not imported from any production React execution path.
  */
 import { matchingRecipient, rebindEvidence } from "../../../src/order-evidence.ts";
-import { addressParts, mergeParsedItem } from "../../../src/parser.ts";
+import { addressParts, mergeParsedItem } from "../oracles/legacy-parser.ts";
 import { assertRustReceptionAnalysis, receptionAnalysisAllowed, type RustReceptionAnalysis } from "../../../src/orders/rust-reception.ts";
 // The live differential uses the latest approved TS semantics; historical
 // Nov 6 snapshots are only archeological evidence, not current policy.
 import { resolvePrice } from "../../../src/domain.ts";
-import { recommendShipping } from "../../../src/shipping.ts";
+import { recommendShipping } from "../oracles/legacy-shipping.ts";
 import type { Client, Order, State } from "../../../src/types.ts";
 
 /**

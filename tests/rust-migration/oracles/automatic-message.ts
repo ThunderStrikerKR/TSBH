@@ -8,8 +8,8 @@ import { validProductUrl } from "../../../src/domain.js";
 import { appliedDefaultColorNotice } from "../../../src/color-guidance.js";
 import { appliedRepresentativeModelNotice } from "../../../src/model-groups.js";
 import { renderAutomaticTemplate } from "../../../src/automatic-message-templates.js";
-import { hubMessages } from "../../../src/hub-messages.js";
-import { groupAccount, groupOrder, groupStep, workflowIssues } from "../../../src/workflow.js";
+import { hubMessages } from "./legacy-hub-messages.js";
+import { groupAccount, groupOrder, groupStep, workflowIssues } from "./legacy-workflow.js";
 import type { State } from "../../../src/types.js";
 export function automaticMessage(state: State, gid: string, includeLinks = false) {
   const order = groupOrder(state, gid),

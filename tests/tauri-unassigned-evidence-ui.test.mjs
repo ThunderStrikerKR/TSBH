@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 
 const read = (name) => readFileSync(new URL("../" + name, import.meta.url), "utf8");
-const validation = read("src/validation.ts");
+const validation = read("tests/rust-migration/oracles/legacy-validation.ts");
 const checks = read("src/StaffChecks.tsx");
 const css = read("src/styles/reception-manual.css");
 

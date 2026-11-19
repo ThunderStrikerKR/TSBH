@@ -1,7 +1,7 @@
 /** Historical retail validation oracle; excluded from production source. */
 import { saleIssues } from "../../../src/sale-status.js";
 import { companySenderMissing } from "../../../src/order-types.js";
-import { orderIssues } from "../../../src/validation.js";
+import { orderIssues } from "./legacy-validation.js";
 import type { Order, State } from "../../../src/types.js";
 export function retailIssues(order: Order, state: State) {
   const issues = orderIssues(order)

@@ -1,3 +1,4 @@
+/** Archived TypeScript comparison oracle. Never imported by the operational app. */
 import type {
   Item,
   Order,
@@ -6,10 +7,10 @@ import type {
   ShippingRule,
   ShippingState,
   State,
-} from "./types.js";
+} from "../../../src/types.js";
 const id = () => crypto.randomUUID();
-import { initialShipping } from "./shipping-initial.js";
-export { initialShipping } from "./shipping-initial.js";
+import { initialShipping } from "./legacy-shipping-initial.js";
+export { initialShipping } from "./legacy-shipping-initial.js";
 export const activeGroups = (s: ShippingState) => s.groups.filter((g) => !g.deletedAt);
 export function upgradeShipping(input: ShippingState) {
   const s = structuredClone(input);

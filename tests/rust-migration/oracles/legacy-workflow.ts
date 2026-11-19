@@ -1,25 +1,26 @@
-import { saleIssues, saleProblem } from "./sale-status.js";
-import { resolveHistoricalProductReference } from "./historical-product-reference.js";
-import { actualFreightOf } from "./actual-freight.js";
-import { orderParty, senderFor } from "./order-types.js";
-import { recommendAccount, totals, uid, unassignedClient, won } from "./domain.js";
-import { hubMessages } from "./hub-messages.js";
-import { mergeParsedItem, parseSmart as parseOrder } from "./parser.js";
-import { ordinaryDeleteIssue } from "./receipt.js";
-import { combinationCurrent, recommendShipping, saveCombination } from "./shipping.js";
-import type { Account, Order, Origin, Price, Recipient, State } from "./types.js";
+/** Archived TypeScript comparison oracle. Never imported by the operational app. */
+import { saleIssues, saleProblem } from "../../../src/sale-status.js";
+import { resolveHistoricalProductReference } from "../../../src/historical-product-reference.js";
+import { actualFreightOf } from "../../../src/actual-freight.js";
+import { orderParty, senderFor } from "../../../src/order-types.js";
+import { recommendAccount, totals, uid, unassignedClient, won } from "./legacy-domain.js";
+import { hubMessages } from "./legacy-hub-messages.js";
+import { mergeParsedItem, parseSmart as parseOrder } from "./legacy-parser.js";
+import { ordinaryDeleteIssue } from "./legacy-receipt.js";
+import { combinationCurrent, recommendShipping, saveCombination } from "./legacy-shipping.js";
+import type { Account, Order, Origin, Price, Recipient, State } from "../../../src/types.js";
 import {
   blocking,
   operationalIssue,
   orderIssues,
   synchronizeIssueDecisions,
-} from "./validation.js";
+} from "./legacy-validation.js";
 import type {
   OrderGroup,
   WorkflowEvent,
   WorkflowShipment,
   WorkflowState,
-} from "./workflow-types.js";
+} from "../../../src/workflow-types.js";
 const now = () => new Date().toISOString();
 const clone = <T>(x: T): T => structuredClone(x);
 const amount = (n: unknown): n is number =>

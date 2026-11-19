@@ -73,7 +73,7 @@ test("709 vs 709-1 are not mistaken for exact code matches",async()=>{
 });
 
 test("copy message orders all finance lines, then provisional note, then links",()=>{
-  const s=read("src/hub-messages.ts");
+  const s=read("tests/rust-migration/oracles/legacy-hub-messages.ts");
   const idxTotal=s.indexOf('parts.push(renderAutomaticTemplate(state.settings,"paymentTotal"');
   const idxAccount=s.indexOf('parts.push("", accountLine);');
   const idxNotice=s.indexOf('const provisionalNotices = recipients.flatMap');

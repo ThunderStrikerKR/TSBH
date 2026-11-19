@@ -2,10 +2,10 @@
  * No application React module may import this implementation.
  */
 import { normalizeColor, orderClient, resolvePrice, totals, uid } from "../../../src/domain.js";
-import { addressInfo, addressParts, parseSmart, quantities } from "../../../src/parser.js";
+import { addressInfo, addressParts, parseSmart, quantities } from "./legacy-parser.js";
 import { colorLabel, registeredProducts } from "../../../src/product-models.js";
 import { productModelNames, registeredNameCandidates } from "../../../src/product-name-match.js";
-import { recommendShipping } from "../../../src/shipping.js";
+import { recommendShipping } from "./legacy-shipping.js";
 import type { BillingSnapshot, Item, Order, ReplyChange, ReplyPreview, State } from "../../../src/types.js";
 export function billingSnapshot(o: Order, state: State, reason: string): BillingSnapshot {
   const c = orderClient(o, state);

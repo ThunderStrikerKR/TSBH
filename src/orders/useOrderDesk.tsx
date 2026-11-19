@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { type WorkflowSelection } from "../WorkflowBoard";
 import { unassignedClient } from "../domain";
 import { useNativeOrderClients } from "./useNativeOrderClients";
-import type { StaffBlock } from "../hub-messages";
+import type { StaffBlock } from "../staff-block-types";
 import { businessCoreCall } from "../tauri-bridge";
 import { useNativeWorkflowReconcile } from "./useNativeWorkflowReconcile";
 import { useNativeWorkflowBoard } from "./useNativeWorkflowBoard";

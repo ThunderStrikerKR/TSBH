@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {tsImport} from "tsx/esm/api";
-const {hubMessages}=await tsImport("../../../src/hub-messages.ts",import.meta.url);
+const {hubMessages}=await tsImport("../oracles/legacy-hub-messages.ts",import.meta.url);
 const {totals}=await tsImport("../../../src/domain.ts",import.meta.url);
 const {provisionalProductNotice}=await tsImport("../../../src/provisional-product-notices.ts",import.meta.url);
 const manifest=fileURLToPath(new URL("./Cargo.toml",import.meta.url));

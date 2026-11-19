@@ -1,5 +1,6 @@
-import type { Order, State } from "./types.js";
-import { applyOrderRawEdit, reconcileWorkflow } from "./workflow.js";
+/** Archived TypeScript comparison oracle. Never imported by the operational app. */
+import type { Order, State } from "../../../src/types.js";
+import { applyOrderRawEdit, reconcileWorkflow } from "./legacy-workflow.js";
 export function receiptOf(order: Order) {
   return (
     order.receipt ?? {

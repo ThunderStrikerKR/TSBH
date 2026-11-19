@@ -17,7 +17,7 @@ test("freight editors add intervals on demand, without redundant fields",()=>{
   assert.match(b,/<th>사용자 참고 메모<\/th>/);
 });
 test("the maximum bundle count is sufficient for packability checks",()=>{
-  const source=read("src/shipping.ts");
+  const source=read("tests/rust-migration/oracles/legacy-shipping.ts");
   assert.doesNotMatch(source,/r\.packable/);
   const rust=read("src-tauri/src/business_core/rules/shipping.rs");
   assert.doesNotMatch(rust,/field\(rule,"packable"\)/);

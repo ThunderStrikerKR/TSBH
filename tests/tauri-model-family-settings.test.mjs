@@ -21,7 +21,7 @@ test("No model code based auto-family groups or prefilled color groups",async()=
   assert.doesNotMatch(ui,/validateModelGroups\(draft\)/);
   assert.match(ui,/await window.bando.backup\(\)/);
   assert.match(ui,/window.bando.patchSettings/);
-  assert.doesNotMatch(read("src/parser.ts"),/baseModelCandidates|modelRepresentatives|modelGroup\(/);
+  assert.doesNotMatch(read("tests/rust-migration/oracles/legacy-parser.ts"),/baseModelCandidates|modelRepresentatives|modelGroup\(/);
   assert.doesNotMatch(read("src/ProductManager.tsx"),/RepresentativeManager|isRepresentative/);
 });
 
@@ -56,7 +56,7 @@ test("Same-color perforated and nonperforated tops must not be mistaken for colo
 });
 
 test("Unspecified color JS-2 stays unresolved until staff chooses from error dialog",async()=>{
-  const {parseSmart}=await tsImport("../src/parser.ts",import.meta.url);
+  const {parseSmart}=await tsImport("./rust-migration/oracles/legacy-parser.ts",import.meta.url);
   const {appliedDefaultColorNotice,suggestGroupColor}=await tsImport("../src/color-guidance.ts",import.meta.url);
   const {resolveProduct}=await tsImport("./rust-migration/oracles/issue-actions.ts",import.meta.url);
   const state=structuredClone(seed),black=siteProduct("245"),silver=siteProduct("254");
@@ -83,7 +83,7 @@ test("Unspecified color JS-2 stays unresolved until staff chooses from error dia
 });
 
 test("Explicit color or unrelated products never receive default-color notification",async()=>{
-  const {parseSmart}=await tsImport("../src/parser.ts",import.meta.url);
+  const {parseSmart}=await tsImport("./rust-migration/oracles/legacy-parser.ts",import.meta.url);
   const {appliedDefaultColorNotice}=await tsImport("../src/color-guidance.ts",import.meta.url);
   const state=structuredClone(seed),client={id:"c",name:"가상 거래처"};
   for(const input of ["BD 709 3개","BD 709G 3개","BD Desk JS-2 블랙 3개"]){
@@ -98,7 +98,7 @@ test("Explicit color or unrelated products never receive default-color notificat
 
 test("Copy messages notify only after employee action, without dealer choice request",()=>{
  const helper=read("src/color-guidance.ts");
- const a=read("tests/rust-migration/oracles/automatic-message.ts"),h=read("src/hub-messages.ts");
+ const a=read("tests/rust-migration/oracles/automatic-message.ts"),h=read("tests/rust-migration/oracles/legacy-hub-messages.ts");
  assert.doesNotMatch(helper,/진행해도 될까요/);
  assert.match(a,/appliedDefaultColorNotice/);
  assert.match(h,/appliedDefaultColorNotice/);

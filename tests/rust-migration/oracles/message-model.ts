@@ -6,12 +6,12 @@
  */
 import { paymentSignature } from "./automatic-message.js";
 import { uid, validProductUrl } from "../../../src/domain.js";
-import { hubMessages } from "../../../src/hub-messages.js";
+import { hubMessages } from "./legacy-hub-messages.js";
 import { customerModel } from "../../../src/matching.js";
 import { renderAutomaticTemplate } from "../../../src/automatic-message-templates.js";
 import { groupedCustomerQuestions } from "../../../src/customer-questions.js";
 import type { State } from "../../../src/types.js";
-import { groupOrder, groupShipments, workflowIssues } from "../../../src/workflow.js";
+import { groupOrder, groupShipments, workflowIssues } from "./legacy-workflow.js";
 export function recordCopy(input: State, gid: string, type: "REQUEST" | "PAYMENT", token: string) {
   const next = structuredClone(input);
   if (

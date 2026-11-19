@@ -20,14 +20,14 @@ test("Client per-account preference is stored and affects outbound billing", () 
   const types = read("src/types.ts");
   const manager = read("src/ClientManager.tsx");
   const domain = read("src/domain.ts");
-  const workflow = read("src/workflow.ts");
+  const workflow = read("tests/rust-migration/oracles/legacy-workflow.ts");
   assert.match(types, /preferredAccountId\?: string/);
   assert.match(manager, /주 사용 입금계좌/);
   assert.match(manager, /preferredAccountId: value/);
   assert.match(domain, /if \(o\.accountMode === "MANUAL"\)/);
   assert.match(domain, /client\?\.preferredAccountId/);
   // The historical TypeScript billing oracle was relocated out of the shared domain.
-  assert.match(read("src/hub-messages.ts"), /recommendAccount\(o, s, products, c\)/);
+  assert.match(read("tests/rust-migration/oracles/legacy-hub-messages.ts"), /recommendAccount\(o, s, products, c\)/);
   // Before confirmation, account recommendations use the live dealer;
   // confirmed orders must keep their captured preferred account setting.
   assert.match(workflow, /orderParty\(active, state\)/);

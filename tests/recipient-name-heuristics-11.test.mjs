@@ -15,7 +15,7 @@ import { tsImport } from "tsx/esm/api";
  */
 const state=JSON.parse(readFileSync(
   new URL("../src-tauri/resources/state-seed.json",import.meta.url),"utf8"));
-const {parseEvidence}=await tsImport("../src/parser.ts",import.meta.url);
+const {parseEvidence}=await tsImport("./rust-migration/oracles/legacy-parser.ts",import.meta.url);
 const dealer={id:"name11-dealer",name:"합성 거래처",tier:"wholesale",
   active:true,payment:"PREPAID",overrides:{},identifiers:"",
   shippingFeeExcluded:false};

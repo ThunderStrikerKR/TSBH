@@ -11,7 +11,7 @@ import { tsImport } from "tsx/esm/api";
 const { automaticMessage, paymentSignature, paymentWasCopied, withGreeting } =
   await tsImport("../oracles/automatic-message.ts",import.meta.url);
 const { groupOrder, groupMessages } =
-  await tsImport("../../../src/workflow.ts",import.meta.url);
+  await tsImport("../oracles/legacy-workflow.ts",import.meta.url);
 const { validProductUrl } =
   await tsImport("../../../src/domain.ts",import.meta.url);
 const root=fileURLToPath(new URL("../../../",import.meta.url));
@@ -230,7 +230,7 @@ test("Rust optional greeting keeps the original TS behavior on edited copy texts
  */
 const rulesManifest=fileURLToPath(new URL("../rules/Cargo.toml",import.meta.url));
 const { approveMissingQuantity, orderIssues } =
-  await tsImport("../../../src/validation.ts",import.meta.url);
+  await tsImport("../oracles/legacy-validation.ts",import.meta.url);
 const { customerModel } =
   await tsImport("../../../src/matching.ts",import.meta.url);
 

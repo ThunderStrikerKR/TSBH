@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { tsImport } from "tsx/esm/api";
 
 const { seed, blankOrder } = await tsImport("../src/seed.ts", import.meta.url);
-const { initialShipping } = await tsImport("../src/shipping.ts", import.meta.url);
+const { initialShipping } = await tsImport("./rust-migration/oracles/legacy-shipping.ts", import.meta.url);
 const { reconcileWorkflow, shipmentTotals, groupContext, groupAccount, setShipmentFreight } =
-  await tsImport("../src/workflow.ts", import.meta.url);
+  await tsImport("./rust-migration/oracles/legacy-workflow.ts", import.meta.url);
 const { orderParty } = await tsImport("../src/order-types.ts", import.meta.url);
 const { orderClient, totals } = await tsImport("../src/domain.ts", import.meta.url);
 const { orderHistory } = await tsImport("./rust-migration/oracles/order-history.ts", import.meta.url);

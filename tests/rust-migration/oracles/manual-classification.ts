@@ -1,8 +1,8 @@
 /** Historical TS manual classification oracle; production uses Rust. */
 import { itemFromProduct, unassignedClient } from "../../../src/domain.js";
-import { addressParts, parseSmart as parseOrder, quantities } from "../../../src/parser.js";
+import { addressParts, parseSmart as parseOrder, quantities } from "./legacy-parser.js";
 import type { Item, Order, Product, Recipient, State } from "../../../src/types.js";
-import { synchronizeIssueDecisions } from "../../../src/validation.js";
+import { synchronizeIssueDecisions } from "./legacy-validation.js";
 
 export type Cell = { recipientId: string; field: string; itemId?: string };
 export type Block = NonNullable<Order["manualClassification"]>["blocks"][number];

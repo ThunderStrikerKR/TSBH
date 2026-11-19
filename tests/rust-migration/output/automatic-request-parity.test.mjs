@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
 const { automaticMessage } = await tsImport("../oracles/automatic-message.ts",import.meta.url);
-const { groupOrder, groupStep, workflowIssues } = await tsImport("../../../src/workflow.ts",import.meta.url);
+const { groupOrder, groupStep, workflowIssues } = await tsImport("../oracles/legacy-workflow.ts",import.meta.url);
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const manifest=fileURLToPath(new URL("./Cargo.toml",import.meta.url));
 const gid="group:o1";

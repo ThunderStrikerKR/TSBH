@@ -5,7 +5,7 @@ import { tsImport } from "tsx/esm/api";
 /** Structurally preserved, privacy-scrubbed representations of 18 text orders
  * and two manually transcribed images. Image OCR itself is NOT assessed. */
 const state=JSON.parse(readFileSync(new URL("../src-tauri/resources/state-seed.json",import.meta.url),"utf8"));
-const {parseEvidence}=await tsImport("../src/parser.ts",import.meta.url);
+const {parseEvidence}=await tsImport("./rust-migration/oracles/legacy-parser.ts",import.meta.url);
 const client={id:"ci-dealer",name:"가상거래처",tier:"wholesale",overrides:{},
 active:true,payment:"PREPAID",identifiers:"",shippingFeeExcluded:false};
 

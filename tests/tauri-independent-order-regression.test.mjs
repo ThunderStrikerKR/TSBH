@@ -10,7 +10,7 @@ const read = (path) => JSON.parse(readFileSync(new URL("../" + path, import.meta
 const seed = read("src-tauri/resources/state-seed.json");
 const { itemFromProduct, resolvePrice, validateProduct, unassignedClient } =
   await tsImport("../src/domain.ts", import.meta.url);
-const { parseSmart, parseEvidence } = await tsImport("../src/parser.ts", import.meta.url);
+const { parseSmart, parseEvidence } = await tsImport("./rust-migration/oracles/legacy-parser.ts", import.meta.url);
 const { applyOfficialProductPreview } =
   await tsImport("./rust-migration/oracles/official-product-import.ts", import.meta.url);
 const { resolveHistoricalProductReference } =

@@ -139,7 +139,7 @@ test("model-group editor places group name, add search and members in order with
 });
 
 test("employee applying a representative model records exact product identity and a declarative notice", async () => {
-  const { parseSmart } = await tsImport("../src/parser.ts", import.meta.url);
+  const { parseSmart } = await tsImport("./rust-migration/oracles/legacy-parser.ts", import.meta.url);
   const { resolveProduct } = await tsImport("./rust-migration/oracles/issue-actions.ts", import.meta.url);
   const { suggestGroupRepresentative, appliedRepresentativeModelNotice } =
     await tsImport("../src/model-groups.ts", import.meta.url);

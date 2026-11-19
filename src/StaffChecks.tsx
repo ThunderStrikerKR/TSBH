@@ -1,4 +1,4 @@
-import type { StaffBlock } from "./hub-messages";
+import type { StaffBlock } from "./staff-block-types";
 import type { NativeShipmentPreview } from "./orders/useNativeWorkflowBoard";
 import type { ContentFadePhase } from "./shared/useReadyContentFade";
 export function StaffChecks({

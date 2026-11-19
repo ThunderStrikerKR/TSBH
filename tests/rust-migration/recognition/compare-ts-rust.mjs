@@ -3,7 +3,7 @@
  * stdin: { state, client, cases:[{ id, raw, rust, match? }] }
  */
 import { tsImport } from "tsx/esm/api";
-const { parseEvidence } = await tsImport("../../../src/parser.ts", import.meta.url);
+const { parseEvidence } = await tsImport("../oracles/legacy-parser.ts", import.meta.url);
 const { registeredNameCandidates } = await tsImport("../../../src/product-name-match.ts", import.meta.url);
 const { registeredProducts } = await tsImport("../../../src/product-models.ts", import.meta.url);
 let input="";

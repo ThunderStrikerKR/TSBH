@@ -4,8 +4,8 @@
 import { uid } from "../../../src/domain.js";
 import { internalModel } from "../../../src/matching.js";
 import type { Recipient, State } from "../../../src/types.js";
-import { blocking, orderIssues } from "../../../src/validation.js";
-import { shipmentContext } from "../../../src/workflow.js";
+import { blocking, orderIssues } from "./legacy-validation.js";
+import { shipmentContext } from "./legacy-workflow.js";
 export function correctionStatus(state: State, id: string) {
   return (
     (state.workflow?.events.filter((e) => e.action === "정정 요청 상태" && e.before === id).at(-1)

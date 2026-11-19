@@ -22,8 +22,8 @@ import {
   upgradeShipping,
   deleteShippingGroup,
   changeShippingBasis,
-} from "../../../../src/shipping.ts";
-import { shipmentTotals, validateWorkflow, reconcileWorkflow, clientChangeIssue, deleteOrder, workflowIssues, stageIssues, applyOrderRawEdit, migrateWorkflow, advanceGroup, undoGroup, setShipmentFreight, processGroup, confirmGroupPayment, recordPayment, restoreShipment, markStoreSent, recordChangeRequest, setGroupAccount, detachShipment, regroupShipment, completeDelivery, groupContext, groupStep, groupTotals } from "../../../../src/workflow.ts";
+} from "../../oracles/legacy-shipping.ts";
+import { shipmentTotals, validateWorkflow, reconcileWorkflow, clientChangeIssue, deleteOrder, workflowIssues, stageIssues, applyOrderRawEdit, migrateWorkflow, advanceGroup, undoGroup, setShipmentFreight, processGroup, confirmGroupPayment, recordPayment, restoreShipment, markStoreSent, recordChangeRequest, setGroupAccount, detachShipment, regroupShipment, completeDelivery, groupContext, groupStep, groupTotals } from "../../oracles/legacy-workflow.ts";
 import { recordActualFreight } from "../../oracles/actual-freight.ts";
 import { dispatchState } from "../../oracles/factory-replies.ts";
 import { shouldRefreshUncommittedOrderPricing } from "../../oracles/passive-pricing.ts";
@@ -31,20 +31,20 @@ import { deleteGroup, restoreGroup } from "../../oracles/group-trash.ts";
 import { correctionStatus, correctionMessage, requestCorrection, copiedCorrection, confirmCorrection, markFactoryDelivered, markCollected, reopenUnsentExport } from "../../oracles/corrections.ts";
 import { recordCopy } from "../../oracles/message-model.ts";
 import { paymentSignature } from "../../oracles/automatic-message.ts";
-import { orderIssues } from "../../../../src/validation.ts";
+import { orderIssues } from "../../oracles/legacy-validation.ts";
 import { repriceOrder } from "../../oracles/reprice-order.ts";
 import { approveMissingQuantity, pendingIssue } from "../../oracles/legacy-issue-actions.ts";
 import { validateReceptionBoundary, newReception, replaceReception, persistedReceptionState } from "../../oracles/reception.ts";
 import { confirmRetail, newRetailOrder } from "../../oracles/retail.ts";
 import { retailIssues } from "../../oracles/retail-validation.ts";
 import { rawCorrectableIssue, rawCorrectionAllowed, correctWorkingRaw } from "../../oracles/working-raw.ts";
-import { receiptOf, correctReceipt } from "../../../../src/receipt.ts";
+import { receiptOf, correctReceipt } from "../../oracles/legacy-receipt.ts";
 import { billingSnapshot, applyReply } from "../../oracles/replies.ts";
 import { replyNeedsReview } from "../../oracles/factory-replies.ts";
 import { factoryConflictConfirmation } from "../../../../src/factory-conflict-review.ts";
 import { validateProvisionalProductNotices } from "../../../../src/provisional-product-notices.ts";
 import { validateAutomaticMessageTemplates } from "../../../../src/automatic-message-templates.ts";
-import { addressInfo, addressParts, parseSmart as parseOrder } from "../../../../src/parser.ts";
+import { addressInfo, addressParts, parseSmart as parseOrder } from "../../oracles/legacy-parser.ts";
 import { validDeliveryAddress, deliveryRequirements } from "../../../../src/delivery-requirements.ts";
 import { companyClient, companyParty, companySenderMissing } from "../../../../src/order-types.ts";
 import { explicitSender } from "../../../../src/explicit-sender.ts";

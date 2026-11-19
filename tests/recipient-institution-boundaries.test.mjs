@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { tsImport } from "tsx/esm/api";
 
-const { parseEvidence } = await tsImport("../src/parser.ts", import.meta.url);
+const { parseEvidence } = await tsImport("./rust-migration/oracles/legacy-parser.ts", import.meta.url);
 const state = JSON.parse(readFileSync(
   new URL("../src-tauri/resources/state-seed.json", import.meta.url), "utf8"));
 const client = {

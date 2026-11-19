@@ -3,7 +3,7 @@
  */
 import { companyClient, companyParty } from "../../../src/order-types.js";
 import { retailIssues } from "../../../src/orders/retail-validation.js";
-import { processGroup, reconcileWorkflow, rootGroupId } from "../../../src/workflow.js";
+import { processGroup, reconcileWorkflow, rootGroupId } from "./legacy-workflow.js";
 import { newReception } from "./reception.js";
 import type { Order, Recipient, State } from "../../../src/types.js";
 export function newRetailOrder(): Order {

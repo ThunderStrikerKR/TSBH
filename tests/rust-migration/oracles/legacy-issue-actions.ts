@@ -1,5 +1,5 @@
 /** Historical issue-action oracles; production actions are Rust-owned. */
-import { orderIssues } from "../../../src/validation.js";
+import { orderIssues } from "./legacy-validation.js";
 import type { Order } from "../../../src/types.js";
 export function approveMissingQuantity(o: Order, rid: string, iid: string, actor: string) {
   const next = structuredClone(o),

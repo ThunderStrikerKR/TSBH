@@ -29,7 +29,7 @@ test("Tauri can save a store Excel independently of factory and only after previ
  assert.doesNotMatch(ui,/매장 Excel 출력 미이식/);
 });
 test("a printed store workbook stays pending until a separately confirmed shipment",()=>{
- const ui=read("src/WorkflowQueue.tsx"),work=read("src/workflow.ts");
+ const ui=read("src/WorkflowQueue.tsx"),work=read("tests/rust-migration/oracles/legacy-workflow.ts");
  const corrections=read("tests/rust-migration/oracles/corrections.ts"),model=read("tests/rust-migration/oracles/store-export.ts");
  assert.match(ui,/q!\.origin === "STORE"/);
  assert.match(ui,/매장 발송 확인/);

@@ -7,9 +7,9 @@ import {fileURLToPath} from "node:url";
 import {tsImport} from "tsx/esm/api";
 const {resolvePrice,totals,repriceOrder}=await tsImport("../../../src/domain.ts",import.meta.url);
 const {shouldRefreshUncommittedOrderPricing}=await tsImport("../oracles/passive-pricing.ts",import.meta.url);
-const {recommendShipping}=await tsImport("../../../src/shipping.ts",import.meta.url);
+const {recommendShipping}=await tsImport("../oracles/legacy-shipping.ts",import.meta.url);
 const {shipmentTotals,stageIssues,groupStep,groupShipments,orderGrandTotal,shipmentVat,groupTotals,workflowIssues,shipmentFreightCode,paymentBalance,shipmentContext,reconcileWorkflow}=
-  await tsImport("../../../src/workflow.ts",import.meta.url);
+  await tsImport("../oracles/legacy-workflow.ts",import.meta.url);
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const manifest=fileURLToPath(new URL("./Cargo.toml",import.meta.url));
 const cases=[];

@@ -1,3 +1,4 @@
+/** Archived TypeScript comparison oracle. Never imported by the operational app. */
 import {
   itemFromProduct,
   normalizeCode,
@@ -5,14 +6,14 @@ import {
   resolvePrice,
   uid,
   unassignedClient,
-} from "./domain.js";
-import { broadCategory, categoryKind } from "./matching.js";
-import { colorLabel, registeredProducts } from "./product-models.js";
-import { brandTerms } from "./product-registry.js";
-import { productFamily } from "./product-search.js";
-import { productModelNames, productNameEvidence, registeredNameCandidates, scoreStandTop, verifiedScoreStandBases } from "./product-name-match.js";
-import { analyzeEvidence, matchingRecipient, rebindEvidence } from "./order-evidence.js";
-import type { Client, Item, Recipient, State } from "./types.js";
+} from "./legacy-domain.js";
+import { broadCategory, categoryKind } from "../../../src/matching.js";
+import { colorLabel, registeredProducts } from "../../../src/product-models.js";
+import { brandTerms } from "../../../src/product-registry.js";
+import { productFamily } from "../../../src/product-search.js";
+import { productModelNames, productNameEvidence, registeredNameCandidates, scoreStandTop, verifiedScoreStandBases } from "../../../src/product-name-match.js";
+import { analyzeEvidence, matchingRecipient, rebindEvidence } from "../../../src/order-evidence.js";
+import type { Client, Item, Recipient, State } from "../../../src/types.js";
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export const quantityWords: Record<string, number> = {
   한: 1,

@@ -10,12 +10,12 @@ const bridge=read("src/tauri-bridge.ts");
 async function legacyFixtureNativeCall(domain, operation, payload) {
   // Synthetic contract oracle only. The application does not import TS parsers.
   if (domain === "recognition" && operation === "analyze_order") {
-    const { parseEvidence } = await tsImport("../src/parser.ts", import.meta.url);
+    const { parseEvidence } = await tsImport("./rust-migration/oracles/legacy-parser.ts", import.meta.url);
     const result = parseEvidence(payload.raw, payload.client, payload.state);
     return { recipients: result.recipients, candidates: result.candidates, unassigned: result.unassigned };
   }
   if (domain === "rules" && operation === "order_issues") {
-    const { orderIssues } = await tsImport("../src/validation.ts", import.meta.url);
+    const { orderIssues } = await tsImport("./rust-migration/oracles/legacy-validation.ts", import.meta.url);
     return { issues: orderIssues(payload.order) };
   }
   throw Error("Unexpected diagnostic IPC operation: " + domain + "." + operation);

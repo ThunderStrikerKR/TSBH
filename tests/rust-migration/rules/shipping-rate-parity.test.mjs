@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
-const { combinationVersions }=await tsImport("../../../src/shipping.ts",import.meta.url);
+const { combinationVersions }=await tsImport("../oracles/legacy-shipping.ts",import.meta.url);
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const cargo=fileURLToPath(new URL("../integration/Cargo.toml",import.meta.url));
 const old={
@@ -438,7 +438,7 @@ const exceptionRequests=exceptionCases.map(([,combinationId,charge],index)=>({
 // group/product resolution into a second test-only implementation.
 const tsVersionsScript=String.raw`
 import fs from "node:fs";
-import { combinationVersions } from "./src/shipping.ts";
+import { combinationVersions } from "../oracles/legacy-shipping.ts";
 const requests=JSON.parse(fs.readFileSync(0,"utf8"));
 process.stdout.write(JSON.stringify(requests.map(r=>
   combinationVersions(

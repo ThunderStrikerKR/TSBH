@@ -90,7 +90,7 @@ test("existing data duplicates stay unresolved without modifying IDs",()=>{
 });
 
 test("whole-document reception resolves catalog model and option evidence",async()=>{
-  const {parseSmart}=await tsImport("../src/parser.ts",import.meta.url);
+  const {parseSmart}=await tsImport("./rust-migration/oracles/legacy-parser.ts",import.meta.url);
   const {unassignedClient}=await tsImport("../src/domain.ts",import.meta.url);
   const client={...unassignedClient,id:"audit-recipient",name:"가상 테스트 거래처",tier:"retail",overrides:{}};
   for(const [raw,wanted] of [

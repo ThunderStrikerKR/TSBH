@@ -1,13 +1,14 @@
-import { orderClient, recommendAccount, totals, unassignedClient, validProductUrl, won } from "./domain.js";
-import { renderAutomaticTemplate } from "./automatic-message-templates.js";
-import { groupedCustomerQuestions } from "./customer-questions.js";
-import { customerModel } from "./matching.js";
-import { colorLabel } from "./product-models.js";
-import { appliedDefaultColorNotice } from "./color-guidance.js";
-import { appliedRepresentativeModelNotice } from "./model-groups.js";
-import { provisionalProductNotice } from "./provisional-product-notices.js";
-import type { Client, Item, Order, Price, Product, Settings, State, ValidationIssue } from "./types.js";
-import { blocking, orderIssues } from "./validation.js";
+/** Archived TypeScript comparison oracle. Never imported by the operational app. */
+import { orderClient, recommendAccount, totals, unassignedClient, validProductUrl, won } from "./legacy-domain.js";
+import { renderAutomaticTemplate } from "../../../src/automatic-message-templates.js";
+import { groupedCustomerQuestions } from "../../../src/customer-questions.js";
+import { customerModel } from "../../../src/matching.js";
+import { colorLabel } from "../../../src/product-models.js";
+import { appliedDefaultColorNotice } from "../../../src/color-guidance.js";
+import { appliedRepresentativeModelNotice } from "../../../src/model-groups.js";
+import { provisionalProductNotice } from "../../../src/provisional-product-notices.js";
+import type { Client, Item, Order, Price, Product, Settings, State, ValidationIssue } from "../../../src/types.js";
+import { blocking, orderIssues } from "./legacy-validation.js";
 import {
   groupAccount,
   groupShipments,
@@ -15,7 +16,7 @@ import {
   shipmentTotals,
   shipmentVat,
   workflowIssues,
-} from "./workflow.js";
+} from "./legacy-workflow.js";
 export interface StaffBlock extends Partial<ValidationIssue> {
   choices?: { label: string; value: string }[];
   recipientId: string;

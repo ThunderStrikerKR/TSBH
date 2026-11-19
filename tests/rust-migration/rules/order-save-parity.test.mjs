@@ -13,7 +13,7 @@ const cargo=fileURLToPath(new URL("../integration/Cargo.toml",import.meta.url));
 const seed=JSON.parse(readFileSync(new URL(
   "../../../src-tauri/resources/state-seed.json",import.meta.url),"utf8"));
 const { totals, canQueue }=await tsImport("../../../src/domain.ts",import.meta.url);
-const { reviewIssues }=await tsImport("../../../src/hub-messages.ts",import.meta.url);
+const { reviewIssues }=await tsImport("../oracles/legacy-hub-messages.ts",import.meta.url);
 const { blankOrder }=await tsImport("../../../src/seed.ts",import.meta.url);
 const { billingSnapshot }=await tsImport("../oracles/replies.ts",import.meta.url);
 const at="2026-11-13T01:05:12.000Z";

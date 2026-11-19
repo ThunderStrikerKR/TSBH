@@ -36,7 +36,7 @@ test("one-item approval executes the production Rust issue reducer with actor an
 });
 
 test("Rust and TypeScript require an actual provisional decision before clearing the quantity blocker", () => {
-  const ts = read("src/validation.ts");
+  const ts = read("tests/rust-migration/oracles/legacy-validation.ts");
   const rs = read("src-tauri/src/business_core/rules/issues.rs");
   const compare = read("tests/rust-migration/rules/parity/compare.mts");
   assert.match(ts, /kind === "QUANTITY_MISSING"/);
