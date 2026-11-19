@@ -307,7 +307,7 @@ pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
 /// One common table row, with content-based secondary text. Percentages are
 /// supplied by the table's layout role, never overridden per record.
 pub fn management_row(
-    ui:&mut Ui,columns:[(&str,&str);3],heading:bool
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],heading:bool
 ) -> Response {
     let width=ui.available_width().max(theme::MANAGEMENT_TABLE_MIN_WIDTH);
     let height=if heading {theme::MANAGEMENT_TABLE_HEADER_HEIGHT}
@@ -331,7 +331,7 @@ pub fn management_row(
                 (height-theme::SPACE_8).max(1.0))
         );
         ui.scope_builder(
-            egui::UiBuilder::new().id_salt(("management-row-column",i,rect.top().to_bits()))
+            egui::UiBuilder::new().id_salt(("management-row-column",row_id,i))
                 .max_rect(cell).layout(Layout::top_down(Align::Min)),
             |inner|{
                 inner.set_clip_rect(cell);
