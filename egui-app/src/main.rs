@@ -6,10 +6,12 @@ mod theme;
 mod layout;
 mod components;
 mod native_engine;
+mod gateway;
+mod http_gateway;
 
 use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, PANEL_GAP};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::{mpsc::{self, Receiver}, Arc};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
@@ -63,6 +65,7 @@ struct VerticalSplitDrag {
 }
 
 struct BandoEgui {
+    gateway: Arc<dyn gateway::BandoGateway>,
     page: Page,
     sample: bool,
     notifications_open: bool,
@@ -83,6 +86,7 @@ struct BandoEgui {
 impl Default for BandoEgui {
     fn default() -> Self {
         Self {
+            gateway: Arc::new(gateway::LocalGateway),
             page: Page::Reception,
             sample: false,
             notifications_open: false,
@@ -109,13 +113,14 @@ impl BandoEgui {
         self.analysis_request = self.analysis_request.wrapping_add(1);
         let request = self.analysis_request;
         let source = self.raw_source.clone();
+        let gateway = Arc::clone(&self.gateway);
         self.analysis = None;
         self.analysis_error = None;
         self.analysis_pending = true;
         let (sender, receiver) = mpsc::channel();
         self.analysis_receiver = Some(receiver);
         std::thread::spawn(move || {
-            let result = native_engine::analyze_raw(&source);
+            let result = native_engine::analyze_raw(gateway.as_ref(), &source);
             let _ = sender.send((request, result));
             context.request_repaint();
         });
@@ -218,8 +223,10 @@ impl BandoEgui {
                             self.notifications_open = !self.notifications_open;
                         }
                         ui.label(
-                            RichText::new("TEST / 격리 UI · DB 미연결")
-                                .size(11.0).color(theme::SELECTED_ORDER)
+                            RichText::new(format!(
+                                "TEST / UI 프리뷰 · {} · 주문 저장 비활성",
+                                self.gateway.label()
+                            )).size(11.0).color(theme::SELECTED_ORDER)
                         );
                     });
                 });
@@ -511,7 +518,7 @@ impl BandoEgui {
             }
         }, |ui| {
             if self.source_editing || !self.raw_source.is_empty() {
-                ui.label(theme::caption("직접 입력 · 실제 Rust 인식 엔진 · 기본 상품 시드"));
+                ui.label(theme::caption("직접 입력 · 공통 업무 서비스 · 주문 저장 안 함"));
                 let editor_height = (ui.available_height() - 62.0).max(120.0);
                 let editor = ui.add_sized(
                     Vec2::new(ui.available_width(), editor_height),
@@ -531,7 +538,7 @@ impl BandoEgui {
                     ).clicked() {
                         analyze_requested = true;
                     }
-                    ui.label(theme::caption("기존 Rust 인식 엔진 · 운영 DB 미사용"));
+                    ui.label(theme::caption("공통 Gateway · 주문 저장 비활성"));
                 });
             } else if self.sample {
                 theme::nested_frame().show(ui, |ui| {
@@ -923,7 +930,7 @@ impl eframe::App for BandoEgui {
             .frame(Frame::new().fill(theme::PANEL).inner_margin(4.0))
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
-                    ui.label(theme::caption("egui UI 재구축 · 별도 실행 · 실제 주문/DB 미연결"));
+                    ui.label(theme::caption("egui UI 재구축 · 별도 실행 · 주문 쓰기 비활성"));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if theme::action(
                             ui,
@@ -946,6 +953,13 @@ impl eframe::App for BandoEgui {
 }
 
 fn main() -> eframe::Result<()> {
+    let backend = match gateway::from_environment() {
+        Ok(backend) => backend,
+        Err(error) => {
+            eprintln!("[BANDO HUB] 서비스 연결 설정 오류: {error}");
+            std::process::exit(2);
+        }
+    };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1600.0, 900.0])
@@ -958,9 +972,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "BANDO HUB · egui UI Preview",
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             theme::install(&cc.egui_ctx);
-            Ok(Box::<BandoEgui>::default())
+            Ok(Box::new(BandoEgui { gateway: backend, ..BandoEgui::default() }))
         }),
     )
 }
