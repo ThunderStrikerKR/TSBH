@@ -86,7 +86,7 @@ pub struct ManualWorkspace {
     edit_text:String,
     confirm_discard:bool,
     product_search:Option<ProductSearch>,
-    remove_recipient_pending:bool,
+    remove_recipient_pending:Option<String>,
     receiver:Option<Receiver<Result<Outcome,String>>>,
     error:Option<String>,
     dirty:bool,
@@ -127,7 +127,7 @@ impl ManualWorkspace {
             assignment_order:Vec::new(),selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
             edit_text:String::new(),confirm_discard:false,
-            product_search:None,remove_recipient_pending:false,
+            product_search:None,remove_recipient_pending:None,
             receiver:Some(rx),error:None,dirty:false,applied:None,
         }
     }
@@ -320,7 +320,7 @@ impl ManualWorkspace {
             .default_height((ctx.screen_rect().height()-theme::MANUAL_DIALOG_VERTICAL_GAP)
                 .max(420.0))
             .show(ctx,|ui|{
-                ui.set_enabled(self.product_search.is_none() && !self.remove_recipient_pending);
+                ui.set_enabled(self.product_search.is_none() && self.remove_recipient_pending.is_none());
                 if let Some(error)=self.error.as_ref() {
                     ui.label(typography::status(error,theme::DANGER));
                 }
@@ -427,14 +427,39 @@ impl ManualWorkspace {
                         |sheet_ui|{
                             sheet_ui.label(typography::subsection_heading("배송 정보 구성표"));
                             sheet_ui.horizontal(|ui|{
-                        if theme::action(ui,"배송 추가",ButtonRole::Standard,
-                            !busy && rows.len()<100).clicked() {
-                            chosen=Some(("resize_manual_rows".into(),json!({
-                                "count":rows.len()+1,
-                                "newRecipientIds":[unique_id()]
-                            })));
-                        }
-                    });
+                                ui.label(typography::field_label("배송 건수"));
+                                if theme::action(ui,"−",ButtonRole::Standard,
+                                    !busy && rows.len()>1).clicked(){
+                                    let last=&rows[rows.len()-1];
+                                    let rid=text(last,"id");
+                                    let populated=["name","address","mobile","phone","note"]
+                                        .iter().any(|field|!text(last,field).is_empty()) ||
+                                        list(last,"items").iter().any(|item|
+                                            !text(item,"name").is_empty() ||
+                                            item.get("productId").is_some_and(|v|!v.is_null()) ||
+                                            item.get("quantity").is_some_and(|v|!v.is_null())
+                                        ) ||
+                                        assignments.as_object().is_some_and(|map|
+                                            map.values().any(|cell|
+                                                text(cell,"recipientId")==rid
+                                            ));
+                                    if populated{
+                                        self.remove_recipient_pending=Some(rid.to_owned());
+                                    } else {
+                                        chosen=Some(("resize_manual_rows".into(),json!({
+                                            "count":rows.len()-1,"newRecipientIds":[]
+                                        })));
+                                    }
+                                }
+                                ui.label(typography::quantity(&rows.len().to_string()));
+                                if theme::action(ui,"+",ButtonRole::Standard,
+                                    !busy && rows.len()<100).clicked(){
+                                    chosen=Some(("resize_manual_rows".into(),json!({
+                                        "count":rows.len()+1,
+                                        "newRecipientIds":[unique_id()]
+                                    })));
+                                }
+                            });
                             egui::ScrollArea::vertical().id_salt("manual-recipients-list")
                                 .max_height((height-theme::SECTION_HEADER_HEIGHT).max(0.0))
                                 .show(sheet_ui,|ui|{
@@ -519,6 +544,17 @@ impl ManualWorkspace {
                                             .and_then(Value::as_i64).map(|x|x.to_string())
                                             .unwrap_or_else(||"미확정".into());
                                         ui.label(typography::quantity(&quantity));
+                                        if theme::action(ui,"검색",ButtonRole::Quiet,!busy).clicked(){
+                                            lookup=Some((
+                                                text(row,"id").to_owned(),item_id.to_owned()
+                                            ));
+                                        }
+                                        if theme::action(ui,"상품 제거",ButtonRole::Quiet,!busy).clicked(){
+                                            chosen=Some(("remove_manual_item".into(),json!({
+                                                "recipientId":row.get("id"),
+                                                "itemId":item_id
+                                            })));
+                                        }
                                     });
                                 }
                                 ui.separator();
