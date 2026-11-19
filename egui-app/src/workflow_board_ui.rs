@@ -253,6 +253,73 @@ fn stage_name(step:usize,notice:bool)->&'static str{
 fn money(amount:Option<i64>)->String{
     amount.map(components::display_won).unwrap_or_else(||"—".to_owned())
 }
+/// Original React workflow-action-line: a fixed summary slot on the left,
+/// 140px primary action and a 34px back-stage slot on the right. The stage
+/// action remains disabled until the audited Rust mutation is implemented,
+/// but its 250ms read-only hover preview is still available.
+fn workflow_action_line(
+    ui:&mut Ui,id:&str,shipments:usize,total:Option<i64>,
+    vat:Option<&str>,button_text:&str,enabled:bool
+)->(bool,bool){
+    let width=ui.available_width();
+    let actions=theme::WORKFLOW_CONTROL_WIDTH
+        +theme::WORKFLOW_TRASH_WIDTH+theme::SPACE_4;
+    let summary_width=(width-actions-theme::SPACE_4).max(0.0);
+    let mut stage_button=None;
+    ui.horizontal(|bar|{
+        bar.spacing_mut().item_spacing.x=theme::SPACE_4;
+        bar.allocate_ui_with_layout(
+            Vec2::new(summary_width,theme::WORKFLOW_ACTION_ROW_HEIGHT),
+            Layout::top_down(Align::Min),|summary|{
+                summary.set_max_width(summary_width);
+                summary.spacing_mut().item_spacing.y=0.0;
+                summary.add_sized(
+                    [summary_width,theme::SPACE_16],
+                    egui::Label::new(typography::caption(
+                        &format!("배송 {shipments}건")
+                    )).truncate()
+                );
+                let detail=match total{
+                    Some(amount)=>{
+                        let amount=money(Some(amount));
+                        if let Some(vat)=vat{
+                            format!("{vat} · {amount}")
+                        }else{amount}
+                    }
+                    None=>"금액 미확정".to_owned(),
+                };
+                summary.add_sized(
+                    [summary_width,theme::SPACE_16],
+                    egui::Label::new(typography::quantity(&detail)).truncate()
+                );
+            }
+        );
+        bar.allocate_ui_with_layout(
+            Vec2::new(theme::WORKFLOW_CONTROL_WIDTH,
+                theme::WORKFLOW_ACTION_ROW_HEIGHT),
+            Layout::top_down(Align::Min),|control|{
+                stage_button=Some(theme::action_full_width(
+                    control,button_text,theme::ButtonRole::Primary,enabled
+                ));
+            }
+        );
+        bar.add_enabled(false,
+            egui::Button::new("↶").min_size(Vec2::new(
+                theme::WORKFLOW_TRASH_WIDTH,
+                theme::WORKFLOW_ACTION_ROW_HEIGHT
+            ))
+        );
+    });
+    let response=stage_button.expect("workflow action occupies a fixed slot");
+    let hovered=if enabled{
+        response.hovered()
+    }else{
+        // A disabled save action must not block a non-mutating hover preview.
+        ui.interact(response.rect,Id::new(("workflow-stage-hover",id)),
+            egui::Sense::hover()).hovered()
+    };
+    (response.clicked(),hovered)
+}
 fn workflow_table_header(ui:&mut Ui){
     let width=ui.available_width();
     ui.horizontal(|columns|{
@@ -378,28 +445,18 @@ fn group_frame(
                     }));
                 }
             }
-        ui.horizontal(|ui|{
-            ui.label(typography::caption(&format!("배송 {}건",
-                group.shipments.len())));
-            ui.with_layout(Layout::right_to_left(Align::Center),|money_row|{
-                money_row.label(typography::quantity(&money(group.total)));
-                let vat=if group.vat_included>0 && group.vat_excluded>0{
-                    format!("포함{} · 별도{}",group.vat_included,group.vat_excluded)
-                }else if group.vat_included>0{
-                    "부가세 포함".to_owned()
-                }else{
-                    "부가세 별도".to_owned()
-                };
-                money_row.label(typography::caption(&vat));
-            });
-        });
-        // The employee action itself must remain absent until its native
-        // audited mutation + revision checked SQLite writer is migrated.
-        // The read-only stage label still owns the approved hover preview.
-        let label=ui.label(typography::field_label(
-            stage_name(group.step,group.needs_notice)
-        )).on_hover_text(STEP_NAMES[group.step.min(3)]);
-        if label.hovered() && !in_preview{*trigger=Some(group.id.clone());}
+        let vat=if group.vat_included>0 && group.vat_excluded>0{
+            format!("포함{}·별도{}",group.vat_included,group.vat_excluded)
+        }else if group.vat_included>0{
+            "부가세 포함".to_owned()
+        }else{"부가세 별도".to_owned()};
+        let (_,stage_hovered)=workflow_action_line(
+            ui,&group.id,group.shipments.len(),group.total,
+            Some(&vat),stage_name(group.step,group.needs_notice),false
+        );
+        if stage_hovered && !in_preview{
+            *trigger=Some(group.id.clone());
+        }
         if open || in_preview{
             components::soft_divider(ui);
             workflow_table_header(ui);
@@ -448,16 +505,11 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
                 .and_then(|v|v.get("recipients"))
                 .and_then(|v|v.as_array()).map(Vec::as_slice).unwrap_or(&[])
         }else{&[]};
-        ui.horizontal(|summary|{
-            summary.label(typography::caption(&format!("배송 {}건",recipients.len())));
-            summary.with_layout(Layout::right_to_left(Align::Center),|right|{
-                if theme::action(right,"거래처 확인",theme::ButtonRole::Primary,
-                    draft.client_id.is_none()).clicked(){
-                    event=Some(Event::SelectPending(draft.id.clone()));
-                }
-                right.label(typography::caption("금액 미확정"));
-            });
-        });
+        let (clicked,_)=workflow_action_line(
+            ui,&draft.id,recipients.len(),None,None,"거래처 확인",
+            draft.client_id.is_none()
+        );
+        if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
         if open{
             components::soft_divider(ui);
             workflow_table_header(ui);
