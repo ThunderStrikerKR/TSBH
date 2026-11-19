@@ -642,18 +642,43 @@ impl BandoEgui {
             theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false);
         }, |ui| {
             if self.source_editing || !self.raw_source.is_empty() {
-                let editor_height = (ui.available_height() - theme::SECTION_CONTENT_GAP).max(120.0);
-                let editor = ui.add_sized(
-                    Vec2::new(ui.available_width(), editor_height),
-                    egui::TextEdit::multiline(&mut self.raw_source)
-                        .font(egui::TextStyle::Body),
-                );
-                if editor.changed() {
-                    self.clear_source_analysis();
-                    self.queue_source_save();
-                    if !self.raw_source.trim().is_empty() {
-                        self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
-                        ui.ctx().request_repaint_after(Duration::from_millis(260));
+                // The source editor receives only the space left after this
+                // section's title, divider, gaps and padding. The old
+                // .max(120.0) could force a larger control than its pane.
+                // Longer originals scroll INSIDE this fixed viewport instead
+                // of enlarging the source section into automatic messages.
+                let editor_height = components::docked_section_body_height(height)
+                    .min(ui.available_height().max(0.0));
+                if editor_height > 0.0 {
+                    let viewport = Rect::from_min_size(
+                        ui.available_rect_before_wrap().min,
+                        Vec2::new(ui.available_width(), editor_height),
+                    );
+                    let clip = ui.clip_rect().intersect(viewport);
+                    let editor = ui.scope(|editor_ui| {
+                        editor_ui.set_clip_rect(clip);
+                        egui::ScrollArea::vertical()
+                            .id_salt("source-editor-vertical-scroll")
+                            .max_height(editor_height)
+                            .auto_shrink([false, false])
+                            .show(editor_ui, |scroll_ui| {
+                                scroll_ui.add_sized(
+                                    Vec2::new(scroll_ui.available_width(), editor_height),
+                                    egui::TextEdit::multiline(&mut self.raw_source)
+                                        .font(egui::TextStyle::Body),
+                                )
+                            })
+                            .inner
+                    }).inner;
+                    if editor.changed() {
+                        self.clear_source_analysis();
+                        self.queue_source_save();
+                        if !self.raw_source.trim().is_empty() {
+                            self.analysis_due_at = Some(
+                                Instant::now() + Duration::from_millis(250)
+                            );
+                            ui.ctx().request_repaint_after(Duration::from_millis(260));
+                        }
                     }
                 }
             } else {
@@ -695,7 +720,9 @@ impl BandoEgui {
             // instead of appearing as a narrow vertical stripe.
             let bottom_controls =
                 theme::ACTION_STANDARD_HEIGHT + theme::SPACE_8;
-            let field_height = (ui.available_height() - bottom_controls).max(48.0);
+            let available_body = components::docked_section_body_height(height)
+                .min(ui.available_height().max(0.0));
+            let field_height = (available_body - bottom_controls).max(0.0);
             let (field_rect, _) = ui.allocate_exact_size(
                 Vec2::new(ui.available_width(), field_height),
                 Sense::hover(),
