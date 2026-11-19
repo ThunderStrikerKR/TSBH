@@ -29,14 +29,16 @@ pub const SPACE_12: f32 = 12.0;
 pub const SPACE_16: f32 = 16.0;
 pub const SPACE_24: f32 = 24.0;
 pub const SPACING: f32 = SPACE_8;
-pub const HEADER_PADDING_X: i8 = 12;
+pub const HEADER_PADDING_X: i8 = 16;
+pub const BRAND_ICON_SIZE: f32 = 38.0;
+pub const HEADER_DRAG_STRIP: f32 = 8.0;
 pub const SECTION_PADDING: f32 = SPACE_16;
 pub const NESTED_PADDING: f32 = SPACE_12;
 pub const SECTION_HEADER_HEIGHT: f32 = 38.0;
 pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
-pub const FONT_BRAND: f32 = 19.0;
+pub const FONT_BRAND: f32 = 24.0;
 pub const FONT_PAGE_HEADING: f32 = 20.0;
 pub const FONT_SECTION_HEADING: f32 = 16.0;
 pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
@@ -61,7 +63,7 @@ pub const ACTION_EMPHASIZED_HEIGHT: f32 = 34.0;
 pub const ACTION_QUIET_HEIGHT: f32 = 32.0;
 // Reserve space for the single-row order total at the bottom of its pane.
 pub const SUMMARY_STRIP_HEIGHT: f32 = 58.0;
-pub const HEADER_HEIGHT: f32 = 54.0;
+pub const HEADER_HEIGHT: f32 = 62.0;
 pub const NAV_HEIGHT: f32 = 38.0;
 
 #[derive(Clone, Copy)]
