@@ -8,6 +8,33 @@ pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 pub const TABLE_ROW_HEIGHT: f32 = 42.0;
 pub const TABLE_HEADER_HEIGHT: f32 = 36.0;
 
+/// Align two actions as one balanced group, not two independently sized
+/// buttons. At narrow pane widths keep them equally wide by stacking rather
+/// than clipping Korean button text. This never changes the pane dimensions.
+pub fn paired_actions(
+    ui: &mut Ui,
+    left: (&str, theme::ButtonRole, bool),
+    right: (&str, theme::ButtonRole, bool),
+) -> (Response, Response) {
+    if ui.available_width() < 280.0 {
+        ui.vertical(|ui| {
+            (
+                theme::action_full_width(ui, left.0, left.1, left.2),
+                theme::action_full_width(ui, right.0, right.1, right.2),
+            )
+        }).inner
+    } else {
+        ui.columns(2, |columns| {
+            let (first, second) = columns.split_at_mut(1);
+            (
+                theme::action_full_width(&mut first[0], left.0, left.1, left.2),
+                theme::action_full_width(&mut second[0], right.0, right.1, right.2),
+            )
+        })
+    }
+}
+
+
 /// The actual content space in a fixed-height docked section. Reserve
 /// exactly the existing top/bottom frame padding, title, divider and gaps.
 /// Section widgets must not impose independent minimums that can spill
