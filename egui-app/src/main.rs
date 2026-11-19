@@ -754,12 +754,46 @@ impl BandoEgui {
         let manual_client_id = association.filter(|draft|
             draft.client_selection.as_deref() == Some("MANUAL")
         ).and_then(|draft| draft.client_id.clone());
+        let manual_receipt=association.filter(|draft|
+            draft.manual_model.is_some()
+        ).cloned();
         let (sender, receiver) = mpsc::channel();
         self.analysis_receiver = Some(receiver);
         std::thread::spawn(move || {
-            let result = reception_service::analyze_raw(
-                gateway.as_ref(), &source, windows, active_chat_handle, manual_client_id
-            );
+            let result=(|| -> Result<reception_service::ReceptionAnalysis,String> {
+                let mut analysis=reception_service::analyze_raw(
+                    gateway.as_ref(), &source, windows, active_chat_handle, manual_client_id
+                )?;
+                if let Some(row)=manual_receipt {
+                    // Reapply employee-confirmed assignments through Rust,
+                    // not a fresh UI parser. The source must still be exact.
+                    let model=row.manual_model.as_ref()
+                        .and_then(|value|value.get("model"))
+                        .ok_or("저장된 수동 분류 결과를 읽을 수 없습니다.")?;
+                    let keys=row.manual_model.as_ref()
+                        .and_then(|value|value.get("assignmentOrder"))
+                        .cloned().unwrap_or_else(||serde_json::json!([]));
+                    let order=manual_workspace::native_order(
+                        gateway.as_ref(),&row,&analysis.recognition
+                    )?;
+                    let result=gateway.execute(
+                        gateway::ReadOperation::ManualClassification,
+                        serde_json::json!({
+                            "action":"apply_manual","order":order,
+                            "model":model,"assignmentOrder":keys
+                        })
+                    )?;
+                    let recipients=result.get("order")
+                        .and_then(|order|order.get("recipients"))
+                        .filter(|value|value.is_array())
+                        .ok_or("저장된 수동 분류 적용 결과에 배송 정보가 없습니다.")?;
+                    analysis.recognition["recipients"]=recipients.clone();
+                    analysis.linked_spans=source_highlight::collect(
+                        &source,&analysis.recognition
+                    );
+                }
+                Ok(analysis)
+            })();
             let _ = sender.send((request, result));
             context.request_repaint();
         });
