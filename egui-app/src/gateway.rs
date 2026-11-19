@@ -51,7 +51,7 @@ pub trait BandoGateway: Send + Sync {
     /// This never creates a confirmed business order.
     fn load_working_source(&self) -> Result<WorkingSource, String>;
     /// Conditional write: another process may not overwrite a newer source.
-    fn save_working_source(&self, raw: &str, order_type: &str, revision: u64) -> Result<u64, String>;
+    fn save_working_source(&self, source: &WorkingSource) -> Result<u64, String>;
     /// Execute one of the explicitly allowed read-only business operations.
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String>;
 }
@@ -72,8 +72,8 @@ impl BandoGateway for LocalGateway {
         PreviewStore::initialize()?.load_source()
     }
 
-    fn save_working_source(&self, raw: &str, order_type: &str, revision: u64) -> Result<u64, String> {
-        PreviewStore::initialize()?.save_source(raw, order_type, revision)
+    fn save_working_source(&self, source: &WorkingSource) -> Result<u64, String> {
+        PreviewStore::initialize()?.save_source(source)
     }
 
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String> {
