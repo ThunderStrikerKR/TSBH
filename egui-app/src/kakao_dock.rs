@@ -52,6 +52,10 @@ impl KakaoDock {
             if self.session.is_some(){return Ok(());}
             let mut session=native::Session::connect()?;
             session.restore_minimized()?;
+            // A native owner relationship prevents HUB activation from pushing
+            // independent Kakao HWNDs behind it. Unsupported windows retain the
+            // existing foreground-event / repaint recovery path.
+            session.attach_independent_windows();
             session.sync(rect,scale)?;
             // React to the native foreground event, not only the next egui repaint.
             session.start_focus_hook()?;
@@ -125,6 +129,8 @@ mod native {
     }
     const GWL_STYLE:i32=-16;
     const GWL_EXSTYLE:i32=-20;
+    const GWLP_HWNDPARENT:i32=-8; // Top-level window OWNER, not child parent.
+    const GW_OWNER:u32=4;
     const WS_CAPTION:isize=0x00C00000;
     const WS_SYSMENU:isize=0x00080000;
     const WS_EX_TOPMOST:isize=0x00000008;
@@ -184,6 +190,8 @@ mod native {
         fn QueryFullProcessImageNameW(process:Handle,flags:u32,text:*mut u16,len:*mut u32)->i32;
         fn CloseHandle(process:Handle)->i32;
         fn GetCurrentProcessId()->u32;
+        fn SetLastError(code:u32);
+        fn GetLastError()->u32;
     }
     fn os(label:&str)->String{
         format!("{label}: {}",std::io::Error::last_os_error())
@@ -489,6 +497,7 @@ mod native {
     #[derive(Clone,Copy)]
     struct Tracked{
         hwnd:Hwnd,pid:u32,original:Placement,style:isize,topmost:bool,main:bool,
+        original_owner:Hwnd,owner_attempted:bool,owned_by_hub:Hwnd,
     }
     impl Tracked {
         fn new(c:&Candidate)->Result<Self,String>{
@@ -498,11 +507,63 @@ mod native {
                 topmost:unsafe{GetWindowLongPtrW(c.hwnd,GWL_EXSTYLE)}
                     & WS_EX_TOPMOST!=0,
                 main:c.main,
+                original_owner:unsafe{GetWindow(c.hwnd,GW_OWNER)},
+                owner_attempted:false,owned_by_hub:0,
             })
         }
         fn alive(self)->bool{
             (unsafe{IsWindow(self.hwnd)}!=0)
                 && pid(self.hwnd)==self.pid && kakao_process(self.pid)
+        }
+        // Touch only genuinely independent top-level Kakao HWNDs. A Kakao
+        // dialog that already has its own owner must retain that relationship.
+        fn try_own(&mut self,hub:Hwnd)->Result<(),String>{
+            if self.owner_attempted || !self.alive(){return Ok(());}
+            self.owner_attempted=true;
+            if self.original_owner!=0 || unsafe{GetWindow(self.hwnd,GW_OWNER)}!=0{
+                return Ok(());
+            }
+            unsafe{SetLastError(0);}
+            let previous=unsafe{SetWindowLongPtrW(
+                self.hwnd,GWLP_HWNDPARENT,hub
+            )};
+            let error=unsafe{GetLastError()};
+            if previous==0 && error!=0{
+                return Err(format!("카카오톡 소유 창 지정 불가 (Windows 오류 {error})"));
+            }
+            if unsafe{GetWindow(self.hwnd,GW_OWNER)}!=hub{
+                // Never retain a half-applied foreign-window ownership edit.
+                unsafe{SetWindowLongPtrW(self.hwnd,GWLP_HWNDPARENT,self.original_owner);}
+                return Err("카카오톡 창의 소유 관계를 확인하지 못했습니다.".into());
+            }
+            self.owned_by_hub=hub;
+            unsafe{SetWindowPos(self.hwnd,HWND_TOP,0,0,0,0,
+                SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_FRAMECHANGED);}
+            Ok(())
+        }
+        fn detach_owner(&mut self)->Result<(),String>{
+            if self.owned_by_hub==0 || !self.alive(){return Ok(());}
+            // Kakao may have re-owned the window while connected. Never
+            // overwrite an independent ownership change made by Kakao.
+            if unsafe{GetWindow(self.hwnd,GW_OWNER)}!=self.owned_by_hub{
+                self.owned_by_hub=0;
+                return Ok(());
+            }
+            unsafe{SetLastError(0);}
+            let previous=unsafe{SetWindowLongPtrW(
+                self.hwnd,GWLP_HWNDPARENT,self.original_owner
+            )};
+            let error=unsafe{GetLastError()};
+            if previous==0 && error!=0{
+                return Err(format!("카카오톡 소유 관계 해제 불가 (Windows 오류 {error})"));
+            }
+            unsafe{SetWindowPos(self.hwnd,HWND_TOP,0,0,0,0,
+                SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_FRAMECHANGED);}
+            if unsafe{GetWindow(self.hwnd,GW_OWNER)}!=self.original_owner{
+                return Err("카카오톡 소유 관계 해제를 확인하지 못했습니다.".into());
+            }
+            self.owned_by_hub=0;
+            Ok(())
         }
         fn restore(self){
             if !self.alive(){return;}
@@ -576,6 +637,15 @@ mod native {
         focus_hook:WinEventHook,
     }
     impl Session{
+        fn attach_independent_windows(&mut self){
+            for window in &mut self.windows{
+                if let Err(reason)=window.try_own(self.hub){
+                    // Ownership can be denied by UIPI / another Kakao owner.
+                    // Continue with the already-installed foreground fallback.
+                    eprintln!("[BANDO HUB] 카카오톡 소유 창 건너뜀: {reason}");
+                }
+            }
+        }
         fn refresh_focus_guard(&self){
             if self.focus_hook==0{return;}
             ACTIVE_DOCK.with(|state|{
@@ -711,6 +781,7 @@ mod native {
                 !self.windows.iter().any(|w|w.hwnd==hwnd)){
                 self.active_chat=self.windows.iter().find(|w|!w.main).map(|w|w.hwnd);
             }
+            self.attach_independent_windows();
             self.refresh_focus_guard();
             let before=self.windows.iter().filter_map(|w|
                 outer(w.hwnd).ok().map(|rect|(w.hwnd,rect))
@@ -769,6 +840,13 @@ mod native {
                 ACTIVE_DOCK.with(|state|{
                     if let Ok(mut current)=state.try_borrow_mut(){*current=None;}
                 });
+            }
+            // IMPORTANT: detach external Kakao windows before restoring
+            // their placement and before eframe tears down the HUB HWND.
+            for window in &mut self.windows{
+                if let Err(reason)=window.detach_owner(){
+                    eprintln!("[BANDO HUB] 카카오톡 소유 관계 복원 실패: {reason}");
+                }
             }
             for window in self.windows.drain(..){
                 window.restore();
