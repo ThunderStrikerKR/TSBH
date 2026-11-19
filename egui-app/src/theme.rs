@@ -31,6 +31,10 @@ pub const SPACE_24: f32 = 24.0;
 pub const SPACING: f32 = SPACE_8;
 pub const HEADER_PADDING_X: i8 = 16;
 pub const BRAND_ICON_SIZE: f32 = 38.0;
+// Optical overlap: the PNG has transparent right padding and the brand
+// font has a left side-bearing. A negative canvas gap leaves a small visible
+// gap, so the red mark and wordmark read as a single identity.
+pub const BRAND_WORDMARK_GAP: f32 = -4.0;
 pub const HEADER_DRAG_STRIP: f32 = 8.0;
 pub const SECTION_PADDING: f32 = SPACE_16;
 pub const NESTED_PADDING: f32 = SPACE_12;
