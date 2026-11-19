@@ -168,8 +168,12 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     validate(changes,expected)?;
     // The client master uses another SQLite connection; read references
     // BEFORE acquiring the IMMEDIATE settings write lock.
-    let clients=client_master::load()?;
-    let used=used_accounts(&clients["clients"]);
+    let account_changed=["accounts","defaultAccountId","brandAccounts"]
+        .iter().any(|key|changes.contains_key(*key));
+    let used=if account_changed{
+        let clients=client_master::load()?;
+        used_accounts(&clients["clients"])
+    }else{Vec::new()};
     let mut conn=connection()?;
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_|"설정 저장 트랜잭션 시작 실패")?;
@@ -187,7 +191,9 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
         else{entries.insert(key.clone(),value.clone());}
     }
     // Account IDs and client references are not a UI-only decision.
-    validate_accounts(&settings,&used)?;
+    // Exactly like Tauri settings_patch: an unrelated sender/scale edit
+    // must not be blocked by untouched historical account records.
+    if account_changed{validate_accounts(&settings,&used)?;}
     let next=revision.checked_add(1).ok_or("설정 revision 한도 초과")?;
     let payload=serde_json::to_string(&settings).map_err(|e|e.to_string())?;
     if payload.len()>SETTINGS_CAP{
