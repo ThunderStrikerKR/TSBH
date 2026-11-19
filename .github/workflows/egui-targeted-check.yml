@@ -1,4 +1,4 @@
-# Targeted Windows compile: Kakao identity icon, compact three-action toolbar and dock body alignment.
+# Targeted Windows compile: recover KakaoTalk z-order on HUB activation without global topmost.
 name: Tauri native CLI executable compile check
 on:
   push:
