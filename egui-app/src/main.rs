@@ -17,6 +17,7 @@ mod clipboard_intake;
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
 use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
+use preview_store::{WorkingReception, WorkingSource};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::{self, Receiver},
@@ -103,6 +104,8 @@ struct BandoEgui {
     dragging_split: Option<HorizontalSplitDrag>,
     dragging_vertical: Option<VerticalSplitDrag>,
     raw_source: String,
+    drafts: Vec<WorkingReception>,
+    active_id: Option<String>,
     source_editing: bool,
     order_type: OrderType,
     clipboard_monitor: ClipboardMonitor,
@@ -136,6 +139,8 @@ impl Default for BandoEgui {
             dragging_split: None,
             dragging_vertical: None,
             raw_source: String::new(),
+            drafts: Vec::new(),
+            active_id: None,
             source_editing: false,
             order_type: OrderType::Agency,
             clipboard_monitor: ClipboardMonitor::default(),
@@ -165,13 +170,74 @@ impl BandoEgui {
     // the previous result and its request sequence, so stale replies are ignored.
     fn queue_source_save(&mut self) {
         self.source_save_error = None;
+        if let Some(active_id) = self.active_id.as_deref() {
+            let Some(active) = self.drafts.iter_mut().find(|item| item.id == active_id) else {
+                self.source_save_error = Some("활성 발주서를 찾을 수 없습니다.".to_owned());
+                return;
+            };
+            active.raw.clone_from(&self.raw_source);
+            active.order_type = self.order_type.as_str().to_owned();
+        }
+        let source = WorkingSource {
+            raw: self.raw_source.clone(),
+            order_type: self.order_type.as_str().to_owned(),
+            revision: 0, // The serialized autosave worker owns the latest revision.
+            active_id: self.active_id.clone(),
+            drafts: self.drafts.clone(),
+        };
         if let Some(worker) = &self.source_autosave {
-            if let Err(error) = worker.queue(self.raw_source.clone(), self.order_type.as_str().to_owned()) {
+            if let Err(error) = worker.queue(source) {
                 self.source_save_error = Some(error);
             }
         } else {
             self.source_save_error = Some("격리 원문 저장소가 초기화되지 않았습니다.".to_owned());
         }
+    }
+
+    // Every reception has its own source. Selecting an existing one never
+    // replaces the text of a different order or merges their evidence.
+    fn select_reception(&mut self, id: &str, ctx: &egui::Context) {
+        let Some(item) = self.drafts.iter().find(|item| item.id == id).cloned() else {
+            self.source_save_error = Some("선택한 발주서를 찾을 수 없습니다.".to_owned());
+            return;
+        };
+        if self.active_id.as_deref() == Some(id) {
+            self.source_editing = true;
+            return;
+        }
+        self.active_id = Some(item.id);
+        self.raw_source = item.raw;
+        self.order_type = OrderType::parse(&item.order_type).unwrap_or_default();
+        self.source_editing = true;
+        self.clear_source_analysis();
+        if !self.raw_source.trim().is_empty() {
+            self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
+            ctx.request_repaint_after(Duration::from_millis(260));
+        }
+        self.queue_source_save();
+    }
+
+    fn new_reception(&mut self, ctx: &egui::Context) {
+        // An already-open empty receipt is the new order. Do not multiply
+        // empty records when the user clicks "+ 새 주문" repeatedly.
+        if self.active_id.as_deref().and_then(|id|
+            self.drafts.iter().find(|item| item.id == id)
+        ).is_some_and(|item| item.raw.trim().is_empty()) {
+            self.source_editing = true;
+            return;
+        }
+        use std::sync::atomic::AtomicU64;
+        use std::time::{SystemTime, UNIX_EPOCH};
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        let epoch = SystemTime::now().duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos()).unwrap_or(0);
+        let id = format!("egui-{}-{epoch}-{}", std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::Relaxed));
+        self.drafts.push(WorkingReception {
+            id: id.clone(), raw: String::new(),
+            order_type: OrderType::Agency.as_str().to_owned(),
+        });
+        self.select_reception(&id, ctx);
     }
 
     fn poll_source_saves(&mut self) {
@@ -296,6 +362,9 @@ impl BandoEgui {
 
     fn apply_intake_text(&mut self, text: String, order_type: OrderType, ctx: &egui::Context) {
         if text.trim().is_empty() { return; }
+        if self.active_id.is_none() {
+            self.new_reception(ctx);
+        }
         let changed = self.raw_source != text;
         self.raw_source = text;
         self.order_type = order_type;
@@ -970,13 +1039,16 @@ impl BandoEgui {
 
     fn source_section(&mut self, ui: &mut Ui, height: f32) {
         let mut begin_input = false;
+        let mut begin_new_order = false;
         let mut start_clipboard = None;
         let can_receive_clipboard =
             self.clipboard_monitor.kind().has_intake() && !self.clipboard_busy;
         let ocr_processing = self.ocr_processing;
         let cancel_ocr = Arc::clone(&self.clipboard_cancel);
         Self::section_with_header(ui, "발주 원문", height, |ui| {
-            theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false);
+            if theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, true).clicked() {
+                begin_new_order = true;
+            }
         }, |ui| {
             if self.source_editing || !self.raw_source.is_empty() {
                 // The source editor receives only the space left after this
@@ -1076,7 +1148,13 @@ impl BandoEgui {
                     });
             }
         });
+        if begin_new_order {
+            self.new_reception(ui.ctx());
+        }
         if begin_input {
+            if self.active_id.is_none() {
+                self.new_reception(ui.ctx());
+            }
             self.source_editing = true;
         }
         if let Some(kind) = start_clipboard {
@@ -1329,10 +1407,37 @@ impl BandoEgui {
     }
 
     fn orders_pane(&mut self, ui: &mut Ui) {
-        // Same section frame, header inset and divider as the other panes.
-        // Do not replace an empty order list with invented placeholder text.
         let height = ui.available_height();
-        Self::section(ui, "처리 중인 주문", height, |_| {});
+        let active = self.active_id.clone();
+        let rows: Vec<(String, String)> = self.drafts.iter().rev().map(|item| {
+            let kind = if item.order_type == "DEALER" { "대리점 납품" } else { "대리발송" };
+            let title = item.raw.lines().find(|line| !line.trim().is_empty())
+                .unwrap_or("새 발주서").trim();
+            let excerpt: String = title.chars().take(40).collect();
+            (item.id.clone(), format!("{kind} · {excerpt}"))
+        }).collect();
+        let mut select = None;
+        Self::section(ui, "처리 중인 주문", height, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("working-receptions-list")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (id, title) in &rows {
+                        let role = if active.as_deref() == Some(id.as_str()) {
+                            ButtonRole::ActiveNavigation
+                        } else {
+                            ButtonRole::Quiet
+                        };
+                        if theme::action(ui, title, role, true).clicked() {
+                            select = Some(id.clone());
+                        }
+                        components::soft_divider(ui);
+                    }
+                });
+        });
+        if let Some(id) = select {
+            self.select_reception(&id, ui.ctx());
+        }
     }
 
     fn other_page(&mut self, ctx: &egui::Context) {
@@ -1426,19 +1531,22 @@ fn main() -> eframe::Result<()> {
                 Arc::clone(&backend), restored.revision, cc.egui_ctx.clone()
             );
             let source_editing = !restored.raw.is_empty();
+            let saved_type = match OrderType::parse(&restored.order_type) {
+                Ok(kind) => kind,
+                Err(error) => {
+                    eprintln!("[BANDO HUB] 접수 유형 복원 실패: {error}");
+                    std::process::exit(2);
+                }
+            };
             if source_editing { cc.egui_ctx.request_repaint_after(Duration::from_millis(260)); }
             Ok(Box::new(BandoEgui {
                 brand_texture: Some(brand_texture),
                 gateway: backend,
                 raw_source: restored.raw,
+                drafts: restored.drafts,
+                active_id: restored.active_id,
                 source_editing,
-                order_type: match OrderType::parse(&restored.order_type) {
-                    Ok(kind) => kind,
-                    Err(error) => {
-                        eprintln!("[BANDO HUB] 접수 유형 복원 실패: {error}");
-                        std::process::exit(2);
-                    }
-                },
+                order_type: saved_type,
                 source_autosave: Some(autosave),
                 analysis_due_at: if source_editing {
                     Some(Instant::now() + Duration::from_millis(250))
