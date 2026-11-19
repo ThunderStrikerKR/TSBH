@@ -595,16 +595,21 @@ impl ManualWorkspace {
                     );
                 });
                 ui.separator();
-                ui.horizontal(|ui|{
-                    if theme::action(ui,"초안에 적용",ButtonRole::Primary,!busy).clicked(){
-                        apply=true;
-                    }
-                    if theme::action(ui,"닫기",ButtonRole::Quiet,!busy).clicked(){
-                        discard=true;
-                    }
-                    ui.label(typography::caption(
+                ui.horizontal(|footer|{
+                    // React manual footer: status stays left; close, then
+                    // primary apply stay together at the right edge.
+                    footer.label(typography::caption(
                         &format!("미배정됨: {unassigned}개")
                     ));
+                    footer.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |actions|{
+                            if theme::action(actions,"초안에 적용",ButtonRole::Primary,!busy)
+                                .clicked(){apply=true;}
+                            if theme::action(actions,"닫기",ButtonRole::Quiet,!busy)
+                                .clicked(){discard=true;}
+                        }
+                    );
                 });
             });
         // Search opens only for the current native recipient/item identity.
