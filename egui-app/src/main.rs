@@ -2064,16 +2064,17 @@ impl BandoEgui {
                                 "운영 작업본 저장 후 변경사항 있음 · 다시 저장 필요"
                             }));
                         }
-                        if row.manual_model.is_some() {
+                        if row.manual_model.is_some() && !row.working_synced {
                             ui.label(typography::caption(
-                                "수동 분류 적용됨 · 운영 작업본 저장은 아직 별도 검증 필요"
+                                "수동 분류 반영 대기 · 운영 미확정 작업본 저장 필요"
                             ));
                         }
-                        if self.gateway.working_commit_enabled() && row.manual_model.is_none() {
+                        if self.gateway.working_commit_enabled() {
                             if self.working_sync.is_some() {
                                 ui.label(typography::caption("운영 작업본 저장 중"));
                             } else if row.client_id.is_some() && !row.raw.trim().is_empty() {
-                                if row.pricing_preview.is_some() {
+                                if row.manual_model.is_some() ||
+                                   row.pricing_preview.is_some() {
                                     if theme::action(
                                         ui,"운영 작업본 저장",ButtonRole::Standard,
                                         !row.working_synced
