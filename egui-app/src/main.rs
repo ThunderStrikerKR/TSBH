@@ -6,7 +6,7 @@ mod theme;
 mod layout;
 mod components;
 
-use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Rect, Sense, Ui, UiBuilder, Vec2};
+use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, PANEL_GAP};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -160,7 +160,7 @@ impl BandoEgui {
             return;
         }
         let Some(pointer) = ctx.input(|input| input.pointer.hover_pos()) else { return; };
-        let bounds = ctx.screen_rect();
+        let bounds = ctx.viewport_rect();
         let edge = 6.0;
         let left = pointer.x <= bounds.left() + edge;
         let right = pointer.x >= bounds.right() - edge;
