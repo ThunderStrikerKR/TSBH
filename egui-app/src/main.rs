@@ -19,6 +19,7 @@ mod client_chooser;
 mod business_state;
 mod native_order_change;
 mod source_highlight;
+mod manual_workspace;
 mod kakao_context;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
@@ -151,6 +152,7 @@ struct BandoEgui {
     source_autosave: Option<source_autosave::SourceAutosave>,
     source_save_error: Option<String>,
     client_chooser: Option<ClientChooser>,
+    manual_workspace: Option<manual_workspace::ManualWorkspace>,
     client_change: Option<PendingClientChange>,
     working_sync: Option<PendingWorkingSync>,
     working_sync_error: Option<String>,
@@ -196,6 +198,7 @@ impl Default for BandoEgui {
             source_autosave: None,
             source_save_error: None,
             client_chooser: None,
+            manual_workspace: None,
             client_change: None,
             working_sync: None,
             working_sync_error: None,
@@ -228,6 +231,7 @@ impl BandoEgui {
                 active.analysis_evidence = None;
                 active.client_match = None;
                 active.pricing_preview = None;
+                active.manual_model = None;
                 active.working_synced = false;
                 // Source changes revoke only automatic dealer assignment.
                 // A deliberate employee selection stays with this receipt.
@@ -298,6 +302,7 @@ impl BandoEgui {
                     item.analysis_evidence = None;
                     item.client_match = None;
                     item.pricing_preview = None;
+                    item.manual_model = None;
                     item.working_synced = false;
                     if item.client_selection.as_deref() != Some("MANUAL") {
                         item.client_id = None;
@@ -394,6 +399,7 @@ impl BandoEgui {
                         row.client_id=Some(result.client_id);
                         row.client_selection=Some("MANUAL".into());
                         row.pricing_preview=Some(result.pricing_preview);
+                        row.manual_model=None;
                         row.working_synced=false;
                         row.analysis_raw=None;
                         row.analysis_evidence=None;
@@ -620,7 +626,7 @@ impl BandoEgui {
             analysis_raw: None, analysis_evidence: None, client_match: None,
             chat_handle: None, chat_title: None,
             client_id: None, client_selection: None, pricing_preview: None,
-            working_version: None, working_synced: false,
+            working_version: None, working_synced: false, manual_model: None,
         });
         self.select_reception(&id, ctx);
     }
