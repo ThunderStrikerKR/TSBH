@@ -9,6 +9,33 @@ use crate::{gateway::{BandoGateway,ReadOperation},theme::{self,ButtonRole},typog
 fn field<'a>(v:&'a Value,key:&str)->&'a str{
     v.get(key).and_then(Value::as_str).unwrap_or("")
 }
+/// Mirror React's categoryFilterLevels presentation. Product inclusion,
+/// brand aliases and listing order are still entirely decided by Rust.
+fn category_levels(categories:&[Value],selected_id:&str)->Vec<(usize,String,String,Vec<Value>)> {
+    let mut ancestors=Vec::<String>::new();
+    let mut cursor=selected_id.to_owned();
+    let mut visited=std::collections::HashSet::new();
+    while !cursor.is_empty() && visited.insert(cursor.clone()) {
+        let Some(row)=categories.iter().find(|row|field(row,"id")==cursor)
+            else{break};
+        ancestors.push(cursor.clone());
+        cursor=field(row,"parentId").to_owned();
+    }
+    ancestors.reverse();
+    let mut levels=Vec::new();
+    for depth in 0..=ancestors.len() {
+        let parent=if depth==0{String::new()}else{ancestors[depth-1].clone()};
+        let children=categories.iter().filter(|category|{
+            field(category,"parentId")==parent &&
+            category.get("active")!=Some(&Value::Bool(false))
+        }).cloned().collect::<Vec<_>>();
+        if children.is_empty() && depth>0{break;}
+        let value=ancestors.get(depth).cloned().unwrap_or_default();
+        levels.push((depth,parent,value,children));
+    }
+    levels
+}
+
 struct Results{catalog:Value,products:Vec<Value>,detail_ids:Vec<String>}
 pub enum Event{Cancelled,Chosen(Value)}
 pub struct ProductSearch{
@@ -110,27 +137,49 @@ impl ProductSearch{
                         .cloned().unwrap_or_default();
                     let categories=catalog.get("categories").and_then(Value::as_array)
                         .cloned().unwrap_or_default();
-                    ui.horizontal(|ui|{
-                        egui::ComboBox::from_id_salt("native-product-category")
-                            .selected_text(categories.iter().find(|c|field(c,"id")==self.major)
-                                .map(|v|field(v,"name")).unwrap_or("전체 분류"))
-                            .show_ui(ui,|ui|{
-                                if ui.selectable_value(&mut self.major,String::new(),"전체 분류").changed(){changed=true;}
-                                for row in &categories{
-                                    let id=field(row,"id");
-                                    if !id.is_empty() && ui.selectable_value(&mut self.major,id.to_owned(),
-                                        field(row,"name")).changed(){changed=true;}
-                                }
-                            });
+                    let levels=category_levels(&categories,&self.major);
+                    ui.horizontal_wrapped(|ui|{
+                        for (depth,parent,selected,children) in levels {
+                            let label=children.iter().find(|c|field(c,"id")==selected)
+                                .map(|c|field(c,"name"))
+                                .unwrap_or(if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
+                            egui::ComboBox::from_id_salt(("manual-product-category",depth))
+                                .selected_text(label)
+                                .show_ui(ui,|ui|{
+                                    let reset=if depth==0{String::new()}else{parent.clone()};
+                                    if ui.selectable_label(selected.is_empty(),
+                                        if depth==0{"전체 카테고리"}else{"현재 분류 전체"})
+                                        .clicked() {
+                                        self.major=reset;
+                                        changed=true;
+                                    }
+                                    for row in &children {
+                                        let id=field(row,"id");
+                                        if !id.is_empty() &&
+                                            ui.selectable_label(selected==id,field(row,"name"))
+                                                .clicked() {
+                                            self.major=id.to_owned();
+                                            changed=true;
+                                        }
+                                    }
+                                });
+                        }
+                        if !self.major.is_empty() &&
+                            theme::action(ui,"카테고리 초기화",ButtonRole::Quiet,true).clicked() {
+                            self.major.clear();
+                            changed=true;
+                        }
                         egui::ComboBox::from_id_salt("native-product-brand")
                             .selected_text(brands.iter().find(|b|field(b,"id")==self.brand)
                                 .map(|v|field(v,"name")).unwrap_or("전체 브랜드"))
                             .show_ui(ui,|ui|{
-                                if ui.selectable_value(&mut self.brand,String::new(),"전체 브랜드").changed(){changed=true;}
-                                for row in &brands{
+                                if ui.selectable_value(&mut self.brand,String::new(),
+                                    "전체 브랜드").changed(){changed=true;}
+                                for row in &brands {
                                     let id=field(row,"id");
-                                    if !id.is_empty() && ui.selectable_value(&mut self.brand,id.to_owned(),
-                                        field(row,"name")).changed(){changed=true;}
+                                    if !id.is_empty() && ui.selectable_value(
+                                        &mut self.brand,id.to_owned(),field(row,"name")
+                                    ).changed(){changed=true;}
                                 }
                             });
                     });
