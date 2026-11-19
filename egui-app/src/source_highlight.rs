@@ -61,6 +61,7 @@ impl HoverState {
                 self.scroll_to=Some(key);
                 self.pending=None;
                 self.pending_at=None;
+                ctx.request_repaint();
             } else {
                 ctx.request_repaint_after(HOVER_ENTER);
             }
@@ -72,6 +73,7 @@ impl HoverState {
                 if now>=expire {
                     self.active=None;
                     self.release_at=None;
+                    ctx.request_repaint();
                 } else {
                     ctx.request_repaint_after(HOVER_EXIT);
                 }
