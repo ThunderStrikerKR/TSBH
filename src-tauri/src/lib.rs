@@ -592,12 +592,13 @@ fn validate_message_templates(state: &Value) -> Result<(), String> {
 
 // Save just the edited settings keys. Order/product updates do not invalidate
 // this edit, but a simultaneous edit of the very same settings key is rejected.
-#[tauri::command]
-fn settings_patch(db: State<'_, Database>, changes: Value, expected: Value) -> Result<Value, String> {
+fn apply_settings_patch(
+    conn: &mut Connection, is_test: bool, changes: &Value, expected: &Value
+) -> Result<Value, String> {
     let changes = changes.as_object().ok_or("설정 변경 형식 오류")?;
     let expected = expected.as_object().ok_or("설정 기준값 형식 오류")?;
-    if changes.is_empty() { return get_snapshot(&*lock_db(&db)?); }
-    if db.is_test && (changes.contains_key("excelDirectory") || changes.contains_key("factoryReplyDirectory") || changes.contains_key("orderImageInboxDirectory")) {
+    if changes.is_empty() { return get_snapshot(conn); }
+    if is_test && (changes.contains_key("excelDirectory") || changes.contains_key("factoryReplyDirectory") || changes.contains_key("orderImageInboxDirectory")) {
         return Err("격리 작업공간의 Excel 보관 경로는 변경할 수 없습니다.".into());
     }
     let allowed = ["senderPostcode", "excelDirectory", "factoryReplyDirectory", "orderImageInboxDirectory",
@@ -605,8 +606,7 @@ fn settings_patch(db: State<'_, Database>, changes: Value, expected: Value) -> R
         "panelRatios", "receptionVerticalRatio", "operatorName", "uiScale", "accounts",
         "defaultAccountId", "senderName", "senderAddress", "senderPhone", "senderMobile",
         "rounding", "brandAccounts", "specialPolicy"];
-    let mut conn = lock_db(&db)?;
-    let mut state = get_snapshot(&conn)?;
+    let mut state = get_snapshot(conn)?;
     let revision = state["revision"].as_u64().unwrap_or(0);
     for (field, updated) in changes {
         if !allowed.contains(&field.as_str()) || !expected.contains_key(field) {
@@ -637,8 +637,19 @@ fn settings_patch(db: State<'_, Database>, changes: Value, expected: Value) -> R
     if ["accounts", "defaultAccountId", "brandAccounts"].iter().any(|k| changes.contains_key(*k)) {
         validate_accounts(&state)?;
     }
-    write_snapshot(&mut conn, state, revision, true)
+    write_snapshot(conn, state, revision, true)
 }
+
+/// The existing Tauri command and the opt-in native egui helper share
+/// EXACTLY the same validation, per-field CAS and revision-checked writer.
+#[tauri::command]
+fn settings_patch(
+    db: State<'_, Database>, changes: Value, expected: Value
+) -> Result<Value,String>{
+    let mut conn=lock_db(&db)?;
+    apply_settings_patch(&mut conn,db.is_test,&changes,&expected)
+}
+
 #[tauri::command]
 fn price_set(db: State<'_, Database>, product_id: String, variant_id: String, tier: String,
              price: Option<i64>, expected: Option<i64>) -> Result<Value, String> {
