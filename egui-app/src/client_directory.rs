@@ -177,14 +177,14 @@ mod tests {
     fn live_relational_database_is_read_only_and_exposes_only_names() {
         use rusqlite::Connection;
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("CREATE TABLE core_schema(key TEXT,version INTEGER);
+        conn.execute_batch(r#"CREATE TABLE core_schema(key TEXT,version INTEGER);
           CREATE TABLE core_clients(id TEXT,position INTEGER,payload TEXT);
           CREATE TABLE app_state(id INTEGER,payload TEXT);
           INSERT INTO core_schema VALUES('business-core',2);
           INSERT INTO core_clients VALUES('c1',0,
             '{"id":"c1","name":"악기사","active":true,"phone":"hidden","tier":"special"}');
           INSERT INTO app_state VALUES(1,
-            '{"settings":{"kakaoTitleMappings":{"악기사":{"clientId":"c1","ambiguous":false}}}}');")
+            '{"settings":{"kakaoTitleMappings":{"악기사":{"clientId":"c1","ambiguous":false}}}}');"#)
             .unwrap();
         let (clients, settings) = load_business_from_connection(&conn).unwrap();
         assert_eq!(clients[0]["name"], "악기사");
