@@ -4,6 +4,7 @@
 
 mod theme;
 mod layout;
+mod components;
 
 use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, PANEL_GAP};
@@ -455,16 +456,22 @@ impl BandoEgui {
             ui.label(theme::caption(if self.sample {
                 "샘플 UI에는 실제 Rust 분석 결과가 없습니다."
             } else {
-                "필수 확인 사항 없음"
+                "Rust 분석 결과 미연결"
             }));
         });
         ui.add_space(PANEL_GAP);
         Self::section(ui, "수취인별 주문 정보", (full_height * 0.22).max(145.0), |ui| {
             if self.sample {
-                theme::label_value(ui, "이름", "샘플수취인");
-                theme::label_value(ui, "주소", "샘플시 샘플로 123");
-                theme::label_value(ui, "휴대폰", "010-0000-0000");
-                theme::label_value(ui, "요청 메시지", "없음");
+                // Disabled controls exercise the exact common input geometry.
+                // No sample values are persisted or sent to the business engine.
+                let mut name = String::from("샘플수취인");
+                let mut address = String::from("샘플시 샘플로 123");
+                let mut phone = String::from("010-0000-0000");
+                let mut note = String::from("없음");
+                components::labeled_field(ui, "이름", &mut name, components::FieldKind::Text, false);
+                components::labeled_field(ui, "주소", &mut address, components::FieldKind::Address, false);
+                components::labeled_field(ui, "휴대전화", &mut phone, components::FieldKind::Telephone, false);
+                components::labeled_field(ui, "요청 메시지", &mut note, components::FieldKind::Text, false);
             } else {
                 ui.label(theme::caption("발주 원문을 입력하거나 배송 건을 선택하세요."));
             }
@@ -503,18 +510,14 @@ impl BandoEgui {
             } else {
                 ui.label(theme::caption("거래처 선택 후 운임과 청구금액을 확인합니다."));
             }
-            ui.add_space((ui.available_height() - 42.0).max(4.0));
-            theme::divider(ui);
-            ui.horizontal(|ui| {
-                ui.label(theme::caption("총 주문"));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(
-                        RichText::new(if self.sample { "62,000원" } else { "—" })
-                            .size(16.0).strong().color(theme::TEXT),
-                    );
-                });
+            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                components::summary_strip(
+                    ui,
+                    "총 주문",
+                    if self.sample { "62,000원" } else { "—" },
+                    if self.sample { "택배 1건 · 부가세 별도" } else { "택배 0건 · 부가세 별도" },
+                );
             });
-            ui.label(theme::caption(if self.sample { "택배 1건 · 부가세 별도" } else { "택배 0건 · 부가세 별도" }));
         });
     }
 
@@ -526,7 +529,7 @@ impl BandoEgui {
             if self.sample {
                 for index in 0..2 {
                     let selected = self.order_expanded[index];
-                    theme::section_frame().show(ui, |ui| {
+                    components::record_card(ui, |ui| {
                         ui.horizontal(|ui| {
                             let caret = if selected { "▾" } else { "▸" };
                             if theme::action(ui, &format!("{caret} 샘플거래처"), ButtonRole::Quiet, true).clicked() {
@@ -534,17 +537,13 @@ impl BandoEgui {
                             }
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 theme::action(ui, "묶음 관리", ButtonRole::Standard, false);
-                                for stage in (0..4).rev() {
-                                    let completed = stage <= if index == 0 { 0 } else { 3 };
-                                    let color = if !completed { theme::BORDER } else if index == 0 {
-                                        theme::SELECTED_ORDER
-                                    } else if stage == 3 {
-                                        theme::SELECTED_ORDER
-                                    } else {
-                                        theme::SUCCESS
-                                    };
-                                    ui.colored_label(color, "●");
-                                }
+                                let tones = [
+                                    if index == 0 { components::StatusTone::Active } else { components::StatusTone::Complete },
+                                    if index == 0 { components::StatusTone::Neutral } else { components::StatusTone::Complete },
+                                    if index == 0 { components::StatusTone::Neutral } else { components::StatusTone::Complete },
+                                    if index == 0 { components::StatusTone::Neutral } else { components::StatusTone::Active },
+                                ];
+                                components::status_dots(ui, &tones);
                             });
                         });
                         theme::divider(ui);
@@ -562,16 +561,14 @@ impl BandoEgui {
                         });
                         if selected {
                             theme::divider(ui);
-                            ui.label(theme::caption("수취인                 품목                                     운임"));
-                            theme::nested_frame().show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.label(theme::body("샘플수취인"));
-                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        ui.label(theme::body("3,000원"));
-                                    });
-                                });
-                                ui.label(theme::caption("709-1 / 블랙 / 비타공 상판 × 1"));
-                            });
+                            components::table_header(ui, &[
+                                ("수취인", 90.0), ("품목", 164.0), ("운임", 76.0),
+                            ]);
+                            components::table_row(ui, &[
+                                ("샘플수취인", 90.0),
+                                ("709-1 블랙 × 1", 164.0),
+                                ("3,000원", 76.0),
+                            ]);
                         }
                     });
                     ui.add_space(PANEL_GAP);
