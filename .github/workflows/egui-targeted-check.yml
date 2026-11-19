@@ -1,4 +1,4 @@
-# Final targeted check: real executable entrypoint for the native manual save.
+# Targeted native compile check: Tauri CLI and egui client manager after final UI/source sync.
 name: Tauri native CLI executable compile check
 on:
   push:
