@@ -133,9 +133,11 @@ pub fn flexible_text_field(
 pub fn manual_table_cell(ui:&mut Ui,value:&str,width:f32,selected:bool)->Response {
     let label=if value.trim().is_empty(){"미입력"}else{value};
     let border=if selected {
-        Stroke::new(2.0,theme::SELECTED_ORDER)
+        Stroke::new(theme::DOCK_SPLITTER_HOVER_LINE,theme::SELECTED_ORDER)
     }else{
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+        // Two adjacent cells share one visual divider. Never create a
+        // double 2pt border on every table column.
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
     };
     ui.add_sized(
         Vec2::new(width,theme::MANUAL_TABLE_ROW_HEIGHT),
