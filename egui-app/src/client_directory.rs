@@ -105,7 +105,7 @@ fn load_business_from_connection(conn: &rusqlite::Connection) -> Result<(Value, 
 
 /// Only the native matching and local chooser fields are projected. No
 /// order history, overrides, payment terms or account details are copied.
-fn project_index(value: &Value) -> Result<(Value, Value), String> {
+pub(crate) fn project_index(value: &Value) -> Result<(Value, Value), String> {
     let clients = value.get("clients").and_then(Value::as_array)
         .ok_or("거래처 인덱스에는 clients 배열이 필요합니다.")?;
     if clients.len() > MAX_CLIENTS {
