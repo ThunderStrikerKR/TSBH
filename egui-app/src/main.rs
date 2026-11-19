@@ -610,7 +610,22 @@ impl BandoEgui {
             self.manual_workspace=None;
             return;
         }
-        let result=self.manual_workspace.as_mut().and_then(|editor|editor.show(ctx));
+        // Manual classification is an in-app workspace. The Windows
+        // KakaoTalk docking strip stays visible and outside its modal area.
+        let viewport=ctx.screen_rect();
+        let kakao_reserved=self.layout.widths(
+            viewport.width().max(layout::LayoutState::minimum_width())
+        )[0]+layout::SPLITTER;
+        let work_area=Rect::from_min_max(
+            egui::pos2(
+                (viewport.left()+kakao_reserved).min(viewport.right()),
+                (viewport.top()+theme::HEADER_HEIGHT).min(viewport.bottom())
+            ),
+            viewport.right_bottom()
+        );
+        let result=self.manual_workspace.as_mut().and_then(|editor|
+            editor.show(ctx,work_area)
+        );
         match result {
             Some(manual_workspace::Event::Closed)=>{
                 self.manual_workspace=None;
