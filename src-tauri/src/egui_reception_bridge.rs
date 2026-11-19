@@ -81,6 +81,13 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
     ) {
         return Err("이미 주문 확인 완료된 발주서는 미확정 접수로 덮어쓸 수 없습니다.".into());
     }
+    let indexed:bool=tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM order_index WHERE id=?1)",
+        params![order_id],|row|row.get(0),
+    ).map_err(err)?;
+    if indexed {
+        return Err("운영 주문 인덱스에 있는 주문은 미확정 접수로 저장할 수 없습니다.".into());
+    }
     let selected_client = state.get("clients").and_then(Value::as_array)
         .and_then(|clients| clients.iter().find(|client|
             client.get("id").and_then(Value::as_str) == Some(client_id) &&
@@ -168,6 +175,8 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
     if !same_id(&next, order_id) ||
        next.get("raw").and_then(Value::as_str) != Some(raw) ||
        next.get("clientId").and_then(Value::as_str) != Some(client_id) ||
+       next.get("receptionVersion").and_then(Value::as_i64)!=Some(1) ||
+       next.get("status").and_then(Value::as_str)==Some("EXPORTED") ||
        next.get("confirmedAt").and_then(Value::as_str)
            .is_some_and(|v| !v.is_empty()) {
         return Err("재계산된 미확정 주문이 요청과 일치하지 않습니다.".into());
