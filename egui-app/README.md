@@ -27,7 +27,7 @@ cargo run --manifest-path egui-app/Cargo.toml
 - **리셋**: 가로 핸들 더블클릭은 4열 기본 비율 전체 복원, 세로 핸들 더블클릭은 원문/메시지 50:50 복원.
 - **저장 위치**: Windows `%LOCALAPPDATA%\BANDO-HUB-egui-preview\layout.txt` (그 외 `~/.config/bando-hub-egui-preview/layout.txt`). 실운영 SQLite/React 설정과 절대 공유하지 않는다.
 - **작은 창**: 패널 최소 폭의 합을 유지하고 가로 스크롤로 접근한다. 본문 폰트를 임의 축소하지 않는다.
-- **기본 Windows 제목표시줄 숨김**: `ViewportBuilder::with_decorations(false)`. BANDO HUB 로고 글자를 드래그해 창 이동, 로고 더블클릭으로 최대화/복원. 상단에 최소화/최대화/닫기 버튼을 둔다.
+- **기본 Windows 제목표시줄 숨김**: `ViewportBuilder::with_decorations(false)`. 로고 이미지와 BANDO HUB 글자는 **정적 표시만** 하며 호버·클릭·드래그·더블클릭 동작이 없다. 상단 헤더의 **빈 공간**만 드래그로 창 이동, 더블클릭으로 최대화·복원한다. 오른쪽 최소화·최대화/복원·닫기 버튼은 기존 업무 헤더의 순서와 동작을 따른다.
 - **창 가장자리 크기 조절**: 각 방향 및 모서리 6pt 영역에서 네이티브 resize 명령을 보낸다.
 
 ### 검증 상태
@@ -121,3 +121,10 @@ GitHub `main`에는 소스 코드가 반영되었지만 이 환경에서 `cargo 
 ## UI 문구 준수 (2026-11-19)
 
 사용자 지시로 기존 React 화면에 없는 개발 안내문, 프리뷰 상태바, 가짜 알림, 샘플 주문 카드, 샘플 모드, 임의 '원문 분석' 버튼을 화면에서 제거했다. 원문 인식은 기존 자동 실행 흐름을 따른다. 화면 문구의 기준은 안정화 React 화면과 이후 승인된 변경사항이다. 미완성 기능을 설명하는 개발 문구는 사용자 화면 대신 이 문서에만 기록한다. 실제 저장 오류는 원래 존재했던 '알림' 위치에서만 보여 준다.
+
+## 로고와 창 제어 원본 복원
+
+- **작업표시줄/Alt-Tab 아이콘**: 기존 `src-tauri/icons/icon.png`를 실행 시 `ViewportBuilder::with_icon`에 전달한다. Windows EXE 리소스는 `egui-app/build.rs`가 기존 `src-tauri/icons/icon.ico`를 그대로 삽입한다. 새 디자인이나 별도 자산을 만들지 않는다.
+- **상단 왼쪽 로고**: 기존 Tauri 아이콘 PNG의 동일 픽셀을 렌더링하며 `BANDO HUB` 글자와 함께 정적으로 표시한다. 원래 React는 `public/branding/bando-symbol.svg`를 사용했으므로 앱 아이콘 PNG와의 시각적 일치 여부는 Windows 화면에서 확인해야 한다.
+- **상단 인터랙션**: 로고/브랜드는 마우스 반응이 없다. 클릭으로 접수 이동도 하지 않으며, 로고 드래그/더블클릭으로 창을 움직이거나 최대화하지 않는다. 헤더에서 컨트롤이 차지하지 않는 빈 곳에서만 OS 창 이동 및 더블클릭 최대화·복원 명령을 보낸다.
+- **빌드 확인**: 소스 변경은 GitHub `main`에 반영했지만 Windows Cargo 컴파일·작업표시줄 아이콘 실제 노출·최대화 후 이동 테스트는 이 환경에서 수행하지 않았다.
