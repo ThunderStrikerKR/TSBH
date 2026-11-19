@@ -371,7 +371,7 @@ impl SettingsView{
         if self.folder_picker.is_some()||self.saving.is_some()||self.read_only(){return;}
         let key=key.to_owned();
         let (tx,rx)=mpsc::channel();
-        self.folder_picker=Some((key,rx));
+        self.folder_picker=Some((key.clone(),rx));
         thread::spawn(move||{
             #[cfg(target_os="windows")]
             let picked=(||->Result<Option<String>,String>{
