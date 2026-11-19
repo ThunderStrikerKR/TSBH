@@ -3,33 +3,35 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 const read = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 
-test("factory reply watcher routes detailed result and invalid workbooks only to notifications", () => {
+test("factory watcher refreshes saved history and never generates routine global alerts", () => {
   const watcher=read("src/FactoryReplyWatcher.tsx");
   const auto=read("src/factory-reply-auto.ts");
-  assert.match(watcher,/onNotification: \(notice: NewHubNotification\) => void/);
-  assert.match(watcher,/onNotification\(\{/);
-  assert.match(watcher,/source: "공장 회신"/);
-  assert.match(watcher,/issues: result\.issues/);
-  assert.doesNotMatch(watcher,/\.onNotice\(/);
+  assert.match(watcher,/await processWatchedFactoryReply\(api, file\)/);
+  assert.match(watcher,/if \(result\.invalid\)/);
+  assert.match(watcher,/rejected\.current\.add\(file\.id\)/);
+  assert.match(watcher,/if \(result\.duplicate\) continue/);
+  assert.match(watcher,/await latest\.current\.onRefresh\(\)/);
+  assert.doesNotMatch(watcher,/onNotification|notificationAdd\(/);
   assert.match(auto,/preview\.rows\.filter\(\(r\) => !r\.applied && !!r\.issue\)/);
 });
 
-test("all floating notice blocks are replaced by a single detailed modal", () => {
+test("global modal contains critical-only persisted alerts; ordinary factory replies remain history", () => {
   const app=read("src/App.tsx");
   const header=read("src/app/AppHeader.tsx");
   const modal=read("src/FactoryNotifications.tsx");
   const css=read("src/styles/application.css");
   assert.match(app,/usePersistedNotifications\(Boolean\(state && draft\)\)/);
+  assert.match(app,/if \(!state \|\| !draft \|\| !notice\?\.critical/);
+  assert.match(app,/priority: "critical"/);
   assert.match(app,/storageError=\{storageError\}/);
   assert.match(app,/onRead=\{\(id\) => \{ void markRead\(id\); \}\}/);
   assert.match(app,/onClear=\{\(\) => \{ void clear\(\); \}\}/);
-  assert.match(app,/onNotification=\{addNotification\}/);
-  assert.doesNotMatch(app,/<AppNotice/);
+  assert.doesNotMatch(app,/onNotification=\{addNotification\}|<AppNotice/);
   assert.match(header,/<span>알림<\/span>/);
-  assert.match(header,/viewBox="0 0 24 24"/);
   assert.doesNotMatch(header,/회신 알림/);
   assert.match(modal,/<Modal title="알림"/);
-  assert.match(modal,/notices\.map\(\(entry\) =>/);
+  assert.match(modal,/const critical = notices\.filter\(isActionRequiredNotification\)/);
+  assert.match(modal,/critical\.map\(\(entry\) =>/);
   assert.match(modal,/onRead\(entry\.id\)/);
   assert.match(modal,/selected\.issues\?\.length/);
   assert.match(css,/\.notification-center-layout/);
