@@ -51,6 +51,7 @@ pub struct ClientManager {
     ready:bool,
     loading:Option<AsyncState>,
     saving:Option<AsyncState>,
+    saving_action:Option<String>,
     search_rx:Option<SearchState>,
     generation:u64,
     matches:Vec<String>,
@@ -76,7 +77,7 @@ impl ClientManager {
         });
         Self {
             state:Value::Null,ready:false,loading:Some(rx),saving:None,
-            search_rx:None,generation:0,matches:Vec::new(),search:String::new(),
+            saving_action:None,search_rx:None,generation:0,matches:Vec::new(),search:String::new(),
             searching:false,error:None,notice:None,
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
@@ -156,15 +157,21 @@ impl ClientManager {
                 self.state=state;self.saving=None;
                 self.draft=None;self.original=None;self.confirm_delete=false;
                 self.confirm_discard=false;self.error=None;
-                self.notice=Some("거래처를 저장했습니다.".into());
+                self.notice=Some(if self.saving_action.take().as_deref()
+                    ==Some("archive_client") {
+                    "거래처를 삭제하고 기존 주문 기록을 보존했습니다.".into()
+                } else {
+                    "거래처를 저장했습니다.".into()
+                });
                 self.query(Arc::clone(&gateway),ctx.clone());
             },
             Some(Ok(Err(error)))=>{
                 self.error=Some(error);self.saving=None;
+                self.saving_action=None;
             },
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
                 self.error=Some("거래처 저장 연결이 중단되었습니다.".into());
-                self.saving=None;
+                self.saving=None;self.saving_action=None;
             },
             _=>{},
         }
@@ -192,6 +199,7 @@ impl ClientManager {
         let (tx,rx)=mpsc::channel();
         self.saving=Some(rx);
         self.error=None;
+        self.saving_action=Some(action.to_owned());
         let action=action.to_owned();
         let ctx=ctx.clone();
         thread::spawn(move||{
