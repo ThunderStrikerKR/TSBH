@@ -158,6 +158,7 @@ struct BandoEgui {
     pending_replace: Option<PendingReplace>,
     source_autosave: Option<source_autosave::SourceAutosave>,
     source_save_error: Option<String>,
+    kakao_dock_error: Option<String>,
     client_chooser: Option<ClientChooser>,
     client_manager: Option<client_manager::ClientManager>,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
@@ -205,6 +206,7 @@ impl Default for BandoEgui {
             pending_replace: None,
             source_autosave: None,
             source_save_error: None,
+            kakao_dock_error: None,
             client_chooser: None,
             client_manager: None,
             manual_workspace: None,
@@ -1347,7 +1349,8 @@ impl BandoEgui {
                             actions.add_space(theme::SPACE_8);
                             if theme::action(
                                 actions, "알림", ButtonRole::Standard,
-                                self.source_save_error.is_some() || self.clipboard_error.is_some(),
+                                self.source_save_error.is_some() || self.clipboard_error.is_some()
+                                    || self.kakao_dock_error.is_some(),
                             ).clicked() {
                                 self.notifications_open = !self.notifications_open;
                             }
@@ -1367,7 +1370,8 @@ impl BandoEgui {
             });
 
         if self.notifications_open &&
-            (self.source_save_error.is_some() || self.clipboard_error.is_some())
+            (self.source_save_error.is_some() || self.clipboard_error.is_some()
+                || self.kakao_dock_error.is_some())
         {
             egui::Window::new("알림")
                 .id(egui::Id::new("native_ui_preview_notifications"))
@@ -1378,6 +1382,9 @@ impl BandoEgui {
                         ui.label(typography::status(error, theme::DANGER));
                     }
                     if let Some(error) = &self.clipboard_error {
+                        ui.label(typography::status(error, theme::DANGER));
+                    }
+                    if let Some(error) = &self.kakao_dock_error {
                         ui.label(typography::status(error, theme::DANGER));
                     }
                 });
@@ -1529,7 +1536,7 @@ impl BandoEgui {
         if disconnect {
             self.kakao_dock.disconnect();
             self.kakao_connected=false;
-            self.source_save_error=None;
+            self.kakao_dock_error=None;
             return;
         }
         if connect {
@@ -1538,11 +1545,11 @@ impl BandoEgui {
             match self.kakao_dock.connect(region,scale){
                 Ok(())=>{
                     self.kakao_connected=true;
-                    self.source_save_error=None;
+                    self.kakao_dock_error=None;
                 }
                 Err(reason)=>{
                     self.kakao_connected=false;
-                    self.source_save_error=Some(format!("카카오톡 연결 실패: {reason}"));
+                    self.kakao_dock_error=Some(format!("카카오톡 연결 실패: {reason}"));
                     self.notifications_open=true;
                 }
             }
@@ -1558,10 +1565,13 @@ impl BandoEgui {
             self.kakao_dock.sync(region,scale)
         };
         match result {
-            Ok(())=>self.kakao_connected=self.kakao_dock.connected(),
+            Ok(())=>{
+                self.kakao_connected=self.kakao_dock.connected();
+                self.kakao_dock_error=None;
+            }
             Err(reason)=>{
                 self.kakao_connected=self.kakao_dock.connected();
-                self.source_save_error=Some(format!("카카오톡 배치 실패: {reason}"));
+                self.kakao_dock_error=Some(format!("카카오톡 배치 실패: {reason}"));
                 self.notifications_open=true;
             }
         }
