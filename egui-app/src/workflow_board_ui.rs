@@ -275,7 +275,7 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
                         .filter(|s|!s.is_empty()).unwrap_or("수취인 확인");
                     if theme::action_full_width(ui,name,theme::ButtonRole::Quiet,true)
                         .clicked(){
-                        selected_id=Some(draft.id.clone());
+                        event=Some(Event::SelectPending(draft.id.clone()));
                     }
                 }
             }
