@@ -1,4 +1,4 @@
-# Targeted Windows compile: fix Kakao HWND_TOP z-order regression without moving BANDO HUB.
+# Targeted Windows compile: Kakao native body rectangle alignment and no extra popup.
 name: Tauri native CLI executable compile check
 on:
   push:
