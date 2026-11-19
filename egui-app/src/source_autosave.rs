@@ -11,7 +11,7 @@ use std::{
 };
 
 enum Command {
-    Save(String),
+    Save { raw: String, order_type: String },
     Shutdown,
 }
 
@@ -39,8 +39,8 @@ impl SourceAutosave {
             let mut revision = initial_revision;
             loop {
                 let Ok(command) = rx.recv() else { break; };
-                let mut raw = match command {
-                    Command::Save(raw) => raw,
+                let (mut raw, mut order_type) = match command {
+                    Command::Save { raw, order_type } => (raw, order_type),
                     Command::Shutdown => break,
                 };
                 let mut shutdown = false;
@@ -48,7 +48,10 @@ impl SourceAutosave {
                 // Shutdown drains the latest pending edit before exiting.
                 loop {
                     match rx.recv_timeout(Duration::from_millis(180)) {
-                        Ok(Command::Save(new_raw)) => raw = new_raw,
+                        Ok(Command::Save { raw: new_raw, order_type: new_type }) => {
+                            raw = new_raw;
+                            order_type = new_type;
+                        },
                         Ok(Command::Shutdown) => {
                             shutdown = true;
                             break;
@@ -60,7 +63,7 @@ impl SourceAutosave {
                         }
                     }
                 }
-                let status = match gateway.save_working_source(&raw, revision) {
+                let status = match gateway.save_working_source(&raw, &order_type, revision) {
                     Ok(next) if next > revision => {
                         revision = next;
                         SaveStatus::Saved(next)
@@ -78,8 +81,8 @@ impl SourceAutosave {
         Self { sender, results, thread: Some(worker) }
     }
 
-    pub fn queue(&self, raw: String) -> Result<(), String> {
-        self.sender.send(Command::Save(raw))
+    pub fn queue(&self, raw: String, order_type: String) -> Result<(), String> {
+        self.sender.send(Command::Save { raw, order_type })
             .map_err(|_| "egui 원문 자동저장 작업이 중단되었습니다.".to_owned())
     }
 
