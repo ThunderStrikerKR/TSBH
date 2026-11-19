@@ -1,4 +1,4 @@
-# Targeted native compile check: Win32 KakaoTalk docking integration and Tauri CLI (49th session).
+# Targeted native compile check: corrected Win32 Kakao docking HWND and borrow handling (49th).
 name: Tauri native CLI executable compile check
 on:
   push:
