@@ -1,4 +1,4 @@
-# Targeted Windows compile: React-parity full-width workflow cards and three-column shipment rows.
+# Targeted Windows compile: workflow title hit area, true hovered-blue row, product chips.
 name: Tauri native CLI executable compile check
 on:
   push:
