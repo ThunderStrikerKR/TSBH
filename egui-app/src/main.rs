@@ -682,27 +682,46 @@ impl BandoEgui {
                     }
                 }
             } else {
-                ui.add_space(theme::SPACE_24);
-                ui.label(typography::subsection_heading("클립보드 접수"));
-                ui.label(typography::caption("복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."));
-                ui.horizontal(|ui| {
-                    theme::action(ui, "대리발송", ButtonRole::Emphasized, false);
-                    theme::action(ui, "대리점 납품", ButtonRole::Emphasized, false);
-                });
-                ui.label(typography::caption("이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."));
-                components::soft_divider(ui);
-                ui.add_space(theme::SPACE_8);
-                ui.label(typography::subsection_heading("다른 방법으로 접수"));
-                ui.horizontal(|ui| {
-                    if theme::action(ui, "직접 입력", ButtonRole::Emphasized, true).clicked() {
-                        begin_input = true;
-                    }
-                    theme::action(ui, "캡처 범위 지정", ButtonRole::Emphasized, false);
-                });
-                components::soft_divider(ui);
-                ui.add_space(theme::SPACE_8);
-                ui.label(typography::subsection_heading("폴더 자동 인식"));
-                ui.label(typography::caption("설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."));
+                // Narrow panes may need a stacked button row. Scroll ONLY the
+                // intake instructions, never the source/message divider.
+                let intake_height = components::docked_section_body_height(height)
+                    .min(ui.available_height().max(0.0));
+                egui::ScrollArea::vertical()
+                    .id_salt("source-intake-instructions")
+                    .max_height(intake_height)
+                    .auto_shrink([false, false])
+                    .show(ui, |intake| {
+                        intake.add_space(theme::SPACE_24);
+                        intake.label(typography::subsection_heading("클립보드 접수"));
+                        intake.label(typography::caption(
+                            "복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."
+                        ));
+                        components::paired_actions(
+                            intake,
+                            ("대리발송", ButtonRole::Emphasized, false),
+                            ("대리점 납품", ButtonRole::Emphasized, false),
+                        );
+                        intake.label(typography::caption(
+                            "이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."
+                        ));
+                        components::soft_divider(intake);
+                        intake.add_space(theme::SPACE_8);
+                        intake.label(typography::subsection_heading("다른 방법으로 접수"));
+                        let (direct, _) = components::paired_actions(
+                            intake,
+                            ("직접 입력", ButtonRole::Emphasized, true),
+                            ("캡처 범위 지정", ButtonRole::Emphasized, false),
+                        );
+                        if direct.clicked() {
+                            begin_input = true;
+                        }
+                        components::soft_divider(intake);
+                        intake.add_space(theme::SPACE_8);
+                        intake.label(typography::subsection_heading("폴더 자동 인식"));
+                        intake.label(typography::caption(
+                            "설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."
+                        ));
+                    });
             }
         });
         if begin_input {
@@ -718,8 +737,12 @@ impl BandoEgui {
             // Empty egui Frames shrink to their contents. Allocate the real
             // message rectangle explicitly so it fills the available width
             // instead of appearing as a narrow vertical stripe.
-            let bottom_controls =
-                theme::ACTION_STANDARD_HEIGHT + theme::SPACE_8;
+            let button_row_height = if ui.available_width() < 280.0 {
+                theme::ACTION_STANDARD_HEIGHT * 2.0 + theme::SPACING
+            } else {
+                theme::ACTION_STANDARD_HEIGHT
+            };
+            let bottom_controls = button_row_height + theme::SPACE_8;
             let available_body = components::docked_section_body_height(height)
                 .min(ui.available_height().max(0.0));
             let field_height = (available_body - bottom_controls).max(0.0);
@@ -733,10 +756,11 @@ impl BandoEgui {
                 theme::INPUT,
             );
             ui.add_space(theme::SPACE_8);
-            ui.horizontal(|ui| {
-                theme::action(ui, "그대로 복사", ButtonRole::Standard, false);
-                theme::action(ui, "인사말 포함 복사", ButtonRole::Standard, false);
-            });
+            components::paired_actions(
+                ui,
+                ("그대로 복사", ButtonRole::Standard, false),
+                ("인사말 포함 복사", ButtonRole::Standard, false),
+            );
         });
     }
 
