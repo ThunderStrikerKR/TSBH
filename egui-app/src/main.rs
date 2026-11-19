@@ -192,6 +192,12 @@ impl BandoEgui {
                 active.analysis_raw = None;
                 active.analysis_evidence = None;
                 active.client_match = None;
+                // Source changes revoke only automatic dealer assignment.
+                // A deliberate employee selection stays with this receipt.
+                if active.client_selection.as_deref() == Some("AUTO") {
+                    active.client_id = None;
+                    active.client_selection = None;
+                }
             }
             active.raw.clone_from(&self.raw_source);
             active.order_type = self.order_type.as_str().to_owned();
@@ -455,8 +461,10 @@ impl BandoEgui {
             return;
         }
         self.clipboard_chat = if self.kakao_connected {
-            self.kakao_tracker.recent_focus()
-                .or(self.kakao_choice.as_deref())
+            // An explicit in-app chat choice is stronger than a recently
+            // focused DIFFERENT chat. Avoid silently binding the wrong dealer.
+            self.kakao_choice.as_deref()
+                .or_else(|| self.kakao_tracker.recent_focus())
                 .and_then(|handle| self.kakao_tracker.verified(handle)).cloned()
         } else { None };
         self.clipboard_busy = true;
