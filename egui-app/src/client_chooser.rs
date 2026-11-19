@@ -1,0 +1,218 @@
+//! Full customer chooser for one unconfirmed reception.
+//! Native Rust owns match/order decisions; egui owns only the transient
+//! list, text entry and selection. Neither operational DB nor order history
+//! is modified by searching.
+
+use std::{sync::{Arc,mpsc::{self,Receiver}}, thread};
+use eframe::egui::{self, Context};
+use serde_json::{json,Value};
+use crate::{gateway::{BandoGateway,ReadOperation}, theme::{self,ButtonRole}, typography};
+
+pub enum Choice {
+    Selected(String),
+    Closed,
+}
+
+type Directory = Result<Vec<Value>,String>;
+type Search = Result<Vec<String>,String>;
+
+pub struct ClientChooser {
+    pub order_id: String,
+    query: String,
+    clients: Vec<Value>,
+    results: Vec<String>,
+    loaded: bool,
+    loading: Receiver<Directory>,
+    search_result: Option<Receiver<(u64,Search)>>,
+    generation: u64,
+    searching: bool,
+    error: Option<String>,
+}
+
+fn text<'a>(row:&'a Value,key:&str)->&'a str {
+    row.get(key).and_then(Value::as_str).unwrap_or("")
+}
+fn active(row:&Value)->bool {
+    row.get("deletedAt").is_none_or(Value::is_null)
+        || text(row,"deletedAt").is_empty()
+}
+
+impl ClientChooser {
+    pub fn new(order_id: String, gateway: Arc<dyn BandoGateway>, ctx: Context) -> Self {
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let result = gateway.load_catalog().and_then(|state| {
+                let clients = state.get("clients").and_then(Value::as_array)
+                    .ok_or("거래처 목록을 가져오지 못했습니다.")?;
+                // Retain ONLY the customer index. Product and other catalog
+                // sections are discarded as soon as the loading job ends.
+                Ok(clients.iter().filter(|c|active(c)).cloned().collect())
+            });
+            let _ = sender.send(result);
+            ctx.request_repaint();
+        });
+        Self {
+            order_id, query:String::new(),
+            clients:Vec::new(),results:Vec::new(),loaded:false,
+            loading:receiver,search_result:None,generation:0,
+            searching:false,error:None,
+        }
+    }
+
+    pub fn contains(&self, id:&str)->bool {
+        self.loaded && self.clients.iter().any(|c| text(c,"id")==id && active(c))
+    }
+
+    fn search(&mut self, gateway:Arc<dyn BandoGateway>, ctx:Context) {
+        self.generation=self.generation.wrapping_add(1);
+        self.search_result=None;
+        self.error=None;
+        self.results.clear();
+        if self.query.trim().is_empty() {
+            self.searching=false;
+            return;
+        }
+        self.searching=true;
+        let generation=self.generation;
+        let query=self.query.clone();
+        let clients=self.clients.clone();
+        let (sender,receiver)=mpsc::channel();
+        self.search_result=Some(receiver);
+        thread::spawn(move || {
+            let result=gateway.execute(ReadOperation::ClientCandidates, json!({
+                "state": {"clients":clients}, "query":query, "raw":""
+            })).and_then(|value| {
+                let ids=value.get("ids").and_then(Value::as_array)
+                    .ok_or("거래처 검색 결과가 잘못되었습니다.")?;
+                ids.iter().map(|entry|entry.as_str().map(str::to_owned)
+                    .ok_or_else(||"거래처 검색 ID가 잘못되었습니다.".to_owned()))
+                    .collect()
+            });
+            let _=sender.send((generation,result));
+            ctx.request_repaint();
+        });
+    }
+
+    fn poll(&mut self, gateway:Arc<dyn BandoGateway>, ctx:&Context) {
+        if !self.loaded {
+            match self.loading.try_recv() {
+                Ok(Ok(clients))=>{
+                    self.clients=clients;
+                    self.loaded=true;
+                    if !self.query.trim().is_empty() {self.search(gateway,ctx.clone());}
+                }
+                Ok(Err(e))=>{
+                    self.loaded=true;
+                    self.error=Some(e);
+                }
+                Err(mpsc::TryRecvError::Disconnected)=>{
+                    self.loaded=true;
+                    self.error=Some("거래처 명단 조회가 중단되었습니다.".into());
+                }
+                _=>{}
+            }
+        }
+        if let Some(rx)=self.search_result.as_ref() {
+            match rx.try_recv() {
+                Ok((generation, result))=>{
+                    if generation==self.generation {
+                        self.searching=false;
+                        match result {
+                            Ok(ids)=>self.results=ids,
+                            Err(e)=>self.error=Some(e),
+                        }
+                    }
+                    self.search_result=None;
+                }
+                Err(mpsc::TryRecvError::Disconnected)=>{
+                    self.search_result=None;
+                    self.searching=false;
+                    self.error=Some("거래처 검색이 중단되었습니다.".into());
+                }
+                _=>{}
+            }
+        }
+    }
+
+    pub fn show(&mut self, ctx:&Context, gateway:Arc<dyn BandoGateway>,
+                current_id:Option<&str>) -> Option<Choice> {
+        self.poll(Arc::clone(&gateway),ctx);
+        let mut is_open=true;
+        let mut chosen:Option<String>=None;
+        egui::Window::new("거래처 변경")
+            .id(egui::Id::new("egui-reception-client-chooser"))
+            .open(&mut is_open)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(460.0)
+            .min_width(340.0)
+            .show(ctx,|ui| {
+                let currently=self.clients.iter()
+                    .find(|c|Some(text(c,"id"))==current_id)
+                    .map(|c|text(c,"name")).unwrap_or("미선택");
+                ui.label(typography::body(&format!("현재 거래처: {currently}")));
+                let response=ui.add(
+                    egui::TextEdit::singleline(&mut self.query)
+                        .hint_text("상호 / 별칭 / 주소 / 전화번호 검색")
+                        .desired_width(ui.available_width())
+                );
+                if response.changed()&&self.loaded {
+                    self.search(Arc::clone(&gateway),ctx.clone());
+                }
+                if let Some(e)=&self.error {
+                    ui.label(typography::status(e,theme::DANGER));
+                }
+                if !self.loaded||self.searching {
+                    ui.label(typography::caption("검색 중"));
+                } else {
+                    let ids:Vec<&str>=if self.query.trim().is_empty() {
+                        self.clients.iter().map(|c|text(c,"id")).collect()
+                    } else {
+                        self.results.iter().map(String::as_str).collect()
+                    };
+                    ui.label(typography::caption(&format!("{}개 거래처",ids.len())));
+                    egui::ScrollArea::vertical()
+                        .id_salt("egui-all-clients-scroll")
+                        .max_height(390.0)
+                        .show(ui,|ui|{
+                            for id in ids {
+                                if let Some(row)=self.clients.iter().find(|c|text(c,"id")==id) {
+                                    let name=text(row,"name");
+                                    let address=text(row,"address");
+                                    let phone=if !text(row,"phone").is_empty() {
+                                        text(row,"phone")
+                                    } else { text(row,"mobile") };
+                                    let selected=current_id==Some(id);
+                                    let title=if selected {
+                                        format!("{name} / 현재 거래처")
+                                    } else { name.to_owned() };
+                                    if theme::action(ui,&title,
+                                        if selected {ButtonRole::ActiveNavigation}
+                                        else {ButtonRole::Quiet},true).clicked() {
+                                        chosen=Some(id.to_owned());
+                                    }
+                                    ui.label(typography::caption(
+                                        &format!("{} / {}",
+                                            if address.is_empty(){"주소 미등록"}else{address},
+                                            if phone.is_empty(){"전화 미등록"}else{phone}
+                                        )
+                                    ));
+                                    ui.separator();
+                                }
+                            }
+                            if self.clients.is_empty() {
+                                ui.label(typography::caption("등록된 거래처가 없습니다."));
+                            } else if self.query.trim().len()>0 && self.results.is_empty() &&
+                                    !self.searching {
+                                ui.label(typography::caption("검색 결과가 없습니다."));
+                            }
+                        });
+                }
+            });
+        if let Some(id)=chosen {
+            if self.contains(&id) {return Some(Choice::Selected(id));}
+        }
+        if !is_open {return Some(Choice::Closed);}
+        None
+    }
+}
