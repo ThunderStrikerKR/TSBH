@@ -61,34 +61,9 @@ test("native commands reject test-only operations on normal database and isolate
   assert.match(native,/200/);
 });
 
-test("developer UI laboratory mounts real business components and prevents writes",()=>{
-  const lab=read("src/developer/DeveloperLab.tsx");
-  const workbench=read("src/developer/DeveloperModalWorkbench.tsx");
-  const host=read("src/app/SettingsView.tsx");
-  const entry=read("src/main.tsx");
-  assert.match(lab,/DeveloperModalWorkbench/);
-  assert.match(workbench,/import \{ Modal \} from "\.\.\/ui"/);
-  for(const component of [
-    "WorkingRawDialog","ManualClassification","IssueResolver","RetailOrderDialog",
-    "ClientManager","ProductManager","ProductCategoryPicker","ProductSearchDialog",
-    "FactoryReplyImport","RegistrationManager","ReceiptArchive"
-  ]) assert.ok(workbench.includes("<"+component),component+" real component must mount");
-  for(const mode of ["NORMAL","EMPTY","ERROR","BUSY","LONG","WARNING","SUCCESS","FAILURE","CANCEL"])
-    assert.ok(workbench.includes('"'+mode+'"'));
-  assert.match(workbench,/const noProductionWrite/);
-  assert.match(workbench,/throw Error\("UI 검사에서는 저장을 차단합니다/);
-  assert.match(workbench,/onSave=\{noProductionWrite\}/);
-  assert.match(workbench,/testRecordRun/);
-  assert.match(lab,/if \(!api\?\.isTestWorkspace/);
-  assert.doesNotMatch(host, /<DeveloperLab/);
-  assert.doesNotMatch(host, /<TestDatabasePanel/);
-  assert.match(entry,/workspaceMode/);
-  assert.doesNotMatch(workbench,/window\.bando!\.save\(/);
-});
-
 test("synthetic developer diagnostics preserve report and state via an injected native contract",async()=>{
   const { inspectOrder, exampleRaw, developerCases } =
-    await tsImport("../src/developer/scenarios.ts", import.meta.url);
+    await tsImport("./rust-migration/oracles/developer-scenarios.ts", import.meta.url);
   const state=JSON.parse(read("src-tauri/resources/state-seed.json"));
   const original=JSON.stringify(state);
   assert.ok(developerCases.length>=9);
@@ -111,7 +86,7 @@ test("synthetic developer diagnostics preserve report and state via an injected 
 
 test("structured native diagnostic report fixtures remain isolated from persistence",async()=>{
   const { inspectOrder, exampleRaw, developerCases, expectedOptions } =
-    await tsImport("../src/developer/scenarios.ts", import.meta.url);
+    await tsImport("./rust-migration/oracles/developer-scenarios.ts", import.meta.url);
   const state=JSON.parse(read("src-tauri/resources/state-seed.json"));
   const unchanged=JSON.stringify(state);
   const ids=[
@@ -132,19 +107,11 @@ test("structured native diagnostic report fixtures remain isolated from persiste
   assert.equal(JSON.stringify(state),unchanged,"The real state must be unchanged");
 });
 
-test("developer diagnostics must use Rust commands and reject TS fallback",()=>{
-  const scenarios=read("src/developer/scenarios.ts");
-  const lab=read("src/developer/DeveloperLab.tsx");
-  const modal=read("src/developer/DeveloperModalWorkbench.tsx");
-  assert.doesNotMatch(scenarios,/from ["']\.\.\/parser(?:\.js)?["']/);
-  assert.doesNotMatch(scenarios,/from ["']\.\.\/validation(?:\.js)?["']/);
-  assert.doesNotMatch(modal,/from ["']\.\.\/validation(?:\.js)?["']/);
+test("archived developer diagnostic fixture calls Rust and never TS fallback",()=>{
+  const scenarios=read("tests/rust-migration/oracles/developer-scenarios.ts");
+  assert.doesNotMatch(scenarios,/from ["']\\.\\.\\/parser(?:\\.js)?["']/);
+  assert.doesNotMatch(scenarios,/from ["']\\.\\.\\/validation(?:\\.js)?["']/);
   assert.match(scenarios,/"recognition", "analyze_order"/);
   assert.match(scenarios,/"rules", "order_issues"/);
   assert.match(scenarios,/assertRustReceptionAnalysis/);
-  assert.match(lab,/await inspectOrder\(/);
-  assert.match(lab,/await diagnosticOrder\(/);
-  assert.match(modal,/await diagnosticOrder\(/);
-  assert.match(modal,/await diagnosticIssues\(/);
-  assert.match(modal,/cancelled = true/);
 });

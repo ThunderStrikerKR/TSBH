@@ -10,7 +10,7 @@ const compiled = new Map();
 const modules = new Map();
 function moduleFor(path) {
   if (modules.has(path)) return modules.get(path);
-  const source = read((["settlement-report","order-history"].includes(path) ? "tests/rust-migration/oracles/" : "src/app/") + path + ".ts");
+  const source = read((["settlement-report","order-history","report-workbook"].includes(path) ? "tests/rust-migration/oracles/" : "src/app/") + path + ".ts");
   const out = {};
   modules.set(path, out);
   const js = ts.transpileModule(source, {
@@ -348,7 +348,7 @@ test("report screens keep live read-only views while Excel export buttons are de
   const daily=read("src/app/DailySettlement.tsx");
   const history=read("src/app/OrderHistory.tsx");
   const model=read("src/app/useAppModel.ts");
-  const reportWorkbook=read("src/app/report-workbook.ts");
+  const reportWorkbook=read("tests/rust-migration/oracles/report-workbook.ts");
   const historyFormat=read("src/app/history-format.ts");
   const dateFormat=read("src/app/seoul-date.ts");
   const native=read("src-tauri/src/lib.rs");
@@ -394,7 +394,7 @@ test("report screens keep live read-only views while Excel export buttons are de
   assert.doesNotMatch(daily, /현재 결산 Excel 다운로드|saveSettlementWorkbook|exportDailySettlementWorkbook/);
   assert.doesNotMatch(history, /조회 결과 Excel 다운로드|saveOrderHistoryWorkbook|exportOrderHistoryWorkbook/);
   // The generation and native export plumbing are retained for later reactivation.
-  const workbook = read("src/app/report-workbook.ts");
+  const workbook = read("tests/rust-migration/oracles/report-workbook.ts");
   assert.match(workbook, /exportDailySettlementWorkbook/);
   assert.match(workbook, /exportOrderHistoryWorkbook/);
   assert.match(history,/소매 주문 \/ 결제 증빙 별도 확인/);

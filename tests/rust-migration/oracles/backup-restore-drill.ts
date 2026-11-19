@@ -1,4 +1,4 @@
-import type { Alias, Client, Item, Order, Recipient, State } from "../types";
+import type { Alias, Client, Item, Order, Recipient, State } from "../../../src/types";
 
 export interface DrillMutation {
   next: State;

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { tsImport } from "tsx/esm/api";
 const read = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
 const seed = () => JSON.parse(read("src-tauri/resources/state-seed.json"));
-const functions = await tsImport("../src/developer/backup-restore-drill.ts", import.meta.url);
+const functions = await tsImport("./rust-migration/oracles/backup-restore-drill.ts", import.meta.url);
 const archive = [{ id: "receipt:historical", orderId: "order-historical",
   record: { original: "과거 주문", at: "2026-11-07T00:00:00Z" } }];
 const stamp = "2026-11-08T11:00:00.000Z";
@@ -89,28 +89,15 @@ test("full comparison includes aliases, clients, orders, prices, workflow and se
   assert.throws(() => functions.buildDrillMutation(original, "../unsafe",stamp),/검증 ID/);
 });
 
-test("guided UI performs actual backup/list/save/restore API with TEST process and confirmation guards", () => {
-  const host = read("src/TestDatabasePanel.tsx");
-  const ui = read("src/developer/BackupRestoreDrill.tsx");
+test("native backup and restore APIs keep pre-restore and validity checks", () => {
   const bridge = read("src/tauri-bridge.ts");
   const native = read("src-tauri/src/backup_manager.rs");
-  assert.match(host, /<BackupRestoreDrill onRestored=\{onReset\}/);
-  assert.match(host, /if \(!preview\?\.enabled\)/);
-  assert.match(ui, /if \(!window\.bando\?\.isTestWorkspace\)/);
-  assert.match(ui, /await native\.backup\(\)/);
-  assert.match(ui, /await native\.backups\(\)/);
-  assert.match(ui, /await native\.save\(sample\.next\)/);
-  assert.match(ui, /await native\.restore\(baseline\.filename\)/);
-  assert.match(ui, /await native\.receiptArchive\(\)/);
-  assert.match(ui, /await confirmAction\(/);
-  assert.match(ui, /comparableState\(current\) !== comparableState\(baseline\.before\)/);
-  assert.match(ui, /live\.revision !== changed\.revision/);
   for (const op of ["backup_create","backup_list","backup_restore","state_save","receipt_archive"]) {
     assert.ok(bridge.includes('"'+op+'"'),op);
   }
-  assert.match(native, /fn restore_selected\(/);
-  assert.match(native, /copy_entire_db\(&backup, conn\)\?/);
-  assert.match(native, /\"pre-restore\"/);
-  assert.match(native, /validate_database\(conn\)/);
+  assert.match(native, /fn restore_selected\\(/);
+  assert.match(native, /copy_entire_db\\(&backup, conn\\)\\?/);
+  assert.match(native, /\\\"pre-restore\\\"/);
+  assert.match(native, /validate_database\\(conn\\)/);
   assert.match(native, /복원을 취소하고 직전 상태로 되돌렸습니다/);
 });

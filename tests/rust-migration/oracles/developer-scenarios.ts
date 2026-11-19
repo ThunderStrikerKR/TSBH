@@ -1,8 +1,8 @@
-import { unassignedClient } from "../domain.js";
-import { newReception } from "../orders/new-reception.js";
-import { assertRustReceptionAnalysis } from "../orders/rust-reception.js";
-import { businessCoreCall } from "../tauri-bridge.js";
-import type { Client, DeveloperTestReport, Item, Order, Recipient, State, ValidationIssue } from "../types.js";
+import { unassignedClient } from "../../../src/domain.js";
+import { newReception } from "../../../src/orders/new-reception.js";
+import { assertRustReceptionAnalysis } from "../../../src/orders/rust-reception.js";
+import { businessCoreCall } from "../../../src/tauri-bridge.js";
+import type { Client, DeveloperTestReport, Item, Order, Recipient, State, ValidationIssue } from "../../../src/types.js";
 
 type DiagnosticNativeCall = typeof businessCoreCall;
 
