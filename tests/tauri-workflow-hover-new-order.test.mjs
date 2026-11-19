@@ -59,7 +59,7 @@ test("one-touch hover leaves accordion heights unchanged while preview can show 
 test("hover selects each actual source and detail and scrolls into stage content", () => {
   const hub=read("src/HubWorkspace.tsx");
   const board=read("src/WorkflowBoard.tsx");
-  assert.match(hub,/hoveredWorkflowSelection\(preview, stageHover\?\.groupId, selected\)/);
+  assert.match(hub,/hoveredWorkflowSelection\(preview, stageHover\?\.groupId, selected, stageHover\?\.shipmentId\)/);
   assert.match(hub,/const visibleSelection = hoverSelection \?\? linkedHoverSelection \?\? selected/);
   assert.match(hub,/const visibleReceptionId = hoverSelection\?\.orderId \?\? linkedHoverSelection\?\.orderId \?\? receptionId/);
   assert.match(hub,/visibleReceptionId === draft\.id/);
@@ -74,14 +74,14 @@ test("hover selects each actual source and detail and scrolls into stage content
   assert.match(hub,/stageHover\.step === 2[\s\S]*?\.freight-input-area/);
   assert.match(hub,/stageHover\.step === 3[\s\S]*?\.payment-message/);
   assert.match(hub,/\.scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/);
-  assert.match(board, /onMouseEnter=\{\(event\) => startStagePreview\(event\.currentTarget, g\.id, step, ss\.length\)\}/);
-  assert.match(board, /createPortal\(/);
+  assert.match(board, /onMouseEnter=\{isPreview \? keepStagePreview : \(event\) => startStagePreview\(event\.currentTarget, g\.id, step\)\}/);
+  assert.doesNotMatch(board, /createPortal\(/);
   assert.match(board, /previewLayer\?\.groupId === g\.id/);
+  assert.match(board, /className="workflow-card-overlay"/);
   assert.match(board, /onMouseEnter=\{keepStagePreview\}/);
-  assert.match(board, /"workflow-preview-layer-shipment" \+ \(displayed/);
+  assert.match(board, /className=\{[\s\S]*?"workflow-shipment"[\s\S]*?isPreviewed \? " previewed"/);
   assert.match(board, /onMouseLeave=\{scheduleStagePreviewExit\}/);
-  assert.match(board, /onMouseLeave=\{scheduleStagePreviewExit\}/);
-  assert.match(board, /onClick=\{\(\) => \{[\s\S]*?stopStagePreview\(\);[\s\S]*?onSelect\(\{ orderId: shipment\.orderId/);
+  assert.match(board, /if \(inPreview\) \{[\s\S]*?stopStagePreview\(\);/);
 });
 
 test("new order resets stale preview immediately and second click is idempotent", () => {
@@ -168,7 +168,11 @@ test("one-touch preview enters and restores at 250ms without reflow or delayed c
   assert.match(board, /onMouseLeave=\{scheduleStagePreviewExit\}/);
   assert.match(board, /if \(hoverReturnDelay\.current\) clearTimeout\(hoverReturnDelay\.current\)/);
   assert.match(board, /onClick=\{async \(\) => \{[\s\S]*?nativeApplyWorkflowAction/);
-  assert.match(css, /\.workflow-preview-layer\s*\{[\s\S]*?position: fixed/);
+  // Current approved preview overlays the card in place: no portal and no
+  // fixed viewport placement that can change button coordinates.
+  assert.match(css, /\.workflow-card-anchor\s*\{\s*position: relative;/);
+  assert.match(css, /\.workflow-card-overlay\s*\{\s*position: absolute;/);
+  assert.doesNotMatch(css, /\.workflow-preview-layer\s*\{/);
   assert.match(css, /\.workflow-progress > \.primary:hover:not\(:disabled\)/);
   assert.match(css, /--ds-role-surface-emphasized-action-hover/);
   assert.match(sel, /return selectedGroupId === groupId && manuallyClosedGroupId !== groupId/);
