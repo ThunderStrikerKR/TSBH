@@ -2631,6 +2631,11 @@ impl eframe::App for BandoEgui {
         self.poll_working_sync(ctx);
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
+        // React polls the Kakao native status every 300 ms on ALL tabs.
+        // A connected external HWND must stay aligned while the page is idle.
+        if self.kakao_dock.connected() {
+            ctx.request_repaint_after(Duration::from_millis(350));
+        }
         if self.page==Page::Reception &&
             self.client_manager.as_mut().is_some_and(|manager|manager.take_changed()) &&
             !self.raw_source.trim().is_empty() {
