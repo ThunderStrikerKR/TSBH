@@ -49,14 +49,14 @@ fn action_payload(action: &str, data: &Value, before: &Value) -> Result<Value, S
             let groups=shipping["groups"].as_array().ok_or("배송 그룹 목록이 없습니다.")?;
             let mut versions=Map::new();
             for (index,(product_id,target)) in assignments.iter().enumerate() {
-                if !existing.iter().any(|product|product["id"]==*product_id
+                if !existing.iter().any(|product|product["id"].as_str()==Some(product_id.as_str())
                     && product["deletedAt"].is_null()
                     && product["supersededBy"].is_null()) {
                     return Err(format!("등록된 상품을 찾지 못했습니다: {product_id}"));
                 }
                 let group_id=target.as_str().ok_or("배송 그룹 지정값 형식 오류")?;
                 if !group_id.is_empty() && !groups.iter().any(|g|
-                    g["id"]==group_id && g["deletedAt"].is_null()){
+                    g["id"].as_str()==Some(group_id) && g["deletedAt"].is_null()){
                     return Err("현재 존재하는 배송 그룹만 지정할 수 있습니다.".into());
                 }
                 if group_id.is_empty(){
@@ -79,7 +79,7 @@ fn action_payload(action: &str, data: &Value, before: &Value) -> Result<Value, S
             let groups=shipping["groups"].as_array().ok_or("배송 그룹 목록 오류")?;
             let mut group_versions=Map::new();
             for (i,g) in groups.iter().enumerate() {
-                if target.is_none_or(|id|g["id"]==id) {
+                if target.is_none_or(|id|g["id"].as_str()==Some(id)) {
                     let id=g["id"].as_str().ok_or("배송 그룹 ID 오류")?;
                     group_versions.insert(id.to_owned(),json!(unique("basis",i)?));
                 }
@@ -132,6 +132,7 @@ pub(super) fn run() -> i32 {
             &path,OpenFlags::SQLITE_OPEN_READ_WRITE
         ).map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
         conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(err)?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(err)?;
         let version:i64=conn.query_row(
             "SELECT version FROM core_schema WHERE key='business-core'",
             [],|row|row.get(0),
