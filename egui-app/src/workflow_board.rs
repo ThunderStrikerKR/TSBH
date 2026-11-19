@@ -12,6 +12,8 @@ pub struct ShipmentRow {
     pub recipient_id: String,
     pub recipient_name: String,
     pub products: Vec<String>,
+    pub source_raw: String,
+    pub recipient: Value,
     pub freight: Option<i64>,
     pub collect: bool,
 }
@@ -26,6 +28,8 @@ pub struct GroupRow {
     pub vat_included: usize,
     pub vat_excluded: usize,
     pub shipments: Vec<ShipmentRow>,
+    pub automatic_text: Option<String>,
+    pub automatic_error: Option<String>,
 }
 #[derive(Clone, Debug, Default)]
 pub struct BoardSnapshot {
@@ -110,6 +114,8 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 recipient_id:text(ship,"recipientId").to_owned(),
                 recipient_name:text(recipient,"name").to_owned(),
                 products,
+                source_raw:text(order,"raw").to_owned(),
+                recipient:recipient.clone(),
                 freight:field(field(native_ship,"totals"),"shipping").as_i64(),
                 collect:text(native_ship,"freightCode")=="020",
             });
@@ -118,6 +124,21 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
             .filter(|ship|field(ship,"vatIncluded")==&Value::Bool(true)).count();
         let vat_excluded=rows(field(native,"shipments")).len()-vat_included;
         let step=field(native,"step").as_u64().unwrap_or(0).min(4) as usize;
+        let wire=rows(field(field(&state,"settings"),"accounts")).iter()
+            .map(|account|Ok(json!({
+                "id":text(account,"id"),
+                "json":serde_json::to_string(account).map_err(|e|e.to_string())?
+            })))
+            .collect::<Result<Vec<Value>,String>>()?;
+        let automatic=gateway.execute(ReadOperation::RenderAutomaticMessage,json!({
+            "state":&state,"groupId":group_id,"includeLinks":false,
+            "accountWire":wire,
+        }));
+        let (automatic_text,automatic_error)=match automatic{
+            Ok(result)=>(result.get("text").and_then(Value::as_str)
+                .map(str::to_owned),None),
+            Err(error)=>(None,Some(error)),
+        };
         groups.push(GroupRow{
             id:group_id.to_owned(),
             created_at:text(group,"createdAt").to_owned(),
@@ -127,6 +148,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
             total:field(field(native,"totals"),"total").as_i64(),
             vat_included,vat_excluded,
             shipments:display_shipments,
+            automatic_text,automatic_error,
         });
     }
     groups.sort_by(|a,b|b.created_at.cmp(&a.created_at));
