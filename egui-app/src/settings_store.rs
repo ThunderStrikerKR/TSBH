@@ -154,6 +154,10 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     let changes=changes.as_object().ok_or("설정 변경 객체가 없습니다.")?;
     let expected=expected.as_object().ok_or("설정 기존값 객체가 없습니다.")?;
     validate(changes,expected)?;
+    // The client master uses another SQLite connection; read references
+    // BEFORE acquiring the IMMEDIATE settings write lock.
+    let clients=client_master::load()?;
+    let used=used_accounts(&clients["clients"]);
     let mut conn=connection()?;
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_|"설정 저장 트랜잭션 시작 실패")?;
@@ -171,8 +175,7 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
         else{entries.insert(key.clone(),value.clone());}
     }
     // Account IDs and client references are not a UI-only decision.
-    let clients=client_master::load()?;
-    validate_accounts(&settings,&used_accounts(&clients["clients"]))?;
+    validate_accounts(&settings,&used)?;
     let next=revision.checked_add(1).ok_or("설정 revision 한도 초과")?;
     let payload=serde_json::to_string(&settings).map_err(|e|e.to_string())?;
     if payload.len()>SETTINGS_CAP{
