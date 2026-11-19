@@ -2116,23 +2116,31 @@ impl BandoEgui {
                                                 let recipient_id=reception_service::text(recipient,"id");
                                                 let item_id=reception_service::text(item,"id");
                                                 ui.horizontal(|ui| {
-                                                    if ui.label(typography::body(
+                                                    let response=ui.label(typography::body(
                                                         &reception_service::item_title(item)
-                                                    )).hovered() {
-                                                        hovered_detail=Some(source_highlight::key(
-                                                            recipient_id,item_id,"product"
-                                                        ));
-                                                    }
+                                                    ));
+                                                    let key=source_highlight::key(
+                                                        recipient_id,item_id,"product"
+                                                    );
+                                                    if response.hovered() {hovered_detail=Some(key.clone());}
+                                                    source_highlight::paint_active(
+                                                        ui,&response,&key,self.link_hover.active.as_ref()
+                                                    );
                                                     ui.with_layout(
                                                         Layout::right_to_left(Align::Center),
                                                         |ui| {
-                                                            if ui.label(typography::quantity(
+                                                            let response=ui.label(typography::quantity(
                                                                 &reception_service::item_quantity(item)
-                                                            )).hovered() {
-                                                                hovered_detail=Some(source_highlight::key(
-                                                                    recipient_id,item_id,"quantity"
-                                                                ));
+                                                            ));
+                                                            let key=source_highlight::key(
+                                                                recipient_id,item_id,"quantity"
+                                                            );
+                                                            if response.hovered() {
+                                                                hovered_detail=Some(key.clone());
                                                             }
+                                                            source_highlight::paint_active(
+                                                                ui,&response,&key,self.link_hover.active.as_ref()
+                                                            );
                                                         },
                                                     );
                                                 });
