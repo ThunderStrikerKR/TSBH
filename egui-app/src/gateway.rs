@@ -49,11 +49,9 @@ pub trait BandoGateway: Send + Sync {
     fn load_catalog(&self) -> Result<Value, String>;
     /// The currently open, unconfirmed source in a separate storage domain.
     /// This never creates a confirmed business order.
-    fn load_working_sources(&self) -> Result<Vec<WorkingSource>, String>;
-    /// Insert a first-class, independent reception item.
-    fn create_working_source(&self) -> Result<WorkingSource, String>;
+    fn load_working_source(&self) -> Result<WorkingSource, String>;
     /// Conditional write: another process may not overwrite a newer source.
-    fn save_working_source(&self, id: i64, raw: &str, revision: u64) -> Result<u64, String>;
+    fn save_working_source(&self, raw: &str, revision: u64) -> Result<u64, String>;
     /// Execute one of the explicitly allowed read-only business operations.
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String>;
 }
@@ -70,16 +68,12 @@ impl BandoGateway for LocalGateway {
         PreviewStore::initialize()?.load_catalog()
     }
 
-    fn load_working_sources(&self) -> Result<Vec<WorkingSource>, String> {
-        PreviewStore::initialize()?.load_sources()
+    fn load_working_source(&self) -> Result<WorkingSource, String> {
+        PreviewStore::initialize()?.load_source()
     }
 
-    fn create_working_source(&self) -> Result<WorkingSource, String> {
-        PreviewStore::initialize()?.create_source()
-    }
-
-    fn save_working_source(&self, id: i64, raw: &str, revision: u64) -> Result<u64, String> {
-        PreviewStore::initialize()?.save_source(id, raw, revision)
+    fn save_working_source(&self, raw: &str, revision: u64) -> Result<u64, String> {
+        PreviewStore::initialize()?.save_source(raw, revision)
     }
 
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String> {
