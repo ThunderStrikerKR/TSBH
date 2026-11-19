@@ -1607,6 +1607,27 @@ impl BandoEgui {
                         Vec2::new(ui.available_width(), editor_height),
                     );
                     let clip = ui.clip_rect().intersect(viewport);
+                    // The native recognition worker owns source/recipient
+                    // associations. Never infer a position by text search.
+                    let spans=self.analysis.as_ref()
+                        .filter(|_|self.active_id.as_deref().and_then(|id|
+                            self.drafts.iter().find(|row|row.id==id)
+                        ).is_some_and(|row|
+                            row.analysis_raw.as_deref()==Some(self.raw_source.as_str())
+                        ))
+                        .map(|analysis|analysis.linked_spans.clone())
+                        .unwrap_or_default();
+                    let selected_id=self.analysis.as_ref()
+                        .and_then(|analysis|reception_service::recipients(analysis)
+                            .get(self.selected_recipient))
+                        .and_then(|recipient|recipient.get("id"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned);
+                    let active_link=self.link_hover.active.clone();
+                    let scroll_link=self.link_hover.scroll_to.clone();
+                    let mut hovered_link=None;
+                    let mut clicked_link=None;
+                    let mut did_scroll=false;
                     let editor = ui.scope(|editor_ui| {
                         editor_ui.set_clip_rect(clip);
                         egui::ScrollArea::vertical()
@@ -1614,14 +1635,65 @@ impl BandoEgui {
                             .max_height(editor_height)
                             .auto_shrink([false, false])
                             .show(editor_ui, |scroll_ui| {
-                                scroll_ui.add_sized(
-                                    Vec2::new(scroll_ui.available_width(), editor_height),
-                                    egui::TextEdit::multiline(&mut self.raw_source)
-                                        .font(egui::TextStyle::Body),
-                                )
-                            })
-                            .inner
+                                // Keep the source/message splitter fixed. Only
+                                // this scroll area grows its internal content.
+                                let lines=self.raw_source.lines().count().max(8).min(1000);
+                                let mut layouter=|lay_ui:&egui::Ui,
+                                    buffer:&dyn egui::TextBuffer, width:f32| {
+                                    let job=source_highlight::layout(
+                                        buffer.as_str(),&spans,
+                                        selected_id.as_deref(),active_link.as_ref(),
+                                        width,egui::FontId::proportional(typography::FONT_BODY),
+                                        theme::TEXT,
+                                    );
+                                    lay_ui.fonts_mut(|fonts|fonts.layout_job(job))
+                                };
+                                let output=egui::TextEdit::multiline(&mut self.raw_source)
+                                    .font(egui::TextStyle::Body)
+                                    .desired_rows(lines)
+                                    .desired_width(scroll_ui.available_width())
+                                    .layouter(&mut layouter)
+                                    .show(scroll_ui);
+                                if output.response.hovered() {
+                                    if let Some(pointer)=scroll_ui.input(|i|i.pointer.hover_pos()) {
+                                        let cursor=output.galley.cursor_from_pos(
+                                            pointer-output.galley_pos
+                                        ).ccursor.index;
+                                        hovered_link=spans.iter().find(|span|
+                                            span.start_char<=cursor && cursor<span.end_char
+                                        ).map(|span|span.key.clone());
+                                        if output.response.clicked() {
+                                            clicked_link=hovered_link.clone();
+                                        }
+                                    }
+                                }
+                                if let Some(key)=scroll_link.as_ref() {
+                                    if let Some(span)=spans.iter().find(|span|span.key==*key) {
+                                        let cursor=output.galley.pos_from_cursor(
+                                            egui::text::CCursor::new(span.start_char)
+                                        );
+                                        scroll_ui.scroll_to_rect(
+                                            cursor.translate(output.galley_pos.to_vec2()),
+                                            Some(Align::Center),
+                                        );
+                                        did_scroll=true;
+                                    }
+                                }
+                                output.response
+                            }).inner
                     }).inner;
+                    self.source_hover=hovered_link;
+                    if did_scroll {self.link_hover.scroll_to=None;}
+                    if let Some(clicked)=clicked_link {
+                        if let Some(analysis)=&self.analysis {
+                            if let Some(index)=reception_service::recipients(analysis)
+                                .iter().position(|row|
+                                    reception_service::text(row,"id")==clicked.recipient_id
+                                ) {
+                                self.selected_recipient=index;
+                            }
+                        }
+                    }
                     if editor.changed() {
                         self.clear_source_analysis();
                         self.queue_source_save();
