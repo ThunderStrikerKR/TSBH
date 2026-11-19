@@ -1,10 +1,11 @@
 //! Explicit, read-only customer name index for the isolated egui preview.
-//! NEVER opens the production Tauri database or copies customer addresses,
-//! phone numbers, financial terms or confirmed orders into preview storage.
+//! Reads production Tauri client master ONLY with an explicit read-only DB
+//! path. Never modifies Tauri data or saves contact/financial/order records
+//! into preview storage.
 //!
-//! Opt in by setting BANDO_EGUI_CLIENT_INDEX to a JSON file whose root has
-//! "clients" and (optionally) "settings.kakaoTitleMappings". The path is never
-//! discovered from Tauri settings. Missing configuration means no client match.
+//! Opt in with BANDO_EGUI_CLIENT_INDEX (exported JSON) OR
+//! BANDO_EGUI_BUSINESS_DB (read-only SQLite). No implicit path discovery.
+//! Missing configuration means no client match.
 
 use serde_json::{json, Value};
 use std::{collections::HashSet, fs, path::PathBuf};
@@ -13,28 +14,93 @@ const MAX_CLIENT_INDEX_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_CLIENTS: usize = 5_000;
 
 pub fn attach(mut catalog: Value) -> Result<Value, String> {
-    let Some(path) = std::env::var_os("BANDO_EGUI_CLIENT_INDEX") else {
-        catalog["clients"] = json!([]);
-        catalog["settings"] = json!({"kakaoTitleMappings": {}});
-        return Ok(catalog);
+    let index = std::env::var_os("BANDO_EGUI_CLIENT_INDEX").filter(|v| !v.is_empty());
+    let business = std::env::var_os("BANDO_EGUI_BUSINESS_DB").filter(|v| !v.is_empty());
+    let (clients, settings) = match (index, business) {
+        (Some(_), Some(_)) =>
+            return Err("거래처 인덱스와 읽기 전용 운영 DB 경로를 동시에 지정할 수 없습니다.".into()),
+        (Some(file), None) => load_index(&PathBuf::from(file))?,
+        (None, Some(file)) => load_business_db(&PathBuf::from(file))?,
+        (None, None) => (json!([]), json!({"kakaoTitleMappings": {}})),
     };
-    if path.is_empty() {
-        return Err("BANDO_EGUI_CLIENT_INDEX 파일 경로가 비어 있습니다.".into());
-    }
-    let file = PathBuf::from(path);
-    let len = fs::metadata(&file)
-        .map_err(|e| format!("거래처 인덱스 파일에 접근할 수 없습니다: {e}"))?.len();
-    if len > MAX_CLIENT_INDEX_BYTES {
-        return Err("거래처 인덱스 파일은 최대 2MB까지 사용할 수 있습니다.".into());
-    }
-    let source = fs::read_to_string(&file)
-        .map_err(|e| format!("거래처 인덱스 파일을 읽지 못했습니다: {e}"))?;
-    let value: Value = serde_json::from_str(&source)
-        .map_err(|e| format!("거래처 인덱스 JSON 형식 오류: {e}"))?;
-    let (clients, settings) = project_index(&value)?;
     catalog["clients"] = clients;
     catalog["settings"] = settings;
     Ok(catalog)
+}
+
+fn load_index(file: &std::path::Path) -> Result<(Value, Value), String> {
+    let len = fs::metadata(file)
+        .map_err(|_| "거래처 인덱스 파일을 확인할 수 없습니다.".to_owned())?.len();
+    if len > MAX_CLIENT_INDEX_BYTES {
+        return Err("거래처 인덱스 파일은 최대 2MB까지 사용할 수 있습니다.".into());
+    }
+    let source = fs::read_to_string(file)
+        .map_err(|_| "거래처 인덱스 파일을 읽지 못했습니다.".to_owned())?;
+    let value: Value = serde_json::from_str(&source)
+        .map_err(|_| "거래처 인덱스 JSON 형식이 잘못되었습니다.".to_owned())?;
+    project_index(&value)
+}
+
+/// Explicit opt-in read of the Tauri relational client master. Does not run
+/// migrations, execute write SQL, copy the DB, read order rows, or save
+/// customer details to egui SQLite. This is a read-only live lookup, not an
+/// ownership transfer. WAL mode is not altered.
+fn load_business_db(file: &std::path::Path) -> Result<(Value, Value), String> {
+    use rusqlite::{Connection, OpenFlags};
+    if !file.is_file() {
+        return Err("지정한 운영 DB 파일을 찾을 수 없습니다.".into());
+    }
+    let conn = Connection::open_with_flags(file, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|_| "운영 DB 읽기 전용 열기에 실패했습니다.".to_owned())?;
+    conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=2000;")
+        .map_err(|_| "운영 DB 읽기 전용 설정에 실패했습니다.".to_owned())?;
+    load_business_from_connection(&conn)
+}
+
+fn load_business_from_connection(conn: &rusqlite::Connection) -> Result<(Value, Value), String> {
+    let version: i64 = conn.query_row(
+        "SELECT version FROM core_schema WHERE key='business-core'",
+        [], |row| row.get(0),
+    ).map_err(|_| "현재 관계형 거래처 DB 버전을 확인할 수 없습니다.".to_owned())?;
+    if version != 2 {
+        return Err("지원하지 않는 거래처 DB 버전입니다. 운영 DB를 변경하지 않았습니다.".into());
+    }
+    let mut stmt = conn.prepare("SELECT payload FROM core_clients ORDER BY position,id")
+        .map_err(|_| "거래처 목록을 읽을 수 없습니다.".to_owned())?;
+    let mut query = stmt.query([])
+        .map_err(|_| "거래처 목록 조회에 실패했습니다.".to_owned())?;
+    let mut clients = Vec::new();
+    let mut size = 0usize;
+    while let Some(row) = query.next()
+        .map_err(|_| "거래처 목록 읽기에 실패했습니다.".to_owned())? {
+        if clients.len() >= MAX_CLIENTS {
+            return Err("거래처 목록이 최대 5,000건을 초과했습니다.".into());
+        }
+        let text: String = row.get(0)
+            .map_err(|_| "거래처 자료가 손상됐습니다.".to_owned())?;
+        size = size.checked_add(text.len()).ok_or("거래처 목록 크기를 확인할 수 없습니다.")?;
+        if size > MAX_CLIENT_INDEX_BYTES {
+            return Err("거래처 목록이 최대 2MB를 초과했습니다.".into());
+        }
+        clients.push(serde_json::from_str::<Value>(&text)
+            .map_err(|_| "거래처 JSON 자료가 손상됐습니다.".to_owned())?);
+    }
+    // Only read settings; app_state may also contain other legacy data, which
+    // is never selected, projected, or saved here.
+    let setting: Option<String> = conn.query_row(
+        "SELECT json_extract(payload,'$.settings.kakaoTitleMappings')
+         FROM app_state WHERE id=1",
+        [], |row| row.get(0),
+    ).map_err(|_| "기존 카카오톡 거래처 연결 정보를 읽을 수 없습니다.".to_owned())?;
+    let mappings: Value = match setting {
+        Some(text) => serde_json::from_str(&text)
+            .map_err(|_| "기존 카카오톡 거래처 매핑이 잘못되었습니다.".to_owned())?,
+        None => json!({}),
+    };
+    project_index(&json!({
+        "clients": clients,
+        "settings": {"kakaoTitleMappings": mappings},
+    }))
 }
 
 /// Only information required by the existing native matcher is allowed out.
@@ -106,6 +172,29 @@ mod tests {
         assert!(clients[0].get("phone").is_none());
         assert!(clients[0].get("tier").is_none());
         assert!(settings["kakaoTitleMappings"].get("unknown").is_none());
+    }
+    #[test]
+    fn live_relational_database_is_read_only_and_exposes_only_names() {
+        use rusqlite::Connection;
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE core_schema(key TEXT,version INTEGER);
+          CREATE TABLE core_clients(id TEXT,position INTEGER,payload TEXT);
+          CREATE TABLE app_state(id INTEGER,payload TEXT);
+          INSERT INTO core_schema VALUES('business-core',2);
+          INSERT INTO core_clients VALUES('c1',0,
+            '{"id":"c1","name":"악기사","active":true,"phone":"hidden","tier":"special"}');
+          INSERT INTO app_state VALUES(1,
+            '{"settings":{"kakaoTitleMappings":{"악기사":{"clientId":"c1","ambiguous":false}}}}');")
+            .unwrap();
+        let (clients, settings) = load_business_from_connection(&conn).unwrap();
+        assert_eq!(clients[0]["name"], "악기사");
+        assert!(clients[0].get("phone").is_none());
+        assert!(clients[0].get("tier").is_none());
+        assert_eq!(settings["kakaoTitleMappings"]["악기사"]["clientId"], "c1");
+        // This adapter creates no user-data tables or modifications.
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM core_clients",
+            [], |row| row.get(0)).unwrap();
+        assert_eq!(count, 1);
     }
     #[test]
     fn duplicate_client_ids_fail_closed() {
