@@ -297,38 +297,60 @@ fn stage_name(step:usize,notice:bool)->&'static str{
 fn money(amount:Option<i64>)->String{
     amount.map(components::display_won).unwrap_or_else(||"—".to_owned())
 }
-/// Second and last row while folded: a SINGLE shipping/amount line on the
-/// left, the existing 140pt primary action and 34pt undo control on the
-/// right. VAT detail is preserved in a tooltip, not a third line.
+/// Same two CARD rows as React: summary and the one-touch action share
+/// the second row. The summary itself is allowed two short text lines inside
+/// the EXISTING button height so shipping, VAT and actual total remain
+/// readable without clipping or adding a third card row.
 
 fn workflow_action_line(
     ui:&mut Ui,id:&str,shipments:usize,total:Option<i64>,
     vat:Option<&str>,button_text:&str,enabled:bool
 )->(bool,bool){
     let width=ui.available_width();
-    let actions=theme::WORKFLOW_CONTROL_WIDTH
-        +theme::WORKFLOW_TRASH_WIDTH+theme::SPACE_4;
+    // The one-touch button is the SAME Emphasized role as "+ 새 주문".
+    // Measure its entire real caption before reserving the action slot.
+    // Do not shorten "계좌 재안내 완료" or allow it to wrap.
+    let caption_width=ui.painter().layout_no_wrap(
+        button_text.to_owned(),
+        egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
+        theme::BRIGHT_TEXT,
+    ).size().x;
+    let button_width=theme::WORKFLOW_CONTROL_WIDTH.max(
+        (caption_width+theme::SPACE_24+theme::SPACE_8).ceil()
+    );
+    let actions=button_width+theme::WORKFLOW_TRASH_WIDTH+theme::SPACE_4;
     let summary_width=(width-actions-theme::SPACE_4).max(0.0);
     let mut stage_button=None;
     ui.horizontal(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-        // No nested horizontal or vertical summary rows. The compact
-        // description stays on ONE line even at the minimum pane width.
         let amount=total.map(components::display_won)
             .unwrap_or_else(||"금액 미확정".to_owned());
-        let compact=format!("배송 {shipments}건 · {amount}");
-        let full=vat.map(|vat|format!("{compact} · {vat}"))
-            .unwrap_or_else(||compact.clone());
-        bar.add_sized(
-            [summary_width,theme::WORKFLOW_ACTION_ROW_HEIGHT],
-            egui::Label::new(typography::caption(&compact)).truncate()
-        ).on_hover_text(full);
+        let money_line=vat.map(|vat|format!("{vat} · {amount}"))
+            .unwrap_or_else(||amount.clone());
         bar.allocate_ui_with_layout(
-            Vec2::new(theme::WORKFLOW_CONTROL_WIDTH,
+            Vec2::new(summary_width,theme::WORKFLOW_ACTION_ROW_HEIGHT),
+            Layout::top_down(Align::Min),|summary|{
+                summary.spacing_mut().item_spacing.y=0.0;
+                summary.set_width(summary_width);
+                summary.add_sized(
+                    [summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT],
+                    egui::Label::new(typography::caption(
+                        &format!("배송 {shipments}건")
+                    )).truncate(),
+                );
+                summary.add_sized(
+                    [summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT],
+                    egui::Label::new(typography::caption(&money_line))
+                        .truncate(),
+                ).on_hover_text(money_line.clone());
+            }
+        );
+        bar.allocate_ui_with_layout(
+            Vec2::new(button_width,
                 theme::WORKFLOW_ACTION_ROW_HEIGHT),
             Layout::top_down(Align::Min),|control|{
                 stage_button=Some(theme::action_full_width(
-                    control,button_text,theme::ButtonRole::Primary,enabled
+                    control,button_text,theme::ButtonRole::Emphasized,enabled
                 ));
             }
         );
@@ -486,7 +508,8 @@ fn group_frame(
         }else{"부가세 별도".to_owned()};
         let (_,stage_hovered)=workflow_action_line(
             ui,&group.id,group.shipments.len(),group.total,
-            Some(&vat),stage_name(group.step,group.needs_notice),false
+            if group.vat_included>0{Some(vat.as_str())}else{None},
+            stage_name(group.step,group.needs_notice),false
         );
         if stage_hovered && !in_preview{
             *trigger=Some(group.id.clone());
