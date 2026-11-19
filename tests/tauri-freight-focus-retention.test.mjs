@@ -19,7 +19,10 @@ test("freight editor stays mounted while Rust workflow/total previews refresh", 
   assert.doesNotMatch(desk,/\{flowSummaryReady && activeShipmentPreview &&\s*activeShipment\?\.recipientId === r\.id/);
 });
 test("freight edit input reads current editable draft, not a stale Rust projection", () => {
-  assert.match(desk,/\.\.\.freightEditor\.preview\.displayCharges,\s*\.\.\.r\.shippingCharges/);
+  // The field displays Rust-computed applied charges. The editable per-row
+  // base charge is preserved separately (including manual remote 2x toggle).
+  assert.match(desk,/displayCharges=\{freightEditor\.preview\.displayCharges\}/);
+  assert.match(desk,/row\.shippingCharges/);
   assert.match(desk,/\.\.\.freightEditor\.shipment\.charges,\s*\.\.\.row\.shippingCharges,\s*\[origin\]: value/);
   assert.match(desk,/props\.workflowSelection\.shipmentId === lastReadyFreight\.current\.shipment\.id/);
   assert.match(rows,/key=\{origin\}/);
