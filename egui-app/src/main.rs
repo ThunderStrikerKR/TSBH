@@ -339,6 +339,7 @@ impl BandoEgui {
         ui.scope_builder(
             UiBuilder::new().id_salt("source-top").max_rect(source_rect),
             |child| {
+                child.set_clip_rect(source_rect);
                 child.set_width(source_rect.width());
                 child.set_height(source_rect.height());
                 self.source_section(child, source_height);
@@ -378,6 +379,7 @@ impl BandoEgui {
         ui.scope_builder(
             UiBuilder::new().id_salt("message-bottom").max_rect(message_rect),
             |child| {
+                child.set_clip_rect(message_rect);
                 child.set_width(message_rect.width());
                 child.set_height(message_rect.height());
                 self.message_section(child, message_height);
