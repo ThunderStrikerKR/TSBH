@@ -156,33 +156,35 @@ fn workflow_card<R>(
 /// A clickable, left-aligned title occupying the same reserved header width
 /// with the workflow lights; no highlighted pill around the dealer name.
 fn group_heading(
-    ui:&mut Ui,title:&str,step:usize,notice:bool
+    ui:&mut Ui,id:&str,title:&str,step:usize,notice:bool
 )->egui::Response{
-    ui.horizontal(|heading|{
-        heading.spacing_mut().item_spacing.x=theme::SPACE_4;
-        let width=(heading.available_width()-theme::WORKFLOW_SIGNAL_WIDTH
+    // The original React title BUTTON includes both the company name and
+    // signal lights. Do not restrict the click target to the text glyphs.
+    let heading=ui.horizontal(|header|{
+        header.spacing_mut().item_spacing.x=theme::SPACE_4;
+        let title_width=(header.available_width()-theme::WORKFLOW_SIGNAL_WIDTH
             -theme::SPACE_4).max(0.0);
-        let response=heading.add_sized(
-            [width,theme::WORKFLOW_TITLE_HEIGHT],
-            egui::Label::new(typography::section_heading(title))
-                .truncate().sense(egui::Sense::click())
+        header.add_sized(
+            [title_width,theme::WORKFLOW_TITLE_HEIGHT],
+            egui::Label::new(typography::section_heading(title)).truncate()
         );
-        lights(heading,step,notice);
-        response
-    }).inner
+        lights(header,step,notice);
+    });
+    ui.interact(heading.response.rect,Id::new(("workflow-header",id)),
+        egui::Sense::click())
 }
 fn lights(ui:&mut Ui,step:usize,notice:bool){
-    ui.horizontal(|ui|{
-        ui.spacing_mut().item_spacing.x=theme::SPACE_4;
+    ui.horizontal(|row|{
+        row.spacing_mut().item_spacing.x=theme::SPACE_4;
         for index in 0..STEP_NAMES.len(){
-            let (rect,_)=ui.allocate_exact_size(
+            let (rect,_)=row.allocate_exact_size(
                 Vec2::splat(theme::SPACE_16),egui::Sense::hover()
             );
             let color=if index<step {theme::SUCCESS}
                 else if index==step && notice {theme::SELECTED_ORDER}
                 else if index==step {theme::SECONDARY}
                 else{theme::DIVIDER};
-            ui.painter().circle_filled(rect.center(),theme::SPACE_4,color);
+            row.painter().circle_filled(rect.center(),theme::SPACE_4,color);
         }
     });
 }
@@ -212,6 +214,24 @@ fn workflow_table_header(ui:&mut Ui){
         ],egui::Label::new(typography::table_header("운임")));
     });
 }
+/// One product occupies a compact chip, exactly as the React
+/// .workflow-shipment .product-chip style, not an unframed text fragment.
+fn product_chip(ui:&mut Ui,label:&str){
+    Frame::new()
+        .fill(theme::WORKFLOW_CHIP_FILL)
+        .stroke(egui::Stroke::new(
+            theme::SOFT_DIVIDER_WIDTH,theme::WORKFLOW_CHIP_BORDER
+        ))
+        .corner_radius(theme::WORKFLOW_CHIP_RADIUS)
+        .inner_margin(egui::Margin{
+            left:theme::WORKFLOW_CHIP_PAD_X,
+            right:theme::WORKFLOW_CHIP_PAD_X,
+            top:theme::WORKFLOW_CHIP_PAD_Y,
+            bottom:theme::WORKFLOW_CHIP_PAD_Y,
+        }).show(ui,|chip|{
+            chip.label(typography::table_cell(label));
+        });
+}
 /// React .workflow-shipment uses a 64 / flexible / 68 three-column row.
 /// No secondary boxed cards: selection is a subtle background plus a thin
 /// accent stripe, not an extra input-style border around every recipient.
@@ -235,8 +255,8 @@ fn shipment_line(
             row.set_min_width(inside);
             row.horizontal(|cols|{
                 cols.spacing_mut().item_spacing.x=theme::SPACE_4;
-                let name_width=theme::WORKFLOW_RECIPIENT_COL.min(inside*0.25);
-                let freight_width=theme::WORKFLOW_FREIGHT_COL.min(inside*0.24);
+                let name_width=theme::WORKFLOW_RECIPIENT_COL;
+                let freight_width=theme::WORKFLOW_FREIGHT_COL;
                 let product_width=(inside-name_width-freight_width
                     -theme::SPACE_8).max(0.0);
                 cols.add_sized(
@@ -250,7 +270,7 @@ fn shipment_line(
                         product_col.horizontal_wrapped(|chips|{
                             chips.spacing_mut().item_spacing.x=theme::SPACE_4;
                             for product in products{
-                                chips.label(typography::table_cell(product));
+                                product_chip(chips,product);
                             }
                         });
                     }
@@ -283,15 +303,15 @@ fn row(ui:&mut Ui,ship:&ShipmentRow,chosen:bool,in_preview:bool)->egui::Response
 }
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
-    open:bool,in_preview:bool,trigger:&mut Option<String>,
-    hovered_row:&mut Option<String>
+    open:bool,in_preview:bool,previewed_id:Option<&str>,
+    trigger:&mut Option<String>,hovered_row:&mut Option<String>
 )->Option<Event>{
     let mut event=None;
     let active=selected.is_some_and(|s|s.group_id==group.id);
     workflow_card(ui,active && !in_preview,|ui|{
         let title=format!("{}  {}",if open || in_preview{"▾"}else{"▸"},
             group.dealer_name);
-        let btn=group_heading(ui,&title,group.step,group.needs_notice);
+        let btn=group_heading(ui,&group.id,&title,group.step,group.needs_notice);
             if btn.clicked(){
                 if active {
                     event=Some(Event::ToggleGroup(group.id.clone()));
@@ -328,8 +348,11 @@ fn group_frame(
             components::soft_divider(ui);
             workflow_table_header(ui);
             for ship in &group.shipments{
-                let chosen=selected.is_some_and(|s|s.shipment_id==ship.id);
-                let label=row(ui,ship,chosen,in_preview && !chosen);
+                // Orange means committed selection ONLY on the base card.
+                // Blue means the temporarily hovered row ONLY in the clone.
+                let chosen=!in_preview && selected.is_some_and(|s|s.shipment_id==ship.id);
+                let previewed=in_preview && previewed_id==Some(ship.id.as_str());
+                let label=row(ui,ship,chosen,previewed);
                 let response=ui.interact(
                     label.rect,Id::new(("workflow-shipment",ship.id.as_str(),in_preview)),
                     egui::Sense::click()
@@ -358,7 +381,7 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
                 .and_then(|m|m.get("name")).and_then(|n|n.as_str())
                 .filter(|n|!n.trim().is_empty()).unwrap_or("거래처 확인").to_owned()
         };
-        if group_heading(ui,
+        if group_heading(ui,&draft.id,
             &format!("{}  {}",if open{"▾"}else{"▸"},title),0,false
         ).clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
@@ -437,7 +460,7 @@ pub fn show(
             let width=ui.available_width();
             let pos=ui.cursor().min;
             let mut ignored_row=None;
-            if let Some(value)=group_frame(ui,group,current,open,false,
+            if let Some(value)=group_frame(ui,group,current,open,false,None,
                 &mut trigger,&mut ignored_row){
                 match value{
                     Event::ToggleGroup(id)=>{
@@ -472,17 +495,22 @@ pub fn show(
     let hovered=trigger.clone();
     state.update_hover(hovered,ui.ctx());
     if let Some((group,pos,width))=overlay{
+        let pane_clip=ui.clip_rect();
         let mut overlay_event=None;
         let mut hovered_row=None;
         let area=egui::Area::new(Id::new(("workflow-card-overlay",group.id.clone())))
             .order(egui::Order::Foreground)
             .fixed_pos(Pos2::new(pos.x,pos.y));
         let response=area.show(ui.ctx(),|ui|{
+            // The temporary card can grow downward, but must not bleed
+            // over the source/details panes or the app header.
+            ui.set_clip_rect(pane_clip);
             ui.set_min_width(width);
             ui.set_max_width(width);
             let mut ignored_hover=None;
             overlay_event=group_frame(
-                ui,&group,current,true,true,&mut ignored_hover,&mut hovered_row
+                ui,&group,current,true,true,state.preview_shipment.as_deref(),
+                &mut ignored_hover,&mut hovered_row
             );
         });
         state.preview_rect=Some(response.response.rect);
