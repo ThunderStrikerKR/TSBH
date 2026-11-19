@@ -1,4 +1,4 @@
-# Targeted Windows compile: final emphasized one-touch and compact VAT/amount layout validation.
+# Targeted Windows compile: left-aligned dealer heading, unchanged 18pt independent lamps and 관리 label.
 name: Tauri native CLI executable compile check
 on:
   push:
