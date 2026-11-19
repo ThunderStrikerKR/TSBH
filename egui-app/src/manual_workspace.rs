@@ -8,7 +8,7 @@
 use std::{sync::{Arc,mpsc::{self,Receiver}},thread,time::{SystemTime,UNIX_EPOCH},sync::atomic::{AtomicU64,Ordering}};
 use eframe::egui::{self,Context};
 use serde_json::{json,Value};
-use crate::{gateway::{BandoGateway,ReadOperation},preview_store::WorkingReception,theme::{self,ButtonRole},typography};
+use crate::{gateway::{BandoGateway,ReadOperation},preview_store::WorkingReception,theme::{self,ButtonRole},typography,manual_product_search::{ProductSearch,Event as ProductEvent}};
 
 fn text<'a>(value:&'a Value,key:&str)->&'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
@@ -85,6 +85,8 @@ pub struct ManualWorkspace {
     selected_field:String,
     edit_text:String,
     confirm_discard:bool,
+    product_search:Option<ProductSearch>,
+    remove_recipient_pending:bool,
     receiver:Option<Receiver<Result<Outcome,String>>>,
     error:Option<String>,
     dirty:bool,
@@ -125,6 +127,7 @@ impl ManualWorkspace {
             assignment_order:Vec::new(),selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
             edit_text:String::new(),confirm_discard:false,
+            product_search:None,remove_recipient_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
         }
     }
@@ -142,6 +145,18 @@ impl ManualWorkspace {
             Some(Ok(Ok(Outcome::Updated{model,assignment_order})))=>{
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
+                let count=self.model.as_ref().map(|m|list(m,"rows").len()).unwrap_or(0);
+                self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
+                if self.selected_item.as_ref().is_some_and(|id|
+                    !self.model.as_ref().is_some_and(|m|
+                        list(m,"rows").get(self.selected_recipient).is_some_and(|r|
+                            list(r,"items").iter().any(|item|text(item,"id")==id)
+                        )
+                    )
+                ){
+                    self.selected_item=None;
+                    self.selected_field="name".into();
+                }
                 self.dirty=true;
                 self.error=None;
                 self.receiver=None;
@@ -295,6 +310,7 @@ impl ManualWorkspace {
         let mut discard=false;
         let mut discard_confirmed=false;
         let mut submit_direct=false;
+        let mut lookup:Option<(String,String)>=None;
         egui::Window::new("수동 분류")
             .id(egui::Id::new("bando-native-manual-classification"))
             .open(&mut open)
@@ -304,6 +320,7 @@ impl ManualWorkspace {
             .default_height((ctx.screen_rect().height()-theme::MANUAL_DIALOG_VERTICAL_GAP)
                 .max(420.0))
             .show(ctx,|ui|{
+                ui.set_enabled(self.product_search.is_none() && !self.remove_recipient_pending);
                 if let Some(error)=self.error.as_ref() {
                     ui.label(typography::status(error,theme::DANGER));
                 }
