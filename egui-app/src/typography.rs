@@ -163,7 +163,7 @@ pub fn brand_galley(ui: &egui::Ui, text: &str) -> std::sync::Arc<egui::Galley> {
         ..Default::default()
     };
     let job = egui::text::LayoutJob::single_section(text.to_owned(), format);
-    ui.fonts(|fonts| fonts.layout_job(job))
+    ui.fonts_mut(|fonts| fonts.layout_job(job))
 }
 
 pub fn page_heading(text: &str) -> RichText { render(text, Role::Page) }
