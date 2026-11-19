@@ -258,7 +258,10 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
             return Err("입력 필드를 확인하세요.".into());
         }
         let rid = required_str(cell,"recipientId")?;
-        let value = required_str(payload,"value")?;
+        // An empty edit is a valid employee correction (clear a mistaken
+        // source assignment). Require a string, not a non-empty string.
+        let value = payload.get("value").and_then(Value::as_str)
+            .ok_or("수동 분류 입력값은 문자열이어야 합니다.")?;
         let row = model["rows"].as_array_mut().ok_or("배송 행을 선택하세요.")?
             .iter_mut().find(|r|str_field(r,"id")==rid)
             .ok_or("배송 행을 선택하세요.")?;
@@ -343,6 +346,18 @@ mod tests {
             .expect("status");
         assert_eq!(ready["pending"],json!(false));
         assert_eq!(ready["items"][0]["valid"],json!(true));
+    }
+    #[test]
+    fn empty_manual_recipient_edit_is_a_valid_native_clear() {
+        let result=apply(&json!({
+            "action":"set_manual_recipient_field",
+            "model":{"rows":[{"id":"r1","name":"김가상","items":[]}],
+                "blocks":[],"assignments":{}},
+            "cell":{"recipientId":"r1","field":"name"},
+            "value":""
+        })).unwrap();
+        assert_eq!(result["model"]["rows"][0]["name"],"");
+        assert_eq!(result["model"]["rows"][0]["confirmedFields"],json!(["name"]));
     }
     #[test]
     fn parses_original_manual_quantity_tokens() {
