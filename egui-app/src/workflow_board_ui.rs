@@ -325,24 +325,41 @@ fn workflow_action_line(
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
         let amount=total.map(components::display_won)
             .unwrap_or_else(||"금액 미확정".to_owned());
-        let money_line=vat.map(|vat|format!("{vat} · {amount}"))
-            .unwrap_or_else(||amount.clone());
         bar.allocate_ui_with_layout(
             Vec2::new(summary_width,theme::WORKFLOW_ACTION_ROW_HEIGHT),
             Layout::top_down(Align::Min),|summary|{
                 summary.spacing_mut().item_spacing.y=0.0;
                 summary.set_width(summary_width);
-                summary.add_sized(
-                    [summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT],
-                    egui::Label::new(typography::caption(
-                        &format!("배송 {shipments}건")
-                    )).truncate(),
+                // React flow-summary-compact: shipment count is LEFT,
+                // included/mixed VAT is RIGHT. Both are on the top line.
+                summary.allocate_ui_with_layout(
+                    Vec2::new(summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
+                    Layout::left_to_right(Align::Center),|line|{
+                        line.spacing_mut().item_spacing.x=theme::SPACE_4;
+                        line.label(typography::caption(
+                            &format!("배송 {shipments}건")
+                        ));
+                        if let Some(vat)=vat{
+                            line.with_layout(Layout::right_to_left(Align::Center),|right|{
+                                right.label(
+                                    typography::caption(vat)
+                                        .color(theme::WORKFLOW_VAT_TEXT)
+                                ).on_hover_text(vat);
+                            });
+                        }
+                    }
                 );
-                summary.add_sized(
-                    [summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT],
-                    egui::Label::new(typography::caption(&money_line))
-                        .truncate(),
-                ).on_hover_text(money_line.clone());
+                // Amount occupies its own right-aligned slot. A long sum
+                // never causes the VAT label to be clipped or a third row.
+                summary.allocate_ui_with_layout(
+                    Vec2::new(summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
+                    Layout::right_to_left(Align::Center),|line|{
+                        line.add(
+                            egui::Label::new(typography::caption(&amount))
+                                .truncate()
+                        ).on_hover_text(&amount);
+                    }
+                );
             }
         );
         bar.allocate_ui_with_layout(
