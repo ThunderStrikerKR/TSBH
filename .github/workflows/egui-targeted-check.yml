@@ -1,4 +1,4 @@
-# Targeted Windows compile: shared native settings account validator and React-equivalent mouse-help popovers.
+# Targeted Windows compile: retry after owned folder-picker key fix; final Settings GUI and Tauri rules.
 name: Tauri native CLI executable compile check
 on:
   push:
