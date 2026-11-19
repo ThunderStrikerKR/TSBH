@@ -33,6 +33,9 @@ pub struct WorkingReception {
     pub working_version: Option<u64>,
     /// True only when current raw, kind and client match the last native save.
     pub working_synced: bool,
+    /// The employee-approved native manual model for THIS exact raw/kind/
+    /// dealer. The full Tauri Order and master client details are excluded.
+    pub manual_model: Option<Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -238,6 +241,7 @@ impl PreviewStore {
                 pricing_preview: row.get("pricingPreview").filter(|v| !v.is_null()).cloned(),
                 working_version: row.get("workingVersion").and_then(Value::as_u64),
                 working_synced: row.get("workingSynced").and_then(Value::as_bool).unwrap_or(false),
+                manual_model: row.get("manualModel").filter(|v|!v.is_null()).cloned(),
             });
         }
         // Preserve a previous single-source editing session without changing
@@ -249,7 +253,7 @@ impl PreviewStore {
                 analysis_raw: None, analysis_evidence: None, client_match: None,
                 chat_handle: None, chat_title: None,
                 client_id: None, client_selection: None, pricing_preview: None,
-                working_version: None, working_synced: false,
+                working_version: None, working_synced: false, manual_model: None,
             });
         }
         let active_id = if !active.is_empty() {
@@ -283,6 +287,7 @@ impl PreviewStore {
             "pricingPreview": item.pricing_preview,
             "workingVersion": item.working_version,
             "workingSynced": item.working_synced,
+            "manualModel": item.manual_model,
         })).collect());
         let encoded = payload.to_string();
         let mut conn = self.open_connection()?;
@@ -341,6 +346,28 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
            (draft.working_synced && (draft.working_version.is_none() ||
                draft.client_id.is_none() || draft.pricing_preview.is_none())) {
             return Err("운영 작업본 저장 상태가 올바르지 않습니다.".into());
+        }
+        if let Some(manual)=&draft.manual_model {
+            let fields=["sourceRaw","orderType","clientId","model","assignmentOrder"];
+            let record=manual.as_object()
+                .ok_or("수동 분류 작업본 형식이 잘못되었습니다.")?;
+            if record.keys().any(|key|!fields.contains(&key.as_str())) ||
+               manual.get("sourceRaw").and_then(Value::as_str)!=Some(draft.raw.as_str()) ||
+               manual.get("orderType").and_then(Value::as_str)!=Some(draft.order_type.as_str()) ||
+               manual.get("clientId").and_then(Value::as_str)!=draft.client_id.as_deref() ||
+               !manual["model"]["rows"].is_array() ||
+               !manual["model"]["blocks"].is_array() ||
+               !manual["model"]["assignments"].is_object() ||
+               !manual["assignmentOrder"].is_array() ||
+               manual["model"]["rows"].as_array().is_some_and(|rows|rows.is_empty()||
+                   rows.len()>100) {
+                return Err("수동 분류 기록이 현재 발주서와 일치하지 않습니다.".into());
+            }
+            analysis_bytes=analysis_bytes.checked_add(manual.to_string().len())
+                .ok_or("수동 분류 작업본 크기 초과")?;
+            if draft.working_synced {
+                return Err("운영 저장 후 수동 분류 변경사항을 먼저 다시 저장해야 합니다.".into());
+            }
         }
         if let Some(price)=&draft.pricing_preview {
             let keys=["sourceRaw","orderId","orderType","clientId","authorityRevision",
