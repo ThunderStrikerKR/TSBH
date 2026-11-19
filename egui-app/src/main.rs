@@ -363,7 +363,7 @@ impl BandoEgui {
             ui.set_min_height((minimum_height - 2.0 * theme::SECTION_PADDING).max(48.0));
             // The section header owns its vertical rhythm. Eguis implicit
             // item spacing must not be added on top of explicit gaps.
-            let body_item_spacing = ui.spacing().item_spacing.y;
+            let body_item_spacing = theme::SPACING;
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.allocate_ui_with_layout(
                 Vec2::new(ui.available_width(), theme::SECTION_HEADER_HEIGHT),
@@ -594,7 +594,7 @@ impl BandoEgui {
                     }
                 }
             } else {
-                ui.add_space(theme::SPACE_24 + theme::SPACE_8);
+                ui.add_space(theme::SPACE_24);
                 ui.label(theme::subsection_heading("클립보드 접수"));
                 ui.label(theme::caption("복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."));
                 ui.horizontal(|ui| {
@@ -652,6 +652,10 @@ impl BandoEgui {
 
     fn details_and_freight(&mut self, ui: &mut Ui) {
         let full_height = ui.available_height();
+        // Independent vertical sections use the same 6-point gap as the
+        // source/message and horizontal panel splitters. Only section bodies
+        // use the normal 8-point item spacing.
+        ui.spacing_mut().item_spacing.y = 0.0;
 
         Self::section(ui, "확인할 내용", (full_height * 0.27).max(150.0), |ui| {
             if let Some(error) = &self.analysis_error {
