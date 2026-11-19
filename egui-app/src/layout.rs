@@ -94,25 +94,36 @@ impl LayoutState {
         let mut locked = [false; PANEL_COUNT];
         let mut remaining = width;
         loop {
-            let sum: f32 = (0..PANEL_COUNT).filter(|&i| !locked[i])
-                .map(|i| self.ratios[i]).sum();
-            if sum <= 0.0 { break; }
-            let mut clamped = false;
-            for i in 0..PANEL_COUNT {
-                if !locked[i] && remaining * self.ratios[i] / sum < MIN_WIDTHS[i] {
-                    values[i] = MIN_WIDTHS[i];
-                    locked[i] = true;
-                    remaining -= MIN_WIDTHS[i];
-                    clamped = true;
-                }
+            let unlocked: Vec<usize> = (0..PANEL_COUNT).filter(|&i| !locked[i]).collect();
+            if unlocked.is_empty() {
+                // Defensive rounding path: distribute any remainder without
+                // violating minimum widths or leaving an unused right gutter.
+                values[PANEL_COUNT - 1] += remaining.max(0.0);
+                break;
             }
-            if !clamped {
-                for i in 0..PANEL_COUNT {
-                    if !locked[i] {
-                        values[i] = remaining * self.ratios[i] / sum;
-                    }
+            let sum: f32 = unlocked.iter().map(|&i| self.ratios[i]).sum();
+            if sum <= 0.0 {
+                let per_column = remaining / unlocked.len() as f32;
+                for i in unlocked { values[i] = per_column; }
+                break;
+            }
+
+            // Decide all clamped columns from ONE stable remaining budget.
+            // Mutating 'remaining' inside this loop made neighboring panels
+            // clamp prematurely and could leave a 12-point empty gutter.
+            let to_lock: Vec<usize> = unlocked.iter().copied()
+                .filter(|&i| remaining * self.ratios[i] / sum < MIN_WIDTHS[i])
+                .collect();
+            if to_lock.is_empty() {
+                for i in unlocked {
+                    values[i] = remaining * self.ratios[i] / sum;
                 }
                 break;
+            }
+            for i in to_lock {
+                values[i] = MIN_WIDTHS[i];
+                locked[i] = true;
+                remaining -= MIN_WIDTHS[i];
             }
         }
         values
