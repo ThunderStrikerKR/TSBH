@@ -17,8 +17,8 @@ BandoGateway (gateway.rs)  — catalog / read-only Rust operations / revisioned 
 
 - UI는 비즈니스 Rust 함수, SQLite, Tauri IPC, HTTP 라이브러리를 직접 호출하지 않는다.
 - 기존 Rust 알고리즘과 JSON 요청/응답은 **단일 출처**로 유지한다.
-- `ReadOperation` enum은 현재 프리뷰가 호출할 수 있는 여섯 읽기 전용 연산만 허용한다:
-  `recognition/analyze_order`, `rules/resolve_unit_price`, `rules/detect_remote_delivery_area`, `catalog_clients/auto_match_reception_client`, `catalog_clients/reception_client_candidates`, `catalog_clients/client_candidates`. 거래처 매칭과 전체 검색은 기존 Rust 모듈을 공유한다.
+- `ReadOperation` enum은 인식/조회 6개와 **DB를 수정하지 않는 순수 Rust 주문 변환 연산 5개**만 허용한다:
+  `recognition/analyze_order`, `rules/resolve_unit_price`, `rules/detect_remote_delivery_area`, `catalog_clients/auto_match_reception_client`, `catalog_clients/reception_client_candidates`, `catalog_clients/client_candidates` 및 `rules/apply_reception_action`, `rules/order_edit_rules`, `rules/merge_reception_analysis`, `rules/reprice_order`, `rules/calculate_price`. 거래처 매칭·검색·주문 수정 판단은 기존 Rust 엔진을 공유한다. **egui 이 연산들은 운영 DB에 아무 것도 저장하지 않는다.**
 - 업무 엔진의 읽기 전용 연산만 연결했다. 단, 프리뷰 편집기 원문은 별도의 versioned working-source 저장 계약으로 자동저장한다. **주문 확정·결제·송장·업무 DB 변경 명령은 없다.**
 - 새 기능은 UI가 아니라 Gateway 인터페이스 및 전용 서비스에 구현한다. 외부 Windows 창·카카오톡 도킹은 네트워크 업무 API와 별개의 로컬 어댑터 책임이다.
 
@@ -184,3 +184,15 @@ $env:BANDO_EGUI_BUSINESS_DB = "C:\\path\\to\\bando-hub-v001.sqlite"
 - 원본 Tauri SQLite는 `SQLITE_OPEN_READ_ONLY` 및 `PRAGMA query_only=ON` 방식으로만 접속한다. 영구 주문의 거래처 변경은 **아직 실행하지 않는다**. 실제 Rust `order_edit_rules/change_order_client`와 revision-checked SQLite 저장 연결은 다음 단계에서 수행한다.
 - 카카오톡 실제 창 연결이 아닌 대화 제목만 표시하는 문제는 독립 추적: https://github.com/ThunderStrikerKR/TSBH/issues/42. 이 단계에서 카카오톡 화면을 수정하지 않는다.
 - Windows Cargo 빌드/GUI 동작 확인은 아직 수행하지 않았다. 대규모 회귀 테스트를 추가하거나 실행하지 않았다.
+
+## 10. 거래처 변경 Rust 주문 규칙 연결 (2026-11-20)
+
+- 기존 Tauri의 운영 거래처 변경 규칙 `rules/order_edit_rules {action: change_order_client}`를 egui Gateway로 연결했다. 원문 분석에서 실제 고객별 상품 별칭을 적용하려면 선택한 거래처의 **전체 원본 master**가 필요하므로 `BANDO_EGUI_BUSINESS_DB`로 명시한 v2 운영 DB를 `SQLITE_OPEN_READ_ONLY` 및 `PRAGMA query_only=ON`으로 조회한다.
+- `business_state.rs`는 하나의 SQLite 읽기 트랜잭션에서 `app_state`, `core_products`, `core_product_prices`, `core_clients`, `core_orders`, `core_recipients`, `core_items`를 관계형 순서대로 읽고, 기존 Tauri `relational_store::hydrate`와 동일한 핵심 객체 구조로 복원한다. 설정·workflow/청구 이력은 규칙 실행 동안 메모리에서만 유지한다.
+- 전체 JSON 거래처 인덱스만 설정했거나 DB 버전이 v2가 아닌 경우, 실운영 단가·운임 검증을 수행하지 않는다. 운영 DB에 이미 같은 주문 ID가 있으면 격리 접수용 임시 주문으로 변경하지 않는다.
+- 직원이 다른 거래처를 선택하면 원문/주문 ID를 고정한 작업 스레드에서 Rust `new_reception → analyze_order(선택 거래처) → change_order_client → merge_reception_analysis → reprice_order → calculate_price` 순서로 수행한다. 기존 단가/운임 및 업무 상태 판단을 egui에서 복제하지 않는다.
+- 성공하면 **egui 미확정 접수에만** `clientId`, `clientSelection=MANUAL`, `pricingPreview`를 저장한다. `pricingPreview`는 원문/거래처/DB revision/품목별 단가/운임/VAT/총액만 허용하며 고객 주소·전화·계좌·전체 order snapshot·청구 이력을 포함하지 않는다. 같은 원문/거래처를 검증하고 egui 전용 SQLite revision-checked 자동저장으로 보관한다. 실패하면 기존 거래처를 보존한다.
+- 제품 마스터가 명시적 운영 DB에 연결되면 접수 인식도 해당 DB의 실제 상품/옵션/별칭을 이용한다. 오래된 내장 상품 시드의 ID로 인식하고 최신 운영 DB로 가격을 매기는 혼합을 금지한다.
+- **중요한 잔여 범위:** 이 경로는 실제 Rust 주문 수정 규칙과 실제 마스터 값을 사용해 **미확정 주문의 참고 견적을 준비**하지만, 운영 `app_state/core_orders/reception_working_orders`를 **갱신하지 않는다**. 영구 운영 주문 변경을 완료하려면 기존 Tauri `write_snapshot/state_save`의 검증, workflow reconcile, revision 및 감사 이력 처리를 동일 저장 트랜잭션으로 호출하는 **명시적 전용 게이트웨이**가 추가로 필요하다. 임의 직접 SQL `UPDATE core_orders/client_id`는 절대 수행하지 않는다.
+- 원문 하이라이트와 수취인 수동 분류는 다음 단계이며, 카카오톡 창 연결 문제는 독립 Issue #42에서 계속 추적한다.
+- 실제 Windows Cargo 컴파일/GUI 확인은 아직 하지 않았고 대규모 회귀 테스트도 실행하지 않았다.
