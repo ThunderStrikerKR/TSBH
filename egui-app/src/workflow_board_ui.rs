@@ -1,6 +1,6 @@
 //! The right-hand workflow board. Layout/hover/selection only; no business rules.
 //! Native Rust provides groups, amounts, freight, stage and shipment identity.
-use eframe::egui::{self, Frame, Id, Pos2, Rect, Ui, Vec2};
+use eframe::egui::{self, Align, Frame, Id, Layout, Pos2, Rect, Ui, Vec2};
 use std::time::{Duration, Instant};
 use crate::{components, preview_store::WorkingReception, theme, typography};
 use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
@@ -117,12 +117,66 @@ impl BoardUi{
         }
     }
 }
+/// React's .workflow-group is a full-width 7px-radius card, not a
+/// shrink-to-content nested Frame or a blue navigation-button tile.
+/// Reserve exactly the pane width for BOTH expanded and folded cards.
+fn workflow_card<R>(
+    ui:&mut Ui,selected:bool,body:impl FnOnce(&mut Ui)->R
+)->R{
+    let outer=ui.available_width();
+    let frame=Frame::new()
+        .fill(if selected{theme::WORKFLOW_SELECTED_BG}else{theme::WORKFLOW_CARD_BG})
+        .stroke(egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,
+            theme::WORKFLOW_CARD_BORDER))
+        .corner_radius(theme::WORKFLOW_CARD_RADIUS)
+        .inner_margin(egui::Margin::symmetric(
+            theme::WORKFLOW_CARD_PADDING_X as i8,
+            theme::WORKFLOW_CARD_PADDING_Y as i8
+        ));
+    let response=frame.show(ui,|card|{
+        card.set_min_width(
+            (outer-theme::WORKFLOW_CARD_PADDING_X*2.0
+                -theme::SOFT_DIVIDER_WIDTH*2.0).max(0.0)
+        );
+        body(card)
+    });
+    if selected{
+        let r=response.response.rect;
+        ui.painter().rect_filled(
+            Rect::from_min_max(
+                Pos2::new(r.left(),r.top()+theme::SOFT_DIVIDER_WIDTH),
+                Pos2::new(r.left()+theme::WORKFLOW_SELECTED_STRIPE,
+                    r.bottom()-theme::SOFT_DIVIDER_WIDTH),
+            ),
+            0.0,theme::SELECTED_ORDER
+        );
+    }
+    response.inner
+}
+/// A clickable, left-aligned title occupying the same reserved header width
+/// with the workflow lights; no highlighted pill around the dealer name.
+fn group_heading(
+    ui:&mut Ui,title:&str,step:usize,notice:bool
+)->egui::Response{
+    ui.horizontal(|heading|{
+        heading.spacing_mut().item_spacing.x=theme::SPACE_4;
+        let width=(heading.available_width()-theme::WORKFLOW_SIGNAL_WIDTH
+            -theme::SPACE_4).max(0.0);
+        let response=heading.add_sized(
+            [width,theme::WORKFLOW_TITLE_HEIGHT],
+            egui::Label::new(typography::section_heading(title))
+                .truncate().sense(egui::Sense::click())
+        );
+        lights(heading,step,notice);
+        response
+    }).inner
+}
 fn lights(ui:&mut Ui,step:usize,notice:bool){
     ui.horizontal(|ui|{
         ui.spacing_mut().item_spacing.x=theme::SPACE_4;
         for index in 0..STEP_NAMES.len(){
             let (rect,_)=ui.allocate_exact_size(
-                Vec2::splat(theme::SPACE_12),egui::Sense::hover()
+                Vec2::splat(theme::SPACE_16),egui::Sense::hover()
             );
             let color=if index<step {theme::SUCCESS}
                 else if index==step && notice {theme::SELECTED_ORDER}
@@ -171,14 +225,11 @@ fn group_frame(
     hovered_row:&mut Option<String>
 )->Option<Event>{
     let mut event=None;
-    theme::nested_frame().show(ui,|ui|{
-        ui.horizontal_wrapped(|ui|{
-            let active=selected.is_some_and(|s|s.group_id==group.id);
-            let title=format!("{} {}",if open || in_preview{"▾"}else{"▸"},
-                group.dealer_name);
-            let btn=theme::action(ui,&title,if active{
-                theme::ButtonRole::ActiveNavigation
-            }else{theme::ButtonRole::Quiet},true);
+    let active=selected.is_some_and(|s|s.group_id==group.id);
+    workflow_card(ui,active && !in_preview,|ui|{
+        let title=format!("{}  {}",if open || in_preview{"▾"}else{"▸"},
+            group.dealer_name);
+        let btn=group_heading(ui,&title,group.step,group.needs_notice);
             if btn.clicked(){
                 if active {
                     event=Some(Event::ToggleGroup(group.id.clone()));
@@ -189,20 +240,20 @@ fn group_frame(
                     }));
                 }
             }
-            lights(ui,group.step,group.needs_notice);
-        });
-        ui.horizontal_wrapped(|ui|{
-            ui.label(typography::caption(&format!(
-                "배송 {}건",group.shipments.len())));
-            ui.label(typography::summary_value(&money(group.total)));
-            if group.vat_included>0 && group.vat_excluded>0{
-                ui.label(typography::caption(&format!(
-                    "포함{} · 별도{}",group.vat_included,group.vat_excluded)));
-            }else if group.vat_included>0{
-                ui.label(typography::caption("부가세 포함"));
-            }else{
-                ui.label(typography::caption("부가세 별도"));
-            }
+        ui.horizontal(|ui|{
+            ui.label(typography::caption(&format!("배송 {}건",
+                group.shipments.len())));
+            ui.with_layout(Layout::right_to_left(Align::Center),|money_row|{
+                money_row.label(typography::quantity(&money(group.total)));
+                let vat=if group.vat_included>0 && group.vat_excluded>0{
+                    format!("포함{} · 별도{}",group.vat_included,group.vat_excluded)
+                }else if group.vat_included>0{
+                    "부가세 포함".to_owned()
+                }else{
+                    "부가세 별도".to_owned()
+                };
+                money_row.label(typography::caption(&vat));
+            });
         });
         // The employee action itself must remain absent until its native
         // audited mutation + revision checked SQLite writer is migrated.
@@ -241,7 +292,7 @@ fn group_frame(
 }
 fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Option<Event>{
     let mut event=None;
-    theme::nested_frame().show(ui,|ui|{
+    workflow_card(ui,selected,|ui|{
         let title=if draft.client_id.is_none(){
             "미확인 거래처".to_owned()
         }else {
@@ -249,9 +300,9 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
                 .and_then(|m|m.get("name")).and_then(|n|n.as_str())
                 .filter(|n|!n.trim().is_empty()).unwrap_or("거래처 확인").to_owned()
         };
-        if theme::action(ui,&format!("{} {}",if open{"▾"}else{"▸"},title),
-            if selected{theme::ButtonRole::ActiveNavigation}
-            else{theme::ButtonRole::Quiet},true).clicked(){
+        if group_heading(ui,
+            &format!("{}  {}",if open{"▾"}else{"▸"},title),0,false
+        ).clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
                 else{Event::SelectPending(draft.id.clone())});
         }
@@ -260,11 +311,23 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
                 .and_then(|v|v.get("recipients"))
                 .and_then(|v|v.as_array()).map(Vec::as_slice).unwrap_or(&[])
         }else{&[]};
-        ui.label(typography::caption(&format!(
-            "배송 {}건",recipients.len()
-        )));
+        ui.horizontal(|summary|{
+            summary.label(typography::caption(&format!("배송 {}건",recipients.len())));
+            summary.with_layout(Layout::right_to_left(Align::Center),|right|{
+                if theme::action(right,"거래처 확인",theme::ButtonRole::Primary,
+                    draft.client_id.is_none()).clicked(){
+                    event=Some(Event::SelectPending(draft.id.clone()));
+                }
+                right.label(typography::caption("금액 미확정"));
+            });
+        });
         if open{
             components::soft_divider(ui);
+            ui.horizontal(|head|{
+                head.label(typography::table_header("수취인"));
+                head.label(typography::table_header("상품"));
+                head.label(typography::table_header("운임"));
+            });
             if recipients.is_empty(){
                 let excerpt=draft.raw.lines().find(|s|!s.trim().is_empty())
                     .unwrap_or("새 발주서");
@@ -314,7 +377,7 @@ pub fn show(
             if state.active_preview()==Some(group.id.as_str()) && !open{
                 overlay=Some((group.clone(),pos,width));
             }
-            ui.add_space(theme::SPACE_8);
+            ui.add_space(theme::WORKFLOW_CARD_GAP);
         }
     }
     for draft in drafts.iter().rev(){
@@ -332,7 +395,7 @@ pub fn show(
                 other=>event=Some(other),
             }
         }
-        ui.add_space(theme::SPACE_8);
+        ui.add_space(theme::WORKFLOW_CARD_GAP);
     }
     let hovered=trigger.clone();
     state.update_hover(hovered,ui.ctx());
