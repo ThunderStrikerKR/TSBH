@@ -1,34 +1,125 @@
-//! Direct reuse of the *same* recognition implementation used by
-//! src-tauri/src/business_core/mod.rs. No Tauri/webview/SQLite IPC.
+//! Read-only native business adapter, deliberately sharing the existing
+//! Rust source used by Tauri. No duplicate pricing, freight or recognition
+//! decisions live in the egui UI.
 //!
-//! This is intentionally an isolated, read-only first integration. Prices,
-//! freight, workflow mutations and persistence are NOT simulated here.
+//! IMPORTANT: The bundled state seed has 360 products and no real clients.
+//! Any reference price here is NOT a billing quote, and the production
+//! SQLite database is never opened.
 
 use serde_json::{json, Value};
+use std::ops::Deref;
 use std::sync::OnceLock;
 
 #[path = "../../src-tauri/src/business_core/recognition/mod.rs"]
 mod recognition;
+#[path = "../../src-tauri/src/business_core/rules/mod.rs"]
+mod rules;
 
-/// Analyze an entered purchase-order source with the shipped catalog seed.
-/// The seed is immutable, may differ from the live user's catalog, and never
-/// touches the production app state or working reception database.
-pub fn analyze_raw(raw: &str) -> Result<Value, String> {
+#[derive(Debug)]
+pub struct PriceReference {
+    /// From the real Rust "resolve_unit_price" rule at the *retail* tier.
+    /// This is a catalog reference only, never a confirmed recipient price.
+    pub retail: Option<i64>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct RecipientReference {
+    /// Rust "detect_remote_delivery_area" output, not a freight quote.
+    pub remote: Option<Value>,
+    pub remote_error: Option<String>,
+    pub item_prices: Vec<PriceReference>,
+}
+
+#[derive(Debug)]
+pub struct NativeAnalysis {
+    pub recognition: Value,
+    pub reference: Vec<RecipientReference>,
+}
+
+impl Deref for NativeAnalysis {
+    type Target = Value;
+
+    fn deref(&self) -> &Self::Target {
+        &self.recognition
+    }
+}
+
+fn bundled_state() -> Result<&'static Value, String> {
+    static SEED: OnceLock<Result<Value, String>> = OnceLock::new();
+    SEED.get_or_init(|| {
+        serde_json::from_str(include_str!(
+            "../../src-tauri/resources/state-seed.json"
+        )).map_err(|error| format!("기본 상품 데이터 파싱 실패: {error}"))
+    }).as_ref().map_err(Clone::clone)
+}
+
+/// Analyze a source, then derive separate *read-only* references using the
+/// same pure-Rust rules that React's Tauri bridge calls. Build all results in
+/// the existing worker thread; never run these computations every UI frame.
+pub fn analyze_raw(raw: &str) -> Result<NativeAnalysis, String> {
     if raw.trim().is_empty() {
         return Err("발주원문을 먼저 입력하세요.".to_owned());
     }
-    // Loading the bundled catalog repeatedly would parse a large JSON file
-    // every time staff check a newly pasted source. Keep one immutable seed.
-    static SEED: OnceLock<Result<Value, String>> = OnceLock::new();
-    let seed = SEED.get_or_init(|| serde_json::from_str(
-        include_str!("../../src-tauri/resources/state-seed.json")
-    ).map_err(|error| format!("기본 상품 데이터 파싱 실패: {error}")));
-    let state = seed.as_ref().map_err(Clone::clone)?;
-
-    recognition::execute("analyze_order", json!({
+    let state = bundled_state()?;
+    let analysis = recognition::execute("analyze_order", json!({
         "raw": raw,
         "state": state,
-    }))
+    }))?;
+    let reference = recipients(&analysis).iter()
+        .map(|recipient| recipient_reference(recipient, state))
+        .collect();
+    Ok(NativeAnalysis { recognition: analysis, reference })
+}
+
+fn recipient_reference(recipient: &Value, state: &Value) -> RecipientReference {
+    let address = text(recipient, "address");
+    let (remote, remote_error) = if address.trim().is_empty() {
+        (None, None)
+    } else {
+        match rules::execute("detect_remote_delivery_area", json!({
+            "address": address,
+        })) {
+            Ok(result) => (Some(result), None),
+            Err(error) => (None, Some(error)),
+        }
+    };
+
+    let item_prices = recipient.get("items").and_then(Value::as_array)
+        .map(|items| items.iter().map(|item| retail_reference(item, state)).collect())
+        .unwrap_or_default();
+    RecipientReference { remote, remote_error, item_prices }
+}
+
+fn retail_reference(item: &Value, state: &Value) -> PriceReference {
+    let product_id = text(item, "productId");
+    let variant_id = text(item, "variantId");
+    if product_id.is_empty() || variant_id.is_empty() {
+        return PriceReference { retail: None, error: None };
+    }
+    let Some(product) = state.get("products").and_then(Value::as_array)
+        .and_then(|products| products.iter().find(|product|
+            text(product, "id") == product_id
+        ))
+    else {
+        return PriceReference { retail: None, error: None };
+    };
+
+    // The pure Rust rule requires a nonempty client ID to resolve a price.
+    // This explicitly synthetic identity is NEVER saved and only requests
+    // the seed's retail-tier reference, not an actual client's billing tier.
+    match rules::execute("resolve_unit_price", json!({
+        "product": product,
+        "variantId": variant_id,
+        "client": { "id": "__egui_readonly_retail_reference__", "tier": "retail" },
+    })) {
+        Ok(value) => PriceReference {
+            retail: value.get("unitPrice").and_then(Value::as_i64)
+                .filter(|amount| *amount > 0),
+            error: None,
+        },
+        Err(error) => PriceReference { retail: None, error: Some(error) },
+    }
 }
 
 pub fn recipients(result: &Value) -> &[Value] {
@@ -57,4 +148,18 @@ pub fn item_quantity(item: &Value) -> String {
         Some(quantity) if quantity > 0 => format!("{quantity}개"),
         _ => "수량 확인 필요".to_owned(),
     }
+}
+
+/// Display formatting only. The monetary amount is always calculated by
+/// the Rust rules above; formatting it never changes the business decision.
+pub fn display_won(amount: i64) -> String {
+    let digits = amount.to_string();
+    let mut output = String::new();
+    for (index, ch) in digits.chars().enumerate() {
+        if index != 0 && (digits.len() - index) % 3 == 0 {
+            output.push(',');
+        }
+        output.push(ch);
+    }
+    format!("{output}원")
 }
