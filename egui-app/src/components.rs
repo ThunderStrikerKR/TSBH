@@ -170,6 +170,23 @@ pub fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     );
 }
 
+/// Display-only won formatting. No business price or rounding decisions live
+/// in the UI layer; amounts are supplied by the Rust business engine.
+pub fn display_won(amount: i64) -> String {
+    let digits = amount.to_string();
+    let (sign, positive) = if let Some(text) = digits.strip_prefix('-') {
+        ("-", text)
+    } else { ("", digits.as_str()) };
+    let mut groups = String::new();
+    for (index, character) in positive.chars().enumerate() {
+        if index > 0 && (positive.len() - index) % 3 == 0 {
+            groups.push(',');
+        }
+        groups.push(character);
+    }
+    format!("{sign}{groups}원")
+}
+
 pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
     ui.vertical(|ui| {
         soft_divider(ui);
