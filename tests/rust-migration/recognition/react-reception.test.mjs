@@ -30,6 +30,15 @@ const { applyRustReceptionAnalysis }=
 const selected=Array.from({length:20},(_,i)=>i+1);
 const inputs=selected.map(id=>({id,raw:samples[id-1].raw}));
 inputs.push({id:"13-edited",raw:samples[12].raw+" "});
+// Historical D11 forms must reach the current native Rust parser, not the
+// retired TypeScript parseLegacy function.
+const formerLegacyNameCases=[
+  {id:"NAME11_D11", name:"김수호",
+    raw:"BD 709 (블랙) 1개\n김수호\n010-1234-5678\n주소: 서울특별시 송파구 석촌호수로 162"},
+  {id:"NAME11_D11-B", name:"한빛중앙교회",
+    raw:"BD 709 (블랙) 1개\n수취인명: 한빛중앙교회\n010-1234-5678\n주소: 서울특별시 송파구 석촌호수로 162"},
+];
+inputs.push(...formerLegacyNameCases.map(({id,raw})=>({id,raw})));
 const rustRequests=inputs.map(x=>({domain:"recognition",operation:"analyze_order",
   payload:{raw:x.raw,client,state}}));
 const run=spawnSync("cargo",["run","--quiet","--manifest-path",cargo,
@@ -81,6 +90,16 @@ test("all twenty original orders pass the Rust-to-React reception boundary",()=>
           assert.equal(span.recipientId,r.id,"sample "+id+" stable recipient reference");
           assert.equal(span.targetId,item.id,"sample "+id+" stable item reference");
         }
+  }
+});
+
+test("former legacy-format recipient names are recognized by compiled Rust",()=>{
+  for(const fixture of formerLegacyNameCases){
+    const evidence=natives.get(fixture.id);
+    assert.ok(evidence,fixture.id+" must have native recognition");
+    assert.equal(evidence.recipients.length,1,fixture.id+" shipping count");
+    assert.equal(evidence.recipients[0].name,fixture.name,fixture.id+" name");
+    assert.match(evidence.recipients[0].address,/석촌호수로 162/,fixture.id+" address");
   }
 });
 
