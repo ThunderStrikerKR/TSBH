@@ -1,0 +1,547 @@
+//! Native client manager: semantic parity with React ClientManager.
+//! Layout uses shared management components; validation and persistence are
+//! delegated to the Rust catalog client rules via BandoGateway.
+use crate::{components, gateway::{BandoGateway,ReadOperation}, theme::{self,ButtonRole}, typography};
+use eframe::egui::{self,Align,Context,Layout,Ui,Vec2};
+use serde_json::{json,Value};
+use std::{sync::{mpsc::{self,Receiver},Arc},thread,time::{SystemTime,UNIX_EPOCH}};
+
+fn field<'a>(client:&'a Value,key:&str)->&'a str {
+    client.get(key).and_then(Value::as_str).unwrap_or("")
+}
+fn readable_tier(tier:&str)->&'static str {
+    match tier {"wholesale"=>"도매","semi"=>"반도매",
+        "retail"=>"소매","special"=>"특수",_=>"미지정"}
+}
+fn label_edit(ui:&mut Ui,draft:&mut Value,key:&str,label:&str) {
+    ui.vertical(|ui|{
+        ui.label(typography::field_label(label));
+        let mut input=field(draft,key).to_owned();
+        if components::flexible_text_field(
+            ui,&mut input,ui.available_width(),""
+        ).changed() {
+            draft[key]=json!(input);
+        }
+    });
+}
+fn bool_edit(ui:&mut Ui,draft:&mut Value,key:&str,title:&str) {
+    let mut selected=draft.get(key).and_then(Value::as_bool).unwrap_or(false);
+    if ui.checkbox(&mut selected,title).changed(){
+        draft[key]=json!(selected);
+    }
+}
+fn new_id()->String {
+    let stamp=SystemTime::now().duration_since(UNIX_EPOCH)
+        .map(|time|time.as_nanos()).unwrap_or(0);
+    format!("egui-client-{}-{stamp}",std::process::id())
+}
+fn empty_client()->Value {
+    json!({"id":new_id(),"name":"","displayName":"","shortNames":"",
+        "identifiers":"","address":"","phone":"","mobile":"",
+        "tier":"wholesale","payment":"PREPAID",
+        "preferredAccountId":null,"shippingFeeExcluded":false,
+        "defaultApplyVat":false,"active":true,"contact":"",
+        "overrides":{}})
+}
+type AsyncState=Receiver<Result<Value,String>>;
+type SearchState=Receiver<(u64,Result<Vec<String>,String>)>;
+
+pub struct ClientManager {
+    state:Value,
+    ready:bool,
+    loading:Option<AsyncState>,
+    saving:Option<AsyncState>,
+    search_rx:Option<SearchState>,
+    generation:u64,
+    matches:Vec<String>,
+    search:String,
+    searching:bool,
+    error:Option<String>,
+    notice:Option<String>,
+    draft:Option<Value>,
+    original:Option<Value>,
+    confirm_delete:bool,
+    confirm_discard:bool,
+    exception_id:String,
+    exception_price:String,
+}
+
+impl ClientManager {
+    pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
+        let (tx,rx)=mpsc::channel();
+        thread::spawn(move||{
+            let result=gateway.load_client_master();
+            let _=tx.send(result);
+            ctx.request_repaint();
+        });
+        Self {
+            state:Value::Null,ready:false,loading:Some(rx),saving:None,
+            search_rx:None,generation:0,matches:Vec::new(),search:String::new(),
+            searching:false,error:None,notice:None,
+            draft:None,original:None,confirm_delete:false,confirm_discard:false,
+            exception_id:String::new(),exception_price:String::new(),
+        }
+    }
+    pub fn has_modal(&self)->bool {self.draft.is_some()}
+    fn editable(&self)->bool {
+        self.state.get("readOnly")!=Some(&Value::Bool(true))
+    }
+    fn dirty(&self)->bool {
+        self.draft.as_ref().zip(self.original.as_ref())
+            .is_some_and(|(draft,old)|draft!=old)
+    }
+    fn clients(&self)->&[Value] {
+        self.state.get("clients").and_then(Value::as_array)
+            .map(Vec::as_slice).unwrap_or(&[])
+    }
+    fn begin(&mut self,client:Value) {
+        self.original=Some(client.clone());
+        self.draft=Some(client);
+        self.error=None;
+        self.confirm_delete=false;
+        self.confirm_discard=false;
+        self.exception_id.clear();
+        self.exception_price.clear();
+    }
+    fn query(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context) {
+        self.generation=self.generation.wrapping_add(1);
+        self.search_rx=None;
+        self.matches.clear();
+        if self.search.trim().is_empty() {
+            self.searching=false;
+            return;
+        }
+        self.searching=true;
+        let generation=self.generation;
+        let query=self.search.clone();
+        let clients=self.clients().to_vec();
+        let (tx,rx)=mpsc::channel();
+        self.search_rx=Some(rx);
+        thread::spawn(move||{
+            let result=gateway.execute(ReadOperation::ClientCandidates,json!({
+                "state":{"clients":clients},"query":query,"raw":""
+            })).and_then(|value|{
+                value.get("ids").and_then(Value::as_array)
+                    .ok_or("Rust 거래처 검색 응답이 잘못되었습니다.".into())
+                    .and_then(|rows|rows.iter().map(|id|
+                        id.as_str().map(str::to_owned)
+                          .ok_or_else(||"거래처 검색 ID가 잘못되었습니다.".into())
+                    ).collect())
+            });
+            let _=tx.send((generation,result));
+            ctx.request_repaint();
+        });
+    }
+    fn poll(&mut self,gateway:Arc<dyn BandoGateway>,ctx:&Context) {
+        let loaded=self.loading.as_ref().map(|rx|rx.try_recv());
+        match loaded {
+            Some(Ok(Ok(state)))=>{
+                self.state=state;self.ready=true;self.loading=None;
+                self.error=None;
+                self.query(Arc::clone(&gateway),ctx.clone());
+            },
+            Some(Ok(Err(error)))=>{
+                self.ready=true;self.loading=None;self.error=Some(error);
+            },
+            Some(Err(mpsc::TryRecvError::Disconnected))=>{
+                self.ready=true;self.loading=None;
+                self.error=Some("거래처 명단을 불러오지 못했습니다.".into());
+            },
+            _=>{},
+        }
+        let saved=self.saving.as_ref().map(|rx|rx.try_recv());
+        match saved {
+            Some(Ok(Ok(state)))=>{
+                self.state=state;self.saving=None;
+                self.draft=None;self.original=None;self.confirm_delete=false;
+                self.confirm_discard=false;self.error=None;
+                self.notice=Some("거래처를 저장했습니다.".into());
+                self.query(Arc::clone(&gateway),ctx.clone());
+            },
+            Some(Ok(Err(error)))=>{
+                self.error=Some(error);self.saving=None;
+            },
+            Some(Err(mpsc::TryRecvError::Disconnected))=>{
+                self.error=Some("거래처 저장 연결이 중단되었습니다.".into());
+                self.saving=None;
+            },
+            _=>{},
+        }
+        let search=self.search_rx.as_ref().map(|rx|rx.try_recv());
+        match search {
+            Some(Ok((generation,result))) if generation==self.generation=>{
+                match result {
+                    Ok(ids)=>{self.matches=ids;self.searching=false;},
+                    Err(error)=>{self.error=Some(error);self.searching=false;}
+                }
+                self.search_rx=None;
+            },
+            Some(Err(mpsc::TryRecvError::Disconnected))=>{
+                self.error=Some("Rust 거래처 검색 연결이 중단되었습니다.".into());
+                self.searching=false;self.search_rx=None;
+            },
+            _=>{},
+        }
+    }
+    fn mutate(&mut self,gateway:Arc<dyn BandoGateway>,ctx:&Context,action:&str) {
+        if self.saving.is_some() || !self.editable(){return;}
+        let Some(client)=self.draft.clone() else {return};
+        let Some(revision)=self.state.get("revision").and_then(Value::as_u64)
+            else{self.error=Some("거래처 revision을 확인할 수 없습니다.".into());return};
+        let (tx,rx)=mpsc::channel();
+        self.saving=Some(rx);
+        self.error=None;
+        let action=action.to_owned();
+        let ctx=ctx.clone();
+        thread::spawn(move||{
+            let result=gateway.mutate_client_master(revision,&action,client);
+            let _=tx.send(result);
+            ctx.request_repaint();
+        });
+    }
+    fn request_close(&mut self) {
+        if self.saving.is_some(){return;}
+        if self.dirty() {
+            self.confirm_discard=true;
+        } else {
+            self.draft=None;
+            self.original=None;
+        }
+    }
+    pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>) {
+        self.poll(Arc::clone(&gateway),ui.ctx());
+        ui.label(typography::page_heading("거래처 관리"));
+        ui.add_space(theme::SPACE_12);
+        components::management_tabs(ui,&[
+            ("거래처 목록",true,true),
+            ("자동 메시지 편집",false,false),
+        ]);
+        ui.add_space(theme::SPACE_12);
+        theme::section_frame().show(ui,|section|{
+            section.horizontal(|toolbar|{
+                toolbar.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                    if theme::action(actions,"＋ 거래처 등록",ButtonRole::Primary,
+                        self.ready && self.editable() && self.saving.is_none()
+                    ).clicked(){
+                        self.begin(empty_client());
+                    }
+                    theme::action(actions,"Excel 관리",ButtonRole::Standard,false)
+                        .on_disabled_hover_text("Excel 관리 기능은 이전되지 않았습니다.");
+                });
+                toolbar.label(typography::field_label("검색"));
+                let width=toolbar.available_width().max(
+                    theme::MANAGEMENT_SEARCH_MIN_WIDTH
+                );
+                if components::flexible_text_field(
+                    toolbar,&mut self.search,width,
+                    "상호 / 주소 / 전화번호 / 별칭 검색"
+                ).changed() {
+                    self.query(Arc::clone(&gateway),toolbar.ctx().clone());
+                }
+            });
+            components::soft_divider(section);
+            if let Some(error)=&self.error {
+                section.label(typography::status(error,theme::DANGER));
+            } else if let Some(notice)=&self.notice {
+                section.label(typography::status(notice,theme::SUCCESS));
+            }
+            if !self.ready {
+                section.label(typography::caption("거래처 명단을 불러오는 중입니다."));
+                return;
+            }
+            if !self.editable() {
+                section.label(typography::caption(
+                    "현재 연결된 거래처 명단은 읽기 전용입니다."
+                ));
+            }
+            let rows=self.clients().iter()
+                .filter(|row|field(row,"deletedAt").is_empty())
+                .filter(|row|self.search.trim().is_empty() ||
+                    (!self.searching && self.matches.iter()
+                    .any(|id|id==field(row,"id"))))
+                .cloned().collect::<Vec<_>>();
+            if self.searching {
+                section.label(typography::caption("거래처 검색 중…"));
+            }
+            egui::ScrollArea::both()
+                .id_salt("client-management-table")
+                .auto_shrink([false,false])
+                .show(section,|table|{
+                    table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+                    components::management_row(table,[
+                        ("거래처",""),("발송인 정보",""),("거래 조건","")
+                    ],true);
+                    for client in &rows {
+                        let name=field(client,"name");
+                        let display=field(client,"displayName");
+                        let description=if display!=name {display} else {""};
+                        let address=field(client,"address");
+                        let contacts=[field(client,"phone"),field(client,"mobile")]
+                            .into_iter().filter(|s|!s.trim().is_empty())
+                            .collect::<Vec<_>>().join(" / ");
+                        let conditions=[
+                            readable_tier(field(client,"tier")),
+                            if field(client,"payment")=="POSTPAID"{"후불"}else{"선입금"},
+                            if client.get("defaultApplyVat").and_then(Value::as_bool)
+                                .unwrap_or(false) {"부가세 포함"} else {"부가세 별도"},
+                            if client.get("shippingFeeExcluded").and_then(Value::as_bool)
+                                .unwrap_or(false) {"운임 청구 제외"} else {""},
+                            if client.get("active")==Some(&Value::Bool(false))
+                                {"거래 중지"}else{""}
+                        ].into_iter().filter(|t|!t.is_empty())
+                            .collect::<Vec<_>>().join(" / ");
+                        if components::management_row(table,[
+                            (name,description),(address,&contacts),
+                            (&conditions,"")
+                        ],false).clicked() {
+                            self.begin(client.clone());
+                        }
+                    }
+                    if rows.is_empty() && !self.searching {
+                        table.add_space(theme::SPACE_12);
+                        table.label(typography::caption(
+                            if self.search.is_empty() {
+                                "등록된 거래처가 없습니다."
+                            } else {"검색 결과가 없습니다."}
+                        ));
+                    }
+                });
+        });
+    }
+    fn editor_fields(&mut self,ui:&mut Ui,draft:&mut Value) {
+        ui.label(typography::section_heading("거래처 식별"));
+        ui.columns(2,|cols|{
+            label_edit(&mut cols[0],draft,"name","거래처명");
+            label_edit(&mut cols[1],draft,"displayName","송장 표시 상호");
+        });
+        label_edit(ui,draft,"shortNames","검색 태그");
+        components::soft_divider(ui);
+        ui.label(typography::section_heading("발송인 정보"));
+        label_edit(ui,draft,"address","거래처 주소");
+        ui.columns(2,|cols|{
+            label_edit(&mut cols[0],draft,"phone","전화번호");
+            label_edit(&mut cols[1],draft,"mobile","휴대폰번호");
+        });
+        components::soft_divider(ui);
+        ui.label(typography::section_heading("거래 조건"));
+        ui.columns(2,|cols|{
+            cols[0].label(typography::field_label("가격 등급"));
+            let mut tier=field(draft,"tier").to_owned();
+            egui::ComboBox::from_id_salt("client-manager-tier")
+                .selected_text(readable_tier(&tier))
+                .show_ui(&mut cols[0],|ui|{
+                    for (key,label) in [
+                        ("wholesale","도매"),("semi","반도매"),
+                        ("retail","소매"),("special","특수")
+                    ] {
+                        ui.selectable_value(&mut tier,key.to_owned(),label);
+                    }
+                });
+            draft["tier"]=json!(tier);
+            cols[1].label(typography::field_label("결제 방식"));
+            let mut payment=field(draft,"payment").to_owned();
+            egui::ComboBox::from_id_salt("client-manager-payment")
+                .selected_text(if payment=="POSTPAID"{"후불"}else{"선입금"})
+                .show_ui(&mut cols[1],|ui|{
+                    ui.selectable_value(&mut payment,"PREPAID".into(),"선입금");
+                    ui.selectable_value(&mut payment,"POSTPAID".into(),"후불");
+                });
+            draft["payment"]=json!(payment);
+        });
+        ui.label(typography::field_label("주 사용 입금계좌"));
+        let accounts=self.state.pointer("/settings/accounts")
+            .and_then(Value::as_array).cloned().unwrap_or_default();
+        if accounts.is_empty() {
+            ui.label(typography::caption("미지정 (상품군 추천 계좌 사용)"));
+        } else {
+            let mut selected=field(draft,"preferredAccountId").to_owned();
+            egui::ComboBox::from_id_salt("client-manager-account")
+                .selected_text(if selected.is_empty(){"미지정"}else{&selected})
+                .show_ui(ui,|ui|{
+                    ui.selectable_value(&mut selected,String::new(),"미지정");
+                    for account in &accounts {
+                        let id=field(account,"id").to_owned();
+                        let label=field(account,"name");
+                        ui.selectable_value(&mut selected,id,label);
+                    }
+                });
+            draft["preferredAccountId"]=if selected.is_empty(){Value::Null}
+                else{json!(selected)};
+        }
+        ui.horizontal_wrapped(|flags|{
+            bool_edit(flags,draft,"shippingFeeExcluded","배송비 청구 제외");
+            bool_edit(flags,draft,"defaultApplyVat","부가세 포함");
+        });
+        if field(draft,"tier")=="special" {
+            components::soft_divider(ui);
+            ui.label(typography::section_heading("특수 / 예외 품목 단가"));
+            let mut remove=None;
+            if let Some(overrides)=draft.get("overrides").and_then(Value::as_object) {
+                for (id,price) in overrides {
+                    ui.horizontal(|row|{
+                        let label=self.variant_name(id);
+                        row.label(typography::body(&format!("{label} · {}원",price)));
+                        if theme::action(row,"예외 해제",ButtonRole::Quiet,true)
+                            .clicked(){remove=Some(id.clone());}
+                    });
+                }
+            }
+            if let Some(id)=remove {
+                if let Some(data)=draft.get_mut("overrides").and_then(Value::as_object_mut) {
+                    data.remove(&id);
+                }
+            }
+            let mut variants=Vec::new();
+            for product in self.state.get("products").and_then(Value::as_array)
+                .into_iter().flatten() {
+                let product_name=field(product,"name");
+                for variant in product.get("variants").and_then(Value::as_array)
+                    .into_iter().flatten() {
+                    let id=field(variant,"id");
+                    if !id.is_empty() {
+                        variants.push((id.to_owned(),format!(
+                            "{} / {}",product_name,field(variant,"color")
+                        )));
+                    }
+                }
+            }
+            ui.horizontal(|row|{
+                egui::ComboBox::from_id_salt("client-manager-exception-variant")
+                    .selected_text(variants.iter()
+                        .find(|(id,_)|id==&self.exception_id)
+                        .map(|(_,label)|label.as_str())
+                        .unwrap_or("예외 품목 / 색상 선택"))
+                    .show_ui(row,|ui|{
+                        for (id,label) in &variants {
+                            ui.selectable_value(&mut self.exception_id,id.clone(),label);
+                        }
+                    });
+                components::flexible_text_field(
+                    row,&mut self.exception_price,
+                    theme::MANUAL_INPUT_WIDTH,"특수 단가"
+                );
+                let amount=self.exception_price.parse::<u64>().ok();
+                if theme::action(row,"예외 추가",ButtonRole::Standard,
+                    !self.exception_id.is_empty() && amount.is_some()
+                ).clicked(){
+                    if let Some(amount)=amount {
+                        if !draft["overrides"].is_object(){
+                            draft["overrides"]=json!({});
+                        }
+                        draft["overrides"][&self.exception_id]=json!(amount);
+                        self.exception_id.clear();self.exception_price.clear();
+                    }
+                }
+            });
+        }
+        if let Some(history)=draft.get("history").and_then(Value::as_array) {
+            if !history.is_empty(){
+                components::soft_divider(ui);
+                ui.collapsing("상품 별칭 / 변경 이력",|ui|{
+                    for row in history.iter().rev(){
+                        ui.label(typography::caption(&format!(
+                            "{} / {}",field(row,"at"),field(row,"field")
+                        )));
+                    }
+                });
+            }
+        }
+    }
+    fn variant_name(&self,id:&str)->String {
+        for product in self.state.get("products").and_then(Value::as_array)
+            .into_iter().flatten(){
+            if product.get("variants").and_then(Value::as_array)
+                .is_some_and(|vs|vs.iter().any(|v|field(v,"id")==id)){
+                return field(product,"name").to_owned();
+            }
+        }
+        id.to_owned()
+    }
+    pub fn show_editor(
+        &mut self,ctx:&Context,work_area:egui::Rect,gateway:Arc<dyn BandoGateway>
+    ){
+        let Some(mut draft)=self.draft.take() else{return;};
+        let exists=self.clients().iter()
+            .any(|row|field(row,"id")==field(&draft,"id"));
+        let title=if exists {"거래처 상세 관리"}else{"거래처 등록"};
+        let mut opened=true;
+        let mut save=false;
+        let mut delete=false;
+        let mut close=false;
+        let editable=self.editable();
+        let busy=self.saving.is_some();
+        components::modal_window(title,"native-client-manager-editor",work_area)
+            .open(&mut opened)
+            .resizable(true)
+            .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
+            .show(ctx,|ui|{
+                if let Some(error)=&self.error {
+                    ui.label(typography::status(error,theme::DANGER));
+                }
+                let body_height=theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT
+                    .min((work_area.height()-theme::SPACE_24*4.0).max(100.0));
+                egui::ScrollArea::vertical()
+                    .id_salt("native-client-manager-fields")
+                    .max_height(body_height)
+                    .auto_shrink([false,false])
+                    .show(ui,|body|{
+                        body.add_enabled_ui(editable && !busy,|form|{
+                            self.editor_fields(form,&mut draft);
+                        });
+                    });
+                components::soft_divider(ui);
+                ui.horizontal(|footer|{
+                    if exists && theme::action(footer,"거래처 삭제",
+                        ButtonRole::Danger,editable && !busy).clicked(){
+                        delete=true;
+                    }
+                    footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
+                        let label=if exists {"변경사항 저장"}else{"거래처 등록"};
+                        let dirty=self.original.as_ref()
+                            .is_some_and(|old|*old!=draft);
+                        if theme::action(buttons,label,ButtonRole::Primary,
+                            editable && !busy && (!exists || dirty)).clicked(){
+                            save=true;
+                        }
+                        if theme::action(buttons,"닫기",ButtonRole::Quiet,!busy)
+                            .clicked(){close=true;}
+                    });
+                });
+            });
+        self.draft=Some(draft);
+        if save {self.mutate(Arc::clone(&gateway),ctx,"upsert_client");}
+        if delete {self.confirm_delete=true;}
+        if close || !opened {self.request_close();}
+        if self.confirm_delete {
+            components::modal_backdrop(ctx,"client-manager-delete-backdrop",true);
+            components::decision_window(
+                "거래처 삭제","client-manager-delete-confirm",work_area
+            ).show(ctx,|ui|{
+                ui.label("거래처를 삭제할까요? 기존 주문의 송하인과 금액은 그대로 보존합니다.");
+                let (cancel,approve)=components::modal_actions(
+                    ui,"취소","거래처 삭제",ButtonRole::Danger,true
+                );
+                if cancel {self.confirm_delete=false;}
+                if approve {
+                    self.confirm_delete=false;
+                    self.mutate(Arc::clone(&gateway),ctx,"archive_client");
+                }
+            });
+        }
+        if self.confirm_discard {
+            components::modal_backdrop(ctx,"client-manager-discard-backdrop",true);
+            components::decision_window(
+                "변경사항 확인","client-manager-discard-confirm",work_area
+            ).show(ctx,|ui|{
+                ui.label("거래처의 수정 내용을 버릴까요?");
+                let (cancel,approve)=components::modal_actions(
+                    ui,"계속 편집","변경 취소",ButtonRole::Danger,true
+                );
+                if cancel {self.confirm_discard=false;}
+                if approve {
+                    self.confirm_discard=false;self.draft=None;self.original=None;
+                }
+            });
+        }
+    }
+}
