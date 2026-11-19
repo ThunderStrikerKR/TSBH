@@ -181,9 +181,10 @@ fn group_heading(
         head.response.rect,Id::new(("workflow-header",id)),egui::Sense::click()
     );
     if response.hovered(){
-        ui.painter().rect_filled(
+        ui.painter().rect_stroke(
             head.response.rect,theme::SPACE_4,
-            theme::WORKFLOW_HEADER_HOVER
+            egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER),
+            egui::StrokeKind::Inside
         );
         // Repaint the icon on top of the hover surface, without relying on
         // fallback text fonts for the chevron.
