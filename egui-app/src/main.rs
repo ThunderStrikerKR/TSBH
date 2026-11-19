@@ -1831,7 +1831,22 @@ impl BandoEgui {
                             }
                         },
                     );
-                    components::summary_strip(ui, "총 주문", "—", "");
+                    let preview = self.active_id.as_deref()
+                        .and_then(|id|self.drafts.iter().find(|draft| draft.id==id))
+                        .and_then(|draft|draft.pricing_preview.as_ref())
+                        .filter(|quote|
+                            quote.get("sourceRaw").and_then(serde_json::Value::as_str)
+                                ==Some(self.raw_source.as_str())
+                        );
+                    let total = preview
+                        .and_then(|quote|quote.get("total"))
+                        .and_then(serde_json::Value::as_i64)
+                        .map(components::display_won)
+                        .unwrap_or_else(||"—".to_owned());
+                    let note = if preview.is_some() {
+                        "Rust 재계산 참고 · 운영 주문 저장 전"
+                    } else { "" };
+                    components::summary_strip(ui, "총 주문", &total, note);
                 });
             },
         );
