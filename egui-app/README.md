@@ -246,3 +246,14 @@ GitHub `main`에는 소스 코드가 반영되었지만 이 환경에서 `cargo 
 - Rust 고유 매칭 결과는 격리 발주서의 `clientId`와 `clientSelection=AUTO`로 저장한다. 후보 버튼을 직원이 선택하면 `MANUAL`로 보존하고 Rust 인식을 재실행한다. 미확정 주문의 거래처 ID일 뿐, Tauri 운영 주문의 거래처·가격·송장 정보는 수정하지 않는다.
 - 실제 Tauri DB 거래처 명단을 사용하려면 실행 전에 환경변수 `BANDO_EGUI_BUSINESS_DB`에 `bando-hub-v001.sqlite`의 정확한 파일 경로를 지정한다. `SQLITE_OPEN_READ_ONLY` 및 `PRAGMA query_only=ON`으로 읽는다. DB 버전 2가 아니면 변경이나 마이그레이션을 하지 않고 오류를 표시한다. 명시하지 않으면 기존 JSON 인덱스를 쓰거나 빈 명단을 사용한다.
 - 기존 4열 레이아웃·업무 상태 전환·영구 주문 DB는 변경하지 않았다. Rust 컴파일/Windows 동작 확인은 아직 미완료다. 별도 전수 회귀 테스트는 실행하지 않았다.
+
+## 거래처 전체 검색 1단계: 격리 접수 수동 선택 (2026-11-20)
+
+- React 원본 `ClientChooser`의 `거래처 변경` UX를 따라 발주원문 제목 아래 82pt 거래처 영역에 `거래처 찾기`/`변경` 버튼을 연결했다.
+- Tauri의 원본 Rust `catalog_clients/queries.rs::client_search`를 공유 `client_search.rs`로 추출했다. 상호·표시명·별칭·주소·전화번호·휴대전화·거래처 식별자를 공백/대소문자 무시로 검색하며 삭제 거래처를 제외한다.
+- 검색 전체 목록과 검색 결과는 egui 모달에서 표시된다. 거래처 명단 로딩 및 검색은 UI 스레드 밖에서 수행하며, 주문을 바꾸면 열려 있던 검색창을 닫는다.
+- 검색 과정에서 가져온 주소·전화번호는 메모리 내 표시/검색에만 사용하고 영구 egui SQLite에 저장하지 않는다.
+- 직원을 통한 수동 선택은 egui 전용 접수의 `clientId`, `clientSelection=MANUAL`만 변경하고 기존 Rust 원문 인식을 다시 실행한다. 이미 선택된 거래처를 다시 누르면 자동 매칭 근거를 변경하지 않는다.
+- **2단계 미완료:** 실제 Tauri 주문의 거래처 변경은 Rust `order_edit_rules/change_order_client`의 주문 상태·가격·운임 조정과 운영 DB revision 비교 저장을 함께 연결해야 한다. 데이터 전체 권한 없이 `clientId`만 운영 주문에 덮어쓰지 않는다.
+- **다음 이후 단계:** 원문 연결 하이라이트 → 수취인 수동 분류. 카카오톡 연결 문제는 별도 GitHub [#42](https://github.com/ThunderStrikerKR/TSBH/issues/42)에서 추적하며 이번 단계에서 수정하지 않는다.
+- 코드 반영만 완료했다. Windows 실제 컴파일/화면 검증 및 대규모 회귀 테스트는 수행하지 않았다.
