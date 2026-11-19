@@ -1,4 +1,4 @@
-# Targeted Windows compile: workflow vector icons, rounded source frame and seamless Kakao dock divider joins.
+# Targeted Windows compile: global Regular weight for all white Primary/Emphasized buttons.
 name: Tauri native CLI executable compile check
 on:
   push:
