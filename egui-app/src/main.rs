@@ -625,6 +625,10 @@ impl BandoEgui {
             self.source_save_error=Some("원문 인식이 완료된 뒤 수동 분류를 시작하세요.".into());
             return;
         }
+        if row.client_id.is_none() {
+            self.source_save_error=Some("수동 분류 전에 거래처를 먼저 선택하세요.".into());
+            return;
+        }
         self.manual_workspace=Some(manual_workspace::ManualWorkspace::new(
             row,Arc::clone(&self.gateway),ctx.clone()
         ));
