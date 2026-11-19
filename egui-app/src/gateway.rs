@@ -5,8 +5,8 @@
 //! Local and future HTTPS adapters preserve the same JSON business contract.
 //!
 //! Business operations remain an explicit read-only allowlist. The gateway
-//! also saves *one preview editor source* with revision checking; this is not
-//! a production order nor a confirmation workflow. No HTTP->local fallback.
+//! saves a versioned *preview-only multi-reception workspace*; this never
+//! confirms a production order. No HTTP->local fallback.
 
 use serde_json::Value;
 use std::sync::Arc;
