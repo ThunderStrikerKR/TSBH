@@ -74,7 +74,7 @@ test("hover selects each actual source and detail and scrolls into stage content
   assert.match(board,/aria-label=\{"배송 건 " \+ recipient\.name \+ \(isPreviewed \?/);
   assert.match(hub,/stageHover\.step === 1[\s\S]*?\.recipient-review/);
   assert.match(hub,/stageHover\.step === 2[\s\S]*?\.freight-input-area/);
-  assert.match(hub,/stageHover\.step === 3[\s\S]*?\.payment-message/);
+  assert.match(hub,/stageHover\.step === 3[\s\S]*?\.message-copy-actions/);
   assert.match(hub,/\.scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/);
   assert.match(board, /onMouseEnter=\{isPreview \? keepStagePreview : \(event\) => startStagePreview\(event\.currentTarget, g\.id, step\)\}/);
   assert.doesNotMatch(board, /createPortal\(/);
