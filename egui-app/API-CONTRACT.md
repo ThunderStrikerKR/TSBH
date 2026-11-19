@@ -215,5 +215,5 @@ $env:BANDO_EGUI_BUSINESS_DB = "C:\\path\\to\\bando-hub-v001.sqlite"
 - 원문 블록의 `start/end`는 Rust의 UTF-16 근거 위치를 그대로 사용하고 `source_highlight::boundary`에서 유효한 UTF-8 문자 경계로 검사한다. 실제 원문·귀속 대상·분류 판단을 egui에 별도 구현하지 않는다.
 - `WorkingReception.manual_model`은 `{sourceRaw,orderType,clientId,model,assignmentOrder}`만 허용하며 해당 발주서의 원문/유형/거래처와 반드시 일치해야 한다. 사용자가 **초안에 적용**하고 Rust가 `apply_manual`을 성공적으로 반환한 경우에만 격리 작업 DB에 기록한다.
 - 활성 발주서 ID, 원문, 유형, 거래처가 분류 도중 바뀌면 결과를 거부한다. 신규 원문/거래처 변경 시 이전 수동 근거를 무효화한다. 재분석/재시작 시에는 저장된 모델을 Rust `apply_manual`로 재적용한다.
-- 현재 `src-tauri/src/egui_reception_bridge.rs`의 운영 작업본 커밋은 자동 인식을 다시 수행하는 계약이라 수동 배정이 손실될 수 있다. **수동 분류가 있는 접수에 대해서는 운영 동기화를 의도적으로 차단**하며 직접 SQL로 우회하지 않는다. 수동 모델의 서버 검증, native scoped IDs, revision/작업본 버전·상품 재가격을 하나의 트랜잭션으로 연결하는 후속 단계가 필요하다.
+- **4차 이식으로 변경:** 수동 배정이 있는 접수도 명시적인 저장 버튼으로 `egui_reception_bridge`에 전송한다. Tauri가 근거 블록과 recipient/item scoped ID를 검증하고 기존 Rust reducer로 재구성하며, 동일한 SQLite 즉시 트랜잭션에서 업무 마스터 revision 및 작업본 버전을 검사한 뒤 저장한다. 수동 모델을 그대로 복사하지 않는다.
 - 배송 감소/삭제 확인, 고급 상품 검색, 키보드 표 조작, 운영 동기화 및 Windows 컴파일·시각 검증은 후속 단계로 보류한다. 카카오톡 Issue #42는 변경하지 않는다.
