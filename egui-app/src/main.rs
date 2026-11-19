@@ -15,6 +15,7 @@ mod source_autosave;
 use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, PANEL_GAP};
 use std::sync::{mpsc::{self, Receiver}, Arc};
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
@@ -70,22 +71,20 @@ struct VerticalSplitDrag {
 struct BandoEgui {
     gateway: Arc<dyn gateway::BandoGateway>,
     page: Page,
-    sample: bool,
     notifications_open: bool,
-    order_expanded: [bool; 2],
     layout: layout::LayoutState,
     dragging_split: Option<HorizontalSplitDrag>,
     dragging_vertical: Option<VerticalSplitDrag>,
     raw_source: String,
     source_editing: bool,
     source_autosave: Option<source_autosave::SourceAutosave>,
-    source_save_status: String,
     source_save_error: Option<String>,
     analysis: Option<reception_service::ReceptionAnalysis>,
     analysis_error: Option<String>,
     selected_recipient: usize,
     analysis_request: u64,
     analysis_pending: bool,
+    analysis_due_at: Option<Instant>,
     analysis_receiver: Option<Receiver<(u64, Result<reception_service::ReceptionAnalysis, String>)>>,
 }
 
@@ -94,22 +93,20 @@ impl Default for BandoEgui {
         Self {
             gateway: Arc::new(gateway::LocalGateway),
             page: Page::Reception,
-            sample: false,
             notifications_open: false,
-            order_expanded: [true, false],
             layout: layout::LayoutState::load(),
             dragging_split: None,
             dragging_vertical: None,
             raw_source: String::new(),
             source_editing: false,
             source_autosave: None,
-            source_save_status: "원문 없음".to_owned(),
             source_save_error: None,
             analysis: None,
             analysis_error: None,
             selected_recipient: 0,
             analysis_request: 0,
             analysis_pending: false,
+            analysis_due_at: None,
             analysis_receiver: None,
         }
     }
@@ -119,7 +116,6 @@ impl BandoEgui {
     // Run parsing outside the egui frame loop. Any changed source invalidates
     // the previous result and its request sequence, so stale replies are ignored.
     fn queue_source_save(&mut self) {
-        self.source_save_status = "격리 DB 저장 중".to_owned();
         self.source_save_error = None;
         if let Some(worker) = &self.source_autosave {
             if let Err(error) = worker.queue(self.raw_source.clone()) {
@@ -140,11 +136,10 @@ impl BandoEgui {
         for event in events {
             match event {
                 source_autosave::SaveStatus::Saved(revision) => {
-                    self.source_save_status = format!("격리 DB 자동저장 완료 · r{revision}");
+                    let _ = revision;
                     self.source_save_error = None;
                 }
                 source_autosave::SaveStatus::Failed(error) => {
-                    self.source_save_status = "격리 DB 저장 실패".to_owned();
                     self.source_save_error = Some(error);
                 }
             }
@@ -175,6 +170,7 @@ impl BandoEgui {
         self.analysis = None;
         self.analysis_error = None;
         self.selected_recipient = 0;
+        self.analysis_due_at = None;
     }
 
     fn poll_source_analysis(&mut self) {
@@ -227,14 +223,6 @@ impl BandoEgui {
                     if brand.double_clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                     }
-                    let caption = ui.add(
-                        egui::Label::new(
-                            RichText::new("/ UI 프리뷰").size(11.0).color(theme::MUTED)
-                        ).sense(Sense::click_and_drag())
-                    );
-                    if caption.drag_started() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                    }
                     ui.add_space(12.0);
                     for page in Page::ALL {
                         let role = if self.page == page {
@@ -261,14 +249,12 @@ impl BandoEgui {
                             .on_hover_text("최소화").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                         }
-                        if theme::action(ui, "알림", ButtonRole::Standard, true).clicked() {
+                        if theme::action(ui, "알림", ButtonRole::Standard, self.source_save_error.is_some()).clicked() {
                             self.notifications_open = !self.notifications_open;
                         }
                         ui.label(
-                            RichText::new(format!(
-                                "TEST / UI 프리뷰 · {} · 주문 저장 비활성",
-                                self.gateway.label()
-                            )).size(11.0).color(theme::SELECTED_ORDER)
+                            RichText::new("TEST / 격리 DB / 외부 발송 금지")
+                                .size(11.0).color(theme::SELECTED_ORDER)
                         );
                     });
                 });
@@ -280,7 +266,9 @@ impl BandoEgui {
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.label(theme::body("현재는 UI 프리뷰입니다. 알림 데이터베이스에 연결되지 않았습니다."));
+                    if let Some(error) = &self.source_save_error {
+                        ui.colored_label(theme::DANGER, error);
+                    }
                 });
         }
     }
@@ -371,8 +359,7 @@ impl BandoEgui {
                 ui.set_min_height((ui.available_height() - 20.0).max(100.0));
                 ui.vertical_centered(|ui| {
                     ui.add_space((ui.available_height() * 0.44).max(20.0));
-                    theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, false)
-                        .on_disabled_hover_text("카카오톡 Windows 도킹은 아직 UI 프리뷰에 연결되지 않았습니다.");
+                    theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, false);
                 });
             });
     }
@@ -550,60 +537,30 @@ impl BandoEgui {
 
     fn source_section(&mut self, ui: &mut Ui, height: f32) {
         let mut begin_input = false;
-        let mut analyze_requested = false;
         Self::section_with_header(ui, "발주 원문", height, |ui| {
-            theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false)
-                .on_disabled_hover_text(
-                    "복수 작업 주문을 보존할 저장 구조가 연결되기 전까지 새 주문 생성을 비활성화합니다."
-                );
+            theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false);
         }, |ui| {
             if self.source_editing || !self.raw_source.is_empty() {
-                ui.label(theme::caption("직접 입력 · 격리 DB 원문 자동저장 · 주문 확인 완료 기능 미연결"));
-                let editor_height = (ui.available_height() - 62.0).max(120.0);
+                let editor_height = (ui.available_height() - 10.0).max(120.0);
                 let editor = ui.add_sized(
                     Vec2::new(ui.available_width(), editor_height),
                     egui::TextEdit::multiline(&mut self.raw_source)
-                        .font(egui::TextStyle::Body)
-                        .hint_text("발주서 원문을 여기에 입력하거나 붙여넣으세요."),
+                        .font(egui::TextStyle::Body),
                 );
                 if editor.changed() {
                     self.clear_source_analysis();
                     self.queue_source_save();
-                }
-                ui.horizontal(|ui| {
-                    if theme::action(
-                        ui,
-                        if self.analysis_pending { "분석 중…" } else { "원문 분석" },
-                        ButtonRole::Emphasized,
-                        !self.analysis_pending && !self.raw_source.trim().is_empty(),
-                    ).clicked() {
-                        analyze_requested = true;
+                    if !self.raw_source.trim().is_empty() {
+                        self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
+                        ui.ctx().request_repaint_after(Duration::from_millis(260));
                     }
-                    ui.label(theme::caption("공통 Gateway · 주문 확정/결제 미연결"));
-                });
-            } else if self.sample {
-                theme::nested_frame().show(ui, |ui| {
-                    ui.label(RichText::new("현재 거래처").size(12.0).color(theme::SECONDARY));
-                    ui.label(RichText::new("샘플거래처").size(14.0).strong());
-                });
-                ui.add_space(8.0);
-                theme::nested_frame().show(ui, |ui| {
-                    ui.label(theme::body("반도 709 민판 1개"));
-                    ui.label(theme::body("수령자: 샘플수취인 / 010-0000-0000"));
-                    ui.label(theme::body("주소: 샘플시 샘플로 123"));
-                    ui.add_space(8.0);
-                    ui.label(theme::caption("실제 발주서가 아닌 UI 배치 확인용 예시입니다."));
-                });
-                if theme::action(ui, "실제 원문 입력", ButtonRole::Emphasized, true).clicked() {
-                    begin_input = true;
                 }
             } else {
                 ui.add_space(32.0);
                 ui.label(theme::subsection_heading("클립보드 접수"));
                 ui.label(theme::caption("복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."));
                 ui.horizontal(|ui| {
-                    theme::action(ui, "대리발송", ButtonRole::Emphasized, false)
-                        .on_disabled_hover_text("클립보드 자동 접수는 아직 연결되지 않았습니다.");
+                    theme::action(ui, "대리발송", ButtonRole::Emphasized, false);
                     theme::action(ui, "대리점 납품", ButtonRole::Emphasized, false);
                 });
                 ui.label(theme::caption("이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."));
@@ -623,13 +580,7 @@ impl BandoEgui {
             }
         });
         if begin_input {
-            // Never mix example cards or example money with actual Rust
-            // recognition output once an employee opens a real source.
-            self.sample = false;
             self.source_editing = true;
-        }
-        if analyze_requested {
-            self.start_source_analysis(ui.ctx().clone());
         }
     }
 
@@ -642,7 +593,7 @@ impl BandoEgui {
             Frame::new().fill(theme::INPUT).corner_radius(6).inner_margin(10.0)
                 .show(ui, |ui| {
                     ui.set_min_height((ui.available_height() - 85.0).max(80.0));
-                    ui.label(theme::caption("거래처와 주문 정보를 확정하면 Rust가 자동 메시지를 생성합니다."));
+
                 });
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                 ui.horizontal(|ui| {
@@ -655,26 +606,11 @@ impl BandoEgui {
 
     fn details_and_freight(&mut self, ui: &mut Ui) {
         let full_height = ui.available_height();
-        let has_result = self.analysis.is_some();
-        let count = self.analysis.as_ref().map(|analysis| {
-            reception_service::recipients(analysis).len()
-        }).unwrap_or(0);
 
-        Self::section_with_header(ui, "확인할 내용", (full_height * 0.27).max(150.0), |ui| {
-            ui.label(theme::caption(if has_result {
-                "Rust 원문 분석 완료"
-            } else if self.analysis_pending {
-                "Rust 원문 분석 중"
-            } else {
-                "분석 대기"
-            }));
-        }, |ui| {
+        Self::section(ui, "확인할 내용", (full_height * 0.27).max(150.0), |ui| {
             if let Some(error) = &self.analysis_error {
-                ui.colored_label(theme::DANGER, format!("인식 오류: {error}"));
-            } else if self.analysis_pending {
-                ui.label(theme::body("기존 Rust 인식 엔진이 발주원문을 분석하고 있습니다."));
+                ui.colored_label(theme::DANGER, error);
             } else if let Some(analysis) = &self.analysis {
-                ui.label(theme::body(&format!("수취인 {count}건 인식")));
                 let unidentified = analysis.get("unassigned")
                     .and_then(serde_json::Value::as_array)
                     .map(Vec::len).unwrap_or(0);
@@ -683,7 +619,7 @@ impl BandoEgui {
                     .map(Vec::len).unwrap_or(0);
                 if unidentified > 0 || candidates > 0 {
                     ui.colored_label(theme::SELECTED_ORDER,
-                        format!("미분류 근거 {unidentified}건 · 추가 후보 {candidates}건"));
+                        format!("미분류 {unidentified}건 · 확인 후보 {candidates}건"));
                 }
                 let issue_count: usize = reception_service::recipients(analysis).iter()
                     .flat_map(|recipient| recipient.get("items")
@@ -695,13 +631,8 @@ impl BandoEgui {
                     .sum();
                 if issue_count > 0 {
                     ui.colored_label(theme::SELECTED_ORDER,
-                        format!("상품 인식 검토 사항 {issue_count}건"));
+                        format!("상품 확인 {issue_count}건"));
                 }
-                ui.label(theme::caption("인식 결과만 표시 · 주문 확정·가격·운임 검증은 아직 미연결"));
-            } else if self.sample {
-                ui.label(theme::caption("샘플 화면입니다. 발주원문을 입력하면 실제 Rust 분석 결과가 표시됩니다."));
-            } else {
-                ui.label(theme::caption("발주원문을 입력하고 분석하면 수취인·상품 인식 결과가 여기에 나타납니다."));
             }
         });
         ui.add_space(PANEL_GAP);
@@ -749,56 +680,12 @@ impl BandoEgui {
                         components::labeled_field(ui, "전화", &mut phone, components::FieldKind::Telephone, false);
                     }
                     components::labeled_field(ui, "요청 메시지", &mut note, components::FieldKind::Text, false);
-                    if let Some(reference) = self.analysis.as_ref()
-                        .and_then(|analysis| analysis.reference.get(self.selected_recipient))
-                    {
-                        ui.add_space(4.0);
-                        if let Some(remote) = &reference.remote {
-                            let (caption, color) = match remote.get("status")
-                                .and_then(serde_json::Value::as_str)
-                            {
-                                Some("auto") => (
-                                    "도서산간 자동 체크 권장 · 실제 적용 전 확인",
-                                    theme::SELECTED_ORDER,
-                                ),
-                                Some("review") => (
-                                    "도서산간 후보 · 직원 확인 후 체크 결정",
-                                    theme::SELECTED_ORDER,
-                                ),
-                                _ => (
-                                    "자동 판정 없음 · 일반지역 확정은 아님",
-                                    theme::SECONDARY,
-                                ),
-                            };
-                            ui.colored_label(color, caption);
-                        } else if let Some(error) = &reference.remote_error {
-                            ui.colored_label(theme::DANGER,
-                                format!("도서산간 판정 오류: {error}"));
-                        }
-                    }
-                } else {
-                    ui.label(theme::caption("인식된 수취인 정보가 없습니다."));
                 }
-            } else if self.sample {
-                let mut name = String::from("샘플수취인");
-                let mut address = String::from("샘플시 샘플로 123");
-                let mut phone = String::from("010-0000-0000");
-                let mut note = String::from("없음");
-                ui.spacing_mut().item_spacing.y = 4.0;
-                components::labeled_field(ui, "이름", &mut name, components::FieldKind::Text, false);
-                components::labeled_field(ui, "주소", &mut address, components::FieldKind::Address, false);
-                components::labeled_field(ui, "휴대전화", &mut phone, components::FieldKind::Telephone, false);
-                components::labeled_field(ui, "요청 메시지", &mut note, components::FieldKind::Text, false);
-            } else {
-                ui.label(theme::caption("발주원문을 입력하고 분석하면 인식된 수취인 정보가 표시됩니다."));
             }
         });
         if let Some(index) = next_recipient {
             self.selected_recipient = index;
         }
-        // Derive the displayed items AFTER changing the recipient selection.
-        // Otherwise the details pane switches immediately but the item pane
-        // can display the previous recipient for one frame.
         let selected = self.analysis.as_ref().and_then(|analysis| {
             reception_service::recipients(analysis).get(self.selected_recipient)
         });
@@ -808,40 +695,18 @@ impl BandoEgui {
         Self::section(ui, "품목 및 운임", remaining, |ui| {
             if let Some(recipient) = selected {
                 if let Some(items) = recipient.get("items").and_then(serde_json::Value::as_array) {
-                    if items.is_empty() {
-                        ui.label(theme::caption("인식된 상품이 없습니다. 원문과 상품 등록 정보를 확인하세요."));
-                    }
                     egui::ScrollArea::vertical()
                         .id_salt("recognized-items")
                         .max_height((ui.available_height() - 115.0).max(90.0))
                         .show(ui, |ui| {
-                            for (item_index, item) in items.iter().enumerate() {
+                            for item in items {
                                 ui.horizontal(|ui| {
                                     ui.label(theme::body(&reception_service::item_title(item)));
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                         ui.label(theme::caption(&reception_service::item_quantity(item)));
                                     });
                                 });
-                                let price_reference = self.analysis.as_ref()
-                                    .and_then(|analysis| analysis.reference.get(self.selected_recipient))
-                                    .and_then(|reference| reference.item_prices.get(item_index));
-                                if let Some(price) = price_reference {
-                                    if let Some(retail) = price.retail {
-                                        ui.label(theme::caption(&format!(
-                                            "소매가 참고: {} · 청구금액 아님",
-                                            reception_service::display_won(retail)
-                                        )));
-                                    } else if let Some(error) = &price.error {
-                                        ui.colored_label(theme::DANGER,
-                                            format!("기본 소매가 조회 오류: {error}"));
-                                    } else {
-                                        ui.label(theme::caption(
-                                            "소매가 정보 없음 또는 상품·옵션 미확정"
-                                        ));
-                                    }
-                                }
-                                let issues = item.get("issues").and_then(serde_json::Value::as_array);
-                                if let Some(issues) = issues {
+                                if let Some(issues) = item.get("issues").and_then(serde_json::Value::as_array) {
                                     for issue in issues.iter().take(3) {
                                         if let Some(message) = issue.as_str() {
                                             ui.colored_label(theme::SELECTED_ORDER, message);
@@ -851,32 +716,10 @@ impl BandoEgui {
                                 components::soft_divider(ui);
                             }
                         });
-                } else {
-                    ui.label(theme::caption("상품 인식 결과가 없습니다."));
                 }
-                ui.add_space(8.0);
-                ui.label(theme::caption("실제 거래처 단가·운임·청구금액 미연결 · DB 저장 안 함"));
-            } else if self.sample {
-                ui.label(theme::body("709-1 / 블랙 / 비타공 상판 · 1개"));
-                components::soft_divider(ui);
-                ui.label(theme::body("운임 3,000원 (선불) · 샘플 표시"));
-                ui.label(theme::caption("샘플은 실제 Rust 인식 결과와 구별됩니다."));
-            } else {
-                ui.label(theme::caption("분석 후 인식된 품목을 확인할 수 있습니다."));
             }
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                components::summary_strip(
-                    ui,
-                    "총 주문",
-                    if self.sample && !has_result { "62,000원 (샘플)" } else { "—" },
-                    if has_result {
-                        "청구·부가세·운임 계산 미연결"
-                    } else if self.sample {
-                        "택배 1건 · 샘플 금액"
-                    } else {
-                        "업무 엔진 계산 연결 전"
-                    },
-                );
+                components::summary_strip(ui, "총 주문", "—", "");
             });
         });
     }
@@ -884,64 +727,6 @@ impl BandoEgui {
     fn orders_pane(&mut self, ui: &mut Ui) {
         ui.label(theme::section_heading("처리 중인 주문"));
         theme::divider(ui);
-        let mut changed = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            if self.sample {
-                for index in 0..2 {
-                    let selected = self.order_expanded[index];
-                    components::record_card(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            let caret = if selected { "▾" } else { "▸" };
-                            if theme::action(ui, &format!("{caret} 샘플거래처"), ButtonRole::Quiet, true).clicked() {
-                                changed = Some(index);
-                            }
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                theme::action(ui, "묶음 관리", ButtonRole::Standard, false);
-                                let tones = [
-                                    if index == 0 { components::StatusTone::Active } else { components::StatusTone::Complete },
-                                    if index == 0 { components::StatusTone::Neutral } else { components::StatusTone::Complete },
-                                    if index == 0 { components::StatusTone::Neutral } else { components::StatusTone::Complete },
-                                    if index == 0 { components::StatusTone::Neutral } else { components::StatusTone::Active },
-                                ];
-                                components::status_dots(ui, &tones);
-                            });
-                        });
-                        theme::divider(ui);
-                        ui.horizontal(|ui| {
-                            ui.label(theme::caption("배송 1건"));
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                theme::action(
-                                    ui,
-                                    if index == 0 { "주문 확인 완료" } else { "입금 확인 완료" },
-                                    ButtonRole::Primary,
-                                    false,
-                                );
-                                ui.label(RichText::new(if index == 0 { "62,000원" } else { "86,000원" }).size(13.0).strong());
-                            });
-                        });
-                        if selected {
-                            theme::divider(ui);
-                            components::table_header(ui, &[
-                                ("수취인", 90.0), ("품목", 164.0), ("운임", 76.0),
-                            ]);
-                            components::table_row(ui, &[
-                                ("샘플수취인", 90.0),
-                                ("709-1 블랙 × 1", 164.0),
-                                ("3,000원", 76.0),
-                            ]);
-                        }
-                    });
-                    ui.add_space(PANEL_GAP);
-                }
-                ui.add_space(12.0);
-                ui.label(theme::caption("위 주문 2건은 UI 미리보기 전용 가상 데이터입니다."));
-            } else {
-                ui.label(theme::caption("실제 진행 중인 주문은 Rust/SQLite 연결 후 표시됩니다."));
-            }
-        });
-        if let Some(index) = changed {
-            self.order_expanded[index] = !self.order_expanded[index];
-        }
     }
 
     fn other_page(&mut self, ctx: &egui::Context) {
@@ -949,11 +734,6 @@ impl BandoEgui {
             .frame(Frame::new().fill(theme::CANVAS).inner_margin(16.0))
             .show(ctx, |ui| {
                 ui.label(RichText::new(self.page.label()).size(20.0).strong());
-                ui.add_space(12.0);
-                Self::section(ui, "공통 레이아웃 적용 대기", 180.0, |ui| {
-                    ui.label(theme::body("이 화면의 Rust 업무 기능과 관리 UI는 아직 연결되지 않았습니다."));
-                    ui.label(theme::caption("기존 React 관리 화면은 삭제하거나 수정하지 않았습니다."));
-                });
             });
     }
 }
@@ -962,33 +742,13 @@ impl eframe::App for BandoEgui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_source_analysis();
         self.poll_source_saves();
+        if self.analysis_due_at.is_some_and(|at| Instant::now() >= at) {
+            self.analysis_due_at = None;
+            if !self.raw_source.trim().is_empty() {
+                self.start_source_analysis(ctx.clone());
+            }
+        }
         self.top_bar(ctx);
-        egui::TopBottomPanel::bottom("preview_mode")
-            .exact_height(36.0)
-            .frame(Frame::new().fill(theme::PANEL).inner_margin(4.0))
-            .show(ctx, |ui| {
-                ui.horizontal_centered(|ui| {
-                    if let Some(error) = &self.source_save_error {
-                        ui.colored_label(theme::DANGER,
-                            format!("원문 자동저장 오류: {error}"));
-                    } else {
-                        ui.label(theme::caption(&format!(
-                            "egui 프리뷰 · {} · 운영 주문/결제 저장 비활성",
-                            self.source_save_status
-                        )));
-                    }
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if theme::action(
-                            ui,
-                            if self.sample { "빈 화면 보기" } else { "UI 샘플 보기" },
-                            ButtonRole::Standard,
-                            true,
-                        ).clicked() {
-                            self.sample = !self.sample;
-                        }
-                    });
-                });
-            });
         if self.page == Page::Reception {
             self.reception(ctx);
         } else {
@@ -1031,12 +791,15 @@ fn main() -> eframe::Result<()> {
                 Arc::clone(&backend), restored.revision, cc.egui_ctx.clone()
             );
             let source_editing = !restored.raw.is_empty();
+            if source_editing { cc.egui_ctx.request_repaint_after(Duration::from_millis(260)); }
             Ok(Box::new(BandoEgui {
                 gateway: backend,
                 raw_source: restored.raw,
                 source_editing,
                 source_autosave: Some(autosave),
-                source_save_status: "격리 DB 원문 복원 완료".to_owned(),
+                analysis_due_at: if source_editing {
+                    Some(Instant::now() + Duration::from_millis(250))
+                } else { None },
                 ..BandoEgui::default()
             }))
         }),
