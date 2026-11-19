@@ -42,9 +42,10 @@ impl ReadOperation {
 
 pub trait BandoGateway: Send + Sync {
     fn label(&self) -> &'static str;
-    /// A snapshot used only for read-only analysis in this preview.
+    /// A minimal catalog snapshot (products, aliases, brands). No orders,
+    /// clients, workflow or other persisted operational state.
     /// This method does not persist or mutate anything.
-    fn load_state(&self) -> Result<Value, String>;
+    fn load_catalog(&self) -> Result<Value, String>;
     /// Execute one of the explicitly allowed read-only business operations.
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String>;
 }
@@ -57,7 +58,7 @@ impl BandoGateway for LocalGateway {
         "로컬 Rust"
     }
 
-    fn load_state(&self) -> Result<Value, String> {
+    fn load_catalog(&self) -> Result<Value, String> {
         // This embedded source is NOT the live staff/client database.
         static SEED: std::sync::OnceLock<Result<Value, String>> =
             std::sync::OnceLock::new();
@@ -65,7 +66,13 @@ impl BandoGateway for LocalGateway {
             serde_json::from_str(include_str!(
                 "../../src-tauri/resources/state-seed.json"
             )).map_err(|error| format!("기본 상품 데이터 오류: {error}"))
-        }).as_ref().map(Clone::clone).map_err(Clone::clone)
+        }).as_ref()
+            .map(|state| serde_json::json!({
+                "products": state["products"],
+                "aliases": state["aliases"],
+                "brands": state["brands"],
+            }))
+            .map_err(Clone::clone)
     }
 
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String> {
