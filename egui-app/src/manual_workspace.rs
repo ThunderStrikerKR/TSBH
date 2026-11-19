@@ -87,6 +87,7 @@ pub struct ManualWorkspace {
     confirm_discard:bool,
     product_search:Option<ProductSearch>,
     remove_recipient_pending:Option<String>,
+    reset_pending:bool,
     receiver:Option<Receiver<Result<Outcome,String>>>,
     error:Option<String>,
     dirty:bool,
@@ -128,6 +129,7 @@ impl ManualWorkspace {
             selected_item:None,selected_field:"name".into(),
             edit_text:String::new(),confirm_discard:false,
             product_search:None,remove_recipient_pending:None,
+            reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
         }
     }
@@ -340,7 +342,7 @@ impl ManualWorkspace {
                 ui.set_enabled(!self.busy() &&
                     self.product_search.is_none() &&
                     self.remove_recipient_pending.is_none() &&
-                    !self.confirm_discard);
+                    !self.reset_pending && !self.confirm_discard);
                 if let Some(error)=self.error.as_ref() {
                     ui.label(typography::status(error,theme::DANGER));
                 }
@@ -354,9 +356,23 @@ impl ManualWorkspace {
                 let busy=self.busy();
                 let unassigned=blocks.iter().filter(|b|
                     assignments.get(text(b,"id")).is_none()).count();
-                ui.label(typography::caption(
-                    &format!("미배정 원문 {unassigned}개 · 배송 {}건",rows.len())
-                ));
+                ui.horizontal(|toolbar|{
+                    toolbar.label(typography::caption(
+                        &format!("미배정 원문 {unassigned}개 · 배송 {}건",rows.len())
+                    ));
+                    toolbar.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |actions|{
+                            if theme::action(actions,"초기화",ButtonRole::Quiet,!busy).clicked(){
+                                if self.edit_text!=self.current_value(){
+                                    self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
+                                }else{
+                                    self.reset_pending=true;
+                                }
+                            }
+                        }
+                    );
+                });
                 ui.separator();
                 // Match React's .manual-workspace override: 34% source and
                 // 66% shipment sheet, not the equal egui default columns.
@@ -693,6 +709,27 @@ impl ManualWorkspace {
                 }
             }
         }
+        if self.reset_pending {
+            let mut confirm=false;
+            let mut cancel=false;
+            components::decision_window("전체 초기화","manual-reset-confirm")
+                .constrain_to(work_area)
+                .show(ctx,|ui|{
+                    ui.label("구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.");
+                    let (closed,approved)=components::modal_actions(
+                        ui,"취소","확인",ButtonRole::Primary,true
+                    );
+                    cancel=closed;
+                    confirm=approved;
+                });
+            if cancel{self.reset_pending=false;}
+            if confirm {
+                self.reset_pending=false;
+                self.action("reset_manual_rows",json!({
+                    "recipientId":unique_id()
+                }),ctx);
+            }
+        }
         if apply {
             if self.edit_text!=self.current_value() {
                 self.error=Some("아직 반영되지 않은 입력 내용이 있습니다.".into());
@@ -704,7 +741,7 @@ impl ManualWorkspace {
             // Dirty typed text is just as important as a completed Rust edit.
             // A parent close cannot destroy an active modal/async operation.
             if self.busy() || self.product_search.is_some() ||
-               self.remove_recipient_pending.is_some() {
+               self.remove_recipient_pending.is_some() || self.reset_pending {
                 return None;
             }
             if self.dirty || self.edit_text!=self.current_value() {
