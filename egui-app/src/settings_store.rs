@@ -10,6 +10,9 @@ use rusqlite::{params,Connection,TransactionBehavior};
 use serde_json::{json,Map,Value};
 use std::{io::Write,process::{Command,Stdio},time::{Duration,SystemTime,UNIX_EPOCH}};
 
+#[path = "../../src-tauri/src/business_core/rules/settings_accounts.rs"]
+mod native_settings_accounts;
+
 const SETTINGS_CAP:usize=512*1024;
 const EDIT_FIELDS:[&str;13]=[
     "uiScale","operatorName","senderName","senderAddress","senderPostcode",
@@ -133,35 +136,6 @@ fn validate(changes:&Map<String,Value>,expected:&Map<String,Value>)->Result<(),S
     }
     Ok(())
 }
-fn validate_accounts(settings:&Value, used:&[String])->Result<(),String>{
-    let accounts=settings.get("accounts").and_then(Value::as_array)
-        .ok_or("입금 계좌 목록이 잘못되었습니다.")?;
-    let mut ids=std::collections::HashSet::new();
-    for account in accounts{
-        let id=account.get("id").and_then(Value::as_str)
-            .filter(|id|!id.is_empty()).ok_or("입금 계좌 ID가 없습니다.")?;
-        if !ids.insert(id.to_owned()){return Err("입금 계좌 ID가 중복되었습니다.".into());}
-        for name in ["bank","number","holder"]{
-            if account.get(name).and_then(Value::as_str)
-                .is_none_or(|value|value.trim().is_empty()){
-                return Err("계좌의 은행명, 계좌번호, 예금주를 모두 입력하세요.".into());
-            }
-        }
-    }
-    let reference=|id:&str| -> Result<(),String>{
-        if !id.is_empty() && !ids.contains(id) {
-            return Err("추천 계좌가 입금 계좌 목록에 없습니다.".into());
-        }
-        Ok(())
-    };
-    reference(settings.get("defaultAccountId").and_then(Value::as_str).unwrap_or(""))?;
-    for brand in ["BANDOSTAND","BANDOMALL"]{
-        reference(settings.pointer(&format!("/brandAccounts/{brand}"))
-            .and_then(Value::as_str).unwrap_or(""))?;
-    }
-    for id in used{reference(id)?;}
-    Ok(())
-}
 fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     let changes=changes.as_object().ok_or("설정 변경 객체가 없습니다.")?;
     let expected=expected.as_object().ok_or("설정 기존값 객체가 없습니다.")?;
@@ -170,10 +144,9 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     // BEFORE acquiring the IMMEDIATE settings write lock.
     let account_changed=["accounts","defaultAccountId","brandAccounts"]
         .iter().any(|key|changes.contains_key(*key));
-    let used=if account_changed{
-        let clients=client_master::load()?;
-        used_accounts(&clients["clients"])
-    }else{Vec::new()};
+    let clients=if account_changed{
+        Some(client_master::load()?)
+    }else{None};
     let mut conn=connection()?;
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_|"설정 저장 트랜잭션 시작 실패")?;
@@ -193,7 +166,14 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     // Account IDs and client references are not a UI-only decision.
     // Exactly like Tauri settings_patch: an unrelated sender/scale edit
     // must not be blocked by untouched historical account records.
-    if account_changed{validate_accounts(&settings,&used)?;}
+    if account_changed{
+        native_settings_accounts::validate(&json!({
+            "settings":&settings,
+            "clients":clients.as_ref()
+                .and_then(|master|master.get("clients"))
+                .ok_or("거래처 계좌 참조를 확인할 수 없습니다.")?
+        }))?;
+    }
     let next=revision.checked_add(1).ok_or("설정 revision 한도 초과")?;
     let payload=serde_json::to_string(&settings).map_err(|e|e.to_string())?;
     if payload.len()>SETTINGS_CAP{
