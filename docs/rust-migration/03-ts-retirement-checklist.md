@@ -1,4 +1,4 @@
-# Session 3 — TypeScript business-algorithm retirement gate
+> **2026-11-19 현행 안내:** 이 문서는 작성 당시의 역사적 이관 기준과 미완료 판단을 보존한 자료입니다. 현재 `main`의 소스 이동, 운영 진입점, 실제 작업 목록은 [46차 현행화 문서](./46-current-live-source-cleanup-20261119.md) 및 [verification-ledger.json](./verification-ledger.json)의 `activeUnresolved`를 우선합니다. 아래 `src/parser.ts`, `src/validation.ts`, `src/workflow.ts` 등 구형 위치는 현재 테스트 오라클 디렉터리로 이전되었습니다.\n\n# Session 3 — TypeScript business-algorithm retirement gate
 
 Status: **NOT CLEARED TO DELETE** (2026-11-13). Branch: `migration/03-integration`.
 This is a live migration inventory, not authorization to remove original TS

@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "policy": "AGENTS.md",
   "recordedAt": "2026-11-19",
-  "recordedHead": "2b4ed344dd152bd4529431a3c31eda60e433b876",
-  "warning": "모든 28개 기능은 검증 완료 판정 전이다. 역사적 파일 차이는 단독 결함 증거가 아니다. 사용자가 승인한 최신 TS 기준이 없으면 BASELINE_UNRESOLVED를 유지한다.",
+  "recordedHead": "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b",
+  "warning": "이 파일의 28개 feature 행은 과거 기능별 검증 증빙의 미완결 상태이며, 28개 미구현/오류를 뜻하지 않습니다. 2026-11-19 이후 현재 소스 기준 실작업 목록은 activeUnresolved를 확인하세요. 이번 정리에서 회귀테스트·Windows 실행 검증은 실시하지 않았습니다.",
   "proofLevels": [
     "patch",
     "unit",
@@ -562,7 +562,7 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "2b4ed344dd152bd4529431a3c31eda60e433b876",
+      "lastReviewedCommit": "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b",
       "runtimeCleanupAudit": [
         {
           "date": "2026-11-19",
@@ -597,6 +597,16 @@
           "includedForbiddenModules": [],
           "windows": "NOT_EXECUTED",
           "note": "Do not mistake asset string fingerprint no-hits for algorithm absence. Verified actual Rollup chunk.modules and TypeScript compiler import graph; still no full Rust app parity or Windows PASS."
+        },
+        {
+          "date": "2026-11-19",
+          "description": "구형 parser/validation/workflow 등 6개 TS 업무 엔진을 운영 src에서 제외하고 tests/rust-migration/oracles/legacy-*.ts로 보존. Rust 접수/검증 호출 경로는 유지. 동작 테스트는 사용자 요청에 따라 생략.",
+          "commits": [
+            "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b"
+          ],
+          "patch": "COMMITTED",
+          "unit": "NOT_EXECUTED",
+          "action": "NOT_EXECUTED"
         }
       ]
     },
@@ -902,14 +912,15 @@
         "status": "BASELINE_UNRESOLVED"
       },
       "rust": {
-        "location": "WorkflowFooter, rules/shipping.rs",
+        "location": "src-tauri/src/business_core/rules/remote_delivery.rs::normalize_applied_input; rules/workflow_preview.rs; rules/shipping.rs",
         "status": "NEEDS_EXECUTION_TRACE"
       },
       "react": {
         "candidatePaths": [
+          "src/OrderDesk.tsx",
           "src/WorkflowFooter.tsx"
         ],
-        "entrypointVerified": false,
+        "entrypointVerified": true,
         "unresolvedCandidates": []
       },
       "scenario": {
@@ -930,9 +941,9 @@
       "legacyLedgerStatus": "WINDOWS_CASES_PARTIAL",
       "gate": {
         "patch": {
-          "status": "NOT_VERIFIED",
-          "commit": null,
-          "evidence": null
+          "status": "COMMITTED",
+          "commit": "d9adc3bb275ebedfa3141751fe88fe4910f772b0",
+          "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/d9adc3bb275ebedfa3141751fe88fe4910f772b0"
         },
         "unit": {
           "status": "NOT_VERIFIED",
@@ -961,7 +972,20 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b",
+      "runtimeCleanupAudit": [
+        {
+          "date": "2026-11-19",
+          "description": "운임 입력의 TS 체크/2배 환산 중복을 Rust normalize_remote_freight_input으로 단일화. 프런트는 결과값 저장과 최신성 확인만 수행. 이번 변경의 테스트 및 Windows 실행은 하지 않음.",
+          "commits": [
+            "d9adc3bb275ebedfa3141751fe88fe4910f772b0"
+          ],
+          "patch": "COMMITTED",
+          "unit": "NOT_EXECUTED",
+          "action": "NOT_EXECUTED",
+          "windows": "NOT_EXECUTED"
+        }
+      ]
     },
     {
       "id": "F12",
@@ -1028,7 +1052,18 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b",
+      "runtimeCleanupAudit": [
+        {
+          "date": "2026-11-19",
+          "description": "기존 WorkingRawDialog는 운영 진입점이 없고 개발자 실험실의 데모에서만 연결됨. 해당 UI는 제거, Rust 원문 정정 명령 보존; 운영 CorrectionPanel은 유지. 기능 불일치 판정 아님.",
+          "commits": [
+            "ebc21eb311e19c5ee96825f6f44bdf507d08fbbb"
+          ],
+          "patch": "UI_CLEANUP_COMMITTED",
+          "action": "NOT_EXECUTED"
+        }
+      ]
     },
     {
       "id": "F13",
@@ -1923,7 +1958,18 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": null
+      "lastReviewedCommit": "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b",
+      "runtimeCleanupAudit": [
+        {
+          "date": "2026-11-19",
+          "description": "FactoryNotifications는 App의 실제 알림 UI이므로 유지, 미사용 AppNotice 토스트만 제거. Rust/SQLite 알림 저장을 건드리지 않음.",
+          "commits": [
+            "ebc21eb311e19c5ee96825f6f44bdf507d08fbbb"
+          ],
+          "patch": "UI_CLEANUP_COMMITTED",
+          "action": "NOT_EXECUTED"
+        }
+      ]
     },
     {
       "id": "F26",
@@ -2155,7 +2201,7 @@
         }
       },
       "overall": "OPEN",
-      "lastReviewedCommit": "2b4ed344dd152bd4529431a3c31eda60e433b876",
+      "lastReviewedCommit": "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b",
       "runtimeCleanupAudit": [
         {
           "date": "2026-11-19",
@@ -2175,8 +2221,103 @@
           "includedForbiddenModules": [],
           "windows": "NOT_EXECUTED",
           "note": "Do not mistake asset string fingerprint no-hits for algorithm absence. Verified actual Rollup chunk.modules and TypeScript compiler import graph; still no full Rust app parity or Windows PASS."
+        },
+        {
+          "date": "2026-11-19",
+          "description": "과거 단계별 설치 패치 실행파일 8개를 제거하고 DEV_WINDOWS_TAURI.cmd, PACKAGE_WINDOWS_TAURI.cmd 유지. 배포 EXE/ZIP 새 빌드는 수행하지 않음.",
+          "commits": [
+            "5a0d6b56ebb855450d4ddccfec3522c83f397639"
+          ],
+          "patch": "COMMITTED",
+          "windows": "NOT_EXECUTED"
         }
       ]
     }
+  ],
+  "activeQueueIsAuthoritative": true,
+  "activeQueueUpdatedAt": "2026-11-19",
+  "currentRuntimeSource": {
+    "inspectedHead": "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b",
+    "entrypoint": "src/main.tsx",
+    "implementationCommits": {
+      "remoteFreightRust": "d9adc3bb275ebedfa3141751fe88fe4910f772b0",
+      "retiredLegacyUI": "ebc21eb311e19c5ee96825f6f44bdf507d08fbbb",
+      "retiredLegacyEngines": "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b",
+      "retiredPatchInstallers": "5a0d6b56ebb855450d4ddccfec3522c83f397639"
+    },
+    "frozenOracleFiles": [
+      "tests/rust-migration/oracles/legacy-parser.ts",
+      "tests/rust-migration/oracles/legacy-validation.ts",
+      "tests/rust-migration/oracles/legacy-workflow.ts",
+      "tests/rust-migration/oracles/legacy-shipping.ts",
+      "tests/rust-migration/oracles/legacy-hub-messages.ts",
+      "tests/rust-migration/oracles/legacy-receipt.ts",
+      "tests/rust-migration/oracles/legacy-domain.ts",
+      "tests/rust-migration/oracles/legacy-shipping-initial.ts"
+    ],
+    "removedRuntimeModules": [
+      "src/parser.ts",
+      "src/validation.ts",
+      "src/workflow.ts",
+      "src/shipping.ts",
+      "src/hub-messages.ts",
+      "src/receipt.ts"
+    ],
+    "uiTypeReplacement": "src/staff-block-types.ts",
+    "deliberatelyPreserved": [
+      "src/FactoryNotifications.tsx",
+      "src/CorrectionPanel.tsx",
+      "src/app/DailySettlement.tsx",
+      "src/app/OrderHistory.tsx",
+      "src/domain.ts",
+      "src/shipping-initial.ts",
+      "DEV_WINDOWS_TAURI.cmd",
+      "PACKAGE_WINDOWS_TAURI.cmd"
+    ],
+    "deliberatelyNotRestored": "src/WorkingRawDialog.tsx — 운영 진입점이 없어 복구하지 않음. Rust raw_corrections.rs는 유지",
+    "regressionTests": "NOT_EXECUTED_ON_USER_REQUEST",
+    "windowsRuntime": "NOT_EXECUTED"
+  },
+  "activeUnresolved": [
+    {
+      "id": "LIVE-20261119-01",
+      "scope": "도서·산간 적용 운임 입력",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "description": "React onBlur/Enter 적용금액 → Rust normalize_remote_freight_input → 기본금액 저장. 체크박스·주소 변경/비동기 응답 경쟁 상태까지 Windows 화면 동작 증거가 아직 없음.",
+      "evidence": [
+        "src/OrderDesk.tsx",
+        "src/WorkflowFooter.tsx",
+        "src-tauri/src/business_core/rules/remote_delivery.rs"
+      ],
+      "commit": "d9adc3bb275ebedfa3141751fe88fe4910f772b0"
+    },
+    {
+      "id": "LIVE-20261119-02",
+      "scope": "구형 업무 엔진 격리 후 빌드 무결성",
+      "status": "IMPLEMENTED_UNVERIFIED",
+      "description": "운영 src의 구형 엔진 6개를 테스트 전용 오라클로 이동하고 import 경로 수정. TypeScript/Vite/Windows 빌드 및 실사용 실행 증거가 없어 검증 완료로 표기하지 않음. 사용자가 제외한 회귀테스트는 수행하지 않음.",
+      "evidence": [
+        "tests/rust-migration/oracles/legacy-workflow.ts",
+        "src/staff-block-types.ts",
+        "scripts/audit-ts-business-retirement.mjs"
+      ],
+      "commit": "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b"
+    },
+    {
+      "id": "LIVE-20261119-03",
+      "scope": "현행 배포본 최종 확인",
+      "status": "WINDOWS_NOT_VERIFIED",
+      "description": "DEV_WINDOWS_TAURI.cmd와 PACKAGE_WINDOWS_TAURI.cmd 유지. 실제 Windows 설치·실행·SQLite 데이터 보존·배포 ZIP 재실행은 이번 정리에서 수행하지 않음.",
+      "evidence": [
+        "DEV_WINDOWS_TAURI.cmd",
+        "PACKAGE_WINDOWS_TAURI.cmd"
+      ]
+    }
+  ],
+  "reviewOnlyNotProvenDefects": [
+    "src/domain.ts의 오래된 totals/resolvePrice/recommendAccount 및 혼합 UI 유틸: 정의가 남았다는 사실만으로 현재 실행 중인 판단/오류로 집계하지 않음",
+    "src/matching.ts, order-types.ts, workflow-view.ts의 데이터 표시용 보조 함수: 실제 업무 결정이 확인될 때만 activeUnresolved로 승격",
+    "원문 정정 전용 모달은 운영 경로에서 쓰이지 않아 복원하지 않음. UI 정책이 새로 승인되기 전에는 미완료 기능으로 처리하지 않음",
+    "과거 문서의 24개 회귀 실패와 TypeScript 차등 비교 실패는 현행 코드의 실제 버그로 재판정하지 않음"
   ]
 }

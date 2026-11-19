@@ -1,4 +1,4 @@
-# 45차 — 운영 화면의 TypeScript 거래처·실운임 선택 경계 제거 (2026-11-19)
+> **2026-11-19 현행 안내:** 이 문서는 작성 당시의 역사적 이관 기준과 미완료 판단을 보존한 자료입니다. 현재 `main`의 소스 이동, 운영 진입점, 실제 작업 목록은 [46차 현행화 문서](./46-current-live-source-cleanup-20261119.md) 및 [verification-ledger.json](./verification-ledger.json)의 `activeUnresolved`를 우선합니다. 아래 `src/parser.ts`, `src/validation.ts`, `src/workflow.ts` 등 구형 위치는 현재 테스트 오라클 디렉터리로 이전되었습니다.\n\n# 45차 — 운영 화면의 TypeScript 거래처·실운임 선택 경계 제거 (2026-11-19)
 
 범위: `main`, `src/main.tsx`에서 도달하는 실제 React → Tauri IPC → Rust 업무 경로. 선행 44차에서 Rust로 이전한 다섯 경로는 재작성하지 않았다. 단순 함수명/원본 파일 존재만으로 활성 업무 판단을 판정하지 않는다.
 

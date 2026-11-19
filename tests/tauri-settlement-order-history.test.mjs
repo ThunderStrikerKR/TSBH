@@ -29,7 +29,7 @@ function moduleFor(path) {
       totals: (o) => o.fixtureTotals,
       statusNames: { RECEIVED: "접수", APPROVED:"승인", EXPORTED:"출력" },
     };
-    if (name === "../../../src/workflow") return {
+    if (name === "./legacy-workflow" || name === "./legacy-workflow.js") return {
       shipmentTotals: (state, s) => s.fixtureTotals,
       shipmentContext: (state, ship) => ({
         order: state.orders.find((o) => o.id === ship.orderId),

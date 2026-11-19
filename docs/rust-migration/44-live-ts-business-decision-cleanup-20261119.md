@@ -1,4 +1,4 @@
-# 44차 — 실제 운영 경로의 TypeScript 업무 판단 정리 (2026-11-19)
+> **2026-11-19 현행 안내:** 이 문서는 작성 당시의 역사적 이관 기준과 미완료 판단을 보존한 자료입니다. 현재 `main`의 소스 이동, 운영 진입점, 실제 작업 목록은 [46차 현행화 문서](./46-current-live-source-cleanup-20261119.md) 및 [verification-ledger.json](./verification-ledger.json)의 `activeUnresolved`를 우선합니다. 아래 `src/parser.ts`, `src/validation.ts`, `src/workflow.ts` 등 구형 위치는 현재 테스트 오라클 디렉터리로 이전되었습니다.\n\n# 44차 — 실제 운영 경로의 TypeScript 업무 판단 정리 (2026-11-19)
 
 기준: `main`의 `src/main.tsx`에서 도달하는 React/Tauri 업무 경로. 파일 존재, 이름, 구형 테스트 import만으로 운영 중이라고 판정하지 않는다. 승인 이후 변경된 동작을 과거 TypeScript 오라클에 맞춰 되돌리지 않는다.
 
