@@ -48,14 +48,16 @@ test("shipping manager reads editable tariff and current combination from Rust",
   assert.match(router, /"shipping_read" => shipping_read::project/);
 });
 
-test("factory alerts and corrections never show stale TS-calculated statuses", () => {
+test("factory history reviews and correction copy are native; critical-only modal avoids stale TS status", () => {
   const notifications = read("src/FactoryNotifications.tsx");
+  const history = read("src/FactoryReplyHistory.tsx");
   const correction = read("src/CorrectionPanel.tsx");
-  assert.match(notifications, /"rules", "factory_reply_review_statuses"/);
-  assert.match(notifications, /resolvedRows\.find\(/);
-  assert.doesNotMatch(notifications, /\breplyNeedsReview\(/);
-  assert.match(notifications, /nativeReview\?\.source === reviewSource/);
-  assert.match(notifications, /\[state\.factoryReplies\]/);
+  assert.match(history, /"rules", "factory_reply_review_statuses"/);
+  assert.match(history, /resolvedRows\.find\(/);
+  assert.match(history, /nativeReview\?\.source === reviewSource/);
+  assert.match(history, /\[state\.factoryReplies\]/);
+  assert.match(notifications, /isActionRequiredNotification/);
+  assert.doesNotMatch(notifications, /replyNeedsReview\(|"factory_reply_review_statuses"/);
   assert.match(correction, /"output", "render_correction_summaries"/);
   assert.doesNotMatch(correction, /\bcorrectionMessage\(/);
   assert.doesNotMatch(correction, /\bcorrectionStatus\(/);
