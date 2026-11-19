@@ -173,6 +173,14 @@
 - **화면 폰트:** Windows에서는 운영체제에 설치된 `C:\\Windows\\Fonts\\malgun.ttf`(맑은 고딕 일반)를 egui proportional UI의 첫 번째 글꼴로 사용한다. 포함되거나 배포되는 별도 폰트 파일은 없다. 파일이 없을 때는 개발 로그에 기록하며 실제 글씨 균형이 같다고 판정하지 않는다.
 - **고정폭 문자:** monospace 계열에는 기존 고정폭 글꼴을 먼저 유지하고 한글 시스템 글꼴을 마지막 폴백으로 둔다. 숫자·코드·표의 고정폭 정렬을 임의로 해치지 않는다.
 - **공통 역할:** 브랜드 24, 페이지 제목 20, 전역 메뉴 16, 섹션 16, 하위 제목 14, 본문 14, 필드 레이블 13, 메타데이터 12. 주요 버튼 14/일반 버튼 13. 승인된 egui 브랜드 확대 24는 React 원본 `src/ui/design-system.json`의 19를 변경하지 않고 egui 전용 오버라이드로 기록한다.
-- **적용 책임:** `theme.rs`의 `brand_heading`/`page_heading`/`section_heading`/`subsection_heading`/`body`/`field_label`/`caption`/`action`과 `TextStyle`을 사용한다. 개별 화면에 `RichText::size(숫자)`를 다시 추가하지 않는다. 폼과 표의 레이블은 `theme::field_label`로 통일한다.
+- **적용 책임:** `typography.rs`가 글꼴 선택·한글 폴백·역할별 글씨 크기·`TextStyle`·문자 스타일 함수(`brand_heading`, `page_heading`, `section_heading`, `subsection_heading`, `body`, `field_label`, `caption`)를 전담한다. `theme.rs`는 색상·공간·테두리·버튼·패널 스타일만 관리하며, 버튼 글씨 크기도 `typography` 상수를 참조한다. 폼과 표의 레이블은 `typography::field_label`로 통일한다. 개별 화면에 `RichText::size(숫자)`를 추가하지 않는다.
 - **굵기 한계:** 기존 React 타이포그래피의 600/650은 egui 기본 `strong`만으로 숫자상 정확한 중간 굵기를 보장하지 못한다. Bold 파일도 자동 선택하고 있지는 않다. 현재는 역할별 '기본/강조'를 통일한 것이며 **실제 폰트 웨이트 일치까지 검증한 상태는 아니다.**
 - **시각 검증:** Windows 실화면에서 한글-영문 혼용 줄높이, 버튼 중앙 정렬, 필드 텍스트 베이스라인, 100/125/150% 배율과 글꼴 로딩 로그를 확인해야 한다. 정적 코드만으로 타이포그래피 완성 판정 금지.
+
+## 13. 글꼴 모듈 분리 및 의존성 계약 (2026-11-19)
+
+- `typography.rs` 전담: Windows 시스템 글꼴 로딩, 폰트 폴백, 기본 TextStyle, 글씨 크기 토큰, 공통 텍스트 역할 함수. 별도 글꼴 파일을 저장소에 넣거나 EXE에 배포하지 않는다.
+- `theme.rs` 전담: 팔레트, 여백, 구조 크기, 모서리, 프레임, 작업 버튼의 형태 및 색상. 텍스트가 필요한 곳에서는 typography 역할을 참조하고 글꼴 크기 상수를 재정의하지 않는다.
+- `components.rs`와 각 화면: 폼·표·제목·본문은 typography를 직접 사용한다. 폰트 변경 시 비즈니스 실행·Gateway·레이아웃 비율을 건드리지 않는다.
+- 설치 순서: 앱 생성 시 theme::install(ctx) 실행 후 typography::install(ctx) 실행. 두 호출 모두 기존 egui 스타일을 복사하여 자신의 책임 범위만 변경한다.
+- 검증 범위: 소스에 반영했지만 Windows Cargo 빌드 및 폰트 메트릭은 아직 검증하지 않았다.
