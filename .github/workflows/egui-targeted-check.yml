@@ -1,4 +1,4 @@
-# Targeted Windows compile: full egui SettingsView including native Tauri audit and backup/restore bridges.
+# Targeted Windows compile: latest SettingsView native archive/backup, Excel directory, git build ID, account store.
 name: Tauri native CLI executable compile check
 on:
   push:
