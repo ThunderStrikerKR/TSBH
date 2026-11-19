@@ -322,14 +322,18 @@ impl BandoEgui {
                 Ok(analysis) => {
                     // Attach the exact Rust analysis to ONLY the still-active
                     // reception. A switched/new order invalidates this worker.
+                    let mut changed_snapshot = false;
                     if let Some(active_id) = self.active_id.as_deref() {
                         if let Some(item) = self.drafts.iter_mut()
                             .find(|item| item.id == active_id) {
                             item.analysis_raw = Some(self.raw_source.clone());
                             item.analysis_evidence = Some(analysis.recognition.clone());
                             item.client_match = Some(analysis.client_match.clone());
-                            self.queue_source_save();
+                            changed_snapshot = true;
                         }
+                    }
+                    if changed_snapshot {
+                        self.queue_source_save();
                     }
                     self.analysis = Some(analysis);
                     self.analysis_error = None;
