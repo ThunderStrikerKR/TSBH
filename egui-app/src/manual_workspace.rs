@@ -382,6 +382,9 @@ impl ManualWorkspace {
                     theme::MANUAL_SHEET_MIN_WIDTH+
                     theme::MANUAL_COLUMN_GAP
                 );
+                let content_height=(ui.available_height().min(work_area.height())
+                    -theme::ACTION_STANDARD_HEIGHT-theme::SPACE_24)
+                    .max(3.0*theme::MANUAL_TABLE_ROW_HEIGHT);
                 egui::ScrollArea::horizontal()
                     .id_salt("manual-columns-horizontal-scroll")
                     .auto_shrink([false,false])
@@ -389,8 +392,7 @@ impl ManualWorkspace {
                         outer.set_min_width(content_width);
                         outer.horizontal(|ui|{
                     let width=content_width;
-                    let height=(ui.available_height()
-                        -theme::ACTION_STANDARD_HEIGHT-theme::SPACE_24).max(200.0);
+                    let height=content_height;
                     let source_width=(width*theme::MANUAL_SOURCE_SHARE)
                         .max(theme::MANUAL_SOURCE_MIN_WIDTH)
                         .min((width-theme::MANUAL_SHEET_MIN_WIDTH
