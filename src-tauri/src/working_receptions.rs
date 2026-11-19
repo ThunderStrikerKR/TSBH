@@ -227,6 +227,24 @@ mod tests {
         conn
     }
     #[test]
+    fn bulk_autosave_cannot_erase_or_rewind_egui_working_receipt() {
+        let mut conn=db();
+        let order=json!({"id":"egui-test","receptionVersion":1,
+            "raw":"접수 원문","_eguiBridgeVersion":2});
+        conn.execute(
+            "INSERT INTO reception_working_orders(id,changed_at,payload)
+             VALUES('egui-test','now',?1)",
+            [order.to_string()]
+        ).unwrap();
+        assert!(replace(&mut conn,vec![]).unwrap_err().contains("다른 창"));
+        let mut stale=order.clone();
+        stale["_eguiBridgeVersion"]=json!(1);
+        assert!(replace(&mut conn,vec![stale]).unwrap_err().contains("다른 창"));
+        assert_eq!(load(&conn).unwrap(),vec![order.clone()]);
+        replace(&mut conn,vec![order.clone()]).unwrap();
+        assert_eq!(load(&conn).unwrap(),vec![order]);
+    }
+    #[test]
     fn unconfirmed_receptions_support_atomic_replacement() {
         let mut conn=db();
         let one=json!({"id":"a","receptionVersion":1,"raw":"접수 원문",
