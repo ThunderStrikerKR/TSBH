@@ -3,9 +3,9 @@
 //! Keep screen-specific hard-coded colors and geometry out of view code.
 
 use eframe::egui::{
-    self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Frame,
-    Response, RichText, Stroke, TextStyle, Ui, Vec2,
+    self, Color32, CornerRadius, Frame, Response, RichText, Stroke, Ui, Vec2,
 };
+use crate::typography;
 
 pub const CANVAS: Color32 = Color32::from_rgb(16, 16, 16);
 pub const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
@@ -38,16 +38,6 @@ pub const SECTION_HEADER_HEIGHT: f32 = 38.0;
 pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
-pub const FONT_BRAND: f32 = 24.0;
-pub const FONT_PAGE_HEADING: f32 = 20.0;
-pub const FONT_SECTION_HEADING: f32 = 16.0;
-pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
-pub const FONT_BODY: f32 = 14.0;
-pub const FONT_FIELD_LABEL: f32 = 13.0;
-pub const FONT_METADATA: f32 = 12.0;
-pub const FONT_MAIN_NAV: f32 = 16.0;
-pub const FONT_PRIMARY_ACTION: f32 = 14.0;
-pub const FONT_STANDARD_ACTION: f32 = 13.0;
 pub const PANEL_GAP: f32 = 6.0;
 // Splitter hit target stays 6pt; only the painted line is 1pt (2pt on hover).
 pub const DOCK_SPLITTER_LINE: f32 = 1.0;
@@ -96,42 +86,9 @@ pub fn install(ctx: &egui::Context) {
     style.spacing.item_spacing = Vec2::new(SPACING, SPACING);
     // Per-role horizontal padding is applied by action() below.
     style.spacing.button_padding = Vec2::new(SPACE_12, SPACE_8);
-    style.text_styles.insert(TextStyle::Heading, FontId::proportional(FONT_PAGE_HEADING));
-    style.text_styles.insert(TextStyle::Body, FontId::proportional(FONT_BODY));
-    style.text_styles.insert(TextStyle::Button, FontId::proportional(FONT_STANDARD_ACTION));
-    style.text_styles.insert(TextStyle::Small, FontId::proportional(FONT_METADATA));
     ctx.set_style(style);
 
-    // The default egui font does not cover Korean. Read an installed system
-    // font rather than committing or redistributing a proprietary font file.
-    let candidates = [
-        r"C:\Windows\Fonts\malgun.ttf",
-        r"C:\Windows\Fonts\malgunbd.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-    ];
-    if let Some((path, bytes)) = candidates.iter()
-        .find_map(|path| std::fs::read(path).ok().map(|bytes| (*path, bytes)))
-    {
-        let mut fonts = FontDefinitions::default();
-        fonts.font_data.insert(
-            "bando-system-korean".into(),
-            FontData::from_owned(bytes).into(),
-        );
-        // The proportional UI uses the installed Korean font for coherent
-        // Korean/Latin line metrics. Monospace retains its actual fixed-width
-        // font first, using Korean glyphs only as a fallback.
-        fonts.families.entry(FontFamily::Proportional).or_default()
-            .insert(0, "bando-system-korean".into());
-        fonts.families.entry(FontFamily::Monospace).or_default()
-            .push("bando-system-korean".into());
-        ctx.set_fonts(fonts);
-        eprintln!("[BANDO HUB] Korean UI font: {path}");
-    } else {
-        // A screenshot cannot be treated as typography-verified if the
-        // intended Korean font did not load. No UI popup is introduced.
-        eprintln!("[BANDO HUB] Korean UI font was not found; using egui defaults");
-    }
+
 }
 
 pub fn section_frame() -> Frame {
@@ -162,34 +119,6 @@ pub fn nested_frame() -> Frame {
         .inner_margin(NESTED_PADDING)
 }
 
-pub fn brand_heading(text: &str) -> RichText {
-    RichText::new(text).size(FONT_BRAND).strong().color(TEXT)
-}
-
-pub fn page_heading(text: &str) -> RichText {
-    RichText::new(text).size(FONT_PAGE_HEADING).strong().color(TEXT)
-}
-
-pub fn field_label(text: &str) -> RichText {
-    RichText::new(text).size(FONT_FIELD_LABEL).strong().color(SECONDARY)
-}
-
-pub fn section_heading(text: &str) -> RichText {
-    RichText::new(text).size(FONT_SECTION_HEADING).strong().color(TEXT)
-}
-
-pub fn subsection_heading(text: &str) -> RichText {
-    RichText::new(text).size(FONT_SUBSECTION_HEADING).strong().color(TEXT)
-}
-
-pub fn body(text: &str) -> RichText {
-    RichText::new(text).size(FONT_BODY).color(TEXT)
-}
-
-pub fn caption(text: &str) -> RichText {
-    RichText::new(text).size(FONT_METADATA).color(SECONDARY)
-}
-
 pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
     let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
         ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, Color32::from_rgb(238, 238, 238), BRIGHT_TEXT, Stroke::NONE),
@@ -201,9 +130,9 @@ pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Resp
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, Color32::from_rgb(41, 72, 92), TEXT, Stroke::NONE),
     };
     let font_size = match role {
-        ButtonRole::Navigation | ButtonRole::ActiveNavigation => FONT_MAIN_NAV,
-        ButtonRole::Primary => FONT_PRIMARY_ACTION,
-        _ => FONT_STANDARD_ACTION,
+        ButtonRole::Navigation | ButtonRole::ActiveNavigation => typography::FONT_MAIN_NAV,
+        ButtonRole::Primary => typography::FONT_PRIMARY_ACTION,
+        _ => typography::FONT_STANDARD_ACTION,
     };
     // Scoped spacing prevents one button role from changing the padding of
     // neighboring buttons, fields and navigation controls.
@@ -243,7 +172,7 @@ pub fn divider(ui: &mut Ui) {
 
 pub fn label_value(ui: &mut Ui, label: &str, value: &str) {
     ui.horizontal(|ui| {
-        ui.add_sized([FIELD_LABEL_WIDTH, INPUT_HEIGHT], egui::Label::new(field_label(label)));
-        ui.label(body(value));
+        ui.add_sized([FIELD_LABEL_WIDTH, INPUT_HEIGHT], egui::Label::new(typography::field_label(label)));
+        ui.label(typography::body(value));
     });
 }
