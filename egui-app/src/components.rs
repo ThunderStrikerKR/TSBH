@@ -74,30 +74,48 @@ pub fn soft_divider(ui: &mut Ui) {
 /// A 6pt dock separator owns its single visual boundary. Panels on either
 /// side do not paint individual borders, preventing doubled or rounded edges.
 pub fn docked_separator(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(
+    let (slot, _) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), theme::PANEL_GAP),
         Sense::hover(),
     );
-    paint_dock_splitter(ui, rect, false, false);
+    // Draw against the pane's fixed rectangle, not the variable cursor
+    // position left behind by differently sized section contents.
+    let bounds = ui.max_rect();
+    let full_width = Rect::from_min_max(
+        egui::pos2(bounds.left(), slot.top()),
+        egui::pos2(bounds.right(), slot.bottom()),
+    );
+    paint_dock_splitter(ui, full_width, false, false);
 }
 
-/// Paint only a 1pt line (2pt during hover/drag) inside the allocated
-/// 6pt hit target. `vertical = true` means a vertical dividing line.
+/// A single coordinate and pixel-snapping rule owns all vertical and
+/// horizontal dock lines. Visual thickness is snapped to physical pixels,
+/// while the full 6pt hit-area rectangle stays unchanged.
 pub fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     ui.painter().rect_filled(rect, 0.0, theme::CANVAS);
-    let thickness = if active {
+    let logical_thickness = if active {
         theme::DOCK_SPLITTER_HOVER_LINE
     } else {
         theme::DOCK_SPLITTER_LINE
     };
-    let size = if vertical {
-        Vec2::new(thickness, rect.height())
+    let scale = ui.ctx().pixels_per_point().max(1.0);
+    let line_px = (logical_thickness * scale).round().max(1.0);
+    let line_width = line_px / scale;
+    let painted = if vertical {
+        let x = ((rect.center().x - 0.5 * line_width) * scale).round() / scale;
+        Rect::from_min_size(
+            egui::pos2(x, rect.top()),
+            Vec2::new(line_width, rect.height()),
+        )
     } else {
-        Vec2::new(rect.width(), thickness)
+        let y = ((rect.center().y - 0.5 * line_width) * scale).round() / scale;
+        Rect::from_min_size(
+            egui::pos2(rect.left(), y),
+            Vec2::new(rect.width(), line_width),
+        )
     };
     ui.painter().rect_filled(
-        Rect::from_center_size(rect.center(), size),
-        0.0,
+        painted, 0.0,
         if active { theme::BORDER } else { theme::DIVIDER },
     );
 }
