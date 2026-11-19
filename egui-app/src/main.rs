@@ -1503,13 +1503,15 @@ impl BandoEgui {
                     ).clicked(){
                         next_mode=Some(kakao_dock::DockMode::Split);
                     }
-                    if theme::action(toolbar,"카카오톡 연결 해제",
-                        ButtonRole::Quiet,true
-                    ).on_hover_text("카카오톡 창을 원래 위치로 복원").clicked(){
-                        disconnect=true;
-                    }
+                    toolbar.with_layout(Layout::right_to_left(Align::Center),|right|{
+                        if theme::action(right,"카카오톡 연결 해제",
+                            ButtonRole::Quiet,true
+                        ).on_hover_text("카카오톡 창을 원래 위치로 복원").clicked(){
+                            disconnect=true;
+                        }
+                    });
                 });
-                pane.add_space(theme::SPACE_4);
+                components::soft_divider(pane);
                 // The Win32 surface must never obscure the three actions.
                 region=pane.available_rect_before_wrap();
                 pane.allocate_rect(region,Sense::hover());
