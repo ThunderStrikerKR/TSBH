@@ -11,8 +11,11 @@ fn field<'a>(value: &'a Value, key: &str) -> &'a str {
 }
 
 fn compact(input: &str) -> String {
-    input.chars().filter(|ch| !ch.is_whitespace())
-        .flat_map(char::to_lowercase).collect()
+    // Customer telephone numbers are stored with optional separators.
+    // The existing search contract expects 0109876 to find 010-9876....
+    input.chars().filter(|ch| {
+        !ch.is_whitespace() && !matches!(ch, '-' | '(' | ')' | '.')
+    }).flat_map(char::to_lowercase).collect()
 }
 
 pub fn search(state: &Value, payload: &Value) -> Value {
