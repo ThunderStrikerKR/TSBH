@@ -1,4 +1,4 @@
-# Targeted Windows compile: Rust workflow projections and selected/hovered cross-pane egui content.
+# Targeted Windows compile: React-parity full-width workflow cards and three-column shipment rows.
 name: Tauri native CLI executable compile check
 on:
   push:
