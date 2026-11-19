@@ -4,6 +4,7 @@
 //! No SQLite writes, confirmation, stage transition, or invented work groups.
 use crate::gateway::{BandoGateway, ReadOperation};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct ShipmentRow {
@@ -16,6 +17,7 @@ pub struct ShipmentRow {
     pub recipient: Value,
     pub freight: Option<i64>,
     pub collect: bool,
+    pub order_total: Option<i64>,
 }
 #[derive(Clone, Debug)]
 pub struct GroupRow {
@@ -75,6 +77,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
     let orders=field(&state,"orders");
     let all_shipments=field(workflow,"shipments");
     let mut groups=Vec::new();
+    let mut order_totals:HashMap<String,Option<i64>>=HashMap::new();
     for group in rows(field(workflow,"groups")).iter().filter(|g|active(g)){
         let group_id=text(group,"id");
         if group_id.is_empty(){continue;}
@@ -109,6 +112,17 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 .ok_or("Rust 업무 미리보기에 배송 금액이 없습니다.")?;
             let products=rows(field(recipient,"items")).iter()
                 .map(product_label).collect();
+            let order_id=text(order,"id").to_owned();
+            let order_total=if let Some(cached)=order_totals.get(&order_id){
+                *cached
+            }else{
+                let preview=gateway.execute(ReadOperation::PreviewOrder,json!({
+                    "state":&state,"orderId":order_id,
+                }))?;
+                let total=field(&preview,"total").as_i64();
+                order_totals.insert(order_id,total);
+                total
+            };
             display_shipments.push(ShipmentRow{
                 id:text(ship,"id").to_owned(),
                 order_id:text(ship,"orderId").to_owned(),
@@ -119,6 +133,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 recipient:recipient.clone(),
                 freight:field(field(native_ship,"totals"),"shipping").as_i64(),
                 collect:text(native_ship,"freightCode")=="020",
+                order_total,
             });
         }
         let vat_included=rows(field(native,"shipments")).iter()
