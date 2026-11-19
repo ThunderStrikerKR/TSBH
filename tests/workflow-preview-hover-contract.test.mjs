@@ -114,8 +114,8 @@ test("source and detail hover use the actual delayed controller", () => {
   const desk = source("src/OrderDesk.tsx");
   const props = source("src/orders/useOrderDesk.tsx");
   const linked = source("src/LinkedText.tsx");
-  assert.match(workspace, /beginLinkHoverLive[\s\S]*?setTimeout\([\s\S]*?, 100\)/);
-  assert.match(workspace, /clearLinkHoverLive[\s\S]*?setTimeout\([\s\S]*?, 150\)/);
+  assert.match(workspace, /beginLinkHoverLive[\s\S]*?setTimeout\([\s\S]*?, 200\)/);
+  assert.match(workspace, /clearLinkHoverLive[\s\S]*?setTimeout\([\s\S]*?, 250\)/);
   assert.match(desk, /beginHover: linkController\?\.beginHover/);
   assert.match(desk, /clearHover: linkController\?\.clearHover/);
   assert.match(props, /beginHover\?: \(key: string\) => void/);
