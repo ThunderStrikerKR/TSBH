@@ -45,10 +45,14 @@ pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 pub const PANEL_GAP: f32 = 6.0;
-// React HubShell Kakao slot: 1px border, 34px toolbar, 26px controls.
-pub const KAKAO_TOOLBAR_HEIGHT: f32 = 34.0;
-pub const KAKAO_CONTROL_HEIGHT: f32 = 26.0;
-pub const KAKAO_TOOLBAR_PAD_X: f32 = 6.0;
+// Kakao dock toolbar: one compact row (2pt vertical gap around 22pt controls).
+// Only its body rect is passed to the Win32 dock.
+pub const KAKAO_TOOLBAR_HEIGHT: f32 = 26.0;
+pub const KAKAO_CONTROL_HEIGHT: f32 = 22.0;
+pub const KAKAO_TOOLBAR_PAD_X: f32 = 4.0;
+pub const KAKAO_MENU_ICON_SIZE: f32 = 20.0;
+pub const KAKAO_ICON_YELLOW: Color32 = Color32::from_rgb(254,229,0);
+pub const KAKAO_ICON_INK: Color32 = Color32::from_rgb(40,35,36);
 // Splitter hit target stays 6pt; only the painted line is 1pt (2pt on hover).
 pub const DOCK_SPLITTER_LINE: f32 = 1.0;
 pub const DOCK_SPLITTER_HOVER_LINE: f32 = 2.0;
@@ -267,7 +271,10 @@ fn action_with_min_width(
         ButtonRole::ActiveKakaoControl
     );
     ui.scope(|ui| {
-        ui.spacing_mut().button_padding = Vec2::new(padding_x, 6.0);
+        let padding_y = if matches!(role,ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl) {
+            2.0
+        } else {6.0};
+        ui.spacing_mut().button_padding = Vec2::new(padding_x, padding_y);
         let button = egui::Button::new(
             typography::action_label(label, font_size, important, color)
         )
