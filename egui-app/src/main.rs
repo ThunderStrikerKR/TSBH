@@ -210,8 +210,8 @@ impl BandoEgui {
     ) {
         let width = ui.available_width();
         theme::section_frame().show(ui, |ui| {
-            ui.set_min_width((width - 20.0).max(60.0));
-            ui.set_min_height((minimum_height - 20.0).max(48.0));
+            ui.set_min_width((width - 2.0 * theme::SECTION_PADDING).max(60.0));
+            ui.set_min_height((minimum_height - 2.0 * theme::SECTION_PADDING).max(48.0));
             ui.horizontal(|ui| {
                 ui.label(theme::section_heading(title));
                 ui.with_layout(Layout::right_to_left(Align::Center), header_right);
