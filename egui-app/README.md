@@ -23,21 +23,21 @@ cargo run --manifest-path egui-app/Cargo.toml
 
 ## 2단계: 드래그 분할과 프레임리스 창
 
-- **가로 4열**: 기존 React 기본 비율 \`20 / 29 / 29 / 22\`, 각 열 독립 최소폭 \`200 / 250 / 250 / 420\`, 열 사이 6pt 드래그 핸들. 양쪽 이웃 열만 크기가 바뀌고 나머지 열은 폭을 유지한다.
+- **가로 4열**: 기존 React 기본 비율 `20 / 29 / 29 / 22`, 각 열 독립 최소폭 `200 / 250 / 250 / 420`, 열 사이 6pt 드래그 핸들. 양쪽 이웃 열만 크기가 바뀌고 나머지 열은 폭을 유지한다.
 - **세로 분할**: 발주원문/복사용 자동 메시지 사이에 6pt 드래그 핸들, 최소 높이 275/160, 더블클릭으로 50:50 초기화.
 - **리셋**: 가로 핸들 더블클릭은 4열 기본 비율 전체 복원, 세로 핸들 더블클릭은 원문/메시지 50:50 복원.
-- **저장 위치**: Windows \`%LOCALAPPDATA%\BANDO-HUB-egui-preview\layout.txt\` (그 외 \`~/.config/bando-hub-egui-preview/layout.txt\`). 실운영 SQLite/React 설정과 절대 공유하지 않는다.
+- **저장 위치**: Windows `%LOCALAPPDATA%\BANDO-HUB-egui-preview\layout.txt` (그 외 `~/.config/bando-hub-egui-preview/layout.txt`). 실운영 SQLite/React 설정과 절대 공유하지 않는다.
 - **작은 창**: 패널 최소 폭의 합을 유지하고 가로 스크롤로 접근한다. 본문 폰트를 임의 축소하지 않는다.
-- **기본 Windows 제목표시줄 숨김**: \`ViewportBuilder::with_decorations(false)\`. BANDO HUB 로고 글자 또는 프리뷰 표시를 드래그해 창 이동, 로고 더블클릭으로 최대화/복원. 상단에 최소화/최대화/닫기 버튼을 둔다.
+- **기본 Windows 제목표시줄 숨김**: `ViewportBuilder::with_decorations(false)`. BANDO HUB 로고 글자 또는 프리뷰 표시를 드래그해 창 이동, 로고 더블클릭으로 최대화/복원. 상단에 최소화/최대화/닫기 버튼을 둔다.
 - **창 가장자리 크기 조절**: 각 방향 및 모서리 6pt 영역에서 네이티브 resize 명령을 보낸다.
 
 ### 검증 상태
 
-GitHub \`main\`에는 소스 코드가 반영되었지만 이 환경에서 \`cargo check\`/Windows 실행, DPI 동작, 저장 복구, 실화면 캡처를 확인하지 못했다. **실사용 성공으로 판정하지 않는다.** 입력 버튼과 주문 업무는 여전히 비활성화된 별도 UI 프리뷰다.
+GitHub `main`에는 소스 코드가 반영되었지만 이 환경에서 `cargo check`/Windows 실행, DPI 동작, 저장 복구, 실화면 캡처를 확인하지 못했다. **실사용 성공으로 판정하지 않는다.** 입력 버튼과 주문 업무는 여전히 비활성화된 별도 UI 프리뷰다.
 
 ### 다음 확인 지점
 
-\`DEV_WINDOWS_EGUI.cmd\`를 실행하면 나타나는 별도 UI에서 창 이동·최대화·최소화·닫기, 가장자리 크기 조절, 4열 핸들, 원문/메시지 핸들, 더블클릭 초기화와 재실행 뒤 분할 비율 유지 여부를 확인한다.
+`DEV_WINDOWS_EGUI.cmd`를 실행하면 나타나는 별도 UI에서 창 이동·최대화·최소화·닫기, 가장자리 크기 조절, 4열 핸들, 원문/메시지 핸들, 더블클릭 초기화와 재실행 뒤 분할 비율 유지 여부를 확인한다.
 
 ## 현재 의도적으로 미구현
 
@@ -51,42 +51,59 @@ GitHub \`main\`에는 소스 코드가 반영되었지만 이 환경에서 \`car
 
 ## 3단계: 공통 업무 위젯 (2026-11-19)
 
-\`src/components.rs\`에 기존 React UI 계약을 기준으로 다음 공통 역할을 추가했다.
+`src/components.rs`에 기존 React UI 계약을 기준으로 다음 공통 역할을 추가했다.
 
-- \`FieldKind\` + \`field\` + \`labeled_field\`: Text, Telephone, Quantity, Money, Address 입력값 크기와 높이 및 공통 레이블
-- \`record_card\`: 주문 및 반복 업무 카드의 패널·반경·패딩 통일
-- \`table_header\` + \`table_row\`: 공통 13pt 글씨, 36pt 헤더와 42pt 행, 공통 구분선
-- \`status_dots\`: 활성/완료/주의/오류/원문 연결에 해당하는 색상 역할
-- \`summary_strip\`: 금액 오른쪽 정렬 및 배송/부가세 보조 정보
-- \`soft_divider\`: 내부 데이터 목록에만 사용되는 단일 얇은 구분선
+- `FieldKind` + `field` + `labeled_field`: Text, Telephone, Quantity, Money, Address 입력값 크기와 높이 및 공통 레이블
+- `record_card`: 주문 및 반복 업무 카드의 패널·반경·패딩 통일
+- `table_header` + `table_row`: 공통 13pt 글씨, 36pt 헤더와 42pt 행, 공통 구분선
+- `status_dots`: 활성/완료/주의/오류/원문 연결에 해당하는 색상 역할
+- `summary_strip`: 금액 오른쪽 정렬 및 배송/부가세 보조 정보
+- `soft_divider`: 내부 데이터 목록에만 사용되는 단일 얇은 구분선
 
 접수 UI 샘플에서 수취인 정보·상품 목록·주문 카드·요약 스트립에 연결했다. 샘플 편집 필드는 비활성이고 현재 데이터와 구별된다. 업무 알고리즘은 추가하지 않았다.
 
-동시에 \`layout.rs\`에서 여러 패널이 최소폭에 걸릴 때 남는 공간이 버려질 수 있었던 비율 계산 오류를 수정했다. \`theme.rs\`의 역할별 버튼 글씨 크기, 16pt 주요 섹션 내부 패딩도 기존 계약에 맞춰 정리했다.
+동시에 `layout.rs`에서 여러 패널이 최소폭에 걸릴 때 남는 공간이 버려질 수 있었던 비율 계산 오류를 수정했다. `theme.rs`의 역할별 버튼 글씨 크기, 16pt 주요 섹션 내부 패딩도 기존 계약에 맞춰 정리했다.
 
-**검증 구분**: GitHub 코드 반영 및 소스 참조 확인만 완료. 실제 Windows \`cargo check\`, 컴파일, 창 이동·드래그·DPI·스크린샷 시각 비교는 아직 완료되지 않았다. 어떤 UI도 운영 DB에 연결되지 않았다.
+**검증 구분**: GitHub 코드 반영 및 소스 참조 확인만 완료. 실제 Windows `cargo check`, 컴파일, 창 이동·드래그·DPI·스크린샷 시각 비교는 아직 완료되지 않았다. 어떤 UI도 운영 DB에 연결되지 않았다.
 
 
 ## 4단계: React 밀도 미세 조정 + 실제 Rust 인식 엔진의 초기 연결
 
 - 공통 다크 테마 역할은 유지하면서 **섹션 안쪽 여백 10pt**, **카드 여백 10pt**, **공통 입력창 높이 34pt**, **레이블 폭 68pt**로 정리했다. 섹션 제목의 높이, 제목 아래 구분선, 입력창 간 기본 간격은 공통 토큰을 사용한다.
-- 직접 입력 버튼으로 원문 편집을 열고 발주서 텍스트를 입력한 뒤 **원문 분석**을 누르면, \`egui-app/src/native_engine.rs\`가 기존 \`src-tauri/src/business_core/recognition/mod.rs\`의 **같은 Rust 인식 구현을 그대로 재사용**한다. TypeScript 분석이나 흉내 낸 제품 인식 로직은 없다.
+- 직접 입력 버튼으로 원문 편집을 열고 발주서 텍스트를 입력한 뒤 **원문 분석**을 누르면, `egui-app/src/reception_service.rs`가 `BandoGateway`를 통해 기존 Rust 인식 구현을 사용한다. 로컬 Gateway에서는 원본 `src-tauri` 업무 코드를 그대로 재사용한다. TypeScript 분석이나 흉내 낸 제품 인식 로직은 없다.
 - 분석은 백그라운드 Rust 스레드에서 실행하고 메인 UI에 결과를 전달한다. 원문 수정·새 주문 시 이전 분석 결과를 무효화하며, 응답 순서가 뒤바뀌면 오래된 결과를 화면에 반영하지 않는다. 중단된 작업은 계속 로딩되는 대신 오류를 표시한다.
 - 인식된 배송 건(수취인), 이름·주소·전화·요청 메시지, 인식된 상품·수량과 Rust가 반환한 검토 후보 수를 표시한다. 여러 수취인 사이를 전환하면 품목 목록도 같은 프레임에서 전환한다.
-- 이 단계의 카탈로그는 **배포 소스에 포함된 기본 \`state-seed.json\`** 이다. 실제 운영 DB의 최근 상품·거래처 데이터가 아니며, 이 점을 안내한다. 카탈로그 JSON 파싱 결과는 한 번만 캐시한다.
+- 이 단계의 카탈로그는 **배포 소스에 포함된 기본 `state-seed.json`** 이다. 실제 운영 DB의 최근 상품·거래처 데이터가 아니며, 이 점을 안내한다. 카탈로그 JSON 파싱 결과는 한 번만 캐시한다.
 - UI 샘플 모드는 가상 자료이며, 실제 원문 입력 시 자동 해제한다. 실제 주문 금액·운임·부가세·상태를 UI가 임의 계산하거나 표시하지 않는다.
 
 **기능 제한:** 실제 Rust 업무 엔진 연결 중 **원문 인식만** 수행했다. 기존 Rust 상품·거래처 변경, 단가, 운임, 작업 단계, 메시지, 이력·결산, SQLite 영속화, 카카오톡 창 연결은 아직 이 egui 바이너리의 실사용 경로에 연결되지 않았다. 전환이 검증되기 전까지 기존 React+Tauri 운영판을 삭제하지 않는다.
 
-**검증 상태:** GitHub 소스 변경은 확인했다. 로컬 Windows에서의 \`cargo check\`, \`cargo run\`, DPI·분할선·프레임리스 창·실제 발주원문 동작을 이 환경에서 실행 검증한 것은 아니므로 성공을 주장하지 않는다. 과거의 빌드 실패 화면만으로 신규 커밋의 빌드 성공을 추정하지 않는다.
+**검증 상태:** GitHub 소스 변경은 확인했다. 로컬 Windows에서의 `cargo check`, `cargo run`, DPI·분할선·프레임리스 창·실제 발주원문 동작을 이 환경에서 실행 검증한 것은 아니므로 성공을 주장하지 않는다. 과거의 빌드 실패 화면만으로 신규 커밋의 빌드 성공을 추정하지 않는다.
 
 
 ## 5단계: 기존 Rust 가격·도서산간 규칙의 읽기 전용 연결
 
-- \`native_engine.rs\`는 기존 \`src-tauri/src/business_core/rules/mod.rs\`를 경로로 직접 참조한다. **TypeScript 계산이나 유사 규칙 재작성 없이** \`resolve_unit_price\`와 \`detect_remote_delivery_area\`를 호출한다.
+- `reception_service.rs`는 Gateway 인터페이스만 참조한다. **LocalGateway**가 기존 `src-tauri/src/business_core/rules/mod.rs`를 재사용한다. **TypeScript 계산이나 유사 규칙 재작성 없이** `resolve_unit_price`와 `detect_remote_delivery_area`를 호출한다.
 - 가격: 분석에서 등록 상품 ID와 옵션 ID가 모두 확정된 항목만 **내장 상품 시드의 소매 등급 참고 단가**를 표시한다. 상품 시드 360개, 거래처 시드 0개. 내부적으로 Rust 규칙이 요구하는 비영구 가상 소매 등급 ID로 조회하지만, 주문 거래처로 사용하지 않고 결제 금액에 포함하지 않는다. 값이 없으면 미등록/확인 필요로 남긴다. **도매·반도매·특수 단가, VAT, 청구금액은 계산하지 않는다.**
 - 배송지: 인식된 주소를 Rust 도서산간 판정 규칙에 전달한다. 자동 체크 권장 / 직원 검토 필요 / 자동 판정 없음으로 표시한다. '자동 판정 없음'은 일반 지역 확정이 아니며, 실제 운임 배수나 수취인 저장 상태를 변경하지 않는다.
 - 두 참고 결과는 기존 백그라운드 인식 작업에서 한 번 계산하고 수취인·상품 단위로 보관한다. UI 프레임마다 규칙을 재실행하지 않는다.
-- \`chrono\`·\`unicode-normalization\`은 재사용하는 순수 Rust 규칙 모듈의 기존 의존성이다. Tauri 및 SQLite 커맨드 의존성을 egui 프리뷰에 포함하지 않았다.
+- `chrono`·`unicode-normalization`은 재사용하는 순수 Rust 규칙 모듈의 기존 의존성이다. Tauri 및 SQLite 커맨드 의존성을 egui 프리뷰에 포함하지 않았다.
 
 **검증 한계:** 현재 도구 환경에 Rust compiler/Cargo가 없어 새 소스를 실제 Windows에서 컴파일·시각 검증하지 못했다. 이 변경은 GitHub 코드 반영 상태이며, 빌드 통과 또는 운영 투입 완료 판정이 아니다. 가격·운임의 실사용 계산은 거래처/할인/운임 저장 데이터를 갖춘 **독립 테스트 DB를 연결한 이후** 진행해야 한다. React/Tauri 운영용 파일과 기존 복구 브랜치는 유지한다.
+
+## 6단계: 공통 BandoGateway 호출 계층 (2026-11-19)
+
+기존 egui -> native_engine -> Rust 알고리즘 직접 호출을 **egui UI -> reception_service -> BandoGateway -> LocalGateway 또는 HttpGateway**로 바꿨다.
+
+- `src/main.rs`: Gateway 인스턴스 생성·주입, 백그라운드 분석 결과만 수신. HTTP/SQL/Rust 비즈니스 모듈 직접 참조 없음
+- `src/reception_service.rs`: 인식·수취인·가격 참고·도서산간 참고 결과 조합. 비즈니스 판단을 재작성하지 않음
+- `src/gateway.rs`: 공통 trait과 명시적으로 제한된 읽기 전용 operation, 기존 Rust recognition/rules를 사용하는 LocalGateway
+- `src/http_gateway.rs`: **명시적 선택 시에만** Bearer 인증된 HTTPS JSON API 호출. 서버는 아직 구축하지 않았음
+- `API-CONTRACT.md`: HTTP 요청·응답·보안·서버 구현 조건 명시
+- 카탈로그 조회는 상품·별칭·브랜드로 제한한다. 주문 내역·거래처 개인정보 전체를 첫 조회에 포함하지 않는다.
+
+실행 환경변수 미설정이면 기본값은 **로컬 Rust + 내장 상품 시드**이고 서버 통신은 발생하지 않는다. `BANDO_HUB_GATEWAY=http`를 선택한 경우에만 `BANDO_HUB_API_BASE_URL`과 `BANDO_HUB_API_TOKEN`이 필요하다. 서버 연결 오류가 생겨도 **암묵적으로 로컬 결과로 대체하지 않는다.**
+
+기존 React/Tauri/실운영 SQLite의 변경은 없으며, egui 바이너리에는 아직 주문 저장·승인·거래처 권한 관리가 없다. 서버의 실제 인증·라우터·거래처/주문 동기화 구현도 없다.
+
+**빌드 상태:** GitHub 소스 구조 및 호출 참조만 확인했다. 현재 도구 환경에 Rust compiler/Cargo가 없어 Windows `cargo check`나 실제 UI 동작을 확인했다고 주장하지 않는다. 기존 전체 회귀 테스트를 새로 실행하지 않았다.
