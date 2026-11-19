@@ -23,21 +23,7 @@ fn ids<'a>(list:impl Iterator<Item=&'a Value>)->Value{
     json!(list.map(|p|field(p,"id").to_owned()).collect::<Vec<_>>())
 }
 fn client_search(state:&Value,payload:&Value)->Value{
-    let clients=items(state,"clients");
-    let query=no_whitespace(field(payload,"query"));
-    let raw=field(payload,"raw");
-    let matches=clients.iter().filter(|c|{
-        field(c,"deletedAt").is_empty() && !query.is_empty() &&
-        ["name","displayName","phone","mobile","address","shortNames","identifiers"]
-            .iter().any(|key|no_whitespace(field(c,key)).contains(&query))
-    });
-    let suggested=clients.iter().filter(|c|{
-        field(c,"deletedAt").is_empty()&&["name","displayName"].iter().any(|key|{
-            let term=field(c,key).trim();
-            term.encode_utf16().count()>=2 && raw.contains(term)
-        })
-    });
-    json!({"ids":ids(matches),"suggestedIds":ids(suggested)})
+    super::client_search::search(state,payload)
 }
 fn cats_with_roots(state:&Value)->Vec<Value>{
     let mut cats=items(state,"categories").to_vec();
