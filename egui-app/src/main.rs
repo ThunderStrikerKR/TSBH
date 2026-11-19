@@ -2944,6 +2944,19 @@ impl eframe::App for BandoEgui {
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_source_analysis();
+        if self.settings_view.as_mut().is_some_and(|view|view.take_restored()){
+            // A restored operational DB invalidates every prior projected
+            // price/client/order snapshot. Never keep stale native matches.
+            self.workflow_snapshot=None;
+            self.workflow_last_fetch=None;
+            self.workflow_ui.selection=None;
+            self.workflow_ui.stop_preview();
+            self.client_manager=None;
+            self.client_chooser=None;
+            self.working_sync=None;
+            self.client_change=None;
+            self.clear_source_analysis();
+        }
         self.poll_workflow_board(ctx);
         self.poll_client_change(ctx);
         self.poll_working_sync(ctx);
@@ -2995,11 +3008,22 @@ impl eframe::App for BandoEgui {
             self.show_manual_workspace(ctx,work_area);
         } else if self.page==Page::Settings {
             if let Some(settings)=self.settings_view.as_mut(){
-                settings.show_tab_confirmation(
-                    ctx,work_area,Arc::clone(&self.gateway)
-                );
+                if settings.has_tab_confirmation(){
+                    settings.show_tab_confirmation(
+                        ctx,work_area,Arc::clone(&self.gateway)
+                    );
+                }else if settings.has_data_modal(){
+                    settings.show_data_modals(
+                        ctx,work_area,Arc::clone(&self.gateway)
+                    );
+                }
             }
-            self.show_settings_leave_guard(ctx,work_area);
+            // Only one settings confirmation can be active at a time.
+            if !self.settings_view.as_ref()
+                .is_some_and(|settings|settings.has_tab_confirmation() ||
+                    settings.has_data_modal()){
+                self.show_settings_leave_guard(ctx,work_area);
+            }
         } else if self.page==Page::Clients {
             if let Some(manager)=self.client_manager.as_mut() {
                 if manager.has_modal() {
