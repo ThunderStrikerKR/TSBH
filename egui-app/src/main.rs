@@ -1706,6 +1706,7 @@ impl BandoEgui {
                     }
                 }
             } else {
+                self.source_hover=None;
                 // Narrow panes may need a stacked button row. Scroll ONLY the
                 // intake instructions, never the source/message divider.
                 let intake_height = components::docked_section_body_height(height)
