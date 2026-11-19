@@ -99,6 +99,15 @@ pub trait BandoGateway: Send + Sync {
         -> Result<Value,String> {
         Err("이 연결은 거래처 변경 저장을 지원하지 않습니다.".into())
     }
+    /// Native settings are separate from the order editor. The local adapter
+    /// either persists in the isolated egui DB or explicitly delegates to
+    /// Tauri's existing settings_patch transaction. HTTP is never fallback.
+    fn load_settings(&self)->Result<Value,String>{
+        Err("이 연결은 설정 조회를 지원하지 않습니다.".into())
+    }
+    fn patch_settings(&self,_changes:Value,_expected:Value)->Result<Value,String>{
+        Err("이 연결은 설정 저장을 지원하지 않습니다.".into())
+    }
     /// Full v2 business snapshot for native rules only, from an explicitly
     /// configured read-only operational DB. This must never mutate SQLite.
     fn load_business_state(&self) -> Result<Value, String> {
@@ -166,6 +175,12 @@ impl BandoGateway for LocalGateway {
     fn mutate_client_master(&self,revision:u64,action:&str,client:Value)
         -> Result<Value,String> {
         crate::client_master::mutate(revision,action,client)
+    }
+    fn load_settings(&self)->Result<Value,String>{
+        crate::settings_store::load()
+    }
+    fn patch_settings(&self,changes:Value,expected:Value)->Result<Value,String>{
+        crate::settings_store::patch(changes,expected)
     }
     fn load_business_state(&self) -> Result<Value, String> {
         crate::business_state::load()
