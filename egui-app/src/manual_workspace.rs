@@ -327,7 +327,7 @@ impl ManualWorkspace {
                                 }else{ButtonRole::Quiet},!busy).clicked() {
                                     if assigned {
                                         chosen=Some(("release_manual_block".into(),json!({
-                                            "id":id,"clear":false
+                                            "id":id,"clear":true
                                         })));
                                     }else{
                                         let recipient=rows.get(self.selected_recipient);
