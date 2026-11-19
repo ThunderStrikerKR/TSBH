@@ -154,6 +154,19 @@ pub fn key(recipient:&str,target:&str,field:&str)->LinkKey {
     LinkKey{recipient_id:recipient.into(),target_id:target.into(),field:field.into()}
 }
 
+/// Paint-only feedback on the detail field; it never changes layout,
+/// capture targets, recipient ownership or input focus.
+pub fn paint_active(ui:&egui::Ui, response:&egui::Response,
+                    key:&LinkKey, active:Option<&LinkKey>) {
+    if active.is_some_and(|selection|same_target(selection,key)) {
+        ui.painter().rect_stroke(
+            response.rect,3.0,
+            egui::Stroke::new(1.5,Color32::from_rgb(112,180,255)),
+            egui::StrokeKind::Outside,
+        );
+    }
+}
+
 fn same_target(left:&LinkKey,right:&LinkKey)->bool {
     left.recipient_id==right.recipient_id &&
     left.target_id==right.target_id && left.field==right.field
