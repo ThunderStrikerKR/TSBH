@@ -3,25 +3,26 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const read = p => readFileSync(new URL("../" + p, import.meta.url), "utf8");
 
-test("factory history and notification both use native review and conflict projection", () => {
+test("factory history alone uses native review and conflict projection", () => {
   const history = read("src/FactoryReplyHistory.tsx");
   const notices = read("src/FactoryNotifications.tsx");
   const app = read("src/App.tsx");
-  assert.match(app, /"rules", "factory_reply_review_statuses"/);
-  assert.doesNotMatch(app, /replyNeedsReview\(/);
-  // Historical replies are not equivalent to pending reviews during async load.
-  assert.doesNotMatch(app, /state\\.factoryReplies\\?\\.length \\?\\? 0/);
-  assert.match(app, /: 0/);
+  // Global alerts are critical-only. The factory reply history is the sole
+  // approval surface and preserves the Rust read snapshot identity.
+  assert.match(app, /priority: "critical"/);
+  assert.doesNotMatch(app, /"rules", "factory_reply_review_statuses"|replyNeedsReview\(/);
   const native = read("src/native-factory-conflict-review.ts");
   const rules = read("src-tauri/src/business_core/rules/factory_reply.rs");
-  assert.match(history,/factory_reply_review_statuses/);
+  assert.match(history,/"rules", "factory_reply_review_statuses"/);
+  assert.match(history,/nativeReview\?\.source === reviewSource/);
   assert.match(history,/nativeFactoryConflictConfirmation\(state, id, row\)/);
-  assert.match(notices,/nativeFactoryConflictConfirmation\(state, record.id, row.row\)/);
+  assert.match(history,/approveFactoryConflict\(id, row, state\.revision \?\? 0\)/);
+  assert.match(notices,/isActionRequiredNotification/);
+  assert.doesNotMatch(notices,/factory_reply_review_statuses|nativeFactoryConflictConfirmation/);
   assert.match(native,/"rules", "factory_conflict_confirmation"/);
   assert.match(rules,/fn resolved_row\(state:&Value,record:&Value,row:&Value\)/);
   assert.doesNotMatch(history,/replyNeedsReview\(/);
   assert.doesNotMatch(history,/factoryConflictConfirmation\(/);
-  assert.doesNotMatch(notices,/(?<!native)factoryConflictConfirmation\(/);
   assert.match(history,/statuses\?\.\[r.id\]\?\.needsReview === false \? "반영 완료" : "확인 중"/);
 });
 
