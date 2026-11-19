@@ -19,6 +19,7 @@ pub const FONT_BRAND: f32 = 28.0;
 /// Compensate in this one typography token without moving the header row.
 pub const BRAND_OPTICAL_CENTER_Y: f32 = 5.0;
 pub const FONT_PAGE_HEADING: f32 = 20.0;
+pub const FONT_MODAL_TITLE: f32 = 18.0;
 pub const FONT_SECTION_HEADING: f32 = 16.0;
 pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
 pub const FONT_BODY: f32 = 14.0;
@@ -54,6 +55,7 @@ struct TypeSpec {
 enum Role {
     Brand,
     Page,
+    ModalTitle,
     Navigation,
     NavigationActive,
     Section,
@@ -76,6 +78,10 @@ fn spec(role: Role) -> TypeSpec {
         },
         Role::Page => TypeSpec {
             size: FONT_PAGE_HEADING, line: 28.0, tracking: -0.30,
+            color: TEXT, weight: Weight::Emphasis,
+        },
+        Role::ModalTitle => TypeSpec {
+            size: FONT_MODAL_TITLE, line: 24.0, tracking: -0.10,
             color: TEXT, weight: Weight::Emphasis,
         },
         Role::Navigation => TypeSpec {
@@ -170,6 +176,7 @@ pub fn brand_galley(ui: &egui::Ui, text: &str) -> std::sync::Arc<egui::Galley> {
 }
 
 pub fn page_heading(text: &str) -> RichText { render(text, Role::Page) }
+pub fn modal_title(text: &str) -> RichText { render(text, Role::ModalTitle) }
 pub fn section_heading(text: &str) -> RichText { render(text, Role::Section) }
 pub fn subsection_heading(text: &str) -> RichText { render(text, Role::Subsection) }
 pub fn body(text: &str) -> RichText { render(text, Role::Body) }
