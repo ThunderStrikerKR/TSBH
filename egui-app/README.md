@@ -41,7 +41,7 @@ GitHub `main`에는 소스 코드가 반영되었지만 이 환경에서 `cargo 
 
 ## 현재 의도적으로 미구현
 
-- React/Tauri 교체, Rust 업무 엔진 IPC와 SQLite 연결, 데이터 저장, 원문 파싱·하이라이트, 카카오톡 외부 Windows 창 연동
+- React/Tauri 교체, 운영 주문 저장·승인·이력 결산, 원문 연결 하이라이트, 카카오톡 외부 Windows 창 연동. egui 격리 SQLite에 원문 텍스트만 자동저장하며 운영 DB와 연동하지 않음
 - 중앙 2열을 포함한 가로/세로 핸들 구현은 2단계 소스에 반영. 주문 카드 실사용 편집, 나머지 7개 화면의 전체 기능은 미구현
 - Windows 실제 DPI와 색·글자 높이 대조
 
@@ -107,3 +107,14 @@ GitHub `main`에는 소스 코드가 반영되었지만 이 환경에서 `cargo 
 기존 React/Tauri/실운영 SQLite의 변경은 없으며, egui 바이너리에는 아직 주문 저장·승인·거래처 권한 관리가 없다. 서버의 실제 인증·라우터·거래처/주문 동기화 구현도 없다.
 
 **빌드 상태:** GitHub 소스 구조 및 호출 참조만 확인했다. 현재 도구 환경에 Rust compiler/Cargo가 없어 Windows `cargo check`나 실제 UI 동작을 확인했다고 주장하지 않는다. 기존 전체 회귀 테스트를 새로 실행하지 않았다.
+
+## 7단계: 격리 SQLite + 편집 원문 자동저장
+
+- 로컬 실행 시 `LocalGateway`가 `PreviewStore::initialize()`로 **전용 SQLite**를 만든다. Windows 경로: `%LOCALAPPDATA%\\BANDO-HUB-egui-preview\\egui-preview.sqlite3`. SQLite WAL, `preview_meta` 식별자 확인, 읽기 전용 카탈로그 시드가 있다.
+- 파일이 이미 있는데 PreviewStore의 식별자가 아니면 **재설정·덮어쓰기·운영 DB 자동 가져오기 없이 오류 종료**한다.
+- **카탈로그:** `catalog_snapshot`에 빌드 내장 상품·별칭·브랜드가 저장된다. 현재 egui가 운영 DB의 최신 재고/거래처를 읽는 것은 아니다. 서버 모드에서는 `GET /api/v1/catalog`을 대신 사용하도록 인터페이스가 분리돼 있다.
+- **원문:** `working_source`에 프리뷰 편집기의 원문 텍스트와 revision을 저장한다. 최초 실행에는 빈 값, 다음 실행에는 저장된 원문을 복원한다. 별도 작업 스레드에서 180ms debounce, 최신 내용만 쓰기, 중복 실행 충돌 시 revision 검사, 종료 시 대기 저장 마무리.
+- **안전:** 위 테이블은 접수 중인 실제 주문·배송·결제 상태와 무관하다. 실제 반도허브의 `reception_working_orders`, `app_state`, `core_*` 등을 직접 가져오거나 수정하지 않는다. **'새 주문'은 여러 주문을 보존할 저장 구조가 만들어지기 전까지 비활성**으로 두어 기존 원문을 실수로 지우지 않는다.
+- `BandoGateway`의 `load_working_source`와 `save_working_source`에 동일한 revision 계약을 만들고 `HttpGateway`에도 `GET/PUT /api/v1/working-source` 클라이언트를 추가했다. **서버 라우트 자체는 아직 구현되지 않았다.**
+
+**검증 상태:** GitHub 소스 반영/정적 호출 확인만 수행했다. Rust toolchain이 없는 실행 환경이므로 Windows `cargo check` 성공이나 DB 생성·재시작 복원의 실제 동작은 아직 확인되지 않았다. 운영용 React·Tauri 파일과 원본 백업 브랜치는 그대로 유지한다.
