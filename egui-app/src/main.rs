@@ -2301,6 +2301,94 @@ impl BandoEgui {
             ),
         );
 
+        if let Some((group,ship))=self.visible_workflow_group(){
+            // The same preallocated review/recipient/items rectangles are
+            // used for real workflow rows. No source replacement, false
+            // editing actions or section boundary changes on hover.
+            ui.scope_builder(
+                UiBuilder::new().id_salt("native-workflow-review")
+                    .max_rect(review_rect).layout(Layout::top_down(Align::Min)),
+                |pane|{
+                    pane.set_clip_rect(review_rect);
+                    pane.set_width(review_rect.width());
+                    pane.set_height(review_rect.height());
+                    Self::section(pane,"확인할 내용",review_height,|ui|{
+                        egui::ScrollArea::vertical()
+                            .max_height(components::docked_section_body_height(review_height))
+                            .id_salt("native-workflow-issues")
+                            .show(ui,|issues|{
+                                for issue in &group.issues{
+                                    issues.label(typography::status(issue,theme::SELECTED_ORDER));
+                                }
+                            });
+                    });
+                }
+            );
+            components::paint_dock_splitter(ui,first_sep,false,false);
+            ui.scope_builder(
+                UiBuilder::new().id_salt("native-workflow-recipient")
+                    .max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
+                |pane|{
+                    pane.set_clip_rect(recipient_rect);
+                    pane.set_width(recipient_rect.width());
+                    pane.set_height(recipient_rect.height());
+                    Self::section(pane,"수취인별 주문 정보",recipient_height,|ui|{
+                        egui::ScrollArea::vertical()
+                            .max_height(components::docked_section_body_height(recipient_height))
+                            .id_salt("native-workflow-recipient-readonly")
+                            .show(ui,|contents|{
+                                for (label,field) in [
+                                    ("이름","name"),("주소","address"),
+                                    ("휴대전화","mobile"),("전화","phone"),
+                                    ("요청 메시지","note")
+                                ]{
+                                    let value=reception_service::text(&ship.recipient,field);
+                                    if value.is_empty() && field!="name"{continue;}
+                                    contents.horizontal(|line|{
+                                        line.label(typography::field_label(label));
+                                        line.label(typography::body(value));
+                                    });
+                                }
+                            });
+                    });
+                }
+            );
+            components::paint_dock_splitter(ui,second_sep,false,false);
+            ui.scope_builder(
+                UiBuilder::new().id_salt("native-workflow-items")
+                    .max_rect(bottom_rect).layout(Layout::top_down(Align::Min)),
+                |pane|{
+                    pane.set_clip_rect(bottom_rect);
+                    pane.set_width(bottom_rect.width());
+                    pane.set_height(bottom_rect.height());
+                    Self::section(pane,"품목 및 운임",bottom_rect.height(),|ui|{
+                        let content_height=(components::docked_section_body_height(
+                            bottom_rect.height())-theme::SUMMARY_STRIP_HEIGHT).max(0.0);
+                        egui::ScrollArea::vertical()
+                            .id_salt("native-workflow-products")
+                            .max_height(content_height)
+                            .show(ui,|contents|{
+                                for product in &ship.products{
+                                    contents.label(typography::body(product));
+                                    components::soft_divider(contents);
+                                }
+                                contents.horizontal(|contents|{
+                                    contents.label(typography::field_label("운임"));
+                                    let display=if ship.collect{"착불".to_owned()}
+                                        else{ship.freight.map(components::display_won)
+                                            .unwrap_or_else(||"—".into())};
+                                    contents.label(typography::quantity(&display));
+                                });
+                            });
+                        let amount=group.total.map(components::display_won)
+                            .unwrap_or_else(||"—".into());
+                        components::summary_strip(ui,"총 주문",&amount,"");
+                    });
+                }
+            );
+            return;
+        }
+
         let mut client_choice: Option<String> = None;
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
         let mut sync_clicked=false;
