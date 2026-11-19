@@ -3,7 +3,7 @@
 //! Keep screen-specific hard-coded colors and geometry out of view code.
 
 use eframe::egui::{
-    self, Color32, CornerRadius, Frame, Response, RichText, Stroke, Ui, Vec2,
+    self, Color32, CornerRadius, Frame, Response, Stroke, Ui, Vec2,
 };
 use crate::typography;
 
@@ -87,8 +87,6 @@ pub fn install(ctx: &egui::Context) {
     // Per-role horizontal padding is applied by action() below.
     style.spacing.button_padding = Vec2::new(SPACE_12, SPACE_8);
     ctx.set_style(style);
-
-
 }
 
 pub fn section_frame() -> Frame {
@@ -146,9 +144,16 @@ pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Resp
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => 5,
         _ => CONTROL_RADIUS,
     };
+    let important = matches!(
+        role,
+        ButtonRole::Primary | ButtonRole::Emphasized |
+        ButtonRole::Danger | ButtonRole::ActiveNavigation
+    );
     ui.scope(|ui| {
         ui.spacing_mut().button_padding = Vec2::new(padding_x, 6.0);
-        let button = egui::Button::new(RichText::new(label).size(font_size).color(color))
+        let button = egui::Button::new(
+            typography::action_label(label, font_size, important, color)
+        )
             .fill(fill)
             .stroke(stroke)
             .corner_radius(CornerRadius::same(radius))
