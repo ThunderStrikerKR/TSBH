@@ -6,7 +6,7 @@
 use std::{sync::{Arc,mpsc::{self,Receiver}}, thread};
 use eframe::egui::{self, Context};
 use serde_json::{json,Value};
-use crate::{gateway::{BandoGateway,ReadOperation}, theme::{self,ButtonRole}, typography};
+use crate::{gateway::{BandoGateway,ReadOperation}, theme::{self,ButtonRole}, typography, components};
 
 pub enum Choice {
     Selected(String),
@@ -135,17 +135,15 @@ impl ClientChooser {
     }
 
     pub fn show(&mut self, ctx:&Context, gateway:Arc<dyn BandoGateway>,
-                current_id:Option<&str>) -> Option<Choice> {
+                current_id:Option<&str>, work_area:egui::Rect) -> Option<Choice> {
         self.poll(Arc::clone(&gateway),ctx);
         let mut is_open=true;
         let mut chosen:Option<String>=None;
-        egui::Window::new("거래처 변경")
-            .id(egui::Id::new("egui-reception-client-chooser"))
+        components::modal_window("거래처 변경","egui-reception-client-chooser",work_area)
             .open(&mut is_open)
-            .collapsible(false)
             .resizable(true)
-            .default_width(460.0)
-            .min_width(340.0)
+            .default_width(460.0_f32.min(work_area.width()))
+            .min_width(340.0_f32.min(work_area.width()))
             .show(ctx,|ui| {
                 let currently=self.clients.iter()
                     .find(|c|Some(text(c,"id"))==current_id)
@@ -173,7 +171,7 @@ impl ClientChooser {
                     ui.label(typography::caption(&format!("{}개 거래처",ids.len())));
                     egui::ScrollArea::vertical()
                         .id_salt("egui-all-clients-scroll")
-                        .max_height(390.0)
+                        .max_height((work_area.height()-180.0).max(60.0).min(390.0))
                         .show(ui,|ui|{
                             for id in ids {
                                 if let Some(row)=self.clients.iter().find(|c|text(c,"id")==id) {
