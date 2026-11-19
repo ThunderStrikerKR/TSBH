@@ -1249,13 +1249,57 @@ impl BandoEgui {
             }
         }, |ui| {
             if self.source_editing || !self.raw_source.is_empty() {
-                // The source editor receives only the space left after this
-                // section's title, divider, gaps and padding. The old
-                // .max(120.0) could force a larger control than its pane.
-                // Longer originals scroll INSIDE this fixed viewport instead
-                // of enlarging the source section into automatic messages.
-                let editor_height = components::docked_section_body_height(height)
+                // The approved React source pane reserves an 82pt dealer
+                // band below the title. Its geometry must be allocated BEFORE
+                // the editor, so dealer information cannot overlap the raw
+                // document or push the fixed source/message splitter.
+                let available_body = components::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
+                let client_band_height = if !self.raw_source.trim().is_empty() {
+                    available_body.min(82.0)
+                } else { 0.0 };
+                if client_band_height > 0.0 {
+                    let (band_rect, _) = ui.allocate_exact_size(
+                        Vec2::new(ui.available_width(), client_band_height),
+                        Sense::hover(),
+                    );
+                    let card_rect = band_rect.shrink2(egui::vec2(0.0, 6.0));
+                    ui.painter().rect(
+                        card_rect,
+                        theme::CONTROL_RADIUS as f32,
+                        theme::INPUT,
+                        Stroke::new(1.0, theme::BORDER),
+                        egui::StrokeKind::Inside,
+                    );
+                    let client_name = self.active_id.as_deref()
+                        .and_then(|id| self.drafts.iter().find(|item| item.id == id))
+                        .and_then(|item| item.client_id.as_deref())
+                        .and_then(|id| self.analysis.as_ref().and_then(|analysis| {
+                            if reception_service::text(&analysis.client_match, "clientId") == id {
+                                analysis.matched_client_name.as_deref()
+                            } else {
+                                analysis.chosen_client_name.as_deref()
+                            }
+                        }))
+                        .map(str::to_owned);
+                    let status = client_name.as_deref()
+                        .unwrap_or("거래처 확인 필요");
+                    ui.scope_builder(
+                        UiBuilder::new()
+                            .id_salt("source-current-client-band")
+                            .max_rect(card_rect.shrink2(egui::vec2(10.0, 5.0)))
+                            .layout(Layout::top_down(Align::Min)),
+                        |card| {
+                            card.set_clip_rect(card_rect);
+                            card.label(typography::caption("현재 거래처"));
+                            card.label(typography::body(status));
+                        },
+                    );
+                }
+                // Only the remaining height belongs to the raw source editor.
+                // A fixed dealer band never enlarges the entire source pane.
+                let editor_height = (available_body - client_band_height)
+                    .min(ui.available_height().max(0.0)).max(0.0);
                 if editor_height > 0.0 {
                     let viewport = Rect::from_min_size(
                         ui.available_rect_before_wrap().min,
