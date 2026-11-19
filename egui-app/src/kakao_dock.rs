@@ -53,6 +53,8 @@ impl KakaoDock {
             let mut session=native::Session::connect()?;
             session.restore_minimized()?;
             session.sync(rect,scale)?;
+            // React to the native foreground event, not only the next egui repaint.
+            session.start_focus_hook()?;
             self.session=Some(session);
             Ok(())
         }
@@ -89,10 +91,11 @@ impl Drop for KakaoDock {
 
 #[cfg(windows)]
 mod native {
-    use std::{path::Path,time::{Duration,Instant}};
+    use std::{cell::RefCell,path::Path,time::{Duration,Instant}};
     use super::egui;
     type Hwnd=isize;
     type Handle=isize;
+    type WinEventHook=isize;
     #[repr(C)]
     #[derive(Clone,Copy,Default,PartialEq,Eq)]
     struct Rect{left:i32,top:i32,right:i32,bottom:i32}
@@ -131,6 +134,8 @@ mod native {
     const SWP_NOACTIVATE:u32=0x0010;
     const SWP_FRAMECHANGED:u32=0x0020;
     const GW_HWNDPREV:u32=3;
+    const EVENT_SYSTEM_FOREGROUND:u32=0x0003;
+    const WINEVENT_OUTOFCONTEXT:u32=0;
     const HWND_TOP:Hwnd=0;
     const HWND_TOPMOST:Hwnd=-1;
     const HWND_NOTOPMOST:Hwnd=-2;
@@ -164,6 +169,10 @@ mod native {
         fn GetWindowLongPtrW(hwnd:Hwnd,index:i32)->isize;
         fn SetWindowLongPtrW(hwnd:Hwnd,index:i32,value:isize)->isize;
         fn SetWindowPos(hwnd:Hwnd,above:Hwnd,x:i32,y:i32,w:i32,h:i32,flags:u32)->i32;
+        fn SetWinEventHook(min:u32,max:u32,module:Handle,
+            callback:Option<unsafe extern "system" fn(WinEventHook,u32,Hwnd,i32,i32,u32,u32)>,
+            process_id:u32,thread_id:u32,flags:u32)->WinEventHook;
+        fn UnhookWinEvent(hook:WinEventHook)->i32;
     }
     #[link(name="dwmapi")]
     unsafe extern "system" {
@@ -242,6 +251,73 @@ mod native {
             if cursor==reference{return true;}
         }
         false
+    }
+
+    // An out-of-context foreground hook executes on the registering egui
+    // message-loop thread. This is transient process state: Kakao's owner,
+    // parent, global topmost status and taskbar semantics are never changed.
+    #[derive(Clone,Copy)]
+    struct DockedHandle{hwnd:Hwnd,main:bool}
+    struct ActiveDock{
+        hub:Hwnd,windows:Vec<DockedHandle>,active_chat:Option<Hwnd>,
+    }
+    thread_local!{
+        static ACTIVE_DOCK:RefCell<Option<ActiveDock>>=const {RefCell::new(None)};
+    }
+    fn restore_docked_order(
+        hub:Hwnd,windows:&[DockedHandle],active_chat:Option<Hwnd>,foreground:Hwnd
+    )->Result<(),String>{
+        if unsafe{IsWindow(hub)}==0 || unsafe{IsIconic(hub)}!=0 {
+            return Ok(());
+        }
+        // A third-party foreground window must NEVER cause a Kakao raise.
+        if foreground!=hub && !windows.iter().any(|w|w.hwnd==foreground){
+            return Ok(());
+        }
+        let shown=|hwnd:Hwnd|unsafe{IsWindow(hwnd)}!=0 &&
+            unsafe{IsIconic(hwnd)}==0 && unsafe{IsWindowVisible(hwnd)}!=0;
+        let base=windows.iter().find(|w|w.main && shown(w.hwnd))
+            .map(|w|w.hwnd);
+        let chat=active_chat.filter(|hwnd|windows.iter().any(|w|
+            !w.main && w.hwnd==*hwnd && shown(*hwnd)
+        ));
+        let Some(top)=chat.or(base) else{return Ok(())};
+        if (below(top,hub) || base.is_some_and(|main|
+            chat.is_some_and(|active|main!=active && below(active,main))))
+            && unsafe{SetWindowPos(top,HWND_TOP,0,0,0,0,
+                SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
+            return Err(os("카카오톡 창 표시 순서 복원 실패"));
+        }
+        if let (Some(main),Some(active))=(base,chat){
+            if main!=active && (below(main,hub) || below(active,main))
+                && unsafe{SetWindowPos(main,active,0,0,0,0,
+                    SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
+                return Err(os("카카오톡 기본창 표시 순서 복원 실패"));
+            }
+        }
+        Ok(())
+    }
+    unsafe extern "system" fn on_foreground_changed(
+        _hook:WinEventHook,event:u32,hwnd:Hwnd,
+        _object:i32,_child:i32,_thread:u32,_time:u32
+    ){
+        if event!=EVENT_SYSTEM_FOREGROUND || hwnd==0{return;}
+        ACTIVE_DOCK.with(|state|{
+            // WinEvent callbacks can reenter; ignore nested notifications.
+            let Ok(mut current)=state.try_borrow_mut() else{return;};
+            let Some(dock)=current.as_mut() else{return;};
+            if hwnd!=dock.hub && !dock.windows.iter().any(|w|w.hwnd==hwnd){
+                return;
+            }
+            if dock.windows.iter().any(|w|!w.main && w.hwnd==hwnd){
+                dock.active_chat=Some(hwnd);
+            }
+            if let Err(reason)=restore_docked_order(
+                dock.hub,&dock.windows,dock.active_chat,hwnd
+            ){
+                eprintln!("[BANDO HUB] 카카오톡 활성화 순서 복구 실패: {reason}");
+            }
+        });
     }
     fn hwnd_of_hub()->Result<Hwnd,String>{
         unsafe extern "system" fn collect(hwnd:Hwnd,param:isize)->i32{
@@ -497,8 +573,33 @@ mod native {
         hub:Hwnd,pid:u32,windows:Vec<Tracked>,active_chat:Option<Hwnd>,
         pub(super) mode:super::DockMode,
         last_region:Option<Rect>,pub(super) last_sync:Option<Instant>,
+        focus_hook:WinEventHook,
     }
     impl Session{
+        fn refresh_focus_guard(&self){
+            if self.focus_hook==0{return;}
+            ACTIVE_DOCK.with(|state|{
+                if let Ok(mut current)=state.try_borrow_mut(){
+                    *current=Some(ActiveDock{
+                        hub:self.hub,
+                        windows:self.windows.iter().filter(|w|w.alive())
+                            .map(|w|DockedHandle{hwnd:w.hwnd,main:w.main})
+                            .collect(),
+                        active_chat:self.active_chat,
+                    });
+                }
+            });
+        }
+        pub(super) fn start_focus_hook(&mut self)->Result<(),String>{
+            let hook=unsafe{SetWinEventHook(
+                EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_FOREGROUND,0,
+                Some(on_foreground_changed),0,0,WINEVENT_OUTOFCONTEXT
+            )};
+            if hook==0{return Err(os("카카오톡 창 활성화 감지 등록 실패"));}
+            self.focus_hook=hook;
+            self.refresh_focus_guard();
+            Ok(())
+        }
         // Capture original placements before restoring. Session::drop restores
         // the minimized state too if initial layout fails or is disconnected.
         pub(super) fn restore_minimized(&mut self)->Result<(),String>{
@@ -537,7 +638,7 @@ mod native {
             Ok(Self{
                 hub,pid,windows:tracked,active_chat,
                 mode:super::DockMode::Together,
-                last_region:None,last_sync:None,
+                last_region:None,last_sync:None,focus_hook:0,
             })
         }
         pub fn foreground_related(&self)->bool {
@@ -546,43 +647,18 @@ mod native {
             let owner_pid=pid(foreground);
             owner_pid==unsafe{GetCurrentProcessId()} || owner_pid==self.pid
         }
-        /// Keep docked Kakao HWNDs above the app after the user clicks
-        /// BANDO HUB. This check must not share the 350ms geometry throttle.
-        /// No HWND_TOPMOST and no reordering of the BANDO HUB HWND.
-        fn restore_relative_z_order(&mut self)->Result<(),String> {
+        /// Preserve the pre-existing repaint repair path as a fallback for
+        /// clicks inside an already foreground BANDO HUB (no new WinEvent).
+        fn restore_relative_z_order(&mut self)->Result<(),String>{
             if !self.foreground_related(){return Ok(());}
-            let base=self.windows.iter().find(|window|
-                window.main && window.alive() &&
-                unsafe{IsIconic(window.hwnd)}==0
-            ).map(|window|window.hwnd);
             let foreground=unsafe{GetForegroundWindow()};
-            if self.windows.iter().any(|window|
-                !window.main && window.alive() && window.hwnd==foreground
-            ){
+            if self.windows.iter().any(|w|!w.main && w.hwnd==foreground){
                 self.active_chat=Some(foreground);
             }
-            let chat=self.active_chat.filter(|hwnd|
-                self.windows.iter().any(|window|
-                    !window.main && window.alive() &&
-                    window.hwnd==*hwnd && unsafe{IsIconic(*hwnd)}==0
-                )
-            );
-            let Some(top)=chat.or(base) else {return Ok(())};
-            if (below(top,self.hub) ||
-                base.is_some_and(|main|
-                    chat.is_some_and(|active|main!=active && below(active,main))))
-                && unsafe{SetWindowPos(top,HWND_TOP,0,0,0,0,
-                    SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
-                return Err(os("카카오톡 창 표시 순서 복원 실패"));
-            }
-            if let (Some(main),Some(active))=(base,chat) {
-                if main!=active && (below(main,self.hub) || below(active,main))
-                    && unsafe{SetWindowPos(main,active,0,0,0,0,
-                        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
-                    return Err(os("카카오톡 기본창 표시 순서 복원 실패"));
-                }
-            }
-            Ok(())
+            let windows=self.windows.iter().filter(|w|w.alive())
+                .map(|w|DockedHandle{hwnd:w.hwnd,main:w.main})
+                .collect::<Vec<_>>();
+            restore_docked_order(self.hub,&windows,self.active_chat,foreground)
         }
         pub fn sync(&mut self,rect:egui::Rect,scale:f32)->Result<(),String>{
             if unsafe{IsWindow(self.hub)}==0 ||
@@ -623,6 +699,7 @@ mod native {
                 !self.windows.iter().any(|w|w.hwnd==hwnd)){
                 self.active_chat=self.windows.iter().find(|w|!w.main).map(|w|w.hwnd);
             }
+            self.refresh_focus_guard();
             let before=self.windows.iter().filter_map(|w|
                 outer(w.hwnd).ok().map(|rect|(w.hwnd,rect))
             ).collect::<Vec<_>>();
@@ -674,6 +751,13 @@ mod native {
     }
     impl Drop for Session {
         fn drop(&mut self){
+            if self.focus_hook!=0{
+                unsafe{UnhookWinEvent(self.focus_hook);}
+                self.focus_hook=0;
+                ACTIVE_DOCK.with(|state|{
+                    if let Ok(mut current)=state.try_borrow_mut(){*current=None;}
+                });
+            }
             for window in self.windows.drain(..){
                 window.restore();
             }
