@@ -13,7 +13,7 @@ mod preview_store;
 mod source_autosave;
 
 use eframe::egui::{self, Align, Frame, Layout, RichText, Rect, Sense, Ui, UiBuilder, Vec2};
-use theme::{ButtonRole, PANEL_GAP};
+use theme::ButtonRole;
 use std::sync::{mpsc::{self, Receiver}, Arc};
 use std::time::{Duration, Instant};
 
