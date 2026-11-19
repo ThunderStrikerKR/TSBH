@@ -46,7 +46,8 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
     let raw = field(request, "sourceRaw")?;
     let kind = field(request, "orderType")?;
     let client_id = field(request, "clientId")?;
-    let at = field(request, "at")?;
+    // A caller must not forge native order timestamps or audit chronology.
+    let at = chrono::Utc::now().to_rfc3339();
     let expected_revision = request.get("expectedAuthorityRevision")
         .and_then(Value::as_u64)
         .ok_or("운영 DB revision이 누락됐습니다.")?;
