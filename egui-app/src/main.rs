@@ -48,16 +48,27 @@ impl Page {
     }
 }
 
+/// A drag always measures displacement from the initial pane widths.
+#[derive(Clone, Copy)]
+struct HorizontalSplitDrag {
+    index: usize,
+    initial_widths: [f32; layout::PANEL_COUNT],
+}
+
+#[derive(Clone, Copy)]
+struct VerticalSplitDrag {
+    initial_source_height: f32,
+    available_height: f32,
+}
+
 struct BandoEgui {
     page: Page,
     sample: bool,
     notifications_open: bool,
     order_expanded: [bool; 2],
     layout: layout::LayoutState,
-    dragging_split: Option<usize>,
-    split_last_delta: f32,
-    dragging_vertical: bool,
-    vertical_last_delta: f32,
+    dragging_split: Option<HorizontalSplitDrag>,
+    dragging_vertical: Option<VerticalSplitDrag>,
     raw_source: String,
     source_editing: bool,
     analysis: Option<serde_json::Value>,
@@ -74,9 +85,7 @@ impl Default for BandoEgui {
             order_expanded: [true, false],
             layout: layout::LayoutState::load(),
             dragging_split: None,
-            split_last_delta: 0.0,
-            dragging_vertical: false,
-            vertical_last_delta: 0.0,
+            dragging_vertical: None,
             raw_source: String::new(),
             source_editing: false,
             analysis: None,
@@ -268,6 +277,9 @@ impl BandoEgui {
                 // any business content. Hover/folding a card cannot shift the
                 // coordinates of splitters or other panels.
                 egui::ScrollArea::horizontal()
+                    // The parent scroll area's touch-style drag handling
+                    // must not compete with a draggable pane separator.
+                    .drag_to_scroll(false)
                     .id_salt("reception_four_columns")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
@@ -318,17 +330,28 @@ impl BandoEgui {
                                     },
                                 );
                                 if response.drag_started() {
-                                    self.dragging_split = Some(index);
-                                    self.split_last_delta = 0.0;
+                                    self.dragging_split = Some(HorizontalSplitDrag {
+                                        index,
+                                        initial_widths: widths,
+                                    });
                                 }
-                                if response.dragged() && self.dragging_split == Some(index) {
-                                    let step = response.drag_delta().x - self.split_last_delta;
-                                    self.layout.resize_pair(widths, index, step);
-                                    self.split_last_delta = response.drag_delta().x;
+                                if response.dragged() {
+                                    if let Some(drag) = self.dragging_split {
+                                        if drag.index == index {
+                                            // Absolute displacement from pointer-down.
+                                            // Never integrate frame-by-frame deltas
+                                            // over already mutated widths.
+                                            self.layout.resize_pair(
+                                                drag.initial_widths, index,
+                                                response.drag_delta().x,
+                                            );
+                                        }
+                                    }
                                 }
-                                if response.drag_stopped() && self.dragging_split == Some(index) {
+                                if response.drag_stopped()
+                                    && self.dragging_split.is_some_and(|drag| drag.index == index)
+                                {
                                     self.dragging_split = None;
-                                    self.split_last_delta = 0.0;
                                     let _ = self.layout.save();
                                 }
                                 if response.double_clicked() {
@@ -379,17 +402,22 @@ impl BandoEgui {
             if response.hovered() || response.dragged() { theme::BORDER } else { theme::DIVIDER },
         );
         if response.drag_started() {
-            self.dragging_vertical = true;
-            self.vertical_last_delta = 0.0;
+            self.dragging_vertical = Some(VerticalSplitDrag {
+                initial_source_height: source_height,
+                available_height: height,
+            });
         }
-        if response.dragged() && self.dragging_vertical {
-            let step = response.drag_delta().y - self.vertical_last_delta;
-            self.layout.resize_vertical(source_height, step, height);
-            self.vertical_last_delta = response.drag_delta().y;
+        if response.dragged() {
+            if let Some(drag) = self.dragging_vertical {
+                self.layout.resize_vertical(
+                    drag.initial_source_height,
+                    response.drag_delta().y,
+                    drag.available_height,
+                );
+            }
         }
-        if response.drag_stopped() && self.dragging_vertical {
-            self.dragging_vertical = false;
-            self.vertical_last_delta = 0.0;
+        if response.drag_stopped() && self.dragging_vertical.is_some() {
+            self.dragging_vertical = None;
             let _ = self.layout.save();
         }
         if response.double_clicked() {
