@@ -394,21 +394,39 @@ fn workflow_table_header(ui:&mut Ui){
 }
 /// One product occupies a compact chip, exactly as the React
 /// .workflow-shipment .product-chip style, not an unframed text fragment.
-fn product_chip(ui:&mut Ui,label:&str){
-    Frame::new()
-        .fill(theme::WORKFLOW_CHIP_FILL)
-        .stroke(egui::Stroke::new(
+fn product_chip(ui:&mut Ui,label:&str,max_width:f32){
+    // A chip may wrap to the NEXT product row, but never one letter per
+    // vertical line. Measure its unwrapped text and cap the chip itself to
+    // the allocated PRODUCT column, preserving the complete name in tooltip.
+    let natural=ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(typography::FONT_FIELD_LABEL),
+        theme::TEXT,
+    ).size().x;
+    let width=(natural+2.0*theme::WORKFLOW_CHIP_PAD_X as f32
+        +2.0*theme::SOFT_DIVIDER_WIDTH).min(max_width).max(0.0);
+    let (rect,response)=ui.allocate_exact_size(
+        Vec2::new(width,theme::WORKFLOW_CHIP_HEIGHT),
+        egui::Sense::hover(),
+    );
+    ui.painter().rect_filled(
+        rect,theme::WORKFLOW_CHIP_RADIUS as f32,
+        theme::WORKFLOW_CHIP_FILL
+    );
+    ui.painter().rect_stroke(
+        rect,theme::WORKFLOW_CHIP_RADIUS as f32,
+        egui::Stroke::new(
             theme::SOFT_DIVIDER_WIDTH,theme::WORKFLOW_CHIP_BORDER
-        ))
-        .corner_radius(theme::WORKFLOW_CHIP_RADIUS)
-        .inner_margin(egui::Margin{
-            left:theme::WORKFLOW_CHIP_PAD_X,
-            right:theme::WORKFLOW_CHIP_PAD_X,
-            top:theme::WORKFLOW_CHIP_PAD_Y,
-            bottom:theme::WORKFLOW_CHIP_PAD_Y,
-        }).show(ui,|chip|{
-            chip.label(typography::table_cell(label));
-        });
+        ),egui::StrokeKind::Inside,
+    );
+    let text_rect=rect.shrink2(Vec2::new(
+        theme::WORKFLOW_CHIP_PAD_X as f32,
+        theme::WORKFLOW_CHIP_PAD_Y as f32,
+    ));
+    ui.put(
+        text_rect,egui::Label::new(typography::table_cell(label)).truncate()
+    );
+    response.on_hover_text(label);
 }
 /// React .workflow-shipment uses a 64 / flexible / 68 three-column row.
 /// No secondary boxed cards: selection is a subtle background plus a thin
@@ -448,7 +466,7 @@ fn shipment_line(
                         product_col.horizontal_wrapped(|chips|{
                             chips.spacing_mut().item_spacing.x=theme::SPACE_4;
                             for product in products{
-                                product_chip(chips,product);
+                                product_chip(chips,product,product_width);
                             }
                         });
                     }
