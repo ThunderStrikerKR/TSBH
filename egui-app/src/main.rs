@@ -32,6 +32,7 @@ mod kakao_dock;
 mod settings_store;
 mod settings_view;
 mod settings_help;
+mod freight_manager;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
@@ -166,6 +167,7 @@ struct BandoEgui {
     client_chooser: Option<ClientChooser>,
     client_manager: Option<client_manager::ClientManager>,
     settings_view: Option<settings_view::SettingsView>,
+    freight_manager: Option<freight_manager::FreightManager>,
     settings_pending_page: Option<Page>,
     settings_pending_save: bool,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
@@ -221,6 +223,7 @@ impl Default for BandoEgui {
             client_chooser: None,
             client_manager: None,
             settings_view: None,
+            freight_manager: None,
             settings_pending_page: None,
             settings_pending_save: false,
             manual_workspace: None,
@@ -2827,6 +2830,11 @@ impl BandoEgui {
                 Arc::clone(&self.gateway),ctx.clone()
             ));
         }
+        if self.page==Page::Freight && self.freight_manager.is_none(){
+            self.freight_manager=Some(freight_manager::FreightManager::new(
+                Arc::clone(&self.gateway),ctx.clone()
+            ));
+        }
         if self.page==Page::Settings && self.settings_view.is_none(){
             self.settings_view=Some(settings_view::SettingsView::new(
                 Arc::clone(&self.gateway),ctx.clone()
@@ -2914,6 +2922,11 @@ impl BandoEgui {
                                                 manager.show_page(page,Arc::clone(&self.gateway));
                                             }
                                         }
+                                        Page::Freight=>{
+                                            if let Some(freight)=self.freight_manager.as_mut(){
+                                                freight.show_page(page);
+                                            }
+                                        }
                                         Page::Settings=>{
                                             if let Some(settings)=self.settings_view.as_mut(){
                                                 settings.show_page(page,Arc::clone(&self.gateway));
@@ -2953,6 +2966,7 @@ impl eframe::App for BandoEgui {
             self.workflow_ui.selection=None;
             self.workflow_ui.stop_preview();
             self.client_manager=None;
+            self.freight_manager=None;
             self.client_chooser=None;
             self.working_sync=None;
             self.client_change=None;
