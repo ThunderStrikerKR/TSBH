@@ -73,6 +73,28 @@ pub const MANUAL_COLUMN_GAP: f32 = SPACE_12;
 pub const MANUAL_SEARCH_DIALOG_WIDTH: f32 = 760.0;
 pub const MANUAL_SEARCH_RESULTS_HEIGHT: f32 = 420.0;
 pub const MANUAL_INPUT_WIDTH: f32 = 250.0;
+// Shared native modal/table roles. Manual source and spreadsheet-like rows
+// inherit these values instead of locally painted one-off geometry.
+pub const MODAL_TITLE_SIZE: f32 = 18.0;
+pub const MODAL_PANEL_PADDING_X: f32 = 18.0;
+pub const MODAL_PANEL_PADDING_Y: f32 = 16.0;
+pub const MODAL_DECISION_MAX_WIDTH: f32 = 560.0;
+pub const MODAL_DEFAULT_MAX_WIDTH: f32 = 880.0;
+pub const MODAL_VIEWPORT_GUTTER: f32 = 18.0;
+pub const MANUAL_TABLE_MIN_WIDTH: f32 = 1180.0;
+pub const MANUAL_TABLE_HEADER_HEIGHT: f32 = 36.0;
+pub const MANUAL_TABLE_ROW_HEIGHT: f32 = 42.0;
+pub const MANUAL_TABLE_DELIVERY_COL: f32 = 76.0;
+pub const MANUAL_TABLE_NAME_COL: f32 = 110.0;
+pub const MANUAL_TABLE_ADDRESS_COL: f32 = 230.0;
+pub const MANUAL_TABLE_PHONE_COL: f32 = 142.0;
+pub const MANUAL_TABLE_NOTE_COL: f32 = 200.0;
+pub const MANUAL_TABLE_PRODUCT_COL: f32 = 340.0;
+pub const MANUAL_TABLE_QUANTITY_COL: f32 = 82.0;
+pub const MANUAL_TABLE_ACTION_COL: f32 = 90.0;
+pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
+pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
+pub const MANUAL_SOURCE_ACTIVE_BG: Color32 = Color32::from_rgb(43, 77, 112);
 
 #[derive(Clone, Copy)]
 pub enum ButtonRole {
@@ -105,6 +127,27 @@ pub fn install(ctx: &egui::Context) {
     // Per-role horizontal padding is applied by action() below.
     style.spacing.button_padding = Vec2::new(SPACE_12, SPACE_8);
     ctx.set_style(style);
+}
+
+pub fn modal_frame() -> Frame {
+    Frame::new()
+        .fill(PANEL)
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH,BORDER))
+        .corner_radius(CornerRadius::same(PANEL_RADIUS))
+        .inner_margin(egui::Margin {
+            left: MODAL_PANEL_PADDING_X as i8,
+            right: MODAL_PANEL_PADDING_X as i8,
+            top: MODAL_PANEL_PADDING_Y as i8,
+            bottom: MODAL_PANEL_PADDING_Y as i8,
+        })
+}
+
+pub fn modal_nested_frame() -> Frame {
+    Frame::new()
+        .fill(INPUT)
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH,DIVIDER))
+        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
+        .inner_margin(SPACE_8)
 }
 
 pub fn section_frame() -> Frame {
