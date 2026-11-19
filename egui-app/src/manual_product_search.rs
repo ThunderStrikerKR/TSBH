@@ -123,13 +123,8 @@ impl ProductSearch{
         let mut open=true;
         let mut chosen=None;
         let mut changed=false;
-        components::modal_window("상품 검색","native-manual-product-search")
+        components::modal_window("상품 검색","native-manual-product-search",work_area)
             .resizable(true)
-            .default_pos(egui::pos2(
-                work_area.center().x-
-                    (theme::MANUAL_SEARCH_DIALOG_WIDTH/2.0).min(work_area.width()/2.0),
-                work_area.center().y-theme::MANUAL_SEARCH_RESULTS_HEIGHT/2.0
-            ))
             .default_width(theme::MANUAL_SEARCH_DIALOG_WIDTH
                 .min((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP).max(0.0)))
             .constrain_to(work_area)
