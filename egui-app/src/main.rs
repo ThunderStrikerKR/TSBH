@@ -178,7 +178,11 @@ impl BandoEgui {
                 source_autosave::SaveStatus::Saved(revision) => {
                     let _ = revision;
                     self.source_save_error = None;
-                    self.notifications_open = false;
+                    // Saving another field must not silently dismiss an
+                    // outstanding clipboard/OCR error notification.
+                    if self.clipboard_error.is_none() {
+                        self.notifications_open = false;
+                    }
                 }
                 source_autosave::SaveStatus::Failed(error) => {
                     self.source_save_error = Some(error);
