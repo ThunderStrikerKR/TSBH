@@ -66,6 +66,7 @@ impl FieldKind {
 pub fn modal_window(title:&str,id:&'static str) -> egui::Window<'static> {
     egui::Window::new(title.to_owned())
         .id(egui::Id::new(id))
+        .order(egui::Order::Foreground)
         .collapsible(false)
         .frame(theme::modal_frame())
 }
