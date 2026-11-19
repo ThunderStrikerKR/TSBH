@@ -1,4 +1,4 @@
-# Targeted Windows compile: checked React workflow card and 18px stage signal parity.
+# Targeted Windows compile: workflow vector icons, rounded source frame and seamless Kakao dock divider joins.
 name: Tauri native CLI executable compile check
 on:
   push:
