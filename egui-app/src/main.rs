@@ -223,18 +223,18 @@ impl BandoEgui {
         egui::TopBottomPanel::top("global_navigation")
             .exact_height(theme::HEADER_HEIGHT)
             .frame(Frame::new().fill(Color32::from_rgb(27, 27, 27))
-                .inner_margin(egui::Margin::symmetric(8, 0)))
+                .inner_margin(egui::Margin::symmetric(theme::HEADER_PADDING_X, 0)))
             .show(ctx, |ui| {
                 // Fixed blank strip gives frameless windows a native
                 // drag target even when the navigation fills the header.
                 // Logo and wordmark are below the strip and inert.
                 let top_drag = ui.allocate_response(
-                    Vec2::new(ui.available_width(), 8.0),
+                    Vec2::new(ui.available_width(), theme::SPACE_8),
                     Sense::click_and_drag(),
                 );
                 Self::handle_header_drag(ctx, &top_drag, maximized);
                 ui.horizontal_centered(|ui| {
-                    ui.add_space(8.0);
+                    ui.add_space(theme::SPACE_8);
                     // Brand identity is deliberately inert: no hover
                     // affordance, click action, drag handler or double-click.
                     // Reuse the existing Tauri application icon pixels.
@@ -245,9 +245,9 @@ impl BandoEgui {
                     }
                     ui.label(
                         RichText::new("BANDO HUB")
-                            .size(16.0).strong().color(theme::TEXT)
+                            .size(theme::FONT_BRAND).strong().color(theme::TEXT)
                     );
-                    ui.add_space(12.0);
+                    ui.add_space(theme::SPACE_12);
                     for page in Page::ALL {
                         let role = if self.page == page {
                             ButtonRole::ActiveNavigation
@@ -383,9 +383,9 @@ impl BandoEgui {
         Frame::new()
             .fill(theme::PANEL)
             .stroke(Stroke::new(1.0, theme::BORDER))
-            .inner_margin(10.0)
+            .inner_margin(theme::SECTION_PADDING)
             .show(ui, |ui| {
-                ui.set_min_height((ui.available_height() - 20.0).max(100.0));
+                ui.set_min_height((ui.available_height() - 2.0 * theme::SECTION_PADDING).max(100.0));
                 ui.vertical_centered(|ui| {
                     ui.add_space((ui.available_height() * 0.44).max(20.0));
                     theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, false);
@@ -395,7 +395,7 @@ impl BandoEgui {
 
     fn reception(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default()
-            .frame(Frame::new().fill(theme::CANVAS).inner_margin(6.0))
+            .frame(Frame::new().fill(theme::CANVAS).inner_margin(theme::PANEL_GAP))
             .show(ctx, |ui| {
                 let viewport_width = ui.available_width();
                 let content_width = viewport_width.max(layout::LayoutState::minimum_width());
@@ -570,7 +570,7 @@ impl BandoEgui {
             theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false);
         }, |ui| {
             if self.source_editing || !self.raw_source.is_empty() {
-                let editor_height = (ui.available_height() - 10.0).max(120.0);
+                let editor_height = (ui.available_height() - theme::SECTION_CONTENT_GAP).max(120.0);
                 let editor = ui.add_sized(
                     Vec2::new(ui.available_width(), editor_height),
                     egui::TextEdit::multiline(&mut self.raw_source)
@@ -585,7 +585,7 @@ impl BandoEgui {
                     }
                 }
             } else {
-                ui.add_space(32.0);
+                ui.add_space(theme::SPACE_24 + theme::SPACE_8);
                 ui.label(theme::subsection_heading("클립보드 접수"));
                 ui.label(theme::caption("복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."));
                 ui.horizontal(|ui| {
@@ -594,7 +594,7 @@ impl BandoEgui {
                 });
                 ui.label(theme::caption("이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."));
                 components::soft_divider(ui);
-                ui.add_space(8.0);
+                ui.add_space(theme::SPACE_8);
                 ui.label(theme::subsection_heading("다른 방법으로 접수"));
                 ui.horizontal(|ui| {
                     if theme::action(ui, "직접 입력", ButtonRole::Emphasized, true).clicked() {
@@ -603,7 +603,7 @@ impl BandoEgui {
                     theme::action(ui, "캡처 범위 지정", ButtonRole::Emphasized, false);
                 });
                 components::soft_divider(ui);
-                ui.add_space(8.0);
+                ui.add_space(theme::SPACE_8);
                 ui.label(theme::subsection_heading("폴더 자동 인식"));
                 ui.label(theme::caption("설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."));
             }
@@ -618,8 +618,10 @@ impl BandoEgui {
             let mut include_link = false;
             ui.add_enabled(false, egui::Checkbox::new(&mut include_link, "링크 포함"));
         }, |ui| {
-            ui.add_space(8.0);
-            Frame::new().fill(theme::INPUT).corner_radius(6).inner_margin(10.0)
+            // section_with_header already owns the title-to-content gap.
+            Frame::new().fill(theme::INPUT)
+                .corner_radius(theme::CONTROL_RADIUS)
+                .inner_margin(theme::NESTED_PADDING)
                 .show(ui, |ui| {
                     ui.set_min_height((ui.available_height() - 85.0).max(80.0));
 
@@ -696,7 +698,7 @@ impl BandoEgui {
                         });
                 }
                 if let Some(recipient) = recipients.get(self.selected_recipient) {
-                    ui.spacing_mut().item_spacing.y = 4.0;
+                    ui.spacing_mut().item_spacing.y = theme::SPACE_4;
                     let mut name = reception_service::text(recipient, "name").to_owned();
                     let mut address = reception_service::text(recipient, "address").to_owned();
                     let mut mobile = reception_service::text(recipient, "mobile").to_owned();
@@ -760,7 +762,7 @@ impl BandoEgui {
 
     fn other_page(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default()
-            .frame(Frame::new().fill(theme::CANVAS).inner_margin(16.0))
+            .frame(Frame::new().fill(theme::CANVAS).inner_margin(theme::SPACE_16))
             .show(ctx, |ui| {
                 ui.label(RichText::new(self.page.label()).size(20.0).strong());
             });
