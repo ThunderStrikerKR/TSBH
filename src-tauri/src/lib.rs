@@ -706,6 +706,12 @@ fn catalog_approve(_db: State<'_, Database>) -> Result<Value, String> {
 #[tauri::command]
 fn receipt_archive(db: State<'_, Database>) -> Result<Value, String> {
     let conn = lock_db(&db)?;
+    receipt_archive_from_conn(&conn)
+}
+
+/// Same archive projection for both React IPC and the egui read-only CLI.
+/// Includes legacy/unverified records without fabricating audit evidence.
+fn receipt_archive_from_conn(conn:&Connection)->Result<Value,String>{
     let mut statement = conn.prepare("SELECT id,order_id,record FROM receipt_archive ORDER BY rowid DESC LIMIT 10000").map_err(err)?;
     let mut rows = statement.query([]).map_err(err)?;
     let mut archive = Vec::new();
