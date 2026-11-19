@@ -27,6 +27,9 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
     if source.raw.trim().is_empty() {
         return Err("발주원문이 없는 주문은 거래처를 변경할 수 없습니다.".into());
     }
+    if source.manual_model.is_some() {
+        return Err("수동 분류를 적용한 발주서의 거래처 변경은 분류 내역 보존 규칙을 연결한 뒤 진행할 수 있습니다.".into());
+    }
     if target_id.trim().is_empty() {
         return Err("변경할 거래처가 없습니다.".into());
     }
