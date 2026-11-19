@@ -82,7 +82,9 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
                 ui.label(RichText::new(value).size(16.0).strong().color(theme::TEXT));
             });
         });
-        ui.label(RichText::new(footnote).size(12.0).color(theme::SECONDARY));
+        if !footnote.trim().is_empty() {
+            ui.label(RichText::new(footnote).size(12.0).color(theme::SECONDARY));
+        }
     });
 }
 
