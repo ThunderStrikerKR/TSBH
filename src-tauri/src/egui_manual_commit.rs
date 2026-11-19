@@ -51,7 +51,13 @@ fn apply_step(
     if let Some(fields)=extra.as_object(){
         for (key,value) in fields {input[key]=value.clone();}
     }
-    let (next,next_keys)=model(rule(action,input)?)?;
+    let mut outcome=rule(action,input)?;
+    if outcome.get("assignmentOrder").is_none(){
+        // Direct recipient field edits return only their modified model.
+        // The native reducer leaves the source assignment order untouched.
+        outcome["assignmentOrder"]=json!(keys);
+    }
+    let (next,next_keys)=model(outcome)?;
     *m=next;
     *keys=next_keys;
     Ok(())
