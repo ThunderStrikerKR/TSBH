@@ -2590,7 +2590,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_icon(existing_icon)
             .with_inner_size([1600.0, 900.0])
-            .with_min_inner_size([1150.0, 720.0])
+            .with_min_inner_size([1260.0, 720.0])
             .with_title("BANDO HUB")
             .with_decorations(false)
             .with_resizable(true),
