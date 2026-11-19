@@ -675,16 +675,8 @@ impl BandoEgui {
         // The center-line between the second and third columns is shared.
         // Independent 27% + 22% measurements used to put the lower third
         // column divider 1–2 physical pixels above the source/message divider.
-        let (shared_upper_height, _) = self.layout.vertical_heights(full_height);
-        let upper_budget = (shared_upper_height - layout::SPLITTER).max(0.0);
-        let review_height = if upper_budget >= 330.0 {
-            (full_height * 0.27).clamp(150.0, upper_budget - 180.0)
-        } else {
-            // Keep the boundary aligned on smaller windows even when the
-            // preferred per-section minimum heights cannot both be met.
-            upper_budget * (150.0 / 330.0)
-        };
-        let recipient_height = (upper_budget - review_height).max(0.0);
+        let (review_height, recipient_height) =
+            self.layout.detail_upper_heights(full_height);
         // Fix the third column to the SAME upper/lower boundary as column
         // two. Section content must never be allowed to move the divider.
         let full_width = ui.available_width();
