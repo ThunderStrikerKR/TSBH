@@ -31,10 +31,14 @@ impl KakaoDock {
             let session=self.session.as_mut().ok_or("카카오톡이 연결되지 않았습니다.")?;
             if session.mode==mode {return Ok(());}
             let previous=session.mode;
+            let previous_footer=session.overlap_footer;
             session.mode=mode;
+            // The previously measured footer is invalid after a mode switch.
+            session.overlap_footer=None;
             session.last_sync=None;
             if let Err(reason)=session.sync(rect,scale) {
                 session.mode=previous;
+                session.overlap_footer=previous_footer;
                 session.last_sync=None;
                 // The previous valid mode remains connected.
                 if session.sync(rect,scale).is_err(){self.disconnect();}
@@ -52,13 +56,10 @@ impl KakaoDock {
             if self.session.is_some(){return Ok(());}
             let mut session=native::Session::connect()?;
             session.restore_minimized()?;
-            // A native owner relationship prevents HUB activation from pushing
-            // independent Kakao HWNDs behind it. Unsupported windows retain the
-            // existing foreground-event / repaint recovery path.
+            // Owner-linked HWNDs follow the HUB window without a foreground
+            // event hook. Unowned Kakao windows retain a throttled fallback.
             session.attach_independent_windows();
             session.sync(rect,scale)?;
-            // React to the native foreground event, not only the next egui repaint.
-            session.start_focus_hook()?;
             self.session=Some(session);
             Ok(())
         }
@@ -79,12 +80,6 @@ impl KakaoDock {
         #[cfg(not(windows))] {let _=(rect,scale);}
         Ok(())
     }
-    pub fn foreground_related(&self)->bool {
-        #[cfg(windows)] {
-            self.session.as_ref().is_some_and(native::Session::foreground_related)
-        }
-        #[cfg(not(windows))] {false}
-    }
     pub fn disconnect(&mut self){
         #[cfg(windows)] {self.session.take();}
     }
@@ -95,11 +90,10 @@ impl Drop for KakaoDock {
 
 #[cfg(windows)]
 mod native {
-    use std::{cell::RefCell,path::Path,time::{Duration,Instant}};
+    use std::{path::Path,time::{Duration,Instant}};
     use super::egui;
     type Hwnd=isize;
     type Handle=isize;
-    type WinEventHook=isize;
     #[repr(C)]
     #[derive(Clone,Copy,Default,PartialEq,Eq)]
     struct Rect{left:i32,top:i32,right:i32,bottom:i32}
@@ -115,11 +109,6 @@ mod native {
     struct MinMaxInfo{
         reserved:Point,max_size:Point,max_position:Point,
         min_track:Point,max_track:Point,
-    }
-    #[repr(C)]
-    #[derive(Clone,Copy,Default)]
-    struct MonitorInfo{
-        size:u32,monitor:Rect,work:Rect,flags:u32,
     }
     #[repr(C)]
     #[derive(Clone,Copy,Default)]
@@ -140,8 +129,6 @@ mod native {
     const SWP_NOACTIVATE:u32=0x0010;
     const SWP_FRAMECHANGED:u32=0x0020;
     const GW_HWNDPREV:u32=3;
-    const EVENT_SYSTEM_FOREGROUND:u32=0x0003;
-    const WINEVENT_OUTOFCONTEXT:u32=0;
     const HWND_TOP:Hwnd=0;
     const HWND_TOPMOST:Hwnd=-1;
     const HWND_NOTOPMOST:Hwnd=-2;
@@ -157,8 +144,6 @@ mod native {
         fn SendMessageTimeoutW(hwnd:Hwnd,msg:u32,wparam:usize,lparam:isize,
             flags:u32,timeout:u32,result:*mut usize)->isize;
         fn GetDpiForWindow(hwnd:Hwnd)->u32;
-        fn MonitorFromWindow(hwnd:Hwnd,flags:u32)->Handle;
-        fn GetMonitorInfoW(handle:Handle,info:*mut MonitorInfo)->i32;
         fn GetWindowTextW(hwnd:Hwnd,buffer:*mut u16,len:i32)->i32;
         fn GetWindowThreadProcessId(hwnd:Hwnd,pid:*mut u32)->u32;
         fn GetForegroundWindow()->Hwnd;
@@ -175,10 +160,6 @@ mod native {
         fn GetWindowLongPtrW(hwnd:Hwnd,index:i32)->isize;
         fn SetWindowLongPtrW(hwnd:Hwnd,index:i32,value:isize)->isize;
         fn SetWindowPos(hwnd:Hwnd,above:Hwnd,x:i32,y:i32,w:i32,h:i32,flags:u32)->i32;
-        fn SetWinEventHook(min:u32,max:u32,module:Handle,
-            callback:Option<unsafe extern "system" fn(WinEventHook,u32,Hwnd,i32,i32,u32,u32)>,
-            process_id:u32,thread_id:u32,flags:u32)->WinEventHook;
-        fn UnhookWinEvent(hook:WinEventHook)->i32;
     }
     #[link(name="dwmapi")]
     unsafe extern "system" {
@@ -261,17 +242,10 @@ mod native {
         false
     }
 
-    // An out-of-context foreground hook executes on the registering egui
-    // message-loop thread. This is transient process state: Kakao's owner,
-    // parent, global topmost status and taskbar semantics are never changed.
+    // Owner-linked Kakao HWNDs already follow the HUB. Only unowned
+    // windows need this occasional, foreground-scoped Z-order fallback.
     #[derive(Clone,Copy)]
     struct DockedHandle{hwnd:Hwnd,main:bool}
-    struct ActiveDock{
-        hub:Hwnd,windows:Vec<DockedHandle>,active_chat:Option<Hwnd>,
-    }
-    thread_local!{
-        static ACTIVE_DOCK:RefCell<Option<ActiveDock>>=const {RefCell::new(None)};
-    }
     fn restore_docked_order(
         hub:Hwnd,windows:&[DockedHandle],active_chat:Option<Hwnd>,foreground:Hwnd
     )->Result<(),String>{
@@ -304,28 +278,6 @@ mod native {
             }
         }
         Ok(())
-    }
-    unsafe extern "system" fn on_foreground_changed(
-        _hook:WinEventHook,event:u32,hwnd:Hwnd,
-        _object:i32,_child:i32,_thread:u32,_time:u32
-    ){
-        if event!=EVENT_SYSTEM_FOREGROUND || hwnd==0{return;}
-        ACTIVE_DOCK.with(|state|{
-            // WinEvent callbacks can reenter; ignore nested notifications.
-            let Ok(mut current)=state.try_borrow_mut() else{return;};
-            let Some(dock)=current.as_mut() else{return;};
-            if hwnd!=dock.hub && !dock.windows.iter().any(|w|w.hwnd==hwnd){
-                return;
-            }
-            if dock.windows.iter().any(|w|!w.main && w.hwnd==hwnd){
-                dock.active_chat=Some(hwnd);
-            }
-            if let Err(reason)=restore_docked_order(
-                dock.hub,&dock.windows,dock.active_chat,hwnd
-            ){
-                eprintln!("[BANDO HUB] 카카오톡 활성화 순서 복구 실패: {reason}");
-            }
-        });
     }
     fn hwnd_of_hub()->Result<Hwnd,String>{
         unsafe extern "system" fn collect(hwnd:Hwnd,param:isize)->i32{
@@ -369,18 +321,31 @@ mod native {
     fn move_visual(hwnd:Hwnd,desired:Rect)->Result<(),String>{
         let out=outer(hwnd)?;
         let vis=visual(hwnd)?;
-        if vis==desired{return Ok(());}
-        let x=desired.left-(vis.left-out.left);
-        let y=desired.top-(vis.top-out.top);
-        let w=desired.width()+(out.width()-vis.width());
-        let h=desired.height()+(out.height()-vis.height());
+        // DWM may clip extended-frame bounds at a physical screen edge.
+        // Such clipping must never be interpreted as a larger border
+        // on each 350ms sync, which previously inflated the main HWND.
+        let dpi=unsafe{GetDpiForWindow(hwnd)}.max(96);
+        let cap=((24.0*dpi as f64/96.0).ceil() as i32).clamp(24,80);
+        let left=(vis.left-out.left).clamp(-cap,cap);
+        let top=(vis.top-out.top).clamp(-cap,cap);
+        let right=(out.right-vis.right).clamp(-cap,cap);
+        let observed_bottom=out.bottom-vis.bottom;
+        let bottom=if observed_bottom.abs()>cap {
+            top.max(left).max(right).max(0)
+        }else{
+            observed_bottom
+        };
+        let x=desired.left-left;
+        let y=desired.top-top;
+        let w=(desired.width()+left+right).max(100);
+        let h=(desired.height()+top+bottom).max(100);
+        let target=Rect{left:x,top:y,right:x+w,bottom:y+h};
+        if out==target{return Ok(());}
         if unsafe{SetWindowPos(
             hwnd,0,x,y,w,h,SWP_NOACTIVATE|SWP_NOZORDER
         )}==0{
             return Err(os("카카오톡 창 배치 실패"));
         }
-        // Match Tauri's set_visible_rect: Win32 minimum sizing is handled by
-        // the selected layout, not an arbitrary egui overflow warning.
         Ok(())
     }
     fn min_visible_height(hwnd:Hwnd)->Result<i32,String>{
@@ -419,23 +384,26 @@ mod native {
         unsafe{EnumChildWindows(hwnd,Some(banner_child),&mut query as *mut _ as isize);}
         query.2.into_iter().min().unwrap_or(reference.bottom)
     }
-    fn offscreen_main_target(hub:Hwnd,main:Hwnd,area:Rect)->Result<Rect,String>{
-        // React/Tauri OVERLAP: keep the conversation visible, move the MAIN
-        // footer advertisement below the monitor. The chat composer stays in
-        // the reserved pane.
-        let handle=unsafe{MonitorFromWindow(hub,2)};
-        if handle==0 {return Err("카카오톡 모니터를 확인할 수 없습니다.".into());}
-        let mut monitor=MonitorInfo{
-            size:std::mem::size_of::<MonitorInfo>() as u32,
-            ..Default::default()
-        };
-        if unsafe{GetMonitorInfoW(handle,&mut monitor)}==0 {
-            return Err(os("모니터 크기 조회 실패"));
-        }
+    fn measure_footer_extension(main:Hwnd)->Result<i32,String>{
+        // Read the bottom-aligned advertisement/banner once BEFORE stretching
+        // the main Kakao window beyond the panel. Off-screen geometry is
+        // never used as a measurement input.
+        let shown=visual(main)?;
         let dpi=unsafe{GetDpiForWindow(main)}.max(96);
-        let extra=((160.0*dpi as f64/96.0).ceil() as i32).clamp(160,400);
-        Ok(Rect{bottom:area.bottom.max(monitor.monitor.bottom)
-            .saturating_add(extra),..area})
+        let top=banner_top(main,shown);
+        let detected=shown.bottom.saturating_sub(top);
+        let minimum=((48.0*dpi as f64/96.0).ceil() as i32).max(48);
+        let maximum=((300.0*dpi as f64/96.0).ceil() as i32).min(600);
+        if detected>=minimum && detected<=maximum {
+            return Ok(detected);
+        }
+        // Kakao sometimes renders its advertisement in the main surface,
+        // with no independent child HWND to measure. Use the existing
+        // Kakao footer allowance then, never the monitor-bottom distance.
+        Ok(((160.0*dpi as f64/96.0).ceil() as i32).clamp(160,400))
+    }
+    fn overlap_main_target(area:Rect,footer:i32)->Rect{
+        Rect{bottom:area.bottom.saturating_add(footer.max(0)),..area}
     }
     fn stack_targets(area:Rect,main:Hwnd,chats:&[Hwnd])
         ->Result<(Rect,Rect),String>{
@@ -634,7 +602,7 @@ mod native {
         hub:Hwnd,pid:u32,windows:Vec<Tracked>,active_chat:Option<Hwnd>,
         pub(super) mode:super::DockMode,
         last_region:Option<Rect>,pub(super) last_sync:Option<Instant>,
-        focus_hook:WinEventHook,
+        overlap_footer:Option<i32>,
     }
     impl Session{
         pub(super) fn attach_independent_windows(&mut self){
@@ -645,40 +613,6 @@ mod native {
                     eprintln!("[BANDO HUB] 카카오톡 소유 창 건너뜀: {reason}");
                 }
             }
-        }
-        fn refresh_focus_guard(&self){
-            if self.focus_hook==0{return;}
-            ACTIVE_DOCK.with(|state|{
-                if let Ok(mut current)=state.try_borrow_mut(){
-                    *current=Some(ActiveDock{
-                        hub:self.hub,
-                        windows:self.windows.iter().filter(|w|w.alive())
-                            .map(|w|DockedHandle{hwnd:w.hwnd,main:w.main})
-                            .collect(),
-                        active_chat:self.active_chat,
-                    });
-                }
-            });
-        }
-        fn sync_active_from_hook(&mut self){
-            if self.focus_hook==0{return;}
-            let selected=ACTIVE_DOCK.with(|state|state.try_borrow().ok()
-                .and_then(|current|current.as_ref().and_then(|dock|dock.active_chat)));
-            if let Some(hwnd)=selected{
-                if self.windows.iter().any(|w|!w.main && w.hwnd==hwnd && w.alive()){
-                    self.active_chat=Some(hwnd);
-                }
-            }
-        }
-        pub(super) fn start_focus_hook(&mut self)->Result<(),String>{
-            let hook=unsafe{SetWinEventHook(
-                EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_FOREGROUND,0,
-                Some(on_foreground_changed),0,0,WINEVENT_OUTOFCONTEXT
-            )};
-            if hook==0{return Err(os("카카오톡 창 활성화 감지 등록 실패"));}
-            self.focus_hook=hook;
-            self.refresh_focus_guard();
-            Ok(())
         }
         // Capture original placements before restoring. Session::drop restores
         // the minimized state too if initial layout fails or is disconnected.
@@ -718,7 +652,7 @@ mod native {
             Ok(Self{
                 hub,pid,windows:tracked,active_chat,
                 mode:super::DockMode::Together,
-                last_region:None,last_sync:None,focus_hook:0,
+                last_region:None,last_sync:None,overlap_footer:None,
             })
         }
         pub fn foreground_related(&self)->bool {
@@ -731,7 +665,6 @@ mod native {
         /// clicks inside an already foreground BANDO HUB (no new WinEvent).
         fn restore_relative_z_order(&mut self)->Result<(),String>{
             if !self.foreground_related(){return Ok(());}
-            self.sync_active_from_hook();
             let foreground=unsafe{GetForegroundWindow()};
             if self.windows.iter().any(|w|!w.main && w.hwnd==foreground){
                 self.active_chat=Some(foreground);
@@ -754,9 +687,7 @@ mod native {
             if unsafe{IsIconic(self.hub)}!=0{return Ok(());}
             if self.last_region==Some(region) &&
                 self.last_sync.is_some_and(|t|t.elapsed()<Duration::from_millis(350)){
-                // The geometry can remain stable while a click raises HUB
-                // in front of the dock's Kakao windows.
-                return self.restore_relative_z_order();
+                return Ok(());
             }
             self.last_region=Some(region);
             self.last_sync=Some(Instant::now());
@@ -772,7 +703,6 @@ mod native {
             if self.windows.is_empty(){
                 return Err("연결된 카카오톡 창이 종료됐습니다.".into());
             }
-            self.sync_active_from_hook();
             let foreground=unsafe{GetForegroundWindow()};
             if self.windows.iter().any(|w|!w.main && w.hwnd==foreground){
                 self.active_chat=Some(foreground);
@@ -782,12 +712,16 @@ mod native {
                 self.active_chat=self.windows.iter().find(|w|!w.main).map(|w|w.hwnd);
             }
             self.attach_independent_windows();
-            self.refresh_focus_guard();
             let before=self.windows.iter().filter_map(|w|
                 outer(w.hwnd).ok().map(|rect|(w.hwnd,rect))
             ).collect::<Vec<_>>();
             let base=self.windows.iter().find(|w|w.main && w.alive())
                 .map(|w|w.hwnd);
+            // Cache while the main window is still visible and unextended;
+            // never infer footer height from a previously offscreen HWND.
+            if self.mode==super::DockMode::Together && self.overlap_footer.is_none() {
+                self.overlap_footer=base.map(measure_footer_extension).transpose()?;
+            }
             let chats=self.windows.iter().filter(|w|
                 !w.main && w.alive() && unsafe{IsIconic(w.hwnd)}==0
             ).map(|w|w.hwnd).collect::<Vec<_>>();
@@ -810,7 +744,7 @@ mod native {
                         if self.mode==super::DockMode::Split {
                             main_target
                         }else{
-                            offscreen_main_target(self.hub,window.hwnd,region)?
+                            overlap_main_target(region,self.overlap_footer.unwrap_or(160))
                         }
                     }else if self.mode==super::DockMode::Split && base.is_some(){
                         chat_target
@@ -834,13 +768,6 @@ mod native {
     }
     impl Drop for Session {
         fn drop(&mut self){
-            if self.focus_hook!=0{
-                unsafe{UnhookWinEvent(self.focus_hook);}
-                self.focus_hook=0;
-                ACTIVE_DOCK.with(|state|{
-                    if let Ok(mut current)=state.try_borrow_mut(){*current=None;}
-                });
-            }
             // IMPORTANT: detach external Kakao windows before restoring
             // their placement and before eframe tears down the HUB HWND.
             for window in &mut self.windows{
