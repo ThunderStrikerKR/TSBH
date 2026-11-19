@@ -12,7 +12,7 @@ mod http_gateway;
 mod preview_store;
 mod source_autosave;
 
-use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
+use eframe::egui::{self, Align, Frame, Layout, RichText, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, PANEL_GAP};
 use std::sync::{mpsc::{self, Receiver}, Arc};
 use std::time::{Duration, Instant};
@@ -222,7 +222,7 @@ impl BandoEgui {
         let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
         egui::TopBottomPanel::top("global_navigation")
             .exact_height(theme::HEADER_HEIGHT)
-            .frame(Frame::new().fill(Color32::from_rgb(27, 27, 27))
+            .frame(Frame::new().fill(theme::HEADER_BG)
                 .inner_margin(egui::Margin::symmetric(theme::HEADER_PADDING_X, 0)))
             .show(ctx, |ui| {
                 // Fixed blank strip gives frameless windows a native
@@ -392,7 +392,7 @@ impl BandoEgui {
             .show(ui, |ui| {
                 ui.set_min_height((ui.available_height() - 2.0 * theme::SECTION_PADDING).max(100.0));
                 ui.vertical_centered(|ui| {
-                    let button_height = 34.0;
+                    let button_height = theme::ACTION_EMPHASIZED_HEIGHT;
                     ui.add_space(((ui.available_height() - button_height) / 2.0).max(0.0));
                     theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, false);
                 });
@@ -770,7 +770,7 @@ impl BandoEgui {
         egui::CentralPanel::default()
             .frame(Frame::new().fill(theme::CANVAS).inner_margin(theme::SPACE_16))
             .show(ctx, |ui| {
-                ui.label(RichText::new(self.page.label()).size(20.0).strong());
+                ui.label(RichText::new(self.page.label()).size(theme::FONT_PAGE_HEADING).strong());
             });
     }
 }
