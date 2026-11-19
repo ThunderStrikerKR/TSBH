@@ -1776,11 +1776,28 @@ impl BandoEgui {
                                     ui, line_area, false, false,
                                 );
                             }
-                            // Keep all vertical axes visually continuous at
-                            // T-junctions by drawing them over the crossbars.
-                            for (splitter, highlighted) in splitter_visuals {
+                            // Paint the vertical strokes and all three
+                            // intersections in this ONE parent paint layer.
+                            // Child panes clip their horizontal separators:
+                            // without these center joins the 6pt gutter shows
+                            // a dark gap between perpendicular rules.
+                            for (splitter, highlighted) in &splitter_visuals {
                                 components::paint_dock_axis_line(
-                                    ui, splitter, true, highlighted,
+                                    ui, *splitter, true, *highlighted,
+                                );
+                            }
+                            for (index, center_y) in [
+                                (0usize, shared_y),
+                                (1usize, review_y),
+                                (1usize, shared_y),
+                            ] {
+                                let gutter=splitter_visuals[index].0;
+                                let joint=Rect::from_center_size(
+                                    egui::pos2(gutter.center().x,center_y),
+                                    Vec2::splat(layout::SPLITTER),
+                                );
+                                components::paint_dock_junction(
+                                    ui,joint,splitter_visuals[index].1,
                                 );
                             }
                         }
