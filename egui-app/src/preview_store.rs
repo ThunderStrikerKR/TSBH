@@ -28,6 +28,11 @@ pub struct WorkingReception {
     /// Small, source-bound pricing/freight result of the real Rust rules.
     /// Never store the native Order or the full live client/state here.
     pub pricing_preview: Option<Value>,
+    /// Cross-process CAS token from the native Tauri working-reception row.
+    /// This is not an order-confirmation status.
+    pub working_version: Option<u64>,
+    /// True only when current raw, kind and client match the last native save.
+    pub working_synced: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -231,6 +236,8 @@ impl PreviewStore {
                 client_id: row.get("clientId").and_then(Value::as_str).map(str::to_owned),
                 client_selection: row.get("clientSelection").and_then(Value::as_str).map(str::to_owned),
                 pricing_preview: row.get("pricingPreview").filter(|v| !v.is_null()).cloned(),
+                working_version: row.get("workingVersion").and_then(Value::as_u64),
+                working_synced: row.get("workingSynced").and_then(Value::as_bool).unwrap_or(false),
             });
         }
         // Preserve a previous single-source editing session without changing
@@ -242,6 +249,7 @@ impl PreviewStore {
                 analysis_raw: None, analysis_evidence: None, client_match: None,
                 chat_handle: None, chat_title: None,
                 client_id: None, client_selection: None, pricing_preview: None,
+                working_version: None, working_synced: false,
             });
         }
         let active_id = if !active.is_empty() {
@@ -273,6 +281,8 @@ impl PreviewStore {
             "clientId": item.client_id,
             "clientSelection": item.client_selection,
             "pricingPreview": item.pricing_preview,
+            "workingVersion": item.working_version,
+            "workingSynced": item.working_synced,
         })).collect());
         let encoded = payload.to_string();
         let mut conn = self.open_connection()?;
@@ -326,6 +336,11 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
             (Some(id), Some(source)) if !id.trim().is_empty() &&
                 matches!(source, "AUTO" | "MANUAL") => {}
             _ => return Err("거래처 선택 상태가 올바르지 않습니다.".into()),
+        }
+        if draft.working_version == Some(0) ||
+           (draft.working_synced && (draft.working_version.is_none() ||
+               draft.client_id.is_none() || draft.pricing_preview.is_none())) {
+            return Err("운영 작업본 저장 상태가 올바르지 않습니다.".into());
         }
         if let Some(price)=&draft.pricing_preview {
             let keys=["sourceRaw","orderId","orderType","clientId","authorityRevision",
