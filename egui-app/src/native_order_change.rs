@@ -98,6 +98,11 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         "explicitEdit":true, "persistedOrders":[],
     }))?;
     let order=required(&priced,"order")?;
+    // Billing remains a pure native calculation, never an egui formula.
+    // The result may legitimately be null until items or freight are known.
+    let totals=gateway.execute(ReadOperation::CalculatePrice,json!({
+        "order":order, "client":client,
+    }))?;
     if order.get("id").and_then(Value::as_str)!=Some(source.id.as_str()) ||
        order.get("clientId").and_then(Value::as_str)!=Some(target_id) ||
        order.get("raw").and_then(Value::as_str)!=Some(source.raw.as_str()) {
@@ -126,7 +131,9 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         "status":order.get("status"),
         "shippingFee":order.get("shippingFee"),
         "shippingVersion":order.get("shippingVersion"),
-        "vatAmount":order.get("vatAmount"),
+        "vatAmount":totals.get("vat"),
+        "subtotal":totals.get("subtotal"),
+        "total":totals.get("total"),
         "notified":order.get("notified"),
         "paid":order.get("paid"),
         "linePrices":lines,
