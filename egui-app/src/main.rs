@@ -550,7 +550,7 @@ impl BandoEgui {
                         // explicit vertical center; no click/hover/drag area.
                         let wordmark = typography::brand_galley(bar, "BANDO HUB");
                         let icon_and_gap = if self.brand_texture.is_some() {
-                            theme::BRAND_ICON_SIZE + theme::SPACE_4 / 2.0
+                            theme::BRAND_ICON_SIZE + theme::BRAND_WORDMARK_GAP
                         } else {
                             0.0
                         };
