@@ -165,8 +165,7 @@ fn action_with_min_width(
     };
     let important = matches!(
         role,
-        ButtonRole::Primary | ButtonRole::Emphasized |
-        ButtonRole::Danger | ButtonRole::ActiveNavigation
+        ButtonRole::Primary | ButtonRole::Danger | ButtonRole::ActiveNavigation
     );
     ui.scope(|ui| {
         ui.spacing_mut().button_padding = Vec2::new(padding_x, 6.0);
