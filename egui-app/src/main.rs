@@ -15,6 +15,8 @@ mod preview_store;
 mod source_autosave;
 mod clipboard_intake;
 mod client_directory;
+mod client_master;
+mod client_manager;
 mod client_chooser;
 mod business_state;
 mod native_order_change;
@@ -156,6 +158,7 @@ struct BandoEgui {
     source_autosave: Option<source_autosave::SourceAutosave>,
     source_save_error: Option<String>,
     client_chooser: Option<ClientChooser>,
+    client_manager: Option<client_manager::ClientManager>,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
     client_change: Option<PendingClientChange>,
     working_sync: Option<PendingWorkingSync>,
@@ -202,6 +205,7 @@ impl Default for BandoEgui {
             source_autosave: None,
             source_save_error: None,
             client_chooser: None,
+            client_manager: None,
             manual_workspace: None,
             client_change: None,
             working_sync: None,
@@ -1298,7 +1302,12 @@ impl BandoEgui {
                                 ButtonRole::Navigation
                             };
                             if theme::action(bar, page.label(), role, true).clicked() {
-                                self.page = page;
+                                // A client editor is modal: navigation cannot
+                                // dispose of an unsaved client draft.
+                                if !self.client_manager.as_ref()
+                                    .is_some_and(|manager|manager.has_modal()) {
+                                    self.page = page;
+                                }
                             }
                         }
                         bar.with_layout(Layout::right_to_left(Align::Center), |actions| {
@@ -2464,10 +2473,21 @@ impl BandoEgui {
     }
 
     fn other_page(&mut self, ctx: &egui::Context) {
+        if self.page==Page::Clients && self.client_manager.is_none() {
+            self.client_manager=Some(client_manager::ClientManager::new(
+                Arc::clone(&self.gateway),ctx.clone()
+            ));
+        }
         egui::CentralPanel::default()
             .frame(Frame::new().fill(theme::CANVAS).inner_margin(theme::SPACE_16))
             .show(ctx, |ui| {
-                ui.label(typography::page_heading(self.page.label()));
+                if self.page==Page::Clients {
+                    if let Some(manager)=self.client_manager.as_mut() {
+                        manager.show_page(ui,Arc::clone(&self.gateway));
+                    }
+                }else{
+                    ui.label(typography::page_heading(self.page.label()));
+                }
             });
     }
 }
@@ -2511,6 +2531,15 @@ impl eframe::App for BandoEgui {
         if self.page == Page::Reception {
             self.show_client_chooser(ctx,work_area);
             self.show_manual_workspace(ctx,work_area);
+        } else if self.page==Page::Clients {
+            if let Some(manager)=self.client_manager.as_mut() {
+                if manager.has_modal() {
+                    components::modal_backdrop(
+                        ctx,"client-manager-modal-backdrop",false
+                    );
+                    manager.show_editor(ctx,work_area,Arc::clone(&self.gateway));
+                }
+            }
         }
         self.frameless_resize(ctx);
     }
