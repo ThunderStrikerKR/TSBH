@@ -358,9 +358,8 @@ impl BandoEgui {
         content: impl FnOnce(&mut Ui),
     ) {
         let width = ui.available_width();
-        theme::section_frame().show(ui, |ui| {
-            let frame_inset =
-                2.0 * (theme::SECTION_PADDING + theme::FRAME_STROKE_WIDTH);
+        theme::docked_pane_frame().show(ui, |ui| {
+            let frame_inset = 2.0 * theme::SECTION_PADDING;
             ui.set_min_width((width - frame_inset).max(60.0));
             ui.set_min_height((minimum_height - frame_inset).max(48.0));
             // The section header owns its vertical rhythm. Eguis implicit
@@ -391,9 +390,8 @@ impl BandoEgui {
         // splitter. The previous content-driven Frame ended too early.
         let pane_width = ui.available_width();
         let pane_height = ui.available_height();
-        theme::section_frame().show(ui, |ui| {
-            let frame_inset =
-                2.0 * (theme::SECTION_PADDING + theme::FRAME_STROKE_WIDTH);
+        theme::docked_pane_frame().show(ui, |ui| {
+            let frame_inset = 2.0 * theme::SECTION_PADDING;
             let inner_width = (pane_width - frame_inset).max(1.0);
             let inner_height = (pane_height - frame_inset).max(1.0);
             ui.set_min_size(Vec2::new(inner_width, inner_height));
@@ -462,13 +460,9 @@ impl BandoEgui {
                                 if response.hovered() || response.dragged() {
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                                 }
-                                ui.painter().rect_filled(
-                                    splitter, 0.0,
-                                    if response.hovered() || response.dragged() {
-                                        theme::BORDER
-                                    } else {
-                                        theme::DIVIDER
-                                    },
+                                components::paint_dock_splitter(
+                                    ui, splitter, true,
+                                    response.hovered() || response.dragged(),
                                 );
                                 if response.drag_started() {
                                     self.dragging_split = Some(HorizontalSplitDrag {
@@ -538,9 +532,9 @@ impl BandoEgui {
         if response.hovered() || response.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
         }
-        ui.painter().rect_filled(
-            splitter_rect, 0.0,
-            if response.hovered() || response.dragged() { theme::BORDER } else { theme::DIVIDER },
+        components::paint_dock_splitter(
+            ui, splitter_rect, false,
+            response.hovered() || response.dragged(),
         );
         if response.drag_started() {
             self.dragging_vertical = Some(VerticalSplitDrag {
@@ -689,7 +683,7 @@ impl BandoEgui {
                 }
             }
         });
-        ui.add_space(PANEL_GAP);
+        components::docked_separator(ui);
 
         let mut next_recipient = None;
         Self::section(ui, "수취인별 주문 정보", (full_height * 0.22).max(180.0), |ui| {
@@ -743,7 +737,7 @@ impl BandoEgui {
         let selected = self.analysis.as_ref().and_then(|analysis| {
             reception_service::recipients(analysis).get(self.selected_recipient)
         });
-        ui.add_space(PANEL_GAP);
+        components::docked_separator(ui);
 
         let remaining = ui.available_height().max(230.0);
         Self::section(ui, "품목 및 운임", remaining, |ui| {
