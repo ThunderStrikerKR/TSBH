@@ -153,31 +153,56 @@ fn workflow_card<R>(
     }
     response.inner
 }
-/// A clickable, left-aligned title occupying the same reserved header width
-/// with the workflow lights; no highlighted pill around the dealer name.
+/// The narrow workflow column cannot fit dealer name, four stage lamps,
+/// management and delete controls on one line. Keep the React order of
+/// information, but give the title a generous first row and put progress
+/// lights in the summary row below. Every card uses the same geometry.
 fn group_heading(
-    ui:&mut Ui,id:&str,title:&str,step:usize,notice:bool
+    ui:&mut Ui,id:&str,title:&str,open:bool
 )->egui::Response{
-    // The original React title BUTTON includes both the company name and
-    // signal lights. Do not restrict the click target to the text glyphs.
-    let heading=ui.horizontal(|header|{
+    let head=ui.horizontal(|header|{
         header.spacing_mut().item_spacing.x=theme::SPACE_4;
-        let title_width=(header.available_width()-theme::WORKFLOW_SIGNAL_WIDTH
-            -theme::SPACE_4).max(0.0);
+        let (icon_rect,_)=header.allocate_exact_size(
+            Vec2::new(theme::WORKFLOW_TOGGLE_ICON_WIDTH,theme::WORKFLOW_TITLE_HEIGHT),
+            egui::Sense::hover(),
+        );
+        components::paint_workflow_icon(
+            header.painter(),icon_rect.center(),
+            if open {components::WorkflowIcon::Expanded}
+            else {components::WorkflowIcon::Collapsed},theme::SECONDARY
+        );
+        let width=header.available_width();
         header.add_sized(
-            [title_width,theme::WORKFLOW_TITLE_HEIGHT],
+            [width,theme::WORKFLOW_TITLE_HEIGHT],
             egui::Label::new(typography::section_heading(title)).truncate()
         );
-        lights(header,step,notice);
     });
-    ui.interact(heading.response.rect,Id::new(("workflow-header",id)),
-        egui::Sense::click())
+    let response=ui.interact(
+        head.response.rect,Id::new(("workflow-header",id)),egui::Sense::click()
+    );
+    if response.hovered(){
+        ui.painter().rect_filled(
+            head.response.rect,theme::SPACE_4,
+            theme::WORKFLOW_HEADER_HOVER
+        );
+        // Repaint the icon on top of the hover surface, without relying on
+        // fallback text fonts for the chevron.
+        let center=egui::pos2(
+            head.response.rect.left()+theme::WORKFLOW_TOGGLE_ICON_WIDTH/2.0,
+            head.response.rect.center().y,
+        );
+        components::paint_workflow_icon(
+            ui.painter(),center,
+            if open {components::WorkflowIcon::Expanded}
+            else {components::WorkflowIcon::Collapsed},theme::TEXT
+        );
+    }
+    response
 }
-/// React header: title and lights occupy the flexible left slot;
-/// its existing manage/delete controls retain their fixed right slots.
-/// Until the native audited writer is available, preserve their visible
-/// roles disabled rather than wiring destructive fake operations.
-fn workflow_header(ui:&mut Ui,id:&str,title:&str,step:usize,notice:bool)
+/// Header top row: the full clickable title and both original management
+/// controls. Stage dots move to the next line to prevent Korean title
+/// truncation in the 22.4%-width right-hand column.
+fn workflow_header(ui:&mut Ui,id:&str,title:&str,open:bool)
     ->egui::Response {
     let width=ui.available_width();
     let title_width=(width-theme::WORKFLOW_MANAGE_WIDTH
@@ -189,7 +214,7 @@ fn workflow_header(ui:&mut Ui,id:&str,title:&str,step:usize,notice:bool)
             Vec2::new(title_width,theme::WORKFLOW_TITLE_HEIGHT),
             Layout::top_down(Align::Min),|left|{
                 left.set_min_width(title_width);
-                title_response=Some(group_heading(left,id,title,step,notice));
+                title_response=Some(group_heading(left,id,title,open));
             }
         );
         bar.allocate_ui_with_layout(
@@ -199,35 +224,22 @@ fn workflow_header(ui:&mut Ui,id:&str,title:&str,step:usize,notice:bool)
                     theme::ButtonRole::Standard,false);
             }
         );
-        // A small disabled trash control, drawn as line art as in React.
-        // It must never delete a native workflow group without an audited
-        // write + undo transaction.
+        // The native mutation is not yet connected: preserve the original
+        // delete slot, but never turn it into an invented destructive action.
         let (rect,_)=bar.allocate_exact_size(
             Vec2::new(theme::WORKFLOW_TRASH_WIDTH,
                 theme::WORKFLOW_TITLE_HEIGHT),
             egui::Sense::hover(),
         );
-        let paint=bar.painter();
-        paint.rect_filled(rect,theme::CONTROL_RADIUS as f32,theme::RAISED);
-        let c=rect.center();
-        let ink=egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::SECONDARY);
-        paint.line_segment([
-            Pos2::new(c.x-7.0,c.y-5.0),Pos2::new(c.x+7.0,c.y-5.0)
-        ],ink);
-        paint.line_segment([
-            Pos2::new(c.x-4.0,c.y-8.0),Pos2::new(c.x+4.0,c.y-8.0)
-        ],ink);
-        for (x1,y1,x2,y2) in [
-            (-5.0,-3.0,-4.0,8.0),(5.0,-3.0,4.0,8.0),
-            (-4.0,8.0,4.0,8.0),(-1.5,-1.0,-1.5,5.0),
-            (1.5,-1.0,1.5,5.0)
-        ]{
-            paint.line_segment([
-                Pos2::new(c.x+x1,c.y+y1),Pos2::new(c.x+x2,c.y+y2)
-            ],ink);
-        }
+        bar.painter().rect_filled(
+            rect,theme::CONTROL_RADIUS as f32,theme::RAISED
+        );
+        components::paint_workflow_icon(
+            bar.painter(),rect.center(),components::WorkflowIcon::Trash,
+            theme::MUTED
+        );
     });
-    title_response.expect("workflow header always renders a clickable title")
+    title_response.expect("workflow heading always creates a title")
 }
 fn lights(ui:&mut Ui,step:usize,notice:bool){
     ui.horizontal(|row|{
@@ -269,7 +281,8 @@ fn money(amount:Option<i64>)->String{
 /// but its 250ms read-only hover preview is still available.
 fn workflow_action_line(
     ui:&mut Ui,id:&str,shipments:usize,total:Option<i64>,
-    vat:Option<&str>,button_text:&str,enabled:bool
+    vat:Option<&str>,button_text:&str,enabled:bool,
+    step:usize,notice:bool
 )->(bool,bool){
     let width=ui.available_width();
     let actions=theme::WORKFLOW_CONTROL_WIDTH
@@ -283,12 +296,13 @@ fn workflow_action_line(
             Layout::top_down(Align::Min),|summary|{
                 summary.set_max_width(summary_width);
                 summary.spacing_mut().item_spacing.y=0.0;
-                summary.add_sized(
-                    [summary_width,theme::SPACE_16],
-                    egui::Label::new(typography::caption(
-                        &format!("배송 {shipments}건")
-                    )).truncate()
-                );
+                summary.horizontal(|line|{
+                    line.spacing_mut().item_spacing.x=theme::SPACE_4;
+                    lights(line,step,notice);
+                    line.with_layout(Layout::right_to_left(Align::Center),|right|{
+                        right.label(typography::caption(&format!("배송 {shipments}건")));
+                    });
+                });
                 let detail=match total{
                     Some(amount)=>{
                         let amount=money(Some(amount));
@@ -299,7 +313,7 @@ fn workflow_action_line(
                     None=>"금액 미확정".to_owned(),
                 };
                 summary.add_sized(
-                    [summary_width,theme::SPACE_16],
+                    [summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT],
                     egui::Label::new(typography::quantity(&detail)).truncate()
                 );
             }
@@ -313,11 +327,15 @@ fn workflow_action_line(
                 ));
             }
         );
-        bar.add_enabled(false,
-            egui::Button::new("↶").min_size(Vec2::new(
+        let back=bar.add_enabled(false,
+            egui::Button::new("").min_size(Vec2::new(
                 theme::WORKFLOW_TRASH_WIDTH,
                 theme::WORKFLOW_ACTION_ROW_HEIGHT
             ))
+        );
+        components::paint_workflow_icon(
+            bar.painter(),back.rect.center(),
+            components::WorkflowIcon::PreviousStage,theme::MUTED
         );
     });
     let response=stage_button.expect("workflow action occupies a fixed slot");
@@ -442,9 +460,9 @@ fn group_frame(
     let mut event=None;
     let active=selected.is_some_and(|s|s.group_id==group.id);
     workflow_card(ui,active && !in_preview,in_preview,|ui|{
-        let title=format!("{}  {}",if open || in_preview{"▾"}else{"▸"},
-            group.dealer_name);
-        let btn=workflow_header(ui,&group.id,&title,group.step,group.needs_notice);
+        let btn=workflow_header(
+            ui,&group.id,&group.dealer_name,open || in_preview
+        );
             if btn.clicked(){
                 if active {
                     event=Some(Event::ToggleGroup(group.id.clone()));
@@ -462,7 +480,8 @@ fn group_frame(
         }else{"부가세 별도".to_owned()};
         let (_,stage_hovered)=workflow_action_line(
             ui,&group.id,group.shipments.len(),group.total,
-            Some(&vat),stage_name(group.step,group.needs_notice),false
+            Some(&vat),stage_name(group.step,group.needs_notice),false,
+            group.step,group.needs_notice
         );
         if stage_hovered && !in_preview{
             *trigger=Some(group.id.clone());
@@ -504,9 +523,7 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
                 .and_then(|m|m.get("name")).and_then(|n|n.as_str())
                 .filter(|n|!n.trim().is_empty()).unwrap_or("거래처 확인").to_owned()
         };
-        if workflow_header(ui,&draft.id,
-            &format!("{}  {}",if open{"▾"}else{"▸"},title),0,false
-        ).clicked(){
+        if workflow_header(ui,&draft.id,&title,open).clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
                 else{Event::SelectPending(draft.id.clone())});
         }
@@ -517,7 +534,7 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
         }else{&[]};
         let (clicked,_)=workflow_action_line(
             ui,&draft.id,recipients.len(),None,None,"거래처 확인",
-            draft.client_id.is_none()
+            draft.client_id.is_none(),0,false
         );
         if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
         if open{
