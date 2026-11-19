@@ -325,7 +325,7 @@ impl ManualWorkspace {
                     ui.label(typography::status(error,theme::DANGER));
                 }
                 if self.busy() {
-                    ui.label(typography::caption("Rust에서 수동 분류를 처리하고 있습니다."));
+                    ui.label(typography::caption("처리 중입니다."));
                 }
                 let Some(model)=self.model.as_ref() else {return};
                 let rows=list(model,"rows").to_vec();
@@ -415,7 +415,7 @@ impl ManualWorkspace {
                             }
                             if blocks.is_empty(){
                                 ui.label(typography::caption(
-                                    "Rust가 분리한 원문 블록이 없습니다. 직접 입력으로 수정할 수 있습니다."
+                                    "분류할 원문 항목이 없습니다."
                                 ));
                             }
                                 });
@@ -595,11 +595,7 @@ impl ManualWorkspace {
                         discard=true;
                     }
                     ui.label(typography::caption(
-                        if self.dirty {
-                            "변경 중 · 적용 전까지 기존 발주서는 유지됩니다."
-                        }else{
-                            "원문 블록 클릭 → 선택된 배송 필드에 배정"
-                        }
+                        &format!("미배정됨: {unassigned}개")
                     ));
                 });
             });
