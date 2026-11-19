@@ -3,6 +3,7 @@
 use serde_json::{json, Value};
 
 mod pricing;
+pub mod settings_accounts;
 mod reconciliation;
 mod issues;
 mod product_confirmation;
