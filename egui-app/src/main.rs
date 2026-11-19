@@ -62,6 +62,7 @@ struct BandoEgui {
     source_editing: bool,
     analysis: Option<serde_json::Value>,
     analysis_error: Option<String>,
+    selected_recipient: usize,
 }
 
 impl Default for BandoEgui {
@@ -80,6 +81,7 @@ impl Default for BandoEgui {
             source_editing: false,
             analysis: None,
             analysis_error: None,
+            selected_recipient: 0,
         }
     }
 }
@@ -429,6 +431,7 @@ impl BandoEgui {
                     // Do not display the previous order's stale recognition.
                     self.analysis = None;
                     self.analysis_error = None;
+                    self.selected_recipient = 0;
                 }
                 ui.horizontal(|ui| {
                     if theme::action(
@@ -439,6 +442,7 @@ impl BandoEgui {
                             Ok(result) => {
                                 self.analysis = Some(result);
                                 self.analysis_error = None;
+                                self.selected_recipient = 0;
                             }
                             Err(error) => {
                                 self.analysis = None;
@@ -493,6 +497,7 @@ impl BandoEgui {
             self.raw_source.clear();
             self.analysis = None;
             self.analysis_error = None;
+            self.selected_recipient = 0;
             self.source_editing = false;
         } else if begin_input {
             self.source_editing = true;
