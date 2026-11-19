@@ -8,6 +8,7 @@ use crate::{
     theme, typography,
 };
 use eframe::egui::{self, Ui};
+use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{json, Value};
 use std::sync::{
     mpsc::{self, Receiver, TryRecvError},
@@ -51,6 +52,16 @@ fn group_name<'a>(groups: &'a [Value], id: &str) -> &'a str {
 
 pub struct FreightManager {
     tab: FreightTab,
+    gateway: Arc<dyn BandoGateway>,
+    write_receiver: Option<Receiver<Result<Value,String>>>,
+    write_action: Option<String>,
+    notice: Option<String>,
+    pending: BTreeMap<String,String>,
+    selected: BTreeSet<String>,
+    bulk_group: String,
+    new_name: String,
+    rename_target: Option<(String,String)>,
+    delete_target: Option<String>,
     receiver: Option<Receiver<Result<(Value, Value), String>>>,
     state: Option<Value>,
     projection: Option<Value>,
@@ -61,13 +72,14 @@ pub struct FreightManager {
 impl FreightManager {
     pub fn new(gateway: Arc<dyn BandoGateway>, ctx: egui::Context) -> Self {
         let (sender, receiver) = mpsc::channel();
+        let loader=Arc::clone(&gateway);
         std::thread::spawn(move || {
             let outcome = (|| {
-                let state = gateway.load_business_state()?;
+                let state = loader.load_business_state()?;
                 let shipping = state.get("shipping")
                     .filter(|value| value.is_object())
                     .ok_or("운영 DB에서 운임 기준을 찾을 수 없습니다.")?;
-                let projection = gateway.execute(
+                let projection = loader.execute(
                     ReadOperation::ShippingManagerView,
                     json!({"state":state,"shipping":shipping}),
                 )?;
@@ -78,6 +90,16 @@ impl FreightManager {
         });
         Self {
             tab: FreightTab::Groups,
+            gateway,
+            write_receiver: None,
+            write_action: None,
+            notice: None,
+            pending: BTreeMap::new(),
+            selected: BTreeSet::new(),
+            bulk_group: String::new(),
+            new_name: String::new(),
+            rename_target: None,
+            delete_target: None,
             receiver: Some(receiver),
             state: None,
             projection: None,
@@ -88,23 +110,90 @@ impl FreightManager {
     }
 
     fn poll(&mut self) {
-        let Some(receiver) = self.receiver.as_ref() else { return; };
-        match receiver.try_recv() {
-            Ok(Ok((state, projection))) => {
-                self.state = Some(state);
-                self.projection = Some(projection);
-                self.receiver = None;
+        if let Some(receiver)=self.receiver.as_ref(){
+            match receiver.try_recv() {
+                Ok(Ok((state, projection))) => {
+                    self.state = Some(state);
+                    self.projection = Some(projection);
+                    self.receiver = None;
+                }
+                Ok(Err(error)) => {
+                    self.error = Some(error);
+                    self.receiver = None;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.error = Some("운임 기준을 불러오는 작업이 중단되었습니다.".into());
+                    self.receiver = None;
+                }
+                Err(TryRecvError::Empty) => {}
             }
-            Ok(Err(error)) => {
-                self.error = Some(error);
-                self.receiver = None;
-            }
-            Err(TryRecvError::Disconnected) => {
-                self.error = Some("운임 기준을 불러오는 작업이 중단되었습니다.".into());
-                self.receiver = None;
-            }
-            Err(TryRecvError::Empty) => {}
         }
+        if let Some(receiver)=self.write_receiver.as_ref(){
+            match receiver.try_recv(){
+                Ok(Ok(result))=>{
+                    if result["state"].is_object() && result["projection"].is_object(){
+                        self.state=Some(result["state"].clone());
+                        self.projection=Some(result["projection"].clone());
+                        self.error=None;
+                        let action=self.write_action.take().unwrap_or_default();
+                        self.notice=Some(match action.as_str(){
+                            "create_group"=>"새 배송 그룹을 등록했습니다.",
+                            "rename_group"=>"배송 그룹명을 변경했습니다.",
+                            "delete_group"=>"그룹을 삭제하고 과거 운임 기록을 보존했습니다.",
+                            "assign_products"=>"배송 그룹 지정을 저장했습니다.",
+                            _=>"운임 변경사항을 저장했습니다."
+                        }.into());
+                        match action.as_str(){
+                            "create_group"=>self.new_name.clear(),
+                            "rename_group"=>self.rename_target=None,
+                            "delete_group"=>self.delete_target=None,
+                            "assign_products"=>{
+                                self.pending.clear();
+                                self.selected.clear();
+                            }
+                            _=>{}
+                        }
+                    }else{
+                        self.error=Some("운임 저장 후 최신 상태를 확인하지 못했습니다.".into());
+                    }
+                    self.write_receiver=None;
+                }
+                Ok(Err(error))=>{
+                    self.error=Some(error);
+                    self.write_receiver=None;
+                    self.write_action=None;
+                }
+                Err(TryRecvError::Disconnected)=>{
+                    self.error=Some("운임 저장 작업이 중단되었습니다. 데이터 재조회를 확인하세요.".into());
+                    self.write_receiver=None;
+                    self.write_action=None;
+                }
+                Err(TryRecvError::Empty)=>{}
+            }
+        }
+    }
+
+    fn write(&mut self, action: String, data: Value, ctx:egui::Context) {
+        if self.write_receiver.is_some() || !self.gateway.shipping_write_enabled(){
+            return;
+        }
+        let Some(revision)=self.state.as_ref()
+            .and_then(|s|s["revision"].as_u64()) else {
+                self.error=Some("운영 DB 리비전을 확인하지 못했습니다.".into());
+                return;
+            };
+        let gateway=Arc::clone(&self.gateway);
+        let requested=action.clone();
+        let (sender,receiver)=mpsc::channel();
+        self.write_action=Some(action);
+        self.notice=None;
+        self.error=None;
+        self.write_receiver=Some(receiver);
+        std::thread::spawn(move||{
+            let result=gateway.mutate_shipping(revision,&requested,data);
+            let _=sender.send(result);
+            ctx.request_repaint();
+        });
     }
 
     pub fn show_page(&mut self, ui: &mut Ui) {
@@ -121,11 +210,16 @@ impl FreightManager {
         ui.add_space(theme::SPACE_12);
         if let Some(error) = &self.error {
             ui.label(typography::status(error, theme::DANGER));
-            return;
+            ui.add_space(theme::SPACE_8);
+        }else if let Some(notice)=&self.notice{
+            ui.label(typography::status(notice,theme::SUCCESS));
+            ui.add_space(theme::SPACE_8);
         }
         let (Some(state), Some(projection)) = (self.state.as_ref(), self.projection.as_ref())
         else {
-            ui.label(typography::caption("운임 기준을 불러오는 중입니다."));
+            if self.receiver.is_some() {
+                ui.label(typography::caption("운임 기준을 불러오는 중입니다."));
+            }
             return;
         };
         let shipping = &state["shipping"];
@@ -147,86 +241,275 @@ impl FreightManager {
             )));
         });
         ui.add_space(theme::SPACE_12);
+        let enabled=self.gateway.shipping_write_enabled()&&self.write_receiver.is_none();
+        let mut action:Option<(String,Value)>=None;
         egui::ScrollArea::vertical()
             .id_salt(("freight-management", self.tab as u8))
             .auto_shrink([false, false])
             .show(ui, |scroll| match self.tab {
                 FreightTab::Groups => Self::show_groups(
-                    scroll, &groups, &products, &mut self.search, &mut self.group_filter
+                    scroll, &groups, &products, &mut self.search, &mut self.group_filter,
+                    &mut self.pending, &mut self.selected,
+                    &mut self.bulk_group, &mut self.new_name,
+                    &mut self.rename_target, &mut self.delete_target, enabled, &mut action
                 ),
                 FreightTab::Rates => Self::show_rates(scroll, &groups, projection),
                 FreightTab::History => Self::show_history(scroll, shipping, projection),
             });
+        if self.tab==FreightTab::Groups {
+            let area=ui.max_rect();
+            let ctx=ui.ctx();
+            if let Some((id,name))=self.rename_target.as_mut(){
+                components::modal_backdrop(ctx,"freight-rename-backdrop",false);
+                components::decision_window("배송 그룹명","freight-rename",area)
+                    .show(ctx,|modal|{
+                        components::field(modal,name,components::FieldKind::Text,enabled);
+                        modal.add_space(theme::SPACE_12);
+                        let (cancel,confirm)=components::modal_actions(
+                            modal,"취소","이름 수정",theme::ButtonRole::Primary,
+                            enabled&&!name.trim().is_empty()
+                        );
+                        if cancel {self.rename_target=None;}
+                        else if confirm {
+                            action=Some(("rename_group".into(),json!({
+                                "groupId":id,"name":name.trim()
+                            })));
+                        }
+                    });
+            }else if let Some(id)=self.delete_target.as_ref(){
+                let linked=products.iter().filter(|p|text(p,"shippingGroupId")==id).count();
+                let name=group_name(&groups,id);
+                components::modal_backdrop(ctx,"freight-delete-backdrop",false);
+                components::decision_window("배송 그룹 삭제","freight-delete",area)
+                    .show(ctx,|modal|{
+                        modal.label(typography::body(name));
+                        modal.label(typography::body(if linked>0 {
+                            "사용 중인 상품을 미지정으로 변경한 후 그룹을 삭제합니다."
+                        }else{
+                            "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
+                        }));
+                        modal.add_space(theme::SPACE_12);
+                        let (cancel,confirm)=components::modal_actions(
+                            modal,"취소",if linked>0 {
+                                "상품 연결을 미지정으로 변경하고 삭제"
+                            }else{"그룹 삭제"},theme::ButtonRole::Danger,enabled
+                        );
+                        if cancel{self.delete_target=None;}
+                        else if confirm{
+                            action=Some(("delete_group".into(),json!({
+                                "groupId":id,"detach":linked>0
+                            })));
+                        }
+                    });
+            }
+        }
+        if let Some((kind,data))=action {
+            self.write(kind,data,ui.ctx().clone());
+        }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn show_groups(
         ui: &mut Ui, groups: &[Value], products: &[&Value],
         search: &mut String, group_filter: &mut String,
+        pending: &mut BTreeMap<String,String>, selected: &mut BTreeSet<String>,
+        bulk_group: &mut String, new_name: &mut String,
+        rename_target: &mut Option<(String,String)>,
+        delete_target: &mut Option<String>, enabled:bool,
+        action:&mut Option<(String,Value)>,
     ) {
+        theme::section_frame().show(ui, |section| {
+            section.horizontal(|tools|{
+                tools.label(typography::field_label("새 배송 그룹명"));
+                components::flexible_text_field(
+                    tools,new_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 배송 그룹명"
+                );
+                if theme::action(tools,"배송 그룹 추가",theme::ButtonRole::Primary,
+                    enabled&&!new_name.trim().is_empty()).clicked(){
+                    *action=Some(("create_group".into(),json!({
+                        "name":new_name.trim()
+                    })));
+                }
+            });
+            components::soft_divider(section);
+            for group in groups {
+                section.horizontal(|line|{
+                    line.label(typography::body(text(group,"name")));
+                    let count=products.iter()
+                        .filter(|p|text(p,"shippingGroupId")==text(group,"id"))
+                        .count();
+                    line.label(typography::caption(format!("{count}개 상품")));
+                    if theme::action(line,"이름 수정",theme::ButtonRole::Standard,enabled)
+                        .clicked() {
+                        *rename_target=Some((
+                            text(group,"id").into(),text(group,"name").into()
+                        ));
+                    }
+                    if theme::action(line,"삭제",theme::ButtonRole::Danger,enabled)
+                        .clicked(){
+                        *delete_target=Some(text(group,"id").into());
+                    }
+                });
+            }
+        });
+        ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui, |section| {
             section.horizontal_wrapped(|tools| {
                 tools.label(typography::field_label("검색"));
                 components::flexible_text_field(
-                    tools, search, theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                    "모델명 / 상품명 / 카테고리 검색",
+                    tools,search,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+                    "모델명 / 상품명 / 카테고리 검색"
                 );
                 egui::ComboBox::from_id_salt("freight-group-filter")
                     .selected_text(if group_filter.is_empty() {
                         "전체 상품"
                     } else if group_filter == "none" {
                         "그룹 미지정"
-                    } else {
-                        group_name(groups, group_filter)
-                    })
+                    } else { group_name(groups,group_filter) })
                     .show_ui(tools, |combo| {
-                        combo.selectable_value(group_filter, String::new(), "전체 상품");
-                        combo.selectable_value(group_filter, "none".into(), "그룹 미지정");
+                        combo.selectable_value(group_filter,String::new(),"전체 상품");
+                        combo.selectable_value(group_filter,"none".into(),"그룹 미지정");
                         for group in groups {
                             combo.selectable_value(
-                                group_filter, text(group, "id").to_owned(),
-                                text(group, "name"),
+                                group_filter,text(group,"id").into(),text(group,"name")
                             );
                         }
                     });
             });
             components::soft_divider(section);
-            let needle = search.trim().to_lowercase();
-            let filtered: Vec<&Value> = products.iter().copied().filter(|p| {
-                (needle.is_empty()
-                    || [text(p, "code"), text(p, "name"), text(p, "subtitle"),
-                        text(p, "category")].iter().any(|s|
-                        s.to_lowercase().contains(&needle)))
-                    && (group_filter.is_empty()
-                        || (group_filter == "none"
-                            && !groups.iter().any(|g|
-                                text(g, "id") == text(p, "shippingGroupId")))
-                        || text(p, "shippingGroupId") == group_filter)
+            let needle=search.trim().to_lowercase();
+            let filtered:Vec<&Value>=products.iter().copied().filter(|p|{
+                (needle.is_empty()||[text(p,"code"),text(p,"name"),
+                    text(p,"subtitle"),text(p,"category")]
+                    .iter().any(|s|s.to_lowercase().contains(&needle)))
+                && (group_filter.is_empty()
+                    || (group_filter=="none" && !groups.iter().any(|g|
+                        text(g,"id")==text(p,"shippingGroupId")))
+                    || text(p,"shippingGroupId")==group_filter)
             }).collect();
-            egui::ScrollArea::horizontal()
-                .id_salt("freight-group-rows")
-                .auto_shrink([false, false])
-                .show(section, |table| {
-                    table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
-                    components::management_row(
-                        table, "freight-header",
-                        [("상품명 / 상품설명",""),("카테고리",""),("배송 그룹","")], true
-                    );
-                    for product in &filtered {
-                        let name = text(product, "name");
-                        components::management_row(
-                            table, text(product, "id"),
-                            [
-                                (name, text(product, "subtitle")),
-                                (text(product, "category"), ""),
-                                (group_name(groups, text(product, "shippingGroupId")), ""),
-                            ], false
-                        );
+            section.horizontal_wrapped(|tools|{
+                let mut all=!filtered.is_empty()
+                    && filtered.iter().all(|p|selected.contains(text(p,"id")));
+                if tools.checkbox(&mut all,"").changed(){
+                    selected.clear();
+                    if all {
+                        selected.extend(filtered.iter()
+                            .map(|p|text(p,"id").to_owned()));
                     }
-                    if filtered.is_empty() {
-                        table.add_space(theme::SPACE_12);
+                }
+                tools.label(typography::field_label(format!(
+                    "{}개 선택",selected.len()
+                )));
+                egui::ComboBox::from_id_salt("freight-bulk-assign")
+                    .selected_text(if bulk_group.is_empty(){
+                        "미지정으로 변경"
+                    }else{group_name(groups,bulk_group)})
+                    .show_ui(tools,|combo|{
+                        combo.selectable_value(bulk_group,String::new(),"미지정으로 변경");
+                        for group in groups{
+                            combo.selectable_value(
+                                bulk_group,text(group,"id").into(),text(group,"name")
+                            );
+                        }
+                    });
+                if theme::action(tools,"선택 상품에 적용",
+                    theme::ButtonRole::Standard,enabled&&!selected.is_empty()
+                ).clicked(){
+                    for id in selected.iter(){
+                        pending.insert(id.clone(),bulk_group.clone());
+                    }
+                }
+            });
+            components::soft_divider(section);
+            egui::ScrollArea::horizontal()
+                .id_salt("freight-assignment-rows")
+                .auto_shrink([false,false])
+                .show(section,|table|{
+                    table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+                    egui::Grid::new("freight-group-assignments-grid")
+                        .striped(true).spacing([theme::SPACE_24,theme::SPACE_8])
+                        .show(table,|grid|{
+                            grid.label(typography::table_header("선택"));
+                            grid.label(typography::table_header("상품명 / 상품설명"));
+                            grid.label(typography::table_header("카테고리"));
+                            grid.label(typography::table_header("배송 그룹"));
+                            grid.label(typography::table_header("지정 상태"));
+                            grid.end_row();
+                            for product in &filtered{
+                                let id=text(product,"id");
+                                let committed=text(product,"shippingGroupId");
+                                let mut checked=selected.contains(id);
+                                if grid.checkbox(&mut checked,"").changed(){
+                                    if checked{selected.insert(id.into());}
+                                    else{selected.remove(id);}
+                                }
+                                grid.vertical(|cell|{
+                                    cell.label(typography::table_cell(text(product,"name")));
+                                    let description=text(product,"subtitle");
+                                    if !description.is_empty(){
+                                        cell.label(typography::caption(description));
+                                    }
+                                });
+                                grid.label(typography::table_cell(text(product,"category")));
+                                let mut current=pending.get(id).cloned()
+                                    .unwrap_or_else(||committed.into());
+                                grid.add_enabled_ui(enabled,|control|{
+                                    egui::ComboBox::from_id_salt(("freight-row-group",id))
+                                        .selected_text(if current.is_empty(){
+                                            "그룹 선택"
+                                        }else{group_name(groups,&current)})
+                                        .show_ui(control,|choice|{
+                                            choice.selectable_value(
+                                                &mut current,String::new(),"그룹 선택"
+                                            );
+                                            for group in groups{
+                                                choice.selectable_value(
+                                                    &mut current,text(group,"id").into(),
+                                                    text(group,"name")
+                                                );
+                                            }
+                                        });
+                                });
+                                if current!=committed {
+                                    pending.insert(id.into(),current);
+                                }else{pending.remove(id);}
+                                let changed=pending.contains_key(id);
+                                grid.label(typography::table_cell(
+                                    if changed{"변경 예정"}
+                                    else if committed.is_empty(){"미지정"}
+                                    else{"지정 완료"}
+                                ));
+                                grid.end_row();
+                            }
+                        });
+                    if filtered.is_empty(){
                         table.label(typography::caption("검색 조건에 맞는 상품이 없습니다."));
                     }
                 });
+            let mut assignments=serde_json::Map::new();
+            for (id,group) in pending.iter(){
+                if let Some(product)=products.iter().find(|p|text(p,"id")==id){
+                    if text(product,"shippingGroupId")!=group{
+                        assignments.insert(id.clone(),json!(group));
+                    }
+                }
+            }
+            components::soft_divider(section);
+            section.horizontal(|actions|{
+                actions.label(typography::caption(format!(
+                    "{}개 상품의 배송 그룹을 변경합니다.",assignments.len()
+                )));
+                if theme::action(actions,"미저장 변경 초기화",
+                    theme::ButtonRole::Standard,enabled&&!assignments.is_empty()
+                ).clicked(){pending.clear();}
+                if theme::action(actions,"그룹 지정 저장",
+                    theme::ButtonRole::Primary,enabled&&!assignments.is_empty()
+                ).clicked(){
+                    *action=Some(("assign_products".into(),json!({
+                        "assignments":assignments
+                    })));
+                }
+            });
         });
     }
 
