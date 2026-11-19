@@ -220,7 +220,10 @@ test("native archive and conflict UI are wired with backup and review, not legac
   assert.match(history,/approveFactoryConflict\(id, row, state\.revision \?\? 0\)/);
   assert.match(bridge,/invoke<void>\("approve_factory_conflict"/);
   assert.match(rust,/factory_conflict::approve_factory_conflict/);
-  assert.match(notification,/window\.bando\.approveFactoryConflict/);
+  // Only factory history can approve a conflict. The global alert modal is
+  // critical-only, never a duplicate factory-review approval surface.
+  assert.match(notification,/isActionRequiredNotification/);
+  assert.doesNotMatch(notification,/approveFactoryConflict/);
 });
 
 
