@@ -47,6 +47,7 @@ pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
 pub const WORKFLOW_CHIP_FILL: Color32 = Color32::from_rgb(48, 48, 48);
 pub const WORKFLOW_CHIP_BORDER: Color32 = Color32::from_rgb(85, 85, 85);
 pub const WORKFLOW_CHIP_RADIUS: u8 = 4;
+pub const WORKFLOW_CHIP_HEIGHT: f32 = 24.0;
 pub const WORKFLOW_CHIP_PAD_X: i8 = 4;
 pub const WORKFLOW_CHIP_PAD_Y: i8 = 2;
 pub const WORKFLOW_CONTROL_WIDTH: f32 = 140.0;
