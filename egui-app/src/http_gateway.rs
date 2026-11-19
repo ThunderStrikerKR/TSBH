@@ -4,6 +4,7 @@
 //! enabled unless BANDO_HUB_GATEWAY=http is explicitly configured.
 
 use crate::gateway::{BandoGateway, ReadOperation};
+use crate::preview_store::WorkingSource;
 use reqwest::{blocking::Client, Url};
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -81,6 +82,38 @@ impl BandoGateway for HttpGateway {
             return Err("서버 카탈로그에 products/aliases 배열이 없습니다.".into());
         }
         Ok(state)
+    }
+
+    fn load_working_source(&self) -> Result<WorkingSource, String> {
+        let response = self.client.get(self.endpoint("working-source"))
+            .bearer_auth(&self.access_token)
+            .send()
+            .map_err(|_| "서버 접수 원문 조회 실패. 연결 상태를 확인하세요.".to_owned())?;
+        let value = Self::decode(response)?;
+        let raw = value.get("raw").and_then(Value::as_str)
+            .ok_or("서버 원문 응답에 raw 문자열이 없습니다.")?
+            .to_owned();
+        let revision = value.get("revision").and_then(Value::as_u64)
+            .ok_or("서버 원문 응답에 revision 숫자가 없습니다.")?;
+        Ok(WorkingSource { raw, revision })
+    }
+
+    fn save_working_source(&self, raw: &str, revision: u64) -> Result<u64, String> {
+        let body = json!({
+            "raw": raw,
+            "expectedRevision": revision,
+        });
+        let response = self.client.put(self.endpoint("working-source"))
+            .bearer_auth(&self.access_token)
+            .json(&body)
+            .send()
+            .map_err(|_| "서버 접수 원문 저장 실패. 연결 상태를 확인하세요.".to_owned())?;
+        if response.status().as_u16() == 409 {
+            return Err("서버에 더 최신 원문이 있어 저장하지 않았습니다.".into());
+        }
+        let value = Self::decode(response)?;
+        value.get("revision").and_then(Value::as_u64)
+            .ok_or_else(|| "서버 저장 응답에 revision 숫자가 없습니다.".into())
     }
 
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String> {
