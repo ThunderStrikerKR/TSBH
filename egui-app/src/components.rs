@@ -71,34 +71,48 @@ pub fn soft_divider(ui: &mut Ui) {
     );
 }
 
-/// A single coordinate and pixel-snapping rule owns all vertical and
-/// horizontal dock lines. Visual thickness is snapped to physical pixels,
-/// while the full 6pt hit-area rectangle stays unchanged.
+/// The 6pt interaction gutter is always painted as a single surface.
+/// The line is a separate operation so the parent dock can extend horizontal
+/// dividers into a neighboring vertical gutter without painting a dark band.
 pub fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     ui.painter().rect_filled(rect, 0.0, theme::CANVAS);
-    let logical_thickness = if active {
-        theme::DOCK_SPLITTER_HOVER_LINE
-    } else {
-        theme::DOCK_SPLITTER_LINE
-    };
+    paint_dock_axis_line(ui, rect, vertical, active);
+}
+
+/// Pixel-exact axis line within a gutter rectangle. A 6-*physical*-pixel
+/// gutter has a center between two pixels, so its normal line must occupy
+/// the middle TWO pixels. A one-pixel line can only sit to one side.
+/// Odd-width gutters get a single centered pixel. Hover adds two pixels.
+pub fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     let scale = ui.ctx().pixels_per_point().max(1.0);
-    let line_px = (logical_thickness * scale).round().max(1.0);
-    let line_width = line_px / scale;
-    let painted = if vertical {
-        let x = ((rect.center().x - 0.5 * line_width) * scale).round() / scale;
-        Rect::from_min_size(
-            egui::pos2(x, rect.top()),
-            Vec2::new(line_width, rect.height()),
+    let (low, high) = if vertical {
+        (rect.left(), rect.right())
+    } else {
+        (rect.top(), rect.bottom())
+    };
+    let start_px = (low * scale).round() as i32;
+    let end_px = (high * scale).round() as i32;
+    let span_px = (end_px - start_px).max(1);
+    let center_width_px = if span_px % 2 == 0 { 2 } else { 1 };
+    let line_width_px = (center_width_px + if active { 2 } else { 0 })
+        .min(span_px);
+    let line_start = start_px + (span_px - line_width_px) / 2;
+    let line_end = line_start + line_width_px;
+
+    let snapped = |n: f32| (n * scale).round() / scale;
+    let line = if vertical {
+        Rect::from_min_max(
+            egui::pos2(line_start as f32 / scale, snapped(rect.top())),
+            egui::pos2(line_end as f32 / scale, snapped(rect.bottom())),
         )
     } else {
-        let y = ((rect.center().y - 0.5 * line_width) * scale).round() / scale;
-        Rect::from_min_size(
-            egui::pos2(rect.left(), y),
-            Vec2::new(rect.width(), line_width),
+        Rect::from_min_max(
+            egui::pos2(snapped(rect.left()), line_start as f32 / scale),
+            egui::pos2(snapped(rect.right()), line_end as f32 / scale),
         )
     };
     ui.painter().rect_filled(
-        painted, 0.0,
+        line, 0.0,
         if active { theme::BORDER } else { theme::DIVIDER },
     );
 }
