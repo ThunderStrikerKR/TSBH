@@ -90,11 +90,14 @@ pub fn analyze_raw(
     let selected = manual_client_id.as_deref().and_then(client_for).or(automatic);
     let chosen_client_name = selected.map(|client| text(client, "name").to_owned());
 
-    // Client directory is a name-only projection, not price authority.
-    // Do NOT submit an incomplete client object and invent a price tier:
-    // final billing is deferred to the Rust production-order workflow.
+    // The client ID is valid for Rust product aliases, but this name-only
+    // index has NO price tier. Passing only the ID deliberately leaves price
+    // calculation unconfirmed; a future production rule owns billing.
+    let recognition_client = selected.map(|client| json!({
+        "id": text(client, "id"),
+    }));
     let analysis = gateway.execute(ReadOperation::AnalyzeOrder, json!({
-        "raw": raw, "state": &state,
+        "raw": raw, "state": &state, "client": recognition_client,
     }))?;
     let reference = recipients(&analysis).iter()
         .map(|recipient| recipient_reference(gateway, recipient, &state))
