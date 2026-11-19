@@ -195,6 +195,23 @@ fn stage_name(step:usize,notice:bool)->&'static str{
 fn money(amount:Option<i64>)->String{
     amount.map(components::display_won).unwrap_or_else(||"—".to_owned())
 }
+fn workflow_table_header(ui:&mut Ui){
+    let width=ui.available_width();
+    ui.horizontal(|columns|{
+        columns.spacing_mut().item_spacing.x=theme::SPACE_4;
+        columns.add_sized([
+            theme::WORKFLOW_RECIPIENT_COL,theme::SPACE_24
+        ],egui::Label::new(typography::table_header("수취인")));
+        let products=(width-theme::WORKFLOW_RECIPIENT_COL
+            -theme::WORKFLOW_FREIGHT_COL-theme::SPACE_8).max(0.0);
+        columns.add_sized([
+            products,theme::SPACE_24
+        ],egui::Label::new(typography::table_header("상품")));
+        columns.add_sized([
+            theme::WORKFLOW_FREIGHT_COL,theme::SPACE_24
+        ],egui::Label::new(typography::table_header("운임")));
+    });
+}
 /// React .workflow-shipment uses a 64 / flexible / 68 three-column row.
 /// No secondary boxed cards: selection is a subtle background plus a thin
 /// accent stripe, not an extra input-style border around every recipient.
@@ -364,21 +381,35 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
         });
         if open{
             components::soft_divider(ui);
-            ui.horizontal(|head|{
-                head.label(typography::table_header("수취인"));
-                head.label(typography::table_header("상품"));
-                head.label(typography::table_header("운임"));
-            });
+            workflow_table_header(ui);
             if recipients.is_empty(){
                 let excerpt=draft.raw.lines().find(|s|!s.trim().is_empty())
                     .unwrap_or("새 발주서");
-                ui.label(typography::body(excerpt));
+                let response=shipment_line(ui,"수취인 확인",
+                    &[excerpt.chars().take(60).collect()],"—",false,false);
+                if ui.interact(response.rect,
+                    Id::new(("pending-reception-row",draft.id.as_str(),0usize)),
+                    egui::Sense::click()).clicked(){
+                    event=Some(Event::SelectPending(draft.id.clone()));
+                }
             }else{
-                for recipient in recipients{
+                for (index,recipient) in recipients.iter().enumerate(){
                     let name=recipient.get("name").and_then(|v|v.as_str())
                         .filter(|s|!s.is_empty()).unwrap_or("수취인 확인");
-                    if theme::action_full_width(ui,name,theme::ButtonRole::Quiet,true)
-                        .clicked(){
+                    let products=recipient.get("items").and_then(|items|items.as_array())
+                        .into_iter().flatten().map(|item|{
+                            let name=item.get("name").and_then(|x|x.as_str())
+                                .filter(|n|!n.trim().is_empty()).or_else(||
+                                    item.get("raw").and_then(|x|x.as_str())
+                                ).unwrap_or("미확정 상품");
+                            let qty=item.get("quantity").and_then(|x|x.as_i64())
+                                .filter(|q|*q>0).map_or("?".to_owned(),|q|q.to_string());
+                            format!("{name} × {qty}")
+                        }).collect::<Vec<_>>();
+                    let response=shipment_line(ui,name,&products,"—",false,false);
+                    if ui.interact(response.rect,
+                        Id::new(("pending-reception-row",draft.id.as_str(),index)),
+                        egui::Sense::click()).clicked(){
                         event=Some(Event::SelectPending(draft.id.clone()));
                     }
                 }
