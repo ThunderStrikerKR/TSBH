@@ -55,6 +55,8 @@ pub const ACTION_PRIMARY_HEIGHT: f32 = 36.0;
 pub const ACTION_STANDARD_HEIGHT: f32 = 34.0;
 pub const ACTION_EMPHASIZED_HEIGHT: f32 = 34.0;
 pub const ACTION_QUIET_HEIGHT: f32 = 32.0;
+// Reserve space for the single-row order total at the bottom of its pane.
+pub const SUMMARY_STRIP_HEIGHT: f32 = 58.0;
 pub const HEADER_HEIGHT: f32 = 54.0;
 pub const NAV_HEIGHT: f32 = 38.0;
 
