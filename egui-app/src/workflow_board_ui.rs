@@ -173,7 +173,15 @@ fn group_heading(
         );
         // Reserve the four 18pt circles and their gaps BEFORE laying out
         // the dealer name. Without the reservation they overflow the card.
-        let lights_width=STEP_NAMES.len() as f32*theme::WORKFLOW_SIGNAL_SIZE
+        // Keep dealer names readable on the minimum 350pt right pane.
+        // Full-size 18pt lights remain on wider cards; the compact 12pt
+        // variant frees space for Korean company names on narrower cards.
+        let signal_size=if header.available_width()<200.0 {
+            theme::WORKFLOW_SIGNAL_COMPACT_SIZE
+        }else{
+            theme::WORKFLOW_SIGNAL_SIZE
+        };
+        let lights_width=STEP_NAMES.len() as f32*signal_size
             +(STEP_NAMES.len()-1) as f32*theme::WORKFLOW_SIGNAL_GAP;
         let width=(header.available_width()-lights_width-theme::SPACE_4).max(0.0);
         header.add_sized(
@@ -181,7 +189,7 @@ fn group_heading(
             egui::Label::new(typography::section_heading(title))
                 .truncate().sense(egui::Sense::hover())
         ).on_hover_text(title);
-        lights(header,step,notice);
+        lights(header,step,notice,signal_size);
     });
     let response=ui.interact(
         head.response.rect,Id::new(("workflow-header",id)),egui::Sense::click()
@@ -248,12 +256,12 @@ fn workflow_header(ui:&mut Ui,id:&str,title:&str,open:bool,
     });
     title_response.expect("workflow heading always creates a title")
 }
-fn lights(ui:&mut Ui,step:usize,notice:bool){
+fn lights(ui:&mut Ui,step:usize,notice:bool,signal_size:f32){
     ui.horizontal(|row|{
         row.spacing_mut().item_spacing.x=theme::WORKFLOW_SIGNAL_GAP;
         for index in 0..STEP_NAMES.len(){
             let (rect,_)=row.allocate_exact_size(
-                Vec2::splat(theme::WORKFLOW_SIGNAL_SIZE),egui::Sense::hover()
+                Vec2::splat(signal_size),egui::Sense::hover()
             );
             let (fill,border)=if index<step {
                 (theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER)
@@ -264,7 +272,7 @@ fn lights(ui:&mut Ui,step:usize,notice:bool){
             }else{
                 (theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER)
             };
-            let radius=theme::WORKFLOW_SIGNAL_SIZE/2.0;
+            let radius=signal_size/2.0;
             row.painter().circle_filled(rect.center(),radius,fill);
             row.painter().circle_stroke(
                 rect.center(),radius,
