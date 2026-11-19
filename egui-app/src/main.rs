@@ -634,7 +634,28 @@ impl BandoEgui {
         ));
     }
 
-    fn show_manual_workspace(&mut self,ctx:&egui::Context) {
+    /// The only coordinate owner for every reception modal. KakaoTalk is an
+    /// external always-on-top Windows surface: never place any modal under it.
+    fn modal_work_area(&self,ctx:&egui::Context)->Rect {
+        let viewport=ctx.screen_rect();
+        let gutter=theme::MODAL_VIEWPORT_GUTTER;
+        let kakao_edge=if self.page==Page::Reception {
+            let content_width=(viewport.width()-2.0*theme::PANEL_GAP)
+                .max(layout::LayoutState::minimum_width());
+            viewport.left()+theme::PANEL_GAP+
+                self.layout.widths(content_width)[0]+layout::SPLITTER
+        }else{viewport.left()};
+        let left=(kakao_edge+gutter).min(viewport.right()-1.0);
+        let right=(viewport.right()-gutter).max(left+1.0)
+            .min(viewport.right());
+        let top=(viewport.top()+theme::HEADER_HEIGHT+gutter)
+            .min(viewport.bottom()-1.0);
+        let bottom=(viewport.bottom()-gutter).max(top+1.0)
+            .min(viewport.bottom());
+        Rect::from_min_max(egui::pos2(left,top),egui::pos2(right,bottom))
+    }
+
+    fn show_manual_workspace(&mut self,ctx:&egui::Context,work_area:Rect) {
         if self.manual_workspace.as_ref().is_some_and(|workspace|
             self.active_id.as_deref()!=Some(workspace.order_id.as_str())
         ) {
@@ -642,19 +663,7 @@ impl BandoEgui {
             self.manual_workspace=None;
             return;
         }
-        // Manual classification is an in-app workspace. The Windows
-        // KakaoTalk docking strip stays visible and outside its modal area.
-        let viewport=ctx.screen_rect();
-        let kakao_reserved=self.layout.widths(
-            viewport.width().max(layout::LayoutState::minimum_width())
-        )[0]+layout::SPLITTER;
-        let work_area=Rect::from_min_max(
-            egui::pos2(
-                (viewport.left()+kakao_reserved).min(viewport.right()),
-                (viewport.top()+theme::HEADER_HEIGHT).min(viewport.bottom())
-            ),
-            viewport.right_bottom()
-        );
+        // Work-area coordinates are shared with every other modal.
         let result=self.manual_workspace.as_mut().and_then(|editor|
             editor.show(ctx,work_area)
         );
@@ -712,7 +721,7 @@ impl BandoEgui {
         ));
     }
 
-    fn show_client_chooser(&mut self, ctx: &egui::Context) {
+    fn show_client_chooser(&mut self, ctx: &egui::Context, work_area:Rect) {
         // The chooser belongs to one reception, not a global selection.
         if self.client_chooser.as_ref().is_some_and(|chooser|
             self.active_id.as_deref() != Some(chooser.order_id.as_str())
@@ -725,7 +734,7 @@ impl BandoEgui {
             .and_then(|row| row.client_id.as_deref())
             .map(str::to_owned);
         let event = self.client_chooser.as_mut().and_then(|chooser|
-            chooser.show(ctx, Arc::clone(&self.gateway), current_id.as_deref())
+            chooser.show(ctx, Arc::clone(&self.gateway), current_id.as_deref(),work_area)
         );
         match event {
             Some(Choice::Selected(id)) => {
@@ -1070,15 +1079,13 @@ impl BandoEgui {
     /// The same OCR review controls that React exposes: inspect the image,
     /// correct recognized text, append or replace. No OCR result is committed
     /// to SQLite or sent to the Rust business engine before acceptance.
-    fn show_ocr_review(&mut self, ctx: &egui::Context) {
+    fn show_ocr_review(&mut self, ctx: &egui::Context, work_area:Rect) {
         let mut close = false;
         let mut apply: Option<(String, OrderType, bool, Option<ChatWindow>)> = None;
         if let Some(review) = self.ocr_review.as_mut() {
             let mut open = true;
-            egui::Window::new("OCR 문자 인식 검토")
-                .id(egui::Id::new("egui-ocr-review"))
+            components::modal_window("OCR 문자 인식 검토","egui-ocr-review",work_area)
                 .open(&mut open)
-                .collapsible(false)
                 .resizable(true)
                 .default_width(620.0)
                 .show(ctx, |ui| {
@@ -1149,9 +1156,12 @@ impl BandoEgui {
         }
 
         if self.discard_ocr_confirm {
-            egui::Window::new("변경사항 확인")
-                .id(egui::Id::new("ocr-review-discard-confirm"))
-                .collapsible(false).resizable(false)
+            components::modal_backdrop(
+                ctx,work_area,"ocr-discard-nested-backdrop",true
+            );
+            components::decision_window(
+                "변경사항 확인","ocr-review-discard-confirm",work_area
+            )
                 .show(ctx, |ui| {
                     ui.label("OCR 문자 인식 검토의 수정 내용을 버릴까요?");
                     ui.horizontal(|ui| {
@@ -1167,13 +1177,13 @@ impl BandoEgui {
         }
     }
 
-    fn show_replacement_confirmation(&mut self, ctx: &egui::Context) {
+    fn show_replacement_confirmation(&mut self, ctx: &egui::Context, work_area:Rect) {
         if self.pending_replace.is_none() { return; }
         let mut accept = false;
         let mut cancel = false;
-        egui::Window::new("발주원문 교체 확인")
-            .id(egui::Id::new("egui-replace-source-confirm"))
-            .collapsible(false).resizable(false)
+        components::decision_window(
+            "발주원문 교체 확인","egui-replace-source-confirm",work_area
+        )
             .show(ctx, |ui| {
                 ui.label("현재 초안과 분석 결과를 새 원문으로 교체할까요?");
                 ui.horizontal(|ui| {
@@ -2473,11 +2483,19 @@ impl eframe::App for BandoEgui {
         } else {
             self.other_page(ctx);
         }
-        self.show_ocr_review(ctx);
-        self.show_replacement_confirmation(ctx);
+        let work_area=self.modal_work_area(ctx);
+        if self.ocr_review.is_some() || self.pending_replace.is_some() ||
+            (self.page==Page::Reception &&
+                (self.client_chooser.is_some() || self.manual_workspace.is_some())) {
+            components::modal_backdrop(
+                ctx,work_area,"bando-workspace-modal-backdrop",false
+            );
+        }
+        self.show_ocr_review(ctx,work_area);
+        self.show_replacement_confirmation(ctx,work_area);
         if self.page == Page::Reception {
-            self.show_client_chooser(ctx);
-            self.show_manual_workspace(ctx);
+            self.show_client_chooser(ctx,work_area);
+            self.show_manual_workspace(ctx,work_area);
         }
         self.frameless_resize(ctx);
     }
