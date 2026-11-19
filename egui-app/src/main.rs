@@ -1849,6 +1849,7 @@ impl BandoEgui {
         );
 
         let mut client_choice: Option<String> = None;
+        let mut hovered_detail: Option<source_highlight::LinkKey>=None;
         let mut sync_clicked=false;
         let mut refresh_price:Option<String>=None;
         ui.scope_builder(
@@ -2031,13 +2032,37 @@ impl BandoEgui {
                             let mut mobile = reception_service::text(recipient, "mobile").to_owned();
                             let mut phone = reception_service::text(recipient, "phone").to_owned();
                             let mut note = reception_service::text(recipient, "note").to_owned();
-                            components::labeled_field(ui, "이름", &mut name, components::FieldKind::Text, false);
-                            components::labeled_field(ui, "주소", &mut address, components::FieldKind::Address, false);
-                            components::labeled_field(ui, "휴대전화", &mut mobile, components::FieldKind::Telephone, false);
-                            if !phone.trim().is_empty() {
-                                components::labeled_field(ui, "전화", &mut phone, components::FieldKind::Telephone, false);
+                            let recipient_id=reception_service::text(recipient,"id");
+                            for (label,value,kind,field) in [
+                                ("이름",&mut name,components::FieldKind::Text,"name"),
+                                ("주소",&mut address,components::FieldKind::Address,"address"),
+                                ("휴대전화",&mut mobile,components::FieldKind::Telephone,"mobile"),
+                            ] {
+                                let response=components::labeled_field(ui,label,value,kind,false);
+                                if response.hovered() {
+                                    hovered_detail=Some(source_highlight::key(
+                                        recipient_id,recipient_id,field
+                                    ));
+                                }
                             }
-                            components::labeled_field(ui, "요청 메시지", &mut note, components::FieldKind::Text, false);
+                            if !phone.trim().is_empty() {
+                                let response=components::labeled_field(
+                                    ui,"전화",&mut phone,components::FieldKind::Telephone,false
+                                );
+                                if response.hovered() {
+                                    hovered_detail=Some(source_highlight::key(
+                                        recipient_id,recipient_id,"phone"
+                                    ));
+                                }
+                            }
+                            let response=components::labeled_field(
+                                ui,"요청 메시지",&mut note,components::FieldKind::Text,false
+                            );
+                            if response.hovered() {
+                                hovered_detail=Some(source_highlight::key(
+                                    recipient_id,recipient_id,"note"
+                                ));
+                            }
                         }
                     }
                 });
@@ -2086,16 +2111,26 @@ impl BandoEgui {
                                         .auto_shrink([false, false])
                                         .show(items_ui, |ui| {
                                             for item in items {
+                                                let recipient_id=reception_service::text(recipient,"id");
+                                                let item_id=reception_service::text(item,"id");
                                                 ui.horizontal(|ui| {
-                                                    ui.label(typography::body(
+                                                    if ui.label(typography::body(
                                                         &reception_service::item_title(item)
-                                                    ));
+                                                    )).hovered() {
+                                                        hovered_detail=Some(source_highlight::key(
+                                                            recipient_id,item_id,"product"
+                                                        ));
+                                                    }
                                                     ui.with_layout(
                                                         Layout::right_to_left(Align::Center),
                                                         |ui| {
-                                                            ui.label(typography::quantity(
+                                                            if ui.label(typography::quantity(
                                                                 &reception_service::item_quantity(item)
-                                                            ));
+                                                            )).hovered() {
+                                                                hovered_detail=Some(source_highlight::key(
+                                                                    recipient_id,item_id,"quantity"
+                                                                ));
+                                                            }
                                                         },
                                                     );
                                                 });
@@ -2138,6 +2173,12 @@ impl BandoEgui {
                     components::summary_strip(ui, "총 주문", &total, note);
                 });
             },
+        );
+        // Hovering details highlights the exact Rust source span after 200ms.
+        // Leaving the field retains the last link for 250ms so the cursor
+        // can cross panel gutters without flicker.
+        self.link_hover.update(
+            hovered_detail.or_else(||self.source_hover.clone()),ui.ctx()
         );
     }
 
