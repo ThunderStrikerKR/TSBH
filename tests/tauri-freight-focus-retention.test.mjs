@@ -23,7 +23,8 @@ test("freight edit input reads current editable draft, not a stale Rust projecti
   // base charge is preserved separately (including manual remote 2x toggle).
   assert.match(desk,/displayCharges=\{freightEditor\.preview\.displayCharges\}/);
   assert.match(desk,/row\.shippingCharges/);
-  assert.match(desk,/\.\.\.freightEditor\.shipment\.charges,\s*\.\.\.row\.shippingCharges,\s*\[origin\]: value/);
+  assert.match(desk,/\.\.\.freightEditor\.shipment\.charges,\s*\.\.\.row\.shippingCharges,\s*\[origin\]: base/);
+  assert.match(desk,/const base = checked && value !== null \? value \/ 2 : value/);
   assert.match(desk,/props\.workflowSelection\.shipmentId === lastReadyFreight\.current\.shipment\.id/);
   assert.match(rows,/key=\{origin\}/);
   assert.match(rows,/requestAnimationFrame\(\(\) => \{/);
