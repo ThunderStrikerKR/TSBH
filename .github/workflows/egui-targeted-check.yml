@@ -1,4 +1,4 @@
-# Targeted Windows compile: full Emphasized one-touch labels, VAT summary, product chip wrapping and splitter network.
+# Targeted Windows compile: final emphasized one-touch and compact VAT/amount layout validation.
 name: Tauri native CLI executable compile check
 on:
   push:
