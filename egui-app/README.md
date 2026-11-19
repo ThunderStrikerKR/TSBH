@@ -268,3 +268,23 @@ GitHub `main`에는 소스 코드가 반영되었지만 이 환경에서 `cargo 
 - **아직 운영 저장은 미완료:** Tauri `write_snapshot/state_save`와 workflow 정합성 검증을 동일 트랜잭션으로 재사용하지 않는 직접 SQL 수정은 금지한다. `core_orders`와 운영 주문 상태를 실제로 변경하지 않았으며, 현재 저장 대상은 `egui-preview.sqlite3`다. 운영 저장 연결은 별도 게이트웨이 과제로 남는다.
 - 카카오톡 연결 Issue [#42](https://github.com/ThunderStrikerKR/TSBH/issues/42)는 이번 작업에서 변경하지 않았다. 원문 하이라이트와 수취인 수동 분류도 아직 이전하지 않았다.
 - 코드 반영 후 Windows Cargo 컴파일/화면 동작 검증은 아직 수행하지 않았다. 전체 회귀 테스트도 실행하지 않았다.
+
+## 운영 미확정 접수 저장 브리지 — 3단계 (2026-11-20)
+
+**정식 주문 확인 완료가 아니다.** 기존 Tauri의 `reception_working_orders`에 미확정 작업본만 저장한다. `core_orders`, `app_state`, 입금·출고 원장은 변경하지 않는다.
+
+- egui `확인할 내용`의 **운영 작업본 저장** 버튼을 직원이 클릭해야 실행된다. 평소 자동저장은 egui 전용 SQLite만 갱신한다.
+- 최신 Tauri 실행 파일을 단발성 `--bando-egui-reception-commit` CLI로 시작하고, 기존 Rust 인식 → 거래처 변경 → 원문 분석 병합 → 재가격·운임 계산을 SQLite `BEGIN IMMEDIATE` 트랜잭션 안에서 재실행한다. 입력 견적 금액을 그대로 믿지 않는다.
+- 기존 운영 주문과 중복 ID, 확정 상태, SQLite 관계형 버전 2, 업무 master revision, 작업본 CAS 버전, 작업본 무결성 해시를 검사하고 실패하면 롤백한다.
+- 이미 겹쳐 실행 중인 React/Tauri의 전체 발주서 목록 자동저장도 egui에서 추가하거나 변경한 작업본을 오래된 데이터로 삭제/덮어쓰지 못하게 보호했다.
+- 성공하면 egui SQLite에 `workingVersion`, `workingSynced`를 기록한다. 이후 원문·거래처·유형을 바꾸면 미반영으로 전환되며 다시 Rust 가격 확인과 명시적 저장이 필요하다.
+- **기본적으로 운영 저장이 꺼져 있다.** 실제 운영 DB와 새로 빌드한 Tauri 실행 파일 경로, 허용 플래그를 모두 설정한 경우에만 버튼이 노출된다. 아래 경로는 예시다.
+
+```powershell
+$env:BANDO_EGUI_BUSINESS_DB = "C:\실제경로\bando-hub-v001.sqlite"
+$env:BANDO_EGUI_TAURI_HELPER = "C:\실제경로\새로빌드한-Tauri.exe"
+$env:BANDO_EGUI_ENABLE_WORKING_COMMIT = "1"
+```
+
+- 기존 구버전 Tauri EXE는 이 CLI를 지원하지 않는다. 정식 운영 사용 전 Windows 빌드, 격리된 DB 사본에서 저장/재실행 확인 및 백업이 필요하다. **현재 실제 Windows 빌드/GUI 테스트는 하지 않았다.**
+- `주문 확인 완료`의 정식 확정, 원문 연결 하이라이트, 수취인 수동 분류는 후속 이전 대상이며 카카오톡 연결 문제는 [#42](https://github.com/ThunderStrikerKR/TSBH/issues/42)에서 별도 추적한다.
