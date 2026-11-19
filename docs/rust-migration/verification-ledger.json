@@ -2343,12 +2343,12 @@
         ".github/workflows/egui-targeted-check.yml"
       ],
       "gates": {
-        "patch": "SOURCE_UPDATED: eed270f, dc74b35, 94e8efb, fe7f22e",
+        "patch": "SOURCE_UPDATED: 9746969 (access fix), 225085f (CI trigger); earlier owner hook: eed270f, dc74b35, 94e8efb, fe7f22e",
         "unit": "NOT_EXECUTED: Win32 behavior requires real Windows session",
         "differential": "NOT_APPLICABLE: native window ownership path",
         "action": "NOT_EXECUTED: HUB click/Kakao click/third party switch/disconnect/normal close",
-        "ci": "QUEUED: https://github.com/ThunderStrikerKR/TSBH/actions/runs/44619026480",
-        "windows": "NOT_EXECUTED: requires accessible Windows KakaoTalk UI and fresh binary"
+        "ci": "PASS: Windows cargo check on egui app and Tauri at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44619554058 (commit 225085f)",
+        "windows": "NOT_EXECUTED: Windows GUI owner attach, third-party focus, disconnect, normal exit remain unverified; CI is compile only"
       }
     }
   ],
