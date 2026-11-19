@@ -1066,7 +1066,8 @@ impl BandoEgui {
                     Err(error) if error == "OCR_CANCELLED" => {}
                     Err(error) => {
                         self.clipboard_error = Some(error);
-                        self.notifications_open = true;
+                        // Existing '알림' button opens details on explicit click;
+                        // receiving an error must not spawn a surprise window.
                     }
                 }
             }
@@ -1079,7 +1080,8 @@ impl BandoEgui {
                     return;
                 }
                 self.clipboard_error = Some("클립보드 접수 작업이 중단되었습니다.".into());
-                self.notifications_open = true;
+                // Keep the approved header notification affordance; no
+                // automatic floating alert on failure.
             }
             _ => {}
         }
