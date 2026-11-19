@@ -22,12 +22,20 @@ pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
 pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const BRIGHT: Color32 = Color32::WHITE;
 pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
-pub const SPACING: f32 = 8.0;
-pub const SECTION_PADDING: f32 = 10.0;
+pub const SPACE_4: f32 = 4.0;
+pub const SPACE_8: f32 = 8.0;
+pub const SPACE_12: f32 = 12.0;
+pub const SPACE_16: f32 = 16.0;
+pub const SPACE_24: f32 = 24.0;
+pub const SPACING: f32 = SPACE_8;
+pub const HEADER_PADDING_X: i8 = 12;
+pub const SECTION_PADDING: f32 = SPACE_16;
+pub const NESTED_PADDING: f32 = SPACE_12;
 pub const SECTION_HEADER_HEIGHT: f32 = 38.0;
-pub const SECTION_CONTENT_GAP: f32 = 8.0;
-pub const CARD_PADDING: f32 = 10.0;
+pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
+pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
+pub const FONT_BRAND: f32 = 19.0;
 pub const FONT_MAIN_NAV: f32 = 16.0;
 pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
@@ -35,7 +43,7 @@ pub const PANEL_GAP: f32 = 6.0;
 pub const SOFT_DIVIDER_WIDTH: f32 = 1.0;
 pub const CONTROL_RADIUS: u8 = 6;
 pub const PANEL_RADIUS: u8 = 9;
-pub const INPUT_HEIGHT: f32 = 34.0;
+pub const INPUT_HEIGHT: f32 = 36.0;
 pub const HEADER_HEIGHT: f32 = 54.0;
 pub const NAV_HEIGHT: f32 = 38.0;
 
@@ -67,7 +75,8 @@ pub fn install(ctx: &egui::Context) {
     style.visuals.selection.bg_fill = SELECTION.linear_multiply(0.3);
     style.visuals.selection.stroke = Stroke::new(1.0_f32, SELECTION);
     style.spacing.item_spacing = Vec2::new(SPACING, SPACING);
-    style.spacing.button_padding = Vec2::new(12.0, 8.0);
+    // Per-role horizontal padding is applied by action() below.
+    style.spacing.button_padding = Vec2::new(SPACE_12, SPACE_8);
     style.text_styles.insert(TextStyle::Heading, FontId::proportional(20.0));
     style.text_styles.insert(TextStyle::Body, FontId::proportional(14.0));
     style.text_styles.insert(TextStyle::Button, FontId::proportional(13.0));
@@ -104,7 +113,7 @@ pub fn nested_frame() -> Frame {
         .fill(INPUT)
         .stroke(Stroke::new(1.0_f32, DIVIDER))
         .corner_radius(CornerRadius::same(CONTROL_RADIUS))
-        .inner_margin(12.0)
+        .inner_margin(NESTED_PADDING)
 }
 
 pub fn section_heading(text: &str) -> RichText {
@@ -138,12 +147,27 @@ pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Resp
         ButtonRole::Primary => FONT_PRIMARY_ACTION,
         _ => FONT_STANDARD_ACTION,
     };
-    let button = egui::Button::new(RichText::new(label).size(font_size).color(color))
-        .fill(fill)
-        .stroke(stroke)
-        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
-        .min_size(Vec2::new(0.0, height));
-    ui.add_enabled(enabled, button)
+    // Scoped spacing prevents one button role from changing the padding of
+    // neighboring buttons, fields and navigation controls.
+    let padding_x = match role {
+        ButtonRole::Primary => 14.0,
+        ButtonRole::Quiet => 8.0,
+        ButtonRole::Navigation | ButtonRole::ActiveNavigation => 12.0,
+        _ => 12.0,
+    };
+    let radius = match role {
+        ButtonRole::Navigation | ButtonRole::ActiveNavigation => 5,
+        _ => CONTROL_RADIUS,
+    };
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = Vec2::new(padding_x, 6.0);
+        let button = egui::Button::new(RichText::new(label).size(font_size).color(color))
+            .fill(fill)
+            .stroke(stroke)
+            .corner_radius(CornerRadius::same(radius))
+            .min_size(Vec2::new(0.0, height));
+        ui.add_enabled(enabled, button)
+    }).inner
 }
 
 pub fn divider(ui: &mut Ui) {
@@ -161,7 +185,7 @@ pub fn divider(ui: &mut Ui) {
 
 pub fn label_value(ui: &mut Ui, label: &str, value: &str) {
     ui.horizontal(|ui| {
-        ui.add_sized([74.0, 24.0], egui::Label::new(RichText::new(label).size(13.0).color(SECONDARY)));
+        ui.add_sized([FIELD_LABEL_WIDTH, INPUT_HEIGHT], egui::Label::new(RichText::new(label).size(13.0).color(SECONDARY)));
         ui.label(body(value));
     });
 }
