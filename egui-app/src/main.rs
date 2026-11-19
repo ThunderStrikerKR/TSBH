@@ -222,71 +222,93 @@ impl BandoEgui {
         let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
         egui::TopBottomPanel::top("global_navigation")
             .exact_height(theme::HEADER_HEIGHT)
-            .frame(Frame::new().fill(theme::HEADER_BG)
-                .inner_margin(egui::Margin::symmetric(theme::HEADER_PADDING_X, 0)))
+            .frame(
+                Frame::new().fill(theme::HEADER_BG)
+                    .inner_margin(egui::Margin::symmetric(theme::HEADER_PADDING_X, 0))
+            )
             .show(ctx, |ui| {
-                // Fixed blank strip gives frameless windows a native
-                // drag target even when the navigation fills the header.
-                // Logo and wordmark are below the strip and inert.
-                let top_drag = ui.allocate_response(
-                    Vec2::new(ui.available_width(), theme::SPACE_8),
+                // The former top strip was a normal layout item, so its 8pt
+                // height PLUS item spacing pushed everything down. Register
+                // the same OS drag target as an overlay instead: it consumes
+                // no layout height and cannot overlap the centered controls.
+                let header = ui.max_rect();
+                let strip = Rect::from_min_size(
+                    header.min,
+                    Vec2::new(header.width(), theme::HEADER_DRAG_STRIP),
+                );
+                let top_drag = ui.interact(
+                    strip,
+                    ui.make_persistent_id("header-empty-top-drag"),
                     Sense::click_and_drag(),
                 );
                 Self::handle_header_drag(ctx, &top_drag, maximized);
-                ui.horizontal_centered(|ui| {
-                    ui.add_space(theme::SPACE_8);
-                    // Brand identity is deliberately inert: no hover
-                    // affordance, click action, drag handler or double-click.
-                    // Reuse the existing Tauri application icon pixels.
-                    if let Some(texture) = &self.brand_texture {
-                        ui.add(egui::Image::new((
-                            texture.id(), Vec2::new(30.0, 26.0)
-                        )));
-                    }
-                    ui.label(
-                        RichText::new("BANDO HUB")
-                            .size(theme::FONT_BRAND).strong().color(theme::TEXT)
-                    );
-                    ui.add_space(theme::SPACE_12);
-                    for page in Page::ALL {
-                        let role = if self.page == page {
-                            ButtonRole::ActiveNavigation
-                        } else {
-                            ButtonRole::Navigation
-                        };
-                        if theme::action(ui, page.label(), role, true).clicked() {
-                            self.page = page;
+
+                // Every header child shares this one 62pt-high center line.
+                // The logo and label are display-only, with no click, hover
+                // styling, drag or double-click action.
+                ui.allocate_ui_with_layout(
+                    Vec2::new(ui.available_width(), theme::HEADER_HEIGHT),
+                    Layout::left_to_right(Align::Center),
+                    |bar| {
+                        bar.spacing_mut().item_spacing.x = theme::SPACE_8;
+                        if let Some(texture) = &self.brand_texture {
+                            bar.add(egui::Image::new((
+                                texture.id(),
+                                Vec2::splat(theme::BRAND_ICON_SIZE),
+                            )));
                         }
-                    }
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if theme::action(ui, "×", ButtonRole::Quiet, true)
-                            .on_hover_text("닫기").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        bar.label(
+                            RichText::new("BANDO HUB")
+                                .size(theme::FONT_BRAND).strong().color(theme::TEXT)
+                        );
+                        bar.add_space(theme::SPACE_12);
+                        for page in Page::ALL {
+                            let role = if self.page == page {
+                                ButtonRole::ActiveNavigation
+                            } else {
+                                ButtonRole::Navigation
+                            };
+                            if theme::action(bar, page.label(), role, true).clicked() {
+                                self.page = page;
+                            }
                         }
-                        if theme::action(
-                            ui, "□", ButtonRole::Quiet, true
-                        ).on_hover_text("창 최대화 또는 복원").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
-                        }
-                        if theme::action(ui, "−", ButtonRole::Quiet, true)
-                            .on_hover_text("최소화").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                        }
-                        if theme::action(ui, "알림", ButtonRole::Standard, self.source_save_error.is_some()).clicked() {
-                            self.notifications_open = !self.notifications_open;
-                        }
-                        // Only unused header space is a drag region. Never
-                        // overlap logo, wordmark, menus or window controls.
-                        let free_width = ui.available_width();
-                        if free_width > 8.0 {
-                            let drag = ui.allocate_response(
-                                Vec2::new(free_width, 28.0),
-                                Sense::click_and_drag(),
-                            );
-                            Self::handle_header_drag(ctx, &drag, maximized);
-                        }
-                    });
-                });
+                        bar.with_layout(Layout::right_to_left(Align::Center), |actions| {
+                            if theme::action(actions, "×", ButtonRole::Quiet, true)
+                                .on_hover_text("닫기").clicked()
+                            {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                            if theme::action(actions, "□", ButtonRole::Quiet, true)
+                                .on_hover_text("창 최대화 또는 복원").clicked()
+                            {
+                                ctx.send_viewport_cmd(
+                                    egui::ViewportCommand::Maximized(!maximized)
+                                );
+                            }
+                            if theme::action(actions, "−", ButtonRole::Quiet, true)
+                                .on_hover_text("최소화").clicked()
+                            {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                            }
+                            if theme::action(
+                                actions, "알림", ButtonRole::Standard,
+                                self.source_save_error.is_some(),
+                            ).clicked() {
+                                self.notifications_open = !self.notifications_open;
+                            }
+                            // Unoccupied header space has the same drag and
+                            // double-click behavior as the original titlebar.
+                            let empty = actions.available_width();
+                            if empty > 8.0 {
+                                let drag = actions.allocate_response(
+                                    Vec2::new(empty, theme::NAV_HEIGHT),
+                                    Sense::click_and_drag(),
+                                );
+                                Self::handle_header_drag(ctx, &drag, maximized);
+                            }
+                        });
+                    },
+                );
             });
 
         if self.notifications_open && self.source_save_error.is_some() {
