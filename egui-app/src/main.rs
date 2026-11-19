@@ -112,6 +112,14 @@ struct PendingClientChange {
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
 }
 
+struct PendingWorkingSync {
+    order_id: String,
+    source_raw: String,
+    order_type: String,
+    client_id: String,
+    receiver: Receiver<Result<serde_json::Value,String>>,
+}
+
 struct BandoEgui {
     brand_texture: Option<egui::TextureHandle>,
     gateway: Arc<dyn gateway::BandoGateway>,
@@ -142,6 +150,8 @@ struct BandoEgui {
     source_save_error: Option<String>,
     client_chooser: Option<ClientChooser>,
     client_change: Option<PendingClientChange>,
+    working_sync: Option<PendingWorkingSync>,
+    working_sync_error: Option<String>,
     analysis: Option<reception_service::ReceptionAnalysis>,
     analysis_error: Option<String>,
     selected_recipient: usize,
@@ -183,6 +193,8 @@ impl Default for BandoEgui {
             source_save_error: None,
             client_chooser: None,
             client_change: None,
+            working_sync: None,
+            working_sync_error: None,
             analysis: None,
             analysis_error: None,
             selected_recipient: 0,
@@ -210,6 +222,7 @@ impl BandoEgui {
                 active.analysis_evidence = None;
                 active.client_match = None;
                 active.pricing_preview = None;
+                active.working_synced = false;
                 // Source changes revoke only automatic dealer assignment.
                 // A deliberate employee selection stays with this receipt.
                 if active.client_selection.as_deref() == Some("AUTO") {
@@ -279,6 +292,7 @@ impl BandoEgui {
                     item.analysis_evidence = None;
                     item.client_match = None;
                     item.pricing_preview = None;
+                    item.working_synced = false;
                     if item.client_selection.as_deref() != Some("MANUAL") {
                         item.client_id = None;
                         item.client_selection = None;
@@ -321,8 +335,9 @@ impl BandoEgui {
         }
         let Some(id) = self.active_id.as_deref() else { return; };
         let Some(row) = self.drafts.iter().find(|row| row.id == id).cloned() else { return; };
-        if row.client_id.as_deref() == Some(client_id) {
-            return; // No surprise AUTO -> MANUAL rewrite.
+        if row.client_id.as_deref() == Some(client_id) &&
+           row.pricing_preview.is_some() {
+            return; // Same dealer with a valid quote: no unnecessary rewrite.
         }
         if row.analysis_raw.as_deref() != Some(row.raw.as_str()) ||
             row.analysis_evidence.is_none() {
@@ -373,6 +388,7 @@ impl BandoEgui {
                         row.client_id=Some(result.client_id);
                         row.client_selection=Some("MANUAL".into());
                         row.pricing_preview=Some(result.pricing_preview);
+                        row.working_synced=false;
                         row.analysis_raw=None;
                         row.analysis_evidence=None;
                         row.client_match=None;
@@ -457,6 +473,7 @@ impl BandoEgui {
             analysis_raw: None, analysis_evidence: None, client_match: None,
             chat_handle: None, chat_title: None,
             client_id: None, client_selection: None, pricing_preview: None,
+            working_version: None, working_synced: false,
         });
         self.select_reception(&id, ctx);
     }
@@ -1903,6 +1920,7 @@ impl eframe::App for BandoEgui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_source_analysis();
         self.poll_client_change(ctx);
+        self.poll_working_sync(ctx);
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
         if self.page == Page::Reception {
