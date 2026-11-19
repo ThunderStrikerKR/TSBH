@@ -52,7 +52,8 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
         .ok_or("운영 DB revision이 누락됐습니다.")?;
     let expected_working_version = request.get("expectedWorkingVersion")
         .and_then(Value::as_u64);
-    if !order_id.starts_with("egui-") || order_id.len() > 180 {
+    if (!order_id.starts_with("egui-") && order_id!="legacy-working-source") ||
+       order_id.len() > 180 {
         return Err("egui에서 생성한 미확정 접수 ID만 이 경로로 저장할 수 있습니다.".into());
     }
     if !matches!(kind, "AGENCY" | "DEALER") {
