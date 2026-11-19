@@ -153,140 +153,100 @@ fn workflow_card<R>(
     }
     response.inner
 }
-/// Compact two-row folded card: the first row contains the dealer title,
-/// its four signal lamps, and the existing management/delete slots. The
-/// second row contains one-line shipping/amount summary and native actions.
-
-fn group_heading(
+/// Exactly one compact header row. The dealer title is a separate left-
+/// aligned interactive area; stage lamps are adjacent but NOT part of its
+/// hit area or hover decoration. The original 18pt lamp diameter is fixed
+/// regardless of window width.
+fn workflow_header(
     ui:&mut Ui,id:&str,title:&str,open:bool,step:usize,notice:bool
 )->egui::Response{
-    let head=ui.horizontal(|header|{
-        header.spacing_mut().item_spacing.x=theme::SPACE_4;
-        let (icon_rect,_)=header.allocate_exact_size(
-            Vec2::new(theme::WORKFLOW_TOGGLE_ICON_WIDTH,theme::WORKFLOW_TITLE_HEIGHT),
-            egui::Sense::hover(),
-        );
-        components::paint_workflow_icon(
-            header.painter(),icon_rect.center(),
-            if open {components::WorkflowIcon::Expanded}
-            else {components::WorkflowIcon::Collapsed},theme::SECONDARY
-        );
-        // Reserve the four 18pt circles and their gaps BEFORE laying out
-        // the dealer name. Without the reservation they overflow the card.
-        // Reserve roughly ten Korean characters at the 350pt pane minimum.
-        // Use compact signals below the width at which the original four
-        // 18pt circles would truncate the dealer name unnecessarily.
-        let signal_size=if header.available_width()<250.0 {
-            theme::WORKFLOW_SIGNAL_COMPACT_SIZE
-        }else{
-            theme::WORKFLOW_SIGNAL_SIZE
-        };
-        let lights_width=STEP_NAMES.len() as f32*signal_size
-            +(STEP_NAMES.len()-1) as f32*theme::WORKFLOW_SIGNAL_GAP;
-        let width=(header.available_width()-lights_width-theme::SPACE_4).max(0.0);
-        header.allocate_ui_with_layout(
-            Vec2::new(width,theme::WORKFLOW_TITLE_HEIGHT),
-            Layout::left_to_right(Align::Center),
-            |title_ui|{
-                title_ui.set_min_width(width);
-                title_ui.add_sized(
-                    [width,theme::WORKFLOW_TITLE_HEIGHT],
-                    egui::Label::new(typography::section_heading(title))
-                        .truncate().sense(egui::Sense::hover()),
-                ).on_hover_text(title);
-            },
-        );
-        lights(header,step,notice,signal_size);
-    });
-    let response=ui.interact(
-        head.response.rect,Id::new(("workflow-header",id)),egui::Sense::click()
-    );
-    if response.hovered(){
-        ui.painter().rect_stroke(
-            head.response.rect,theme::SPACE_4,
-            egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER),
-            egui::StrokeKind::Inside
-        );
-        // Repaint the icon on top of the hover surface, without relying on
-        // fallback text fonts for the chevron.
-        let center=egui::pos2(
-            head.response.rect.left()+theme::WORKFLOW_TOGGLE_ICON_WIDTH/2.0,
-            head.response.rect.center().y,
-        );
-        components::paint_workflow_icon(
-            ui.painter(),center,
-            if open {components::WorkflowIcon::Expanded}
-            else {components::WorkflowIcon::Collapsed},theme::TEXT
-        );
-    }
-    response
-}
-/// First and only header row: dealer name followed by progress dots, then
-/// the original management/delete controls (fixed-width slots).
-fn workflow_header(ui:&mut Ui,id:&str,title:&str,open:bool,
-    step:usize,notice:bool)
-    ->egui::Response {
     let width=ui.available_width();
-    let title_width=(width-theme::WORKFLOW_MANAGE_WIDTH
-        -theme::WORKFLOW_TRASH_WIDTH-theme::SPACE_8).max(0.0);
+    let title_width=(width-theme::WORKFLOW_SIGNAL_WIDTH
+        -theme::WORKFLOW_MANAGE_WIDTH-theme::WORKFLOW_TRASH_WIDTH
+        -3.0*theme::SPACE_4).max(0.0);
     let mut title_response=None;
     ui.horizontal(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-        bar.allocate_ui_with_layout(
+        let (title_rect,_)=bar.allocate_exact_size(
             Vec2::new(title_width,theme::WORKFLOW_TITLE_HEIGHT),
-            Layout::top_down(Align::Min),|left|{
-                left.set_min_width(title_width);
-                title_response=Some(group_heading(left,id,title,open,step,notice));
-            }
-        );
-        bar.allocate_ui_with_layout(
-            Vec2::new(theme::WORKFLOW_MANAGE_WIDTH,theme::WORKFLOW_TITLE_HEIGHT),
-            Layout::top_down(Align::Min),|manage|{
-                theme::action_full_width(manage,"묶음 관리",
-                    theme::ButtonRole::Standard,false);
-            }
-        );
-        // The native mutation is not yet connected: preserve the original
-        // delete slot, but never turn it into an invented destructive action.
-        let (rect,_)=bar.allocate_exact_size(
-            Vec2::new(theme::WORKFLOW_TRASH_WIDTH,
-                theme::WORKFLOW_TITLE_HEIGHT),
             egui::Sense::hover(),
         );
-        bar.painter().rect_filled(
-            rect,theme::CONTROL_RADIUS as f32,theme::RAISED
+        let icon_center=Pos2::new(
+            title_rect.left()+theme::WORKFLOW_TOGGLE_ICON_WIDTH/2.0,
+            title_rect.center().y,
         );
         components::paint_workflow_icon(
-            bar.painter(),rect.center(),components::WorkflowIcon::Trash,
-            theme::MUTED
+            bar.painter(),icon_center,
+            if open{components::WorkflowIcon::Expanded}
+            else{components::WorkflowIcon::Collapsed},theme::SECONDARY
         );
-    });
-    title_response.expect("workflow heading always creates a title")
-}
-fn lights(ui:&mut Ui,step:usize,notice:bool,signal_size:f32){
-    ui.horizontal(|row|{
-        row.spacing_mut().item_spacing.x=theme::WORKFLOW_SIGNAL_GAP;
+        // A label aligned to the LEFT edge of a fixed text rectangle.
+        // Do not center the label within the overall heading allocation.
+        let text_left=title_rect.left()
+            +theme::WORKFLOW_TOGGLE_ICON_WIDTH+theme::SPACE_4;
+        let text_rect=Rect::from_min_max(
+            Pos2::new(text_left,title_rect.top()),
+            title_rect.max,
+        );
+        bar.put(
+            text_rect,
+            egui::Label::new(typography::section_heading(title))
+                .truncate().halign(Align::Min)
+        );
+        let heading=bar.interact(
+            title_rect,Id::new(("workflow-header",id)),
+            egui::Sense::click()
+        ).on_hover_text(title);
+        title_response=Some(heading);
+
+        // Independent status area: not part of the heading's click target,
+        // background or border. Never use a smaller compact-lamp variant.
+        let (status_rect,_)=bar.allocate_exact_size(
+            Vec2::new(theme::WORKFLOW_SIGNAL_WIDTH,theme::WORKFLOW_TITLE_HEIGHT),
+            egui::Sense::hover()
+        );
+        let diameter=theme::WORKFLOW_SIGNAL_SIZE;
         for index in 0..STEP_NAMES.len(){
-            let (rect,_)=row.allocate_exact_size(
-                Vec2::splat(signal_size),egui::Sense::hover()
+            let center=Pos2::new(
+                status_rect.left()+diameter/2.0
+                    +index as f32*(diameter+theme::WORKFLOW_SIGNAL_GAP),
+                status_rect.center().y,
             );
-            let (fill,border)=if index<step {
+            let (fill,border)=if index<step{
                 (theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER)
-            }else if index==step && notice{
-                (theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER)
-            }else if index==step{
+            }else if index==step || (index==step && notice){
                 (theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER)
             }else{
                 (theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER)
             };
-            let radius=signal_size/2.0;
-            row.painter().circle_filled(rect.center(),radius,fill);
-            row.painter().circle_stroke(
-                rect.center(),radius,
-                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,border)
+            bar.painter().circle_filled(center,diameter/2.0,fill);
+            bar.painter().circle_stroke(
+                center,diameter/2.0,
+                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,border),
             );
         }
+
+        bar.allocate_ui_with_layout(
+            Vec2::new(theme::WORKFLOW_MANAGE_WIDTH,theme::WORKFLOW_TITLE_HEIGHT),
+            Layout::top_down(Align::Min),|manage|{
+                theme::action_full_width(
+                    manage,"묶음 관리",theme::ButtonRole::Standard,false
+                );
+            }
+        );
+        let (delete_rect,_)=bar.allocate_exact_size(
+            Vec2::new(theme::WORKFLOW_TRASH_WIDTH,theme::WORKFLOW_TITLE_HEIGHT),
+            egui::Sense::hover(),
+        );
+        bar.painter().rect_filled(
+            delete_rect,theme::CONTROL_RADIUS as f32,theme::RAISED
+        );
+        components::paint_workflow_icon(
+            bar.painter(),delete_rect.center(),
+            components::WorkflowIcon::Trash,theme::MUTED,
+        );
     });
+    title_response.expect("workflow heading must reserve a clickable title")
 }
 fn stage_name(step:usize,notice:bool)->&'static str{
     if notice && step>=2 {"계좌 재안내 완료"}
