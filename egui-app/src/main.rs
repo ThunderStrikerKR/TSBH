@@ -1751,7 +1751,12 @@ impl BandoEgui {
                         Vec2::new(ui.available_width(), client_band_height),
                         Sense::hover(),
                     );
-                    let card_rect = band_rect.shrink2(egui::vec2(0.0, 6.0));
+                    // The header-to-band gap and the band's following item gap
+                    // are asymmetric. Shift the card within its reserved
+                    // band so the visible gaps above and below match.
+                    let card_rect = band_rect
+                        .shrink2(egui::vec2(0.0, theme::PANEL_GAP))
+                        .translate(egui::vec2(0.0, -theme::SPACE_4));
                     ui.painter().rect(
                         card_rect,
                         theme::CONTROL_RADIUS as f32,
