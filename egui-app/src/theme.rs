@@ -23,6 +23,11 @@ pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const BRIGHT: Color32 = Color32::WHITE;
 pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
 pub const SPACING: f32 = 8.0;
+pub const SECTION_PADDING: f32 = 16.0;
+pub const CARD_PADDING: f32 = 12.0;
+pub const FONT_MAIN_NAV: f32 = 16.0;
+pub const FONT_PRIMARY_ACTION: f32 = 14.0;
+pub const FONT_STANDARD_ACTION: f32 = 13.0;
 pub const PANEL_GAP: f32 = 6.0;
 pub const CONTROL_RADIUS: u8 = 6;
 pub const PANEL_RADIUS: u8 = 9;
@@ -87,7 +92,7 @@ pub fn section_frame() -> Frame {
         .fill(PANEL)
         .stroke(Stroke::new(1.0, BORDER))
         .corner_radius(CornerRadius::same(PANEL_RADIUS))
-        .inner_margin(10.0)
+        .inner_margin(SECTION_PADDING)
 }
 
 pub fn nested_frame() -> Frame {
@@ -124,9 +129,12 @@ pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Resp
         ButtonRole::Navigation => (NAV_HEIGHT, CANVAS, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, Color32::from_rgb(41, 72, 92), TEXT, Stroke::NONE),
     };
-    let button = egui::Button::new(RichText::new(label).size(
-        if matches!(role, ButtonRole::Navigation | ButtonRole::ActiveNavigation) { 14.0 } else { 13.0 },
-    ).color(color))
+    let font_size = match role {
+        ButtonRole::Navigation | ButtonRole::ActiveNavigation => FONT_MAIN_NAV,
+        ButtonRole::Primary => FONT_PRIMARY_ACTION,
+        _ => FONT_STANDARD_ACTION,
+    };
+    let button = egui::Button::new(RichText::new(label).size(font_size).color(color))
         .fill(fill)
         .stroke(stroke)
         .corner_radius(CornerRadius::same(CONTROL_RADIUS))
