@@ -88,6 +88,8 @@ pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 760.0;
 pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
+// Width reserved for the two original client-list actions on one toolbar row.
+pub const MANAGEMENT_TOOLBAR_ACTIONS_WIDTH: f32 = 276.0;
 pub const MANAGEMENT_MODAL_BODY_MAX_HEIGHT: f32 = 670.0;
 pub const MANAGEMENT_CLIENT_COLS: [f32; 3] = [0.30, 0.38, 0.32];
 pub const MANUAL_TABLE_MIN_WIDTH: f32 = 1180.0;
