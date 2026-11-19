@@ -351,6 +351,9 @@ mod native {
             // Check every frame for geometry changes, but scan/move no faster
             // than once per 350ms when the viewport hasn't changed.
             let region=physical_region(self.hub,rect,scale)?;
+            // The dock must not float over other windows while the hub is
+            // minimized. Restore normal positioning when the hub reappears.
+            if unsafe{IsIconic(self.hub)}!=0{return Ok(());}
             if self.last_region==Some(region) &&
                 self.last_sync.is_some_and(|t|t.elapsed()<Duration::from_millis(350)){
                 return Ok(());
