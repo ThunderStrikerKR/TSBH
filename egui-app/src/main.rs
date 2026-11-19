@@ -552,7 +552,7 @@ impl BandoEgui {
                             }
                             if theme::action(
                                 actions, "알림", ButtonRole::Standard,
-                                self.source_save_error.is_some(),
+                                self.source_save_error.is_some() || self.clipboard_error.is_some(),
                             ).clicked() {
                                 self.notifications_open = !self.notifications_open;
                             }
@@ -571,13 +571,18 @@ impl BandoEgui {
                 );
             });
 
-        if self.notifications_open && self.source_save_error.is_some() {
+        if self.notifications_open &&
+            (self.source_save_error.is_some() || self.clipboard_error.is_some())
+        {
             egui::Window::new("알림")
                 .id(egui::Id::new("native_ui_preview_notifications"))
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
                     if let Some(error) = &self.source_save_error {
+                        ui.label(typography::status(error, theme::DANGER));
+                    }
+                    if let Some(error) = &self.clipboard_error {
                         ui.label(typography::status(error, theme::DANGER));
                     }
                 });
