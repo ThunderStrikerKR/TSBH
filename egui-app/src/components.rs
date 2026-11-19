@@ -103,7 +103,7 @@ pub fn modal_backdrop(
         .interactable(false)
         .sense(egui::Sense::hover());
     // egui's modal focus barrier also blocks keyboard input in the toolbar,
-    // while the visual dim and pointer blocker stay clear of the Kakao dock.
+    // while the visual dim stays clear of the Kakao dock.
     let layer=area.layer();
     ctx.memory_mut(|memory|memory.set_modal_layer(layer));
     area.show(ctx,|ui|{
