@@ -1586,7 +1586,7 @@ impl BandoEgui {
 
     fn reception(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default()
-            .frame(Frame::new().fill(theme::CANVAS).inner_margin(theme::PANEL_GAP))
+            .frame(theme::workspace_shell_frame())
             .show(ctx, |ui| {
                 let viewport_width = ui.available_width();
                 let content_width = viewport_width.max(layout::LayoutState::minimum_width());
@@ -1595,13 +1595,10 @@ impl BandoEgui {
                 // Exactly four column rectangles are allocated before drawing
                 // any business content. Hover/folding a card cannot shift the
                 // coordinates of splitters or other panels.
-                egui::ScrollArea::horizontal()
-                    // The parent scroll area's touch-style drag handling
-                    // must not compete with a draggable pane separator.
-                    .drag_to_scroll(false)
-                    .id_salt("reception_four_columns")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
+                // The full-width layout needs no ancestor ScrollArea.
+                // It used to display a long hover-only horizontal thumb
+                // along the bottom even when the four panes fitted exactly.
+                let mut draw_columns = |ui: &mut Ui| {
                         let widths = self.layout.widths(content_width);
                         let (_, all) = ui.allocate_space(Vec2::new(content_width, content_height));
                         let mut x = all.left();
@@ -1721,7 +1718,17 @@ impl BandoEgui {
                                 );
                             }
                         }
-                    });
+                    };
+                if content_width > viewport_width + 0.5 {
+                    // Small windows must still be able to reach every pane.
+                    egui::ScrollArea::horizontal()
+                        .drag_to_scroll(false)
+                        .id_salt("reception_four_columns")
+                        .auto_shrink([false, false])
+                        .show(ui, &mut draw_columns);
+                } else {
+                    draw_columns(ui);
+                }
             });
     }
 
@@ -2548,15 +2555,13 @@ impl BandoEgui {
         // A tab change must keep the native HWND dock visible; only the
         // explicit Disconnect button (or app exit) restores external windows.
         egui::CentralPanel::default()
-            .frame(Frame::new().fill(theme::CANVAS).inner_margin(theme::PANEL_GAP))
+            .frame(theme::workspace_shell_frame())
             .show(ctx, |ui| {
-                let content_width=ui.available_width()
+                let viewport_width=ui.available_width();
+                let content_width=viewport_width
                     .max(layout::LayoutState::minimum_width());
                 let height=ui.available_height().max(1.0);
-                egui::ScrollArea::horizontal()
-                    .id_salt("kakao-management-shell")
-                    .auto_shrink([false,false])
-                    .show(ui,|host|{
+                let mut draw_management=|host:&mut Ui|{
                         let widths=self.layout.widths(content_width);
                         let (_,all)=host.allocate_space(
                             Vec2::new(content_width,height)
@@ -2632,7 +2637,15 @@ impl BandoEgui {
                                 });
                             }
                         );
-                    });
+                    };
+                if content_width > viewport_width + 0.5 {
+                    egui::ScrollArea::horizontal()
+                        .id_salt("kakao-management-shell")
+                        .auto_shrink([false,false])
+                        .show(ui,&mut draw_management);
+                }else{
+                    draw_management(ui);
+                }
             });
     }
 }
