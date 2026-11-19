@@ -338,8 +338,8 @@ impl ManualWorkspace {
                     &format!("미배정 원문 {unassigned}개 · 배송 {}건",rows.len())
                 ));
                 ui.separator();
-                // Match the React manual workspace: source 0.36fr and
-                // shipment sheet 1fr, never the equal egui default columns.
+                // Match React's .manual-workspace override: 34% source and
+                // 66% shipment sheet, not the equal egui default columns.
                 ui.horizontal(|ui|{
                     let width=ui.available_width();
                     let height=(ui.available_height()
