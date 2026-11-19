@@ -2,7 +2,7 @@
 //! Layout uses shared management components; validation and persistence are
 //! delegated to the Rust catalog client rules via BandoGateway.
 use crate::{components, gateway::{BandoGateway,ReadOperation}, theme::{self,ButtonRole}, typography};
-use eframe::egui::{self,Align,Context,Layout,Ui,Vec2};
+use eframe::egui::{self,Align,Context,Layout,Ui};
 use serde_json::{json,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc},thread,time::{SystemTime,UNIX_EPOCH}};
 
@@ -84,6 +84,7 @@ impl ClientManager {
     }
     pub fn has_modal(&self)->bool {self.draft.is_some()}
     fn editable(&self)->bool {
+        self.state.is_object() &&
         self.state.get("readOnly")!=Some(&Value::Bool(true))
     }
     fn dirty(&self)->bool {
@@ -219,24 +220,22 @@ impl ClientManager {
         ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui,|section|{
             section.horizontal(|toolbar|{
-                toolbar.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                    if theme::action(actions,"＋ 거래처 등록",ButtonRole::Primary,
-                        self.ready && self.editable() && self.saving.is_none()
-                    ).clicked(){
-                        self.begin(empty_client());
-                    }
-                    theme::action(actions,"Excel 관리",ButtonRole::Standard,false)
-                        .on_disabled_hover_text("Excel 관리 기능은 이전되지 않았습니다.");
-                });
                 toolbar.label(typography::field_label("검색"));
-                let width=toolbar.available_width().max(
-                    theme::MANAGEMENT_SEARCH_MIN_WIDTH
-                );
+                let width=(toolbar.available_width()-
+                    theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH)
+                    .max(theme::MANAGEMENT_SEARCH_MIN_WIDTH);
                 if components::flexible_text_field(
                     toolbar,&mut self.search,width,
                     "상호 / 주소 / 전화번호 / 별칭 검색"
                 ).changed() {
                     self.query(Arc::clone(&gateway),toolbar.ctx().clone());
+                }
+                theme::action(toolbar,"Excel 관리",ButtonRole::Standard,false)
+                    .on_disabled_hover_text("Excel 관리 기능은 이전되지 않았습니다.");
+                if theme::action(toolbar,"＋ 거래처 등록",ButtonRole::Primary,
+                    self.ready && self.editable() && self.saving.is_none()
+                ).clicked(){
+                    self.begin(empty_client());
                 }
             });
             components::soft_divider(section);
@@ -314,7 +313,19 @@ impl ClientManager {
             label_edit(&mut cols[0],draft,"name","거래처명");
             label_edit(&mut cols[1],draft,"displayName","송장 표시 상호");
         });
-        label_edit(ui,draft,"shortNames","검색 태그");
+        ui.vertical(|ui|{
+            ui.label(typography::field_label("검색 태그"));
+            let mut tags=[
+                field(draft,"shortNames"),field(draft,"identifiers")
+            ].into_iter().filter(|v|!v.is_empty())
+                .collect::<Vec<_>>().join(", ");
+            if components::flexible_text_field(
+                ui,&mut tags,ui.available_width(),""
+            ).changed(){
+                draft["shortNames"]=json!(tags);
+                draft["identifiers"]=json!("");
+            }
+        });
         components::soft_divider(ui);
         ui.label(typography::section_heading("발송인 정보"));
         label_edit(ui,draft,"address","거래처 주소");
@@ -355,8 +366,11 @@ impl ClientManager {
             ui.label(typography::caption("미지정 (상품군 추천 계좌 사용)"));
         } else {
             let mut selected=field(draft,"preferredAccountId").to_owned();
+            let selected_label=accounts.iter()
+                .find(|a|field(a,"id")==selected)
+                .map(|a|field(a,"name")).unwrap_or("미지정");
             egui::ComboBox::from_id_salt("client-manager-account")
-                .selected_text(if selected.is_empty(){"미지정"}else{&selected})
+                .selected_text(selected_label)
                 .show_ui(ui,|ui|{
                     ui.selectable_value(&mut selected,String::new(),"미지정");
                     for account in &accounts {
@@ -416,9 +430,9 @@ impl ClientManager {
                             ui.selectable_value(&mut self.exception_id,id.clone(),label);
                         }
                     });
-                components::flexible_text_field(
-                    row,&mut self.exception_price,
-                    theme::MANUAL_INPUT_WIDTH,"특수 단가"
+                row.label(typography::field_label("특수 단가"));
+                components::field(
+                    row,&mut self.exception_price,components::FieldKind::Money,true
                 );
                 let amount=self.exception_price.parse::<u64>().ok();
                 if theme::action(row,"예외 추가",ButtonRole::Standard,
@@ -428,7 +442,7 @@ impl ClientManager {
                         if !draft["overrides"].is_object(){
                             draft["overrides"]=json!({});
                         }
-                        draft["overrides"][&self.exception_id]=json!(amount);
+                        draft["overrides"][self.exception_id.as_str()]=json!(amount);
                         self.exception_id.clear();self.exception_price.clear();
                     }
                 }
