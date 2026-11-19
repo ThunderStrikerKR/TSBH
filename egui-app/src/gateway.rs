@@ -36,6 +36,8 @@ pub enum ReadOperation {
     CalculatePrice,
     ManualClassification,
     SearchProductsWithUrls,
+    PreviewWorkflow,
+    ReadShipments,
 }
 
 impl ReadOperation {
@@ -47,7 +49,8 @@ impl ReadOperation {
             | Self::ClientCandidates | Self::SearchProductsWithUrls => "catalog_clients",
             Self::NewReception | Self::MergeReceptionAnalysis
             | Self::ChangeOrderClient | Self::RepriceOrder
-            | Self::CalculatePrice | Self::ManualClassification => "rules",
+            | Self::CalculatePrice | Self::ManualClassification
+            | Self::PreviewWorkflow | Self::ReadShipments => "rules",
         }
     }
 
@@ -66,6 +69,8 @@ impl ReadOperation {
             Self::CalculatePrice => "calculate_price",
             Self::ManualClassification => "apply_manual_classification",
             Self::SearchProductsWithUrls => "search_products_with_urls",
+            Self::PreviewWorkflow => "preview_workflow",
+            Self::ReadShipments => "read_shipments",
         }
     }
 }
@@ -225,7 +230,9 @@ impl BandoGateway for LocalGateway {
             | ReadOperation::ChangeOrderClient
             | ReadOperation::RepriceOrder
             | ReadOperation::CalculatePrice
-            | ReadOperation::ManualClassification => {
+            | ReadOperation::ManualClassification
+            | ReadOperation::PreviewWorkflow
+            | ReadOperation::ReadShipments => {
                 rules::execute(operation.operation(), payload)
             }
             ReadOperation::AutoMatchReceptionClient
