@@ -4,7 +4,7 @@
 //! enabled unless BANDO_HUB_GATEWAY=http is explicitly configured.
 
 use crate::gateway::{BandoGateway, ReadOperation};
-use crate::preview_store::WorkingSource;
+use crate::preview_store::{WorkingReception, WorkingSource};
 use reqwest::{blocking::Client, Url};
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -99,21 +99,45 @@ impl BandoGateway for HttpGateway {
             .ok_or("서버 접수 원문 응답에 orderType이 없습니다.")?
             .to_owned();
         crate::clipboard_intake::OrderType::parse(&order_type)?;
-        Ok(WorkingSource { raw, order_type, revision })
+        // The multi-reception contract must be explicit. Do not silently
+        // discard server receipts or reinterpret a missing array as empty.
+        let records = value.get("drafts").and_then(Value::as_array)
+            .ok_or("서버 접수 목록 drafts가 없습니다.")?;
+        let mut drafts = Vec::with_capacity(records.len());
+        for record in records {
+            let id = record.get("id").and_then(Value::as_str)
+                .ok_or("서버 접수 ID가 없습니다.")?.to_owned();
+            let source = record.get("raw").and_then(Value::as_str)
+                .ok_or("서버 접수 원문이 없습니다.")?.to_owned();
+            let kind = record.get("orderType").and_then(Value::as_str)
+                .ok_or("서버 접수 유형이 없습니다.")?.to_owned();
+            crate::clipboard_intake::OrderType::parse(&kind)?;
+            drafts.push(WorkingReception { id, raw: source, order_type: kind });
+        }
+        let active_id = match value.get("activeId") {
+            Some(Value::String(id)) if !id.is_empty() => Some(id.clone()),
+            Some(Value::Null) => None,
+            _ => return Err("서버 활성 접수 ID가 없습니다.".into()),
+        };
+        Ok(WorkingSource { raw, order_type, revision, active_id, drafts })
     }
 
-    fn save_working_source(&self, raw: &str, order_type: &str, revision: u64) -> Result<u64, String> {
-        crate::clipboard_intake::OrderType::parse(order_type)?;
+    fn save_working_source(&self, source: &WorkingSource) -> Result<u64, String> {
+        let drafts: Vec<Value> = source.drafts.iter().map(|item| json!({
+            "id": item.id, "raw": item.raw, "orderType": item.order_type,
+        })).collect();
         let body = json!({
-            "raw": raw,
-            "orderType": order_type,
-            "expectedRevision": revision,
+            "raw": source.raw,
+            "orderType": source.order_type,
+            "activeId": source.active_id,
+            "drafts": drafts,
+            "expectedRevision": source.revision,
         });
         let response = self.client.put(self.endpoint("working-source"))
             .bearer_auth(&self.access_token)
             .json(&body)
             .send()
-            .map_err(|_| "서버 접수 원문 저장 실패. 연결 상태를 확인하세요.".to_owned())?;
+            .map_err(|_| "서버 접수 목록 저장 실패. 연결 상태를 확인하세요.".to_owned())?;
         if response.status().as_u16() == 409 {
             return Err("서버에 더 최신 원문이 있어 저장하지 않았습니다.".into());
         }
