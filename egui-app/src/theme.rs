@@ -45,6 +45,10 @@ pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 pub const PANEL_GAP: f32 = 6.0;
+// React HubShell Kakao slot: 1px border, 34px toolbar, 26px controls.
+pub const KAKAO_TOOLBAR_HEIGHT: f32 = 34.0;
+pub const KAKAO_CONTROL_HEIGHT: f32 = 26.0;
+pub const KAKAO_TOOLBAR_PAD_X: f32 = 6.0;
 // Splitter hit target stays 6pt; only the painted line is 1pt (2pt on hover).
 pub const DOCK_SPLITTER_LINE: f32 = 1.0;
 pub const DOCK_SPLITTER_HOVER_LINE: f32 = 2.0;
@@ -117,6 +121,8 @@ pub enum ButtonRole {
     ActiveNavigation,
     ManagementTab,
     ActiveManagementTab,
+    KakaoControl,
+    ActiveKakaoControl,
 }
 
 pub fn install(ctx: &egui::Context) {
@@ -182,6 +188,16 @@ pub fn docked_pane_frame() -> Frame {
         .inner_margin(SECTION_PADDING)
 }
 
+/// Kakao's native HWND uses the whole slot below its toolbar, without the
+/// 16pt work-pane content inset. React's native region has no such padding.
+pub fn kakao_slot_frame() -> Frame {
+    Frame::new()
+        .fill(PANEL)
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
+        .corner_radius(CornerRadius::same(0))
+        .inner_margin(1)
+}
+
 pub fn nested_frame() -> Frame {
     Frame::new()
         .fill(INPUT)
@@ -216,11 +232,15 @@ fn action_with_min_width(
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, Color32::from_rgb(41, 72, 92), TEXT, Stroke::NONE),
         ButtonRole::ManagementTab => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveManagementTab => (NAV_HEIGHT, RAISED, TEXT, Stroke::new(1.0,BORDER)),
+        ButtonRole::KakaoControl => (KAKAO_CONTROL_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
+        ButtonRole::ActiveKakaoControl => (KAKAO_CONTROL_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH,BORDER)),
     };
     let font_size = match role {
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => typography::FONT_MAIN_NAV,
         ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab =>
             typography::FONT_STANDARD_ACTION,
+        ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl =>
+            typography::FONT_METADATA,
         ButtonRole::Primary => typography::FONT_PRIMARY_ACTION,
         _ => typography::FONT_STANDARD_ACTION,
     };
@@ -231,17 +251,20 @@ fn action_with_min_width(
         ButtonRole::Quiet => 8.0,
         ButtonRole::Navigation | ButtonRole::ActiveNavigation |
         ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 12.0,
+        ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 7.0,
         _ => 12.0,
     };
     let radius = match role {
         ButtonRole::Navigation | ButtonRole::ActiveNavigation |
         ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 5,
+        ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 4,
         _ => CONTROL_RADIUS,
     };
     let important = matches!(
         role,
         ButtonRole::Primary | ButtonRole::Danger |
-        ButtonRole::ActiveNavigation | ButtonRole::ActiveManagementTab
+        ButtonRole::ActiveNavigation | ButtonRole::ActiveManagementTab |
+        ButtonRole::ActiveKakaoControl
     );
     ui.scope(|ui| {
         ui.spacing_mut().button_padding = Vec2::new(padding_x, 6.0);
