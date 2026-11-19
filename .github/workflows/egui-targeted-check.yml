@@ -1,4 +1,4 @@
-# Targeted Windows compile: final workflow visual parity - exact selection/preview colors and disabled original controls.
+# Targeted Windows compile: checked React workflow card and 18px stage signal parity.
 name: Tauri native CLI executable compile check
 on:
   push:
