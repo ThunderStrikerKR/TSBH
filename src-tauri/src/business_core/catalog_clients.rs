@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 mod title_clients;
 #[path = "catalog_clients/client_search.rs"]
 mod client_search;
+#[path = "catalog_clients/client_mutation.rs"]
+mod client_mutation;
 #[path = "catalog_clients/client_preview.rs"]
 mod client_preview;
 #[path = "catalog_clients/registration.rs"]
@@ -78,23 +80,7 @@ pub(super) fn product_url_ok(value: &str) -> bool {
         && url.path().starts_with("/product/")
 }
 fn validate_client(state: &Value, client: &Value) -> Result<(), String> {
-    if !value_present(client, "name") {
-        return Err("거래처명을 입력하세요.".into());
-    }
-    if !value_present(client, "address") {
-        return Err("거래처 주소를 입력하세요.".into());
-    }
-    if !value_present(client, "phone") && !value_present(client, "mobile") {
-        return Err("거래처 전화번호 또는 휴대폰 번호를 입력하세요.".into());
-    }
-    let account_id = field(client, "preferredAccountId");
-    if !account_id.is_empty()
-        && !items(state.get("settings").unwrap_or(&Value::Null), "accounts")
-            .iter().any(|a| field(a, "id") == account_id)
-    {
-        return Err("설정에 등록된 입금 계좌를 선택하세요.".into());
-    }
-    Ok(())
+    client_mutation::validate_client(state,client)
 }
 fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
     // src/domain.ts::productSchema and validateProduct: one sale unit only,
@@ -158,19 +144,7 @@ fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
     Ok(())
 }
 fn upsert(state: &Value, entity: &Value, collection: &str) -> Result<Value, String> {
-    let id = field(entity, "id");
-    if id.is_empty() {
-        return Err(format!("{collection} 항목 ID가 없습니다."));
-    }
-    let mut next = state.clone();
-    let collection_rows = next.get_mut(collection).and_then(Value::as_array_mut)
-        .ok_or_else(|| format!("{collection} 목록이 없습니다."))?;
-    if let Some(index) = collection_rows.iter().position(|row| field(row, "id") == id) {
-        collection_rows[index] = entity.clone();
-    } else {
-        collection_rows.push(entity.clone());
-    }
-    Ok(json!({"state":next}))
+    client_mutation::upsert(state,entity,collection)
 }
 /// Original oracle: src/client-workbook.ts::applyClientWorkbook.
 /// The Excel parser and per-row draft remain in TypeScript; the approved
@@ -240,16 +214,8 @@ fn apply_product_workbook(state: &Value, preview: &Value) -> Result<Value, Strin
 }
 
 fn archive_client(state: &Value, id: &str, at: &str) -> Result<Value, String> {
-    if id.is_empty() || at.is_empty() { return Err("거래처 삭제 요청 정보가 없습니다.".into()); }
-    let mut next = state.clone();
-    let clients = next.get_mut("clients").and_then(Value::as_array_mut)
-        .ok_or("거래처 목록이 없습니다.")?;
-    let client = clients.iter_mut().find(|client| field(client, "id") == id)
-        .ok_or("삭제할 거래처를 찾지 못했습니다.")?;
-    client["deletedAt"] = json!(at);
-    Ok(json!({"state":next}))
+    client_mutation::archive_client(state,id,at)
 }
-
 /// Original productKey uses a compact upper-case model code and a stable
 /// single-sale-variant ID. Deletion must not relink a later catalog import.
 fn product_key(product: &Value) -> String {
