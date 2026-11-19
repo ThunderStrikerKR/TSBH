@@ -30,6 +30,14 @@ pub struct SettingsView{
     loading:Option<Pending>,
     saving:Option<(SaveKind,Pending)>,
     folder_picker:Option<(String,Receiver<Option<String>>)>,
+    data_request:Option<(String,Pending)>,
+    archive:Option<Vec<Value>>,
+    archive_query:String,
+    archive_open:bool,
+    backups:Vec<String>,
+    backup_refresh_after_create:bool,
+    restore_target:Option<String>,
+    restored:bool,
     requested_tab:Option<SettingsTab>,
     switch_after_save:bool,
     pub error:Option<String>,
@@ -119,15 +127,23 @@ impl SettingsView{
         Self{
             tab:SettingsTab::Basic,source:Value::Null,draft:Value::Null,
             loaded:false,loading:Some(receiver),saving:None,
-            folder_picker:None,requested_tab:None,switch_after_save:false,
+            folder_picker:None,data_request:None,
+            archive:None,archive_query:String::new(),archive_open:false,
+            backups:Vec::new(),backup_refresh_after_create:false,
+            restore_target:None,restored:false,
+            requested_tab:None,switch_after_save:false,
             error:None,notice:None
         }
+    }
+    pub fn take_restored(&mut self)->bool{
+        std::mem::take(&mut self.restored)
     }
     pub fn dirty(&self)->bool{
         self.loaded && changed(settings(&self.source),&self.draft)
     }
     pub fn busy(&self)->bool{
-        self.loading.is_some()||self.saving.is_some()||self.folder_picker.is_some()
+        self.loading.is_some()||self.saving.is_some()||
+            self.folder_picker.is_some()||self.data_request.is_some()
     }
     pub fn read_only(&self)->bool {
         self.source.get("readOnly").and_then(Value::as_bool).unwrap_or(true)
@@ -138,7 +154,32 @@ impl SettingsView{
         self.requested_tab=None;
         self.switch_after_save=false;
     }
-    pub fn poll(&mut self,ctx:&Context){
+    fn data_action(
+        &mut self,operation:&str,filename:Option<String>,
+        gateway:Arc<dyn BandoGateway>,ctx:Context
+    ){
+        if self.data_request.is_some(){return;}
+        let (tx,rx)=mpsc::channel();
+        self.data_request=Some((operation.to_owned(),rx));
+        self.error=None;
+        let operation=operation.to_owned();
+        thread::spawn(move||{
+            let result=gateway.settings_data(&operation,filename.as_deref());
+            let _=tx.send(result);
+            ctx.request_repaint();
+        });
+    }
+    fn reload(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context){
+        let (tx,rx)=mpsc::channel();
+        self.loading=Some(rx);
+        self.loaded=false;
+        thread::spawn(move||{
+            let result=gateway.load_settings();
+            let _=tx.send(result);
+            ctx.request_repaint();
+        });
+    }
+    pub fn poll(&mut self,ctx:&Context,gateway:Arc<dyn BandoGateway>){
         if let Some(rx)=self.loading.as_ref(){
             match rx.try_recv(){
                 Ok(Ok(state))=>{
@@ -189,6 +230,54 @@ impl SettingsView{
                 }
                 Err(mpsc::TryRecvError::Empty)=>{}
             }
+        }
+        if let Some((action,receiver))=self.data_request.as_ref(){
+            match receiver.try_recv(){
+                Ok(Ok(payload))=>{
+                    let kind=action.clone();
+                    self.data_request=None;
+                    match kind.as_str(){
+                        "archive"=>{
+                            self.archive=payload.as_array().cloned();
+                            self.archive_query.clear();
+                            self.archive_open=true;
+                        }
+                        "backups"=>{
+                            self.backups=payload.as_array().cloned()
+                                .unwrap_or_default().iter()
+                                .filter_map(Value::as_str).map(str::to_owned).collect();
+                        }
+                        "backup"=>{
+                            self.notice=Some(format!(
+                                "백업 완료: {}",payload.as_str().unwrap_or("")
+                            ));
+                            self.backup_refresh_after_create=true;
+                        }
+                        "restore"=>{
+                            self.notice=Some(
+                                "백업을 복구했습니다. 주문 내역을 다시 확인하세요.".into()
+                            );
+                            self.restored=true;
+                            self.archive=None;self.backups.clear();
+                            self.reload(Arc::clone(&gateway),ctx.clone());
+                        }
+                        _=>{}
+                    }
+                }
+                Ok(Err(error))=>{
+                    self.data_request=None;
+                    self.error=Some(error);
+                }
+                Err(mpsc::TryRecvError::Disconnected)=>{
+                    self.data_request=None;
+                    self.error=Some("데이터 관리 연결이 중단되었습니다.".into());
+                }
+                Err(mpsc::TryRecvError::Empty)=>{}
+            }
+        }
+        if self.backup_refresh_after_create && self.data_request.is_none(){
+            self.backup_refresh_after_create=false;
+            self.data_action("backups",None,Arc::clone(&gateway),ctx.clone());
         }
         if let Some((key,rx))=self.folder_picker.as_ref(){
             match rx.try_recv(){
@@ -306,7 +395,7 @@ impl SettingsView{
         {self.error=Some("폴더 열기는 Windows 환경에서 사용할 수 있습니다.".into());}
     }
     pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
-        self.poll(ui.ctx());
+        self.poll(ui.ctx(),Arc::clone(&gateway));
         ui.label(typography::page_heading("설정"));
         ui.add_space(theme::SPACE_12);
         if let Some(tab)=components::management_tabs(ui,&[
@@ -344,7 +433,7 @@ impl SettingsView{
                 match self.tab{
                     SettingsTab::Basic=>self.show_basic(scroll,editable,Arc::clone(&gateway)),
                     SettingsTab::Files=>self.show_files(scroll,editable,Arc::clone(&gateway)),
-                    SettingsTab::Data=>self.show_data(scroll),
+                    SettingsTab::Data=>self.show_data(scroll,Arc::clone(&gateway)),
                     SettingsTab::System=>self.show_system(scroll),
                 }
             });
