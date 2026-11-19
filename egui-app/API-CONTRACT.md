@@ -208,3 +208,12 @@ $env:BANDO_EGUI_BUSINESS_DB = "C:\\path\\to\\bando-hub-v001.sqlite"
 - 연동은 `BANDO_EGUI_BUSINESS_DB`, `BANDO_EGUI_TAURI_HELPER`, `BANDO_EGUI_ENABLE_WORKING_COMMIT=1` 세 설정이 모두 필요한 opt-in 방식이며, 설정이 없으면 기존 읽기 전용 미리보기가 유지된다.
 - 이 단계는 `주문 확인 완료`로 정식 원장에 반영하는 `write_snapshot/state_save`가 아니다. 원문의 자동 분류 및 실제 단가 계산과 별개로 최종 검수, 수취인 수동 분류, 정식 확정과 배송 흐름은 아직 이어서 이전해야 한다.
 - Windows Cargo 빌드, 격리 DB에서 동시 실행 검증은 미실시. Tauri 네이티브 단건 보관을 외부 운영 환경에 배포하기 전 수동 검증이 필요하다. 카카오톡 연결은 Issue #42에 남긴다.
+
+## 12. Native Rust 수취인 수동 분류 작업본 (2026-11-20)
+
+- UI는 `ReadOperation::ManualClassification`으로 기존 Rust `rules/apply_manual_classification`을 호출한다. `initial_manual`, `assign_manual_block`, `release_manual_block`, `resize_manual_rows`, `add_manual_item`, `set_manual_recipient_field`, `set_manual_product`, `set_manual_quantity_draft`, `confirm_manual_quantity`, `manual_quantity_status`, `apply_manual`만 1차 egui 작업 흐름에서 사용한다.
+- 원문 블록의 `start/end`는 Rust의 UTF-16 근거 위치를 그대로 사용하고 `source_highlight::boundary`에서 유효한 UTF-8 문자 경계로 검사한다. 실제 원문·귀속 대상·분류 판단을 egui에 별도 구현하지 않는다.
+- `WorkingReception.manual_model`은 `{sourceRaw,orderType,clientId,model,assignmentOrder}`만 허용하며 해당 발주서의 원문/유형/거래처와 반드시 일치해야 한다. 사용자가 **초안에 적용**하고 Rust가 `apply_manual`을 성공적으로 반환한 경우에만 격리 작업 DB에 기록한다.
+- 활성 발주서 ID, 원문, 유형, 거래처가 분류 도중 바뀌면 결과를 거부한다. 신규 원문/거래처 변경 시 이전 수동 근거를 무효화한다. 재분석/재시작 시에는 저장된 모델을 Rust `apply_manual`로 재적용한다.
+- 현재 `src-tauri/src/egui_reception_bridge.rs`의 운영 작업본 커밋은 자동 인식을 다시 수행하는 계약이라 수동 배정이 손실될 수 있다. **수동 분류가 있는 접수에 대해서는 운영 동기화를 의도적으로 차단**하며 직접 SQL로 우회하지 않는다. 수동 모델의 서버 검증, native scoped IDs, revision/작업본 버전·상품 재가격을 하나의 트랜잭션으로 연결하는 후속 단계가 필요하다.
+- 배송 감소/삭제 확인, 고급 상품 검색, 키보드 표 조작, 운영 동기화 및 Windows 컴파일·시각 검증은 후속 단계로 보류한다. 카카오톡 Issue #42는 변경하지 않는다.
