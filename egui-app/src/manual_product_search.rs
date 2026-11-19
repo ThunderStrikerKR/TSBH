@@ -4,7 +4,7 @@
 use eframe::egui::{self,Context};
 use serde_json::{json,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc},thread};
-use crate::{gateway::{BandoGateway,ReadOperation},theme::{self,ButtonRole},typography};
+use crate::{gateway::{BandoGateway,ReadOperation},theme::{self,ButtonRole},typography,components};
 
 fn field<'a>(v:&'a Value,key:&str)->&'a str{
     v.get(key).and_then(Value::as_str).unwrap_or("")
@@ -91,9 +91,10 @@ impl ProductSearch{
             .default_width(theme::MANUAL_SEARCH_DIALOG_WIDTH)
             .open(&mut open)
             .show(ctx,|ui|{
-                if ui.add(egui::TextEdit::singleline(&mut self.query)
-                    .hint_text("브랜드 / 상품명 / 모델 / 별칭 검색")
-                    .desired_width(ui.available_width())
+                let width=ui.available_width();
+                if components::flexible_text_field(
+                    ui,&mut self.query,width,
+                    "브랜드 / 상품명 / 모델 / 별칭 검색"
                 ).changed(){changed=true;}
                 if let Some(catalog)=&self.catalog{
                     let brands=catalog.get("brands").and_then(Value::as_array)
