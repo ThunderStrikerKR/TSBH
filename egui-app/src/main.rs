@@ -439,6 +439,12 @@ impl BandoEgui {
         let Some(source)=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row| row.id==id)).cloned()
         else{return};
+        if source.manual_model.is_some() {
+            self.working_sync_error=Some(
+                "수동 분류는 egui 미확정 초안에 보존됐습니다. 운영 저장은 수동 분류 안전 연동 후 사용하세요.".into()
+            );
+            return;
+        }
         let Some(client_id)=source.client_id.clone() else{
             self.working_sync_error=Some("거래처를 먼저 선택하세요.".into());
             return;
@@ -1996,7 +2002,12 @@ impl BandoEgui {
                                 "운영 작업본 저장 후 변경사항 있음 · 다시 저장 필요"
                             }));
                         }
-                        if self.gateway.working_commit_enabled() {
+                        if row.manual_model.is_some() {
+                            ui.label(typography::caption(
+                                "수동 분류 적용됨 · 운영 작업본 저장은 아직 별도 검증 필요"
+                            ));
+                        }
+                        if self.gateway.working_commit_enabled() && row.manual_model.is_none() {
                             if self.working_sync.is_some() {
                                 ui.label(typography::caption("운영 작업본 저장 중"));
                             } else if row.client_id.is_some() && !row.raw.trim().is_empty() {
