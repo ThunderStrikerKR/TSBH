@@ -447,6 +447,8 @@ impl BandoEgui {
                         let widths = self.layout.widths(content_width);
                         let (_, all) = ui.allocate_space(Vec2::new(content_width, content_height));
                         let mut x = all.left();
+                        let mut splitter_visuals =
+                            Vec::with_capacity(layout::PANEL_COUNT - 1);
                         for index in 0..layout::PANEL_COUNT {
                             let rect = Rect::from_min_size(
                                 egui::pos2(x, all.top()),
@@ -482,10 +484,11 @@ impl BandoEgui {
                                 if response.hovered() || response.dragged() {
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                                 }
+                                let highlighted = response.hovered() || response.dragged();
                                 components::paint_dock_splitter(
-                                    ui, splitter, true,
-                                    response.hovered() || response.dragged(),
+                                    ui, splitter, true, highlighted,
                                 );
+                                splitter_visuals.push((splitter, highlighted));
                                 if response.drag_started() {
                                     self.dragging_split = Some(HorizontalSplitDrag {
                                         index,
@@ -516,6 +519,48 @@ impl BandoEgui {
                                     let _ = self.layout.save();
                                 }
                                 x += layout::SPLITTER;
+                            }
+                        }
+
+                        // Draw the visible dock rules once in the common
+                        // coordinate system. A panel-clipped horizontal line
+                        // otherwise stops at the edge of a 6pt vertical
+                        // gutter and cannot reach its centered stroke.
+                        // The overlays only paint; interaction rectangles,
+                        // widths and drag behavior remain unchanged.
+                        if splitter_visuals.len() == layout::PANEL_COUNT - 1 {
+                            let shared_upper = self.layout.vertical_heights(all.height()).0;
+                            let (review_upper, _) =
+                                self.layout.detail_upper_heights(all.height());
+                            let shared_y =
+                                all.top() + shared_upper + layout::SPLITTER / 2.0;
+                            let review_y =
+                                all.top() + review_upper + layout::SPLITTER / 2.0;
+                            for (left, right, center_y) in [
+                                (0, 1, shared_y),
+                                (1, 2, review_y),
+                                (1, 2, shared_y),
+                            ] {
+                                let line_area = Rect::from_min_max(
+                                    egui::pos2(
+                                        splitter_visuals[left].0.center().x,
+                                        center_y - layout::SPLITTER / 2.0,
+                                    ),
+                                    egui::pos2(
+                                        splitter_visuals[right].0.center().x,
+                                        center_y + layout::SPLITTER / 2.0,
+                                    ),
+                                );
+                                components::paint_dock_axis_line(
+                                    ui, line_area, false, false,
+                                );
+                            }
+                            // Keep all vertical axes visually continuous at
+                            // T-junctions by drawing them over the crossbars.
+                            for (splitter, highlighted) in splitter_visuals {
+                                components::paint_dock_axis_line(
+                                    ui, splitter, true, highlighted,
+                                );
                             }
                         }
                     });
