@@ -2,7 +2,7 @@
 //! UI preview only: uses existing read-only Rust business decisions and
 //! a separate egui-preview.sqlite3 for source continuity. Existing React/Tauri
 //! stays untouched. A production client master may be read ONLY by explicit
-//! read-only opt-in; KakaoTalk windows are inspected, never docked or moved.
+//! read-only opt-in; KakaoTalk is placed by a separate reversible Win32 dock.
 
 mod theme;
 mod typography;
@@ -26,6 +26,7 @@ mod catalog_query_bridge;
 mod manual_product_search;
 mod manual_source_view;
 mod kakao_context;
+mod kakao_dock;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
@@ -145,6 +146,7 @@ struct BandoEgui {
     clipboard_monitor: ClipboardMonitor,
     kakao_tracker: KakaoTracker,
     kakao_connected: bool,
+    kakao_dock: kakao_dock::KakaoDock,
     clipboard_chat: Option<ChatWindow>,
     clipboard_busy: bool,
     ocr_processing: bool,
@@ -191,6 +193,7 @@ impl Default for BandoEgui {
             clipboard_monitor: ClipboardMonitor::default(),
             kakao_tracker: KakaoTracker::default(),
             kakao_connected: false,
+            kakao_dock: kakao_dock::KakaoDock::default(),
             clipboard_chat: None,
             clipboard_busy: false,
             ocr_processing: false,
@@ -309,7 +312,8 @@ impl BandoEgui {
             .is_none_or(|current| current.title != chat.title) {
             return;
         }
-        self.kakao_connected = true;
+        // Associating the chat with a draft must never forge a successful
+        // OS dock connection. The actual dock owns connection state.
         let mut changed = false;
         if let Some(id) = self.active_id.as_deref() {
             if let Some(item) = self.drafts.iter_mut().find(|item| item.id == id) {
@@ -1462,7 +1466,17 @@ impl BandoEgui {
         // Chat metadata is used only at the subsequent order intake boundary.
         let pane_width = ui.available_width();
         let pane_height = ui.available_height();
-        let connected = self.kakao_connected;
+        let region=ui.max_rect();
+        let scale=ui.ctx().pixels_per_point();
+        if self.kakao_dock.connected() {
+            if let Err(reason)=self.kakao_dock.sync(region,scale) {
+                self.kakao_connected=false;
+                self.source_save_error=Some(format!("카카오톡 연결 해제: {reason}"));
+                self.notifications_open=true;
+            }
+        }
+        let connected=self.kakao_dock.connected();
+        self.kakao_connected=connected;
         let mut connect = false;
         theme::docked_pane_frame().show(ui, |ui| {
             let inset = 2.0 * theme::SECTION_PADDING;
@@ -1482,9 +1496,21 @@ impl BandoEgui {
             }
         });
         if connect {
-            // Connectivity is separate from matching a dealer. Do not bind an
-            // arbitrary chat or start recognition on this button press.
-            self.kakao_connected = true;
+            // The button is a real Win32 docking request, not a chat picker.
+            // Only a successful verified HWND placement counts as connected.
+            self.kakao_tracker.refresh();
+            let recent=self.kakao_tracker.recent_focus();
+            match self.kakao_dock.connect(recent,region,scale){
+                Ok(())=>{
+                    self.kakao_connected=true;
+                    self.source_save_error=None;
+                }
+                Err(reason)=>{
+                    self.kakao_connected=false;
+                    self.source_save_error=Some(format!("카카오톡 연결 실패: {reason}"));
+                    self.notifications_open=true;
+                }
+            }
         }
     }
 
