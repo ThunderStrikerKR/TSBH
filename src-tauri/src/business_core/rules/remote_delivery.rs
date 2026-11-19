@@ -139,6 +139,26 @@ pub(super) fn multiply_shipment(
         .filter(|n| (0..=super::MAX_SAFE).contains(n))
 }
 
+/// Convert the APPLIED amount typed by staff into the undoubled charge to
+/// persist. The checked-state decision and the 2x constraint live in Rust,
+/// exactly as they do for shipment previews and totals.
+pub(super) fn normalize_applied_input(payload: &Value) -> Result<Value, String> {
+    let recipient = super::req(payload, "recipient")?;
+    let shipment = super::req(payload, "shipment")?;
+    let order = super::req(payload, "order")?;
+    let checked = resolve_shipment(recipient, shipment, order)?["checked"]
+        .as_bool().ok_or("도서·산간 운임 적용 상태를 확인하세요.")?;
+    let input = super::req(payload, "appliedCharge")?;
+    if input.is_null() {
+        return Ok(json!({"baseCharge": Value::Null}));
+    }
+    let amount = super::safe(input).ok_or("운임은 0 이상의 안전한 정수여야 합니다.")?;
+    if checked && amount % 2 != 0 {
+        return Err("도서/산간 적용 운임은 기준 운임의 2배입니다. 짝수 금액으로 입력하세요.".into());
+    }
+    Ok(json!({"baseCharge": if checked { amount / 2 } else { amount }}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

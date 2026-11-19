@@ -5,7 +5,7 @@ import type { WorkflowShipment } from "./workflow-types";
 /** Keep freight typing local; native totals run on blur, Enter or unmount. */
 function FreightAmountInput({ label, value, disabled, onCommit }: {
   label: string; value: Price | undefined; disabled: boolean;
-  onCommit: (value: Price) => boolean | void;
+  onCommit: (value: Price) => boolean | void | Promise<boolean | void>;
 }) {
   const format = (amount: Price | undefined) =>
     amount === null || amount === undefined ? "" : amount.toLocaleString("ko-KR");
@@ -21,9 +21,18 @@ function FreightAmountInput({ label, value, disabled, onCommit }: {
   const flush = () => {
     const amount = pending.current;
     pending.current = undefined;
-    if (amount !== undefined && amount !== currentValue.current &&
-        latestCommit.current(amount) === false)
-      setText(format(currentValue.current));
+    if (amount === undefined || amount === currentValue.current) return;
+    const rollback = () => {
+      // A newer keystroke must not be discarded by a delayed native reply.
+      if (pending.current === undefined) setText(format(currentValue.current));
+    };
+    const result = latestCommit.current(amount);
+    if (result === false) rollback();
+    else if (result instanceof Promise) {
+      void result.then((accepted) => {
+        if (accepted === false) rollback();
+      }, rollback);
+    }
   };
   useEffect(() => () => {
     if (pending.current !== undefined && pending.current !== currentValue.current)
@@ -76,7 +85,7 @@ type FreightProps = {
   displayCharges: Partial<Record<Origin, Price>>;
   freightEditingBlocked: boolean;
   activeKey?: string;
-  onFreight: (origin: Origin, value: Price) => boolean | void;
+  onFreight: (origin: Origin, value: Price) => boolean | void | Promise<boolean | void>;
   onCode: (v: "010" | "020") => void;
   remoteChecked: boolean;
   onRemoteChecked: (checked: boolean) => void;

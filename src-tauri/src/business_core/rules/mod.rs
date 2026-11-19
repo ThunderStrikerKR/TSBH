@@ -86,6 +86,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "apply_shipping_action" => shipping::shipping_action(&payload),
         "shipping_read" => shipping_read::project(&payload),
         "detect_remote_delivery_area" => remote_delivery::detect(&payload),
+        "normalize_remote_freight_input" => remote_delivery::normalize_applied_input(&payload),
         "reconcile_workflow" => reconciliation::reconcile(&payload),
         "calculate_shipping" => shipping::recommend(
             req(&payload, "order")?, req(&payload, "state")?,

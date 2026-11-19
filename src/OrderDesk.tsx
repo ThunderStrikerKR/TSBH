@@ -76,6 +76,9 @@ export function OrderDesk(props: OrderDeskProps) {
     itemEditing,
   } = useOrderDesk(props);
   const retailShipmentRead = useNativeShipmentRead(state, draft.orderType === "RETAIL");
+  const freightInputRequests = useRef(new Map<string, number>());
+  const latestFreightDraft = useRef({ id: draft.id, recipients: draft.recipients });
+  latestFreightDraft.current = { id: draft.id, recipients: draft.recipients };
   // Do not clear/recreate the "확인할 내용" list while multiple Rust
   // previews settle after a paste. Old blocks are read-only until current.
   const lastReadyChecks = useRef<{ orderId: string; blocks: typeof staffBlocks } | undefined>(undefined);
@@ -699,26 +702,47 @@ export function OrderDesk(props: OrderDeskProps) {
                                     }, false)
                                   }
                                   activeKey={highlight}
-                                  onFreight={(origin, value) => {
-                                    const checked = r.remoteDelivery?.manual === true &&
-                                      r.remoteDelivery.address === r.address
-                                        ? r.remoteDelivery.checked
-                                        : freightEditor.preview.remoteDelivery?.checked === true;
-                                    // The input displays an applied amount, but
-                                    // storage keeps its undoubled base so toggling
-                                    // the box cannot multiply it twice.
-                                    if (checked && value !== null && value % 2 !== 0) {
-                                      props.onNotice("도서/산간 적용 운임은 기준 운임의 2배입니다. 짝수 금액으로 입력하세요.", "error");
+                                  onFreight={async (origin, value) => {
+                                    const key = [draft.id, r.id, origin].join(":");
+                                    const request = (freightInputRequests.current.get(key) ?? 0) + 1;
+                                    freightInputRequests.current.set(key, request);
+                                    const previousAddress = r.address;
+                                    const previousRemote = JSON.stringify(r.remoteDelivery ?? null);
+                                    const previousCharge = r.shippingCharges?.[origin];
+                                    try {
+                                      // The UI sends the applied amount unchanged. Only
+                                      // Rust interprets the locality flag, validates the
+                                      // 2x rule and converts it to a persisted base amount.
+                                      const { baseCharge } = await businessCoreCall<{ baseCharge: number | null }>(
+                                        "rules", "normalize_remote_freight_input", {
+                                          recipient: r, shipment: freightEditor.shipment,
+                                          order: draft, appliedCharge: value,
+                                        },
+                                      );
+                                      const latest = latestFreightDraft.current;
+                                      const row = latest.recipients.find((item) => item.id === r.id);
+                                      if (freightInputRequests.current.get(key) !== request ||
+                                          latest.id !== draft.id || !row ||
+                                          row.address !== previousAddress ||
+                                          JSON.stringify(row.remoteDelivery ?? null) !== previousRemote ||
+                                          row.shippingCharges?.[origin] !== previousCharge) return false;
+                                      recEdit(r.id, (current) => {
+                                        current.shippingCharges = {
+                                          ...freightEditor.shipment.charges,
+                                          ...current.shippingCharges,
+                                          [origin]: baseCharge,
+                                        };
+                                      }, false);
+                                      return true;
+                                    } catch (error) {
+                                      if (freightInputRequests.current.get(key) === request) {
+                                        props.onNotice(
+                                          error instanceof Error ? error.message : String(error),
+                                          "error",
+                                        );
+                                      }
                                       return false;
                                     }
-                                    const base = checked && value !== null ? value / 2 : value;
-                                    recEdit(r.id, (row) => {
-                                      row.shippingCharges = {
-                                        ...freightEditor.shipment.charges,
-                                        ...row.shippingCharges,
-                                        [origin]: base,
-                                      };
-                                    }, false);
                                   }}
                                   onCode={(v) => recEdit(r.id, (row) => (row.freightCode = v), false)}
                                 />
