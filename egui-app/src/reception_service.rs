@@ -26,12 +26,12 @@ pub struct RecipientReference {
 }
 
 #[derive(Debug)]
-pub struct NativeAnalysis {
+pub struct ReceptionAnalysis {
     pub recognition: Value,
     pub reference: Vec<RecipientReference>,
 }
 
-impl Deref for NativeAnalysis {
+impl Deref for ReceptionAnalysis {
     type Target = Value;
 
     fn deref(&self) -> &Self::Target {
@@ -39,10 +39,10 @@ impl Deref for NativeAnalysis {
     }
 }
 
-/// Analyze a source, then derive separate *read-only* references using the
-/// same pure-Rust rules that React's Tauri bridge calls. Build all results in
+/// Analyze a source, then derive separate *read-only* references through
+/// the selected backend (local Rust or an explicitly configured HTTPS API). Build all results in
 /// the existing worker thread; never run these computations every UI frame.
-pub fn analyze_raw(gateway: &dyn BandoGateway, raw: &str) -> Result<NativeAnalysis, String> {
+pub fn analyze_raw(gateway: &dyn BandoGateway, raw: &str) -> Result<ReceptionAnalysis, String> {
     if raw.trim().is_empty() {
         return Err("발주원문을 먼저 입력하세요.".to_owned());
     }
@@ -54,7 +54,7 @@ pub fn analyze_raw(gateway: &dyn BandoGateway, raw: &str) -> Result<NativeAnalys
     let reference = recipients(&analysis).iter()
         .map(|recipient| recipient_reference(gateway, recipient, &state))
         .collect();
-    Ok(NativeAnalysis { recognition: analysis, reference })
+    Ok(ReceptionAnalysis { recognition: analysis, reference })
 }
 
 fn recipient_reference(gateway: &dyn BandoGateway, recipient: &Value, state: &Value) -> RecipientReference {
@@ -91,8 +91,8 @@ fn retail_reference(gateway: &dyn BandoGateway, item: &Value, state: &Value) -> 
     };
 
     // The pure Rust rule requires a nonempty client ID to resolve a price.
-    // This explicitly synthetic identity is NEVER saved and only requests
-    // the seed's retail-tier reference, not an actual client's billing tier.
+    // This explicitly synthetic identity is NEVER saved. It requests a
+    // read-only retail-tier reference, not an actual client's billing tier.
     match gateway.execute(ReadOperation::ResolveRetailUnitPrice, json!({
         "product": product,
         "variantId": variant_id,
