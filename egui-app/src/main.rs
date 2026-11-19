@@ -20,6 +20,7 @@ mod business_state;
 mod native_order_change;
 mod source_highlight;
 mod manual_workspace;
+mod catalog_query_bridge;
 mod kakao_context;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
