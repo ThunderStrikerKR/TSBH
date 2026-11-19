@@ -4,6 +4,7 @@
 //! production Tauri database or docks KakaoTalk. Existing React/Tauri stays.
 
 mod theme;
+mod typography;
 mod layout;
 mod components;
 mod reception_service;
@@ -257,7 +258,7 @@ impl BandoEgui {
                                 Vec2::splat(theme::BRAND_ICON_SIZE),
                             )));
                         }
-                        bar.label(theme::brand_heading("BANDO HUB"));
+                        bar.label(typography::brand_heading("BANDO HUB"));
                         bar.add_space(theme::SPACE_12);
                         for page in Page::ALL {
                             let role = if self.page == page {
@@ -390,7 +391,7 @@ impl BandoEgui {
                 Layout::left_to_right(Align::Center),
                 |header| {
                     header.set_min_height(theme::SECTION_HEADER_HEIGHT);
-                    header.label(theme::section_heading(title));
+                    header.label(typography::section_heading(title));
                     header.with_layout(Layout::right_to_left(Align::Center), header_right);
                 },
             );
@@ -657,16 +658,16 @@ impl BandoEgui {
                 }
             } else {
                 ui.add_space(theme::SPACE_24);
-                ui.label(theme::subsection_heading("클립보드 접수"));
-                ui.label(theme::caption("복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."));
+                ui.label(typography::subsection_heading("클립보드 접수"));
+                ui.label(typography::caption("복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."));
                 ui.horizontal(|ui| {
                     theme::action(ui, "대리발송", ButtonRole::Emphasized, false);
                     theme::action(ui, "대리점 납품", ButtonRole::Emphasized, false);
                 });
-                ui.label(theme::caption("이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."));
+                ui.label(typography::caption("이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."));
                 components::soft_divider(ui);
                 ui.add_space(theme::SPACE_8);
-                ui.label(theme::subsection_heading("다른 방법으로 접수"));
+                ui.label(typography::subsection_heading("다른 방법으로 접수"));
                 ui.horizontal(|ui| {
                     if theme::action(ui, "직접 입력", ButtonRole::Emphasized, true).clicked() {
                         begin_input = true;
@@ -675,8 +676,8 @@ impl BandoEgui {
                 });
                 components::soft_divider(ui);
                 ui.add_space(theme::SPACE_8);
-                ui.label(theme::subsection_heading("폴더 자동 인식"));
-                ui.label(theme::caption("설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."));
+                ui.label(typography::subsection_heading("폴더 자동 인식"));
+                ui.label(typography::caption("설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."));
             }
         });
         if begin_input {
@@ -883,13 +884,13 @@ impl BandoEgui {
                                         .show(items_ui, |ui| {
                                             for item in items {
                                                 ui.horizontal(|ui| {
-                                                    ui.label(theme::body(
+                                                    ui.label(typography::body(
                                                         &reception_service::item_title(item)
                                                     ));
                                                     ui.with_layout(
                                                         Layout::right_to_left(Align::Center),
                                                         |ui| {
-                                                            ui.label(theme::caption(
+                                                            ui.label(typography::caption(
                                                                 &reception_service::item_quantity(item)
                                                             ));
                                                         },
@@ -930,7 +931,7 @@ impl BandoEgui {
         egui::CentralPanel::default()
             .frame(Frame::new().fill(theme::CANVAS).inner_margin(theme::SPACE_16))
             .show(ctx, |ui| {
-                ui.label(theme::page_heading(self.page.label()));
+                ui.label(typography::page_heading(self.page.label()));
             });
     }
 }
@@ -1000,6 +1001,7 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(move |cc| {
             theme::install(&cc.egui_ctx);
+            typography::install(&cc.egui_ctx);
             let brand_texture = cc.egui_ctx.load_texture(
                 "bando-original-brand",
                 brand_image,
