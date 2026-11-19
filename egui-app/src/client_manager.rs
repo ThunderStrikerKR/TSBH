@@ -280,7 +280,7 @@ impl ClientManager {
                 .auto_shrink([false,false])
                 .show(section,|table|{
                     table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
-                    components::management_row(table,[
+                    components::management_row(table,"client-management-header",[
                         ("거래처",""),("발송인 정보",""),("거래 조건","")
                     ],true);
                     for client in &rows {
@@ -302,7 +302,7 @@ impl ClientManager {
                                 {"거래 중지"}else{""}
                         ].into_iter().filter(|t|!t.is_empty())
                             .collect::<Vec<_>>().join(" / ");
-                        if components::management_row(table,[
+                        if components::management_row(table,field(client,"id"),[
                             (name,description),(address,&contacts),
                             (&conditions,"")
                         ],false).clicked() {
