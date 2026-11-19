@@ -12,9 +12,11 @@ mod gateway;
 mod http_gateway;
 mod preview_store;
 mod source_autosave;
+mod clipboard_intake;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::ButtonRole;
+use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
 use std::sync::{mpsc::{self, Receiver}, Arc};
 use std::time::{Duration, Instant};
 
@@ -56,6 +58,25 @@ impl Page {
     }
 }
 
+// Only accepted clipboard text/OCR text is ever committed to the egui
+// working source. Images remain in memory for the existing review workflow.
+enum ClipboardReceipt {
+    Text(String),
+    Ocr { text: String, image: ClipboardImage },
+}
+struct OcrReview {
+    order_type: OrderType,
+    original_text: String,
+    edited_text: String,
+    texture: egui::TextureHandle,
+    width: usize,
+    height: usize,
+}
+struct PendingReplace {
+    text: String,
+    order_type: OrderType,
+}
+
 /// A drag always measures displacement from the initial pane widths.
 #[derive(Clone, Copy)]
 struct HorizontalSplitDrag {
@@ -79,6 +100,14 @@ struct BandoEgui {
     dragging_vertical: Option<VerticalSplitDrag>,
     raw_source: String,
     source_editing: bool,
+    order_type: OrderType,
+    clipboard_monitor: ClipboardMonitor,
+    clipboard_busy: bool,
+    clipboard_receiver: Option<Receiver<(OrderType, Result<ClipboardReceipt, String>)>>,
+    clipboard_error: Option<String>,
+    ocr_review: Option<OcrReview>,
+    discard_ocr_confirm: bool,
+    pending_replace: Option<PendingReplace>,
     source_autosave: Option<source_autosave::SourceAutosave>,
     source_save_error: Option<String>,
     analysis: Option<reception_service::ReceptionAnalysis>,
@@ -102,6 +131,14 @@ impl Default for BandoEgui {
             dragging_vertical: None,
             raw_source: String::new(),
             source_editing: false,
+            order_type: OrderType::Agency,
+            clipboard_monitor: ClipboardMonitor::default(),
+            clipboard_busy: false,
+            clipboard_receiver: None,
+            clipboard_error: None,
+            ocr_review: None,
+            discard_ocr_confirm: false,
+            pending_replace: None,
             source_autosave: None,
             source_save_error: None,
             analysis: None,
@@ -121,7 +158,7 @@ impl BandoEgui {
     fn queue_source_save(&mut self) {
         self.source_save_error = None;
         if let Some(worker) = &self.source_autosave {
-            if let Err(error) = worker.queue(self.raw_source.clone()) {
+            if let Err(error) = worker.queue(self.raw_source.clone(), self.order_type.as_str().to_owned()) {
                 self.source_save_error = Some(error);
             }
         } else {
@@ -1077,6 +1114,13 @@ fn main() -> eframe::Result<()> {
                 gateway: backend,
                 raw_source: restored.raw,
                 source_editing,
+                order_type: match OrderType::parse(&restored.order_type) {
+                    Ok(kind) => kind,
+                    Err(error) => {
+                        eprintln!("[BANDO HUB] 접수 유형 복원 실패: {error}");
+                        std::process::exit(2);
+                    }
+                },
                 source_autosave: Some(autosave),
                 analysis_due_at: if source_editing {
                     Some(Instant::now() + Duration::from_millis(250))
