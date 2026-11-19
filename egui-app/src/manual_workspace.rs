@@ -599,6 +599,47 @@ impl ManualWorkspace {
                     ));
                 });
             });
+        // Search opens only for the current native recipient/item identity.
+        // The underlying worksheet is disabled while a chooser is open.
+        if let Some((recipient_id,item_id))=lookup {
+            if self.edit_text!=self.current_value(){
+                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
+            }else if self.product_search.is_none(){
+                self.product_search=Some(ProductSearch::new(
+                    recipient_id,item_id,self.client_id.clone().unwrap_or_default(),
+                    Arc::clone(&self.gateway),ctx.clone()
+                ));
+            }
+        }
+        let product_event=self.product_search.as_mut().and_then(|search|
+            search.show(ctx,Arc::clone(&self.gateway))
+        );
+        if let Some(event)=product_event {
+            let search=self.product_search.take();
+            if let (Some(search),ProductEvent::Chosen(product))=(search,event){
+                // Never apply a delayed search result to a removed product
+                // row or another shipment; Rust still owns product selection.
+                let exists=self.model.as_ref().is_some_and(|model|
+                    list(model,"rows").iter().any(|row|
+                        text(row,"id")==search.recipient_id &&
+                        list(row,"items").iter().any(|item|
+                            text(item,"id")==search.item_id
+                        )
+                    )
+                );
+                if exists && !self.busy(){
+                    let title=if text(&product,"name").is_empty(){
+                        text(&product,"code")
+                    }else{text(&product,"name")};
+                    self.action("set_manual_product",json!({
+                        "cell":{"recipientId":search.recipient_id,
+                            "itemId":search.item_id,"field":"product"},
+                        "value":title,"product":product
+                    }),ctx);
+                }
+            }
+        }
+
         if submit_direct {
             let rid=self.model.as_ref().and_then(|m|list(m,"rows")
                 .get(self.selected_recipient)).and_then(|r|r.get("id"))
@@ -624,6 +665,41 @@ impl ManualWorkspace {
                 self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
             }else{
                 self.action(&action,payload,ctx);
+            }
+        }
+        // React already confirms truncation only when the final shipment
+        // holds actual values or source assignments. No popup for empty rows.
+        if let Some(target)=self.remove_recipient_pending.clone(){
+            let mut confirm=false;
+            let mut cancel=false;
+            egui::Window::new("배송 건수 줄이기")
+                .id(egui::Id::new("manual-shipment-removal"))
+                .collapsible(false).resizable(false)
+                .show(ctx,|ui|{
+                    ui.label("마지막 배송 건의 입력값과 원문 배정을 제거할까요?");
+                    ui.horizontal(|ui|{
+                        if theme::action(ui,"확인",ButtonRole::Danger,true).clicked(){
+                            confirm=true;
+                        }
+                        if theme::action(ui,"취소",ButtonRole::Quiet,true).clicked(){
+                            cancel=true;
+                        }
+                    });
+                });
+            if cancel {self.remove_recipient_pending=None;}
+            if confirm {
+                let count=self.model.as_ref().map(|m|list(m,"rows").len()).unwrap_or(0);
+                let unchanged=self.model.as_ref().and_then(|m|list(m,"rows").last())
+                    .is_some_and(|row|text(row,"id")==target);
+                self.remove_recipient_pending=None;
+                if unchanged && count>1 && !self.busy() &&
+                   self.edit_text==self.current_value() {
+                    self.action("resize_manual_rows",json!({
+                        "count":count-1,"newRecipientIds":[]
+                    }),ctx);
+                }else{
+                    self.error=Some("삭제 대상이 변경됐습니다. 현재 배송 목록을 확인하세요.".into());
+                }
             }
         }
         if apply {
