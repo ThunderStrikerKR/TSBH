@@ -5,6 +5,7 @@
 //! freight, workflow mutations and persistence are NOT simulated here.
 
 use serde_json::{json, Value};
+use std::sync::OnceLock;
 
 #[path = "../../src-tauri/src/business_core/recognition/mod.rs"]
 mod recognition;
@@ -16,9 +17,13 @@ pub fn analyze_raw(raw: &str) -> Result<Value, String> {
     if raw.trim().is_empty() {
         return Err("발주원문을 먼저 입력하세요.".to_owned());
     }
-    let state: Value = serde_json::from_str(include_str!(
-        "../../src-tauri/resources/state-seed.json"
-    )).map_err(|error| format!("기본 상품 데이터 파싱 실패: {error}"))?;
+    // Loading the bundled catalog repeatedly would parse a large JSON file
+    // every time staff check a newly pasted source. Keep one immutable seed.
+    static SEED: OnceLock<Result<Value, String>> = OnceLock::new();
+    let seed = SEED.get_or_init(|| serde_json::from_str(
+        include_str!("../../src-tauri/resources/state-seed.json")
+    ).map_err(|error| format!("기본 상품 데이터 파싱 실패: {error}")));
+    let state = seed.as_ref().map_err(Clone::clone)?;
 
     recognition::execute("analyze_order", json!({
         "raw": raw,
