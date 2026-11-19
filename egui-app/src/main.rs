@@ -1869,7 +1869,51 @@ impl BandoEgui {
         );
     }
 
+    /// Selected/hovered workflow content is a transient read-only view.
+    /// Never swap it into the editable egui working_source, autosave worker,
+    /// or the active employee-selected draft.
+    fn visible_workflow_group(&self)->Option<(
+        workflow_board::GroupRow,workflow_board::ShipmentRow
+    )>{
+        let group_id=self.workflow_ui.active_preview()
+            .or_else(||self.workflow_ui.selection.as_ref()
+                .map(|selection|selection.group_id.as_str()))?;
+        let board=self.workflow_snapshot.as_ref()?;
+        let group=board.groups.iter().find(|g|g.id==group_id)?;
+        let selected=self.workflow_ui.selection.as_ref()
+            .filter(|s|s.group_id==group.id)
+            .and_then(|s|group.shipments.iter().find(|ship|
+                ship.id==s.shipment_id&&ship.order_id==s.order_id));
+        let ship=selected.or_else(||group.shipments.first())?;
+        Some((group.clone(),ship.clone()))
+    }
+
     fn source_section(&mut self, ui: &mut Ui, height: f32) {
+        if let Some((_group,shipment))=self.visible_workflow_group(){
+            let mut new_clicked=false;
+            Self::section_with_header(ui,"발주 원문",height,|header|{
+                if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,true).clicked(){
+                    new_clicked=true;
+                }
+            },|body|{
+                egui::ScrollArea::vertical()
+                    .id_salt("workflow-source-read-only")
+                    .max_height(components::docked_section_body_height(height))
+                    .auto_shrink([false,false])
+                    .show(body,|content|{
+                        content.add(egui::Label::new(
+                            typography::body(&shipment.source_raw)
+                        ).selectable(true));
+                    });
+            });
+            if new_clicked{
+                self.workflow_ui.selection=None;
+                self.workflow_ui.folded=None;
+                self.workflow_ui.stop_preview();
+                self.new_reception(ui.ctx());
+            }
+            return;
+        }
         let mut begin_input = false;
         let mut begin_new_order = false;
         let mut start_clipboard = None;
@@ -2160,6 +2204,36 @@ impl BandoEgui {
     }
 
     fn message_section(&mut self, ui: &mut Ui, height: f32) {
+        if let Some((group,_shipment))=self.visible_workflow_group(){
+            Self::section_with_header(ui,"복사용 자동 메시지",height,|header|{
+                let mut include_link=false;
+                header.add_enabled(false,egui::Checkbox::new(&mut include_link,"링크 포함"));
+            },|body|{
+                let available=components::docked_section_body_height(height)
+                    .min(body.available_height().max(0.0));
+                let message_height=(available-theme::ACTION_STANDARD_HEIGHT
+                    -theme::SPACE_8).max(0.0);
+                egui::ScrollArea::vertical()
+                    .id_salt("native-workflow-message")
+                    .max_height(message_height)
+                    .auto_shrink([false,false])
+                    .show(body,|content|{
+                        if let Some(message)=group.automatic_text.as_deref(){
+                            content.add(egui::Label::new(typography::body(message))
+                                .selectable(true));
+                        }
+                        if let Some(error)=group.automatic_error.as_deref(){
+                            content.label(typography::status(error,theme::DANGER));
+                        }
+                    });
+                body.add_space(theme::SPACE_8);
+                components::paired_actions(body,
+                    ("그대로 복사",ButtonRole::Standard,false),
+                    ("인사말 포함 복사",ButtonRole::Standard,false)
+                );
+            });
+            return;
+        }
         Self::section_with_header(ui, "복사용 자동 메시지", height, |ui| {
             let mut include_link = false;
             ui.add_enabled(false, egui::Checkbox::new(&mut include_link, "링크 포함"));
