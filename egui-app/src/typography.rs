@@ -3,7 +3,7 @@
 //! tracking, line-height, contrast and numeric alignment. Panels, spacing,
 //! colors and business decisions keep their existing owners.
 //!
-//! The approved 24pt wordmark is an intentional egui override. No font
+//! The approved 34pt wordmark is an intentional egui override. No font
 //! binaries are bundled or redistributed.
 
 use eframe::egui::{
@@ -11,7 +11,12 @@ use eframe::egui::{
 };
 use crate::theme::{MUTED, SECONDARY, TEXT};
 
-pub const FONT_BRAND: f32 = 24.0;
+// Caps height is visually close to the 38pt brand icon (whose bitmap
+// includes transparent margins). Do not alter overall header geometry.
+pub const FONT_BRAND: f32 = 34.0;
+/// Glyph centering differs from the typographic box. Pixel-based optical
+/// correction is isolated here, not scattered through header view code.
+pub const BRAND_OPTICAL_CENTER_Y: f32 = 2.0;
 pub const FONT_PAGE_HEADING: f32 = 20.0;
 pub const FONT_SECTION_HEADING: f32 = 16.0;
 pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
@@ -65,7 +70,7 @@ enum Role {
 fn spec(role: Role) -> TypeSpec {
     match role {
         Role::Brand => TypeSpec {
-            size: FONT_BRAND, line: 30.0, tracking: -0.60,
+            size: FONT_BRAND, line: 42.0, tracking: -0.60,
             color: TEXT, weight: Weight::Emphasis,
         },
         Role::Page => TypeSpec {
@@ -142,6 +147,25 @@ fn render(text: &str, role: Role) -> RichText {
 }
 
 pub fn brand_heading(text: &str) -> RichText { render(text, Role::Brand) }
+
+/// Layout the wordmark using the same font, tracking and line-height as the
+/// typography role. The header paints this galley in an explicit centered
+/// rect so nested egui row layouts cannot bias its vertical position.
+pub fn brand_galley(ui: &egui::Ui, text: &str) -> std::sync::Arc<egui::Galley> {
+    let role = spec(Role::Brand);
+    let format = egui::TextFormat {
+        font_id: FontId::new(
+            role.size, FontFamily::Name(BRAND_FAMILY.into())
+        ),
+        color: role.color,
+        extra_letter_spacing: role.tracking,
+        line_height: Some(role.line),
+        ..Default::default()
+    };
+    let job = egui::text::LayoutJob::single_section(text.to_owned(), format);
+    ui.fonts(|fonts| fonts.layout_job(job))
+}
+
 pub fn page_heading(text: &str) -> RichText { render(text, Role::Page) }
 pub fn section_heading(text: &str) -> RichText { render(text, Role::Section) }
 pub fn subsection_heading(text: &str) -> RichText { render(text, Role::Subsection) }
