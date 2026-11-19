@@ -900,6 +900,9 @@ impl BandoEgui {
 
     fn source_section(&mut self, ui: &mut Ui, height: f32) {
         let mut begin_input = false;
+        let mut start_clipboard = None;
+        let can_receive_clipboard =
+            self.clipboard_monitor.kind().has_intake() && !self.clipboard_busy;
         Self::section_with_header(ui, "발주 원문", height, |ui| {
             theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false);
         }, |ui| {
@@ -958,11 +961,16 @@ impl BandoEgui {
                         intake.label(typography::caption(
                             "복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."
                         ));
-                        components::paired_actions(
+                        let (agency, dealer) = components::paired_actions(
                             intake,
-                            ("대리발송", ButtonRole::Emphasized, false),
-                            ("대리점 납품", ButtonRole::Emphasized, false),
+                            ("대리발송", ButtonRole::Emphasized, can_receive_clipboard),
+                            ("대리점 납품", ButtonRole::Emphasized, can_receive_clipboard),
                         );
+                        if agency.clicked() {
+                            start_clipboard = Some(OrderType::Agency);
+                        } else if dealer.clicked() {
+                            start_clipboard = Some(OrderType::Dealer);
+                        }
                         intake.label(typography::caption(
                             "이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."
                         ));
@@ -988,6 +996,9 @@ impl BandoEgui {
         });
         if begin_input {
             self.source_editing = true;
+        }
+        if let Some(kind) = start_clipboard {
+            self.begin_clipboard_intake(kind, ui.ctx().clone());
         }
     }
 
@@ -1255,6 +1266,11 @@ impl eframe::App for BandoEgui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_source_analysis();
         self.poll_source_saves();
+        self.poll_clipboard_intake(ctx);
+        if self.page == Page::Reception && !self.source_editing && self.raw_source.is_empty() {
+            self.clipboard_monitor.refresh();
+            ctx.request_repaint_after(Duration::from_millis(450));
+        }
         if self.analysis_due_at.is_some_and(|at| Instant::now() >= at) {
             self.analysis_due_at = None;
             if !self.raw_source.trim().is_empty() {
@@ -1267,6 +1283,8 @@ impl eframe::App for BandoEgui {
         } else {
             self.other_page(ctx);
         }
+        self.show_ocr_review(ctx);
+        self.show_replacement_confirmation(ctx);
         self.frameless_resize(ctx);
     }
 }
