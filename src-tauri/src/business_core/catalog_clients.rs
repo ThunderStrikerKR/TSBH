@@ -4,6 +4,8 @@
 use serde_json::{json, Value};
 #[path = "catalog_clients/title_clients.rs"]
 mod title_clients;
+#[path = "catalog_clients/client_search.rs"]
+mod client_search;
 #[path = "catalog_clients/client_preview.rs"]
 mod client_preview;
 #[path = "catalog_clients/registration.rs"]
