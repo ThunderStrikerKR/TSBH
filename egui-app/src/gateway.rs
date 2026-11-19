@@ -33,6 +33,7 @@ pub enum ReadOperation {
     MergeReceptionAnalysis,
     ChangeOrderClient,
     RepriceOrder,
+    CalculatePrice,
 }
 
 impl ReadOperation {
@@ -43,7 +44,8 @@ impl ReadOperation {
             Self::AutoMatchReceptionClient | Self::ReceptionClientCandidates
             | Self::ClientCandidates => "catalog_clients",
             Self::NewReception | Self::MergeReceptionAnalysis
-            | Self::ChangeOrderClient | Self::RepriceOrder => "rules",
+            | Self::ChangeOrderClient | Self::RepriceOrder
+            | Self::CalculatePrice => "rules",
         }
     }
 
@@ -59,6 +61,7 @@ impl ReadOperation {
             Self::MergeReceptionAnalysis => "merge_reception_analysis",
             Self::ChangeOrderClient => "order_edit_rules",
             Self::RepriceOrder => "reprice_order",
+            Self::CalculatePrice => "calculate_price",
         }
     }
 }
@@ -135,7 +138,8 @@ impl BandoGateway for LocalGateway {
             | ReadOperation::NewReception
             | ReadOperation::MergeReceptionAnalysis
             | ReadOperation::ChangeOrderClient
-            | ReadOperation::RepriceOrder => {
+            | ReadOperation::RepriceOrder
+            | ReadOperation::CalculatePrice => {
                 rules::execute(operation.operation(), payload)
             }
             ReadOperation::AutoMatchReceptionClient
