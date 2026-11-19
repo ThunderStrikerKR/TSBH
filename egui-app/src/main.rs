@@ -2384,7 +2384,7 @@ impl BandoEgui {
                                     contents.label(typography::quantity(&display));
                                 });
                             });
-                        let amount=group.total.map(components::display_won)
+                        let amount=ship.order_total.map(components::display_won)
                             .unwrap_or_else(||"—".into());
                         components::summary_strip(ui,"총 주문",&amount,"");
                     });
