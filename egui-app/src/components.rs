@@ -5,7 +5,6 @@ use eframe::egui::{self, Align, Color32, Frame, Layout, Response, RichText, Stro
 use crate::theme;
 
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
-pub const FIELD_GAP: f32 = 8.0;
 pub const TABLE_ROW_HEIGHT: f32 = 42.0;
 pub const TABLE_HEADER_HEIGHT: f32 = 36.0;
 
@@ -65,7 +64,7 @@ pub fn labeled_field(
 /// Sections themselves are framed by the caller.
 pub fn soft_divider(ui: &mut Ui) {
     let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 1.0), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, theme::SOFT_DIVIDER_WIDTH), egui::Sense::hover());
     ui.painter().line_segment(
         [rect.left_top(), rect.right_top()],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER),
@@ -75,7 +74,7 @@ pub fn soft_divider(ui: &mut Ui) {
 pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
     ui.vertical(|ui| {
         soft_divider(ui);
-        ui.add_space(8.0);
+        ui.add_space(theme::SPACE_8);
         ui.horizontal(|ui| {
             ui.label(RichText::new(label).size(13.0).color(theme::SECONDARY));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -131,7 +130,7 @@ pub fn status_dots(ui: &mut Ui, tones: &[StatusTone]) {
 }
 
 pub fn table_header(ui: &mut Ui, columns: &[(&str, f32)]) {
-    Frame::new().fill(theme::RAISED).inner_margin(egui::Margin::symmetric(8, 4))
+    Frame::new().fill(theme::RAISED).inner_margin(egui::Margin::symmetric(theme::SPACE_8 as i8, theme::SPACE_4 as i8))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 for (title, width) in columns {
