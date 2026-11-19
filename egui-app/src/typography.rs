@@ -23,6 +23,7 @@ pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
 
 const EMPHASIS_FAMILY: &str = "bando-ui-emphasis";
+const BRAND_FAMILY: &str = "bando-brand-display";
 
 #[derive(Clone, Copy)]
 enum Weight {
@@ -108,8 +109,8 @@ fn spec(role: Role) -> TypeSpec {
             color: TEXT, weight: Weight::Regular,
         },
         Role::SummaryValue => TypeSpec {
-            size: FONT_SECTION_HEADING, line: 23.0, tracking: -0.10,
-            color: TEXT, weight: Weight::Emphasis,
+            size: FONT_SECTION_HEADING, line: 23.0, tracking: 0.0,
+            color: TEXT, weight: Weight::Monospace,
         },
         Role::Quantity => TypeSpec {
             size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
@@ -123,6 +124,7 @@ fn spec(role: Role) -> TypeSpec {
 }
 
 fn render(text: &str, role: Role) -> RichText {
+    let is_brand = matches!(role, Role::Brand);
     let role = spec(role);
     let rich = RichText::new(text)
         .size(role.size)
@@ -131,7 +133,10 @@ fn render(text: &str, role: Role) -> RichText {
         .color(role.color);
     match role.weight {
         Weight::Regular => rich,
-        Weight::Emphasis => rich.family(FontFamily::Name(EMPHASIS_FAMILY.into())).strong(),
+        Weight::Emphasis => {
+            let family = if is_brand { BRAND_FAMILY } else { EMPHASIS_FAMILY };
+            rich.family(FontFamily::Name(family.into())).strong()
+        },
         Weight::Monospace => rich.family(FontFamily::Monospace),
     }
 }
@@ -227,8 +232,41 @@ pub fn install(ctx: &egui::Context) {
             .cloned().unwrap_or_default()
     );
     fonts.families.insert(
-        FontFamily::Name(EMPHASIS_FAMILY.into()), emphasis_fonts,
+        FontFamily::Name(EMPHASIS_FAMILY.into()), emphasis_fonts.clone(),
     );
+
+    // Brand is an English-only wordmark: use a distinct, industrial Latin
+    // display face, not the same face as every Korean UI label. Missing
+    // Windows fonts fall back to the registered Korean emphasis family.
+    let brand_candidates = [
+        r"C:\Windows\Fonts\bahnschrift.ttf",
+        r"C:\Windows\Fonts\seguisb.ttf",
+    ];
+    let brand = brand_candidates.iter()
+        .find_map(|path| std::fs::read(path).ok().map(|bytes| (*path, bytes)));
+    let mut brand_fonts = Vec::new();
+    if let Some((_, bytes)) = &brand {
+        let key = "bando-brand-latin";
+        fonts.font_data.insert(key.into(), FontData::from_owned(bytes.clone()).into());
+        brand_fonts.push(key.into());
+    }
+    brand_fonts.extend(emphasis_fonts);
+    fonts.families.insert(FontFamily::Name(BRAND_FAMILY.into()), brand_fonts);
+
+    // Keep Windows Consolas ahead of the egui monospace fallback for
+    // quantities and numeric totals. Korean glyphs still fall back to
+    // the regular UI face in the existing monospace family.
+    let numeric_candidates = [
+        r"C:\Windows\Fonts\consola.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    ];
+    let numeric = numeric_candidates.iter()
+        .find_map(|path| std::fs::read(path).ok().map(|bytes| (*path, bytes)));
+    if let Some((_, bytes)) = &numeric {
+        let key = "bando-numeric-mono";
+        fonts.font_data.insert(key.into(), FontData::from_owned(bytes.clone()).into());
+        fonts.families.entry(FontFamily::Monospace).or_default().insert(0, key.into());
+    }
     ctx.set_fonts(fonts);
 
     match regular_name {
@@ -237,5 +275,13 @@ pub fn install(ctx: &egui::Context) {
     }
     if bold.is_none() {
         eprintln!("[BANDO HUB] Emphasis face: system bold unavailable; fallback in use");
+    }
+    match brand {
+        Some((path, _)) => eprintln!("[BANDO HUB] Brand display face: {path}"),
+        None => eprintln!("[BANDO HUB] Brand display face: Korean emphasis fallback"),
+    }
+    match numeric {
+        Some((path, _)) => eprintln!("[BANDO HUB] Numeric face: {path}"),
+        None => eprintln!("[BANDO HUB] Numeric face: egui monospace fallback"),
     }
 }
