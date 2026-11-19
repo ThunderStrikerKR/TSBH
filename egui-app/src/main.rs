@@ -110,11 +110,24 @@ impl BandoEgui {
         minimum_height: f32,
         content: impl FnOnce(&mut Ui),
     ) {
+        Self::section_with_header(ui, title, minimum_height, |_| {}, content);
+    }
+
+    fn section_with_header(
+        ui: &mut Ui,
+        title: &str,
+        minimum_height: f32,
+        header_right: impl FnOnce(&mut Ui),
+        content: impl FnOnce(&mut Ui),
+    ) {
         let width = ui.available_width();
         theme::section_frame().show(ui, |ui| {
             ui.set_min_width((width - 20.0).max(60.0));
             ui.set_min_height((minimum_height - 20.0).max(48.0));
-            ui.label(theme::section_heading(title));
+            ui.horizontal(|ui| {
+                ui.label(theme::section_heading(title));
+                ui.with_layout(Layout::right_to_left(Align::Center), header_right);
+            });
             theme::divider(ui);
             content(ui);
         });
@@ -159,11 +172,10 @@ impl BandoEgui {
     fn source_and_message(&mut self, ui: &mut Ui) {
         let full_height = ui.available_height();
         let source_height = (full_height * 0.50 - PANEL_GAP).max(280.0);
-        Self::section(ui, "발주 원문", source_height, |ui| {
-            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false)
-                    .on_disabled_hover_text("주문 생성은 Rust 업무 엔진 연결 이후 활성화됩니다.");
-            });
+        Self::section_with_header(ui, "발주 원문", source_height, |ui| {
+            theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false)
+                .on_disabled_hover_text("주문 생성은 Rust 업무 엔진 연결 이후 활성화됩니다.");
+        }, |ui| {
             if self.sample {
                 theme::nested_frame().show(ui, |ui| {
                     ui.label(RichText::new("현재 거래처").size(12.0).color(theme::SECONDARY));
@@ -199,11 +211,10 @@ impl BandoEgui {
         });
         ui.add_space(PANEL_GAP);
         let message_height = (ui.available_height() - PANEL_GAP).max(220.0);
-        Self::section(ui, "복사용 자동 메시지", message_height, |ui| {
+        Self::section_with_header(ui, "복사용 자동 메시지", message_height, |ui| {
             let mut include_link = false;
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.add_enabled(false, egui::Checkbox::new(&mut include_link, "링크 포함"));
-            });
+            ui.add_enabled(false, egui::Checkbox::new(&mut include_link, "링크 포함"));
+        }, |ui| {
             ui.add_space(8.0);
             Frame::new().fill(theme::INPUT).corner_radius(6).inner_margin(10.0)
                 .show(ui, |ui| {
@@ -221,10 +232,9 @@ impl BandoEgui {
 
     fn details_and_freight(&mut self, ui: &mut Ui) {
         let full_height = ui.available_height();
-        Self::section(ui, "확인할 내용", (full_height * 0.27).max(150.0), |ui| {
-            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                ui.label(theme::caption("조치 0건 / 안내 0건"));
-            });
+        Self::section_with_header(ui, "확인할 내용", (full_height * 0.27).max(150.0), |ui| {
+            ui.label(theme::caption("조치 0건 / 안내 0건"));
+        }, |ui| {
             ui.label(theme::caption(if self.sample {
                 "샘플 UI에는 실제 Rust 분석 결과가 없습니다."
             } else {
@@ -276,7 +286,7 @@ impl BandoEgui {
             } else {
                 ui.label(theme::caption("거래처 선택 후 운임과 청구금액을 확인합니다."));
             }
-            ui.add_space(ui.available_height().max(6.0) - 42.0);
+            ui.add_space((ui.available_height() - 42.0).max(4.0));
             theme::divider(ui);
             ui.horizontal(|ui| {
                 ui.label(theme::caption("총 주문"));
