@@ -132,8 +132,14 @@ impl BandoEgui {
 
     fn poll_source_analysis(&mut self) {
         let complete = self.analysis_receiver.as_ref()
-            .and_then(|receiver| receiver.try_recv().ok());
-        if let Some((request, result)) = complete {
+            .map(|receiver| receiver.try_recv());
+        if let Some(Err(mpsc::TryRecvError::Disconnected)) = complete {
+            self.analysis_receiver = None;
+            self.analysis_pending = false;
+            self.analysis_error = Some("Rust 인식 작업이 중단되었습니다.".to_owned());
+            return;
+        }
+        if let Some(Ok((request, result))) = complete {
             self.analysis_receiver = None;
             if request != self.analysis_request {
                 return;
