@@ -83,6 +83,21 @@ pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) ->
     }).inner
 }
 
+/// Shared single-line free-text editor for inline manual cells and search.
+/// Uses the same font, internal margin and height as the standard field role.
+pub fn flexible_text_field(
+    ui:&mut Ui, value:&mut String, width:f32, placeholder:&str
+)->Response {
+    let width=width.min(ui.available_width().max(60.0));
+    let edit=egui::TextEdit::singleline(value)
+        .font(egui::TextStyle::Body)
+        .vertical_align(Align::Center)
+        .margin(egui::Margin::symmetric(8,2))
+        .hint_text(placeholder)
+        .desired_width(width);
+    ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
+}
+
 /// A field group's label and editor share the same baseline and label width.
 pub fn labeled_field(
     ui: &mut Ui,
