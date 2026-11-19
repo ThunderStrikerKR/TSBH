@@ -69,16 +69,16 @@ impl BandoGateway for HttpGateway {
         "HTTPS 서버"
     }
 
-    fn load_state(&self) -> Result<Value, String> {
-        let response = self.client.get(self.endpoint("state"))
+    fn load_catalog(&self) -> Result<Value, String> {
+        let response = self.client.get(self.endpoint("catalog"))
             .bearer_auth(&self.access_token)
             .send()
-            .map_err(|_| "서버 상태 조회에 실패했습니다. 연결과 인증을 확인하세요.".to_owned())?;
+            .map_err(|_| "서버 카탈로그 조회에 실패했습니다. 연결과 인증을 확인하세요.".to_owned())?;
         let state = Self::decode(response)?;
         if !state.get("products").is_some_and(Value::is_array)
             || !state.get("aliases").is_some_and(Value::is_array)
         {
-            return Err("서버 상태에 products/aliases 배열이 없습니다.".into());
+            return Err("서버 카탈로그에 products/aliases 배열이 없습니다.".into());
         }
         Ok(state)
     }
