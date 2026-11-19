@@ -11,6 +11,7 @@ mod backup_manager;
 mod notification_store;
 mod relational_store;
 mod working_receptions;
+mod egui_reception_bridge;
 mod sale_unit_migration;
 mod product_name_enrichment;
 mod business_core;
@@ -1211,6 +1212,39 @@ fn start_automatic_backup(app: tauri::AppHandle) {
                     Err(reason) => eprintln!("반도허브 자동 백업 DB 잠금 실패: {reason}"),
                 };
             });
+}
+
+/// One-shot CLI entry for the egui reception bridge. A helper process uses
+/// the very same native Rust rules and the Tauri working-reception table; it
+/// does not start a WebView or invoke any unrelated startup/migration path.
+/// The environment variables intentionally require explicit local consent.
+pub fn run_egui_reception_commit() -> i32 {
+    use std::io::{Read, Write};
+    let result=(|| -> Result<Value,String> {
+        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .filter(|p|!p.is_empty())
+            .map(PathBuf::from)
+            .ok_or("BANDO_EGUI_BUSINESS_DB 운영 DB 경로가 필요합니다.")?;
+        if std::env::var("BANDO_EGUI_ENABLE_WORKING_COMMIT")
+            .ok().as_deref()!=Some("1") {
+            return Err("운영 미확정 접수 저장은 명시적 동의 설정이 필요합니다.".into());
+        }
+        let mut bytes=Vec::new();
+        std::io::stdin().take(2_100_000).read_to_end(&mut bytes).map_err(err)?;
+        if bytes.is_empty() || bytes.len()>=2_100_000 {
+            return Err("egui 접수 요청 크기가 허용 범위를 초과했습니다.".into());
+        }
+        let request:Value=serde_json::from_slice(&bytes)
+            .map_err(|_|"egui 접수 요청 JSON을 읽을 수 없습니다.".to_owned())?;
+        egui_reception_bridge::commit_file(&path, request)
+    })();
+    let output=match &result {
+        Ok(payload)=>json!({"ok":true,"result":payload}),
+        Err(message)=>json!({"ok":false,"error":message}),
+    };
+    // Avoid stdout debug logs: this is a strict machine-readable IPC pipe.
+    let _=std::io::stdout().write_all(output.to_string().as_bytes());
+    if result.is_ok(){0}else{2}
 }
 
 pub fn run() {
