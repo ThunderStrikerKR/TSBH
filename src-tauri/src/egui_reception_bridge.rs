@@ -185,9 +185,19 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
         "client":selected_client, "state":&state, "at":at
     }))?)?;
     let merged=if let Some(manual_model)=manual {
-        super::egui_manual_commit::verify_apply(
-            &merged,&state,selected_client,manual_model
-        )?
+        // The existing egui manual editor builds its initial model using
+        // recognized recipient sources/candidates and an EMPTY top-level
+        // analysisEvidence array. Native merge stores a second candidates
+        // index there. Keep this editable-workspace input contract exact,
+        // then restore the canonical native candidates index for persistence.
+        let mut manual_baseline=merged.clone();
+        manual_baseline["analysisEvidence"]=json!([]);
+        let mut applied=super::egui_manual_commit::verify_apply(
+            &manual_baseline,&state,selected_client,manual_model
+        )?;
+        applied["analysisEvidence"]=merged.get("analysisEvidence")
+            .cloned().unwrap_or(Value::Null);
+        applied
     }else{merged};
     let mut next = order_from(rule("reprice_order", json!({
         "order":merged, "state":&state, "client":selected_client,
