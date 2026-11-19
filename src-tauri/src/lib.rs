@@ -13,6 +13,7 @@ mod relational_store;
 mod working_receptions;
 mod egui_reception_bridge;
 mod egui_manual_commit;
+mod egui_shipping_bridge;
 mod sale_unit_migration;
 mod product_name_enrichment;
 mod business_core;
@@ -1216,6 +1217,10 @@ fn start_automatic_backup(app: tauri::AppHandle) {
 /// backup manager; never makes a separate, incomplete egui archive writer.
 /// Archive and backup listing are read-only. Backup/restore additionally
 /// require explicit operator permission AND React-equivalent UI confirmation.
+pub fn run_egui_shipping_patch() -> i32 {
+    egui_shipping_bridge::run()
+}
+
 pub fn run_egui_settings_data() -> i32 {
     use std::io::{Read,Write};
     let result=(|| -> Result<Value,String> {
