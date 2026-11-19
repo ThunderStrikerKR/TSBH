@@ -133,7 +133,7 @@ pub fn docked_pane_frame() -> Frame {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::NONE)
-        .corner_radius(CornerRadius::ZERO)
+        .corner_radius(CornerRadius::same(0))
         .inner_margin(SECTION_PADDING)
 }
 
