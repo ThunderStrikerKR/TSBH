@@ -5,7 +5,6 @@ import { tsImport } from "tsx/esm/api";
 
 const { shouldRefreshUncommittedOrderPricing } =
   await tsImport("./rust-migration/oracles/passive-pricing.ts", import.meta.url);
-const { repriceOrder } = await tsImport("../src/domain.ts", import.meta.url);
 
 const draft = (extra = {}) => ({
   id: "order-pricing-audit", confirmedAt: undefined, deletedAt: undefined,
@@ -20,13 +19,12 @@ const draft = (extra = {}) => ({
 test("a saved legacy order must never passively adopt current master prices or freight", () => {
   const original = draft({ pricesLocked: false });
   const snapshot = structuredClone(original);
-  const master = {
-    products: [{ id: "product", variants: [{ id: "price", wholesale: 29000 }] }],
-  };
-  const dealer = { id: "dealer", tier: "wholesale", overrides: {} };
-  const repriced = repriceOrder(original, dealer, master);
-  assert.equal(repriced.recipients[0].items[0].unitPrice, 29000,
-    "This fixture must be able to reproduce unintended repricing if unguarded");
+  // Historical saved order must never auto-reprice; compiled Rust owns the
+  // decision, not the retired TypeScript repriceOrder helper.
+  const native = readFileSync(new URL("../src-tauri/src/business_core/rules/pricing.rs", import.meta.url), "utf8");
+  assert.match(native, /let refresh = flag\(payload, "explicitEdit"\) \|\| should_refresh\(payload\)\?/);
+  assert.match(native, /if !refresh \{/);
+  assert.match(native, /passive_catalog_reprice_keeps_frozen_shipments_at_original_price/);
   assert.equal(shouldRefreshUncommittedOrderPricing(original, [{ id: original.id }]), false);
   assert.deepEqual(original, snapshot, "Policy checks must never mutate snapshots");
   assert.equal(original.shippingFee, 7500);
@@ -62,7 +60,7 @@ test("native Rust pricing/shipping effects protect persisted records and explici
   const freightEffect = parts.find((part) => part.includes('action: "calculate_order_shipping"'));
   assert.ok(priceEffect, "New receptions must invoke the real Rust repricing engine");
   assert.ok(freightEffect, "Auto freight must invoke the real Rust shipping engine");
-  assert.match(priceEffect, /!liveClient \|\| !passivePricingAllowed/);
+  assert.match(priceEffect, /!clientSelection\.ready \|\| !liveClient \|\|\s*!passivePricingAllowed/);
   assert.match(freightEffect, /!passivePricingAllowed && !shippingPending/,
     "Saved orders may refresh freight only after a deliberate edit marked pending");
   assert.match(source, /"rules", "should_refresh_pricing"/,
