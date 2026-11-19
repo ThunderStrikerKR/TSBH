@@ -240,7 +240,7 @@ fn group_frame(
     event
 }
 fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Option<Event>{
-    let mut selected_id=None;
+    let mut event=None;
     theme::nested_frame().show(ui,|ui|{
         let title=if draft.client_id.is_none(){
             "미확인 거래처".to_owned()
@@ -252,7 +252,8 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
         if theme::action(ui,&format!("{} {}",if open{"▾"}else{"▸"},title),
             if selected{theme::ButtonRole::ActiveNavigation}
             else{theme::ButtonRole::Quiet},true).clicked(){
-            selected_id=Some(draft.id.clone());
+            event=Some(if selected{Event::TogglePending(draft.id.clone())}
+                else{Event::SelectPending(draft.id.clone())});
         }
         let recipients=if draft.analysis_raw.as_deref()==Some(draft.raw.as_str()){
             draft.analysis_evidence.as_ref()
@@ -280,8 +281,7 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
             }
         }
     });
-    selected_id.map(|id|if selected{Event::TogglePending(id)}
-        else{Event::SelectPending(id)})
+    event
 }
 /// Render once in the existing fixed pane. The floating expansion uses an egui
 /// foreground Area anchored to the card; it DOES NOT resize/reorder other cards.
