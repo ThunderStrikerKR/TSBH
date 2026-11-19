@@ -10,6 +10,7 @@
 
 use serde_json::Value;
 use std::sync::Arc;
+use crate::preview_store::{PreviewStore, WorkingSource};
 
 #[path = "../../src-tauri/src/business_core/recognition/mod.rs"]
 mod recognition;
@@ -46,6 +47,11 @@ pub trait BandoGateway: Send + Sync {
     /// clients, workflow or other persisted operational state.
     /// This method does not persist or mutate anything.
     fn load_catalog(&self) -> Result<Value, String>;
+    /// The currently open, unconfirmed source in a separate storage domain.
+    /// This never creates a confirmed business order.
+    fn load_working_source(&self) -> Result<WorkingSource, String>;
+    /// Conditional write: another process may not overwrite a newer source.
+    fn save_working_source(&self, raw: &str, revision: u64) -> Result<u64, String>;
     /// Execute one of the explicitly allowed read-only business operations.
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String>;
 }
@@ -59,20 +65,15 @@ impl BandoGateway for LocalGateway {
     }
 
     fn load_catalog(&self) -> Result<Value, String> {
-        // This embedded source is NOT the live staff/client database.
-        static SEED: std::sync::OnceLock<Result<Value, String>> =
-            std::sync::OnceLock::new();
-        SEED.get_or_init(|| {
-            serde_json::from_str(include_str!(
-                "../../src-tauri/resources/state-seed.json"
-            )).map_err(|error| format!("기본 상품 데이터 오류: {error}"))
-        }).as_ref()
-            .map(|state| serde_json::json!({
-                "products": state["products"],
-                "aliases": state["aliases"],
-                "brands": state["brands"],
-            }))
-            .map_err(Clone::clone)
+        PreviewStore::initialize()?.load_catalog()
+    }
+
+    fn load_working_source(&self) -> Result<WorkingSource, String> {
+        PreviewStore::initialize()?.load_source()
+    }
+
+    fn save_working_source(&self, raw: &str, revision: u64) -> Result<u64, String> {
+        PreviewStore::initialize()?.save_source(raw, revision)
     }
 
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String> {
@@ -94,7 +95,12 @@ pub fn from_environment() -> Result<Arc<dyn BandoGateway>, String> {
     let mode = std::env::var("BANDO_HUB_GATEWAY")
         .unwrap_or_else(|_| "local".to_owned());
     match mode.trim().to_ascii_lowercase().as_str() {
-        "local" => Ok(Arc::new(LocalGateway)),
+        "local" => {
+            // Fail early if the isolated DB cannot be initialized or opened.
+            // Never attempt to recover by opening a Tauri/production DB.
+            PreviewStore::initialize()?;
+            Ok(Arc::new(LocalGateway))
+        },
         "http" => Ok(Arc::new(crate::http_gateway::HttpGateway::from_environment()?)),
         _ => Err("BANDO_HUB_GATEWAY는 local 또는 http여야 합니다.".into()),
     }
