@@ -2049,8 +2049,13 @@ impl BandoEgui {
                         .and_then(serde_json::Value::as_i64)
                         .map(components::display_won)
                         .unwrap_or_else(||"—".to_owned());
-                    let note = if preview.is_some() {
-                        "Rust 재계산 참고 · 운영 주문 저장 전"
+                    let synced=self.active_id.as_deref()
+                        .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+                        .is_some_and(|row|row.working_synced);
+                    let note = if synced {
+                        "Rust 참고 금액 · 운영 미확정 작업본 저장됨"
+                    } else if preview.is_some() {
+                        "Rust 재계산 참고 · 운영 작업본 저장 전"
                     } else { "" };
                     components::summary_strip(ui, "총 주문", &total, note);
                 });
