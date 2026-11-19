@@ -470,13 +470,26 @@ impl SettingsView{
             // Do not create a border around every nested settings heading.
             theme::section_frame().show(form,|form|{
             let available=form.available_width();
-            if available>600.0{
-                form.columns(2,|cells|{
-                    section(&mut cells[0],"화면 글자 크기",|cell|{
-                        self.scale_selector(cell,Arc::clone(&gateway));
+            if available>theme::SETTINGS_TOP_TWO_COL_MIN_WIDTH{
+                // React settings-basic-top-grid: 1fr : 1.4fr,
+                // top aligned, with exactly the shared management gap.
+                form.with_layout(Layout::left_to_right(Align::Min),|row|{
+                    row.spacing_mut().item_spacing.x=theme::SETTINGS_GRID_GAP_X;
+                    let total=(row.available_width()-theme::SETTINGS_GRID_GAP_X).max(0.0);
+                    let ratios=theme::SETTINGS_TOP_COL_RATIOS;
+                    let left=total*ratios[0]/(ratios[0]+ratios[1]);
+                    let right=total-left;
+                    row.vertical(|col|{
+                        col.set_width(left);
+                        section(col,"화면 글자 크기",|cell|{
+                            self.scale_selector(cell,Arc::clone(&gateway));
+                        });
                     });
-                    section(&mut cells[1],"작업 이력",|cell|{
-                        edit_input(cell,&mut self.draft,"operatorName","작업자 이름");
+                    row.vertical(|col|{
+                        col.set_width(right);
+                        section(col,"작업 이력",|cell|{
+                            edit_input(cell,&mut self.draft,"operatorName","작업자 이름");
+                        });
                     });
                 });
             }else{
@@ -491,16 +504,54 @@ impl SettingsView{
             form.add_space(theme::SPACE_12);
             section(form,"반도스탠드 정보",|content|{
                 let width=content.available_width();
-                if width>680.0{
-                    content.columns(3,|cols|{
-                        edit_input(&mut cols[0],&mut self.draft,"senderName","상호명");
-                        edit_input(&mut cols[1],&mut self.draft,"senderAddress","주소");
-                        edit_input(&mut cols[2],&mut self.draft,"senderPostcode","우편번호");
+                if width>theme::SETTINGS_SENDER_THREE_COL_MIN_WIDTH{
+                    let ratios=theme::SETTINGS_SENDER_COL_RATIOS;
+                    let sum=ratios.iter().sum::<f32>();
+                    // Original CSS grid row 1: company (1.1fr) and
+                    // address spanning the next 1.6fr + 0.8fr tracks.
+                    content.with_layout(Layout::left_to_right(Align::Min),|row|{
+                        row.spacing_mut().item_spacing.x=theme::SETTINGS_GRID_GAP_X;
+                        let total=(row.available_width()-theme::SETTINGS_GRID_GAP_X).max(0.0);
+                        let name_width=total*ratios[0]/sum;
+                        row.vertical(|col|{
+                            col.set_width(name_width);
+                            edit_input(col,&mut self.draft,"senderName","상호명");
+                        });
+                        row.vertical(|col|{
+                            col.set_width(total-name_width);
+                            edit_input(col,&mut self.draft,"senderAddress","주소");
+                        });
                     });
                     content.add_space(theme::SPACE_8);
+                    // Original CSS grid row 2: postcode / phone / mobile.
+                    content.with_layout(Layout::left_to_right(Align::Min),|row|{
+                        row.spacing_mut().item_spacing.x=theme::SETTINGS_GRID_GAP_X;
+                        let total=(row.available_width()-2.0*theme::SETTINGS_GRID_GAP_X).max(0.0);
+                        for (index,(key,label)) in [
+                            ("senderPostcode","우편번호"),
+                            ("senderPhone","전화번호"),
+                            ("senderMobile","휴대폰 번호")
+                        ].into_iter().enumerate(){
+                            row.vertical(|col|{
+                                col.set_width(total*ratios[index]/sum);
+                                edit_input(col,&mut self.draft,key,label);
+                            });
+                        }
+                    });
+                }else if width>theme::SETTINGS_TOP_TWO_COL_MIN_WIDTH{
+                    // Original <=1120px CSS: address spans both tracks.
                     content.columns(2,|cols|{
-                        edit_input(&mut cols[0],&mut self.draft,"senderPhone","전화번호");
-                        edit_input(&mut cols[1],&mut self.draft,"senderMobile","휴대폰 번호");
+                        edit_input(&mut cols[0],&mut self.draft,"senderName","상호명");
+                    });
+                    content.add_space(theme::SPACE_8);
+                    edit_input(content,&mut self.draft,"senderAddress","주소");
+                    content.add_space(theme::SPACE_8);
+                    content.columns(2,|cols|{
+                        edit_input(&mut cols[0],&mut self.draft,"senderPostcode","우편번호");
+                        edit_input(&mut cols[1],&mut self.draft,"senderPhone","전화번호");
+                    });
+                    content.columns(2,|cols|{
+                        edit_input(&mut cols[0],&mut self.draft,"senderMobile","휴대폰 번호");
                     });
                 }else{
                     edit_input(content,&mut self.draft,"senderName","상호명");
