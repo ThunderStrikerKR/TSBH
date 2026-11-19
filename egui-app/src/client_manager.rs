@@ -456,17 +456,30 @@ impl ClientManager {
                 }
             });
         }
-        if let Some(history)=draft.get("history").and_then(Value::as_array) {
-            if !history.is_empty(){
-                components::soft_divider(ui);
-                ui.collapsing("상품 별칭 / 변경 이력",|ui|{
-                    for row in history.iter().rev(){
-                        ui.label(typography::caption(&format!(
-                            "{} / {}",field(row,"at"),field(row,"field")
-                        )));
-                    }
-                });
-            }
+        let aliases=self.state.get("aliases").and_then(Value::as_array)
+            .into_iter().flatten()
+            .filter(|a|field(a,"clientId")==field(draft,"id"))
+            .cloned().collect::<Vec<_>>();
+        let history=draft.get("history").and_then(Value::as_array)
+            .cloned().unwrap_or_default();
+        if !aliases.is_empty() || !history.is_empty() {
+            components::soft_divider(ui);
+            ui.collapsing("상품 별칭 / 변경 이력",|ui|{
+                for alias in &aliases {
+                    let product_name=self.state.get("products")
+                        .and_then(Value::as_array).into_iter().flatten()
+                        .find(|p|field(p,"id")==field(alias,"productId"))
+                        .map(|p|field(p,"name")).unwrap_or("과거 품목");
+                    ui.label(typography::body(&format!(
+                        "{} → {}",field(alias,"text"),product_name
+                    )));
+                }
+                for row in history.iter().rev(){
+                    ui.label(typography::caption(&format!(
+                        "{} / {}",field(row,"at"),field(row,"field")
+                    )));
+                }
+            });
         }
     }
     fn variant_name(&self,id:&str)->String {
