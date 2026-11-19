@@ -117,6 +117,7 @@ struct PendingWorkingSync {
     source_raw: String,
     order_type: String,
     client_id: String,
+    authority_revision: u64,
     receiver: Receiver<Result<serde_json::Value,String>>,
 }
 
@@ -405,6 +406,145 @@ impl BandoEgui {
                 }
             }
         } else if self.client_change.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
+    }
+
+    /// A deliberate employee click is the ONLY way to send an unconfirmed
+    /// reception into the Tauri working-order store. Editing or selecting
+    /// customers continues to save exclusively to egui-preview.sqlite3.
+    fn start_working_sync(&mut self, ctx:&egui::Context) {
+        self.working_sync_error=None;
+        if !self.gateway.working_commit_enabled() {
+            self.working_sync_error=Some(
+                "운영 작업본 저장 도우미와 명시적 허용 설정이 필요합니다.".into()
+            );
+            return;
+        }
+        if self.working_sync.is_some() || self.client_change.is_some() {
+            self.working_sync_error=Some("진행 중인 Rust 작업이 끝난 후 저장하세요.".into());
+            return;
+        }
+        let Some(source)=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row| row.id==id)).cloned()
+        else{return};
+        let Some(client_id)=source.client_id.clone() else{
+            self.working_sync_error=Some("거래처를 먼저 선택하세요.".into());
+            return;
+        };
+        let Some(quote)=source.pricing_preview.as_ref() else {
+            self.working_sync_error=Some("거래처 변경 창에서 Rust 금액을 재계산한 뒤 저장하세요.".into());
+            return;
+        };
+        if quote.get("sourceRaw").and_then(serde_json::Value::as_str)
+            !=Some(source.raw.as_str()) ||
+           quote.get("orderType").and_then(serde_json::Value::as_str)
+            !=Some(source.order_type.as_str()) ||
+           quote.get("clientId").and_then(serde_json::Value::as_str)
+            !=Some(client_id.as_str()) {
+            self.working_sync_error=Some("발주서 또는 거래처의 계산 근거가 달라졌습니다.".into());
+            return;
+        }
+        let Some(authority_revision)=quote.get("authorityRevision")
+            .and_then(serde_json::Value::as_u64) else {
+            self.working_sync_error=Some("Rust 운영 데이터 기준 버전이 누락되었습니다.".into());
+            return;
+        };
+        let request=serde_json::json!({
+            "orderId":source.id,
+            "sourceRaw":source.raw,
+            "orderType":source.order_type,
+            "clientId":client_id,
+            "expectedAuthorityRevision":authority_revision,
+            "expectedWorkingVersion":source.working_version,
+            "at":chrono::Utc::now().to_rfc3339(),
+        });
+        let (sender,receiver)=mpsc::channel();
+        let gateway=Arc::clone(&self.gateway);
+        self.working_sync=Some(PendingWorkingSync {
+            order_id:source.id,
+            source_raw:source.raw,
+            order_type:source.order_type,
+            client_id,
+            authority_revision,
+            receiver,
+        });
+        std::thread::spawn(move || {
+            let _=sender.send(gateway.commit_working_reception(request));
+        });
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+
+    fn poll_working_sync(&mut self, ctx:&egui::Context) {
+        let value=self.working_sync.as_ref().map(|sync|sync.receiver.try_recv());
+        let outcome=match value {
+            Some(Ok(value))=>Some(value),
+            Some(Err(mpsc::TryRecvError::Disconnected))=>
+                Some(Err("Tauri 저장 도우미와 연결이 끊어졌습니다.".to_owned())),
+            _=>None,
+        };
+        if let Some(outcome)=outcome {
+            let Some(pending)=self.working_sync.take() else{return};
+            match outcome {
+                Ok(result)=>{
+                    let version=result.get("workingVersion")
+                        .and_then(serde_json::Value::as_u64);
+                    let valid=version.is_some_and(|v|v>0) &&
+                        result.get("orderId").and_then(serde_json::Value::as_str)
+                            ==Some(pending.order_id.as_str()) &&
+                        result.get("clientId").and_then(serde_json::Value::as_str)
+                            ==Some(pending.client_id.as_str()) &&
+                        result.get("authorityRevision").and_then(serde_json::Value::as_u64)
+                            ==Some(pending.authority_revision);
+                    if !valid {
+                        self.working_sync_error=Some(
+                            "운영 주문이 저장됐을 수 있지만 확인 응답이 일치하지 않습니다. 다시 저장하지 말고 작업본을 확인하세요.".into()
+                        );
+                        return;
+                    }
+                    let Some(row)=self.drafts.iter_mut().find(|row|
+                        row.id==pending.order_id
+                    ) else {
+                        self.working_sync_error=Some(
+                            "운영 작업본은 저장됐으나 현재 발주서가 목록에 없습니다. 다시 불러오세요.".into()
+                        );
+                        return;
+                    };
+                    row.working_version=version;
+                    let same_input=row.raw==pending.source_raw &&
+                        row.order_type==pending.order_type &&
+                        row.client_id.as_deref()==Some(pending.client_id.as_str());
+                    row.working_synced=same_input && row.pricing_preview.as_ref()
+                        .is_some_and(|quote|
+                            quote.get("sourceRaw").and_then(serde_json::Value::as_str)
+                                ==Some(pending.source_raw.as_str()) &&
+                            quote.get("authorityRevision")
+                                .and_then(serde_json::Value::as_u64)
+                                ==Some(pending.authority_revision)
+                        );
+                    if row.working_synced {
+                        if let Some(quote)=row.pricing_preview.as_mut() {
+                            for (source,target) in [
+                                ("subtotal","subtotal"),("shippingFee","shippingFee"),
+                                ("vatAmount","vatAmount"),("total","total")
+                            ] {
+                                if let Some(amount)=result.get(source) {
+                                    quote[target]=amount.clone();
+                                }
+                            }
+                        }
+                    } else {
+                        self.working_sync_error=Some(
+                            "운영 작업본은 저장됐지만 이후 수정한 내용은 반영되지 않았습니다.".into()
+                        );
+                    }
+                    self.queue_source_save();
+                }
+                Err(error)=>{
+                    self.working_sync_error=Some(format!("운영 작업본 저장 실패: {error}"));
+                }
+            }
+        } else if self.working_sync.is_some() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
     }
