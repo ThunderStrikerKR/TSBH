@@ -191,3 +191,58 @@ impl LayoutState {
         self.source_ratio = VERTICAL_DEFAULT;
     }
 }
+
+
+// Small, deterministic geometry-contract checks only. These are intentionally
+// independent of order contents, screenshots, Tauri, CI and production data.
+#[cfg(test)]
+mod geometry_contract {
+    use super::*;
+
+    #[test]
+    fn reference_1920p_columns_do_not_trigger_min_width_clamping() {
+        // The 1920px Windows reference is approximately 1637 egui points
+        // inside the 6pt margins at its capture scaling. Confirm the same
+        // proportions at unscaled 1920px too.
+        for width in [1637.0, 1908.0] {
+            let columns = LayoutState::default().widths(width);
+            let total: f32 = columns.iter().sum();
+            let target = width - SPLITTER * (PANEL_COUNT - 1) as f32;
+            assert!((total - target).abs() < 0.01);
+            for i in 0..PANEL_COUNT {
+                let actual_percent = columns[i] / total * 100.0;
+                assert!(
+                    (actual_percent - DEFAULT_RATIOS[i]).abs() < 0.05,
+                    "column {i}: actual={actual_percent}, reference={}",
+                    DEFAULT_RATIOS[i]
+                );
+                assert!(columns[i] >= MIN_WIDTHS[i]);
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_preset_migrates_but_manually_saved_splits_survive() {
+        let legacy = LayoutState::from_string(Some(
+            "20,29,29,22,0.65".to_owned()
+        ));
+        assert_eq!(legacy.ratios, DEFAULT_RATIOS);
+        assert!((legacy.source_ratio - 0.65).abs() < 0.00001);
+
+        let custom = LayoutState::from_string(Some(
+            "350,440,500,380,0.65".to_owned()
+        ));
+        assert_eq!(custom.ratios, [350.0, 440.0, 500.0, 380.0]);
+        assert!((custom.source_ratio - 0.65).abs() < 0.00001);
+    }
+
+    #[test]
+    fn adjacent_middle_column_dividers_share_one_y_coordinate() {
+        let layout = LayoutState::default();
+        for height in [500.0, 800.0, 1000.0] {
+            let (source, _) = layout.vertical_heights(height);
+            let (review, recipient) = layout.detail_upper_heights(height);
+            assert!((review + SPLITTER + recipient - source).abs() < 0.01);
+        }
+    }
+}
