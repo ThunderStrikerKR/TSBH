@@ -243,6 +243,224 @@ impl BandoEgui {
         }
     }
 
+    fn begin_clipboard_intake(&mut self, order_type: OrderType, ctx: egui::Context) {
+        if self.clipboard_busy || !self.clipboard_monitor.kind().has_intake() {
+            return;
+        }
+        self.clipboard_busy = true;
+        self.clipboard_error = None;
+        let (tx, rx) = mpsc::channel();
+        self.clipboard_receiver = Some(rx);
+        // Clipboard image decoding and PaddleOCR never block the UI thread.
+        std::thread::spawn(move || {
+            let result = clipboard_intake::read().and_then(|value| match value {
+                ClipboardPayload::Text(text) => Ok(ClipboardReceipt::Text(text)),
+                ClipboardPayload::Image(image) => {
+                    let text = clipboard_intake::recognize_image(&image)?;
+                    Ok(ClipboardReceipt::Ocr { text, image })
+                }
+            });
+            let _ = tx.send((order_type, result));
+            ctx.request_repaint();
+        });
+    }
+
+    fn accept_clipboard_text(&mut self, text: String, order_type: OrderType, ctx: &egui::Context) {
+        if text.trim().is_empty() {
+            self.clipboard_error = Some("발주 원문이 비어 있습니다.".into());
+            return;
+        }
+        if self.raw_source != text && !self.raw_source.trim().is_empty() {
+            // Exact replacement confirmation from the existing React intake.
+            self.pending_replace = Some(PendingReplace { text, order_type });
+            return;
+        }
+        self.apply_intake_text(text, order_type, ctx);
+    }
+
+    fn apply_intake_text(&mut self, text: String, order_type: OrderType, ctx: &egui::Context) {
+        if text.trim().is_empty() { return; }
+        let changed = self.raw_source != text;
+        self.raw_source = text;
+        self.order_type = order_type;
+        self.source_editing = true;
+        self.clipboard_error = None;
+        if changed {
+            self.clear_source_analysis();
+            self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
+            ctx.request_repaint_after(Duration::from_millis(260));
+        }
+        // One revision-checked write includes both raw and AGENCY/DEALER.
+        self.queue_source_save();
+    }
+
+    fn poll_clipboard_intake(&mut self, ctx: &egui::Context) {
+        let next = self.clipboard_receiver.as_ref().map(|rx| rx.try_recv());
+        match next {
+            Some(Ok((order_type, result))) => {
+                self.clipboard_receiver = None;
+                self.clipboard_busy = false;
+                match result {
+                    Ok(ClipboardReceipt::Text(text)) => {
+                        self.accept_clipboard_text(text, order_type, ctx);
+                    }
+                    Ok(ClipboardReceipt::Ocr { text, image }) => {
+                        if text.len() > 20_000 {
+                            self.clipboard_error = Some(
+                                "발주 원문은 최대 20,000자까지 입력할 수 있습니다.".into()
+                            );
+                            return;
+                        }
+                        let texture = ctx.load_texture(
+                            "clipboard-ocr-review-preview",
+                            egui::ColorImage::from_rgba_unmultiplied(
+                                [image.width, image.height], &image.rgba,
+                            ),
+                            egui::TextureOptions::LINEAR,
+                        );
+                        self.ocr_review = Some(OcrReview {
+                            order_type,
+                            original_text: text.clone(),
+                            edited_text: text,
+                            texture,
+                            width: image.width,
+                            height: image.height,
+                        });
+                    }
+                    Err(error) => {
+                        self.clipboard_error = Some(error);
+                        self.notifications_open = true;
+                    }
+                }
+            }
+            Some(Err(mpsc::TryRecvError::Disconnected)) => {
+                self.clipboard_receiver = None;
+                self.clipboard_busy = false;
+                self.clipboard_error = Some("클립보드 접수 작업이 중단되었습니다.".into());
+                self.notifications_open = true;
+            }
+            _ => {}
+        }
+    }
+
+    /// The same OCR review controls that React exposes: inspect the image,
+    /// correct recognized text, append or replace. No OCR result is committed
+    /// to SQLite or sent to the Rust business engine before acceptance.
+    fn show_ocr_review(&mut self, ctx: &egui::Context) {
+        let mut close = false;
+        let mut apply: Option<(String, OrderType)> = None;
+        if let Some(review) = self.ocr_review.as_mut() {
+            let mut open = true;
+            egui::Window::new("OCR 문자 인식 검토")
+                .id(egui::Id::new("egui-ocr-review"))
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(true)
+                .default_width(620.0)
+                .show(ctx, |ui| {
+                    ui.label(typography::caption(
+                        "접수한 이미지와 인식 문구를 비교하고 오타를 고쳐 주세요."
+                    ));
+                    ui.label(typography::caption(
+                        "확인 전에는 발주 원문이나 주문 데이터베이스가 변경되지 않습니다."
+                    ));
+                    let width = review.width as f32;
+                    let height = review.height as f32;
+                    let scale = (ui.available_width().min(560.0) / width)
+                        .min(240.0 / height).min(1.0);
+                    ui.image((
+                        review.texture.id(),
+                        Vec2::new(width * scale, height * scale),
+                    ));
+                    ui.label(typography::field_label("인식된 문구"));
+                    ui.add(
+                        egui::TextEdit::multiline(&mut review.edited_text)
+                            .font(egui::TextStyle::Body)
+                            .desired_width(ui.available_width())
+                            .desired_rows(9),
+                    );
+                    ui.horizontal(|ui| {
+                        if theme::action(ui, "닫기", ButtonRole::Standard, true).clicked() {
+                            close = true;
+                        }
+                        let can_apply = !review.edited_text.trim().is_empty()
+                            && review.edited_text.len() <= 20_000;
+                        if theme::action(ui, "원문에 추가", ButtonRole::Standard, can_apply).clicked() {
+                            let appended = if self.raw_source.trim().is_empty() {
+                                review.edited_text.trim().to_owned()
+                            } else {
+                                format!("{}\n{}", self.raw_source.trim_end(), review.edited_text.trim())
+                            };
+                            apply = Some((appended, review.order_type));
+                        }
+                        if theme::action(ui, "원문 교체", ButtonRole::Primary, can_apply).clicked() {
+                            apply = Some((review.edited_text.trim().to_owned(), review.order_type));
+                        }
+                    });
+                });
+            if !open { close = true; }
+        }
+        if let Some((raw, kind)) = apply {
+            self.ocr_review = None;
+            self.discard_ocr_confirm = false;
+            self.accept_clipboard_text(raw, kind, ctx);
+        } else if close {
+            if self.ocr_review.as_ref().is_some_and(|review|
+                review.edited_text != review.original_text
+            ) {
+                self.discard_ocr_confirm = true;
+            } else {
+                self.ocr_review = None;
+                self.discard_ocr_confirm = false;
+            }
+        }
+
+        if self.discard_ocr_confirm {
+            egui::Window::new("변경사항 확인")
+                .id(egui::Id::new("ocr-review-discard-confirm"))
+                .collapsible(false).resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("OCR 문자 인식 검토의 수정 내용을 버릴까요?");
+                    ui.horizontal(|ui| {
+                        if theme::action(ui, "계속 편집", ButtonRole::Standard, true).clicked() {
+                            self.discard_ocr_confirm = false;
+                        }
+                        if theme::action(ui, "변경 취소", ButtonRole::Danger, true).clicked() {
+                            self.ocr_review = None;
+                            self.discard_ocr_confirm = false;
+                        }
+                    });
+                });
+        }
+    }
+
+    fn show_replacement_confirmation(&mut self, ctx: &egui::Context) {
+        if self.pending_replace.is_none() { return; }
+        let mut accept = false;
+        let mut cancel = false;
+        egui::Window::new("발주원문 교체 확인")
+            .id(egui::Id::new("egui-replace-source-confirm"))
+            .collapsible(false).resizable(false)
+            .show(ctx, |ui| {
+                ui.label("현재 초안과 분석 결과를 새 원문으로 교체할까요?");
+                ui.horizontal(|ui| {
+                    if theme::action(ui, "취소", ButtonRole::Standard, true).clicked() {
+                        cancel = true;
+                    }
+                    if theme::action(ui, "교체", ButtonRole::Primary, true).clicked() {
+                        accept = true;
+                    }
+                });
+            });
+        if accept {
+            if let Some(next) = self.pending_replace.take() {
+                self.apply_intake_text(next.text, next.order_type, ctx);
+            }
+        } else if cancel {
+            self.pending_replace = None;
+        }
+    }
+
     fn handle_header_drag(
         ctx: &egui::Context,
         response: &egui::Response,
