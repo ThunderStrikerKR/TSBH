@@ -103,7 +103,8 @@ fn load_business_from_connection(conn: &rusqlite::Connection) -> Result<(Value, 
     }))
 }
 
-/// Only information required by the existing native matcher is allowed out.
+/// Only the native matching and local chooser fields are projected. No
+/// order history, overrides, payment terms or account details are copied.
 fn project_index(value: &Value) -> Result<(Value, Value), String> {
     let clients = value.get("clients").and_then(Value::as_array)
         .ok_or("거래처 인덱스에는 clients 배열이 필요합니다.")?;
@@ -129,6 +130,11 @@ fn project_index(value: &Value) -> Result<(Value, Value), String> {
             "displayName": text("displayName"),
             "shortNames": text("shortNames"),
             "identifiers": text("identifiers"),
+            // Local read-only search/display fields; never persisted to the
+            // isolated egui receipt or the original Tauri database.
+            "address": text("address"),
+            "phone": text("phone"),
+            "mobile": text("mobile"),
             "active": client.get("active").and_then(Value::as_bool).unwrap_or(true),
             "deletedAt": client.get("deletedAt").cloned().unwrap_or(Value::Null),
         }));
@@ -168,8 +174,8 @@ mod tests {
         });
         let (clients, settings) = project_index(&data).unwrap();
         assert_eq!(clients[0]["shortNames"], "경기악기");
-        assert!(clients[0].get("address").is_none());
-        assert!(clients[0].get("phone").is_none());
+        assert_eq!(clients[0]["address"], "private");
+        assert_eq!(clients[0]["phone"], "private");
         assert!(clients[0].get("tier").is_none());
         assert!(settings["kakaoTitleMappings"].get("unknown").is_none());
     }
