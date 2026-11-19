@@ -9,7 +9,7 @@ use crate::{gateway::{BandoGateway,ReadOperation},theme::{self,ButtonRole},typog
 fn field<'a>(v:&'a Value,key:&str)->&'a str{
     v.get(key).and_then(Value::as_str).unwrap_or("")
 }
-struct Results{catalog:Value,products:Vec<Value>}
+struct Results{catalog:Value,products:Vec<Value>,detail_ids:Vec<String>}
 pub enum Event{Cancelled,Chosen(Value)}
 pub struct ProductSearch{
     pub recipient_id:String,
@@ -20,19 +20,22 @@ pub struct ProductSearch{
     client_id:String,
     catalog:Option<Value>,
     products:Vec<Value>,
+    detail_ids:Vec<String>,
     receiver:Option<Receiver<Result<Results,String>>>,
     error:Option<String>,
 }
 impl ProductSearch{
     pub fn new(recipient_id:String,item_id:String,client_id:String,gateway:Arc<dyn BandoGateway>,ctx:Context)->Self{
         let mut state=Self{recipient_id,item_id,query:String::new(),major:String::new(),
-            brand:String::new(),client_id,catalog:None,products:Vec::new(),receiver:None,error:None};
+            brand:String::new(),client_id,catalog:None,products:Vec::new(),
+            detail_ids:Vec::new(),receiver:None,error:None};
         state.reload(gateway,ctx);
         state
     }
     fn reload(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context){
         self.error=None;
         self.products.clear();
+        self.detail_ids.clear();
         let query=self.query.clone();
         let brand=self.brand.clone();
         let major=self.major.clone();
@@ -58,7 +61,13 @@ impl ProductSearch{
                         .ok_or("상품 ID와 목록이 일치하지 않습니다.")?;
                     products.push(row.clone());
                 }
-                Ok(Results{catalog:state,products})
+                let detail_ids=result.get("detailLinkIds")
+                    .and_then(Value::as_array)
+                    .into_iter().flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect();
+                Ok(Results{catalog:state,products,detail_ids})
             })();
             let _=tx.send(result);
             ctx.request_repaint();
@@ -70,6 +79,7 @@ impl ProductSearch{
                 Ok(Ok(result))=>{
                     self.catalog=Some(result.catalog);
                     self.products=result.products;
+                    self.detail_ids=result.detail_ids;
                     self.receiver=None;
                 }
                 Ok(Err(error))=>{self.receiver=None;self.error=Some(error);}
@@ -85,9 +95,8 @@ impl ProductSearch{
         let mut open=true;
         let mut chosen=None;
         let mut changed=false;
-        egui::Window::new("상품 검색")
-            .id(egui::Id::new("native-manual-product-search"))
-            .collapsible(false).resizable(true)
+        components::modal_window("상품 검색","native-manual-product-search")
+            .resizable(true)
             .default_width(theme::MANUAL_SEARCH_DIALOG_WIDTH)
             .open(&mut open)
             .show(ctx,|ui|{
@@ -139,13 +148,41 @@ impl ProductSearch{
                             for row in &self.products{
                                 let name=field(row,"name");
                                 let name=if name.is_empty(){field(row,"code")}else{name};
-                                if theme::action(ui,name,ButtonRole::Standard,true).clicked(){
-                                    chosen=Some(row.clone());
-                                }
                                 let detail=field(row,"subtitle");
                                 let detail=if detail.is_empty(){field(row,"specification")}else{detail};
-                                if !detail.is_empty(){ui.label(typography::caption(detail));}
-                                ui.separator();
+                                ui.horizontal(|ui|{
+                                    ui.vertical(|info|{
+                                        info.label(typography::body(name));
+                                        if !detail.is_empty() {
+                                            info.label(typography::caption(detail));
+                                        }
+                                    });
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |actions|{
+                                            if theme::action(actions,"선택",ButtonRole::Standard,true)
+                                                .clicked() {
+                                                chosen=Some(row.clone());
+                                            }
+                                            if self.detail_ids.iter().any(|id|id==field(row,"id")) {
+                                                let url=row.get("variants")
+                                                    .and_then(Value::as_array)
+                                                    .and_then(|variants|variants.first())
+                                                    .and_then(|variant|variant.get("url"))
+                                                    .and_then(Value::as_str);
+                                                if let Some(url)=url {
+                                                    if theme::action(actions,"상세보기 ↗",
+                                                        ButtonRole::Quiet,true).clicked() {
+                                                        ctx.open_url(egui::OpenUrl::new_tab(
+                                                            url.to_owned()
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    );
+                                });
+                                components::soft_divider(ui);
                             }
                             if self.products.is_empty()&&self.error.is_none(){
                                 ui.label(typography::caption("검색 결과가 없습니다."));
