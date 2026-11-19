@@ -451,10 +451,10 @@ impl BandoEgui {
             return;
         };
         let request=serde_json::json!({
-            "orderId":source.id,
-            "sourceRaw":source.raw,
-            "orderType":source.order_type,
-            "clientId":client_id,
+            "orderId":&source.id,
+            "sourceRaw":&source.raw,
+            "orderType":&source.order_type,
+            "clientId":&client_id,
             "expectedAuthorityRevision":authority_revision,
             "expectedWorkingVersion":source.working_version,
             "at":chrono::Utc::now().to_rfc3339(),
