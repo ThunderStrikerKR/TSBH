@@ -52,7 +52,7 @@ pub fn labeled_field(
     ui.horizontal(|ui| {
         ui.add_sized(
             Vec2::new(LABEL_WIDTH, theme::INPUT_HEIGHT),
-            egui::Label::new(RichText::new(label).size(13.0).color(theme::SECONDARY)),
+            egui::Label::new(RichText::new(label).size(theme::FONT_FIELD_LABEL).color(theme::SECONDARY)),
         );
         // egui horizontal layout already supplies the shared item gap.
         // Avoid doubling it and unnecessarily shrinking long address fields.
@@ -76,13 +76,13 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
         soft_divider(ui);
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(label).size(13.0).color(theme::SECONDARY));
+            ui.label(RichText::new(label).size(theme::FONT_FIELD_LABEL).color(theme::SECONDARY));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(RichText::new(value).size(16.0).strong().color(theme::TEXT));
             });
         });
         if !footnote.trim().is_empty() {
-            ui.label(RichText::new(footnote).size(12.0).color(theme::SECONDARY));
+            ui.label(RichText::new(footnote).size(theme::FONT_METADATA).color(theme::SECONDARY));
         }
     });
 }
@@ -137,7 +137,7 @@ pub fn table_header(ui: &mut Ui, columns: &[(&str, f32)]) {
                     ui.add_sized(
                         Vec2::new(*width, TABLE_HEADER_HEIGHT - 8.0),
                         egui::Label::new(
-                            RichText::new(*title).size(13.0).strong().color(theme::SECONDARY),
+                            RichText::new(*title).size(theme::FONT_FIELD_LABEL).strong().color(theme::SECONDARY),
                         ),
                     );
                 }
@@ -150,7 +150,7 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
         for (value, width) in columns {
             ui.add_sized(
                 Vec2::new(*width, TABLE_ROW_HEIGHT),
-                egui::Label::new(RichText::new(*value).size(13.0).color(theme::TEXT)),
+                egui::Label::new(RichText::new(*value).size(theme::FONT_FIELD_LABEL).color(theme::TEXT)),
             );
         }
     });
