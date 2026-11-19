@@ -272,34 +272,10 @@ fn validate_clients(before: &Value, next: &Value) -> Result<(), String> {
     }
     Ok(())
 }
-fn validate_accounts(state: &Value) -> Result<(), String> {
-    let accounts = state["settings"]["accounts"].as_array().ok_or("입금 계좌 목록 형식 오류")?;
-    let mut ids = std::collections::HashSet::new();
-    for account in accounts {
-        let id = account["id"].as_str().ok_or("계좌 ID 오류")?;
-        if id.is_empty() || !ids.insert(id) { return Err("입금 계좌 ID가 중복되거나 비어 있습니다.".into()); }
-        if ["bank", "number", "holder"].iter().any(|k| account[*k].as_str().unwrap_or("").trim().is_empty()) {
-            return Err("은행명, 계좌번호, 예금주를 모두 입력한 뒤 저장하세요.".into());
-        }
-    }
-    let check_id = |id: &Value| -> Result<(), String> {
-        if let Some(id) = id.as_str().filter(|x| !x.is_empty()) {
-            if !ids.contains(id) { return Err("추천 계좌가 등록된 입금 계좌 목록에 없습니다.".into()); }
-        }
-        Ok(())
-    };
-    check_id(&state["settings"]["defaultAccountId"])?;
-    for brand in ["BANDOSTAND", "BANDOMALL"] {
-        check_id(&state["settings"]["brandAccounts"][brand])?;
-    }
-    for client in state["clients"].as_array().ok_or("거래처 데이터 형식 오류")? {
-        if !client["deletedAt"].is_null() { continue; }
-        if let Some(id) = client["preferredAccountId"].as_str().filter(|x| !x.is_empty()) {
-            if !ids.contains(id) { return Err("거래처에서 사용하는 입금 계좌는 삭제할 수 없습니다. 거래처의 주 사용 계좌부터 변경하세요.".into()); }
-        }
-    }
-    Ok(())
+fn validate_accounts(state:&Value)->Result<(),String>{
+    business_core::rules::settings_accounts::validate(state)
 }
+
 fn initialize_database(path: &Path) -> Result<Connection, String> {
     let mut conn = Connection::open(path).map_err(err)?;
     relational_store::backup_legacy_if_needed(&conn,path)?;
