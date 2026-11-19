@@ -29,6 +29,10 @@ pub enum ReadOperation {
     AutoMatchReceptionClient,
     ReceptionClientCandidates,
     ClientCandidates,
+    NewReception,
+    MergeReceptionAnalysis,
+    ChangeOrderClient,
+    RepriceOrder,
 }
 
 impl ReadOperation {
@@ -38,6 +42,8 @@ impl ReadOperation {
             Self::ResolveRetailUnitPrice | Self::DetectRemoteDeliveryArea => "rules",
             Self::AutoMatchReceptionClient | Self::ReceptionClientCandidates
             | Self::ClientCandidates => "catalog_clients",
+            Self::NewReception | Self::MergeReceptionAnalysis
+            | Self::ChangeOrderClient | Self::RepriceOrder => "rules",
         }
     }
 
@@ -49,6 +55,10 @@ impl ReadOperation {
             Self::AutoMatchReceptionClient => "auto_match_reception_client",
             Self::ReceptionClientCandidates => "reception_client_candidates",
             Self::ClientCandidates => "client_candidates",
+            Self::NewReception => "apply_reception_action",
+            Self::MergeReceptionAnalysis => "merge_reception_analysis",
+            Self::ChangeOrderClient => "order_edit_rules",
+            Self::RepriceOrder => "reprice_order",
         }
     }
 }
@@ -60,6 +70,11 @@ pub trait BandoGateway: Send + Sync {
     /// confirmed orders, customer contacts or workflow state.
     /// This method does not persist or mutate anything.
     fn load_catalog(&self) -> Result<Value, String>;
+    /// Full v2 business snapshot for native rules only, from an explicitly
+    /// configured read-only operational DB. This must never mutate SQLite.
+    fn load_business_state(&self) -> Result<Value, String> {
+        Err("서버에는 실제 주문 수정 미리보기 계약이 아직 없습니다.".into())
+    }
     /// The currently open, unconfirmed source in a separate storage domain.
     /// This never creates a confirmed business order.
     fn load_working_source(&self) -> Result<WorkingSource, String>;
@@ -80,6 +95,9 @@ impl BandoGateway for LocalGateway {
     fn load_catalog(&self) -> Result<Value, String> {
         crate::client_directory::attach(PreviewStore::initialize()?.load_catalog()?)
     }
+    fn load_business_state(&self) -> Result<Value, String> {
+        crate::business_state::load()
+    }
 
     fn load_working_source(&self) -> Result<WorkingSource, String> {
         PreviewStore::initialize()?.load_source()
@@ -95,7 +113,11 @@ impl BandoGateway for LocalGateway {
                 recognition::execute(operation.operation(), payload)
             }
             ReadOperation::ResolveRetailUnitPrice
-            | ReadOperation::DetectRemoteDeliveryArea => {
+            | ReadOperation::DetectRemoteDeliveryArea
+            | ReadOperation::NewReception
+            | ReadOperation::MergeReceptionAnalysis
+            | ReadOperation::ChangeOrderClient
+            | ReadOperation::RepriceOrder => {
                 rules::execute(operation.operation(), payload)
             }
             ReadOperation::AutoMatchReceptionClient
