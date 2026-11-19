@@ -2415,9 +2415,9 @@
         "patch": "SOURCE_UPDATED: four settings tabs, original Rust CAS and archive/backup, shared account rule, native HelpTooltip, Excel folder scaffold, true build ID and React one-card + proportional field grid, through commit 49ce2ab.",
         "differential": "STATIC PASS for tab/fields/one-card/group hierarchy, React top-grid and sender-grid ratio, account references and original HelpTooltip contents. Dynamic Windows GUI not evaluated.",
         "action": "NOT RUN: no actual GUI or local database functional sequence; user excludes Windows GUI",
-        "ci": "IN_PROGRESS: focused Windows Tauri and standalone egui cargo check https://github.com/ThunderStrikerKR/TSBH/actions/runs/44641475244 (code source 249616d8)",
-        "windows": "EXCLUDED_BY_USER_REQUEST: no real Windows GUI execution/screenshots required",
-        "status": "PARTIAL: complete named settings tab/control code path and data bridges, but standalone background watcher for factory replies / order images not migrated."
+        "ci": "PASS: focused Windows Tauri + standalone egui cargo check https://github.com/ThunderStrikerKR/TSBH/actions/runs/44641475244, source commit 249616d8 (includes single-card grid and shared validator). No broad regression tests run in this task.",
+        "windows": "NOT RUN BY USER REQUEST: no real Windows GUI, mouse, DPI, screenshot comparisons; not a requirement for this source-based phase.",
+        "status": "PARTIAL_SOURCE_PARITY: four settings tabs, accounts/CAS, archive/backup/restore and help wired; native egui background intake watchers remain unported."
       }
     }
   ],
