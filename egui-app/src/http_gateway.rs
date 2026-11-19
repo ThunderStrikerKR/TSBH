@@ -124,6 +124,7 @@ impl BandoGateway for HttpGateway {
                 pricing_preview: record.get("pricingPreview").filter(|v| !v.is_null()).cloned(),
                 working_version: record.get("workingVersion").and_then(Value::as_u64),
                 working_synced: record.get("workingSynced").and_then(Value::as_bool).unwrap_or(false),
+                manual_model: record.get("manualModel").filter(|v|!v.is_null()).cloned(),
             });
         }
         let active_id = match value.get("activeId") {
@@ -144,6 +145,7 @@ impl BandoGateway for HttpGateway {
             "pricingPreview": item.pricing_preview,
             "workingVersion": item.working_version,
             "workingSynced": item.working_synced,
+            "manualModel": item.manual_model,
         })).collect();
         let body = json!({
             "raw": source.raw,
