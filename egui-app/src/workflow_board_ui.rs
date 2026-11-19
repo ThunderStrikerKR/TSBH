@@ -231,16 +231,26 @@ fn workflow_header(ui:&mut Ui,id:&str,title:&str,step:usize,notice:bool)
 }
 fn lights(ui:&mut Ui,step:usize,notice:bool){
     ui.horizontal(|row|{
-        row.spacing_mut().item_spacing.x=theme::SPACE_4;
+        row.spacing_mut().item_spacing.x=theme::WORKFLOW_SIGNAL_GAP;
         for index in 0..STEP_NAMES.len(){
             let (rect,_)=row.allocate_exact_size(
-                Vec2::splat(theme::SPACE_16),egui::Sense::hover()
+                Vec2::splat(theme::WORKFLOW_SIGNAL_SIZE),egui::Sense::hover()
             );
-            let color=if index<step {theme::SUCCESS}
-                else if index==step && notice {theme::SELECTED_ORDER}
-                else if index==step {theme::SECONDARY}
-                else{theme::DIVIDER};
-            row.painter().circle_filled(rect.center(),theme::SPACE_4,color);
+            let (fill,border)=if index<step {
+                (theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER)
+            }else if index==step && notice{
+                (theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER)
+            }else if index==step{
+                (theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER)
+            }else{
+                (theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER)
+            };
+            let radius=theme::WORKFLOW_SIGNAL_SIZE/2.0;
+            row.painter().circle_filled(rect.center(),radius,fill);
+            row.painter().circle_stroke(
+                rect.center(),radius,
+                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,border)
+            );
         }
     });
 }
