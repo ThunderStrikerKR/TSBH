@@ -1,4 +1,4 @@
-# Targeted Windows compile: native workflow cards, cross-pane preview, Rust automatic message.
+# Targeted Windows compile: Rust workflow projections and selected/hovered cross-pane egui content.
 name: Tauri native CLI executable compile check
 on:
   push:
