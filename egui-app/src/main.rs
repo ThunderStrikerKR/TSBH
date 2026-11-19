@@ -625,10 +625,9 @@ impl BandoEgui {
             self.source_save_error=Some("원문 인식이 완료된 뒤 수동 분류를 시작하세요.".into());
             return;
         }
-        if row.client_id.is_none() {
-            self.source_save_error=Some("수동 분류 전에 거래처를 먼저 선택하세요.".into());
-            return;
-        }
+        // A dealer choice is NOT required for assigning recipient/source
+        // evidence. Pricing and business-state reconciliation remain native
+        // Rust responsibilities when a dealer is subsequently selected.
         self.manual_workspace=Some(manual_workspace::ManualWorkspace::new(
             row,Arc::clone(&self.gateway),ctx.clone()
         ));
@@ -1727,6 +1726,7 @@ impl BandoEgui {
         let mut begin_new_order = false;
         let mut start_clipboard = None;
         let mut open_client_chooser = false;
+        let mut open_manual_workspace = false;
         let can_receive_clipboard =
             self.clipboard_monitor.kind().has_intake() && !self.clipboard_busy;
         let ocr_processing = self.ocr_processing;
@@ -1800,9 +1800,16 @@ impl BandoEgui {
                         },
                     );
                 }
-                // Only the remaining height belongs to the raw source editor.
-                // A fixed dealer band never enlarges the entire source pane.
-                let editor_height = (available_body - client_band_height)
+                // The React source actions belong at the BOTTOM of the source
+                // pane, not inside the adjacent "확인할 내용" review scroll.
+                // Reserve their height before allocating the editor so the
+                // fixed source/message splitter cannot be displaced.
+                let has_source = !self.raw_source.trim().is_empty();
+                let source_actions_height = if has_source {
+                    theme::ACTION_STANDARD_HEIGHT + theme::SPACE_8 + theme::SPACING
+                } else { 0.0 };
+                let editor_height = (available_body - client_band_height
+                    - source_actions_height)
                     .min(ui.available_height().max(0.0)).max(0.0);
                 if editor_height > 0.0 {
                     let viewport = Rect::from_min_size(
@@ -1908,6 +1915,23 @@ impl BandoEgui {
                         }
                     }
                 }
+                if has_source {
+                    ui.add_space(theme::SPACE_8);
+                    let ready = self.active_id.as_deref()
+                        .and_then(|id| self.drafts.iter().find(|row| row.id == id))
+                        .is_some_and(|row|
+                            row.analysis_raw.as_deref()==Some(self.raw_source.as_str()) &&
+                            row.analysis_evidence.is_some()
+                        );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |actions| {
+                        if theme::action(actions,"수동 분류",ButtonRole::Standard,
+                            ready && self.manual_workspace.is_none() &&
+                            self.client_change.is_none() && self.working_sync.is_none()
+                        ).clicked() {
+                            open_manual_workspace=true;
+                        }
+                    });
+                }
             } else {
                 self.source_hover=None;
                 // Narrow panes may need a stacked button row. Scroll ONLY the
@@ -1972,6 +1996,9 @@ impl BandoEgui {
         }
         if open_client_chooser {
             self.open_client_chooser(ui.ctx());
+        }
+        if open_manual_workspace {
+            self.open_manual_workspace(ui.ctx());
         }
         if begin_input {
             if self.active_id.is_none() {
@@ -2054,7 +2081,6 @@ impl BandoEgui {
 
         let mut client_choice: Option<String> = None;
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
-        let mut manual_clicked=false;
         let mut sync_clicked=false;
         let mut refresh_price:Option<String>=None;
         ui.scope_builder(
@@ -2108,19 +2134,6 @@ impl BandoEgui {
                                     }
                                 }
                             }
-                        }
-                    }
-                    if self.active_id.as_deref().and_then(|id|
-                        self.drafts.iter().find(|row|row.id==id)
-                    ).is_some_and(|row|
-                        row.analysis_raw.as_deref()==Some(self.raw_source.as_str()) &&
-                        row.analysis_evidence.is_some()
-                    ) {
-                        if theme::action(ui,"수동 분류",ButtonRole::Standard,
-                            self.manual_workspace.is_none() &&
-                            self.client_change.is_none() && self.working_sync.is_none()
-                        ).clicked() {
-                            manual_clicked=true;
                         }
                     }
                     if let Some(error) = &self.analysis_error {
@@ -2210,9 +2223,6 @@ impl BandoEgui {
         }
         if sync_clicked {
             self.start_working_sync(ui.ctx());
-        }
-        if manual_clicked {
-            self.open_manual_workspace(ui.ctx());
         }
         components::paint_dock_splitter(ui, first_sep, false, false);
 
