@@ -76,15 +76,35 @@ impl Default for BandoEgui {
 
 impl BandoEgui {
     fn top_bar(&mut self, ctx: &egui::Context) {
+        let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
         egui::TopBottomPanel::top("global_navigation")
             .exact_height(theme::HEADER_HEIGHT)
             .frame(Frame::new().fill(Color32::from_rgb(27, 27, 27)).inner_margin(8.0))
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
-                    ui.add_space(10.0);
-                    ui.label(RichText::new("BANDO HUB").size(20.0).strong().color(theme::TEXT));
-                    ui.label(RichText::new("/ UI 프리뷰").size(11.0).color(theme::MUTED));
-                    ui.add_space(16.0);
+                    ui.add_space(8.0);
+                    // Frameless window: the brand acts as the title-bar drag
+                    // region. Buttons/tabs remain fully interactive.
+                    let brand = ui.add(
+                        egui::Label::new(
+                            RichText::new("BANDO HUB").size(20.0).strong().color(theme::TEXT)
+                        ).sense(Sense::click_and_drag())
+                    );
+                    if brand.drag_started() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    }
+                    if brand.double_clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                    }
+                    let caption = ui.add(
+                        egui::Label::new(
+                            RichText::new("/ UI 프리뷰").size(11.0).color(theme::MUTED)
+                        ).sense(Sense::click_and_drag())
+                    );
+                    if caption.drag_started() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    }
+                    ui.add_space(12.0);
                     for page in Page::ALL {
                         let role = if self.page == page {
                             ButtonRole::ActiveNavigation
@@ -96,10 +116,27 @@ impl BandoEgui {
                         }
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new("테스트 전용 · DB 미연결").size(12.0).color(theme::SELECTED_ORDER));
+                        if theme::action(ui, "×", ButtonRole::Quiet, true)
+                            .on_hover_text("닫기").clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                        if theme::action(
+                            ui, if maximized { "❐" } else { "□" },
+                            ButtonRole::Quiet, true
+                        ).on_hover_text(if maximized { "이전 크기" } else { "최대화" }).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                        }
+                        if theme::action(ui, "−", ButtonRole::Quiet, true)
+                            .on_hover_text("최소화").clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                        }
                         if theme::action(ui, "알림", ButtonRole::Standard, true).clicked() {
                             self.notifications_open = !self.notifications_open;
                         }
+                        ui.label(
+                            RichText::new("TEST / 격리 UI · DB 미연결")
+                                .size(11.0).color(theme::SELECTED_ORDER)
+                        );
                     });
                 });
             });
@@ -557,7 +594,9 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1600.0, 900.0])
             .with_min_inner_size([1150.0, 720.0])
-            .with_title("BANDO HUB · egui UI Preview"),
+            .with_title("BANDO HUB · egui UI Preview")
+            .with_decorations(false)
+            .with_resizable(true),
         ..Default::default()
     };
     eframe::run_native(
