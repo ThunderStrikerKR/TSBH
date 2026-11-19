@@ -23,3 +23,5 @@ jobs:
           workspaces: src-tauri -> target
       - name: Compile Tauri executable including egui manual commit CLI dispatch
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
+      - name: Compile standalone egui client-management entrypoint
+        run: cargo check --manifest-path egui-app/Cargo.toml
