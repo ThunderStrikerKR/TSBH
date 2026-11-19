@@ -1880,11 +1880,15 @@ impl BandoEgui {
                 .map(|selection|selection.group_id.as_str()))?;
         let board=self.workflow_snapshot.as_ref()?;
         let group=board.groups.iter().find(|g|g.id==group_id)?;
+        let previewed=self.workflow_ui.active_preview()
+            .filter(|active|*active==group.id)
+            .and_then(|_|self.workflow_ui.preview_shipment.as_deref())
+            .and_then(|id|group.shipments.iter().find(|ship|ship.id==id));
         let selected=self.workflow_ui.selection.as_ref()
             .filter(|s|s.group_id==group.id)
             .and_then(|s|group.shipments.iter().find(|ship|
                 ship.id==s.shipment_id&&ship.order_id==s.order_id));
-        let ship=selected.or_else(||group.shipments.first())?;
+        let ship=previewed.or(selected).or_else(||group.shipments.first())?;
         Some((group.clone(),ship.clone()))
     }
 
