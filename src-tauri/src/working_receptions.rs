@@ -153,6 +153,32 @@ pub(super) fn replace(conn:&mut Connection,orders:Vec<Value>)->Result<(),String>
     // Validate every row before replacing either table. A failed write rolls
     // both collections back and leaves the last good edit intact.
     let tx=conn.transaction().map_err(err)?;
+    // The legacy React autosave replaces its full snapshot. If egui added
+    // a working order AFTER React last loaded the list, that replacement
+    // must fail instead of silently deleting the new order. Existing egui
+    // rows also use an optimistic per-row version to prevent stale writes.
+    {
+        let mut query=tx.prepare(
+            "SELECT id,json_extract(payload,'$._eguiBridgeVersion')
+             FROM reception_working_orders
+             WHERE json_type(payload,'$._eguiBridgeVersion')='integer'"
+        ).map_err(err)?;
+        let rows=query.query_map([],|row|
+            Ok((row.get::<_,String>(0)?,row.get::<_,i64>(1)?))
+        ).map_err(err)?;
+        for row in rows {
+            let (id,version)=row.map_err(err)?;
+            if permanent.contains(&id) {continue;}
+            let incoming=orders.iter().find(|order|
+                order["id"].as_str()==Some(&id)
+            ).ok_or_else(||
+                format!("egui에서 접수한 주문 {id}이 다른 창에서 추가됐습니다. 최신 주문을 불러온 뒤 저장하세요.")
+            )?;
+            if incoming["_eguiBridgeVersion"].as_i64()!=Some(version) {
+                return Err(format!("egui 작업본 {id}이 다른 창에서 변경됐습니다. 새로고침 후 저장하세요."));
+            }
+        }
+    }
     tx.execute("DELETE FROM reception_working_orders",[]).map_err(err)?;
     tx.execute("DELETE FROM reception_confirmed_edits",[]).map_err(err)?;
     let timestamp=chrono::Utc::now().to_rfc3339();
