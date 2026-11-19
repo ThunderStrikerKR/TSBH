@@ -1,0 +1,35 @@
+name: Egui native targeted compile check
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/egui-targeted-check.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: egui-native-targeted-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  egui-windows-check:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: egui-app -> target
+      - name: Compile egui UI without running regression suites
+        run: cargo check --manifest-path egui-app/Cargo.toml --all-targets
+  tauri-windows-library-check:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Compile native Tauri Rust library only
+        run: cargo check --manifest-path src-tauri/Cargo.toml --lib
