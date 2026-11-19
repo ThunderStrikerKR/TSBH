@@ -1901,7 +1901,7 @@ impl BandoEgui {
                 }
             },|body|{
                 egui::ScrollArea::vertical()
-                    .id_salt("workflow-source-read-only")
+                    .id_salt(("workflow-source-read-only",shipment.order_id.as_str()))
                     .max_height(components::docked_section_body_height(height))
                     .auto_shrink([false,false])
                     .show(body,|content|{
@@ -2218,7 +2218,7 @@ impl BandoEgui {
                 let message_height=(available-theme::ACTION_STANDARD_HEIGHT
                     -theme::SPACE_8).max(0.0);
                 egui::ScrollArea::vertical()
-                    .id_salt("native-workflow-message")
+                    .id_salt(("native-workflow-message",group.id.as_str()))
                     .max_height(message_height)
                     .auto_shrink([false,false])
                     .show(body,|content|{
@@ -2319,7 +2319,7 @@ impl BandoEgui {
                     Self::section(pane,"확인할 내용",review_height,|ui|{
                         egui::ScrollArea::vertical()
                             .max_height(components::docked_section_body_height(review_height))
-                            .id_salt("native-workflow-issues")
+                            .id_salt(("native-workflow-issues",group.id.as_str()))
                             .show(ui,|issues|{
                                 for issue in &group.issues{
                                     issues.label(typography::status(issue,theme::SELECTED_ORDER));
@@ -2339,7 +2339,7 @@ impl BandoEgui {
                     Self::section(pane,"수취인별 주문 정보",recipient_height,|ui|{
                         egui::ScrollArea::vertical()
                             .max_height(components::docked_section_body_height(recipient_height))
-                            .id_salt("native-workflow-recipient-readonly")
+                            .id_salt(("native-workflow-recipient-readonly",ship.id.as_str()))
                             .show(ui,|contents|{
                                 for (label,field) in [
                                     ("이름","name"),("주소","address"),
@@ -2369,7 +2369,7 @@ impl BandoEgui {
                         let content_height=(components::docked_section_body_height(
                             bottom_rect.height())-theme::SUMMARY_STRIP_HEIGHT).max(0.0);
                         egui::ScrollArea::vertical()
-                            .id_salt("native-workflow-products")
+                            .id_salt(("native-workflow-products",ship.id.as_str()))
                             .max_height(content_height)
                             .show(ui,|contents|{
                                 for product in &ship.products{
