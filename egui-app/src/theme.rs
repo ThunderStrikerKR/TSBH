@@ -76,7 +76,6 @@ pub const MANUAL_SEARCH_RESULTS_HEIGHT: f32 = 420.0;
 pub const MANUAL_INPUT_WIDTH: f32 = 250.0;
 // Shared native modal/table roles. Manual source and spreadsheet-like rows
 // inherit these values instead of locally painted one-off geometry.
-pub const MODAL_TITLE_SIZE: f32 = 18.0;
 pub const MODAL_PANEL_PADDING_X: f32 = 18.0;
 pub const MODAL_PANEL_PADDING_Y: f32 = 16.0;
 pub const MODAL_DECISION_MAX_WIDTH: f32 = 560.0;
