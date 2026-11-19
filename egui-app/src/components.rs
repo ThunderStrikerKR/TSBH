@@ -78,7 +78,7 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
         ui.horizontal(|ui| {
             ui.label(RichText::new(label).size(theme::FONT_FIELD_LABEL).color(theme::SECONDARY));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(value).size(16.0).strong().color(theme::TEXT));
+                ui.label(RichText::new(value).size(theme::FONT_SECTION_HEADING).strong().color(theme::TEXT));
             });
         });
         if !footnote.trim().is_empty() {
