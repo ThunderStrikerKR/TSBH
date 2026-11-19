@@ -309,9 +309,9 @@ impl BandoEgui {
         self.apply_manual_client(client_id, ctx);
     }
 
-    // All-client changes and Rust suggestion clicks share one selection
-    // path. This is ONLY a preview edit until the complete native Rust order
-    // mutation and revision-checked production save are connected.
+    // All-client choices use one guarded native Rust order-edit path.
+    // It computes a full repricing preview, but production state_save and
+    // workflow reconciliation are not exposed in this isolated egui app.
     fn apply_manual_client(&mut self, client_id: &str, ctx: &egui::Context) {
         if self.client_change.is_some() {
             self.source_save_error = Some("이전 거래처 변경 계산이 끝난 뒤 다시 선택하세요.".into());
