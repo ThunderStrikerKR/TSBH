@@ -322,14 +322,13 @@ impl ManualWorkspace {
         let mut discard_confirmed=false;
         let mut submit_direct=false;
         let mut lookup:Option<(String,String)>=None;
-        egui::Window::new("수동 분류")
-            .id(egui::Id::new("bando-native-manual-classification"))
+        components::modal_window("수동 분류","bando-native-manual-classification")
             .open(&mut open)
-            .collapsible(false).resizable(true)
+            .resizable(true)
             .default_width((ctx.screen_rect().width()-theme::MANUAL_DIALOG_SIDE_GAP)
                 .min(theme::MANUAL_DIALOG_MAX_WIDTH))
             .default_height((ctx.screen_rect().height()-theme::MANUAL_DIALOG_VERTICAL_GAP)
-                .max(420.0))
+                .max(theme::MANUAL_DIALOG_MIN_HEIGHT))
             .show(ctx,|ui|{
                 ui.set_enabled(self.product_search.is_none() && self.remove_recipient_pending.is_none());
                 if let Some(error)=self.error.as_ref() {
@@ -655,9 +654,7 @@ impl ManualWorkspace {
         if let Some(target)=self.remove_recipient_pending.clone(){
             let mut confirm=false;
             let mut cancel=false;
-            egui::Window::new("배송 건수 줄이기")
-                .id(egui::Id::new("manual-shipment-removal"))
-                .collapsible(false).resizable(false)
+            components::decision_window("배송 건수 줄이기","manual-shipment-removal")
                 .show(ctx,|ui|{
                     ui.label("마지막 배송 건의 입력값과 원문 배정을 제거할까요?");
                     ui.horizontal(|ui|{
@@ -701,10 +698,8 @@ impl ManualWorkspace {
         }
         if self.confirm_discard {
             let mut confirm=true;
-            egui::Window::new("수동 분류 변경 취소")
-                .id(egui::Id::new("manual-discard-prompt"))
+            components::decision_window("수동 분류 변경 취소","manual-discard-prompt")
                 .open(&mut confirm)
-                .collapsible(false).resizable(false)
                 .show(ctx,|ui|{
                     ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
                     ui.horizontal(|ui|{
