@@ -235,6 +235,43 @@ impl BandoEgui {
         self.queue_source_save();
     }
 
+    /// Bind only an OS-verified KakaoTalk chat to the ACTIVE unconfirmed
+    /// reception. A changed/closed handle is not reused as evidence.
+    fn bind_chat_to_active(&mut self, chat: ChatWindow, ctx: &egui::Context) {
+        if self.kakao_tracker.verified(&chat.handle)
+            .is_none_or(|current| current.title != chat.title) {
+            return;
+        }
+        self.kakao_connected = true;
+        self.kakao_choice = Some(chat.handle.clone());
+        let mut changed = false;
+        if let Some(id) = self.active_id.as_deref() {
+            if let Some(item) = self.drafts.iter_mut().find(|item| item.id == id) {
+                if item.chat_handle.as_deref() != Some(chat.handle.as_str()) ||
+                   item.chat_title.as_deref() != Some(chat.title.as_str()) {
+                    item.chat_handle = Some(chat.handle);
+                    item.chat_title = Some(chat.title);
+                    item.analysis_raw = None;
+                    item.analysis_evidence = None;
+                    item.client_match = None;
+                    if item.client_selection.as_deref() != Some("MANUAL") {
+                        item.client_id = None;
+                        item.client_selection = None;
+                    }
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.clear_source_analysis();
+            if !self.raw_source.trim().is_empty() {
+                self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
+                ctx.request_repaint_after(Duration::from_millis(260));
+            }
+            self.queue_source_save();
+        }
+    }
+
     fn new_reception(&mut self, ctx: &egui::Context) {
         // An already-open empty receipt is the new order. Do not multiply
         // empty records when the user clicks "+ 새 주문" repeatedly.
@@ -388,6 +425,11 @@ impl BandoEgui {
         if self.clipboard_busy || !self.clipboard_monitor.kind().has_intake() {
             return;
         }
+        self.clipboard_chat = if self.kakao_connected {
+            self.kakao_tracker.recent_focus()
+                .or(self.kakao_choice.as_deref())
+                .and_then(|handle| self.kakao_tracker.verified(handle)).cloned()
+        } else { None };
         self.clipboard_busy = true;
         self.ocr_processing =
             self.clipboard_monitor.kind() == clipboard_intake::ClipboardKind::Image;
@@ -410,20 +452,22 @@ impl BandoEgui {
         });
     }
 
-    fn accept_clipboard_text(&mut self, text: String, order_type: OrderType, ctx: &egui::Context) {
+    fn accept_clipboard_text(&mut self, text: String, order_type: OrderType,
+        chat: Option<ChatWindow>, ctx: &egui::Context) {
         if text.trim().is_empty() {
             self.clipboard_error = Some("발주 원문이 비어 있습니다.".into());
             return;
         }
         if self.raw_source != text && !self.raw_source.trim().is_empty() {
             // Exact replacement confirmation from the existing React intake.
-            self.pending_replace = Some(PendingReplace { text, order_type });
+            self.pending_replace = Some(PendingReplace { text, order_type, chat });
             return;
         }
-        self.apply_intake_text(text, order_type, ctx);
+        self.apply_intake_text(text, order_type, chat, ctx);
     }
 
-    fn apply_intake_text(&mut self, text: String, order_type: OrderType, ctx: &egui::Context) {
+    fn apply_intake_text(&mut self, text: String, order_type: OrderType,
+        chat: Option<ChatWindow>, ctx: &egui::Context) {
         if text.trim().is_empty() { return; }
         if self.active_id.is_none() {
             self.new_reception(ctx);
@@ -432,6 +476,9 @@ impl BandoEgui {
         self.raw_source = text;
         self.order_type = order_type;
         self.source_editing = true;
+        if let Some(chat) = chat {
+            self.bind_chat_to_active(chat, ctx);
+        }
         self.clipboard_error = None;
         if changed {
             self.clear_source_analysis();
@@ -449,6 +496,7 @@ impl BandoEgui {
                 self.clipboard_receiver = None;
                 self.clipboard_busy = false;
                 self.ocr_processing = false;
+                let intake_chat = self.clipboard_chat.take();
                 if self.clipboard_cancel.swap(false, Ordering::AcqRel) {
                     // User cancellation wins even if a completed OCR result
                     // raced with the Cancel click. Never open the review.
@@ -456,7 +504,7 @@ impl BandoEgui {
                 }
                 match result {
                     Ok(ClipboardReceipt::Text(text)) => {
-                        self.accept_clipboard_text(text, order_type, ctx);
+                        self.accept_clipboard_text(text, order_type, intake_chat, ctx);
                     }
                     Ok(ClipboardReceipt::Ocr { text, image }) => {
                         if text.chars().count() > 20_000 {
@@ -479,6 +527,7 @@ impl BandoEgui {
                             texture,
                             width: image.width,
                             height: image.height,
+                            chat: intake_chat,
                         });
                     }
                     Err(error) if error == "OCR_CANCELLED" => {}
@@ -492,6 +541,7 @@ impl BandoEgui {
                 self.clipboard_receiver = None;
                 self.clipboard_busy = false;
                 self.ocr_processing = false;
+                self.clipboard_chat = None;
                 if self.clipboard_cancel.swap(false, Ordering::AcqRel) {
                     return;
                 }
@@ -507,7 +557,7 @@ impl BandoEgui {
     /// to SQLite or sent to the Rust business engine before acceptance.
     fn show_ocr_review(&mut self, ctx: &egui::Context) {
         let mut close = false;
-        let mut apply: Option<(String, OrderType, bool)> = None;
+        let mut apply: Option<(String, OrderType, bool, Option<ChatWindow>)> = None;
         if let Some(review) = self.ocr_review.as_mut() {
             let mut open = true;
             egui::Window::new("OCR 문자 인식 검토")
@@ -550,27 +600,27 @@ impl BandoEgui {
                             } else {
                                 format!("{}\n{}", self.raw_source.trim_end(), review.edited_text.trim())
                             };
-                            apply = Some((appended, review.order_type, false));
+                            apply = Some((appended, review.order_type, false, review.chat.clone()));
                         }
                         if theme::action(ui, "원문 교체", ButtonRole::Primary, can_apply).clicked() {
                             apply = Some((
                                 review.edited_text.trim().to_owned(),
-                                review.order_type, true
+                                review.order_type, true, review.chat.clone()
                             ));
                         }
                     });
                 });
             if !open { close = true; }
         }
-        if let Some((raw, kind, replacing)) = apply {
+        if let Some((raw, kind, replacing, chat)) = apply {
             self.ocr_review = None;
             self.discard_ocr_confirm = false;
             if replacing {
-                self.accept_clipboard_text(raw, kind, ctx);
+                self.accept_clipboard_text(raw, kind, chat, ctx);
             } else {
                 // Append preserves the original React behavior: no redundant
                 // replacement confirmation because the old source remains.
-                self.apply_intake_text(raw, kind, ctx);
+                self.apply_intake_text(raw, kind, chat, ctx);
             }
         } else if close {
             if self.ocr_review.as_ref().is_some_and(|review|
@@ -622,7 +672,7 @@ impl BandoEgui {
             });
         if accept {
             if let Some(next) = self.pending_replace.take() {
-                self.apply_intake_text(next.text, next.order_type, ctx);
+                self.apply_intake_text(next.text, next.order_type, next.chat, ctx);
             }
         } else if cancel {
             self.pending_replace = None;
