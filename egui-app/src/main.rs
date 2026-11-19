@@ -609,9 +609,6 @@ impl BandoEgui {
     fn details_and_freight(&mut self, ui: &mut Ui) {
         let full_height = ui.available_height();
         let has_result = self.analysis.is_some();
-        let selected = self.analysis.as_ref().and_then(|analysis| {
-            native_engine::recipients(analysis).get(self.selected_recipient)
-        });
         let count = self.analysis.as_ref().map(|analysis| {
             native_engine::recipients(analysis).len()
         }).unwrap_or(0);
@@ -725,6 +722,12 @@ impl BandoEgui {
         if let Some(index) = next_recipient {
             self.selected_recipient = index;
         }
+        // Derive the displayed items AFTER changing the recipient selection.
+        // Otherwise the details pane switches immediately but the item pane
+        // can display the previous recipient for one frame.
+        let selected = self.analysis.as_ref().and_then(|analysis| {
+            native_engine::recipients(analysis).get(self.selected_recipient)
+        });
         ui.add_space(PANEL_GAP);
 
         let remaining = ui.available_height().max(230.0);
