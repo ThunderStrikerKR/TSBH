@@ -579,6 +579,9 @@ impl BandoEgui {
             self.clear_source_analysis();
             self.source_editing = false;
         } else if begin_input {
+            // Never mix example cards or example money with actual Rust
+            // recognition output once an employee opens a real source.
+            self.sample = false;
             self.source_editing = true;
         }
         if analyze_requested {
