@@ -2039,30 +2039,32 @@ impl BandoEgui {
                                 ("휴대전화",&mut mobile,components::FieldKind::Telephone,"mobile"),
                             ] {
                                 let response=components::labeled_field(ui,label,value,kind,false);
+                                let key=source_highlight::key(recipient_id,recipient_id,field);
                                 if response.hovered() {
-                                    hovered_detail=Some(source_highlight::key(
-                                        recipient_id,recipient_id,field
-                                    ));
+                                    hovered_detail=Some(key.clone());
                                 }
+                                source_highlight::paint_active(
+                                    ui,&response,&key,self.link_hover.active.as_ref()
+                                );
                             }
                             if !phone.trim().is_empty() {
                                 let response=components::labeled_field(
                                     ui,"전화",&mut phone,components::FieldKind::Telephone,false
                                 );
-                                if response.hovered() {
-                                    hovered_detail=Some(source_highlight::key(
-                                        recipient_id,recipient_id,"phone"
-                                    ));
-                                }
+                                let key=source_highlight::key(recipient_id,recipient_id,"phone");
+                                if response.hovered() {hovered_detail=Some(key.clone());}
+                                source_highlight::paint_active(
+                                    ui,&response,&key,self.link_hover.active.as_ref()
+                                );
                             }
                             let response=components::labeled_field(
                                 ui,"요청 메시지",&mut note,components::FieldKind::Text,false
                             );
-                            if response.hovered() {
-                                hovered_detail=Some(source_highlight::key(
-                                    recipient_id,recipient_id,"note"
-                                ));
-                            }
+                            let key=source_highlight::key(recipient_id,recipient_id,"note");
+                            if response.hovered() {hovered_detail=Some(key.clone());}
+                            source_highlight::paint_active(
+                                ui,&response,&key,self.link_hover.active.as_ref()
+                            );
                         }
                     }
                 });
