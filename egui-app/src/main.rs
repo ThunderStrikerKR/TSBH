@@ -145,7 +145,6 @@ struct BandoEgui {
     clipboard_monitor: ClipboardMonitor,
     kakao_tracker: KakaoTracker,
     kakao_connected: bool,
-    kakao_choice: Option<String>,
     clipboard_chat: Option<ChatWindow>,
     clipboard_busy: bool,
     ocr_processing: bool,
@@ -192,7 +191,6 @@ impl Default for BandoEgui {
             clipboard_monitor: ClipboardMonitor::default(),
             kakao_tracker: KakaoTracker::default(),
             kakao_connected: false,
-            kakao_choice: None,
             clipboard_chat: None,
             clipboard_busy: false,
             ocr_processing: false,
@@ -312,7 +310,6 @@ impl BandoEgui {
             return;
         }
         self.kakao_connected = true;
-        self.kakao_choice = Some(chat.handle.clone());
         let mut changed = false;
         if let Some(id) = self.active_id.as_deref() {
             if let Some(item) = self.drafts.iter_mut().find(|item| item.id == id) {
@@ -951,11 +948,17 @@ impl BandoEgui {
             return;
         }
         self.clipboard_chat = if self.kakao_connected {
-            // An explicit in-app chat choice is stronger than a recently
-            // focused DIFFERENT chat. Avoid silently binding the wrong dealer.
-            self.kakao_choice.as_deref()
-                .or_else(|| self.kakao_tracker.recent_focus())
-                .and_then(|handle| self.kakao_tracker.verified(handle)).cloned()
+            // Existing contract: observe the actual KakaoTalk conversation
+            // when an order is pasted, not when a user presses Connect.
+            // A recently focused, OS-verified chat is the strongest source.
+            // When there is exactly one chat, it is unambiguous even if
+            // foreground focus has already moved to BANDO HUB.
+            let focused = self.kakao_tracker.recent_focus()
+                .and_then(|handle| self.kakao_tracker.verified(handle)).cloned();
+            focused.or_else(|| {
+                let chats=self.kakao_tracker.chats();
+                if chats.len()==1 {chats.first().cloned()} else {None}
+            })
         } else { None };
         self.clipboard_busy = true;
         self.ocr_processing =
@@ -1453,19 +1456,18 @@ impl BandoEgui {
     }
 
     fn kakao_pane(&mut self, ui: &mut Ui) {
-        // Preserve the allocated four-column panel geometry. Native Kakao
-        // metadata is listed here; no window movement or reparenting occurs.
+        // The KakaoTalk dock is an OS foreground surface, not a chat chooser.
+        // The left pane is reserved for that window. Do not render chat titles,
+        // a selection list, or dealer-identification instructions here.
+        // Chat metadata is used only at the subsequent order intake boundary.
         let pane_width = ui.available_width();
         let pane_height = ui.available_height();
-        let chats = self.kakao_tracker.chats().to_vec();
         let connected = self.kakao_connected;
-        let selected = self.kakao_choice.clone();
         let mut connect = false;
-        let mut choose: Option<ChatWindow> = None;
         theme::docked_pane_frame().show(ui, |ui| {
-            let frame_inset = 2.0 * theme::SECTION_PADDING;
-            let inner_width = (pane_width - frame_inset).max(1.0);
-            let inner_height = (pane_height - frame_inset).max(1.0);
+            let inset = 2.0 * theme::SECTION_PADDING;
+            let inner_width = (pane_width - inset).max(1.0);
+            let inner_height = (pane_height - inset).max(1.0);
             ui.set_min_size(Vec2::new(inner_width, inner_height));
             if !connected {
                 ui.vertical_centered(|ui| {
@@ -1477,44 +1479,12 @@ impl BandoEgui {
                         connect = true;
                     }
                 });
-            } else {
-                ui.label(typography::subsection_heading("카카오톡 대화 선택"));
-                ui.label(typography::caption(
-                    "현재 창 제목으로 발주처를 확인합니다. 메시지는 읽지 않습니다."
-                ));
-                if chats.is_empty() {
-                    ui.label(typography::caption("열려 있는 카카오톡 대화창이 없습니다."));
-                } else {
-                    egui::ScrollArea::vertical()
-                        .id_salt("verified-kakao-chat-list")
-                        .max_height((inner_height - 70.0).max(1.0))
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            for chat in &chats {
-                                let role = if selected.as_deref() == Some(chat.handle.as_str()) {
-                                    ButtonRole::ActiveNavigation
-                                } else {
-                                    ButtonRole::Quiet
-                                };
-                                if theme::action(ui, &chat.title, role, true).clicked() {
-                                    choose = Some(chat.clone());
-                                }
-                                components::soft_divider(ui);
-                            }
-                        });
-                }
             }
         });
         if connect {
+            // Connectivity is separate from matching a dealer. Do not bind an
+            // arbitrary chat or start recognition on this button press.
             self.kakao_connected = true;
-            // An explicit Connect click with a single verified chat is
-            // unambiguous. With multiple chat windows the user must choose.
-            if chats.len() == 1 {
-                choose = chats.first().cloned();
-            }
-        }
-        if let Some(chat) = choose {
-            self.bind_chat_to_active(chat, ui.ctx());
         }
     }
 
