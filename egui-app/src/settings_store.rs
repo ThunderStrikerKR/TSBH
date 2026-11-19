@@ -243,6 +243,49 @@ pub fn patch(changes:Value,expected:Value)->Result<Value,String>{
     if using_business(){patch_business(changes,expected)}
     else{patch_local(changes,expected)}
 }
+/// Read-only archive/list, or explicitly authorized Tauri backup/restore.
+/// The bridge uses exactly the original backup_manager and receipt_archive
+/// functions; local preview SQLite is never represented as operational data.
+pub fn data(operation:&str,filename:Option<&str>)->Result<Value,String>{
+    if !using_business(){
+        return Err("운영 감사 기록과 백업을 조회하려면 업무 DB 연결이 필요합니다.".into());
+    }
+    if !matches!(operation,"archive"|"backups"|"backup"|"restore"){
+        return Err("허용되지 않은 데이터 관리 작업입니다.".into());
+    }
+    if matches!(operation,"backup"|"restore") && !writable_business(){
+        return Err("현재 운영 데이터는 읽기 전용입니다. 백업·복원 권한을 확인하세요.".into());
+    }
+    let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
+        .ok_or("Tauri 업무 데이터 도우미가 연결되지 않았습니다.")?;
+    if !std::path::Path::new(&helper).is_file(){
+        return Err("Tauri 업무 데이터 도우미 실행파일을 찾지 못했습니다.".into());
+    }
+    let payload=json!({"operation":operation,"filename":filename});
+    let mut child=Command::new(helper)
+        .arg("--bando-egui-settings-data")
+        .stdin(Stdio::piped()).stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn().map_err(|_|"Tauri 데이터 관리 도우미를 실행하지 못했습니다.".to_owned())?;
+    let mut input=child.stdin.take()
+        .ok_or("데이터 관리 요청 채널이 열리지 않았습니다.")?;
+    input.write_all(payload.to_string().as_bytes())
+        .map_err(|_|"데이터 관리 요청을 전달하지 못했습니다.".to_owned())?;
+    drop(input);
+    let result=child.wait_with_output()
+        .map_err(|_|"데이터 관리 응답을 받을 수 없습니다.".to_owned())?;
+    if result.stdout.len()>16_000_000{
+        return Err("데이터 관리 응답 크기가 허용 범위를 초과했습니다.".into());
+    }
+    let response:Value=serde_json::from_slice(&result.stdout)
+        .map_err(|_|"Tauri 데이터 관리 응답이 잘못되었습니다.".to_owned())?;
+    if !result.status.success() || response["ok"]!=Value::Bool(true){
+        return Err(response.get("error").and_then(Value::as_str)
+            .unwrap_or("데이터 관리 작업이 실패했습니다.").to_owned());
+    }
+    Ok(response.get("result").cloned().unwrap_or(Value::Null))
+}
+
 pub fn new_account_id()->String{
     let time=SystemTime::now().duration_since(UNIX_EPOCH)
         .map(|time|time.as_nanos()).unwrap_or(0);
