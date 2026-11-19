@@ -380,3 +380,13 @@ $env:BANDO_EGUI_ENABLE_WORKING_COMMIT = "1"
 - 수취인 행은 원본의 `수취인 64px | 상품 가변 | 운임 68px`을 따른다. 품목은 `#303030` 표면·`#555555` 경계의 컴팩트 칩으로 표시한다. 실제 **선택은 주황 `#f59e0b`**, **미리보기는 파랑**이다. 복제 미리보기 카드와 배송행에 선택 색을 잘못 중복 적용하지 않고, 미리보기는 현재 오른쪽 패널 범위에서만 렌더한다. 빈 목록 문구도 React 원본을 사용한다.
 - 본문 4분할 비율, 공통 내비게이션, 카카오톡 HWND 도킹, 운영 주문·운임·금액의 Rust 계산, 격리 SQLite 자동 저장 구조는 수정하지 않았다.
 - **검증 경계:** Windows `cargo check`를 통과하더라도 화면 동등성은 사용자 제공 원본 캡처와 egui 실제 실행 화면의 같은 창 크기/DPI 비교 전까지 **보류**한다. 결제·배송 상태 변경·묶음 관리·삭제·복원의 정식 동작은 별도 기능 이전 대상이다. 기존 코드가 있다는 이유로 통합 지침 준수 및 기능 이전 완료로 보고하지 않는다.
+
+## 51차: 설정 화면 Rust + egui 이전 (2026-11-20)
+
+- **원본 기준:** `src/app/SettingsView.tsx`, `src/SettingsPanel.tsx`, `src/ui/AccountPicker.tsx`, `src/ReceiptArchive.tsx`, `src/ManagementUI.tsx:BackupPanel`, `src/styles/management-layout.css`, `src/shared/meaningful-changes.ts`; 기존 Tauri `src-tauri/src/lib.rs::settings_patch`, `receipt_archive`, `backup_manager` 및 `validate_accounts`를 재사용한다.
+- **UI:** 기본 설정/파일 관리/데이터 관리/시스템 4탭을 기존 공통 관리 탭·패널·액션 버튼 규칙으로 이식. 화면 크기 90/100/110/125% 변경 시 해당 키만 즉시 저장, 작업자, 발송인, 입금 계좌 CRUD, 반도스탠드·반도몰 추천 계좌 선택, 파일 보관 경로 설정, 실제 감사 기록 조회/검색/정정 내용, 수동 백업/백업 목록/복구 확인, 실제 버전·Git 빌드 ID를 표시한다. 탭/페이지 이탈 시 저장/저장 안 함/취소는 변경사항이 있을 때만 표시한다.
+- **설정 저장 소유권:** 격리 작업공간은 `egui-preview.sqlite3`의 별도 `egui_settings` 표를 사용한다. `settings_store`는 필드별 CAS·revision·계좌 ID 참조 보호를 수행하고, 거래처 관리가 동일 egui 계좌 목록을 읽도록 연결했다. 운영 설정은 자동 탐색·수정하지 않는다. 운영 DB에 연결할 때 `BANDO_EGUI_BUSINESS_DB`에 명시한 v2 DB를 읽기 전용으로 확인한다.
+- **운영 DB 쓰기(명시적 허용):** `BANDO_EGUI_BUSINESS_DB` (DB 경로), `BANDO_EGUI_TAURI_HELPER` (현재 버전의 Tauri EXE), `BANDO_EGUI_ENABLE_SETTINGS_WRITE=1`의 세 조건이 필요하다. Tauri의 기존 `apply_settings_patch`는 React IPC 명령과 egui 원샷 CLI가 공유하므로 같은 설정별 기준값 비교·계좌 참조 검사·revision 체크·저장 경로를 실행한다. 임의 SQL 설정 패치를 하지 않는다. 외부 HTTP 게이트웨이가 지원하지 않으면 실패로 표시하고 로컬로 폴백하지 않는다.
+- **데이터 관리:** 기존 `receipt_archive_from_conn` 및 `backup_manager::{manual_backup,list_backups,restore_backup}`를 원샷 Tauri 데이터 CLI로 호출한다. 읽기는 운영 DB RO, 쓰기는 명시적 허용 및 복구 확인창 필수. 복구 시 기존 Rust가 생성하는 복원 전 안전 백업·검증을 그대로 사용하고 egui 캐시를 무효화한다.
+- **파일 관리:** Windows 시스템 폴더 선택, 설정된 폴더 열기, Excel 보관함 선택 시 원본의 공장 발송·매장 발송·공장 회신·상품 관리·거래처 관리 5개 하위 폴더 생성을 반영했다. **주의: 독립 egui 프로세스에서 실행되는 자동 수신 감시/파일 가져오기(OCR 및 공장 회신 이벤트)는 이 단계에 아직 이전하지 않았다.** 경로 설정 저장과 자동 파일 감시 실행을 동일한 완료 상태로 보고하지 않는다.
+- **잔여 이전:** `HelpTooltip` 원본의 마우스 전용 500ms 진입, 클릭 고정 및 단계별 설명 UI, 파일 자동 수신 watcher/처리, 설정 행 비율·필드 크기의 세부 CSS 동등성. 원본 코드가 포함된 기능과 기능별 실제 실행 동등성 검증은 별도로 남는다. GUI 검증은 사용자 최신 지시로 실시하지 않는다. 기존 React/Tauri 경로는 삭제하지 않았고 전체 회귀 테스트는 실행하지 않는다.
