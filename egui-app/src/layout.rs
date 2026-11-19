@@ -4,8 +4,18 @@
 
 pub const PANEL_COUNT: usize = 4;
 pub const SPLITTER: f32 = 6.0;
-pub const MIN_WIDTHS: [f32; PANEL_COUNT] = [200.0, 250.0, 250.0, 420.0];
-pub const DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.0, 29.0, 29.0, 22.0];
+// Measured from the original 1920x1080 React reception screenshot:
+// column interiors are 390/531/529/418 physical pixels. Use these
+// proportions for the initial egui layout, not a visually guessed split.
+// The previous last-pane 420pt minimum forced it to ~25.4% on this screen
+// despite a reference width of only 22.4%. 350pt clears that clamp while
+// retaining a readable minimum on smaller windows.
+pub const MIN_WIDTHS: [f32; PANEL_COUNT] = [200.0, 250.0, 250.0, 350.0];
+pub const DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.9, 28.4, 28.3, 22.4];
+const LEGACY_DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.0, 29.0, 29.0, 22.0];
+// Original review section: ~262 / 994 screen-content pixels.
+// The lower horizontal divider is shared with the source/message column.
+pub const DETAIL_REVIEW_RATIO: f32 = 0.264;
 pub const SOURCE_MIN: f32 = 275.0;
 pub const MESSAGE_MIN: f32 = 160.0;
 pub const VERTICAL_DEFAULT: f32 = 0.5;
@@ -74,7 +84,16 @@ impl LayoutState {
         if ratio_total <= 0.0 {
             return Self::default();
         }
-        Self { ratios, source_ratio: parts[PANEL_COUNT].clamp(0.05, 0.95) }
+        // Some installations saved the old default ratios with layout.txt.
+        // Update only that exact uncustomized preset. Preserved, manually
+        // dragged layouts are not normalized or overwritten.
+        let unmodified_legacy_preset = ratios.iter()
+            .zip(LEGACY_DEFAULT_RATIOS.iter())
+            .all(|(value, legacy)| (*value - *legacy).abs() < 0.00001);
+        Self {
+            ratios: if unmodified_legacy_preset { DEFAULT_RATIOS } else { ratios },
+            source_ratio: parts[PANEL_COUNT].clamp(0.05, 0.95),
+        }
     }
 
     pub fn as_string(&self) -> String {
@@ -155,7 +174,7 @@ impl LayoutState {
         let (shared_upper, _) = self.vertical_heights(available);
         let budget = (shared_upper - SPLITTER).max(0.0);
         let review = if budget >= 330.0 {
-            (available * 0.27).clamp(150.0, budget - 180.0)
+            (available * DETAIL_REVIEW_RATIO).clamp(150.0, budget - 180.0)
         } else {
             budget * (150.0 / 330.0)
         };
