@@ -16,6 +16,8 @@ use crate::preview_store::{PreviewStore, WorkingSource};
 mod recognition;
 #[path = "../../src-tauri/src/business_core/rules/mod.rs"]
 mod rules;
+#[path = "../../src-tauri/src/business_core/output/mod.rs"]
+mod output;
 #[path = "../../src-tauri/src/business_core/catalog_clients/title_clients.rs"]
 mod native_title_clients;
 #[path = "../../src-tauri/src/business_core/catalog_clients/client_search.rs"]
@@ -38,6 +40,7 @@ pub enum ReadOperation {
     SearchProductsWithUrls,
     PreviewWorkflow,
     ReadShipments,
+    RenderAutomaticMessage,
 }
 
 impl ReadOperation {
@@ -51,6 +54,7 @@ impl ReadOperation {
             | Self::ChangeOrderClient | Self::RepriceOrder
             | Self::CalculatePrice | Self::ManualClassification
             | Self::PreviewWorkflow | Self::ReadShipments => "rules",
+            Self::RenderAutomaticMessage => "output",
         }
     }
 
@@ -71,6 +75,7 @@ impl ReadOperation {
             Self::SearchProductsWithUrls => "search_products_with_urls",
             Self::PreviewWorkflow => "preview_workflow",
             Self::ReadShipments => "read_shipments",
+            Self::RenderAutomaticMessage => "render_automatic_message",
         }
     }
 }
@@ -244,6 +249,9 @@ impl BandoGateway for LocalGateway {
             }
             ReadOperation::SearchProductsWithUrls => {
                 crate::catalog_query_bridge::search_products(&payload)
+            }
+            ReadOperation::RenderAutomaticMessage => {
+                output::execute(operation.operation(),payload)
             }
         }
     }
