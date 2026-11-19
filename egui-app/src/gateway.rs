@@ -16,12 +16,16 @@ use crate::preview_store::{PreviewStore, WorkingSource};
 mod recognition;
 #[path = "../../src-tauri/src/business_core/rules/mod.rs"]
 mod rules;
+#[path = "../../src-tauri/src/business_core/catalog_clients/title_clients.rs"]
+mod native_title_clients;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ReadOperation {
     AnalyzeOrder,
     ResolveRetailUnitPrice,
     DetectRemoteDeliveryArea,
+    AutoMatchReceptionClient,
+    ReceptionClientCandidates,
 }
 
 impl ReadOperation {
@@ -29,6 +33,7 @@ impl ReadOperation {
         match self {
             Self::AnalyzeOrder => "recognition",
             Self::ResolveRetailUnitPrice | Self::DetectRemoteDeliveryArea => "rules",
+            Self::AutoMatchReceptionClient | Self::ReceptionClientCandidates => "catalog_clients",
         }
     }
 
@@ -37,14 +42,17 @@ impl ReadOperation {
             Self::AnalyzeOrder => "analyze_order",
             Self::ResolveRetailUnitPrice => "resolve_unit_price",
             Self::DetectRemoteDeliveryArea => "detect_remote_delivery_area",
+            Self::AutoMatchReceptionClient => "auto_match_reception_client",
+            Self::ReceptionClientCandidates => "reception_client_candidates",
         }
     }
 }
 
 pub trait BandoGateway: Send + Sync {
     fn label(&self) -> &'static str;
-    /// A minimal catalog snapshot (products, aliases, brands). No orders,
-    /// clients, workflow or other persisted operational state.
+    /// A minimal catalog snapshot (products, aliases, brands), plus an
+    /// explicitly configured name-only client index. No operational database,
+    /// confirmed orders, customer contacts or workflow state.
     /// This method does not persist or mutate anything.
     fn load_catalog(&self) -> Result<Value, String>;
     /// The currently open, unconfirmed source in a separate storage domain.
@@ -65,7 +73,7 @@ impl BandoGateway for LocalGateway {
     }
 
     fn load_catalog(&self) -> Result<Value, String> {
-        PreviewStore::initialize()?.load_catalog()
+        crate::client_directory::attach(PreviewStore::initialize()?.load_catalog()?)
     }
 
     fn load_working_source(&self) -> Result<WorkingSource, String> {
@@ -84,6 +92,10 @@ impl BandoGateway for LocalGateway {
             ReadOperation::ResolveRetailUnitPrice
             | ReadOperation::DetectRemoteDeliveryArea => {
                 rules::execute(operation.operation(), payload)
+            }
+            ReadOperation::AutoMatchReceptionClient
+            | ReadOperation::ReceptionClientCandidates => {
+                native_title_clients::execute(operation.operation(), &payload)
             }
         }
     }
