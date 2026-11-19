@@ -123,6 +123,7 @@ mod native {
     const SWP_NOZORDER:u32=0x0004;
     const SWP_NOACTIVATE:u32=0x0010;
     const SWP_FRAMECHANGED:u32=0x0020;
+    const HWND_TOP:Hwnd=0;
     const HWND_TOPMOST:Hwnd=-1;
     const HWND_NOTOPMOST:Hwnd=-2;
     const PROCESS_QUERY_LIMITED_INFORMATION:u32=0x1000;
@@ -602,7 +603,7 @@ mod native {
                     chats.contains(chat) && unsafe{IsIconic(*chat)}==0
                 );
                 if let Some(top)=visible_chat.or(base) {
-                    if unsafe{SetWindowPos(top,0,0,0,0,0,
+                    if unsafe{SetWindowPos(top,HWND_TOP,0,0,0,0,
                         SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)}==0 {
                         return Err(os("카카오톡 창 표시 순서 변경 실패"));
                     }
