@@ -370,6 +370,51 @@ pub fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     );
 }
 
+/// Repaint the complete reception splitter topology in ONE parent layer.
+/// Bridges and junctions use the SAME measured pane-divider coordinates.
+/// Painting only the bridge's left junction left a visible gap where its
+/// right endpoint met a vertical bar at fractional DPI scaling.
+pub fn paint_dock_network(
+    ui: &Ui,
+    verticals: &[(Rect, bool)],
+    bridges: &[(usize, usize, f32)],
+) {
+    // All interactive splitter surfaces were already reserved and painted
+    // by their owning pane. This final pass is strictly decorative.
+    for &(rect, highlighted) in verticals {
+        paint_dock_axis_line(ui, rect, true, highlighted);
+    }
+    let mut intersections: Vec<(usize, f32)> = Vec::new();
+    for &(left, right, center_y) in bridges {
+        if left >= verticals.len() || right >= verticals.len() { continue; }
+        let x_start = verticals[left].0.center().x;
+        let x_end = verticals[right].0.center().x;
+        let area = Rect::from_min_max(
+            egui::pos2(x_start, center_y - crate::layout::SPLITTER / 2.0),
+            egui::pos2(x_end, center_y + crate::layout::SPLITTER / 2.0),
+        );
+        paint_dock_axis_line(ui, area, false, false);
+        for index in [left, right] {
+            if !intersections.iter().any(|&(existing, y)| {
+                existing == index && (y - center_y).abs() < 0.01
+            }) {
+                intersections.push((index, center_y));
+            }
+        }
+    }
+    // The intersection painter owns BOTH endpoint corners of EVERY bridge.
+    // Centering one bar independently inside a clipped child rect no longer
+    // leaves a discontinuity between two neighboring strokes.
+    for (index, center_y) in intersections {
+        let gutter = verticals[index].0;
+        let joint = Rect::from_center_size(
+            egui::pos2(gutter.center().x, center_y),
+            Vec2::splat(crate::layout::SPLITTER),
+        );
+        paint_dock_junction(ui, joint, verticals[index].1);
+    }
+}
+
 /// Shared management tab roles (content width, no full-page stretching).
 pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
     let mut pressed=None;
