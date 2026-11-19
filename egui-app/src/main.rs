@@ -72,12 +72,12 @@ struct BandoEgui {
     dragging_vertical: Option<VerticalSplitDrag>,
     raw_source: String,
     source_editing: bool,
-    analysis: Option<serde_json::Value>,
+    analysis: Option<native_engine::NativeAnalysis>,
     analysis_error: Option<String>,
     selected_recipient: usize,
     analysis_request: u64,
     analysis_pending: bool,
-    analysis_receiver: Option<Receiver<(u64, Result<serde_json::Value, String>)>>,
+    analysis_receiver: Option<Receiver<(u64, Result<native_engine::NativeAnalysis, String>)>>,
 }
 
 impl Default for BandoEgui {
@@ -705,6 +705,33 @@ impl BandoEgui {
                         components::labeled_field(ui, "전화", &mut phone, components::FieldKind::Telephone, false);
                     }
                     components::labeled_field(ui, "요청 메시지", &mut note, components::FieldKind::Text, false);
+                    if let Some(reference) = self.analysis.as_ref()
+                        .and_then(|analysis| analysis.reference.get(self.selected_recipient))
+                    {
+                        ui.add_space(4.0);
+                        if let Some(remote) = &reference.remote {
+                            let (caption, color) = match remote.get("status")
+                                .and_then(serde_json::Value::as_str)
+                            {
+                                Some("auto") => (
+                                    "도서산간 자동 체크 권장 · 실제 적용 전 확인",
+                                    theme::SELECTED_ORDER,
+                                ),
+                                Some("review") => (
+                                    "도서산간 후보 · 직원 확인 후 체크 결정",
+                                    theme::SELECTED_ORDER,
+                                ),
+                                _ => (
+                                    "자동 판정 없음 · 일반지역 확정은 아님",
+                                    theme::SECONDARY,
+                                ),
+                            };
+                            ui.colored_label(color, caption);
+                        } else if let Some(error) = &reference.remote_error {
+                            ui.colored_label(theme::DANGER,
+                                format!("도서산간 판정 오류: {error}"));
+                        }
+                    }
                 } else {
                     ui.label(theme::caption("인식된 수취인 정보가 없습니다."));
                 }
@@ -744,13 +771,31 @@ impl BandoEgui {
                         .id_salt("recognized-items")
                         .max_height((ui.available_height() - 115.0).max(90.0))
                         .show(ui, |ui| {
-                            for item in items {
+                            for (item_index, item) in items.iter().enumerate() {
                                 ui.horizontal(|ui| {
                                     ui.label(theme::body(&native_engine::item_title(item)));
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                         ui.label(theme::caption(&native_engine::item_quantity(item)));
                                     });
                                 });
+                                let price_reference = self.analysis.as_ref()
+                                    .and_then(|analysis| analysis.reference.get(self.selected_recipient))
+                                    .and_then(|reference| reference.item_prices.get(item_index));
+                                if let Some(price) = price_reference {
+                                    if let Some(retail) = price.retail {
+                                        ui.label(theme::caption(&format!(
+                                            "기본 시드 소매가 참고: {} · 청구금액 아님",
+                                            native_engine::display_won(retail)
+                                        )));
+                                    } else if let Some(error) = &price.error {
+                                        ui.colored_label(theme::DANGER,
+                                            format!("기본 소매가 조회 오류: {error}"));
+                                    } else {
+                                        ui.label(theme::caption(
+                                            "기본 시드 가격 없음 또는 상품·옵션 미확정"
+                                        ));
+                                    }
+                                }
                                 let issues = item.get("issues").and_then(serde_json::Value::as_array);
                                 if let Some(issues) = issues {
                                     for issue in issues.iter().take(3) {
@@ -766,7 +811,7 @@ impl BandoEgui {
                     ui.label(theme::caption("상품 인식 결과가 없습니다."));
                 }
                 ui.add_space(8.0);
-                ui.label(theme::caption("운임·단가 미연결 · 인식 결과는 주문으로 저장되지 않습니다."));
+                ui.label(theme::caption("실제 거래처 단가·운임·청구금액 미연결 · DB 저장 안 함"));
             } else if self.sample {
                 ui.label(theme::body("709-1 / 블랙 / 비타공 상판 · 1개"));
                 components::soft_divider(ui);
