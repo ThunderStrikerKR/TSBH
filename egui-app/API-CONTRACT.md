@@ -68,9 +68,9 @@ GET /api/v1/working-source
 PUT /api/v1/working-source
 ```
 
-GET 응답: `{"raw":"텍스트 원문","revision":7}`.
+GET 응답: `{"raw":"텍스트 원문","orderType":"AGENCY","revision":7}`. `orderType`은 `AGENCY`(대리발송) 또는 `DEALER`(대리점 납품)만 허용한다.
 
-PUT 요청: `{"raw":"편집된 원문","expectedRevision":7}`; 성공 응답은 `{"revision":8}`이다. 서버는 SQLite 트랜잭션/조건부 revision 비교로 동시 편집 충돌을 검증하고, 최신 상태가 다르면 HTTP `409 Conflict`를 반환해야 한다. 프리뷰 편집기 원문은 업무용 주문 확인 완료나 주문내역 이전을 의미하지 않는다. 민감한 주소·연락처를 취급하므로 저장 위치와 접근 제어에 주의한다. 해당 서버 라우트는 아직 **구현되지 않았다.**
+PUT 요청: `{"raw":"편집된 원문","orderType":"DEALER","expectedRevision":7}`; 성공 응답은 `{"revision":8}`이다. 서버는 SQLite 트랜잭션/조건부 revision 비교로 동시 편집 충돌을 검증하고, 최신 상태가 다르면 HTTP `409 Conflict`를 반환해야 한다. 프리뷰 편집기 원문은 업무용 주문 확인 완료나 주문내역 이전을 의미하지 않는다. 민감한 주소·연락처를 취급하므로 저장 위치와 접근 제어에 주의한다. 해당 서버 라우트는 아직 **구현되지 않았다.**
 
 **(3) 읽기 전용 Rust 계산**
 
@@ -120,8 +120,19 @@ POST /api/v1/business-core
 
 - Windows: `%LOCALAPPDATA%\\BANDO-HUB-egui-preview\\egui-preview.sqlite3`
 - 홈 디렉터리 기반 환경: `~/.config/BANDO-HUB-egui-preview/egui-preview.sqlite3`
-- SQLite 테이블: `preview_meta`(DB 식별자), `catalog_snapshot`(상품·별칭·브랜드), `working_source`(현재 편집기 원문·revision).
+- SQLite 테이블: `preview_meta`(DB 식별자), `catalog_snapshot`(상품·별칭·브랜드), `working_source`(현재 편집기 원문·접수 유형·revision).
 - 카탈로그는 **처음 생성 시** 공식 내장 시드에서 넣는다. 이 원본 시드는 실제 운영 DB에서 최신 거래처·상품을 자동 수집한 것이 아니다.
 - 저장소가 다른 구조이거나 DB 식별자가 다르면 마이그레이션하거나 덮어쓰지 않고 시작 오류로 종료한다.
 - 원문은 입력 중 별도 스레드에서 debounce 후 SQLite에 저장하고, 정상 종료 때 마지막 대기 저장을 마무리한다. 충돌 및 저장 오류는 UI 하단에 표시한다.
 - **중요:** 이 저장 영역은 프로토타입의 편집기 지속성만 제공한다. 거래처·주문내역·결제·운임·발주서별 처리 상태가 완성됐다는 의미가 아니다.
+
+## 7. 클립보드 접수 타입 및 OCR 경계 (2026-11-19)
+
+- `clipboard_intake.rs`는 로컬 OS 클립보드 텍스트·이미지를 읽는 **로컬 UI 어댑터**다. 데이터 분류·상품 인식·가격 등 업무 판단은 여전히 `BandoGateway`를 경유해 기존 Rust 엔진에서 수행한다.
+- 텍스트는 `대리발송`(AGENCY) / `대리점 납품`(DEALER) 선택과 함께 기존 `working_source`로 자동저장한다. `order_type`은 `raw`와 같은 revision-checked SQLite 트랜잭션으로 저장되며 이전 단일 원문 작업 데이터는 스키마 열 추가만으로 보존한다.
+- 이미지가 들어오면 기존 `src-tauri/resources/ocr/recognize.py`와 PP-OCRv5 모델 실행 규약을 재사용한다. OCR 결과·이미지는 사용자가 `OCR 문자 인식 검토`에서 반영하기 전까지 저장하거나 Rust 업무 분석에 전달하지 않는다.
+- OCR 이미지 작업은 Worker 스레드, 임시 폴더, 180초 제한을 사용한다. 원본 클립보드는 수신 시 읽기만 하고, 외부 실행 파일은 명시적 실행 경로 `BANDO_OCR_RUNTIME_DIR` 또는 egui 실행파일 옆 `ocr` 폴더에서만 선택한다.
+- 클립보드에 유효한 텍스트/이미지가 없을 때 두 버튼은 비활성화된다. 400ms 간격의 상태 갱신과 Win32 시퀀스 번호로 반복 이미지 디코딩을 줄인다.
+- 이미 존재하는 원문과 다르면 React 원본에서 쓰던 교체 확인을 적용하며, 사용자 승인 없는 덮어쓰기는 하지 않는다.
+- HTTP 서버 구현체는 아직 없다. 향후 `working-source` 계약 구현 시 `orderType`을 함께 처리해야 하며, 필드 누락을 임의로 AGENCY로 기본 처리하지 않는다.
+- **제한:** 현재 저장소는 격리 egui 작업 원문 1건이다. 여러 발주서, 거래처 자동 연결, 영구 주문 내역, 공장 전달 등 실운영 업무 이전 완료로 취급하지 않는다.
