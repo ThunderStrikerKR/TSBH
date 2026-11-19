@@ -920,22 +920,69 @@ impl BandoEgui {
     }
 
     fn kakao_pane(&mut self, ui: &mut Ui) {
-        // A pane must occupy the exact rectangle allocated by the 4-column
-        // splitter. The previous content-driven Frame ended too early.
+        // Preserve the allocated four-column panel geometry. Native Kakao
+        // metadata is listed here; no window movement or reparenting occurs.
         let pane_width = ui.available_width();
         let pane_height = ui.available_height();
+        let chats = self.kakao_tracker.chats().to_vec();
+        let connected = self.kakao_connected;
+        let selected = self.kakao_choice.clone();
+        let mut connect = false;
+        let mut choose: Option<ChatWindow> = None;
         theme::docked_pane_frame().show(ui, |ui| {
             let frame_inset = 2.0 * theme::SECTION_PADDING;
             let inner_width = (pane_width - frame_inset).max(1.0);
             let inner_height = (pane_height - frame_inset).max(1.0);
             ui.set_min_size(Vec2::new(inner_width, inner_height));
-            ui.vertical_centered(|ui| {
-                ui.add_space(
-                    ((inner_height - theme::ACTION_EMPHASIZED_HEIGHT) / 2.0).max(0.0)
-                );
-                theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, false);
-            });
+            if !connected {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(
+                        ((inner_height - theme::ACTION_EMPHASIZED_HEIGHT) / 2.0).max(0.0)
+                    );
+                    if theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, true)
+                        .clicked() {
+                        connect = true;
+                    }
+                });
+            } else {
+                ui.label(typography::subsection_heading("카카오톡 대화 선택"));
+                ui.label(typography::caption(
+                    "현재 창 제목으로 발주처를 확인합니다. 메시지는 읽지 않습니다."
+                ));
+                if chats.is_empty() {
+                    ui.label(typography::caption("열려 있는 카카오톡 대화창이 없습니다."));
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt("verified-kakao-chat-list")
+                        .max_height((inner_height - 70.0).max(1.0))
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for chat in &chats {
+                                let role = if selected.as_deref() == Some(chat.handle.as_str()) {
+                                    ButtonRole::ActiveNavigation
+                                } else {
+                                    ButtonRole::Quiet
+                                };
+                                if theme::action(ui, &chat.title, role, true).clicked() {
+                                    choose = Some(chat.clone());
+                                }
+                                components::soft_divider(ui);
+                            }
+                        });
+                }
+            }
         });
+        if connect {
+            self.kakao_connected = true;
+            // An explicit Connect click with a single verified chat is
+            // unambiguous. With multiple chat windows the user must choose.
+            if chats.len() == 1 {
+                choose = chats.first().cloned();
+            }
+        }
+        if let Some(chat) = choose {
+            self.bind_chat_to_active(chat, ui.ctx());
+        }
     }
 
     fn reception(&mut self, ctx: &egui::Context) {
@@ -1592,9 +1639,12 @@ impl eframe::App for BandoEgui {
         self.poll_source_analysis();
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
-        if self.page == Page::Reception && !self.source_editing && self.raw_source.is_empty() {
-            self.clipboard_monitor.refresh();
+        if self.page == Page::Reception {
+            self.kakao_tracker.refresh();
             ctx.request_repaint_after(Duration::from_millis(450));
+            if !self.source_editing && self.raw_source.is_empty() {
+                self.clipboard_monitor.refresh();
+            }
         }
         if self.analysis_due_at.is_some_and(|at| Instant::now() >= at) {
             self.analysis_due_at = None;
