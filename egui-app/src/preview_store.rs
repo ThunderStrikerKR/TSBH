@@ -12,6 +12,7 @@ const SOURCE_LIMIT_BYTES: usize = 2 * 1024 * 1024;
 #[derive(Clone, Debug)]
 pub struct WorkingSource {
     pub raw: String,
+    pub order_type: String,
     pub revision: u64,
 }
 
@@ -66,6 +67,8 @@ impl PreviewStore {
                  CREATE TABLE working_source (
                      id INTEGER PRIMARY KEY CHECK(id=1),
                      raw TEXT NOT NULL,
+                     order_type TEXT NOT NULL DEFAULT 'AGENCY'
+                       CHECK(order_type IN ('AGENCY','DEALER')),
                      revision INTEGER NOT NULL CHECK(revision >= 0),
                      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                  );"
@@ -90,7 +93,8 @@ impl PreviewStore {
                     [catalog.to_string()],
                 ).map_err(|e| e.to_string())?;
                 conn.execute(
-                    "INSERT INTO working_source(id,raw,revision) VALUES(1,'',0)",
+                    "INSERT INTO working_source(id,raw,order_type,revision)
+                     VALUES(1,'','AGENCY',0)",
                     [],
                 ).map_err(|e| e.to_string())?;
                 conn.execute_batch("COMMIT;").map_err(|e| e.to_string())?;
@@ -104,6 +108,20 @@ impl PreviewStore {
                 let _ = fs::remove_file(&store.path);
                 return Err(error);
             }
+        }
+        // Non-destructive migration of the isolated egui preview database.
+        // Never touch Tauri operational tables or truncate an existing source.
+        let mut stmt = conn.prepare("PRAGMA table_info(working_source)")
+            .map_err(|e| e.to_string())?;
+        let columns = stmt.query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        if !columns.iter().any(|name| name == "order_type") {
+            conn.execute_batch(
+                "ALTER TABLE working_source ADD COLUMN order_type TEXT
+                 NOT NULL DEFAULT 'AGENCY'
+                 CHECK(order_type IN ('AGENCY','DEALER'))"
+            ).map_err(|e| format!("egui 접수 유형 마이그레이션 실패: {e}"))?;
         }
         Ok(store)
     }
@@ -136,18 +154,26 @@ impl PreviewStore {
 
     pub fn load_source(&self) -> Result<WorkingSource, String> {
         let conn = self.open_connection()?;
-        let (raw, rev): (String, i64) = conn.query_row(
-            "SELECT raw,revision FROM working_source WHERE id=1",
-            [], |r| Ok((r.get(0)?, r.get(1)?))
+        let (raw, order_type, rev): (String, String, i64) = conn.query_row(
+            "SELECT raw,order_type,revision FROM working_source WHERE id=1",
+            [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         ).map_err(|e| format!("egui 접수 원문을 복원하지 못했습니다: {e}"))?;
+        if !matches!(order_type.as_str(), "AGENCY" | "DEALER") {
+            return Err("egui 저장된 접수 유형이 잘못되었습니다.".into());
+        }
         let revision = u64::try_from(rev)
             .map_err(|_| "egui 저장 revision이 잘못되었습니다.".to_owned())?;
-        Ok(WorkingSource { raw, revision })
+        Ok(WorkingSource { raw, order_type, revision })
     }
 
     /// Revision-checked write to prevent two preview windows silently
     /// overwriting each other's source. Does NOT create a confirmed order.
-    pub fn save_source(&self, raw: &str, revision: u64) -> Result<u64, String> {
+    pub fn save_source(&self, raw: &str, order_type: &str, revision: u64)
+        -> Result<u64, String>
+    {
+        if !matches!(order_type, "AGENCY" | "DEALER") {
+            return Err("접수 유형은 대리발송 또는 대리점 납품이어야 합니다.".into());
+        }
         if raw.len() > SOURCE_LIMIT_BYTES {
             return Err("egui 발주원문은 최대 2MB까지 저장할 수 있습니다.".into());
         }
@@ -158,9 +184,10 @@ impl PreviewStore {
         let mut conn = self.open_connection()?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         let affected = tx.execute(
-            "UPDATE working_source SET raw=?1,revision=?2,updated_at=CURRENT_TIMESTAMP
-             WHERE id=1 AND revision=?3",
-            params![raw, next, expected],
+            "UPDATE working_source
+             SET raw=?1,order_type=?2,revision=?3,updated_at=CURRENT_TIMESTAMP
+             WHERE id=1 AND revision=?4",
+            params![raw, order_type, next, expected],
         ).map_err(|e| format!("egui 원문 저장 실패: {e}"))?;
         if affected != 1 {
             return Err("다른 egui 창에서 원문이 변경됐습니다. 저장을 덮어쓰지 않았습니다.".into());
