@@ -35,6 +35,7 @@ pub enum ReadOperation {
     RepriceOrder,
     CalculatePrice,
     ManualClassification,
+    SearchProductsWithUrls,
 }
 
 impl ReadOperation {
@@ -43,7 +44,7 @@ impl ReadOperation {
             Self::AnalyzeOrder => "recognition",
             Self::ResolveRetailUnitPrice | Self::DetectRemoteDeliveryArea => "rules",
             Self::AutoMatchReceptionClient | Self::ReceptionClientCandidates
-            | Self::ClientCandidates => "catalog_clients",
+            | Self::ClientCandidates | Self::SearchProductsWithUrls => "catalog_clients",
             Self::NewReception | Self::MergeReceptionAnalysis
             | Self::ChangeOrderClient | Self::RepriceOrder
             | Self::CalculatePrice | Self::ManualClassification => "rules",
@@ -64,6 +65,7 @@ impl ReadOperation {
             Self::RepriceOrder => "reprice_order",
             Self::CalculatePrice => "calculate_price",
             Self::ManualClassification => "apply_manual_classification",
+            Self::SearchProductsWithUrls => "search_products_with_urls",
         }
     }
 }
@@ -205,6 +207,9 @@ impl BandoGateway for LocalGateway {
             }
             ReadOperation::ClientCandidates => {
                 native_client_search::execute(&payload)
+            }
+            ReadOperation::SearchProductsWithUrls => {
+                crate::catalog_query_bridge::search_products(&payload)
             }
         }
     }
