@@ -11,7 +11,16 @@
 use super::{business_core, err, get_snapshot};
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use serde_json::{json, Value};
+use sha2::{Digest,Sha256};
 use std::path::Path;
+
+fn payload_hash(order:&Value)->Result<String,String>{
+    let mut data=order.clone();
+    data.as_object_mut().ok_or("작업본 객체 형식 오류")?
+        .remove("_eguiBridgePayloadHash");
+    let bytes=serde_json::to_vec(&data).map_err(err)?;
+    Ok(format!("{:x}",Sha256::digest(&bytes)))
+}
 
 fn field<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {
     value.get(key).and_then(Value::as_str)
@@ -95,6 +104,11 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
             if Some(version) != expected_working_version {
                 return Err("미확정 주문이 다른 창에서 수정됐습니다. 새로고침 후 다시 확인하세요.".into());
             }
+            let saved_hash=existing.get("_eguiBridgePayloadHash").and_then(Value::as_str)
+                .ok_or("egui 작업본에 무결성 확인값이 없습니다.")?;
+            if saved_hash!=payload_hash(&existing)? {
+                return Err("운영 작업본이 다른 화면에서 수정됐습니다. 내용을 확인한 뒤 다시 진행하세요.".into());
+            }
             if existing.get("confirmedAt").and_then(Value::as_str)
                 .is_some_and(|value| !value.is_empty()) {
                 return Err("이미 확인 완료된 주문은 이 경로로 변경할 수 없습니다.".into());
@@ -117,12 +131,14 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
         // Changing order type needs its own explicit business transition.
         return Err("이미 저장한 주문의 접수 유형 변경은 별도 검증 후 처리해야 합니다.".into());
     }
-    if previous.get("raw").and_then(Value::as_str)
-        .is_some_and(|old| old != raw) &&
-        expected_working_version.is_some() {
-        // Do not discard employee edits from the persisted native order.
-        return Err("운영 작업본의 발주원문이 다릅니다. 내용을 확인한 뒤 다시 진행하세요.".into());
-    }
+    // Only the existing Rust reception transition is allowed to reset and
+    // replace a changed raw source; never patch the Order fields by hand.
+    let previous=if previous.get("raw").and_then(Value::as_str)!=Some(raw){
+        order_from(rule("apply_reception_action",json!({
+            "action":"replace_reception","order":previous,
+            "raw":raw,"now":at
+        }))?)?
+    }else{previous};
 
     // Never trust price/total figures or a clientSnapshot supplied by egui.
     // Re-run recognition, dealer guard, item reprice and freight using the
@@ -163,6 +179,7 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
         .ok_or("미확정 주문 버전 범위를 초과했습니다.")?;
     next["_eguiBridgeVersion"] = json!(working_version);
     next["_eguiBridgeAuthorityRevision"] = json!(expected_revision);
+    next["_eguiBridgePayloadHash"] = json!(payload_hash(&next)?);
     let encoded = serde_json::to_string(&next).map_err(err)?;
     if encoded.len() > 50_000_000 {
         return Err("미확정 주문 크기 한도를 초과했습니다.".into());
