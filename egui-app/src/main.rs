@@ -5,6 +5,7 @@
 mod theme;
 mod layout;
 mod components;
+mod native_engine;
 
 use eframe::egui::{self, Align, Color32, Frame, Layout, RichText, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, PANEL_GAP};
@@ -57,6 +58,10 @@ struct BandoEgui {
     split_last_delta: f32,
     dragging_vertical: bool,
     vertical_last_delta: f32,
+    raw_source: String,
+    source_editing: bool,
+    analysis: Option<serde_json::Value>,
+    analysis_error: Option<String>,
 }
 
 impl Default for BandoEgui {
@@ -71,6 +76,10 @@ impl Default for BandoEgui {
             split_last_delta: 0.0,
             dragging_vertical: false,
             vertical_last_delta: 0.0,
+            raw_source: String::new(),
+            source_editing: false,
+            analysis: None,
+            analysis_error: None,
         }
     }
 }
@@ -398,11 +407,48 @@ impl BandoEgui {
     }
 
     fn source_section(&mut self, ui: &mut Ui, height: f32) {
+        let mut new_reception = false;
+        let mut begin_input = false;
         Self::section_with_header(ui, "발주 원문", height, |ui| {
-            theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false)
-                .on_disabled_hover_text("주문 생성은 Rust 업무 엔진 연결 이후 활성화됩니다.");
+            if theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, true)
+                .on_hover_text("프리뷰: 입력한 원문과 분석 결과만 초기화합니다.")
+                .clicked() {
+                new_reception = true;
+            }
         }, |ui| {
-            if self.sample {
+            if self.source_editing || !self.raw_source.is_empty() {
+                ui.label(theme::caption("직접 입력 · 실제 Rust 인식 엔진 · 기본 상품 시드"));
+                let editor_height = (ui.available_height() - 62.0).max(120.0);
+                let editor = ui.add_sized(
+                    Vec2::new(ui.available_width(), editor_height),
+                    egui::TextEdit::multiline(&mut self.raw_source)
+                        .font(egui::TextStyle::Body)
+                        .hint_text("발주서 원문을 여기에 입력하거나 붙여넣으세요."),
+                );
+                if editor.changed() {
+                    // Do not display the previous order's stale recognition.
+                    self.analysis = None;
+                    self.analysis_error = None;
+                }
+                ui.horizontal(|ui| {
+                    if theme::action(
+                        ui, "원문 분석", ButtonRole::Emphasized,
+                        !self.raw_source.trim().is_empty(),
+                    ).clicked() {
+                        match native_engine::analyze_raw(&self.raw_source) {
+                            Ok(result) => {
+                                self.analysis = Some(result);
+                                self.analysis_error = None;
+                            }
+                            Err(error) => {
+                                self.analysis = None;
+                                self.analysis_error = Some(error);
+                            }
+                        }
+                    }
+                    ui.label(theme::caption("결과는 메모리에만 보관 · 주문 저장 안 함"));
+                });
+            } else if self.sample {
                 theme::nested_frame().show(ui, |ui| {
                     ui.label(RichText::new("현재 거래처").size(12.0).color(theme::SECONDARY));
                     ui.label(RichText::new("샘플거래처").size(14.0).strong());
@@ -415,26 +461,42 @@ impl BandoEgui {
                     ui.add_space(8.0);
                     ui.label(theme::caption("실제 발주서가 아닌 UI 배치 확인용 예시입니다."));
                 });
+                if theme::action(ui, "실제 원문 입력", ButtonRole::Emphasized, true).clicked() {
+                    begin_input = true;
+                }
             } else {
-                ui.add_space(50.0);
+                ui.add_space(32.0);
                 ui.label(theme::subsection_heading("클립보드 접수"));
                 ui.label(theme::caption("복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."));
                 ui.horizontal(|ui| {
-                    theme::action(ui, "대리발송", ButtonRole::Emphasized, false);
+                    theme::action(ui, "대리발송", ButtonRole::Emphasized, false)
+                        .on_disabled_hover_text("클립보드 자동 접수는 아직 연결되지 않았습니다.");
                     theme::action(ui, "대리점 납품", ButtonRole::Emphasized, false);
                 });
                 ui.label(theme::caption("이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."));
-                theme::divider(ui);
+                components::soft_divider(ui);
+                ui.add_space(8.0);
                 ui.label(theme::subsection_heading("다른 방법으로 접수"));
                 ui.horizontal(|ui| {
-                    theme::action(ui, "직접 입력", ButtonRole::Emphasized, false);
+                    if theme::action(ui, "직접 입력", ButtonRole::Emphasized, true).clicked() {
+                        begin_input = true;
+                    }
                     theme::action(ui, "캡처 범위 지정", ButtonRole::Emphasized, false);
                 });
-                theme::divider(ui);
+                components::soft_divider(ui);
+                ui.add_space(8.0);
                 ui.label(theme::subsection_heading("폴더 자동 인식"));
                 ui.label(theme::caption("설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."));
             }
         });
+        if new_reception {
+            self.raw_source.clear();
+            self.analysis = None;
+            self.analysis_error = None;
+            self.source_editing = false;
+        } else if begin_input {
+            self.source_editing = true;
+        }
     }
 
     fn message_section(&mut self, ui: &mut Ui, height: f32) {
