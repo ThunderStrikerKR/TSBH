@@ -1,4 +1,4 @@
-# Targeted Windows compile: Kakao cached footer visibility and owner-only dock cleanup.
+# Targeted Windows compile: split Kakao ad footer, conditional outer scroll, shared workspace border.
 name: Tauri native CLI executable compile check
 on:
   push:
