@@ -51,6 +51,7 @@ impl KakaoDock {
         #[cfg(windows)] {
             if self.session.is_some(){return Ok(());}
             let mut session=native::Session::connect()?;
+            session.restore_minimized()?;
             session.sync(rect,scale)?;
             self.session=Some(session);
             Ok(())
@@ -154,6 +155,7 @@ mod native {
         fn IsWindow(hwnd:Hwnd)->i32;
         fn IsWindowVisible(hwnd:Hwnd)->i32;
         fn IsIconic(hwnd:Hwnd)->i32;
+        fn ShowWindow(hwnd:Hwnd,command:i32)->i32;
         fn GetWindowRect(hwnd:Hwnd,rect:*mut Rect)->i32;
         fn GetClientRect(hwnd:Hwnd,rect:*mut Rect)->i32;
         fn ClientToScreen(hwnd:Hwnd,pos:*mut Point)->i32;
@@ -497,6 +499,19 @@ mod native {
         last_region:Option<Rect>,pub(super) last_sync:Option<Instant>,
     }
     impl Session{
+        // Capture original placements before restoring. Session::drop restores
+        // the minimized state too if initial layout fails or is disconnected.
+        pub(super) fn restore_minimized(&mut self)->Result<(),String>{
+            for window in &self.windows {
+                if window.alive() && unsafe{IsIconic(window.hwnd)}!=0 {
+                    unsafe{ShowWindow(window.hwnd,9);}
+                    if unsafe{IsIconic(window.hwnd)}!=0 {
+                        return Err("최소화된 카카오톡 창을 복원하지 못했습니다. 카카오톡 창을 연 뒤 다시 연결하세요.".into());
+                    }
+                }
+            }
+            Ok(())
+        }
         pub fn connect()->Result<Self,String>{
             let hub=hwnd_of_hub()?;
             let found=candidates();

@@ -147,6 +147,7 @@ struct BandoEgui {
     kakao_tracker: KakaoTracker,
     kakao_connected: bool,
     kakao_dock: kakao_dock::KakaoDock,
+    kakao_dock_error: Option<String>,
     clipboard_chat: Option<ChatWindow>,
     clipboard_busy: bool,
     ocr_processing: bool,
@@ -194,6 +195,7 @@ impl Default for BandoEgui {
             kakao_tracker: KakaoTracker::default(),
             kakao_connected: false,
             kakao_dock: kakao_dock::KakaoDock::default(),
+            kakao_dock_error: None,
             clipboard_chat: None,
             clipboard_busy: false,
             ocr_processing: false,
@@ -1548,16 +1550,21 @@ impl BandoEgui {
                         ).clicked(){
                             connect=true;
                         }
+                        if let Some(reason)=&self.kakao_dock_error {
+                            center.label(reason);
+                        }
                     },
                 );
             }
         });
         if disconnect {
+            self.kakao_dock_error=None;
             self.kakao_dock.disconnect();
             self.kakao_connected=false;
             return;
         }
         if connect {
+            self.kakao_dock_error=None;
             // The dock receives the future connected BODY rectangle on the
             // first click, not the larger placeholder rectangle.
             match self.kakao_dock.connect(region,scale){
@@ -1565,6 +1572,7 @@ impl BandoEgui {
                 Err(reason)=>{
                     self.kakao_connected=false;
                     eprintln!("[BANDO HUB] 카카오톡 연결 실패: {reason}");
+                    self.kakao_dock_error=Some(reason);
                 }
             }
             return;
@@ -1583,6 +1591,7 @@ impl BandoEgui {
             Err(reason)=>{
                 self.kakao_connected=self.kakao_dock.connected();
                 eprintln!("[BANDO HUB] 카카오톡 배치 실패: {reason}");
+                self.kakao_dock_error=Some(reason);
             }
         }
     }

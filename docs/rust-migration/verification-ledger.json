@@ -2312,6 +2312,25 @@
         "DEV_WINDOWS_TAURI.cmd",
         "PACKAGE_WINDOWS_TAURI.cmd"
       ]
+    },
+    {
+      "id": "LIVE-20261120-KAKAO-CONNECT",
+      "scope": "egui 카카오톡 최소화 창 연결 및 실패 원인 표시",
+      "status": "PATCHED_WINDOWS_UNVERIFIED",
+      "description": "최소화된 카카오톡을 후보로 선택한 뒤 sync에서 건너뛰면서 연결 성공 처리하던 경로를 수정. 원래 WINDOWPLACEMENT 저장 후 연결 직전에 복원, 복원 실패 시 오류 반환, 실패/해제 시 원상태 복구. 연결 오류를 화면에 표시. 사용자 보고의 실제 원인은 화면 캡처 실패로 아직 확정하지 못함.",
+      "evidence": [
+        "egui-app/src/kakao_dock.rs",
+        "egui-app/src/main.rs",
+        "docs/rust-migration/2026-11-20-kakao-connect.md"
+      ],
+      "gates": {
+        "patch": "SOURCE_UPDATED",
+        "unit": "148 executed: 146 passed, 2 failed; minimized-window native lifecycle not covered by these tests",
+        "differential": "NOT_EXECUTED",
+        "action": "BLOCKED: window capture timed out; no successful Connect click observed",
+        "ci": "NOT_EXECUTED",
+        "windows": "Windows dev executable compiled successfully; runtime connection UNVERIFIED; original running executable not replaced"
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
