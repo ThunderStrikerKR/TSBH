@@ -8,6 +8,62 @@ pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 pub const TABLE_ROW_HEIGHT: f32 = 42.0;
 pub const TABLE_HEADER_HEIGHT: f32 = 36.0;
 
+#[derive(Clone, Copy)]
+pub enum WorkflowIcon {
+    Collapsed,
+    Expanded,
+    PreviousStage,
+    Trash,
+}
+
+/// Draw workflow glyphs as stable vectors; the UI font may not contain
+/// Unicode chevrons, trash or curved-arrow symbols on Windows.
+pub fn paint_workflow_icon(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    icon: WorkflowIcon,
+    ink: Color32,
+) {
+    let stroke = Stroke::new(1.55, ink);
+    let p = |x: f32, y: f32| egui::pos2(center.x + x, center.y + y);
+    match icon {
+        WorkflowIcon::Collapsed => {
+            painter.line_segment([p(-2.6, -4.2), p(1.7, 0.0)], stroke);
+            painter.line_segment([p(1.7, 0.0), p(-2.6, 4.2)], stroke);
+        }
+        WorkflowIcon::Expanded => {
+            painter.line_segment([p(-4.2, -1.8), p(0.0, 2.5)], stroke);
+            painter.line_segment([p(0.0, 2.5), p(4.2, -1.8)], stroke);
+        }
+        WorkflowIcon::PreviousStage => {
+            painter.line_segment([p(-5.3, -1.6), p(-1.5, -5.2)], stroke);
+            painter.line_segment([p(-5.3, -1.6), p(-1.0, 1.8)], stroke);
+            painter.add(egui::Shape::line(
+                vec![p(-4.4,-1.6), p(1.2,-1.6), p(4.2,1.0),p(4.2,5.0)],
+                stroke
+            ));
+        }
+        WorkflowIcon::Trash => {
+            for (a,b) in [
+                (p(-5.0,-4.1),p(5.0,-4.1)),
+                (p(-2.9,-6.9),p(2.9,-6.9)),
+                (p(-4.3,-1.5),p(-3.4,6.2)),
+                (p(4.3,-1.5),p(3.4,6.2)),
+                (p(-3.4,6.2),p(3.4,6.2)),
+                (p(-1.3,-1.2),p(-1.3,3.9)),
+                (p(1.3,-1.2),p(1.3,3.9))
+            ] {painter.line_segment([a,b],stroke);}
+        }
+    }
+}
+
+/// Repaint the common center of two splitter rules in one parent layer.
+/// A crossbar clipped by its child pane cannot leave a dark open seam.
+pub fn paint_dock_junction(ui: &Ui, joint: Rect, vertical_active: bool) {
+    paint_dock_axis_line(ui, joint, false, false);
+    paint_dock_axis_line(ui, joint, true, vertical_active);
+}
+
 /// A compact KakaoTalk identity mark, used only as a visual menu prefix.
 /// The native Kakao HWND and order-matching logic remain unchanged.
 pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
