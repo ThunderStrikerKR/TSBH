@@ -13,6 +13,7 @@ mod http_gateway;
 mod preview_store;
 mod source_autosave;
 mod clipboard_intake;
+mod client_directory;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
@@ -1262,6 +1263,31 @@ impl BandoEgui {
                     if let Some(error) = &self.analysis_error {
                         ui.label(typography::status(error, theme::DANGER));
                     } else if let Some(analysis) = &self.analysis {
+                        if analysis.directory_count == 0 {
+                            ui.label(typography::status(
+                                "거래처 명단 미연결 · 자동 매칭 확인 필요",
+                                theme::SELECTED_ORDER,
+                            ));
+                        } else if let Some(name) = &analysis.matched_client_name {
+                            ui.label(typography::body(
+                                &format!("거래처 자동 인식 · {name}")
+                            ));
+                        } else if reception_service::text(&analysis.client_match, "source") == "CONFLICT" {
+                            ui.label(typography::status(
+                                reception_service::text(&analysis.client_match, "detail"),
+                                theme::DANGER,
+                            ));
+                        } else {
+                            ui.label(typography::status(
+                                "거래처 확인 필요", theme::SELECTED_ORDER
+                            ));
+                            if !analysis.client_candidates.is_empty() {
+                                ui.label(typography::caption(&format!(
+                                    "거래처 후보 {}건 · 자동 적용하지 않음",
+                                    analysis.client_candidates.len()
+                                )));
+                            }
+                        }
                         let unidentified = analysis.get("unassigned")
                             .and_then(serde_json::Value::as_array)
                             .map(Vec::len).unwrap_or(0);
