@@ -782,7 +782,7 @@ impl BandoEgui {
                             let icon_rect = Rect::from_center_size(
                                 egui::pos2(
                                     brand_slot.left() + theme::BRAND_ICON_SIZE / 2.0,
-                                    brand_slot.center().y,
+                                    brand_slot.center().y + theme::BRAND_ICON_OPTICAL_CENTER_Y,
                                 ),
                                 Vec2::splat(theme::BRAND_ICON_SIZE),
                             );
