@@ -1,4 +1,4 @@
-# Targeted Windows compile: two-row folded workflow cards, dealer-name signals, one-line totals.
+# Targeted Windows compile: two-row workflow card with responsive dealer-adjacent lights.
 name: Tauri native CLI executable compile check
 on:
   push:
