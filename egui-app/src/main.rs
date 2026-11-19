@@ -107,6 +107,7 @@ struct BandoEgui {
     order_type: OrderType,
     clipboard_monitor: ClipboardMonitor,
     clipboard_busy: bool,
+    ocr_processing: bool,
     clipboard_cancel: Arc<AtomicBool>,
     clipboard_receiver: Option<Receiver<(OrderType, Result<ClipboardReceipt, String>)>>,
     clipboard_error: Option<String>,
@@ -139,6 +140,7 @@ impl Default for BandoEgui {
             order_type: OrderType::Agency,
             clipboard_monitor: ClipboardMonitor::default(),
             clipboard_busy: false,
+            ocr_processing: false,
             clipboard_cancel: Arc::new(AtomicBool::new(false)),
             clipboard_receiver: None,
             clipboard_error: None,
@@ -258,6 +260,8 @@ impl BandoEgui {
             return;
         }
         self.clipboard_busy = true;
+        self.ocr_processing =
+            self.clipboard_monitor.kind() == clipboard_intake::ClipboardKind::Image;
         self.clipboard_error = None;
         self.clipboard_cancel.store(false, Ordering::Release);
         let cancelled = Arc::clone(&self.clipboard_cancel);
@@ -312,6 +316,7 @@ impl BandoEgui {
             Some(Ok((order_type, result))) => {
                 self.clipboard_receiver = None;
                 self.clipboard_busy = false;
+                self.ocr_processing = false;
                 if self.clipboard_cancel.swap(false, Ordering::AcqRel) {
                     // User cancellation wins even if a completed OCR result
                     // raced with the Cancel click. Never open the review.
@@ -354,6 +359,7 @@ impl BandoEgui {
             Some(Err(mpsc::TryRecvError::Disconnected)) => {
                 self.clipboard_receiver = None;
                 self.clipboard_busy = false;
+                self.ocr_processing = false;
                 if self.clipboard_cancel.swap(false, Ordering::AcqRel) {
                     return;
                 }
@@ -940,6 +946,8 @@ impl BandoEgui {
         let mut start_clipboard = None;
         let can_receive_clipboard =
             self.clipboard_monitor.kind().has_intake() && !self.clipboard_busy;
+        let ocr_processing = self.ocr_processing;
+        let cancel_ocr = Arc::clone(&self.clipboard_cancel);
         Self::section_with_header(ui, "발주 원문", height, |ui| {
             theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, false);
         }, |ui| {
@@ -1007,6 +1015,16 @@ impl BandoEgui {
                             start_clipboard = Some(OrderType::Agency);
                         } else if dealer.clicked() {
                             start_clipboard = Some(OrderType::Dealer);
+                        }
+                        if ocr_processing {
+                            intake.horizontal(|ui| {
+                                ui.label(typography::caption("OCR 처리 중…"));
+                                if theme::action(
+                                    ui, "취소", ButtonRole::Standard, true
+                                ).clicked() {
+                                    cancel_ocr.store(true, Ordering::Release);
+                                }
+                            });
                         }
                         intake.label(typography::caption(
                             "이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."
