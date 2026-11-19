@@ -1,4 +1,4 @@
-# Targeted Windows compile: global Regular weight for all white Primary/Emphasized buttons.
+# Targeted Windows compile: two-row folded workflow cards, dealer-name signals, one-line totals.
 name: Tauri native CLI executable compile check
 on:
   push:
