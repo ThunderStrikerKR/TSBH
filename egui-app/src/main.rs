@@ -5,7 +5,7 @@
 mod theme;
 mod layout;
 mod components;
-mod native_engine;
+mod reception_service;
 mod gateway;
 mod http_gateway;
 
@@ -75,12 +75,12 @@ struct BandoEgui {
     dragging_vertical: Option<VerticalSplitDrag>,
     raw_source: String,
     source_editing: bool,
-    analysis: Option<native_engine::NativeAnalysis>,
+    analysis: Option<reception_service::NativeAnalysis>,
     analysis_error: Option<String>,
     selected_recipient: usize,
     analysis_request: u64,
     analysis_pending: bool,
-    analysis_receiver: Option<Receiver<(u64, Result<native_engine::NativeAnalysis, String>)>>,
+    analysis_receiver: Option<Receiver<(u64, Result<reception_service::NativeAnalysis, String>)>>,
 }
 
 impl Default for BandoEgui {
@@ -120,7 +120,7 @@ impl BandoEgui {
         let (sender, receiver) = mpsc::channel();
         self.analysis_receiver = Some(receiver);
         std::thread::spawn(move || {
-            let result = native_engine::analyze_raw(gateway.as_ref(), &source);
+            let result = reception_service::analyze_raw(gateway.as_ref(), &source);
             let _ = sender.send((request, result));
             context.request_repaint();
         });
@@ -620,7 +620,7 @@ impl BandoEgui {
         let full_height = ui.available_height();
         let has_result = self.analysis.is_some();
         let count = self.analysis.as_ref().map(|analysis| {
-            native_engine::recipients(analysis).len()
+            reception_service::recipients(analysis).len()
         }).unwrap_or(0);
 
         Self::section_with_header(ui, "확인할 내용", (full_height * 0.27).max(150.0), |ui| {
@@ -648,7 +648,7 @@ impl BandoEgui {
                     ui.colored_label(theme::SELECTED_ORDER,
                         format!("미분류 근거 {unidentified}건 · 추가 후보 {candidates}건"));
                 }
-                let issue_count: usize = native_engine::recipients(analysis).iter()
+                let issue_count: usize = reception_service::recipients(analysis).iter()
                     .flat_map(|recipient| recipient.get("items")
                         .and_then(serde_json::Value::as_array)
                         .into_iter().flatten())
@@ -672,7 +672,7 @@ impl BandoEgui {
         let mut next_recipient = None;
         Self::section(ui, "수취인별 주문 정보", (full_height * 0.22).max(180.0), |ui| {
             if let Some(analysis) = &self.analysis {
-                let recipients = native_engine::recipients(analysis);
+                let recipients = reception_service::recipients(analysis);
                 if recipients.len() > 1 {
                     egui::ScrollArea::horizontal()
                         .id_salt("analyzed-recipients")
@@ -680,7 +680,7 @@ impl BandoEgui {
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 for (index, recipient) in recipients.iter().enumerate() {
-                                    let name = native_engine::text(recipient, "name");
+                                    let name = reception_service::text(recipient, "name");
                                     let label = if name.is_empty() {
                                         format!("수취인 {}", index + 1)
                                     } else {
@@ -700,11 +700,11 @@ impl BandoEgui {
                 }
                 if let Some(recipient) = recipients.get(self.selected_recipient) {
                     ui.spacing_mut().item_spacing.y = 4.0;
-                    let mut name = native_engine::text(recipient, "name").to_owned();
-                    let mut address = native_engine::text(recipient, "address").to_owned();
-                    let mut mobile = native_engine::text(recipient, "mobile").to_owned();
-                    let mut phone = native_engine::text(recipient, "phone").to_owned();
-                    let mut note = native_engine::text(recipient, "note").to_owned();
+                    let mut name = reception_service::text(recipient, "name").to_owned();
+                    let mut address = reception_service::text(recipient, "address").to_owned();
+                    let mut mobile = reception_service::text(recipient, "mobile").to_owned();
+                    let mut phone = reception_service::text(recipient, "phone").to_owned();
+                    let mut note = reception_service::text(recipient, "note").to_owned();
                     components::labeled_field(ui, "이름", &mut name, components::FieldKind::Text, false);
                     components::labeled_field(ui, "주소", &mut address, components::FieldKind::Address, false);
                     components::labeled_field(ui, "휴대전화", &mut mobile, components::FieldKind::Telephone, false);
@@ -763,7 +763,7 @@ impl BandoEgui {
         // Otherwise the details pane switches immediately but the item pane
         // can display the previous recipient for one frame.
         let selected = self.analysis.as_ref().and_then(|analysis| {
-            native_engine::recipients(analysis).get(self.selected_recipient)
+            reception_service::recipients(analysis).get(self.selected_recipient)
         });
         ui.add_space(PANEL_GAP);
 
@@ -780,9 +780,9 @@ impl BandoEgui {
                         .show(ui, |ui| {
                             for (item_index, item) in items.iter().enumerate() {
                                 ui.horizontal(|ui| {
-                                    ui.label(theme::body(&native_engine::item_title(item)));
+                                    ui.label(theme::body(&reception_service::item_title(item)));
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        ui.label(theme::caption(&native_engine::item_quantity(item)));
+                                        ui.label(theme::caption(&reception_service::item_quantity(item)));
                                     });
                                 });
                                 let price_reference = self.analysis.as_ref()
@@ -792,7 +792,7 @@ impl BandoEgui {
                                     if let Some(retail) = price.retail {
                                         ui.label(theme::caption(&format!(
                                             "기본 시드 소매가 참고: {} · 청구금액 아님",
-                                            native_engine::display_won(retail)
+                                            reception_service::display_won(retail)
                                         )));
                                     } else if let Some(error) = &price.error {
                                         ui.colored_label(theme::DANGER,
