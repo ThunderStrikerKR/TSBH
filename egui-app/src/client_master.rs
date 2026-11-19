@@ -89,7 +89,8 @@ pub fn load() -> Result<Value,String> {
         "revision":revision,"clients":clients,
         "products":catalog.get("products").cloned().unwrap_or_else(||json!([])),
         "aliases":catalog.get("aliases").cloned().unwrap_or_else(||json!([])),
-        "settings":{"accounts":[]},"readOnly":false,
+        "settings":{"accounts":crate::settings_store::load_local_accounts()?},
+        "readOnly":false,
     }))
 }
 
