@@ -33,6 +33,7 @@ pub struct ReceptionAnalysis {
     pub client_match: Value,
     pub client_candidates: Vec<Value>,
     pub matched_client_name: Option<String>,
+    pub chosen_client_name: Option<String>,
     pub directory_count: usize,
 }
 
@@ -47,7 +48,11 @@ impl Deref for ReceptionAnalysis {
 /// Analyze a source, then derive separate *read-only* references through
 /// the selected backend (local Rust or an explicitly configured HTTPS API). Build all results in
 /// the existing worker thread; never run these computations every UI frame.
-pub fn analyze_raw(gateway: &dyn BandoGateway, raw: &str) -> Result<ReceptionAnalysis, String> {
+pub fn analyze_raw(
+    gateway: &dyn BandoGateway, raw: &str,
+    windows: Value, active_chat_handle: Option<String>,
+    manual_client_id: Option<String>,
+) -> Result<ReceptionAnalysis, String> {
     if raw.trim().is_empty() {
         return Err("발주원문을 먼저 입력하세요.".to_owned());
     }
@@ -56,9 +61,13 @@ pub fn analyze_raw(gateway: &dyn BandoGateway, raw: &str) -> Result<ReceptionAna
     let directory_count = directory.map(Vec::len).unwrap_or(0);
 
     // The same Rust matcher used by Tauri owns all client-selection logic.
-    // egui has no connected KakaoTalk HWND yet, so it never fabricates
-    // a window title or infers an ordering dealer from a recipient address.
-    let context = json!({"state": &state, "raw": raw, "windows": []});
+    // Only OS-verified and explicitly selected KakaoTalk windows may enter
+    // this boundary. Unselected/invalid handles are represented as [].
+    let context = json!({
+        "state": &state, "raw": raw,
+        "windows": windows,
+        "activeChatHandle": active_chat_handle,
+    });
     let client_match = gateway.execute(
         ReadOperation::AutoMatchReceptionClient, context.clone()
     )?;
@@ -68,19 +77,24 @@ pub fn analyze_raw(gateway: &dyn BandoGateway, raw: &str) -> Result<ReceptionAna
     let client_candidates = candidates.get("candidates").and_then(Value::as_array)
         .cloned().unwrap_or_default();
 
-    let selected = client_match.get("clientId").and_then(Value::as_str)
-        .and_then(|id| directory?.iter().find(|client|
+    let client_for = |id: &str| {
+        directory?.iter().find(|client|
             text(client, "id") == id &&
             client.get("deletedAt").is_none_or(Value::is_null) &&
             client.get("active") != Some(&Value::Bool(false))
-        ));
-    let matched_client_name = selected.map(|client| text(client, "name").to_owned());
+        )
+    };
+    let automatic = client_match.get("clientId").and_then(Value::as_str)
+        .and_then(client_for);
+    let matched_client_name = automatic.map(|client| text(client, "name").to_owned());
+    let selected = manual_client_id.as_deref().and_then(client_for).or(automatic);
+    let chosen_client_name = selected.map(|client| text(client, "name").to_owned());
 
-    // Matched client is passed to the existing Rust recognition logic only
-    // when the native matcher established a unique, active customer identity.
-    // This is still unconfirmed preview data; no order or client is saved.
+    // Client directory is a name-only projection, not price authority.
+    // Do NOT submit an incomplete client object and invent a price tier:
+    // final billing is deferred to the Rust production-order workflow.
     let analysis = gateway.execute(ReadOperation::AnalyzeOrder, json!({
-        "raw": raw, "state": &state, "client": selected,
+        "raw": raw, "state": &state,
     }))?;
     let reference = recipients(&analysis).iter()
         .map(|recipient| recipient_reference(gateway, recipient, &state))
@@ -91,6 +105,7 @@ pub fn analyze_raw(gateway: &dyn BandoGateway, raw: &str) -> Result<ReceptionAna
         client_match,
         client_candidates,
         matched_client_name,
+        chosen_client_name,
         directory_count,
     })
 }
