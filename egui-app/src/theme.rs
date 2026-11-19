@@ -98,7 +98,7 @@ pub fn install(ctx: &egui::Context) {
     style.spacing.button_padding = Vec2::new(SPACE_12, SPACE_8);
     style.text_styles.insert(TextStyle::Heading, FontId::proportional(FONT_PAGE_HEADING));
     style.text_styles.insert(TextStyle::Body, FontId::proportional(FONT_BODY));
-    style.text_styles.insert(TextStyle::Button, FontId::proportional(13.0));
+    style.text_styles.insert(TextStyle::Button, FontId::proportional(FONT_STANDARD_ACTION));
     style.text_styles.insert(TextStyle::Small, FontId::proportional(FONT_METADATA));
     ctx.set_style(style);
 
@@ -110,12 +110,27 @@ pub fn install(ctx: &egui::Context) {
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/System/Library/Fonts/AppleSDGothicNeo.ttc",
     ];
-    if let Some(bytes) = candidates.iter().find_map(|path| std::fs::read(path).ok()) {
+    if let Some((path, bytes)) = candidates.iter()
+        .find_map(|path| std::fs::read(path).ok().map(|bytes| (*path, bytes)))
+    {
         let mut fonts = FontDefinitions::default();
-        fonts.font_data.insert("korean".into(), FontData::from_owned(bytes).into());
-        fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "korean".into());
-        fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "korean".into());
+        fonts.font_data.insert(
+            "bando-system-korean".into(),
+            FontData::from_owned(bytes).into(),
+        );
+        // The proportional UI uses the installed Korean font for coherent
+        // Korean/Latin line metrics. Monospace retains its actual fixed-width
+        // font first, using Korean glyphs only as a fallback.
+        fonts.families.entry(FontFamily::Proportional).or_default()
+            .insert(0, "bando-system-korean".into());
+        fonts.families.entry(FontFamily::Monospace).or_default()
+            .push("bando-system-korean".into());
         ctx.set_fonts(fonts);
+        eprintln!("[BANDO HUB] Korean UI font: {path}");
+    } else {
+        // A screenshot cannot be treated as typography-verified if the
+        // intended Korean font did not load. No UI popup is introduced.
+        eprintln!("[BANDO HUB] Korean UI font was not found; using egui defaults");
     }
 }
 
@@ -145,6 +160,18 @@ pub fn nested_frame() -> Frame {
         .stroke(Stroke::new(1.0_f32, DIVIDER))
         .corner_radius(CornerRadius::same(CONTROL_RADIUS))
         .inner_margin(NESTED_PADDING)
+}
+
+pub fn brand_heading(text: &str) -> RichText {
+    RichText::new(text).size(FONT_BRAND).strong().color(TEXT)
+}
+
+pub fn page_heading(text: &str) -> RichText {
+    RichText::new(text).size(FONT_PAGE_HEADING).strong().color(TEXT)
+}
+
+pub fn field_label(text: &str) -> RichText {
+    RichText::new(text).size(FONT_FIELD_LABEL).strong().color(SECONDARY)
 }
 
 pub fn section_heading(text: &str) -> RichText {
@@ -216,7 +243,7 @@ pub fn divider(ui: &mut Ui) {
 
 pub fn label_value(ui: &mut Ui, label: &str, value: &str) {
     ui.horizontal(|ui| {
-        ui.add_sized([FIELD_LABEL_WIDTH, INPUT_HEIGHT], egui::Label::new(RichText::new(label).size(FONT_FIELD_LABEL).color(SECONDARY)));
+        ui.add_sized([FIELD_LABEL_WIDTH, INPUT_HEIGHT], egui::Label::new(field_label(label)));
         ui.label(body(value));
     });
 }
