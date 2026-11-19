@@ -1,6 +1,6 @@
 //! The right-hand workflow board. Layout/hover/selection only; no business rules.
 //! Native Rust provides groups, amounts, freight, stage and shipment identity.
-use eframe::egui::{self, Align, Color32, Frame, Id, Pos2, Rect, Ui, Vec2};
+use eframe::egui::{self, Frame, Id, Pos2, Rect, Ui, Vec2};
 use std::time::{Duration, Instant};
 use crate::{components, preview_store::WorkingReception, theme, typography};
 use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
@@ -28,6 +28,8 @@ pub struct BoardUi {
 pub enum Event {
     SelectPending(String),
     SelectShipment(Selection),
+    ToggleGroup(String),
+    TogglePending(String),
 }
 impl BoardUi{
     pub fn stop_preview(&mut self){
@@ -127,9 +129,8 @@ fn row(ui:&mut Ui,ship:&ShipmentRow,chosen:bool,in_preview:bool)->egui::Response
                     for product in &ship.products{
                         ui.label(typography::caption(product));
                     }
-                    ui.label(typography::quantity(
-                        if ship.collect{"착불".to_owned()}else{money(ship.freight)}
-                    ));
+                    let freight=if ship.collect{"착불".to_owned()}else{money(ship.freight)};
+                    ui.label(typography::quantity(&freight));
                 });
             });
     }).response
@@ -148,7 +149,9 @@ fn group_frame(
                 theme::ButtonRole::ActiveNavigation
             }else{theme::ButtonRole::Quiet},true);
             if btn.clicked(){
-                if let Some(first)=group.shipments.first(){
+                if active {
+                    event=Some(Event::ToggleGroup(group.id.clone()));
+                }else if let Some(first)=group.shipments.first(){
                     event=Some(Event::SelectShipment(Selection{
                         group_id:group.id.clone(),order_id:first.order_id.clone(),
                         shipment_id:first.id.clone()
@@ -186,8 +189,11 @@ fn group_frame(
             });
             for ship in &group.shipments{
                 let chosen=selected.is_some_and(|s|s.shipment_id==ship.id);
-                let response=row(ui,ship,chosen,in_preview && !chosen)
-                    .interact(egui::Sense::click());
+                let label=row(ui,ship,chosen,in_preview && !chosen);
+                let response=ui.interact(
+                    label.rect,Id::new(("workflow-shipment",ship.id.as_str(),in_preview)),
+                    egui::Sense::click()
+                );
                 if response.clicked(){
                     event=Some(Event::SelectShipment(Selection{
                         group_id:group.id.clone(),order_id:ship.order_id.clone(),
@@ -240,7 +246,8 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
             }
         }
     });
-    selected_id.map(Event::SelectPending)
+    selected_id.map(|id|if selected{Event::TogglePending(id)}
+        else{Event::SelectPending(id)})
 }
 /// Render once in the existing fixed pane. The floating expansion uses an egui
 /// foreground Area anchored to the card; it DOES NOT resize/reorder other cards.
@@ -252,7 +259,8 @@ pub fn show(
     let mut event=None;
     let mut trigger=None;
     let mut overlay=None;
-    let current=state.selection.as_ref();
+    let selected=state.selection.clone();
+    let current=selected.as_ref();
     if let Some(snapshot)=snapshot{
         for group in &snapshot.groups {
             let selected=current.is_some_and(|s|s.group_id==group.id);
@@ -260,10 +268,12 @@ pub fn show(
             let width=ui.available_width();
             let pos=ui.cursor().min;
             if let Some(value)=group_frame(ui,group,current,open,false,&mut trigger){
-                if selected && open && matches!(&value,Event::SelectShipment(s)
-                    if s.shipment_id==current.map(|s|s.shipment_id.as_str()).unwrap_or("")) {
-                    state.folded=Some(group.id.clone());
-                }else{event=Some(value);}
+                match value{
+                    Event::ToggleGroup(id)=>{
+                        state.folded=if open{Some(id)}else{None};
+                    }
+                    other=>event=Some(other),
+                }
             }
             if state.active_preview()==Some(group.id.as_str()) && !open{
                 overlay=Some((group.clone(),pos,width));
@@ -276,7 +286,16 @@ pub fn show(
         if snapshot.is_some_and(|snapshot|snapshot.groups.iter().any(|group|
             group.shipments.iter().any(|ship|ship.order_id==draft.id))){continue;}
         let selected=state.selection.is_none() && active_id==Some(draft.id.as_str());
-        if let Some(value)=pending_frame(ui,draft,selected,selected){event=Some(value);}
+        let key=format!("pending:{}",draft.id);
+        let open=selected && state.folded.as_deref()!=Some(key.as_str());
+        if let Some(value)=pending_frame(ui,draft,selected,open){
+            match value{
+                Event::TogglePending(_)=>{
+                    state.folded=if open{Some(key)}else{None};
+                }
+                other=>event=Some(other),
+            }
+        }
         ui.add_space(theme::SPACE_8);
     }
     let hovered=trigger.clone();
@@ -289,12 +308,22 @@ pub fn show(
         let response=area.show(ui.ctx(),|ui|{
             ui.set_min_width(width);
             ui.set_max_width(width);
+            let mut ignored_hover=None;
             overlay_event=group_frame(
-                ui,&group,current,true,true,&mut None
+                ui,&group,current,true,true,&mut ignored_hover
             );
         });
         state.preview_rect=Some(response.response.rect);
-        if overlay_event.is_some(){event=overlay_event;}
+        if let Some(overlay_event)=overlay_event {
+            if let Event::ToggleGroup(id)=overlay_event {
+                state.folded=None;
+                if let Some(first)=group.shipments.first(){
+                    event=Some(Event::SelectShipment(Selection{
+                        group_id:id,order_id:first.order_id.clone(),shipment_id:first.id.clone()
+                    }));
+                }
+            }else { event=Some(overlay_event); }
+        }
     }else{
         state.preview_rect=None;
     }
