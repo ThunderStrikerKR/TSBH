@@ -645,12 +645,11 @@ impl BandoEgui {
     fn modal_work_area(&self,ctx:&egui::Context)->Rect {
         let viewport=ctx.screen_rect();
         let gutter=theme::MODAL_VIEWPORT_GUTTER;
-        let kakao_edge=if self.page==Page::Reception {
-            let content_width=(viewport.width()-2.0*theme::PANEL_GAP)
-                .max(layout::LayoutState::minimum_width());
-            viewport.left()+theme::PANEL_GAP+
-                self.layout.widths(content_width)[0]+layout::SPLITTER
-        }else{viewport.left()};
+        let content_width=(viewport.width()-2.0*theme::PANEL_GAP)
+            .max(layout::LayoutState::minimum_width());
+        // React HubShell reserves Kakao across every navigation tab.
+        let kakao_edge=viewport.left()+theme::PANEL_GAP+
+            self.layout.widths(content_width)[0]+layout::SPLITTER;
         let left=(kakao_edge+gutter).min(viewport.right()-1.0);
         let right=(viewport.right()-gutter).max(left+1.0)
             .min(viewport.right());
@@ -1315,14 +1314,9 @@ impl BandoEgui {
                                 // dispose of an unsaved client draft.
                                 if !self.client_manager.as_ref()
                                     .is_some_and(|manager|manager.has_modal()) {
-                                    if self.page==Page::Reception &&
-                                        page!=Page::Reception {
-                                        // The Kakao dock exists only in the
-                                        // reception column. Restore external
-                                        // windows before another page owns it.
-                                        self.kakao_dock.disconnect();
-                                        self.kakao_connected=false;
-                                    }
+                                    // React HubShell keeps the Kakao dock
+                                    // outside the per-tab content. Navigation
+                                    // must NOT disconnect an OS window.
                                     self.page = page;
                                 }
                             }
@@ -2537,16 +2531,95 @@ impl BandoEgui {
                 Arc::clone(&self.gateway),ctx.clone()
             ));
         }
+        // React HubShell owns the Kakao column independently of navigation.
+        // A tab change must keep the native HWND dock visible; only the
+        // explicit Disconnect button (or app exit) restores external windows.
         egui::CentralPanel::default()
-            .frame(Frame::new().fill(theme::CANVAS).inner_margin(theme::SPACE_16))
+            .frame(Frame::new().fill(theme::CANVAS).inner_margin(theme::PANEL_GAP))
             .show(ctx, |ui| {
-                if self.page==Page::Clients {
-                    if let Some(manager)=self.client_manager.as_mut() {
-                        manager.show_page(ui,Arc::clone(&self.gateway));
-                    }
-                }else{
-                    ui.label(typography::page_heading(self.page.label()));
-                }
+                let content_width=ui.available_width()
+                    .max(layout::LayoutState::minimum_width());
+                let height=ui.available_height().max(1.0);
+                egui::ScrollArea::horizontal()
+                    .id_salt("kakao-management-shell")
+                    .auto_shrink([false,false])
+                    .show(ui,|host|{
+                        let widths=self.layout.widths(content_width);
+                        let (_,all)=host.allocate_space(
+                            Vec2::new(content_width,height)
+                        );
+                        let left=Rect::from_min_size(
+                            all.min,Vec2::new(widths[0],height)
+                        );
+                        host.scope_builder(
+                            UiBuilder::new().id_salt("management-kakao-pane")
+                                .max_rect(left).layout(Layout::top_down(Align::Min)),
+                            |pane|{
+                                pane.set_clip_rect(left);
+                                pane.set_width(left.width());
+                                pane.set_height(left.height());
+                                self.kakao_pane(pane);
+                            }
+                        );
+                        let splitter=Rect::from_min_size(
+                            egui::pos2(left.right(),all.top()),
+                            Vec2::new(layout::SPLITTER,height)
+                        );
+                        let id=host.make_persistent_id("management-kakao-splitter");
+                        let response=host.interact(
+                            splitter,id,Sense::click_and_drag()
+                        );
+                        if response.hovered() || response.dragged(){
+                            ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                        }
+                        components::paint_dock_splitter(
+                            host,splitter,true,response.hovered()||response.dragged()
+                        );
+                        if response.drag_started() {
+                            self.dragging_split=Some(HorizontalSplitDrag{
+                                index:0,initial_widths:widths,
+                            });
+                        }
+                        if response.dragged() {
+                            if let Some(drag)=self.dragging_split {
+                                if drag.index==0 {
+                                    self.layout.resize_pair(
+                                        drag.initial_widths,0,response.drag_delta().x
+                                    );
+                                }
+                            }
+                        }
+                        if response.drag_stopped() &&
+                            self.dragging_split.is_some_and(|d|d.index==0) {
+                            self.dragging_split=None;
+                            let _=self.layout.save();
+                        }
+                        if response.double_clicked(){
+                            self.layout.reset();
+                            let _=self.layout.save();
+                        }
+                        let right=Rect::from_min_max(
+                            egui::pos2(splitter.right(),all.top()),all.max
+                        );
+                        host.scope_builder(
+                            UiBuilder::new().id_salt(("management-page",self.page.label()))
+                                .max_rect(right).layout(Layout::top_down(Align::Min)),
+                            |main|{
+                                main.set_clip_rect(right);
+                                main.set_width(right.width());
+                                main.set_height(right.height());
+                                Frame::new().inner_margin(theme::SPACE_16).show(main,|page|{
+                                    if self.page==Page::Clients {
+                                        if let Some(manager)=self.client_manager.as_mut() {
+                                            manager.show_page(page,Arc::clone(&self.gateway));
+                                        }
+                                    }else{
+                                        page.label(typography::page_heading(self.page.label()));
+                                    }
+                                });
+                            }
+                        );
+                    });
             });
     }
 }
