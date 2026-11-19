@@ -1,7 +1,7 @@
 //! Reusable egui controls. A screen specifies business purpose and data,
 //! while colors, sizes and alignment are owned by the shared UI layer.
 
-use eframe::egui::{self, Align, Color32, Frame, Layout, Response, RichText, Stroke, Ui, Vec2};
+use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, RichText, Sense, Stroke, Ui, Vec2};
 use crate::theme;
 
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
@@ -68,6 +68,37 @@ pub fn soft_divider(ui: &mut Ui) {
     ui.painter().line_segment(
         [rect.left_top(), rect.right_top()],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER),
+    );
+}
+
+/// A 6pt dock separator owns its single visual boundary. Panels on either
+/// side do not paint individual borders, preventing doubled or rounded edges.
+pub fn docked_separator(ui: &mut Ui) {
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), theme::PANEL_GAP),
+        Sense::hover(),
+    );
+    paint_dock_splitter(ui, rect, false, false);
+}
+
+/// Paint only a 1pt line (2pt during hover/drag) inside the allocated
+/// 6pt hit target. `vertical = true` means a vertical dividing line.
+pub fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
+    ui.painter().rect_filled(rect, 0.0, theme::CANVAS);
+    let thickness = if active {
+        theme::DOCK_SPLITTER_HOVER_LINE
+    } else {
+        theme::DOCK_SPLITTER_LINE
+    };
+    let size = if vertical {
+        Vec2::new(thickness, rect.height())
+    } else {
+        Vec2::new(rect.width(), thickness)
+    };
+    ui.painter().rect_filled(
+        Rect::from_center_size(rect.center(), size),
+        0.0,
+        if active { theme::BORDER } else { theme::DIVIDER },
     );
 }
 
