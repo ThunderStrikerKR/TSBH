@@ -1468,47 +1468,74 @@ impl BandoEgui {
     }
 
     fn kakao_pane(&mut self, ui: &mut Ui) {
-        // The KakaoTalk dock is an OS foreground surface, not a chat chooser.
-        // The left pane is reserved for that window. Do not render chat titles,
-        // a selection list, or dealer-identification instructions here.
-        // Chat metadata is used only at the subsequent order intake boundary.
-        let pane_width = ui.available_width();
-        let pane_height = ui.available_height();
-        let region=ui.max_rect();
+        // Direct port of React HubShell's Kakao area:
+        // Connect when idle; Together / Split / Disconnect when connected.
+        // The OS windows belong ONLY below the visible control toolbar.
+        // Dealer matching still occurs separately upon intake.
+        let pane_width=ui.available_width();
+        let pane_height=ui.available_height();
         let scale=ui.ctx().pixels_per_point();
-        if self.kakao_dock.connected() {
-            if let Err(reason)=self.kakao_dock.sync(region,scale) {
-                self.kakao_connected=false;
-                self.source_save_error=Some(format!("카카오톡 연결 해제: {reason}"));
-                self.notifications_open=true;
-            }
-        }
         let connected=self.kakao_dock.connected();
-        self.kakao_connected=connected;
-        let mut connect = false;
-        theme::docked_pane_frame().show(ui, |ui| {
-            let inset = 2.0 * theme::SECTION_PADDING;
-            let inner_width = (pane_width - inset).max(1.0);
-            let inner_height = (pane_height - inset).max(1.0);
-            ui.set_min_size(Vec2::new(inner_width, inner_height));
-            if !connected {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(
-                        ((inner_height - theme::ACTION_EMPHASIZED_HEIGHT) / 2.0).max(0.0)
+        let current_mode=self.kakao_dock.mode();
+        let mut region=ui.available_rect_before_wrap();
+        let mut connect=false;
+        let mut disconnect=false;
+        let mut next_mode=None;
+        theme::docked_pane_frame().show(ui,|pane|{
+            let inset=2.0*theme::SECTION_PADDING;
+            let inner_width=(pane_width-inset).max(1.0);
+            let inner_height=(pane_height-inset).max(1.0);
+            pane.set_min_size(Vec2::new(inner_width,inner_height));
+            if connected {
+                pane.horizontal(|toolbar|{
+                    toolbar.spacing_mut().item_spacing.x=theme::SPACE_4;
+                    let mode_role=|active|if active{
+                        ButtonRole::ActiveManagementTab
+                    }else{ButtonRole::ManagementTab};
+                    if theme::action(toolbar,"함께 보기",
+                        mode_role(current_mode==kakao_dock::DockMode::Together),true
+                    ).clicked(){
+                        next_mode=Some(kakao_dock::DockMode::Together);
+                    }
+                    if theme::action(toolbar,"나누어 보기",
+                        mode_role(current_mode==kakao_dock::DockMode::Split),true
+                    ).clicked(){
+                        next_mode=Some(kakao_dock::DockMode::Split);
+                    }
+                    if theme::action(toolbar,"카카오톡 연결 해제",
+                        ButtonRole::Quiet,true
+                    ).on_hover_text("카카오톡 창을 원래 위치로 복원").clicked(){
+                        disconnect=true;
+                    }
+                });
+                pane.add_space(theme::SPACE_4);
+                // The Win32 surface must never obscure the three actions.
+                region=pane.available_rect_before_wrap();
+                pane.allocate_rect(region,Sense::hover());
+            }else{
+                region=pane.available_rect_before_wrap();
+                pane.vertical_centered(|center|{
+                    center.add_space(
+                        ((inner_height-theme::ACTION_EMPHASIZED_HEIGHT)/2.0).max(0.0)
                     );
-                    if theme::action(ui, "카카오톡 연결", ButtonRole::Emphasized, true)
-                        .clicked() {
-                        connect = true;
+                    if theme::action(center,"카카오톡 연결",
+                        ButtonRole::Emphasized,true
+                    ).clicked(){
+                        connect=true;
                     }
                 });
             }
         });
+        if disconnect {
+            self.kakao_dock.disconnect();
+            self.kakao_connected=false;
+            self.source_save_error=None;
+            return;
+        }
         if connect {
-            // The button is a real Win32 docking request, not a chat picker.
-            // Only a successful verified HWND placement counts as connected.
-            self.kakao_tracker.refresh();
-            let recent=self.kakao_tracker.recent_focus();
-            match self.kakao_dock.connect(recent,region,scale){
+            // Original React useAppModel::docking uses OS-verified CHAT or
+            // MAIN directly. No chat chooser or status-only connection.
+            match self.kakao_dock.connect(region,scale){
                 Ok(())=>{
                     self.kakao_connected=true;
                     self.source_save_error=None;
@@ -1518,6 +1545,24 @@ impl BandoEgui {
                     self.source_save_error=Some(format!("카카오톡 연결 실패: {reason}"));
                     self.notifications_open=true;
                 }
+            }
+            return;
+        }
+        if !connected {
+            self.kakao_connected=false;
+            return;
+        }
+        let result=if let Some(mode)=next_mode {
+            self.kakao_dock.set_mode(mode,region,scale)
+        }else{
+            self.kakao_dock.sync(region,scale)
+        };
+        match result {
+            Ok(())=>self.kakao_connected=self.kakao_dock.connected(),
+            Err(reason)=>{
+                self.kakao_connected=self.kakao_dock.connected();
+                self.source_save_error=Some(format!("카카오톡 배치 실패: {reason}"));
+                self.notifications_open=true;
             }
         }
     }
