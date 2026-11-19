@@ -23,15 +23,19 @@ pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const BRIGHT: Color32 = Color32::WHITE;
 pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
 pub const SPACING: f32 = 8.0;
-pub const SECTION_PADDING: f32 = 16.0;
-pub const CARD_PADDING: f32 = 12.0;
+pub const SECTION_PADDING: f32 = 10.0;
+pub const SECTION_HEADER_HEIGHT: f32 = 38.0;
+pub const SECTION_CONTENT_GAP: f32 = 8.0;
+pub const CARD_PADDING: f32 = 10.0;
+pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 pub const FONT_MAIN_NAV: f32 = 16.0;
 pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
 pub const PANEL_GAP: f32 = 6.0;
+pub const SOFT_DIVIDER_WIDTH: f32 = 1.0;
 pub const CONTROL_RADIUS: u8 = 6;
 pub const PANEL_RADIUS: u8 = 9;
-pub const INPUT_HEIGHT: f32 = 36.0;
+pub const INPUT_HEIGHT: f32 = 34.0;
 pub const HEADER_HEIGHT: f32 = 54.0;
 pub const NAV_HEIGHT: f32 = 38.0;
 
@@ -144,7 +148,14 @@ pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Resp
 
 pub fn divider(ui: &mut Ui) {
     ui.add_space(4.0);
-    ui.separator();
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), SOFT_DIVIDER_WIDTH),
+        egui::Sense::hover(),
+    );
+    ui.painter().line_segment(
+        [rect.left_top(), rect.right_top()],
+        Stroke::new(SOFT_DIVIDER_WIDTH, DIVIDER),
+    );
     ui.add_space(4.0);
 }
 
