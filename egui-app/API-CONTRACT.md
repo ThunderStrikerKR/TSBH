@@ -121,8 +121,8 @@ POST /api/v1/business-core
 - Windows: `%LOCALAPPDATA%\\BANDO-HUB-egui-preview\\egui-preview.sqlite3`
 - 홈 디렉터리 기반 환경: `~/.config/BANDO-HUB-egui-preview/egui-preview.sqlite3`
 - SQLite 테이블: `preview_meta`(DB 식별자), `catalog_snapshot`(상품·별칭·브랜드), `working_source`(현재 편집기 원문·접수 유형·revision과 전체 미확정 접수 목록 `drafts_json`·선택 ID `active_id`).
-- 카탈로그는 **처음 생성 시** 공식 내장 시드에서 넣는다. 내장 시드의 거래처는 0건이며 실제 운영 DB를 자동 수집하지 않는다.
-- 거래처 이름 인덱스는 별도의 `BANDO_EGUI_CLIENT_INDEX` 환경변수에 지정한 JSON 파일에서만 메모리에 로드한다. 파일이 없으면 `clients=[]`이며 임의로 거래처를 추정하지 않는다.
+- 카탈로그는 **처음 생성 시** 공식 내장 시드에서 넣는다. 내장 시드의 거래처는 0건이며 운영 DB를 무단 자동 탐색하지 않는다.
+- 거래처 이름 인덱스는 `BANDO_EGUI_CLIENT_INDEX` JSON 파일 **또는** `BANDO_EGUI_BUSINESS_DB`에 명시한 기존 Tauri SQLite DB를 `SQLITE_OPEN_READ_ONLY`와 `PRAGMA query_only=ON`으로 조회해 메모리로 구성한다. 경로 자동 탐색·운영 스키마 수정·운영 주문 조회·연락처/단가 복제는 하지 않는다. 둘 다 설정되면 오류다. 둘 다 없으면 `clients=[]`이다.
 - 저장소가 다른 구조이거나 DB 식별자가 다르면 마이그레이션하거나 덮어쓰지 않고 시작 오류로 종료한다.
 - 원문·접수 유형·선택 ID·전체 미확정 접수 목록을 하나의 revision-checked SQLite 트랜잭션으로 저장한다. 입력은 별도 스레드에서 debounce 처리하고, 정상 종료 때 마지막 대기 저장을 마무리한다. 충돌 및 저장 오류는 UI 하단에 표시한다.
 - **중요:** 이 저장 영역은 여러 미확정 발주원문의 선택 복원과 해당 원문에 대한 Rust 분석 근거·거래처 매칭 의견의 발주서별 보관만 제공한다. 거래처 확정·주문내역·결제·운임·발주서별 실제 처리 상태는 미이전이다.
@@ -137,12 +137,12 @@ POST /api/v1/business-core
 - 이미 존재하는 원문과 다르면 React 원본에서 쓰던 교체 확인을 적용하며, 사용자 승인 없는 덮어쓰기는 하지 않는다.
 - HTTP 서버 구현체는 아직 없다. 향후 `working-source` 계약 구현 시 `orderType`을 함께 처리해야 하며, 필드 누락을 임의로 AGENCY로 기본 처리하지 않는다.
 - **2026-11-20 반영:** 격리 egui에서 여러 미확정 발주원문을 각각 독립 ID로 유지한다. `+ 새 주문`으로 빈 접수를 열고, 오른쪽 `처리 중인 주문`에서 선택하면 해당 원문을 복원하여 Rust 분석을 다시 실행한다. 기존 단일 원문은 `legacy-working-source` ID로 메모리상 승계한 뒤 다음 사용자 변경 시 새 구조로 비파괴 저장한다.
-- **2026-11-20 추가:** 기존 Rust `catalog_clients/title_clients.rs`의 발주원문 거래처 자동 매칭·후보 판단을 연결했다. egui 카카오톡 창 어댑터는 아직 없으므로 창 목록은 비워 전달하며, 명시적 발주처와 연결된 거래처 명단이 있을 때만 자동 매칭 의견을 낸다. 수취인 이름·학교·주소·상호만으로 발주처를 추측하지 않는다.
-- **제한:** 매칭 의견을 실제 운영 거래처에 적용하는 확정 기능, 주문별 확인·수정·확정 및 공장 전달은 아직 이전되지 않았다. 오른쪽 목록은 egui 전용 미확정 접수 목록이다.
+- **2026-11-20 추가:** 기존 Rust `catalog_clients/title_clients.rs`의 발주원문 거래처 자동 매칭·후보 판단을 연결했다. egui Windows 카카오톡 창 어댑터는 실제 `KakaoTalk.exe`의 확인된 대화창 제목과 HWND만 제공한다. 사용자가 `카카오톡 연결`에서 대화를 선택하거나 최근 실제 활성 대화를 확인한 경우에만 창 정보를 Rust 매칭 엔진에 전달한다. 창 내용은 읽지 않는다. 거래처 명단이 없으면 매칭을 확정하지 않는다. 수취인 이름·학교·주소·상호만으로 발주처를 추측하지 않는다.
+- **제한:** 거래처는 **격리 egui 미확정 발주서에만** 자동 후보 적용 또는 직원 수동 후보 선택으로 기록한다. Tauri 운영 주문의 거래처 확정·단가 계산·주문별 확인·공장 전달은 아직 이전되지 않았다. 오른쪽 목록은 egui 전용 미확정 접수 목록이다.
 
 ## 8. 거래처 이름 인덱스와 발주서별 분석 근거 (2026-11-20)
 
-운영 DB를 자동으로 검색·복사하지 않는다. 명시적 프리뷰 인덱스 파일을 연결할 때만 거래처 자동 식별을 수행한다.
+운영 DB를 자동 검색하거나 복사하지 않는다. 파일명과 경로는 사용자가 명시해야 한다. JSON 인덱스 파일뿐 아니라 기존 Tauri 관계형 SQLite의 거래처 테이블을 **읽기 전용**으로 조회할 수 있다.
 
 ```powershell
 $env:BANDO_EGUI_CLIENT_INDEX = "C:\\private-data\\clients-index.json"
@@ -155,5 +155,22 @@ $env:BANDO_EGUI_CLIENT_INDEX = "C:\\private-data\\clients-index.json"
 - 원본의 `id`, `name`, `displayName`, `shortNames`, `identifiers`, `active`, `deletedAt`만 투영한다. 주소·전화번호·가격·주문내역은 제외한다. 최대 5,000건, 2MB다.
 - 각 미확정 접수는 `analysisRaw`, `analysisEvidence`, `clientMatch`를 함께 저장할 수 있다. 분석 근거의 원문이 현재 원문과 다르면 저장을 거절하고, 입력이 변경될 때 기존 근거를 무효화한다.
 - `RAW_EXPLICIT` 등은 영구 거래처 지정이 아니라 Rust의 읽기 전용 의견이다. 실제 지정은 이후 Rust 주문 변경·검증·저장 경로에서 처리한다.
-- 현재 카카오톡 창 목록을 얻는 egui 어댑터가 없으므로 빈 목록을 전달한다. 여러 대화창에서 특정 대화창을 근거 없이 고르지 않는다.
+- `kakao_context.rs`는 운영 Tauri의 창 검증 기준에 맞춰 실제 `KakaoTalk.exe`의 보이는 대화창 제목과 HWND를 조회한다. 창 배치·화면 임베딩·대화 메시지 조회는 하지 않는다. 선택된 HWND/제목이 현재 창 목록에서 일치하지 않으면 Rust 매칭에는 빈 창 목록을 전달한다.
+- 직원이 Rust 후보 중 하나를 선택하면 접수별 `clientId`/`clientSelection=MANUAL`을 보존하고 Rust 분석을 다시 실행한다. 자동 고유 매칭은 `AUTO`로 저장한다. 선택한 거래처 ID는 egui 프리뷰에만 적용된다.
 - 컴파일·Windows 실동작 확인 및 대규모 회귀 테스트는 수행하지 않았다.
+
+### 관계형 운영 거래처 명단 읽기 전용 연결
+
+Tauri 운영 DB 파일 경로를 **사용자가 명시한 경우에만** 조회한다. 아래 경로는 예시이며 실제 설치 위치를 확인해서 사용한다.
+
+```powershell
+$env:BANDO_EGUI_BUSINESS_DB = "C:\\path\\to\\bando-hub-v001.sqlite"
+```
+
+읽는 테이블은 `core_schema`(버전 2 확인), `core_clients`(거래처), `app_state` 내 `settings.kakaoTitleMappings`뿐이다. 운영 DB를 마이그레이션하거나 수정하지 않는다. 거래처 원본 payload에서 이름·별칭·활성/삭제 상태만 추려 메모리에 보관하고 주소·연락처·가격·주문 내역은 egui SQLite에 저장하지 않는다. 기존 JSON 인덱스 환경변수와 동시 사용은 금지한다.
+
+### 발주서별 대화창·거래처 선택 계약
+
+각 draft에는 다음 선택 필드가 추가될 수 있다: `chatHandle`, `chatTitle`(둘 다 존재하거나 둘 다 null), `clientId`, `clientSelection`(`AUTO` 또는 `MANUAL`), `analysisRaw`, `analysisEvidence`, `clientMatch`. 서버가 workspace 계약을 구현할 경우 누락·드롭 없이 왕복 보존해야 한다. 원문이 수정되거나 대화창 선택이 달라지면 기존 분석 근거를 무효화한다. 사용자가 수동 선택한 거래처는 다른 원문/대화 분석 때문에 자동으로 덮어쓰지 않는다.
+
+자동 판정은 기존 Rust `catalog_clients/auto_match_reception_client`를 그대로 호출한다. `windows`와 `activeChatHandle`은 OS에서 검증된 대화창 정보만 전달한다. 복수 대화창에서 활성 창이 특정되지 않으면 임의로 고르지 않는다. Tauri 운영 주문 상태와는 여전히 완전히 분리되어 있다.
