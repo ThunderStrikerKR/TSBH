@@ -71,7 +71,7 @@ pub const MANUAL_SOURCE_SHARE: f32 = 0.34;
 pub const MANUAL_SOURCE_MIN_WIDTH: f32 = 300.0;
 pub const MANUAL_SHEET_MIN_WIDTH: f32 = 500.0;
 pub const MANUAL_COLUMN_GAP: f32 = SPACE_12;
-pub const MANUAL_SEARCH_DIALOG_WIDTH: f32 = 760.0;
+pub const MANUAL_SEARCH_DIALOG_WIDTH: f32 = MODAL_DEFAULT_MAX_WIDTH;
 pub const MANUAL_SEARCH_RESULTS_HEIGHT: f32 = 420.0;
 pub const MANUAL_INPUT_WIDTH: f32 = 250.0;
 // Shared native modal/table roles. Manual source and spreadsheet-like rows
