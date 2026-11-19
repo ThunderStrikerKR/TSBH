@@ -1,4 +1,4 @@
-# Targeted Windows compile: left-aligned dealer heading, unchanged 18pt independent lamps and 관리 label.
+# Targeted Windows compile: native egui settings tabs and original Rust settings_patch bridge.
 name: Tauri native CLI executable compile check
 on:
   push:
