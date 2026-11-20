@@ -2560,18 +2560,14 @@ fn freight_history_table(
 ){
     let old_spacing=ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y=0.0;
-    let viewport_width=ui.available_width().max(1.0);
-    let gutter=ui.spacing().scroll.allocated_width()+theme::SPACE_4;
     let minimum=bases.iter().sum::<f32>()
         +5.0*theme::FREIGHT_ASSIGNMENT_COL_GAP;
-    let width=(viewport_width-gutter).max(minimum);
-    let extra=(width-minimum).max(0.0);
-    let mut widths=bases;
-    for index in 0..6{widths[index]+=extra*shares[index];}
-    let (header_rect,_)=ui.allocate_exact_size(
-        egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
-        egui::Sense::hover()
+    let layout=components::management_existing_list_table_header(ui,minimum);
+    let width=layout.table_width;
+    let widths=theme::management_weighted_columns(
+        bases,shares,width,theme::FREIGHT_ASSIGNMENT_COL_GAP
     );
+    let header_rect=layout.header_rect;
     let mut first_row_left=None;
     let scroll=components::virtual_fixed_rows(
         egui::ScrollArea::both()
