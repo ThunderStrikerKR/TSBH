@@ -206,7 +206,7 @@ pub(super) fn list_view_range(
 )->Result<Value,String>{
     for day in [from,to]{
         if !day.is_empty() && NaiveDate::parse_from_str(day,"%Y-%m-%d")
-            .is_err_or(|parsed|parsed.format("%Y-%m-%d").to_string()!=day)
+            .map_or(true,|parsed|parsed.format("%Y-%m-%d").to_string()!=day)
         {
             return Err("주문 내역 검색 날짜는 YYYY-MM-DD 형식이어야 합니다.".into());
         }
@@ -431,4 +431,78 @@ mod tests {
         assert_eq!(view[0]["display"]["references"][0]["link"],Value::Null);
         assert_eq!(view[0]["display"]["paymentEvidenceMissing"],false);
     }
+    #[test]
+    fn date_range_reception_and_real_payment_allocations_are_distinct() {
+        let state=json!({
+            "orders":[
+                {"id":"o1","clientId":"c1","raw":"709","createdAt":"2026-11-15",
+                 "recipients":[{"id":"r1","items":[]}]},
+                {"id":"o2","clientId":"c1","raw":"709","createdAt":"2026-11-17",
+                 "recipients":[{"id":"r2","items":[]}]},
+                {"id":"o3","clientId":"c1","raw":"709","createdAt":"2026-11-18",
+                 "recipients":[{"id":"r3","items":[]}]}
+            ],
+            "clients":[{"id":"c1","name":"거래처","tier":"wholesale"}],
+            "workflow":{
+                "groups":[{"id":"g1"}],
+                "shipments":[
+                    {"id":"s1","orderId":"o1","recipientId":"r1","groupId":"g1","transferred":true},
+                    {"id":"s2","orderId":"o2","recipientId":"r2","groupId":"g1","transferred":true},
+                    {"id":"s3","orderId":"o3","recipientId":"r3","groupId":"g1","transferred":true}
+                ],
+                "queue":[
+                    {"shipmentId":"s1","status":"EXPORTED","origin":"STORE",
+                     "snapshot":{"subtotal":0,"shipping":0,"vat":0,"total":0}},
+                    {"shipmentId":"s2","status":"EXPORTED","origin":"STORE",
+                     "snapshot":{"subtotal":0,"shipping":0,"vat":0,"total":0}},
+                    {"shipmentId":"s3","status":"EXPORTED","origin":"STORE",
+                     "snapshot":{"subtotal":0,"shipping":0,"vat":0,"total":0}}
+                ],
+                "payments":[
+                    {"id":"p1","paidAt":"2026-11-19T16:00:00Z",
+                     "allocations":[{"shipmentId":"s1","amount":1500}]},
+                    {"id":"p2","paidAt":"2026-11-21T03:00:00Z",
+                     "allocations":[{"shipmentId":"s2","amount":500}]},
+                    {"id":"p3","paidAt":"2026-11-20T01:00:00Z","allocations":[]},
+                    {"id":"p4","paidAt":"2026-11-20T05:00:00Z",
+                     "allocations":[{"shipmentId":"s3","amount":0}]}
+                ]
+            }
+        });
+        let ids=|items:&Value|items.as_array().unwrap().iter()
+            .map(|row|str_field(field(row,"order"),"id").to_owned())
+            .collect::<Vec<_>>();
+        let before=state.clone();
+        assert_eq!(ids(&list_view_range(
+            &state,"","2026-11-20","2026-11-20","PAYMENT",&Value::Null
+        ).unwrap()),vec!["o1"]);
+        assert_eq!(ids(&list_view_range(
+            &state,"","2026-11-20","2026-11-21","PAYMENT",&Value::Null
+        ).unwrap()),vec!["o1","o2"]);
+        assert_eq!(ids(&list_view_range(
+            &state,"","2026-11-17","2026-11-18","RECEPTION",&Value::Null
+        ).unwrap()),vec!["o2","o3"]);
+        assert_eq!(ids(&list_view_range(
+            &state,"","","2026-11-20","PAYMENT",&Value::Null
+        ).unwrap()),vec!["o1"]);
+        assert_eq!(ids(&list_view_range(
+            &state,"","2026-11-21","","PAYMENT",&Value::Null
+        ).unwrap()),vec!["o2"]);
+        assert_eq!(ids(&list_view_range(
+            &state,"","","","RECEPTION",&Value::Null
+        ).unwrap()),vec!["o1","o2","o3"]);
+        assert_eq!(ids(&list_view_range(
+            &state,"","","","PAYMENT",&Value::Null
+        ).unwrap()),vec!["o1","o2"]);
+        assert!(list_view_range(
+            &state,"","2026-11-22","2026-11-20","PAYMENT",&Value::Null
+        ).is_err());
+        assert!(list_view_range(
+            &state,"","2026-02-30","","RECEPTION",&Value::Null
+        ).is_err());
+        assert_eq!(state,before,"searching cannot mutate business data");
+        // The original date-only entrypoint remains unchanged for settlement.
+        assert_eq!(ids(&list(&state,"","2026-11-17").unwrap()),vec!["o2"]);
+    }
+
 }
