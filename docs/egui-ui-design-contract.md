@@ -453,3 +453,13 @@
 - **UI 이전:** `egui-app/src/model_group_manager.rs`에서 그룹 이름 입력·생성·중복 이름 검토, 그룹 검색·선택, 상품명 검색과 '추가', 기존 소속 표시·중복 추가 비활성, 등록 상품 '대표 지정'/'제외', 그룹 이름 변경, 삭제 확인, 변경사항 저장, 미저장 이탈 확인을 기존 공통 egui 역할별 버튼/문구로 구현한다. `egui-app/src/product_manager.rs`의 기존 상품관리 3번째 탭에서 활성화하고, 카테고리 등 이미 이전된 탭의 변경을 유지한다.
 - **원본 Rust 업무·저장:** `src-tauri/src/business_core/catalog_clients/model_groups.rs::validate`와 `src-tauri/src/lib.rs::apply_settings_patch`를 그대로 쓴다. 새 판단 엔진과 임의 추가 저장 구조는 없다. `egui-app/src/settings_store.rs`는 운영 DB의 기존 모델군 설정 필드만 허용하고 격리 미리보기 DB에는 저장하지 않는다. `BANDO_EGUI_ENABLE_SETTINGS_WRITE=1`, 운영 DB 경로와 Tauri 도우미 연결이 명시된 경우 `backup_manager::manual_backup`을 선행하고 원본 per-field expected-value CAS로 저장한다. 성공 시 최신 상품·모델군 상태를 재조회하며 실패하면 편집값을 보존한다.
 - **검증/판정:** 구조·업무 기준 정적 대조 및 목표 Rust 컴파일·좁은 모델군 규칙 테스트만 대상. Windows GUI 실행·스크린샷은 사용자 정책에 따라 생략. 실제 운영 DB 설정 저장·재조회와 동시 수정 충돌은 별도 확인 전까지 동작 PASS로 기록하지 않는다.
+
+
+### 52차 상품관리 후속: 별칭 관리 Rust/egui 이전 (2026-11-20)
+
+- **기존 기능·디자인 기준:** `src/AliasManager.tsx`, `src/ProductSearchDialog.tsx`, `src/Classification.tsx`, `src/category-filter-levels.ts`, `src/matching.ts`, `src/styles/tauri-stage2-products.css` 최종 `.alias-manager`, `.registry-edit-form`, `.registry-list`, `.registry-row` 규칙. 제목과 설명, 별칭·적용 범위·연결 상품·별칭 저장, 등록 별칭의 `연결 정정`, 기존 오류의 영향 범위 안내를 보존한다. 저장된 별칭은 사용자가 명시적으로 지시하지 않는 이상 삭제하지 않는다.
+- **egui:** `egui-app/src/alias_manager.rs`는 `상품관리 > 별칭 관리` 탭(인덱스 3)의 원본 form/목록·정정 UI를 공통 테마/서체/모달로 제공한다. 원본 ProductSearchDialog는 Rust 검색어/별칭 기반 상품 후보 조회와 계층형 카테고리 선택, Rust 기준 브랜드 후보, 유효한 공식 상세 링크를 표시한다. 연결 상품은 사용자가 직접 선택하며 자동 연결하지 않는다.
+- **저장·진단 소유자:** `src-tauri/src/business_core/catalog_clients/aliases.rs`의 `save_alias`·`alias_problems`를 그대로 재사용한다. `egui-app/src/catalog_query_bridge.rs`는 원본 모듈을 직접 링크하여 충돌 진단한다. `src-tauri/src/egui_product_bridge.rs`의 `save_alias` 경로는 운영 SQLite 원본 전체 상태에서 첫 번째 판매구성 ID, 작성자, 생성시각을 채운 뒤 Rust `save_alias` 호출 결과를 기존 revision-checked `write_snapshot`에 저장한다. 읽기/쓰기용 별칭 업무 알고리즘을 egui에 복제하지 않는다.
+- **저장 도메인:** 별칭 변경은 `BANDO_EGUI_ENABLE_PRODUCT_WRITE=1` + 명시적 운영 DB/실행 helper에서만 가능하며, 격리된 egui PreviewStore/JSON/외부 DB에 쓰기 우회하지 않는다. 중복된 동의 버튼이나 새로운 별칭 삭제 동작을 추가하지 않는다. 동시 작업의 오래된 revision 저장은 거부하고 로컬 입력은 보존한다.
+- **미저장 전환:** 기존 별칭 선택·상품관리 하위 탭·전역 메뉴 이동에서 저장/버리기/취소를 구분한다. 저장 중 입력과 중복 저장을 방지하며, 실패 시 현재 별칭·범위·연결 상품 입력을 덮어쓰지 않는다. 성공 시 수정 폼은 초기화하고 적용 범위는 유지한다.
+- **검증:** React+실제 CSS+native Rust 정적 대조, alias Rust 단위 테스트, 원본 SQLite init/`save_alias`/교정/리비전 충돌/재연결 좁은 통합 테스트, Tauri/egui 컴파일을 개별 근거로 기록한다. Windows 화면은 사용자 결정에 따라 실행하지 않는다. 모델군/카테고리/브랜드/주문 화면에 대한 전역 수정은 범위 밖이다.
