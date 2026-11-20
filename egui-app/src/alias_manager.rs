@@ -334,13 +334,13 @@ impl AliasManager {
                                 .selected_text(visible).show_ui(filters,|choice|{
                                     choice.selectable_value(&mut value,String::new(),
                                         if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
-                                    for (id,name) in children{
+                                    for (id,name) in &children{
                                         let visible=typography::fit_category_path(
-                                            choice,&name,text_width,
+                                            choice,name,text_width,
                                             typography::CategoryPathFont::Body
                                         );
-                                        choice.selectable_value(&mut value,id,visible)
-                                            .on_hover_text(name);
+                                        choice.selectable_value(&mut value,id.clone(),visible)
+                                            .on_hover_text(name.as_str());
                                     }
                                 }).response.on_hover_text(label);
                             if value!=selected{
