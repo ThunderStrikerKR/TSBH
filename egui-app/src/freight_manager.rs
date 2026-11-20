@@ -1875,16 +1875,9 @@ impl FreightManager {
 
 }
 
-/// Returns the vertical glyph baseline inside the laid-out text.
-/// We must use font metrics instead of half the galley height, otherwise
-/// mixed Hangul and monospaced digits appear at different vertical levels.
-fn summary_glyph_baseline(galley: &egui::Galley) -> f32 {
-    galley.rows.first()
-        .and_then(|row|row.glyphs.first()
-            .map(|glyph|row.pos.y+glyph.pos.y))
-        .unwrap_or_else(||galley.size().y/2.0)
-}
-
+/// Render one of four independent KPI cards. Visual hierarchy is deliberately
+/// numeric-first: 28pt value, then a muted 13pt label, both centered.
+/// The card itself stays fixed at 228pt wide, with proportional internal spacing.
 fn summary(ui: &mut Ui, label: &str, count: usize) {
     let card_width=theme::FREIGHT_SUMMARY_CARD_WIDTH;
     ui.allocate_ui_with_layout(
@@ -1893,50 +1886,44 @@ fn summary(ui: &mut Ui, label: &str, count: usize) {
         |slot|{
             slot.set_width(card_width);
             theme::freight_summary_frame().show(slot,|cell|{
+                // These two lines and their gap define the frame's exact
+                // content height; disable egui's implicit vertical item gap.
+                cell.spacing_mut().item_spacing.y=0.0;
                 let content_width=card_width-2.0*theme::FREIGHT_SUMMARY_PADDING_X
                     -2.0*theme::FRAME_STROKE_WIDTH;
-                // Padding, line height and total card height are calculated
-                // from the same 16pt summary font size. The one-line row
-                // remains a shared baseline for labels, digits and units.
-                let (line,_)=cell.allocate_exact_size(
-                    egui::vec2(content_width,theme::FREIGHT_SUMMARY_LINE_HEIGHT),
+                let (number_row,_)=cell.allocate_exact_size(
+                    egui::vec2(
+                        content_width,theme::FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT
+                    ),
                     egui::Sense::hover()
                 );
-                let caption=typography::summary_card_label_galley(
-                    cell,label
+                cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP);
+                let (label_row,_)=cell.allocate_exact_size(
+                    egui::vec2(
+                        content_width,theme::FREIGHT_SUMMARY_LABEL_LINE_HEIGHT
+                    ),
+                    egui::Sense::hover()
                 );
-                let digits=typography::summary_value_galley(
+                let number=typography::freight_summary_large_number_galley(
                     cell,&count.to_string()
                 );
-                let unit=typography::summary_card_unit_galley(
-                    cell,"개"
+                let caption=typography::freight_summary_small_label_galley(
+                    cell,label
                 );
-                // Right-align the number to the unit: "358개" remains
-                // adjacent, and the last digit shares the same x-position
-                // for 0, 358, or a five-digit quantity.
-                let unit_x=line.right()-unit.size().x;
-                let digits_x=unit_x-theme::SPACE_4-digits.size().x;
                 let painter=cell.painter();
-                // A galley's box center is NOT its glyph baseline. CJK
-                // captions, proportional units, and monospaced digits have
-                // different ascents even at the same 16pt font size.
-                // Anchor all three galleys to the same actual glyph
-                // baseline; keep numbers right-aligned before the unit.
-                let caption_top=line.center().y-caption.size().y/2.0;
-                let baseline=caption_top+summary_glyph_baseline(&caption);
-                let digits_top=baseline-summary_glyph_baseline(&digits);
-                let unit_top=baseline-summary_glyph_baseline(&unit);
                 painter.galley(
-                    egui::pos2(line.left(),caption_top),
+                    egui::pos2(
+                        number_row.center().x-number.size().x/2.0,
+                        number_row.center().y-number.size().y/2.0
+                    ),
+                    number,theme::TEXT
+                );
+                painter.galley(
+                    egui::pos2(
+                        label_row.center().x-caption.size().x/2.0,
+                        label_row.center().y-caption.size().y/2.0
+                    ),
                     caption,theme::SECONDARY
-                );
-                painter.galley(
-                    egui::pos2(digits_x,digits_top),
-                    digits,theme::TEXT
-                );
-                painter.galley(
-                    egui::pos2(unit_x,unit_top),
-                    unit,theme::SECONDARY
                 );
             });
         }
