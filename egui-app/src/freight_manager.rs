@@ -1933,7 +1933,7 @@ impl FreightManager {
             // '배송 그룹 편성' reference. Only row contents differ.
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
-            let rate_layout=components::management_existing_list_table_header(
+            let rate_layout=components::management_list_table_header(
                 section,theme::FREIGHT_RATE_TABLE_MIN_WIDTH
             );
             let table_width=rate_layout.table_width;
@@ -2562,7 +2562,7 @@ fn freight_history_table(
     ui.spacing_mut().item_spacing.y=0.0;
     let minimum=bases.iter().sum::<f32>()
         +5.0*theme::FREIGHT_ASSIGNMENT_COL_GAP;
-    let layout=components::management_existing_list_table_header(ui,minimum);
+    let layout=components::management_list_table_header(ui,minimum);
     let width=layout.table_width;
     let widths=theme::management_weighted_columns(
         bases,shares,width,theme::FREIGHT_ASSIGNMENT_COL_GAP
