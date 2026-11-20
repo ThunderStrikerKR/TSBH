@@ -1043,16 +1043,6 @@ impl FreightManager {
                         bulk.label(typography::field_label(&format!(
                             "{}개 선택",selected.len()
                         )));
-                        let mut all=!filtered.is_empty()
-                            && filtered.iter().all(|p|selected.contains(text(p,"id")));
-                        if bulk.checkbox(&mut all,"").changed(){
-                            selected.clear();
-                            *bulk_feedback=None;
-                            if all {
-                                selected.extend(filtered.iter()
-                                    .map(|p|text(p,"id").to_owned()));
-                            }
-                        }
                 }
             );
             if *bulk_group!=previous_group {
@@ -1070,7 +1060,7 @@ impl FreightManager {
             widths[2]+=extra*0.10; // category
             widths[3]+=extra*0.20; // colors/options are never removed
             let titles=[
-                "선택","상품명 / 상품설명","카테고리","색상 / 옵션",
+                "","상품명 / 상품설명","카테고리","색상 / 옵션",
                 "배송 그룹","운임 / 묶음 상태","지정 상태","설정"
             ];
             // The header is a fixed sibling above the independently scrolling
@@ -1392,6 +1382,46 @@ impl FreightManager {
                 [header_rect.left_bottom(),header_rect.right_bottom()],
                 egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
             );
+
+            // This is the single "select all" control for the currently
+            // filtered product list (not only the virtualized visible rows).
+            // It replaces the redundant checkbox in the bulk-action toolbar.
+            let mut all_filtered=!filtered.is_empty()
+                && filtered.iter().all(|p|selected.contains(text(p,"id")));
+            let header_check_width=section.spacing().icon_width
+                +section.spacing().icon_spacing;
+            let header_check_rect=egui::Rect::from_center_size(
+                header_cells[0].center(),
+                egui::vec2(
+                    header_check_width,
+                    header_cells[0].height().min(theme::INPUT_HEIGHT)
+                )
+            );
+            let mut header_check_builder=egui::UiBuilder::new()
+                .id_salt("freight-select-all-filtered")
+                .max_rect(header_check_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center));
+            if !enabled || filtered.is_empty(){
+                header_check_builder=header_check_builder.disabled();
+            }
+            section.scope_builder(header_check_builder,|header_check|{
+                header_check.set_clip_rect(
+                    header_cells[0].intersect(header_rect)
+                );
+                if header_check.checkbox(&mut all_filtered,"")
+                    .on_hover_text("현재 검색·필터 결과 전체 선택 / 해제")
+                    .changed()
+                {
+                    let current_ids: BTreeSet<&str>=filtered.iter()
+                        .map(|p|text(p,"id")).collect();
+                    // Keep selections outside the current filtered list.
+                    selected.retain(|id|!current_ids.contains(id.as_str()));
+                    if all_filtered{
+                        selected.extend(current_ids.into_iter().map(str::to_owned));
+                    }
+                    *bulk_feedback=None;
+                }
+            });
             let mut assignments=serde_json::Map::new();
             for (id,group) in pending.iter(){
                 if let Some(product)=products.iter().find(|p|text(p,"id")==id.as_str()){
