@@ -5,7 +5,7 @@
 //! - No business DB: isolated egui-preview.sqlite3 settings domain, with
 //!   per-field CAS and a local account-reference guard.
 //! No implicit operational database discovery and no shadow settings rules.
-use crate::{business_state, preview_store::PreviewStore};
+use crate::{business_state, gateway::rules, preview_store::PreviewStore};
 use rusqlite::{params,Connection,TransactionBehavior};
 use serde_json::{json,Map,Value};
 use std::{time::{Duration,SystemTime,UNIX_EPOCH},path::PathBuf};
@@ -14,11 +14,12 @@ use std::{time::{Duration,SystemTime,UNIX_EPOCH},path::PathBuf};
 mod native_settings_accounts;
 
 const SETTINGS_CAP:usize=512*1024;
-const EDIT_FIELDS:[&str;14]=[
+const EDIT_FIELDS:[&str;16]=[
     "uiScale","operatorName","senderName","senderAddress","senderPostcode",
     "senderPhone","senderMobile","accounts","defaultAccountId",
     "brandAccounts","excelDirectory","factoryReplyDirectory",
     "orderImageInboxDirectory","colorGuidanceGroups",
+    "automaticMessageTemplates","provisionalProductNotices",
 ];
 fn local_defaults()->Value {
     json!({
@@ -146,6 +147,10 @@ fn validate(changes:&Map<String,Value>,expected:&Map<String,Value>)->Result<(),S
             }
         }else if key=="brandAccounts"{
             if !value.is_object(){return Err("추천 계좌 설정 형식이 잘못되었습니다.".into());}
+        }else if key=="automaticMessageTemplates" || key=="provisionalProductNotices"{
+            if !value.is_object(){
+                return Err("자동 메시지 설정은 유형별 문자열 객체여야 합니다.".into());
+            }
         }else if !value.is_string() && !value.is_null(){
             return Err(format!("설정 문자 필드 형식 오류: {key}"));
         }
@@ -176,6 +181,28 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     for (key,value) in changes{
         if value.is_null(){entries.remove(key);}
         else{entries.insert(key.clone(),value.clone());}
+    }
+    // Isolated preview writes must use the SAME compiled Rust validators as
+    // business settings. Operating v2 writes validate again inside the
+    // authoritative settings_patch transaction.
+    if changes.contains_key("automaticMessageTemplates"){
+        rules::execute("validate_automatic_templates",json!({
+            "edits":settings.get("automaticMessageTemplates")
+                .cloned().unwrap_or_else(||json!({}))
+        }))?;
+    }
+    if changes.contains_key("provisionalProductNotices"){
+        let catalog=PreviewStore::initialize()?.load_catalog()?;
+        rules::execute("validate_provisional_product_notices",json!({
+            "state":{
+                "products":catalog.get("products").cloned()
+                    .unwrap_or_else(||json!([])),
+                "settings":{"provisionalProductNotices":
+                    settings.get("provisionalProductNotices").cloned()
+                        .unwrap_or_else(||json!({}))
+                }
+            }
+        }))?;
     }
     // Account IDs and client references are not a UI-only decision.
     // Exactly like Tauri settings_patch: an unrelated sender/scale edit
