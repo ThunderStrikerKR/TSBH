@@ -345,9 +345,10 @@ pub fn labeled_field(
     }).inner
 }
 
-/// React recipient grid: name/address/note span a full row, while mobile
-/// and landline occupy equal columns (stacked below 330pt). The landline
-/// control is ALWAYS rendered, including when no number was recognized.
+/// Recipient grid: name/address/note span a full row, while mobile and
+/// landline ALWAYS share one horizontal line. A narrow pane scrolls this
+/// contact row horizontally rather than stacking or clipping inputs.
+/// The landline control is rendered even when no number was recognized.
 /// Return whole field-row responses so source evidence highlighting keeps
 /// its existing exact field-level targets.
 pub fn reception_recipient_fields(
@@ -388,20 +389,24 @@ pub fn reception_recipient_fields(
         fields.spacing_mut().item_spacing.x = theme::RECIPIENT_PHONE_COLUMN_GAP;
         let name_response = row(fields, "이름", name, theme::RECIPIENT_LABEL_WIDTH);
         let address_response = row(fields, "주소", address, theme::RECIPIENT_LABEL_WIDTH);
-        let (mobile_response, phone_response) =
-            if fields.available_width() > theme::RECIPIENT_PHONE_STACK_BELOW {
-                fields.columns(2, |columns| {
+        // Keep a two-column contact row at every viewport width. The inner
+        // horizontal scroller preserves readable input widths in narrow panes
+        // without changing the parent recipient pane or other field rows.
+        let contact_width = fields.available_width()
+            .max(theme::RECIPIENT_PHONE_ROW_MIN_WIDTH);
+        let (mobile_response, phone_response) = egui::ScrollArea::horizontal()
+            .id_salt("recipient-contact-row")
+            .drag_to_scroll(false)
+            .auto_shrink([false, true])
+            .show(fields, |contacts| {
+                contacts.set_min_width(contact_width);
+                contacts.columns(2, |columns| {
                     (
                         row(&mut columns[0], "휴대폰", mobile, theme::RECIPIENT_LABEL_WIDTH),
                         row(&mut columns[1], "전화", phone, theme::RECIPIENT_PHONE_LABEL_WIDTH),
                     )
                 })
-            } else {
-                (
-                    row(fields, "휴대폰", mobile, theme::RECIPIENT_LABEL_WIDTH),
-                    row(fields, "전화", phone, theme::RECIPIENT_LABEL_WIDTH),
-                )
-            };
+            }).inner;
         let note_response = row(fields, "요청 메시지", note, theme::RECIPIENT_LABEL_WIDTH);
         [
             name_response, address_response, mobile_response,
