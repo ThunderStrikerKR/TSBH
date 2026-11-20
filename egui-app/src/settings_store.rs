@@ -14,11 +14,11 @@ use std::{io::Write,process::{Command,Stdio},time::{Duration,SystemTime,UNIX_EPO
 mod native_settings_accounts;
 
 const SETTINGS_CAP:usize=512*1024;
-const EDIT_FIELDS:[&str;13]=[
+const EDIT_FIELDS:[&str;14]=[
     "uiScale","operatorName","senderName","senderAddress","senderPostcode",
     "senderPhone","senderMobile","accounts","defaultAccountId",
     "brandAccounts","excelDirectory","factoryReplyDirectory",
-    "orderImageInboxDirectory",
+    "orderImageInboxDirectory","colorGuidanceGroups",
 ];
 fn local_defaults()->Value {
     json!({
@@ -128,6 +128,10 @@ fn validate(changes:&Map<String,Value>,expected:&Map<String,Value>)->Result<(),S
             }
         }else if key=="accounts"{
             if !value.is_array(){return Err("입금 계좌는 목록이어야 합니다.".into());}
+        }else if key=="colorGuidanceGroups"{
+            if !value.is_object() && !value.is_null(){
+                return Err("모델군 설정은 객체여야 합니다.".into());
+            }
         }else if key=="brandAccounts"{
             if !value.is_object(){return Err("추천 계좌 설정 형식이 잘못되었습니다.".into());}
         }else if !value.is_string() && !value.is_null(){
@@ -225,6 +229,11 @@ fn patch_business(changes:Value,expected:Value)->Result<Value,String>{
     load() // Reload the authoritative settings; never trust echoed UI state.
 }
 pub fn patch(changes:Value,expected:Value)->Result<Value,String>{
+    // Model groups belong to the operating catalog/settings, never to the
+    // isolated egui account/preferences SQLite domain.
+    if changes.get("colorGuidanceGroups").is_some() && !using_business(){
+        return Err("모델군은 운영 상품 DB에서만 저장할 수 있습니다.".into());
+    }
     if changes.as_object().is_some_and(Map::is_empty){return load();}
     if using_business(){patch_business(changes,expected)}
     else{patch_local(changes,expected)}
