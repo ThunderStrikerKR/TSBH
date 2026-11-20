@@ -22,6 +22,7 @@ on:
       - src-tauri/src/egui_shipping_bridge.rs
       - src-tauri/src/main.rs
       - src-tauri/src/lib.rs
+      - src-tauri/src/workflow_sqlite_integration_tests.rs
   workflow_dispatch:
 permissions:
   contents: read
@@ -48,3 +49,5 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib category_ -- --nocapture
       - name: Verify native staff model-group validation and representative rules
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib model_groups::tests -- --nocapture
+      - name: Verify model-group actual SQLite backup, reopen and stale-editor CAS
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib native_model_group_sqlite_roundtrip_and_stale_editor_conflict -- --nocapture
