@@ -20,6 +20,9 @@ pub const INPUT: Color32 = Color32::from_rgb(41, 41, 41);
 pub const RAISED: Color32 = Color32::from_rgb(48, 48, 48);
 pub const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
 pub const DIVIDER: Color32 = Color32::from_rgb(63, 63, 63);
+// Stronger than the normal 1pt row divider so fixed table headers have a
+// readable bottom boundary, including when their final pixel is clipped.
+pub const TABLE_HEADER_OUTLINE: Color32 = Color32::from_rgb(106, 106, 106);
 pub const TEXT: Color32 = Color32::from_rgb(237, 237, 237);
 pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
 pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
