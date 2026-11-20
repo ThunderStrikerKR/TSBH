@@ -61,6 +61,21 @@ fn attach(
     Ok(())
 }
 
+/// Read the complete v2 business snapshot through the same relational
+/// projector in every desktop host. The caller owns the SQLite connection,
+/// snapshot consistency and schema-v2 verification; this function never writes.
+pub fn read_v2_snapshot(conn: &Connection) -> Result<Value, String> {
+    let raw: String = conn.query_row(
+        "SELECT payload FROM app_state WHERE id=1",
+        [],
+        |row| row.get(0),
+    ).map_err(|_| "운영 업무 상태를 읽지 못했습니다.".to_owned())?;
+    let mut state: Value = serde_json::from_str(&raw)
+        .map_err(|_| "운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())?;
+    hydrate_v2(conn, &mut state)?;
+    Ok(state)
+}
+
 /// Hydrate only an already-verified schema-v2 snapshot.
 ///
 /// The caller must hold a consistent read snapshot or a write transaction.
