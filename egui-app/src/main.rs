@@ -17,6 +17,7 @@ mod clipboard_intake;
 mod client_directory;
 mod client_master;
 mod client_manager;
+mod category_manager;
 mod product_manager;
 mod client_chooser;
 mod business_state;
