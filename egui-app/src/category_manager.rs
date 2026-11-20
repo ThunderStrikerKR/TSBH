@@ -378,69 +378,75 @@ impl CategoryManager {
                 if self.selected==item.id {theme::RAISED}else{theme::INPUT}
             );
         }
-        ui.scope_builder(UiBuilder::new().max_rect(rect)
-            .layout(Layout::left_to_right(Align::Center)),|line|{
-                line.add_space(theme::CATALOG_TREE_INDENT*depth as f32
-                    +theme::SPACE_12);
-                // A fixed-width vector chevron prevents missing-font boxes
-                // and gives leaf and branch names an identical left edge.
-                let (icon_rect,_)=line.allocate_exact_size(
-                    Vec2::splat(theme::SPACE_16),Sense::hover()
-                );
-                if !branches.is_empty(){
-                    let center=icon_rect.center();
-                    let stroke=egui::Stroke::new(1.5,theme::SECONDARY);
-                    let arm=theme::SPACE_4;
-                    if open{
-                        line.painter().line_segment([
-                            egui::pos2(center.x-arm,center.y-arm/2.0),
-                            egui::pos2(center.x,center.y+arm/2.0)
-                        ],stroke);
-                        line.painter().line_segment([
-                            egui::pos2(center.x,center.y+arm/2.0),
-                            egui::pos2(center.x+arm,center.y-arm/2.0)
-                        ],stroke);
-                    }else{
-                        line.painter().line_segment([
-                            egui::pos2(center.x-arm/2.0,center.y-arm),
-                            egui::pos2(center.x+arm/2.0,center.y)
-                        ],stroke);
-                        line.painter().line_segment([
-                            egui::pos2(center.x+arm/2.0,center.y),
-                            egui::pos2(center.x-arm/2.0,center.y+arm)
-                        ],stroke);
-                    }
-                }
-                let count=total_count(catalog,cats,&item.id);
-                let summary=if branches.is_empty(){
-                    format!("상품 {count}개")
-                }else{
-                    format!("하위 {} · 상품 {count}개",branches.len())
-                };
-                let summary_width=typography::client_table_metadata_galley(
-                    line,&summary,theme::MUTED
-                ).size().x+theme::SPACE_24;
-                let name_width=(width
-                    -theme::CATALOG_TREE_INDENT*depth as f32
-                    -theme::SPACE_12-theme::SPACE_16
-                    -summary_width-theme::SPACE_24).max(theme::SPACE_16);
-                let font=if is_root(&item.id){
-                    typography::CategoryPathFont::Subsection
-                }else{typography::CategoryPathFont::Body};
-                let visible=typography::fit_category_path(
-                    line,&item.name,name_width,font
-                );
-                line.add_sized(
-                    Vec2::new(name_width,height),
-                    egui::Label::new(if is_root(&item.id){
-                        typography::subsection_heading(&visible)
-                    }else{typography::body(&visible)}).truncate()
-                ).on_hover_text(&item.name);
-                line.with_layout(Layout::right_to_left(Align::Center),|right|{
-                    right.add_space(theme::SPACE_12);
-                    right.label(typography::caption(&summary));
-                });
-            });
+        // Stable tree geometry: chevron and name are LEFT-anchored by
+        // their painted coordinates. Only the category totals are RIGHT-
+        // anchored. A wide Label allocation previously centered every
+        // name halfway across the available row width.
+        let count=total_count(catalog,cats,&item.id);
+        let summary=if branches.is_empty(){
+            format!("상품 {count}개")
+        }else{
+            format!("하위 {} · 상품 {count}개",branches.len())
+        };
+        let summary_galley=typography::client_table_metadata_galley(
+            ui,&summary,theme::MUTED
+        );
+        let summary_x=rect.right()-theme::SPACE_12-summary_galley.size().x;
+        let icon_x=rect.left()+theme::SPACE_12
+            +theme::CATALOG_TREE_INDENT*depth as f32;
+        let icon_rect=egui::Rect::from_min_size(
+            egui::pos2(icon_x,rect.center().y-theme::SPACE_8),
+            Vec2::splat(theme::SPACE_16)
+        );
+        if !branches.is_empty(){
+            let center=icon_rect.center();
+            let stroke=egui::Stroke::new(1.5,theme::SECONDARY);
+            let arm=theme::SPACE_4;
+            if open{
+                ui.painter().line_segment([
+                    egui::pos2(center.x-arm,center.y-arm/2.0),
+                    egui::pos2(center.x,center.y+arm/2.0)
+                ],stroke);
+                ui.painter().line_segment([
+                    egui::pos2(center.x,center.y+arm/2.0),
+                    egui::pos2(center.x+arm,center.y-arm/2.0)
+                ],stroke);
+            }else{
+                ui.painter().line_segment([
+                    egui::pos2(center.x-arm/2.0,center.y-arm),
+                    egui::pos2(center.x+arm/2.0,center.y)
+                ],stroke);
+                ui.painter().line_segment([
+                    egui::pos2(center.x+arm/2.0,center.y),
+                    egui::pos2(center.x-arm/2.0,center.y+arm)
+                ],stroke);
+            }
+        }
+        let name_x=icon_rect.right()+theme::SPACE_8;
+        let name_right=(summary_x-theme::SPACE_24).max(name_x);
+        let name_width=(name_right-name_x).max(0.0);
+        let font=if is_root(&item.id){
+            typography::CategoryPathFont::Subsection
+        }else{typography::CategoryPathFont::Body};
+        let visible=typography::fit_category_path(
+            ui,&item.name,name_width,font
+        );
+        let name_galley=typography::category_tree_name_galley(
+            ui,&visible,is_root(&item.id)
+        );
+        let name_clip=egui::Rect::from_min_max(
+            egui::pos2(name_x,rect.top()),
+            egui::pos2(name_right,rect.bottom())
+        );
+        ui.painter().with_clip_rect(name_clip).galley(
+            egui::pos2(name_x,rect.center().y-name_galley.size().y/2.0),
+            name_galley,theme::TEXT
+        );
+        ui.painter().with_clip_rect(rect).galley(
+            egui::pos2(summary_x,rect.center().y-summary_galley.size().y/2.0),
+            summary_galley,theme::MUTED
+        );
+        let response=response.on_hover_text(&item.name);
         if response.clicked(){
             self.selected=item.id.clone();
             self.name=item.name.clone();
