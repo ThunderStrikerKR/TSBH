@@ -616,15 +616,29 @@ impl OrderHistoryManager {
         ui.add_space(theme::SPACE_16);
         let mut changed=false;
         components::align_management_primary_card(ui,page_origin_y);
-        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::FRAME_STROKE_WIDTH);
-        theme::management_list_frame().show(ui,|section|{
+        // Match Freight > Shipping Group Assignment: a 16pt interior inset
+        // on EVERY side, without moving the 59th-round outer card border.
+        let card_min_height=components::management_primary_card_min_inner_height(
+            ui,theme::SECTION_PADDING
+        );
+        theme::section_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
-            theme::management_list_strip_frame().show(section,|toolbar|{
+            let mut table_scroll=theme::management_scroll_style();
+            table_scroll.bar_inner_margin=0.0;
+            table_scroll.bar_outer_margin=0.0;
+            section.spacing_mut().scroll=table_scroll;
+            // No additional list-strip margin: the card already owns 16pt.
+            // A 36pt toolbar and a single 9pt separator match Freight.
+            section.scope(|toolbar|{
                 let full_width=toolbar.available_width().max(1.0);
+                // Reserve the scrollbar rail outside the rightmost data
+                // controls, exactly as on the Freight assignment page.
+                let toolbar_data_width=(full_width
+                    -toolbar.spacing().scroll.allocated_width()).max(1.0);
                 // Reserve independent search/date slots. The date slot
                 // right-anchors reverse-inserted RTL widgets so their visible
                 // order stays natural and the last button meets the right edge.
-                let one_row=full_width>=
+                let one_row=toolbar_data_width>=
                     theme::MANAGEMENT_SEARCH_MIN_WIDTH
                     +theme::SPACE_16+RANGE_CONTROLS_WIDTH;
                 if one_row {
@@ -637,8 +651,8 @@ impl OrderHistoryManager {
                         )
                     );
                     let range_rect=Rect::from_min_size(
-                        egui::pos2(row_rect.right()-RANGE_CONTROLS_WIDTH,
-                            row_rect.top()),
+                        egui::pos2(row_rect.left()+toolbar_data_width
+                            -RANGE_CONTROLS_WIDTH,row_rect.top()),
                         Vec2::new(RANGE_CONTROLS_WIDTH,row_rect.height())
                     );
                     toolbar.scope_builder(UiBuilder::new()
@@ -675,16 +689,17 @@ impl OrderHistoryManager {
                     // At narrower dock widths the date group alone drops to
                     // its own right-aligned row. At very narrow widths it
                     // becomes two right-aligned rows, without clipping text.
-                    let compact=full_width<RANGE_CONTROLS_WIDTH;
+                    let compact=toolbar_data_width<RANGE_CONTROLS_WIDTH;
                     let height=if compact {
                         theme::INPUT_HEIGHT*2.0+theme::SPACE_8
                     }else{theme::INPUT_HEIGHT};
                     let (row_rect,_)=toolbar.allocate_exact_size(
                         Vec2::new(full_width,height),Sense::hover()
                     );
-                    let width=RANGE_CONTROLS_WIDTH.min(full_width);
+                    let width=RANGE_CONTROLS_WIDTH.min(toolbar_data_width);
                     let range_rect=Rect::from_min_size(
-                        egui::pos2(row_rect.right()-width,row_rect.top()),
+                        egui::pos2(row_rect.left()+toolbar_data_width-width,
+                            row_rect.top()),
                         Vec2::new(width,row_rect.height())
                     );
                     toolbar.scope_builder(UiBuilder::new()
@@ -725,11 +740,22 @@ impl OrderHistoryManager {
                     ui.label(typography::caption("주문 이력을 확인 중입니다."));
                 });
             }
-            components::soft_divider(section);
+            // Freight baseline: 4pt above + 1pt dividing rule + 4pt
+            // below, followed immediately by the fixed 36pt table header.
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
+            let (separator,_)=section.allocate_exact_size(
+                Vec2::new(section.available_width(),
+                    theme::SPACE_8+theme::SOFT_DIVIDER_WIDTH),Sense::hover()
+            );
+            section.painter().rect_filled(
+                Rect::from_min_size(
+                    egui::pos2(separator.left(),separator.top()+theme::SPACE_4),
+                    Vec2::new(separator.width(),theme::SOFT_DIVIDER_WIDTH)
+                ),0.0,theme::DIVIDER
+            );
             let viewport=section.available_width().max(1.0);
-            let gutter=section.spacing().scroll.allocated_width()+theme::SPACE_4;
+            let gutter=section.spacing().scroll.allocated_width();
             let table_width=(viewport-gutter).max(MIN_WIDTH);
             let mut widths=COLS;
             let extra=(table_width-MIN_WIDTH).max(0.0);
