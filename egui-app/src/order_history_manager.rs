@@ -883,60 +883,21 @@ fn range_date_picker_rtl(
     );
     changed
 }
-/// A full-height custom combo trigger, with a distinct right-hand arrow
-/// section. The old "label ▾" button looked like an ordinary action,
-/// while egui's default ComboBox had a visibly short, clipped trigger.
+/// Date-basis selection uses the same split-chevron trigger as the
+/// Shipping Group Assignment selectors. The values and menu remain unchanged.
 fn history_basis_dropdown(ui:&mut Ui,basis:&mut HistoryDateBasis)->bool{
     let previous=*basis;
-    let trigger=ui.add_sized(
-        Vec2::new(HISTORY_DATE_BASIS_WIDTH,theme::ACTION_STANDARD_HEIGHT),
-        egui::Button::new("")
-            .fill(theme::RAISED)
-            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
-            .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
-    ).on_hover_text("조회 날짜 기준 선택");
-    let rect=trigger.rect;
-    let painter=ui.painter().with_clip_rect(rect);
-    let label=typography::freight_table_cell_galley(
-        ui,basis.label(),false,theme::TEXT
+    components::management_dropdown(
+        ui,basis.label(),HISTORY_DATE_BASIS_WIDTH,true,
+        "조회 날짜 기준 선택",|options|{
+            components::management_dropdown_option(
+                options,basis,HistoryDateBasis::Reception,"접수일 기준"
+            );
+            components::management_dropdown_option(
+                options,basis,HistoryDateBasis::Payment,"입금일 기준"
+            );
+        }
     );
-    painter.galley(
-        egui::pos2(rect.left()+12.0,rect.center().y-label.size().y/2.0),
-        label,theme::TEXT
-    );
-    let arrow_left=rect.right()-30.0;
-    painter.line_segment(
-        [egui::pos2(arrow_left,rect.top()+5.0),
-         egui::pos2(arrow_left,rect.bottom()-5.0)],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
-    let x=rect.right()-15.0;
-    let y=rect.center().y+1.0;
-    painter.line_segment(
-        [egui::pos2(x-4.0,y-2.0),egui::pos2(x,y+2.0)],
-        Stroke::new(1.5,theme::SECONDARY)
-    );
-    painter.line_segment(
-        [egui::pos2(x,y+2.0),egui::pos2(x+4.0,y-2.0)],
-        Stroke::new(1.5,theme::SECONDARY)
-    );
-    egui::Popup::menu(&trigger)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|options|{
-            options.set_min_width(HISTORY_DATE_BASIS_WIDTH);
-            if options.selectable_label(
-                *basis==HistoryDateBasis::Reception,"접수일 기준"
-            ).clicked(){
-                *basis=HistoryDateBasis::Reception;
-                options.close();
-            }
-            if options.selectable_label(
-                *basis==HistoryDateBasis::Payment,"입금일 기준"
-            ).clicked(){
-                *basis=HistoryDateBasis::Payment;
-                options.close();
-            }
-        });
     *basis!=previous
 }
 /// Only the OUTER toolbar is anchored to the right. Its child controls
