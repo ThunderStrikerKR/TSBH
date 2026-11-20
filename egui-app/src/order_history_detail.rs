@@ -482,7 +482,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
             let panes=dashboard_grid(grid_rect);
             section_panel(ui,panes.raw,raw_title,"raw",order_id,|panel|{
                 if raw.is_empty(){
-                    panel.label(typography::caption("보존된 발주 원문이 없습니다."));
+                    panel.label(typography::caption("보존된 텍스트 원문이 없습니다."));
                 }else{
                     panel.label(typography::body(raw));
                 }
@@ -491,6 +491,14 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                     panel.label(typography::caption(
                         "최초 원문 별도 보관 기록은 확인되지 않습니다."
                     ));
+                }
+                let attachments=rows(&order["photos"]).len();
+                if attachments>0{
+                    panel.separator();
+                    panel.label(typography::caption(&format!(
+                        "첨부 이미지 {}건 · 이미지 미리보기는 아직 연결되지 않았습니다.",
+                        attachments
+                    )));
                 }
             });
             section_panel(ui,panes.changes,
