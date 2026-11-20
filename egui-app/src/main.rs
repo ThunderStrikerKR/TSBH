@@ -43,6 +43,7 @@ mod settings_view;
 mod settings_help;
 mod freight_manager;
 mod order_history_manager;
+mod order_history_memo;
 mod daily_settlement_manager;
 mod excel_manager;
 mod excel_service;
