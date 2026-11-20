@@ -2,7 +2,8 @@
 //! The 20 template labels/defaults below are DISPLAY metadata only, copied
 //! from src/automatic-message-templates.ts. Validation, business message
 //! generation, settings CAS and SQLite stay in the existing Rust services.
-use crate::{components,gateway::{BandoGateway,ReadOperation},theme::{self,ButtonRole},typography};
+use crate::{components,gateway::{BandoGateway,ReadOperation},
+    settings_help,theme::{self,ButtonRole},typography};
 use eframe::egui::{self,Align,Context,Layout,Ui,Vec2};
 use serde_json::{json,Map,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc,OnceLock},thread};
@@ -386,7 +387,10 @@ impl AutomaticMessageManager {
         visible
     }
     fn general_list(&mut self,ui:&mut Ui,target:&mut Option<Destination>){
-        ui.label(typography::section_heading("상황별 자동 메시지"));
+        ui.horizontal(|heading|{
+            heading.label(typography::section_heading("상황별 자동 메시지"));
+            settings_help::icon(heading,"상황별 자동 메시지");
+        });
         ui.add_space(theme::SPACE_8);
         egui::ScrollArea::vertical().id_salt("auto-template-types")
             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
@@ -412,7 +416,10 @@ impl AutomaticMessageManager {
             });
     }
     fn provisional_list(&mut self,ui:&mut Ui,target:&mut Option<Destination>){
-        ui.label(typography::section_heading("상품별 안내문 등록"));
+        ui.horizontal(|heading|{
+            heading.label(typography::section_heading("상품별 안내문 등록"));
+            settings_help::icon(heading,"상품별 안내문");
+        });
         ui.add_space(theme::SPACE_8);
         ui.label(typography::field_label("안내문을 등록할 상품 검색"));
         let width=ui.available_width();
@@ -447,6 +454,7 @@ impl AutomaticMessageManager {
         let def=TEMPLATES[self.selected];
         ui.horizontal(|heading|{
             heading.label(typography::section_heading(def.label));
+            settings_help::icon(heading,"선택한 자동 메시지");
             heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
                 if theme::action(actions,"기본 문구 복원",ButtonRole::Standard,
                     !self.busy() && self.draft_templates.contains_key(def.id)
@@ -470,10 +478,13 @@ impl AutomaticMessageManager {
             def.variables.iter().map(|v|format!("{{{v}}}"))
                 .collect::<Vec<_>>().join(", ")
         };
-        ui.label(typography::caption(&format!(
-            "안내문에 넣을 수 있는 자동 표시 항목: {vars}{}",
-            if def.required.is_empty(){""}else{" (필수 변수는 삭제할 수 없습니다.)"}
-        )));
+        ui.horizontal_wrapped(|metadata|{
+            metadata.label(typography::caption(&format!(
+                "안내문에 넣을 수 있는 자동 표시 항목: {vars}{}",
+                if def.required.is_empty(){""}else{" (필수 변수는 삭제할 수 없습니다.)"}
+            )));
+            settings_help::icon(metadata,"자동 표시 항목");
+        });
         ui.add_space(theme::SPACE_8);
         ui.label(typography::subsection_heading("예시 미리보기"));
         egui::Frame::new().fill(theme::INPUT)
