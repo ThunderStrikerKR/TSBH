@@ -38,6 +38,7 @@ pub enum ReadOperation {
     CalculatePrice,
     ManualClassification,
     SearchProductsWithUrls,
+    ManagementProducts,
     PreviewWorkflow,
     PreviewOrder,
     ReadShipments,
@@ -53,7 +54,8 @@ impl ReadOperation {
             Self::AnalyzeOrder => "recognition",
             Self::ResolveRetailUnitPrice | Self::DetectRemoteDeliveryArea => "rules",
             Self::AutoMatchReceptionClient | Self::ReceptionClientCandidates
-            | Self::ClientCandidates | Self::SearchProductsWithUrls => "catalog_clients",
+            | Self::ClientCandidates | Self::SearchProductsWithUrls
+            | Self::ManagementProducts => "catalog_clients",
             Self::NewReception | Self::MergeReceptionAnalysis
             | Self::ChangeOrderClient | Self::RepriceOrder
             | Self::CalculatePrice | Self::ManualClassification
@@ -79,6 +81,7 @@ impl ReadOperation {
             Self::CalculatePrice => "calculate_price",
             Self::ManualClassification => "apply_manual_classification",
             Self::SearchProductsWithUrls => "search_products_with_urls",
+            Self::ManagementProducts => "management_products",
             Self::PreviewWorkflow => "preview_workflow",
             Self::PreviewOrder => "preview_order",
             Self::ReadShipments => "read_shipments",
@@ -352,6 +355,9 @@ impl BandoGateway for LocalGateway {
             }
             ReadOperation::SearchProductsWithUrls => {
                 crate::catalog_query_bridge::search_products(&payload)
+            }
+            ReadOperation::ManagementProducts => {
+                crate::catalog_query_bridge::management_products(&payload)
             }
             ReadOperation::RenderAutomaticMessage => {
                 output::execute(operation.operation(),payload)
