@@ -204,6 +204,26 @@ pub fn section_heading_galley(
 pub fn subsection_heading(text: &str) -> RichText { render(text, Role::Subsection) }
 pub fn body(text: &str) -> RichText { render(text, Role::Body) }
 pub fn field_label(text: &str) -> RichText { render(text, Role::FieldLabel) }
+
+/// Shared field-label typography laid out for exact left-edge painting.
+/// A fixed-width egui Label can otherwise center its glyphs inside the
+/// recipient label column, making short labels drift toward the input.
+pub fn field_label_galley(
+    ui: &egui::Ui, text: &str
+) -> std::sync::Arc<egui::Galley> {
+    let role = spec(Role::FieldLabel);
+    let format = egui::TextFormat {
+        font_id: FontId::new(
+            role.size, FontFamily::Name(EMPHASIS_FAMILY.into())
+        ),
+        color: role.color,
+        extra_letter_spacing: role.tracking,
+        line_height: Some(role.line),
+        ..Default::default()
+    };
+    let job = egui::text::LayoutJob::single_section(text.to_owned(), format);
+    ui.fonts_mut(|fonts| fonts.layout_job(job))
+}
 pub fn caption(text: &str) -> RichText { render(text, Role::Metadata) }
 pub fn table_header(text: &str) -> RichText { render(text, Role::TableHeader) }
 
