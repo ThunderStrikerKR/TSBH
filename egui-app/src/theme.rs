@@ -178,6 +178,9 @@ pub const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
+// React shipping.css constrains lengthy freight lists to a 60vh scroll
+// region; native management tables keep both axes inside that region.
+pub const MANAGEMENT_TABLE_VIEWPORT_FRACTION: f32 = 0.60;
 pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
 // Width reserved for the two original client-list actions on one toolbar row.
 pub const MANAGEMENT_TOOLBAR_ACTIONS_WIDTH: f32 = 276.0;
