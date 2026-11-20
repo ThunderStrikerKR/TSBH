@@ -76,6 +76,34 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
     Ok(Some(path))
 }
 
+/// Client writes require a pre-existing explicitly bound business database.
+/// A debug or developer-test process is additionally restricted to the EXACT
+/// Tauri developer-test file; it cannot be redirected to the production file.
+pub fn authorized_client_write_path() -> Result<PathBuf,String> {
+    let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+        .filter(|v|!v.is_empty()).map(PathBuf::from)
+        .ok_or("실제 거래처를 저장할 업무 DB가 연결되지 않았습니다.")?;
+    if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|v|!v.is_empty()){
+        return Err("거래처 JSON 인덱스는 저장할 수 없습니다.".into());
+    }
+    if !path.is_file(){
+        return Err("지정한 업무 DB 파일이 없습니다. 새 DB를 만들지 않았습니다.".into());
+    }
+    if cfg!(windows) && (cfg!(debug_assertions) ||
+        std::env::var("BANDO_EGUI_DEVELOPER_TEST").ok().as_deref()==Some("1")){
+        let roaming=std::env::var_os("APPDATA")
+            .filter(|v|!v.is_empty()).ok_or("개발 DB 보관 위치를 확인할 수 없습니다.")?;
+        let allowed=tauri_database_path(std::path::Path::new(&roaming),true)?;
+        let actual=path.canonicalize().map_err(|_|"거래처 저장 DB 경로가 올바르지 않습니다.")?;
+        let expected=allowed.canonicalize()
+            .map_err(|_|"Tauri 개발용 테스트 DB가 없습니다.".to_owned())?;
+        if actual!=expected{
+            return Err("개발 모드에서는 Tauri 개발용 테스트 DB에만 거래처를 저장할 수 있습니다.".into());
+        }
+    }
+    Ok(path)
+}
+
 /// The live catalog requires a real v2 Tauri DB. A seed fallback would mix
 /// unrelated product IDs with prices and freight rules.
 pub fn load() -> Result<Value,String> {
