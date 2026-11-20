@@ -35,6 +35,13 @@ pub fn alias_problems(catalog:&Value)->Result<Value,String>{
 
 
 /// The exact Rust catalog_clients validator is also the pre-backup gate.
+/// Return only product IDs the existing model-family Rust validator accepts.
+/// The egui candidate list must not duplicate active/demo/sale-unit rules.
+pub fn eligible_model_group_products(catalog:&Value)->Result<Value,String>{
+    native_model_groups::execute("eligible_model_group_product_ids",
+        &json!({"state":catalog}))
+}
+
 pub fn validate_model_groups(catalog:&Value,groups:&Value)->Result<(),String>{
     let payload=json!({
         "state":{
