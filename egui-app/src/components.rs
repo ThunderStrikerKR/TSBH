@@ -890,6 +890,15 @@ pub fn management_sticky_table_header(
             header_rect.bottom()
         )
     );
+    // Fixed-header contract shared by BOTH approved master tables.
+    // Validate real allocated Rects, not just intended token values.
+    debug_assert!((header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01,
+        "management table header must retain the shared 36pt height");
+    if header_rect.width()>=scrollbar_gutter+1.0 {
+        debug_assert!((header_content_rect.right()+scrollbar_gutter
+            -header_rect.right()).abs()<0.01,
+            "header's data right edge must exclude the table scrollbar gutter");
+    }
     ManagementTableHeader{
         header_rect,header_content_rect,viewport_width,
         scrollbar_gutter,table_width
