@@ -2,6 +2,7 @@
 //! while colors, sizes and alignment are owned by the shared UI layer.
 
 use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, Stroke, Ui, Vec2};
+use chrono::{Datelike, Duration as Days, Months, NaiveDate};
 use crate::{theme, typography};
 
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
@@ -664,6 +665,103 @@ pub fn paint_dock_network(
     for &(rect, highlighted) in verticals {
         paint_dock_axis_line(ui, rect, true, highlighted);
     }
+}
+
+/// Shared date-picker calendar from the approved Order History screen.
+/// Use the SAME popup, month navigation, selected-day style and 7-column
+/// grid for all management date selectors; each caller supplies its own ID.
+pub fn calendar_month_start(date: NaiveDate)->NaiveDate{
+    NaiveDate::from_ymd_opt(date.year(),date.month(),1).unwrap_or(date)
+}
+pub fn shift_calendar_month(month:NaiveDate,offset:i32)->NaiveDate{
+    let first=calendar_month_start(month);
+    if offset>=0{
+        first.checked_add_months(Months::new(offset as u32))
+    }else{
+        first.checked_sub_months(Months::new(offset.unsigned_abs()))
+    }.unwrap_or(first)
+}
+pub fn calendar_dates(month:NaiveDate)->Vec<Option<NaiveDate>>{
+    let first=calendar_month_start(month);
+    let leading=first.weekday().num_days_from_monday() as usize;
+    let next=shift_calendar_month(first,1);
+    let days=next.pred_opt().map_or(31,|end|end.day() as usize);
+    let visible=((leading+days+6)/7)*7;
+    (0..visible).map(|index|{
+        (index>=leading && index<leading+days)
+            .then(||first.checked_add_signed(Days::days((index-leading) as i64)))
+            .flatten()
+    }).collect()
+}
+pub fn date_calendar(
+    trigger:&egui::Response,month:&mut NaiveDate,selected:&str,
+    grid_id:&'static str
+)->Option<NaiveDate>{
+    let mut chosen=None;
+    let selected_date=NaiveDate::parse_from_str(selected,"%Y-%m-%d").ok();
+    egui::Popup::menu(trigger)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|calendar|{
+            calendar.spacing_mut().item_spacing=egui::vec2(
+                theme::SPACE_4,theme::SPACE_4
+            );
+            calendar.horizontal(|nav|{
+                if theme::action(nav,"«",theme::ButtonRole::Standard,true)
+                    .on_hover_text("이전 연도").clicked(){
+                    *month=shift_calendar_month(*month,-12);
+                }
+                if theme::action(nav,"‹",theme::ButtonRole::Standard,true)
+                    .on_hover_text("이전 달").clicked(){
+                    *month=shift_calendar_month(*month,-1);
+                }
+                nav.label(typography::field_label(&format!(
+                    "{}년 {}월",month.year(),month.month()
+                )));
+                if theme::action(nav,"›",theme::ButtonRole::Standard,true)
+                    .on_hover_text("다음 달").clicked(){
+                    *month=shift_calendar_month(*month,1);
+                }
+                if theme::action(nav,"»",theme::ButtonRole::Standard,true)
+                    .on_hover_text("다음 연도").clicked(){
+                    *month=shift_calendar_month(*month,12);
+                }
+            });
+            calendar.add_space(theme::SPACE_8);
+            let width=theme::ACTION_STANDARD_HEIGHT;
+            let dates=calendar_dates(*month);
+            egui::Grid::new(grid_id)
+                .num_columns(7)
+                .spacing(egui::vec2(theme::SPACE_4,theme::SPACE_4))
+                .show(calendar,|grid|{
+                    for day in ["월","화","수","목","금","토","일"]{
+                        grid.add_sized(
+                            egui::vec2(width,width),
+                            egui::Label::new(typography::caption(day))
+                                .halign(Align::Center),
+                        );
+                    }
+                    grid.end_row();
+                    for (index,day) in dates.iter().enumerate(){
+                        if let Some(date)=day{
+                            let mut button=egui::Button::new(typography::body(
+                                &date.day().to_string()
+                            ));
+                            if selected_date==Some(*date){
+                                button=button.fill(theme::WORKFLOW_SELECTED_BG)
+                                    .stroke(Stroke::new(1.0,theme::SELECTION));
+                            }
+                            if grid.add_sized(egui::vec2(width,width),button).clicked(){
+                                chosen=Some(*date);
+                                grid.close();
+                            }
+                        }else{
+                            grid.allocate_space(egui::vec2(width,width));
+                        }
+                        if index%7==6{grid.end_row();}
+                    }
+                });
+        });
+    chosen
 }
 
 /// Approved 59th-round Freight page heading: 16pt from the top of the
