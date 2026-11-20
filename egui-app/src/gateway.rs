@@ -253,10 +253,17 @@ impl BandoGateway for LocalGateway {
         // state or a second SQLite write performed by egui.
         let state=self.load_business_state()?;
         let shipping=state.get("shipping").ok_or("최신 운임 조회 실패")?;
-        let projection=self.execute(
+        let mut projection=self.execute(
             ReadOperation::ShippingManagerView,
             serde_json::json!({"state":state,"shipping":shipping})
         )?;
+        let product_view=self.execute(
+            ReadOperation::ProductFreightView,
+            serde_json::json!({"action":"product_freight_view","state":{
+                "products":state["products"],"shipping":shipping
+            }})
+        )?;
+        projection["productViews"]=product_view["views"].clone();
         Ok(serde_json::json!({"state":state,"projection":projection}))
     }
     fn working_commit_enabled(&self) -> bool {
