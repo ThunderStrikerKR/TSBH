@@ -8,7 +8,7 @@
 use crate::{business_state, preview_store::PreviewStore};
 use rusqlite::{params,Connection,TransactionBehavior};
 use serde_json::{json,Map,Value};
-use std::{io::Write,process::{Command,Stdio},time::{Duration,SystemTime,UNIX_EPOCH}};
+use std::{time::{Duration,SystemTime,UNIX_EPOCH},path::PathBuf};
 
 #[path = "../../src-tauri/src/business_core/rules/settings_accounts.rs"]
 mod native_settings_accounts;
@@ -40,12 +40,14 @@ pub fn writable_business()->bool{
         .ok().as_deref()==Some("1") &&
     business_state::authorized_business_write_path().is_ok()
 }
-/// Backup and restore are a separate, safety-critical Tauri data operation.
-/// They remain available only if the existing Tauri backup bridge is present.
-pub fn backup_helper_available()->bool{
-    let Some(helper)=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-        .filter(|path|!path.is_empty()) else{return false};
-    std::path::Path::new(&helper).is_file()
+/// Full SQLite backups and archive reads use the shared in-process Rust
+/// service. No separate Tauri executable is required for these operations.
+pub fn data_service_available()->bool{
+    if !using_business(){return false;}
+    let Some(path)=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+        .filter(|p|!p.is_empty()).map(PathBuf::from) else{return false};
+    path.is_file() &&
+        std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_none_or(|x|x.is_empty())
 }
 fn used_accounts(clients:&Value)->Vec<String>{
     let mut refs=Vec::new();
@@ -110,7 +112,7 @@ pub fn load()->Result<Value,String>{
         return Ok(json!({
             "revision":revision,"settings":settings,
             "readOnly":!writable_business(),"mode":"business",
-            "dataAvailable":backup_helper_available(),
+            "dataAvailable":data_service_available(),
             "usedAccounts":used_accounts(&state["clients"])
         }));
     }
@@ -248,47 +250,62 @@ pub fn patch(changes:Value,expected:Value)->Result<Value,String>{
     if using_business(){patch_business(changes,expected)}
     else{patch_local(changes,expected)}
 }
-/// Read-only archive/list, or explicitly authorized Tauri backup/restore.
-/// The bridge uses exactly the original backup_manager and receipt_archive
-/// functions; local preview SQLite is never represented as operational data.
+/// Audits, snapshots, full SQLite backup and protected restore are now
+/// executed inside this process through the EXACT Tauri backup engine moved
+/// to bando-data-access. No helper EXE and no separate egui backup database.
 pub fn data(operation:&str,filename:Option<&str>)->Result<Value,String>{
-    if !using_business(){
+    use rusqlite::OpenFlags;
+    if !data_service_available(){
         return Err("운영 감사 기록과 백업을 조회하려면 업무 DB 연결이 필요합니다.".into());
     }
     if !matches!(operation,"archive"|"backups"|"backup"|"restore"){
         return Err("허용되지 않은 데이터 관리 작업입니다.".into());
     }
-    if matches!(operation,"backup"|"restore") && !writable_business(){
+    let write=matches!(operation,"backup"|"restore");
+    if write && !writable_business(){
         return Err("현재 운영 데이터는 읽기 전용입니다. 백업·복원 권한을 확인하세요.".into());
     }
-    let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-        .ok_or("Tauri 업무 데이터 도우미가 연결되지 않았습니다.")?;
-    if !std::path::Path::new(&helper).is_file(){
-        return Err("Tauri 업무 데이터 도우미 실행파일을 찾지 못했습니다.".into());
+    let path=if write{
+        business_state::authorized_business_write_path()?
+    }else{
+        std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .filter(|path|!path.is_empty())
+            .map(PathBuf::from)
+            .ok_or("운영 DB 파일 경로가 설정되지 않았습니다.")?
+    };
+    if !path.is_file(){return Err("운영 DB 파일이 없습니다.".into());}
+    let base=path.parent().ok_or("운영 DB 보관 폴더가 없습니다.")?;
+    let flags=if write{OpenFlags::SQLITE_OPEN_READ_WRITE}
+        else{OpenFlags::SQLITE_OPEN_READ_ONLY};
+    let mut conn=Connection::open_with_flags(&path,flags)
+        .map_err(|_|"데이터 관리 DB를 열지 못했습니다.".to_owned())?;
+    conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
+    if !write {
+        conn.execute_batch("PRAGMA query_only=ON;").map_err(|e|e.to_string())?;
+    }else{
+        conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;
     }
-    let payload=json!({"operation":operation,"filename":filename});
-    let mut child=Command::new(helper)
-        .arg("--bando-egui-settings-data")
-        .stdin(Stdio::piped()).stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn().map_err(|_|"Tauri 데이터 관리 도우미를 실행하지 못했습니다.".to_owned())?;
-    let mut input=child.stdin.take()
-        .ok_or("데이터 관리 요청 채널이 열리지 않았습니다.")?;
-    input.write_all(payload.to_string().as_bytes())
-        .map_err(|_|"데이터 관리 요청을 전달하지 못했습니다.".to_owned())?;
-    drop(input);
-    let result=child.wait_with_output()
-        .map_err(|_|"데이터 관리 응답을 받을 수 없습니다.".to_owned())?;
-    if result.stdout.len()>16_000_000{
+    let version:i64=conn.query_row(
+        "SELECT version FROM core_schema WHERE key='business-core'",
+        [],|row|row.get(0),
+    ).map_err(|_|"DB 스키마 버전을 확인할 수 없습니다.".to_owned())?;
+    if version!=2{return Err("지원하지 않는 업무 DB 버전입니다.".into());}
+    let result=match operation{
+        "archive"=>bando_data_access::audit_service::receipt_archive_from_conn(&conn)?,
+        "backups"=>json!(bando_data_access::backup_service::list_backups(base)?),
+        "backup"=>json!(bando_data_access::backup_service::manual_backup(&conn,base)?),
+        "restore"=>{
+            let file=filename.filter(|name|!name.is_empty())
+                .ok_or("복원할 백업 파일을 선택하세요.")?;
+            bando_data_access::backup_service::restore_backup(&mut conn,base,file)?;
+            json!({"restored":true})
+        },
+        _=>unreachable!(),
+    };
+    if result.to_string().len()>16_000_000{
         return Err("데이터 관리 응답 크기가 허용 범위를 초과했습니다.".into());
     }
-    let response:Value=serde_json::from_slice(&result.stdout)
-        .map_err(|_|"Tauri 데이터 관리 응답이 잘못되었습니다.".to_owned())?;
-    if !result.status.success() || response["ok"]!=Value::Bool(true){
-        return Err(response.get("error").and_then(Value::as_str)
-            .unwrap_or("데이터 관리 작업이 실패했습니다.").to_owned());
-    }
-    Ok(response.get("result").cloned().unwrap_or(Value::Null))
+    Ok(result)
 }
 
 pub fn new_account_id()->String{
