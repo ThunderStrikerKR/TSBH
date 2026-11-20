@@ -140,7 +140,7 @@ struct HistorySnapshot {
 struct MemoEditor {
     shipment_id:String,
     order_id:String,
-    expected_revision:u64,
+    expected_revision:Option<u64>,
     original:String,
     draft:String,
 }
@@ -667,8 +667,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                             *pending_memo=Some(MemoEditor{
                                 shipment_id:field(ship,"id").to_owned(),
                                 order_id:id.to_owned(),
-                                expected_revision:snapshot.state["revision"].as_u64()
-                                    .unwrap_or(0),
+                                expected_revision:snapshot.state["revision"].as_u64(),
                                 original:memo_text.to_owned(),
                                 draft:memo_text.to_owned(),
                             });
@@ -1113,7 +1112,7 @@ impl OrderHistoryManager {
                             !busy && writable &&
                             editor.draft!=editor.original &&
                             editor.draft.chars().count()<=2_000 &&
-                            editor.expected_revision>0).clicked(){
+                            editor.expected_revision.is_some()).clicked(){
                             save=true;
                         }
                     });
@@ -1127,7 +1126,7 @@ impl OrderHistoryManager {
             if let Some(editor)=self.memo_editor.as_ref(){
                 let (sender,receiver)=mpsc::channel();
                 let gateway=Arc::clone(&self.gateway);
-                let revision=editor.expected_revision;
+                let Some(revision)=editor.expected_revision else{return;};
                 let shipment_id=editor.shipment_id.clone();
                 let memo=editor.draft.clone();
                 let wake=ctx.clone();
