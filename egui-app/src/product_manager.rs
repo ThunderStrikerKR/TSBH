@@ -428,11 +428,6 @@ impl ProductManager {
                     ).clicked(){
                         begin_new=true;
                     }
-                    theme::action(
-                        actions,"홈페이지에서 수집",theme::ButtonRole::Standard,false
-                    ).on_disabled_hover_text(
-                        "상품 홈페이지 수집 기능은 아직 이전되지 않았습니다."
-                    );
                 });
                 components::soft_divider(panel);
             }
