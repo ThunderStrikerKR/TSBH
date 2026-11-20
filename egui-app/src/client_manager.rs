@@ -1,7 +1,8 @@
 //! Native client manager: semantic parity with React ClientManager.
 //! Layout uses shared management components; validation and persistence are
 //! delegated to the Rust catalog client rules via BandoGateway.
-use crate::{components, gateway::{BandoGateway,ReadOperation}, theme::{self,ButtonRole}, typography};
+use crate::{automatic_message_manager::AutomaticMessageManager,
+    components, gateway::{BandoGateway,ReadOperation}, theme::{self,ButtonRole}, typography};
 use eframe::egui::{self,Align,Context,Layout,Ui};
 use serde_json::{json,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc},thread,time::{SystemTime,UNIX_EPOCH}};
@@ -69,6 +70,8 @@ pub struct ClientManager {
     confirm_discard:bool,
     exception_id:String,
     exception_price:String,
+    show_messages:bool,
+    messages:Option<AutomaticMessageManager>,
 }
 
 impl ClientManager {
@@ -85,9 +88,29 @@ impl ClientManager {
             searching:false,sort:None,error:None,changed:false,
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
+            show_messages:false,messages:None,
         }
     }
-    pub fn has_modal(&self)->bool {self.draft.is_some()}
+    pub fn has_modal(&self)->bool {
+        self.draft.is_some() || self.messages.as_ref()
+            .is_some_and(|message|self.show_messages && message.has_confirmation())
+    }
+    pub fn show_message_confirmation(
+        &mut self,ctx:&Context,area:egui::Rect,gateway:Arc<dyn BandoGateway>
+    ){
+        if self.show_messages {
+            if let Some(manager)=self.messages.as_mut(){
+                manager.show_confirmation(ctx,area,gateway);
+            }
+        }
+    }
+    pub fn request_global_leave(&mut self)->bool{
+        if !self.show_messages{return true;}
+        self.messages.as_mut().is_none_or(|m|m.request_global_leave())
+    }
+    pub fn take_global_approved(&mut self)->bool{
+        self.messages.as_mut().is_some_and(|m|m.take_global_approved())
+    }
     pub fn take_changed(&mut self)->bool {
         std::mem::take(&mut self.changed)
     }
@@ -252,11 +275,36 @@ impl ClientManager {
         ui.add_space(theme::SPACE_12);
         // Keep the existing second tab disabled until its native workflow
         // is actually migrated; a visual refresh must not fake availability.
-        components::management_tabs(ui,&[
-            ("거래처 목록",true,true),
-            ("자동 메시지 편집",false,false),
+        if let Some(manager)=self.messages.as_mut(){
+            manager.poll();
+            if manager.take_clients_approved(){self.show_messages=false;}
+        }
+        let chosen_tab=components::management_tabs(ui,&[
+            ("거래처 목록",!self.show_messages,true),
+            ("자동 메시지 편집",self.show_messages,true),
         ]);
+        if let Some(tab)=chosen_tab{
+            if tab==1 && !self.show_messages {
+                if self.messages.is_none(){
+                    self.messages=Some(AutomaticMessageManager::new(
+                        Arc::clone(&gateway),ui.ctx().clone()
+                    ));
+                }
+                self.show_messages=true;
+            }else if tab==0 && self.show_messages{
+                if let Some(manager)=self.messages.as_mut(){
+                    manager.request_clients();
+                    if manager.take_clients_approved(){self.show_messages=false;}
+                }
+            }
+        }
         ui.add_space(theme::SPACE_16);
+        if self.show_messages{
+            if let Some(manager)=self.messages.as_mut(){
+                manager.show(ui,gateway);
+            }
+            return;
+        }
 
         // A filtered copy keeps Rust's search IDs authoritative.
         // Sorting changes display order only, never the backing master.
