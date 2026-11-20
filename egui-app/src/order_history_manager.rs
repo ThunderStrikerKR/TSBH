@@ -378,14 +378,13 @@ fn move_range(from:&mut String,to:&mut String,step:i64){
         }
     }
 }
-fn range_date_picker(
+/// Place date fields in reverse insertion order inside an RTL parent.
+/// egui then RIGHT-anchors the entire range while the visible order stays
+/// basis -> previous -> start/calendar -> end/calendar -> next -> all.
+fn range_date_picker_rtl(
     ui:&mut Ui,label:&str,date:&mut String,month:&mut NaiveDate,
     id:&'static str
 )->bool{
-    ui.label(typography::field_label(label));
-    let mut changed=components::flexible_text_field(
-        ui,date,theme::SETTLEMENT_DATE_FIELD_WIDTH,"YYYY-MM-DD"
-    ).changed();
     let trigger=theme::action(
         ui,"달력",theme::ButtonRole::Standard,true
     ).on_hover_text(&format!("{label}을 달력에서 선택"));
@@ -395,18 +394,31 @@ fn range_date_picker(
                 &seoul_today(),"%Y-%m-%d").expect("valid today"));
         *month=month_start(day);
     }
-    if let Some(day)=date_calendar(&trigger,month,date,id){
+    let mut changed=components::date_calendar(
+        &trigger,month,date,id
+    ).is_some_and(|day|{
         *date=day.format("%Y-%m-%d").to_string();
-        changed=true;
-    }
+        true
+    });
+    changed|=components::flexible_text_field(
+        ui,date,theme::SETTLEMENT_DATE_FIELD_WIDTH,"YYYY-MM-DD"
+    ).changed();
+    ui.label(typography::field_label(label));
     changed
 }
-fn history_date_range_leading(
+fn history_date_range_leading_rtl(
     ui:&mut Ui,basis:&mut HistoryDateBasis,
     from:&mut String,from_month:&mut NaiveDate,
     to:&mut String
 )->bool{
     ui.spacing_mut().item_spacing.x=theme::SPACE_8;
+    let mut changed=range_date_picker_rtl(
+        ui,"시작일",from,from_month,"order-history-date-from-calendar"
+    );
+    if theme::action(ui,"‹",theme::ButtonRole::Standard,true).clicked(){
+        move_range(from,to,-1);
+        changed=true;
+    }
     let previous=*basis;
     egui::ComboBox::from_id_salt("history-range-date-basis")
         .width(115.0)
@@ -415,42 +427,31 @@ fn history_date_range_leading(
             options.selectable_value(basis,HistoryDateBasis::Reception,"접수일 기준");
             options.selectable_value(basis,HistoryDateBasis::Payment,"입금일 기준");
         });
-    let mut changed=*basis!=previous;
-    if theme::action(ui,"‹",theme::ButtonRole::Standard,true).clicked(){
-        move_range(from,to,-1);
-        if let Ok(day)=NaiveDate::parse_from_str(from,"%Y-%m-%d"){
-            *from_month=month_start(day);
-        }
-        changed=true;
-    }
-    changed |=range_date_picker(ui,"시작일",from,from_month,
-        "order-history-date-from-calendar");
-    changed
+    changed||*basis!=previous
 }
-fn history_date_range_trailing(
+fn history_date_range_trailing_rtl(
     ui:&mut Ui,from:&mut String,to:&mut String,
     to_month:&mut NaiveDate
 )->bool{
     ui.spacing_mut().item_spacing.x=theme::SPACE_8;
-    ui.label(typography::caption("~"));
-    let mut changed=range_date_picker(
-        ui,"종료일",to,to_month,"order-history-date-to-calendar"
-    );
-    if theme::action(ui,"›",theme::ButtonRole::Standard,true).clicked(){
-        move_range(from,to,1);
-        if let Ok(day)=NaiveDate::parse_from_str(to,"%Y-%m-%d"){
-            *to_month=month_start(day);
-        }
-        changed=true;
-    }
+    let mut changed=false;
     if theme::action(ui,"전체 날짜",theme::ButtonRole::Standard,
         !from.is_empty()||!to.is_empty()).clicked(){
         from.clear();to.clear();changed=true;
     }
+    if theme::action(ui,"›",theme::ButtonRole::Standard,true).clicked(){
+        move_range(from,to,1);
+        changed=true;
+    }
+    changed|=range_date_picker_rtl(
+        ui,"종료일",to,to_month,"order-history-date-to-calendar"
+    );
+    ui.label(typography::caption("~"));
     changed
 }
-/// All controls use explicit left-to-right slots even when the slot is
-/// anchored against the right edge; RTL layouts would reverse their order.
+/// The RIGHT edge is fixed; drawing each part in reverse in an RTL layout
+/// restores its intended left-to-right visual sequence without guessing its
+/// pixel width. Narrow panes get two separately right-anchored rows.
 fn history_date_controls(
     ui:&mut Ui,basis:&mut HistoryDateBasis,
     from:&mut String,to:&mut String,
@@ -477,33 +478,32 @@ fn history_date_controls(
         );
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-start-line")
-            .max_rect(first).layout(egui::Layout::left_to_right(Align::Center)),
+            .max_rect(first).layout(egui::Layout::right_to_left(Align::Center)),
             |line|{
-                changed|=history_date_range_leading(
+                changed|=history_date_range_leading_rtl(
                     line,basis,from,from_month,to
                 );
             });
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-end-line")
-            .max_rect(second).layout(egui::Layout::left_to_right(Align::Center)),
+            .max_rect(second).layout(egui::Layout::right_to_left(Align::Center)),
             |line|{
-                changed|=history_date_range_trailing(
+                changed|=history_date_range_trailing_rtl(
                     line,from,to,to_month
                 );
             });
     }else{
-        ui.horizontal(|line|{
-            changed|=history_date_range_leading(
-                line,basis,from,from_month,to
-            );
-            changed|=history_date_range_trailing(
+        ui.with_layout(egui::Layout::right_to_left(Align::Center),|line|{
+            changed|=history_date_range_trailing_rtl(
                 line,from,to,to_month
+            );
+            changed|=history_date_range_leading_rtl(
+                line,basis,from,from_month,to
             );
         });
     }
-    // Previous/next moves BOTH ends of the window. Keep each calendar's
-    // visible month synchronized without undoing unsaved month navigation
-    // in a still-open popup (which does not set changed).
+    // Previous/next moves BOTH ends of the window. Do not reset a calendar
+    // merely because the user navigated its month without selecting a day.
     if changed{
         if let Ok(day)=NaiveDate::parse_from_str(from,"%Y-%m-%d"){
             *from_month=month_start(day);
