@@ -647,6 +647,34 @@ impl FreightManager {
                     }
                 }
             });
+            section.horizontal_wrapped(|tools|{
+                let mut available=groups.iter().any(|g|text(g,"id")==copy_template);
+                if !available {copy_template.clear();available=false;}
+                egui::ComboBox::from_id_salt("freight-copy-group-tariff")
+                    .selected_text(if available{group_name(groups,copy_template)}
+                        else{"확인된 공통 기준 선택"})
+                    .show_ui(tools,|choice|{
+                        for group in groups {
+                            choice.selectable_value(
+                                copy_template,text(group,"id").to_owned(),
+                                text(group,"name")
+                            );
+                        }
+                    });
+                let can_copy=enabled&&!copy_template.is_empty()&&!selected.is_empty()
+                    && selected.iter().all(|id|{
+                        products.iter().any(|p|text(p,"id")==id.as_str()
+                            && !groups.iter().any(|g|
+                                text(g,"id")==text(p,"shippingGroupId"))
+                            && !pending.contains_key(id))
+                    });
+                if theme::action(tools,"상품별 기준으로 복사",
+                    theme::ButtonRole::Standard,can_copy).clicked(){
+                    *copy_target=Some((
+                        copy_template.clone(),selected.iter().cloned().collect()
+                    ));
+                }
+            });
             components::soft_divider(section);
             egui::ScrollArea::horizontal()
                 .id_salt("freight-assignment-rows")
@@ -661,6 +689,7 @@ impl FreightManager {
                             grid.label(typography::table_header("카테고리"));
                             grid.label(typography::table_header("배송 그룹"));
                             grid.label(typography::table_header("지정 상태"));
+                            grid.label(typography::table_header("기본 운임"));
                             grid.end_row();
                             for product in &filtered{
                                 let id=text(product,"id");
@@ -706,6 +735,50 @@ impl FreightManager {
                                     else if committed.is_empty(){"미지정"}
                                     else{"지정 완료"}
                                 ));
+                                let effective=product_views.get(id)
+                                    .filter(|entry|entry.is_object());
+                                let rule=effective.map(|entry|&entry["rule"])
+                                    .unwrap_or(&Value::Null);
+                                if !committed.is_empty() && groups.iter()
+                                    .any(|g|text(g,"id")==committed){
+                                    grid.label(typography::caption("그룹 운임표 적용"));
+                                }else{
+                                    grid.horizontal(|cell|{
+                                        let editable=enabled&&!changed&&effective.is_some();
+                                        if theme::action(cell,"기본 운임 설정",
+                                            theme::ButtonRole::Standard,editable).clicked(){
+                                            let initial=effective
+                                                .and_then(|entry|entry.get("editableRule"))
+                                                .filter(|v|v.is_object()).cloned()
+                                                .or_else(||{
+                                                    match gateway.execute(
+                                                        ReadOperation::DefaultProductRule,
+                                                        json!({
+                                                            "action":"default_product_rule",
+                                                            "versionId":"unsaved",
+                                                            "now":chrono::Utc::now().to_rfc3339()
+                                                        })
+                                                    ){
+                                                        Ok(value)=>value.get("rule").cloned(),
+                                                        Err(message)=>{
+                                                            *error=Some(message);
+                                                            None
+                                                        }
+                                                    }
+                                                });
+                                            if let Some(initial)=initial {
+                                                *rate_editor=Some(RateEditor::new_product(
+                                                    id,text(product,"name"),&initial
+                                                ));
+                                            }
+                                        }
+                                        if rule.is_object() &&
+                                            theme::action(cell,"기준 변경",
+                                                theme::ButtonRole::Standard,editable).clicked(){
+                                                *reset_target=Some(id.to_owned());
+                                        }
+                                    });
+                                }
                                 grid.end_row();
                             }
                         });
