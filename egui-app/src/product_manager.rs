@@ -1221,6 +1221,10 @@ impl ProductManager {
         ).resizable(false)
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
             .show(ctx,|modal|{
+                let dialog_title=if is_new{"상품 등록"}else{"상품 상세 관리"};
+                if components::modal_header(
+                    modal,dialog_title,"취소",!busy
+                ){request_close=true;}
                 egui::ScrollArea::vertical()
                     .id_salt("egui-product-detail-content")
                     .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
@@ -1410,8 +1414,6 @@ impl ProductManager {
                             editable&&!busy&&
                                 (is_new || draft!=original || price_changed)
                         ).clicked(){request_save=true;}
-                        if theme::action(right,"닫기",theme::ButtonRole::Standard,!busy)
-                            .clicked(){request_close=true;}
                     });
                 });
             });
@@ -1441,12 +1443,13 @@ impl ProductManager {
             components::decision_window(
                 "상품 삭제","egui-product-archive-confirm",work_area
             ).show(ctx,|dialog|{
+                cancel=components::modal_header(
+                    dialog,"상품 삭제","취소",!busy
+                );
                 dialog.label(typography::body(
                     "등록 상품에서 삭제할까요? 과거 주문과 가격 기록은 보존하며 홈페이지 재수집으로 자동 복원하지 않습니다."
                 ));
                 dialog.horizontal(|actions|{
-                    if theme::action(actions,"취소",theme::ButtonRole::Standard,!busy)
-                        .clicked(){cancel=true;}
                     if theme::action(actions,"상품 삭제",theme::ButtonRole::Danger,
                         editable&&!busy).clicked(){archive=true;}
                 });
@@ -1465,12 +1468,13 @@ impl ProductManager {
             components::decision_window(
                 "저장하지 않은 상품","egui-product-discard-confirm",work_area
             ).show(ctx,|dialog|{
+                keep=components::modal_header(
+                    dialog,"저장하지 않은 상품","취소",!busy
+                );
                 dialog.label(typography::body(
                     "상품 수정사항을 저장하지 않고 닫을까요?"
                 ));
                 dialog.horizontal(|actions|{
-                    if theme::action(actions,"계속 수정",
-                        theme::ButtonRole::Standard,!busy).clicked(){keep=true;}
                     if theme::action(actions,"저장 안 함",
                         theme::ButtonRole::Danger,!busy).clicked(){discard=true;}
                 });
