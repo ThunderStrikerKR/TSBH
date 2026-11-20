@@ -101,9 +101,9 @@ fn action_payload(action: &str, data: &Value, before: &Value) -> Result<Value, S
                 p["active"]!=false
             ).ok_or("등록된 상품을 찾을 수 없습니다.")?;
             let group_id=product["shippingGroupId"].as_str().unwrap_or("");
-            if shipping["groups"].as_array().is_some_and(|groups|
-                groups.iter().any(|g|g["id"].as_str()==Some(group_id)
-                    && g["deletedAt"].is_null())){
+            if action=="save_product_rule" && shipping["groups"].as_array()
+                .is_some_and(|groups|groups.iter().any(|g|
+                    g["id"].as_str()==Some(group_id) && g["deletedAt"].is_null())){
                 return Err("배송 그룹 소속 상품은 그룹 운임표에서 수정하세요.".into());
             }
             payload["productId"]=json!(product_id);
@@ -133,15 +133,11 @@ fn action_payload(action: &str, data: &Value, before: &Value) -> Result<Value, S
             let mut version_ids=Map::new();
             for (index,id) in ids.iter().enumerate(){
                 let pid=id.as_str().ok_or("상품 식별자 형식 오류")?;
-                let product=products.iter().find(|p|p["id"].as_str()==Some(pid)
+                if !products.iter().any(|p|p["id"].as_str()==Some(pid)
                     && p["deletedAt"].is_null()
                     && p["supersededBy"].is_null()
-                    && p["active"]!=false)
-                    .ok_or("등록된 상품을 찾을 수 없습니다.")?;
-                if shipping["groups"].as_array().is_some_and(|groups|groups.iter()
-                    .any(|g|g["id"]==product["shippingGroupId"]
-                        && g["deletedAt"].is_null())){
-                    return Err("이미 그룹에 소속된 상품은 별도 운임 복사 대상이 아닙니다.".into());
+                    && p["active"]!=false){
+                    return Err("등록된 상품을 찾을 수 없습니다.".into());
                 }
                 if version_ids.insert(pid.to_owned(),json!(unique("copy",index)?))
                     .is_some(){
