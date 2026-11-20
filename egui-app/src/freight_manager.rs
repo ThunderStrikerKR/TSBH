@@ -218,6 +218,11 @@ impl FreightManager {
             self.rate_editor.as_ref().is_some_and(|editor|editor.dirty())
     }
     pub fn busy(&self)->bool{self.write_receiver.is_some()}
+    pub fn can_save_pending(&self)->bool{
+        self.gateway.shipping_write_enabled() && !self.busy() &&
+            self.rate_editor.is_none() && self.new_name.trim().is_empty() &&
+            !self.pending_changes().is_empty()
+    }
     pub fn has_modal(&self)->bool{
         self.rate_editor.is_some() || self.rename_target.is_some()
             || self.delete_target.is_some() || self.basis_target.is_some()
