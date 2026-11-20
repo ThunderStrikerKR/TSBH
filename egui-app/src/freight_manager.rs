@@ -472,6 +472,10 @@ impl FreightManager {
 
     pub fn show_page(&mut self, ui: &mut Ui) {
         self.poll(ui.ctx().clone());
+        if self.saving_for_tab && !self.busy() && self.dirty() &&
+            !self.save_dirty(ui.ctx().clone()) {
+            self.saving_for_tab=false;
+        }
         ui.label(typography::page_heading("운임 관리"));
         ui.add_space(theme::SPACE_12);
         if let Some(index) = components::management_tabs(ui, &[
@@ -705,6 +709,19 @@ impl FreightManager {
                                 theme::ButtonRole::Danger,enabled).clicked(){
                                 close_editor=true;
                             }
+                            if theme::action(bar,"저장하고 닫기",
+                                theme::ButtonRole::Primary,enabled&&editor.dirty()).clicked(){
+                                match editor.write_action(){
+                                    Ok(command)=>{
+                                        editor.error=None;
+                                        action=Some(command);
+                                    }
+                                    Err(message)=>{
+                                        editor.error=Some(message);
+                                        editor.ask_discard=false;
+                                    }
+                                }
+                            }
                         });
                     });
                 }
@@ -774,10 +791,10 @@ impl FreightManager {
             let mut cancel=false;
             let mut discard=false;
             let mut save=false;
-            let can_save=enabled&&self.new_name.trim().is_empty()
-                && !self.pending_changes().is_empty();
+            let can_save=self.can_save_dirty();
             let ctx=ui.ctx();
-            components::modal_backdrop(ctx,"freight-tab-leave-backdrop",false);
+            components::modal_backdrop(ctx,"freight-tab-leave-backdrop",
+                self.rate_editor.is_some());
             components::decision_window(
                 "저장하지 않은 변경사항","freight-tab-leave",ui.max_rect()
             ).show(ctx,|dialog|{
@@ -804,12 +821,8 @@ impl FreightManager {
                 self.discard_drafts();
                 self.tab=next;
             }else if save{
-                let changes=self.pending_changes();
-                if !changes.is_empty(){
+                if self.save_dirty(ui.ctx().clone()){
                     self.saving_for_tab=true;
-                    action=Some(("assign_products".into(),json!({
-                        "assignments":changes
-                    })));
                 }
             }
         }
