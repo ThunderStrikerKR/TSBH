@@ -2752,7 +2752,7 @@
     {
       "id": "LIVE-20261120-EGUI-MODEL-FAMILY-MANAGEMENT",
       "scope": "상품관리 모델군 관리 React ColorGuidanceManager -> Rust/egui (수동 편성·대표 지정·설정 CAS)",
-      "status": "SOURCE_PATCHED_TARGET_COMPILATION_PASS_AT_4168_LATEST_SCOPED_TEST_PENDING",
+      "status": "SQLITE_REAL_ROUNDTRIP_TEST_ADDED_CI_PENDING",
       "description": "2026-11-20 기존 ProductManager 상품관리 3번째 탭에 모델군 관리 독립 화면 구현. 왼쪽 그룹 생성/검색/목록과 오른쪽 그룹 이름·상품 추가 검색·기존 상품·대표모델 지정/제외·삭제 확인·저장 및 미저장 변경 이탈 처리. 원본 React ColorGuidanceManager.tsx의 수동 직원 선택 및 등록상품 ID와 같은 ID/대표 ID/레거시 대표색상 보존. 상품/주문 자동 병합 금지. 기존 Tauri settings.colorGuidanceGroups만 per-field CAS 패치. 격리 egui DB 쓰기 거부. 운영 settings-write 권한과 DB+helper 명시 환경 필수. 검증은 원본 Rust catalog_clients/model_groups.rs::validate (백업 전+최종 설정 transaction), Tauri manual_backup 이후 apply_settings_patch 사용. CAS 충돌 및 저장 후 재조회 실패는 실패 처리하고 사용자 입력 보존. 모델군 2개 이상 실제 단일구성 상품/고유 회원/대표 SKU 필수.",
       "evidence": [
         "src/ColorGuidanceManager.tsx",
@@ -2774,17 +2774,17 @@
         "docs/egui-ui-design-contract.md"
       ],
       "gates": {
-        "patch": "PASS: model UI commit baaef0cd6707dab99fd1b22124ab7c7d15916135; screen mount 416888029416c1b37aaf1dfac7b17a12e3a1b884; storage CAS 43c18230f8ed4255c37efa14c08708cf6d28e21a; gateway backup 787250e5f500ae0abf79dff8852584db18cb1b4d; canonical pre-backup validation 6fbf8f4609272e21666a7c46fc9e3164192700a2.; vertical border alignment 810e3630b58a1a8791a2c28274799db1090f7020.",
+        "patch": "PASS: model UI commit baaef0cd6707dab99fd1b22124ab7c7d15916135; screen mount 416888029416c1b37aaf1dfac7b17a12e3a1b884; storage CAS 43c18230f8ed4255c37efa14c08708cf6d28e21a; gateway backup 787250e5f500ae0abf79dff8852584db18cb1b4d; canonical pre-backup validation 6fbf8f4609272e21666a7c46fc9e3164192700a2.; vertical border alignment 810e3630b58a1a8791a2c28274799db1090f7020.; focused DB test 75a3b69daaab80d96dc4e27fdc6b33f0a198ee7b; workflow step 5da030a276abafc1a8802d41eeb343a78e8c6fc7; exact postwrite model-group equality 4c4bb527ba6928a49001728b31c6a77d5c7485cc.",
         "static": "PASS source comparison: ColorGuidanceManager React event paths, model-groups.ts, CSS product-admin-redesign and management-layout; Rust model_groups validate source reused, Tauri settings_patch expected-value CAS and existing SQLite backup protocol reused; no new product/order modification code.; verified model-group outer container draws one vertical split border, not a horizontal control separator.",
-        "unit": "Model-group tests added on de51e2e8a4423e0bc874c2177af915282ee896a2, include explicit representative validation and no cross-group duplication. Execution pending at observation time.",
-        "ci": "PASS on source 416888029416c1b37aaf1dfac7b17a12e3a1b884: Tauri cargo check + egui cargo check, https://github.com/ThunderStrikerKR/TSBH/actions/runs/44655691358. Final model-group scoped-tests and newer source changes as of 810e3630b58a1a8791a2c28274799db1090f7020: latest CI still in progress, NOT asserted PASS.",
-        "action": "NOT VERIFIED: actual operational SQLite roundtrip for group create/update/delete, backup generation, concurrent expected-value CAS, UI interaction against live Windows.",
+        "unit": "Original Rust catalog model-group unit tests passed on run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44656216539. New isolated production-v2 SQLite real round-trip+manual backup+unrelated setting CAS+same-key stale-editor rejection+group deletion test committed at 75a3b69. Targeted new test run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44657091102 queued at observation; do not claim PASS before step result.",
+        "ci": "PASS at unchanged earlier source https://github.com/ThunderStrikerKR/TSBH/actions/runs/44656216539: Tauri and egui cargo check; group native unit rules. New SQLite test + exact egui postwrite compare CI pending at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44657091102, do not transfer old PASS.",
+        "action": "Real SQLite test source added and CI scheduled; actual execution PASS unconfirmed. Test uses fresh temporary DB with production initializer, disk reopen and current Rust settings_patch writer (not in-memory mock). Live operational DB was not modified. Windows GUI explicitly skipped.",
         "windows": "SKIPPED by user policy: no real Windows GUI/DPI/click/screenshot testing."
       },
       "clauses": {
         "applicable": "0-1~0-7, 6~10, 12~15, 16~22, 27~32, 39~43, 47~54, 57~61",
         "notApplicable": "카카오톡 도킹 / 주문 OCR 및 운임 계산 실행 경로는 미변경",
-        "pending": "source SHA specific latest cargo checks, three narrowed model groups tests, actual operating SQLite action."
+        "pending": "Actual newest source scoped SQLite test result pending; operating live DB never modified; Windows GUI excluded by user policy."
       }
     },
     {
