@@ -776,28 +776,32 @@ impl FreightManager {
             section.horizontal_wrapped(|tools|{
                 let mut all=!filtered.is_empty()
                     && filtered.iter().all(|p|selected.contains(text(p,"id")));
-                if tools.checkbox(&mut all,"").changed(){
-                    selected.clear();
-                    if all {
-                        selected.extend(filtered.iter()
-                            .map(|p|text(p,"id").to_owned()));
+                tools.add_enabled_ui(enabled,|control|{
+                    if control.checkbox(&mut all,"").changed(){
+                        selected.clear();
+                        if all {
+                            selected.extend(filtered.iter()
+                                .map(|p|text(p,"id").to_owned()));
+                        }
                     }
-                }
+                });
                 tools.label(typography::field_label(&format!(
                     "{}개 선택",selected.len()
                 )));
-                egui::ComboBox::from_id_salt("freight-bulk-assign")
-                    .selected_text(if bulk_group.is_empty(){
-                        "미지정으로 변경"
-                    }else{group_name(groups,bulk_group)})
-                    .show_ui(tools,|combo|{
-                        combo.selectable_value(bulk_group,String::new(),"미지정으로 변경");
-                        for group in groups{
-                            combo.selectable_value(
-                                bulk_group,text(group,"id").into(),text(group,"name")
-                            );
-                        }
-                    });
+                tools.add_enabled_ui(enabled,|control|{
+                    egui::ComboBox::from_id_salt("freight-bulk-assign")
+                        .selected_text(if bulk_group.is_empty(){
+                            "미지정으로 변경"
+                        }else{group_name(groups,bulk_group)})
+                        .show_ui(control,|combo|{
+                            combo.selectable_value(bulk_group,String::new(),"미지정으로 변경");
+                            for group in groups{
+                                combo.selectable_value(
+                                    bulk_group,text(group,"id").into(),text(group,"name")
+                                );
+                            }
+                        });
+                });
                 if theme::action(tools,"선택 상품에 적용",
                     theme::ButtonRole::Standard,enabled&&!selected.is_empty()
                 ).clicked(){
@@ -809,17 +813,19 @@ impl FreightManager {
             section.horizontal_wrapped(|tools|{
                 let mut available=groups.iter().any(|g|text(g,"id")==copy_template.as_str());
                 if !available {copy_template.clear();available=false;}
-                egui::ComboBox::from_id_salt("freight-copy-group-tariff")
-                    .selected_text(if available{group_name(groups,copy_template)}
-                        else{"확인된 공통 기준 선택"})
-                    .show_ui(tools,|choice|{
-                        for group in groups {
-                            choice.selectable_value(
-                                copy_template,text(group,"id").to_owned(),
-                                text(group,"name")
-                            );
-                        }
-                    });
+                tools.add_enabled_ui(enabled,|control|{
+                    egui::ComboBox::from_id_salt("freight-copy-group-tariff")
+                        .selected_text(if available{group_name(groups,copy_template)}
+                            else{"확인된 공통 기준 선택"})
+                        .show_ui(control,|choice|{
+                            for group in groups {
+                                choice.selectable_value(
+                                    copy_template,text(group,"id").to_owned(),
+                                    text(group,"name")
+                                );
+                            }
+                        });
+                });
                 let can_copy=enabled&&!copy_template.is_empty()&&!selected.is_empty()
                     && selected.iter().all(|id|{
                         products.iter().any(|p|text(p,"id")==id.as_str()
@@ -854,10 +860,12 @@ impl FreightManager {
                                 let id=text(product,"id");
                                 let committed=text(product,"shippingGroupId");
                                 let mut checked=selected.contains(id);
-                                if grid.checkbox(&mut checked,"").changed(){
-                                    if checked{selected.insert(id.into());}
-                                    else{selected.remove(id);}
-                                }
+                                grid.add_enabled_ui(enabled,|control|{
+                                    if control.checkbox(&mut checked,"").changed(){
+                                        if checked{selected.insert(id.into());}
+                                        else{selected.remove(id);}
+                                    }
+                                });
                                 grid.vertical(|cell|{
                                     cell.label(typography::table_cell(text(product,"name")));
                                     let description=text(product,"subtitle");
