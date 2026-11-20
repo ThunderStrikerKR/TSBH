@@ -915,13 +915,13 @@ pub fn management_dropdown(
          egui::pos2(arrow_left,rect.bottom()-5.0)],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
     );
-    // A V-shaped chevron has more visual weight toward its tip, so its
-    // optical center sits above the trigger's geometric center. Keep its
-    // dimensions and alignment shared across all management dropdowns.
-    const CHEVRON_HALF_WIDTH:f32=5.0;
-    const CHEVRON_HALF_HEIGHT:f32=2.5;
-    const CHEVRON_STROKE:f32=1.8;
-    const CHEVRON_OPTICAL_OFFSET_Y:f32=-1.0;
+    // Match the neighboring 14pt Body caption visually, not the default
+    // tiny combo-arrow glyph. The chevron keeps its own 30pt split area.
+    // Raise the V's center because its tip gives it more lower visual weight.
+    const CHEVRON_HALF_WIDTH:f32=typography::FONT_BODY/2.0;
+    const CHEVRON_HALF_HEIGHT:f32=6.0;
+    const CHEVRON_STROKE:f32=2.0;
+    const CHEVRON_OPTICAL_OFFSET_Y:f32=-2.0;
     let x=rect.right()-15.0;
     let y=rect.center().y+CHEVRON_OPTICAL_OFFSET_Y;
     let left=egui::pos2(x-CHEVRON_HALF_WIDTH,y-CHEVRON_HALF_HEIGHT);
