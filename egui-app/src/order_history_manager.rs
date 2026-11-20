@@ -613,25 +613,30 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 ui.make_persistent_id(("history-payment-confirmation",id)),
                 Sense::hover()).on_hover_text(approval_help);
             let message=field(&row["display"],"trackingMessage");
-            // Both order-level actions stay in the 42pt parent row.
-            // The frequent whole-order copy is FIRST and remains identical
-            // to the original Rust-generated trackingMessage.
+            // Keep two INDEPENDENT controls in this fixed 264pt column.
+            // Main-justify expanded the first button to the full cell width,
+            // silently clipping the second one. Allocate exactly half each.
             let control=columns[6].shrink2(
                 Vec2::new(theme::SPACE_8,theme::SPACE_4)
             );
+            let action_gap=theme::SPACE_4;
+            let action_width=(control.width()-action_gap)/2.0;
             ui.scope_builder(UiBuilder::new()
                 .id_salt(("order-history-actions",id))
                 .max_rect(control)
-                .layout(egui::Layout::left_to_right(Align::Center)
-                    .with_main_justify(true)),|actions|{
+                .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
                     actions.set_clip_rect(control.intersect(area));
-                    actions.spacing_mut().item_spacing.x=theme::SPACE_4;
-                    if theme::action(actions,"운송장 복사",
-                        theme::ButtonRole::TableSecondary,!message.is_empty()).clicked(){
+                    actions.set_width(control.width());
+                    actions.spacing_mut().item_spacing.x=action_gap;
+                    // Copy the FULL order's existing Rust-generated message.
+                    if theme::action_with_min_width(actions,"운송장 복사",
+                        theme::ButtonRole::TableSecondary,!message.is_empty(),
+                        action_width).clicked(){
                         actions.ctx().copy_text(message.to_owned());
                     }
-                    if theme::action(actions,"발주서 상세",
-                        theme::ButtonRole::TableSecondary,true).clicked(){
+                    if theme::action_with_min_width(actions,"발주서 상세",
+                        theme::ButtonRole::TableSecondary,true,
+                        action_width).clicked(){
                         *pending_detail=Some(id.to_owned());
                     }
                 });
@@ -1549,7 +1554,18 @@ impl OrderHistoryManager {
                 offsets.push(offsets.last().copied().unwrap_or(0.0)+height);
             }
             let total_height=*offsets.last().unwrap_or(&0.0);
-            let output=egui::ScrollArea::both()
+            // Freight reference: header, rows and the right-hand 10pt rail
+            // use one measured data width. An unconditional two-axis
+            // ScrollArea exposed a bottom scrollbar even at desktop widths.
+            // Only allow horizontal scrolling if the viewport is actually
+            // narrower than the seven-column minimum.
+            let needs_horizontal=(viewport-gutter)+0.5<MIN_WIDTH;
+            let table_scroll=if needs_horizontal{
+                egui::ScrollArea::both()
+            }else{
+                egui::ScrollArea::vertical()
+            };
+            let output=table_scroll
                 .scroll_bar_rect(scroll_track)
                 .id_salt("order-history-table-rows")
                 .scroll_bar_visibility(
