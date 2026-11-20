@@ -172,6 +172,8 @@ pub const RECEPTION_VAT_ROW_HEIGHT: f32 = 32.0;
 pub const RECEPTION_TOTAL_HEIGHT: f32 = 56.0;
 pub const HEADER_HEIGHT: f32 = 62.0;
 pub const NAV_HEIGHT: f32 = 38.0;
+// Second-level management tabs must be visibly smaller than the global nav.
+pub const MANAGEMENT_TAB_HEIGHT: f32 = 30.0;
 // Original React manual workspace: max 1760, viewport side gap 36,
 // source-to-sheet columns 34:66 (.manual-workspace .manual-columns).
 pub const MANUAL_DIALOG_MAX_WIDTH: f32 = 1760.0;
@@ -474,8 +476,8 @@ fn action_with_min_width(
         ButtonRole::Danger => (34.0, Color32::from_rgb(84, 44, 48), DANGER, Stroke::NONE),
         ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, Color32::from_rgb(41, 72, 92), TEXT, Stroke::NONE),
-        ButtonRole::ManagementTab => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
-        ButtonRole::ActiveManagementTab => (NAV_HEIGHT, RAISED, TEXT, Stroke::new(1.0,BORDER)),
+        ButtonRole::ManagementTab => (MANAGEMENT_TAB_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
+        ButtonRole::ActiveManagementTab => (MANAGEMENT_TAB_HEIGHT, RAISED, TEXT, Stroke::new(1.0,BORDER)),
         ButtonRole::KakaoControl => (KAKAO_CONTROL_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveKakaoControl => (KAKAO_CONTROL_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH,BORDER)),
     };
@@ -493,8 +495,8 @@ fn action_with_min_width(
     let padding_x = match role {
         ButtonRole::Primary => 14.0,
         ButtonRole::Quiet => 8.0,
-        ButtonRole::Navigation | ButtonRole::ActiveNavigation |
-        ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 12.0,
+        ButtonRole::Navigation | ButtonRole::ActiveNavigation => 12.0,
+        ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 9.0,
         ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 7.0,
         _ => 12.0,
     };
@@ -513,9 +515,11 @@ fn action_with_min_width(
         ButtonRole::ActiveManagementTab | ButtonRole::ActiveKakaoControl
     );
     ui.scope(|ui| {
-        let padding_y = if matches!(role,ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl) {
-            2.0
-        } else {6.0};
+        let padding_y = match role {
+            ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 2.0,
+            ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 4.0,
+            _ => 6.0,
+        };
         ui.spacing_mut().button_padding = Vec2::new(padding_x, padding_y);
         let button = egui::Button::new(
             typography::action_label(label, font_size, important, color)
