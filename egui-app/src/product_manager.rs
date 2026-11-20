@@ -608,12 +608,65 @@ impl ProductManager {
             self.new_product();
         }
     }
+    fn edit_text(ui:&mut Ui,draft:&mut Value,key:&str,label:&str,enabled:bool){
+        ui.horizontal_wrapped(|line|{
+            line.label(typography::field_label(label));
+            let mut value=field(draft,key).to_owned();
+            line.add_enabled_ui(enabled,|input|{
+                if components::flexible_text_field(
+                    input,&mut value,theme::MANAGEMENT_SEARCH_MIN_WIDTH,label
+                ).changed(){
+                    draft[key]=json!(value);
+                }
+            });
+        });
+    }
+    fn product_price_candidate(
+        draft:&Value,inputs:&HashMap<String,String>,
+    )->Result<Value,String>{
+        let mut next=draft.clone();
+        let variant=next["variants"].as_array_mut()
+            .and_then(|rows|rows.first_mut())
+            .ok_or("상품의 단일 판매 구성을 확인할 수 없습니다.")?;
+        for tier in ["wholesale","semi","retail"]{
+            let raw=inputs.get(tier).ok_or("상품 가격 입력이 없습니다.")?
+                .trim().replace(',', "");
+            if raw.is_empty(){
+                variant[tier]=Value::Null;
+            }else{
+                let price=raw.parse::<i64>()
+                    .map_err(|_|"가격은 숫자만 입력하세요.".to_owned())?;
+                if !(0..=9_007_199_254_740_991).contains(&price){
+                    return Err("가격은 0원 이상 안전한 정수 범위로 입력하세요.".into());
+                }
+                variant[tier]=json!(price);
+            }
+        }
+        Ok(next)
+    }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
-        let Some(product)=self.selected.clone()else{return};
-        let mut close=false;
+        let Some(mut draft)=self.selected.clone()else{return};
+        let original=self.original_selected.clone().unwrap_or_else(||draft.clone());
+        let editable=self.gateway.product_write_enabled()
+            && self.catalog.as_ref().is_some_and(|v|v["revision"].as_u64().is_some());
+        let busy=self.writing.is_some();
+        let is_new=field(&draft,"id").is_empty();
+        let categories=self.catalog.as_ref().map(category_choices).unwrap_or_default();
+        let brands=self.catalog.as_ref().map(|state|
+            rows(&state["brands"]).to_vec()).unwrap_or_default();
+        let groups=self.catalog.as_ref().map(|state|
+            rows(&state["shipping"]["groups"]).iter()
+                .filter(|g|g.get("deletedAt").is_none_or(Value::is_null))
+                .cloned().collect::<Vec<_>>()).unwrap_or_default();
+        let mut prices=self.detail_prices.clone();
+        let mut request_close=false;
+        let mut request_save=false;
+        let mut request_archive=false;
+        let saved_error=self.error.clone();
         components::modal_backdrop(ctx,"egui-product-detail-backdrop",false);
         components::modal_window(
-            "상품 상세 관리","egui-product-detail",work_area
+            if is_new {"상품 등록"} else {"상품 상세 관리"},
+            "egui-product-detail",work_area
         ).resizable(false)
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
             .show(ctx,|modal|{
@@ -622,54 +675,243 @@ impl ProductManager {
                     .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
                     .show(modal,|body|{
                         body.label(typography::section_heading("상품 정보"));
-                        for (label,key) in [
-                            ("상품명","name"),("모델명","code"),
-                            ("상품설명","subtitle"),("카테고리","category"),
-                            ("판매 구분","catalog"),("기본 색상","defaultColor"),
-                            ("발송지","origin"),
-                        ] {
-                            let value=field(&product,key);
-                            body.horizontal_wrapped(|row|{
-                                row.label(typography::field_label(label));
-                                row.label(typography::body(
-                                    if value.is_empty(){"—"}else{value}
-                                ));
+                        Self::edit_text(body,&mut draft,"name","상품명",editable&&!busy);
+                        Self::edit_text(body,&mut draft,"code","모델명",editable&&!busy);
+                        Self::edit_text(body,&mut draft,"subtitle","상품설명",editable&&!busy);
+                        body.horizontal_wrapped(|line|{
+                            line.label(typography::field_label("카테고리"));
+                            let before=draft["categories"].as_array()
+                                .and_then(|ids|ids.last())
+                                .and_then(Value::as_str).unwrap_or("").to_owned();
+                            let mut category_id=before.clone();
+                            let display=categories.iter()
+                                .find(|(id,_)|id==&category_id)
+                                .map(|(_,name)|name.as_str())
+                                .unwrap_or("카테고리 미지정");
+                            line.add_enabled_ui(editable&&!busy,|input|{
+                                egui::ComboBox::from_id_salt("product-detail-category")
+                                    .selected_text(display)
+                                    .show_ui(input,|choices|{
+                                        choices.selectable_value(&mut category_id,
+                                            String::new(),"카테고리 미지정");
+                                        for (id,label) in &categories{
+                                            choices.selectable_value(
+                                                &mut category_id,id.clone(),label
+                                            );
+                                        }
+                                    });
+                            });
+                            if category_id!=before{
+                                draft["categories"]=if category_id.is_empty(){
+                                    json!([])
+                                }else{json!([category_id])};
+                                draft["category"]=json!(categories.iter().find(|(id,_)|
+                                    id==&category_id).map(|(_,name)|name.as_str())
+                                    .unwrap_or(""));
+                            }
+                        });
+                        body.horizontal_wrapped(|line|{
+                            line.label(typography::field_label("브랜드"));
+                            let mut brand_id=field(&draft,"brandId").to_owned();
+                            let before=brand_id.clone();
+                            let label=brands.iter().find(|b|field(b,"id")==brand_id)
+                                .map(|b|field(b,"name")).unwrap_or("브랜드 미지정");
+                            line.add_enabled_ui(editable&&!busy,|input|{
+                                egui::ComboBox::from_id_salt("product-detail-brand")
+                                    .selected_text(label).show_ui(input,|choices|{
+                                        choices.selectable_value(&mut brand_id,
+                                            String::new(),"브랜드 미지정");
+                                        for brand in &brands{
+                                            choices.selectable_value(&mut brand_id,
+                                                field(brand,"id").to_owned(),
+                                                field(brand,"name"));
+                                        }
+                                    });
+                            });
+                            if brand_id!=before{
+                                draft["brandId"]=if brand_id.is_empty(){
+                                    Value::Null
+                                }else{json!(brand_id)};
+                            }
+                        });
+                        body.horizontal_wrapped(|line|{
+                            line.label(typography::field_label("발송지"));
+                            let mut origin=field(&draft,"origin").to_owned();
+                            let before=origin.clone();
+                            line.add_enabled_ui(editable&&!busy,|input|{
+                                egui::ComboBox::from_id_salt("product-detail-origin")
+                                    .selected_text(if origin=="STORE"{"매장"}else{"공장"})
+                                    .show_ui(input,|options|{
+                                        options.selectable_value(
+                                            &mut origin,"FACTORY".into(),"공장");
+                                        options.selectable_value(
+                                            &mut origin,"STORE".into(),"매장");
+                                    });
+                            });
+                            if origin!=before{draft["origin"]=json!(origin);}
+                        });
+                        body.horizontal_wrapped(|line|{
+                            line.label(typography::field_label("배송 그룹"));
+                            let before=field(&draft,"shippingGroupId").to_owned();
+                            let mut group=before.clone();
+                            let label=groups.iter().find(|g|field(g,"id")==group)
+                                .map(|g|field(g,"name")).unwrap_or("미지정");
+                            line.add_enabled_ui(editable&&!busy,|input|{
+                                egui::ComboBox::from_id_salt("product-detail-shipping")
+                                    .selected_text(label).show_ui(input,|choices|{
+                                        choices.selectable_value(
+                                            &mut group,String::new(),"미지정");
+                                        for row in &groups{
+                                            choices.selectable_value(
+                                                &mut group,field(row,"id").to_owned(),
+                                                field(row,"name"));
+                                        }
+                                    });
+                            });
+                            if group!=before{
+                                draft["shippingGroupId"]=if group.is_empty(){
+                                    Value::Null
+                                }else{json!(group)};
+                            }
+                        });
+                        Self::edit_text(body,&mut draft,"defaultColor","기본 색상",
+                            editable&&!busy);
+                        body.add_space(theme::SPACE_12);
+                        components::soft_divider(body);
+                        body.label(typography::section_heading("단일 판매 구성"));
+                        if let Some(variant)=draft["variants"].as_array_mut()
+                            .and_then(|rows|rows.first_mut()){
+                            Self::edit_text(body,variant,"color","판매 색상",editable&&!busy);
+                            Self::edit_text(body,variant,"option","판매 옵션",editable&&!busy);
+                            Self::edit_text(body,variant,"url","홈페이지 상품 연결",
+                                editable&&!busy);
+                        }
+                        body.add_space(theme::SPACE_12);
+                        body.label(typography::section_heading("상품 가격"));
+                        for (label,tier) in [
+                            ("도매가","wholesale"),("반도매가","semi"),
+                            ("소매가","retail")
+                        ]{
+                            body.horizontal(|line|{
+                                line.label(typography::field_label(label));
+                                let text=prices.entry(tier.to_owned())
+                                    .or_insert_with(String::new);
+                                line.add_enabled_ui(editable&&!busy,|input|{
+                                    components::field(input,text,
+                                        components::FieldKind::Money,true);
+                                });
                             });
                         }
                         body.add_space(theme::SPACE_12);
-                        body.label(typography::section_heading("등록된 판매 구성과 가격"));
-                        for variant in rows(&product["variants"]) {
-                            components::soft_divider(body);
-                            let label=option_text(&product,variant);
-                            body.label(typography::subsection_heading(
-                                if label.is_empty(){"기본 구성"}else{&label}
-                            ));
-                            for (title,key) in [
-                                ("도매가","wholesale"),("반도매가","semi"),
-                                ("소매가","retail")
-                            ]{
-                                body.horizontal(|row|{
-                                    row.label(typography::field_label(title));
-                                    row.label(typography::quantity(&price(&variant[key])));
-                                });
-                            }
-                            let url=field(variant,"url");
-                            if !url.is_empty() {
-                                body.horizontal_wrapped(|row|{
-                                    row.label(typography::field_label("상품 연결"));
-                                    row.label(typography::caption(url));
-                                });
-                            }
+                        if !is_new{
+                            let refs=rows(&draft["priceHistory"]);
+                            egui::CollapsingHeader::new(
+                                format!("가격 변경 이력 {}건",refs.len())
+                            ).show(body,|history|{
+                                for item in refs.iter().rev(){
+                                    history.label(typography::caption(
+                                        &format!("{} / {} / {} → {}",
+                                            field(item,"at"),field(item,"field"),
+                                            item["before"],item["after"]
+                                        )
+                                    ));
+                                }
+                            });
+                        }
+                        if let Some(message)=&saved_error{
+                            body.label(typography::status(message,theme::DANGER));
                         }
                     });
                 modal.add_space(theme::SPACE_12);
-                modal.horizontal(|actions|{
-                    if theme::action(
-                        actions,"닫기",theme::ButtonRole::Standard,true
-                    ).clicked(){close=true;}
+                modal.horizontal(|footer|{
+                    if !is_new && theme::action(
+                        footer,"상품 삭제",theme::ButtonRole::Danger,
+                        editable&&!busy
+                    ).clicked(){
+                        request_archive=true;
+                    }
+                    footer.with_layout(Layout::right_to_left(Align::Center),|right|{
+                        let price_changed=prices.iter().any(|(tier,raw)|{
+                            let before=original["variants"].as_array()
+                                .and_then(|v|v.first())
+                                .and_then(|v|v.get(tier))
+                                .and_then(Value::as_i64)
+                                .map(|n|n.to_string()).unwrap_or_default();
+                            raw.trim().replace(',', "")!=before
+                        });
+                        if theme::action(right,"변경사항 저장",
+                            theme::ButtonRole::Primary,
+                            editable&&!busy&&
+                                (is_new || draft!=original || price_changed)
+                        ).clicked(){request_save=true;}
+                        if theme::action(right,"닫기",theme::ButtonRole::Standard,!busy)
+                            .clicked(){request_close=true;}
+                    });
                 });
             });
-        if close {self.selected=None;}
+        self.selected=Some(draft.clone());
+        self.detail_prices=prices;
+        if request_save{
+            match Self::product_price_candidate(&draft,&self.detail_prices){
+                Ok(candidate)=>self.start_write(
+                    "upsert_product",json!({"product":candidate}),None,ctx.clone()
+                ),
+                Err(message)=>self.error=Some(message),
+            }
+        }
+        if request_archive {self.confirm_archive=true;}
+        if request_close {
+            let candidate=Self::product_price_candidate(&draft,&self.detail_prices).ok();
+            if candidate.as_ref().is_some_and(|changed|changed!=&original){
+                self.confirm_discard=true;
+            }else{
+                self.close_detail();
+            }
+        }
+        if self.confirm_archive{
+            let mut cancel=false;
+            let mut archive=false;
+            components::modal_backdrop(ctx,"egui-product-archive-nested",true);
+            components::decision_window(
+                "상품 삭제","egui-product-archive-confirm",work_area
+            ).show(ctx,|dialog|{
+                dialog.label(typography::body(
+                    "등록 상품에서 삭제할까요? 과거 주문과 가격 기록은 보존하며 홈페이지 재수집으로 자동 복원하지 않습니다."
+                ));
+                dialog.horizontal(|actions|{
+                    if theme::action(actions,"취소",theme::ButtonRole::Standard,!busy)
+                        .clicked(){cancel=true;}
+                    if theme::action(actions,"상품 삭제",theme::ButtonRole::Danger,
+                        editable&&!busy).clicked(){archive=true;}
+                });
+            });
+            if cancel{self.confirm_archive=false;}
+            else if archive{
+                self.confirm_archive=false;
+                self.start_write("archive_product",
+                    json!({"productId":field(&draft,"id")}),None,ctx.clone()
+                );
+            }
+        }else if self.confirm_discard {
+            let mut keep=false;
+            let mut discard=false;
+            components::modal_backdrop(ctx,"egui-product-discard-nested",true);
+            components::decision_window(
+                "저장하지 않은 상품","egui-product-discard-confirm",work_area
+            ).show(ctx,|dialog|{
+                dialog.label(typography::body(
+                    "상품 수정사항을 저장하지 않고 닫을까요?"
+                ));
+                dialog.horizontal(|actions|{
+                    if theme::action(actions,"계속 수정",
+                        theme::ButtonRole::Standard,!busy).clicked(){keep=true;}
+                    if theme::action(actions,"저장 안 함",
+                        theme::ButtonRole::Danger,!busy).clicked(){discard=true;}
+                });
+            });
+            if keep {self.confirm_discard=false;}
+            else if discard{self.close_detail();}
+        }
     }
 }
 
