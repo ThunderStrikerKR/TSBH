@@ -6,6 +6,9 @@ on:
     paths:
       - .github/workflows/egui-targeted-check.yml
       - egui-app/src/freight_manager.rs
+      - egui-app/src/components.rs
+      - egui-app/src/settings_help.rs
+      - egui-app/src/theme.rs
       - egui-app/src/gateway.rs
       - egui-app/src/main.rs
       - src-tauri/src/egui_shipping_bridge.rs
