@@ -269,20 +269,23 @@ impl ProductManager {
                         self.confirm_archive=false;
                         self.confirm_discard=false;
                     }
-                    if matches!(job.kind.as_str(),"change_category"|"delete_category"){
-                        self.category_manager.on_saved(&job.kind,&catalog);
+                    let category_notice=if matches!(
+                        job.kind.as_str(),"change_category"|"delete_category"
+                    ){
+                        let notice=self.category_manager.on_saved(&job.kind,&catalog);
                         if self.category_manager.take_switch_to_list(){
                             self.tab=0;
                         }
-                    }
-                    self.notice=Some(match job.kind.as_str(){
+                        Some(notice)
+                    }else{None};
+                    self.notice=Some(category_notice.unwrap_or(match job.kind.as_str(){
                         "set_price"=>"가격 변경을 저장했습니다.",
                         "upsert_product"=>"상품 상세 정보를 저장했습니다.",
                         "archive_product"=>"상품을 삭제하고 과거 기록을 보존했습니다.",
                         "change_category"=>"카테고리 변경사항을 저장했습니다.",
                         "delete_category"=>"빈 분류를 삭제했습니다.",
                         _=>"상품 변경을 저장했습니다.",
-                    }.into());
+                    }).into());
                     self.catalog=Some(catalog);
                     self.reload(ctx.clone());
                 }
