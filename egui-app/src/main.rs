@@ -3640,7 +3640,7 @@ impl BandoEgui {
                                         Page::Excel=>{
                                             if let Some(excel)=self.excel_manager.as_mut(){
                                                 excel.show_page(page);
-                                                if let Some(order_id)=excel.take_open_order(){
+                                                if let Some((order_id,order_date))=excel.take_open_order(){
                                                     self.page=Page::History;
                                                     if self.order_history_manager.is_none(){
                                                         self.order_history_manager=Some(
@@ -3650,7 +3650,7 @@ impl BandoEgui {
                                                         );
                                                     }
                                                     if let Some(history)=self.order_history_manager.as_mut(){
-                                                        history.open_order(&order_id,ctx.clone());
+                                                        history.open_order(&order_id,&order_date,ctx.clone());
                                                     }
                                                 }
                                                 if excel.take_open_settings(){
