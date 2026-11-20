@@ -741,7 +741,11 @@ impl FreightManager {
                 }
             });
         });
-        ui.add_space(theme::SPACE_12);
+        // Progressive vertical rhythm: 8pt heading -> tab,
+        // 12pt tab -> KPI, 16pt KPI -> main content card.
+        // This absorbs the new title-top padding without moving the
+        // shared primary-card border below its 59th-round position.
+        ui.add_space(theme::SPACE_8);
         let selected_tab=freight_top_content(ui,|top|
             components::management_tabs(top, &[
                 ("배송 그룹 편성", self.tab == FreightTab::Groups, true),
@@ -762,7 +766,7 @@ impl FreightManager {
                 }
             }
         }
-        ui.add_space(theme::SPACE_16);
+        ui.add_space(theme::SPACE_12);
         let (Some(state), Some(projection)) = (self.state.as_ref(), self.projection.as_ref())
         else {
             if self.receiver.is_some() {
