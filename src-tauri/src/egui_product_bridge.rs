@@ -96,7 +96,7 @@ pub(super) fn patch(conn:&mut Connection, request:&Value)->Result<Value,String>{
                     "evidence":data["evidence"],
                 }),
             )?;
-            result.get("state").filter(Value::is_object).cloned()
+            result.get("state").filter(|v|v.is_object()).cloned()
                 .ok_or("Rust 브랜드 저장 결과 형식 오류")?
         }
         "save_alias"=>{
