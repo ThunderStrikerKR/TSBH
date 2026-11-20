@@ -80,8 +80,8 @@ fn read_local(conn:&Connection)->Result<(u64,Value),String>{
     if !settings.is_object(){return Err("설정은 JSON 객체여야 합니다.".into());}
     Ok((revision,settings))
 }
-/// Client settings and account pickers share the same isolated account
-/// master. Avoid recursion: this helper never calls client_master::load().
+/// Isolated egui settings own preview account preferences only.
+/// Real customer account references are checked against the operational DB.
 pub fn load_local_accounts()->Result<Value,String>{
     if using_business(){
         return Err("운영 계좌는 격리 저장소에서 조회하지 않습니다.".into());
