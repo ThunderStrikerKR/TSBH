@@ -865,17 +865,35 @@ impl FreightManager {
                 title.label(typography::section_heading("상품별 배송 그룹 지정"));
                 settings_help::icon(title,"상품별 운임");
             });
-            // Reserve the toolbar's full 36pt control height *before*
-            // rendering either group. A content-sized horizontal row made
-            // the left text field set the height after the smaller right
-            // controls had already been placed, drifting their baselines.
-            // Both clusters now share this exact vertical center line.
+            // Reserve a single toolbar rectangle. Left filters and right
+            // bulk controls receive independent fixed-height child UIs.
+            // Mixing left-to-right and right-to-left layouts in ONE row
+            // previously advanced the second group's vertical origin.
             let toolbar_width=section.available_width();
-            let filtered=section.allocate_ui_with_layout(
+            let (toolbar_rect,_) = section.allocate_exact_size(
                 egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
-                egui::Layout::left_to_right(egui::Align::Center),
+                egui::Sense::hover()
+            );
+            let bulk_width=500.0_f32.min(toolbar_rect.width());
+            let left_width=(toolbar_rect.width()-bulk_width-theme::SPACE_16).max(0.0);
+            let left_rect=egui::Rect::from_min_size(
+                toolbar_rect.left_top(),
+                egui::vec2(left_width,toolbar_rect.height())
+            );
+            let right_rect=egui::Rect::from_min_size(
+                egui::pos2(toolbar_rect.right()-bulk_width,toolbar_rect.top()),
+                egui::vec2(bulk_width,toolbar_rect.height())
+            );
+            section.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt("freight-assignment-search-toolbar")
+                    .max_rect(left_rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
                 |tools|{
-                tools.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    tools.set_clip_rect(left_rect);
+                    tools.set_width(left_rect.width());
+                    tools.set_height(left_rect.height());
+                    tools.spacing_mut().item_spacing.x=theme::SPACE_8;
                 components::flexible_text_field(
                     tools,search,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                     "모델명 / 상품명 / 카테고리 검색"
@@ -902,6 +920,9 @@ impl FreightManager {
                     *only_missing=false;
                 }
                 tools.checkbox(only_missing,"그룹 미지정 상품만");
+
+                }
+            );
 
                 // Apply the current filters before drawing bulk selection.
                 // This ensures "전체 선택" always targets the visible rows.
@@ -934,12 +955,17 @@ impl FreightManager {
                     *bulk_group=None;
                     *bulk_feedback=None;
                 }
-                let previous_group=bulk_group.clone();
-                // RTL layout pins this cluster to the far right. Controls
-                // are emitted in reverse order so their visible sequence is
-                // [checkbox, count, selector, apply, help].
-                tools.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),|bulk|{
+            let previous_group=bulk_group.clone();
+            section.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt("freight-assignment-bulk-toolbar")
+                    .max_rect(right_rect)
+                    .layout(egui::Layout::right_to_left(egui::Align::Center)),
+                |bulk|{
+                    bulk.set_clip_rect(right_rect);
+                    bulk.set_width(right_rect.width());
+                    bulk.set_height(right_rect.height());
+                    bulk.spacing_mut().item_spacing.x=theme::SPACE_8;
                         settings_help::icon(bulk,"배송 그룹 일괄 지정");
                         if theme::action(bulk,"선택 상품에 적용",
                             theme::ButtonRole::Standard,
@@ -1003,13 +1029,11 @@ impl FreightManager {
                                 }
                             }
                         });
-                    }
-                );
-                if *bulk_group!=previous_group {
-                    *bulk_feedback=None;
                 }
-                filtered
-            }).inner;
+            );
+            if *bulk_group!=previous_group {
+                *bulk_feedback=None;
+            }
             components::soft_divider(section);
             // Reserve the header OUTSIDE the scroll area. The table's
             // scroll offset is reflected only in its horizontal coordinates,
