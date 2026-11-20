@@ -132,6 +132,10 @@ struct PendingClientChange {
     order_id: String,
     source_raw: String,
     order_type: String,
+    // A changed Kakao conversation invalidates the pending dealer decision,
+    // even when the pasted text itself has not changed.
+    chat_handle: Option<String>,
+    chat_title: Option<String>,
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
 }
 
@@ -566,7 +570,9 @@ impl BandoEgui {
         let gateway=Arc::clone(&self.gateway);
         let (sender,receiver)=mpsc::channel();
         self.client_change=Some(PendingClientChange {
-            order_id,source_raw,order_type,receiver,
+            order_id,source_raw,order_type,
+            chat_handle:row.chat_handle.clone(),
+            chat_title:row.chat_title.clone(),receiver,
         });
         self.source_save_error=None;
         std::thread::spawn(move || {
@@ -588,9 +594,24 @@ impl BandoEgui {
             let Some(pending)=self.client_change.take() else {return;};
             // Another order or edited original may never inherit an old
             // calculation, regardless of asynchronous completion order.
+            let same_chat=self.drafts.iter().find(|row|
+                row.id==pending.order_id
+            ).is_some_and(|row|
+                row.chat_handle==pending.chat_handle &&
+                row.chat_title==pending.chat_title &&
+                row.manual_model.is_none()
+            );
             if self.active_id.as_deref()!=Some(pending.order_id.as_str()) ||
                self.raw_source!=pending.source_raw ||
-               self.order_type.as_str()!=pending.order_type {
+               self.order_type.as_str()!=pending.order_type ||
+               !same_chat {
+                if let Some(chooser)=self.client_chooser.as_mut(){
+                    if chooser.order_id==pending.order_id && chooser.is_selecting() {
+                        chooser.selection_failed(
+                            "발주서나 카카오톡 대화창이 변경되었습니다. 거래처를 다시 선택하세요.".into()
+                        );
+                    }
+                }
                 return;
             }
             match result {
@@ -613,9 +634,22 @@ impl BandoEgui {
                         ctx.request_repaint_after(Duration::from_millis(260));
                     }
                     self.queue_source_save();
+                    if self.client_chooser.as_ref().is_some_and(|chooser|
+                        chooser.order_id==pending.order_id && chooser.is_selecting()
+                    ){
+                        self.client_chooser=None;
+                    }
                 }
                 Err(error)=>{
-                    self.source_save_error=Some(format!("거래처 변경 확인 실패: {error}"));
+                    let message=format!("거래처 변경 확인 실패: {error}");
+                    if let Some(chooser)=self.client_chooser.as_mut()
+                        .filter(|chooser|
+                            chooser.order_id==pending.order_id && chooser.is_selecting()
+                        ){
+                        chooser.selection_failed(message);
+                    }else{
+                        self.source_save_error=Some(message);
+                    }
                 }
             }
         } else if self.client_change.is_some() {
@@ -922,14 +956,28 @@ impl BandoEgui {
             Some(Choice::Selected(id)) => {
                 let verified = self.client_chooser.as_ref()
                     .is_some_and(|chooser| chooser.contains(&id));
-                self.client_chooser = None;
-                // Re-selecting the same dealer is harmless unless raw
-                // changes require a fresh native price calculation.
-                let refresh=self.active_id.as_deref()
-                    .and_then(|active|self.drafts.iter().find(|row|row.id==active))
-                    .is_some_and(|row|row.pricing_preview.is_none());
-                if verified && (current_id.as_deref()!=Some(id.as_str()) || refresh) {
-                    self.apply_manual_client(&id, ctx);
+                if !verified { return; }
+                // React's current-dealer click simply closes the chooser.
+                // An unpriced quote is a separate pricing task, not grounds
+                // to re-run the client mutation without a different dealer.
+                if current_id.as_deref()==Some(id.as_str()) {
+                    self.client_chooser=None;
+                } else if self.client_change.is_some() {
+                    if let Some(chooser)=self.client_chooser.as_mut(){
+                        chooser.selection_failed(
+                            "이전 거래처 변경이 끝난 뒤 다시 선택하세요.".into()
+                        );
+                    }
+                } else {
+                    self.apply_manual_client(&id,ctx);
+                    if self.client_change.is_some() {
+                        if let Some(chooser)=self.client_chooser.as_mut(){
+                            chooser.begin_selection(&id);
+                        }
+                    } else if let Some(chooser)=self.client_chooser.as_mut(){
+                        chooser.selection_failed(self.source_save_error.clone()
+                            .unwrap_or_else(||"거래처 변경을 시작할 수 없습니다.".into()));
+                    }
                 }
             }
             Some(Choice::Closed) => { self.client_chooser = None; }
