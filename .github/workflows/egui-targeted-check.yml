@@ -7,6 +7,9 @@ on:
       - .github/workflows/egui-targeted-check.yml
       - egui-app/src/freight_manager.rs
       - egui-app/src/order_history_manager.rs
+      - egui-app/src/excel_manager.rs
+      - egui-app/src/excel_service.rs
+      - egui-app/Cargo.toml
       - egui-app/src/daily_settlement_manager.rs
       - src-tauri/src/business_core/rules/history.rs
       - egui-app/src/management_queries.rs
@@ -56,6 +59,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml order_history_manager::tests -- --nocapture
       - name: Verify daily settlement Seoul date navigation and view-only sort rules
         run: cargo test --manifest-path egui-app/Cargo.toml daily_settlement_manager::tests -- --nocapture
+      - name: Verify egui Logen native XLSX serializer uses the original sixteen text columns
+        run: cargo test --manifest-path egui-app/Cargo.toml excel_service::tests -- --nocapture
       - name: Verify synthetic UI samples cover seven management views without changing original catalog
         run: cargo test --manifest-path egui-app/Cargo.toml developer_ui_samples::tests -- --nocapture
       - name: Verify existing Tauri app-data DB selection remains mode-isolated
