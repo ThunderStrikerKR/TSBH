@@ -245,8 +245,11 @@ impl BandoGateway for LocalGateway {
             serde_json::json!({"colorGuidanceGroups":expected})
         )?;
         let catalog=self.load_catalog()?;
-        if catalog["settings"].get("colorGuidanceGroups").is_none(){
-            return Err("모델군 저장 후 상태를 다시 확인할 수 없습니다.".into());
+        // An unrelated process may commit another group edit between
+        // settings_patch and this read. A non-null key alone is NOT proof
+        // that the editor's exact draft survived the SQLite round trip.
+        if catalog["settings"]["colorGuidanceGroups"]!=groups{
+            return Err("모델군 저장 후 최신 데이터가 일치하지 않습니다. 다시 불러온 뒤 확인하세요.".into());
         }
         Ok(catalog)
     }
