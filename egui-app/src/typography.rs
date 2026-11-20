@@ -25,7 +25,10 @@ pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
 pub const FONT_BODY: f32 = 14.0;
 pub const FONT_FIELD_LABEL: f32 = 13.0;
 pub const FONT_METADATA: f32 = 12.0;
-pub const FONT_MAIN_NAV: f32 = 16.0;
+pub const FONT_MAIN_NAV: f32 = 18.0;
+/// Second-level management tabs remain full-size controls, visually
+/// subordinate through position and neutral styling rather than tiny text.
+pub const FONT_MANAGEMENT_TAB: f32 = 16.0;
 pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
 // Shared line boxes used for balanced reception guidance geometry.
