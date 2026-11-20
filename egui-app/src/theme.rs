@@ -67,6 +67,10 @@ pub const SETTINGS_SENDER_THREE_COL_MIN_WIDTH: f32 = 1120.0;
 pub const SETTINGS_GRID_GAP_X: f32 = 16.0;
 pub const SETTINGS_TOP_COL_RATIOS: [f32;2] = [1.0,1.4];
 pub const SETTINGS_SENDER_COL_RATIOS: [f32;3] = [1.1,1.6,0.8];
+// React account-row: bank / number / holder / 112px delete button.
+pub const SETTINGS_ACCOUNT_ROW_MIN_WIDTH: f32 = 600.0;
+pub const SETTINGS_ACCOUNT_COL_RATIOS: [f32;3] = [1.0,1.3,1.0];
+pub const SETTINGS_ACCOUNT_DELETE_WIDTH: f32 = 112.0;
 pub const SPACE_12: f32 = 12.0;
 pub const SPACE_16: f32 = 16.0;
 pub const SPACE_24: f32 = 24.0;
