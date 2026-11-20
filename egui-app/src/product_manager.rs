@@ -10,6 +10,7 @@ use crate::{
     gateway::BandoGateway,
     management_queries::{self, ManagementProductRows},
     latest_job::LatestJob,
+    product_excel_ui::ProductExcelUi,
     settings_help, theme, typography,
 };
 use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Pos2, Vec2};
@@ -246,6 +247,7 @@ pub struct ProductManager {
     price_drafts:HashMap<String,PriceDraft>,
     selected_variants:HashMap<String,String>,
     sort:Option<ProductSort>,
+    excel:ProductExcelUi,
     writing:Option<ProductWrite>,
     notice:Option<String>,
     result:LatestJob<ManagementProductRows>,
@@ -272,6 +274,7 @@ impl ProductManager {
             confirm_discard:false,confirm_archive:false,
             price_mode:false,price_drafts:HashMap::new(),
             selected_variants:HashMap::new(),sort:None,
+            excel:ProductExcelUi::default(),
             writing:None,notice:None,
             result:LatestJob::default(),next_query:None,error:None,
         };
@@ -312,7 +315,7 @@ impl ProductManager {
     }
     pub fn blocks_navigation(&self)->bool{
         self.selected.is_some() || self.has_pending_prices()
-            || self.writing.is_some()
+            || self.writing.is_some() || self.excel.blocks_navigation()
     }
     fn start_write(
         &mut self,action:&str,data:Value,key:Option<String>,ctx:Context
@@ -346,6 +349,12 @@ impl ProductManager {
         ctx.request_repaint_after(Duration::from_millis(160));
     }
     fn poll(&mut self,ctx:&Context) {
+        if let Some(catalog)=self.excel.poll(ctx){
+            self.model_groups.set_catalog(&catalog,ctx);
+            self.aliases.set_catalog(&catalog,ctx);
+            self.catalog=Some(catalog);
+            self.reload(ctx.clone());
+        }
         if let Some(catalog)=self.model_groups.poll(ctx){
             self.model_groups.set_catalog(&catalog,ctx);
             self.aliases.set_catalog(&catalog,ctx);
@@ -445,7 +454,7 @@ impl ProductManager {
         }
     }
     pub fn has_modal(&self)->bool {
-        self.selected.is_some() ||
+        self.selected.is_some() || self.excel.has_modal() ||
             (self.tab==1 && self.category_manager.has_overlay()) ||
             (self.tab==2 && self.model_groups.has_overlay()) ||
             (self.tab==3 && self.aliases.has_overlay()) ||
@@ -459,6 +468,10 @@ impl ProductManager {
         self.confirm_discard=false;
     }
     pub fn allow_leave(&mut self)->bool{
+        if self.excel.blocks_navigation(){
+            self.error=Some("상품 Excel 검토 또는 저장을 마친 뒤 이동하세요.".into());
+            return false;
+        }
         if self.writing.is_some(){
             self.error=Some("상품 저장이 완료된 뒤 다른 화면으로 이동하세요.".into());
             return false;
@@ -594,7 +607,7 @@ impl ProductManager {
         ui.add_space(theme::SPACE_12);
         let can_edit=self.gateway.product_write_enabled()
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
-        let saving=self.writing.is_some();
+        let saving=self.writing.is_some()||self.excel.busy();
         let mut price_write:Option<(String,Value)>=None;
         let mut open_detail:Option<Value>=None;
         let mut begin_new=false;
@@ -661,8 +674,15 @@ impl ProductManager {
                         if !self.price_mode{self.price_drafts.clear();}
                     }
                 }
-                theme::action(actions,"Excel 관리",theme::ButtonRole::Standard,false)
-                    .on_disabled_hover_text("Excel 관리 기능이 이전되지 않았습니다.");
+                if theme::action(actions,"Excel 관리",theme::ButtonRole::Standard,
+                    !saving
+                ).clicked(){
+                    if self.has_pending_prices(){
+                        self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                    }else{
+                        self.excel.toggle();
+                    }
+                }
             });
         });
         ui.add_space(theme::SPACE_12);
@@ -674,6 +694,11 @@ impl ProductManager {
             });
             ui.add_space(theme::SPACE_12);
         }
+        self.excel.show_panel(
+            ui,Arc::clone(&self.gateway),
+            self.catalog.is_some()&&!self.writing.is_some()&&!self.has_pending_prices()
+        );
+        if self.excel.open(){ui.add_space(theme::SPACE_12);}
         theme::management_list_frame().show(ui,|panel|{
             theme::management_list_strip_frame().show(panel,|strip|{
                 strip.horizontal_wrapped(|filter|{
@@ -1157,6 +1182,13 @@ impl ProductManager {
         Ok(next)
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
+        if self.tab==0 && self.excel.has_modal(){
+            self.excel.show_review(
+                ctx,work_area,Arc::clone(&self.gateway),
+                self.gateway.product_write_enabled()&&!self.writing.is_some()
+            );
+            return;
+        }
         if self.tab==4 {
             if let Some(catalog)=self.catalog.clone(){
                 let editable=self.gateway.product_write_enabled()

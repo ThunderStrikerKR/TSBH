@@ -83,6 +83,32 @@ fn unique_id(kind:&str)->Result<String,String>{
     Ok(format!("egui-{kind}-{}-{}",std::process::id(),now.as_nanos()))
 }
 
+/// The workbook's parsing is a UI/file-boundary concern; original catalog
+/// validation, ID collision handling and price changes stay in the Tauri
+/// Rust engine. Preview never opens SQLite or writes a snapshot.
+pub fn preview_unified_product_workbook(
+    state:&Value,source:&Value
+)->Result<Value,String>{
+    let products=source["products"].as_array()
+        .ok_or("상품 Excel 상품 행이 없습니다.")?;
+    let options=source["options"].as_array()
+        .ok_or("상품 Excel 가격 행이 없습니다.")?;
+    if products.len()>20_000 || options.len()>20_000 ||
+        products.len()!=options.len(){
+        return Err("상품 Excel은 최대 20,000개의 독립 상품 행만 지원합니다.".into());
+    }
+    let prefix=unique_id("workbook")?;
+    let ids=(0..products.len())
+        .map(|i|format!("{prefix}-product-{i}")).collect::<Vec<_>>();
+    let option_ids=(0..options.len())
+        .map(|i|format!("{prefix}-variant-{i}")).collect::<Vec<_>>();
+    catalog_clients::execute("preview_product_sync_rows",json!({
+        "state":state,"source":source,"unified":true,
+        "productIds":ids,"optionIds":option_ids,
+        "now":chrono::Utc::now().to_rfc3339(),
+    }))
+}
+
 pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,String>{
     let expected=request.get("expectedRevision").and_then(Value::as_u64)
         .ok_or("상품 변경 비교 리비전이 없습니다.")?;
@@ -100,6 +126,17 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
     }
     let data=request.get("data").ok_or("상품 변경 입력이 없습니다.")?;
     let mut next=match action {
+        "apply_product_workbook"=>{
+            let preview=data.get("preview").filter(Value::is_object)
+                .ok_or("상품 Excel 변경 검토 결과가 없습니다.")?;
+            // Reuse the original native reducer's revision and ERROR/HOLD
+            // checks. The shared snapshot writer still validates and commits
+            // the complete candidate in one optimistic SQLite transaction.
+            let result=catalog_clients::execute("apply_product_workbook",
+                json!({"state":&before,"preview":preview}))?;
+            result.get("next").filter(Value::is_object).cloned()
+                .ok_or("상품 Excel Rust 저장 결과 형식 오류")?
+        }
         "set_price"=>{
             let product_id=required(data,"productId")?;
             let variant_id=required(data,"variantId")?;

@@ -23,6 +23,8 @@ mod latest_job;
 mod brand_manager;
 mod model_group_manager;
 mod product_manager;
+mod product_excel;
+mod product_excel_ui;
 mod client_chooser;
 mod business_state;
 mod native_order_change;

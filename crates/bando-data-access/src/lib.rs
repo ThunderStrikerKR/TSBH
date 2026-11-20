@@ -34,7 +34,8 @@ pub use validation::{
 pub use relational_write::store_v2_relational;
 pub use storage::write_v2_snapshot;
 pub use client_commands::mutate_client_v2;
-pub use product_commands::{patch_product_v2,patch_model_groups_v2,apply_product_price};
+pub use product_commands::{patch_product_v2,patch_model_groups_v2,apply_product_price,
+    preview_unified_product_workbook};
 pub(crate) use product_commands::validate_native_model_groups;
 pub use settings_commands::{apply_settings_changes,patch_settings_v2};
 pub use reception_commands::commit_reception_v2;

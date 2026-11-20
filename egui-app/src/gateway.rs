@@ -164,6 +164,14 @@ pub trait BandoGateway: Send + Sync {
         -> Result<Value,String>{
         Err("이 연결에서는 운영 상품 변경을 지원하지 않습니다.".into())
     }
+    /// Preview the parsed product workbook using the original native catalog engine.
+    fn preview_product_workbook(&self,_source:Value)->Result<Value,String>{
+        Err("상품 Excel 변경 검토를 지원하지 않는 연결입니다.".into())
+    }
+    /// Apply a reviewed workbook only after manual backup and native revision CAS.
+    fn apply_product_workbook(&self,_preview:Value)->Result<Value,String>{
+        Err("상품 Excel 변경 저장을 지원하지 않는 연결입니다.".into())
+    }
     /// Full v2 business snapshot for native rules only, from an explicitly
     /// configured read-only operational DB. This must never mutate SQLite.
     fn load_business_state(&self) -> Result<Value, String> {
@@ -312,7 +320,8 @@ impl BandoGateway for LocalGateway {
         let request=serde_json::json!({
             "expectedRevision":revision,"action":action,"data":data,
         });
-        if request.to_string().len()>2_000_000{
+        let limit=if action=="apply_product_workbook"{60_000_000}else{2_000_000};
+        if request.to_string().len()>limit{
             return Err("상품 변경 요청이 허용 크기를 초과했습니다.".into());
         }
         let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
@@ -344,6 +353,37 @@ impl BandoGateway for LocalGateway {
         if let Some(id)=id{crate::excel_service::open_directory(id)}
         else if let Some(origin)=origin{crate::excel_service::open_daily(origin)}
         else{Err("열어 볼 Excel 폴더를 선택하세요.".into())}
+    }
+    fn preview_product_workbook(&self,source:Value)->Result<Value,String>{
+        if source.to_string().len()>40_000_000{
+            return Err("상품 Excel 검토 요청이 허용 크기를 초과했습니다.".into());
+        }
+        let snapshot=self.load_business_state()?;
+        bando_data_access::preview_unified_product_workbook(&snapshot,&source)
+    }
+    fn apply_product_workbook(&self,preview:Value)->Result<Value,String>{
+        if !self.product_write_enabled(){
+            return Err("운영 상품 변경 저장 권한이 없습니다.".into());
+        }
+        let revision=preview["revision"].as_u64()
+            .ok_or("상품 Excel 검토 리비전을 확인할 수 없습니다.")?;
+        let now=self.load_business_state()?;
+        if now["revision"].as_u64()!=Some(revision){
+            return Err("검토 후 데이터가 변경되었습니다. 파일을 다시 검증하세요.".into());
+        }
+        if !preview["rows"].as_array().is_some_and(|rows|!rows.is_empty()) ||
+            preview["rows"].as_array().is_some_and(|rows|rows.iter().any(|row|
+                matches!(row["status"].as_str(),Some("ERROR"|"HOLD")))){
+            return Err("상품 Excel에 오류나 중복 의심 항목이 있습니다. 변경사항을 저장하지 않습니다.".into());
+        }
+        if preview["createdProducts"].as_u64().unwrap_or(0)==0 &&
+            preview["updatedProducts"].as_u64().unwrap_or(0)==0 &&
+            preview["createdOptions"].as_u64().unwrap_or(0)==0 &&
+            preview["updatedOptions"].as_u64().unwrap_or(0)==0 {
+            return Err("상품 Excel에 저장할 변경사항이 없습니다.".into());
+        }
+        self.settings_data("backup",None)?;
+        self.mutate_product(revision,"apply_product_workbook",json!({"preview":preview}))
     }
     fn shipping_write_enabled(&self) -> bool {
         std::env::var("BANDO_EGUI_ENABLE_SHIPPING_WRITE")
