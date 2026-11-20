@@ -210,7 +210,7 @@ fn table<const N:usize>(
     let minimum=base.iter().sum::<f32>()+(N-1) as f32*GAP;
     // The pre-existing 4pt rail inset stays intact until the user
     // resolves that difference from the two approved master tables.
-    let layout=components::management_existing_list_table_header(ui,minimum);
+    let layout=components::management_list_table_header(ui,minimum);
     let width=layout.table_width;
     let widths=theme::management_single_stretch_columns(base,width,GAP,stretch);
     let header=layout.header_rect;
