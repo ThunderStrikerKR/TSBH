@@ -907,6 +907,13 @@ impl FreightManager {
                 egui::pos2(toolbar_rect.right()-bulk_width,toolbar_rect.top()),
                 egui::vec2(bulk_width,toolbar_rect.height())
             );
+            // Keep the help icon's circular stroke clear of the toolbar's
+            // right clip boundary. The control layout is right-to-left, so
+            // without this inset the icon is placed flush against that clip.
+            let right_controls_rect=egui::Rect::from_min_max(
+                right_rect.min,
+                egui::pos2(right_rect.right()-theme::SPACE_8,right_rect.bottom())
+            );
             section.scope_builder(
                 egui::UiBuilder::new()
                     .id_salt("freight-assignment-search-toolbar")
@@ -987,15 +994,17 @@ impl FreightManager {
             // and checkbox below the search control's center line.
             let mut bulk_builder=egui::UiBuilder::new()
                 .id_salt("freight-assignment-bulk-toolbar")
-                .max_rect(right_rect)
+                .max_rect(right_controls_rect)
                 .layout(egui::Layout::right_to_left(egui::Align::Center));
             if !enabled {
                 bulk_builder=bulk_builder.disabled();
             }
             section.scope_builder(bulk_builder,|bulk|{
+                    // Clip to the full toolbar but lay out controls 8pt
+                    // inside it: the 22pt ? icon is now fully visible.
                     bulk.set_clip_rect(right_rect);
-                    bulk.set_width(right_rect.width());
-                    bulk.set_height(right_rect.height());
+                    bulk.set_width(right_controls_rect.width());
+                    bulk.set_height(right_controls_rect.height());
                     bulk.spacing_mut().item_spacing.x=theme::SPACE_8;
                     // Keep the bulk dropdown at the same 36pt control
                     // height as the search field on the other side.
