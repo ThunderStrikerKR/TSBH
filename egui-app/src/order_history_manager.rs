@@ -823,9 +823,9 @@ fn range_date_picker_rtl(
     ui:&mut Ui,label:&str,date:&mut String,month:&mut NaiveDate,
     id:&'static str
 )->bool{
-    const PREV:f32=28.0;
-    const NEXT:f32=28.0;
-    const CALENDAR:f32=36.0;
+    const PREV:f32=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
+    const NEXT:f32=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
+    const CALENDAR:f32=theme::MANAGEMENT_DATE_CALENDAR_BUTTON_WIDTH;
     const FRAME_INSET:f32=1.0;
     const GROUP_WIDTH:f32=PREV+HISTORY_DATE_FIELD_WIDTH+NEXT
         +CALENDAR+FRAME_INSET*2.0;
@@ -833,8 +833,11 @@ fn range_date_picker_rtl(
     let (outer,_)=ui.allocate_exact_size(
         Vec2::new(GROUP_WIDTH,theme::INPUT_HEIGHT),Sense::hover()
     );
-    let inner=outer.shrink(FRAME_INSET);
+    let inner=Rect::from_center_size(
+        outer.center(),Vec2::new(GROUP_WIDTH-2.0*FRAME_INSET,INNER_HEIGHT)
+    );
     debug_assert!((INNER_HEIGHT+FRAME_INSET*2.0-theme::INPUT_HEIGHT).abs()<0.01);
+    debug_assert!((outer.center().y-inner.center().y).abs()<0.01);
 
     ui.painter().rect_filled(
         outer,theme::CONTROL_RADIUS as f32,theme::INPUT
@@ -873,6 +876,7 @@ fn range_date_picker_rtl(
             changed|=edit.changed();
             let next=history_date_segment(row,"›",NEXT)
                 .on_hover_text(&format!("{label} 하루 뒤"));
+            debug_assert!((prev.rect.width()-next.rect.width()).abs()<0.01);
             if next.clicked(){
                 *date=move_date(date,1);
                 changed=true;
@@ -940,7 +944,18 @@ fn history_date_range_end(
     ui:&mut Ui,from:&mut String,to:&mut String,
     to_month:&mut NaiveDate
 )->bool{
-    ui.label(typography::caption("~"));
+    // Fixed 36pt separator slot: the glyph is centered on both axes,
+    // with the same external 8pt gaps as every other date control.
+    let (separator,_)=ui.allocate_exact_size(
+        Vec2::new(theme::MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH,
+            theme::INPUT_HEIGHT),
+        Sense::hover()
+    );
+    ui.painter().text(
+        separator.center(),egui::Align2::CENTER_CENTER,"~",
+        egui::FontId::proportional(typography::FONT_METADATA),
+        theme::MUTED
+    );
     let mut changed=range_date_picker_rtl(
         ui,"종료일",to,to_month,"order-history-date-to-calendar"
     );
@@ -960,7 +975,7 @@ fn history_date_controls(
     compact:bool
 )->bool{
     let mut changed=false;
-    ui.spacing_mut().item_spacing.x=theme::SPACE_8;
+    ui.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
     if compact{
         let width=ui.available_width().max(1.0);
         let (area,_)=ui.allocate_exact_size(
@@ -988,7 +1003,7 @@ fn history_date_controls(
             |line|{
                 line.set_width(first.width());
                 line.set_height(first.height());
-                line.spacing_mut().item_spacing.x=theme::SPACE_8;
+                line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
                 changed|=history_date_range_start(
                     line,basis,from,from_month
                 );
@@ -1001,7 +1016,7 @@ fn history_date_controls(
             |line|{
                 line.set_width(second.width());
                 line.set_height(second.height());
-                line.spacing_mut().item_spacing.x=theme::SPACE_8;
+                line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
                 changed|=history_date_range_end(
                     line,from,to,to_month
                 );
