@@ -172,6 +172,41 @@ fn has_registered_product(product:&Value)->bool{
         && product.get("supersededBy").is_none_or(|value|
             value.is_null() || value.as_str().is_some_and(str::is_empty))
 }
+/// Presentation-only natural name order: React uses ko numeric collation.
+/// Numeric model segments (BD 9 vs BD 10) are ordered by integer magnitude
+/// without changing any catalog identity, match or pricing rule.
+fn natural_name_cmp(a:&str,b:&str)->std::cmp::Ordering{
+    use std::cmp::Ordering;
+    let mut left=a.chars().peekable();
+    let mut right=b.chars().peekable();
+    loop {
+        match (left.peek().copied(),right.peek().copied()){
+            (None,None)=>return Ordering::Equal,
+            (None,Some(_))=>return Ordering::Less,
+            (Some(_),None)=>return Ordering::Greater,
+            (Some(x),Some(y)) if x.is_ascii_digit()&&y.is_ascii_digit()=>{
+                let mut a_num=String::new();
+                let mut b_num=String::new();
+                while left.peek().is_some_and(char::is_ascii_digit){
+                    a_num.push(left.next().unwrap_or_default());
+                }
+                while right.peek().is_some_and(char::is_ascii_digit){
+                    b_num.push(right.next().unwrap_or_default());
+                }
+                let a_sig=a_num.trim_start_matches('0');
+                let b_sig=b_num.trim_start_matches('0');
+                let cmp=a_sig.len().cmp(&b_sig.len())
+                    .then_with(||a_sig.cmp(b_sig));
+                if cmp!=Ordering::Equal{return cmp;}
+            },
+            (Some(x),Some(y))=>{
+                left.next();right.next();
+                let cmp=x.to_lowercase().cmp(y.to_lowercase());
+                if cmp!=Ordering::Equal{return cmp;}
+            }
+        }
+    }
+}
 fn preview_message(def:TemplateDef,body:&str)->String{
     static TOKENS:OnceLock<Regex>=OnceLock::new();
     let regex=TOKENS.get_or_init(||Regex::new(r"\{([^{}]+)\}").expect("literal"));
@@ -382,7 +417,7 @@ impl AutomaticMessageManager {
             let registered=|v:&Value|self.draft_notices.get(product_id(v))
                 .and_then(Value::as_str).is_some_and(|s|!s.is_empty());
             registered(b).cmp(&registered(a))
-                .then_with(||product_name(a).cmp(product_name(b)))
+                .then_with(||natural_name_cmp(product_name(a),product_name(b)))
         });
         visible.truncate(80);
         visible
