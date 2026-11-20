@@ -154,6 +154,14 @@ pub const ACTION_EMPHASIZED_HEIGHT: f32 = 34.0;
 pub const ACTION_QUIET_HEIGHT: f32 = 32.0;
 // Reserve space for the single-row order total at the bottom of its pane.
 pub const SUMMARY_STRIP_HEIGHT: f32 = 58.0;
+// Freight overview cards are left-anchored, content-sized controls rather
+// than four equal-width columns spanning the whole management viewport.
+// 64pt numeric slot fits five decimal digits (up to 99,999) at the shared
+// 16pt monospaced summary font; the 16pt unit slot is fixed independently.
+pub const FREIGHT_SUMMARY_CARD_WIDTH: f32 = 228.0;
+pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 = 56.0;
+pub const FREIGHT_SUMMARY_NUMBER_WIDTH: f32 = 64.0;
+pub const FREIGHT_SUMMARY_UNIT_WIDTH: f32 = 16.0;
 // Reception items/freight mirrors the React 3-column table. The summary
 // remains a separate fixed-height strip below its own scrolling content.
 pub const RECEPTION_ITEMS_HEADER_HEIGHT: f32 = 32.0;
