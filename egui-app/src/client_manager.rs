@@ -245,6 +245,9 @@ impl ClientManager {
 
     pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>) {
         self.poll(Arc::clone(&gateway),ui.ctx());
+        // The client directory uses the same always-readable 10pt solid
+        // scrollbar track as the approved Freight Assignment screen.
+        ui.spacing_mut().scroll=theme::management_scroll_style();
         ui.label(typography::page_heading("거래처 관리"));
         ui.add_space(theme::SPACE_12);
         // Keep the existing second tab disabled until its native workflow
