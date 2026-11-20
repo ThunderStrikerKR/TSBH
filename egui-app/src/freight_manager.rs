@@ -713,6 +713,7 @@ impl FreightManager {
     }
 
     pub fn show_page(&mut self, ui: &mut Ui) {
+        let page_origin_y=ui.cursor().top();
         // Non-floating, always legible scrollbar geometry for every freight
         // management tab. This is scoped to the freight page, not global nav.
         ui.spacing_mut().scroll=theme::management_scroll_style();
@@ -785,6 +786,9 @@ impl FreightManager {
         // One 16pt boundary between the stats strip and the next section.
         // show_groups() must not add a second top margin on top of this.
         ui.add_space(theme::SPACE_16);
+        // Keep the approved Freight Assignment as the layout reference,
+        // including when the four KPIs wrap in narrower workspaces.
+        components::align_management_primary_card(ui,page_origin_y);
         let enabled=self.gateway.shipping_write_enabled()&&self.write_receiver.is_none();
         let mut action:Option<(String,Value)>=None;
         // The assignment tab owns its own scrollable *rows*. Do not wrap
@@ -1101,7 +1105,9 @@ impl FreightManager {
         product_views: &Value, enabled:bool,
         action:&mut Option<(String,Value)>,
     ) {
+        let card_min_height=components::management_primary_card_min_inner_height(ui);
         theme::section_frame().show(ui, |section| {
+            components::fill_management_primary_card(section,card_min_height);
             section.horizontal(|title|{
                 title.label(typography::section_heading("상품별 배송 그룹 지정"));
                 settings_help::icon(title,"상품별 운임");
@@ -1800,7 +1806,9 @@ impl FreightManager {
         let group_rules=&projection["editableRules"];
         // A single group table replaces the duplicate group cards + audit grid.
         // Its actions still use the original Rust write paths and modal editors.
+        let card_min_height=components::management_primary_card_min_inner_height(ui);
         theme::section_frame().show(ui, |section| {
+            components::fill_management_primary_card(section,card_min_height);
             section.horizontal(|heading|{
                 heading.label(typography::section_heading("그룹 운임표"));
                 settings_help::icon(heading,"그룹 운임표");
