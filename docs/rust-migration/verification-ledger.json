@@ -1043,7 +1043,7 @@
             "S13 PATCH: reused settings_help delayed/pinnable tooltip for freight page, bulk assignment, group rates, basis changes and editors; per-UI scoped tooltip IDs",
             "S14 REUSED PASS: selection cleared when shipping group filter changes, as prior P1 code",
             "S15 PATCH: MoneyInput-like integer field, commas when unfocused and comma-safe validation (0..2^53-1); Rust remains business validator",
-            "S16 PATCH: distinct no-product / no-search-result, zero-change footer guidance and save count; reset only with changed rows",
+            "S16 PATCH: distinct no-product / no-search-result, zero-change footer guidance and save count; reset only with changed rows; right-aligned save and reset actions",
             "S17 PARTIAL: 3 freight tables now have viewport-relative local both-axis scrolling; sticky headers and exact visual parity not proven",
             "S18 PATCH: 4 equal management summary metric cells with 개 suffix; 2-column fallback for narrow panes",
             "S19 REUSED PASS: whitespace-insensitive search was already implemented"
@@ -1057,16 +1057,19 @@
             "ea5d0e7497324b0f501094ceb64a3ec24fd30f2d",
             "8365a66a42da122590fa6868684e042b11fffdb3",
             "b2a0298dd96396d3b1b6fd4f5e91696f75b63e1c",
-            "98cbd1c158b5bee5db79dbb28dc66b327196ee3e"
+            "98cbd1c158b5bee5db79dbb28dc66b327196ee3e",
+            "217060a77790d53cfc16e5098ca81ea070623a19"
           ],
-          "p2BuildRun": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44650584488",
+          "p2BuildRun": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44650957399",
           "p2Gate": {
             "patch": "SOURCE_COMMITTED",
             "static": "SOURCE_CHECKS_PASS_WITH_S17_PARTIAL",
             "action": "NOT_RUN",
             "build": "PENDING",
             "windows": "SKIPPED_PER_USER_POLICY"
-          }
+          },
+          "p2BuildBase": "a20de489d4e0f2c554fd05b476c5c162f08bee1b",
+          "p2ChangePolicy": "Relevant P2/source/UI changes are committed; old CI path widening rolled back to avoid recurrent checks from unrelated shared recipient UI edits."
         }
       },
       "legacyLedgerStatus": "FROZEN_SHIPPING_ORACLE_PARTIAL",
