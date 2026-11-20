@@ -316,6 +316,6 @@ mod tests {
         let view = LocalGateway.execute(ReadOperation::ShippingManagerView,
             json!({"state":&state,"shipping":&state["shipping"]})).unwrap();
         assert!(view["currentCombinations"].as_object().unwrap()
-            .values().all(|active|active==true));
+            .values().all(|active|active.as_bool() == Some(true)));
     }
 }
