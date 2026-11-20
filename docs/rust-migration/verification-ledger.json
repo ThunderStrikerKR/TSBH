@@ -866,6 +866,25 @@
         }
       ],
       "eguiFreightMigration": {
+        "historyUi58": {
+          "date": "2026-11-20",
+          "scope": "운임 관리 > 조합 / 기준 이력 탭의 표시 전용 UI 정리",
+          "patchCommits": [
+            "710a654c3a7132d30fc112ce8882ddaab75fb054",
+            "bbe6061aff690d815083b8e0fcf0b4ab67aa9392",
+            "2c76713fb01825a9e03a6e011447a0d572d55fc0"
+          ],
+          "files": [
+            "egui-app/src/freight_manager.rs",
+            "egui-app/src/theme.rs"
+          ],
+          "patch": "CODE_COMMITTED: verified combinations and group rate version history use common pinned 36pt header and virtual 42pt fixed row geometry, viewport-aligned columns, solid scrollbar, consistent left/right/center alignments, separate metadata/date cells and full hover content; original group collapse, exception editing and status source preserved.",
+          "static": "PASS (targeted source comparison): src/ShippingManager.tsx+shipping.css+management-layout.css; current egui freight and approved management reference; Rust currentCombinations projection, read/mutation entrypoints and historical-null handling. History writes, DB schemas, shipment computations, order statuses unchanged.",
+          "unit": "NOT EXECUTED: historical display-only transformation with existing Rust read/action paths; no GUI simulation or business regression tests.",
+          "compile": "NOT VERIFIED for 2c76713f at record creation; targeted check requested by existing main branch workflow, queued at run 44696230672 then cancelled as newer main commit arrived.",
+          "windows": "SKIPPED by user-approved no-Windows-GUI testing policy.",
+          "assessment": "CODE_PATCHED_STATIC_REVIEWED; final target build unverified, no claim of live UI parity."
+        },
         "groupManagementUi58": {
           "date": "2026-11-20",
           "scope": "운임 관리 > 배송 그룹 관리: 승인된 배송 그룹 편성 화면의 관리 표/정보 밀도 계약 적용",
@@ -1986,6 +2005,30 @@
         "responseOrders": []
       },
       "discrepancies": [],
+      "eguiProductListMigration": {
+        "reference": "docs/egui-management-ui-reference.md — 운임 관리 > 배송 그룹 편성",
+        "commit": "2299b1158fe825850a3a7d39db175b15abb2a9dd",
+        "compileFixCommit": "5a0bf027b7bf56c793eb0edc646530154224b2ca",
+        "scope": "상품 목록 UI: 원본 검색/카테고리/브랜드/가격 미등록 필터, 가격 수정, 상품 상세를 유지한 채 고정 헤더/42pt 행/정렬/스크롤 이전",
+        "sources": [
+          "src/ProductManager.tsx",
+          "src/styles/management-layout.css",
+          "src/styles/product-admin-redesign.css",
+          "egui-app/src/product_manager.rs",
+          "egui-app/src/theme.rs",
+          "crates/bando-data-access/src/product_commands.rs"
+        ],
+        "patch": "PASS: main에 변경 파일·실행 경로 반영",
+        "static": "PASS: 승인된 배송그룹편성 고정행 좌표·공통 타이포·버튼/검색 구조 정적 대조, 기존 가격 Rust 저장 경로 유지",
+        "unit": "PENDING: egui product_manager::tests (정렬 순환·고정행 좌표·가격 입력)",
+        "ci": "PENDING: Windows targeted cargo check run 44696930187",
+        "windowsGui": "NOT_REQUESTED: 사용자 결정에 따라 제외",
+        "notMigrated": [
+          "Excel 관리: 전체 상품 Excel 내보내기/가져오기 및 검토",
+          "상품 추가: 공식 상품 가져오기 및 Excel 대량 등록"
+        ],
+        "businessChanges": "NONE"
+      },
       "legacyLedgerStatus": "ORACLE_REVIEW_OPEN",
       "gate": {
         "patch": {

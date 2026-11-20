@@ -642,32 +642,16 @@ impl CategoryManager {
                             );
                             body.label(typography::caption(&visible))
                                 .on_hover_text(&breadcrumb);
-                            body.add_space(theme::SPACE_8);
+                            // Compact context for an editor, not KPI cards.
+                            // Keep a single divider between context and fields.
+                            body.label(typography::caption(&format!(
+                                "직접 연결 상품 {}개 · 하위 분류 {}개",
+                                direct_count(catalog,&current.id),
+                                children(&cats,&current.id).len()
+                            )));
+                            // Default 8pt item gaps around the single divider
+                            // already provide enough breathing room.
                             components::soft_divider(body);
-                            body.add_space(theme::SPACE_8);
-                            let stats_width=body.available_width();
-                            let card_gap=theme::SPACE_8;
-                            let card_width=((stats_width-2.0*card_gap)/3.0)
-                                .max(theme::CATEGORY_MODAL_STATS_MIN_WIDTH);
-                            body.horizontal_wrapped(|cards|{
-                                cards.spacing_mut().item_spacing=
-                                    Vec2::new(card_gap,card_gap);
-                                components::management_summary_card(
-                                    cards,"직접 연결 상품",
-                                    direct_count(catalog,&current.id),card_width
-                                );
-                                components::management_summary_card(
-                                    cards,"하위 포함 상품",
-                                    total_count(catalog,&cats,&current.id),card_width
-                                );
-                                components::management_summary_card(
-                                    cards,"직속 하위 분류",
-                                    children(&cats,&current.id).len(),card_width
-                                );
-                            });
-                            body.add_space(theme::SPACE_16);
-                            components::soft_divider(body);
-                            body.add_space(theme::SPACE_8);
                             body.label(typography::field_label("분류 이름"));
                             body.add_enabled_ui(
                                 editable && !busy && !is_root(&current.id),
@@ -678,23 +662,38 @@ impl CategoryManager {
                                     );
                                 }
                             );
-                            body.add_space(theme::SPACE_12);
+                            body.add_space(theme::SPACE_4);
                             body.label(typography::field_label("상위 카테고리"));
-                            body.horizontal_wrapped(|location|{
+                            body.horizontal(|location|{
+                                // Align category text to the button's vertical
+                                // center; keep them adjacent at a shared 8pt gap.
+                                location.spacing_mut().item_spacing.x=theme::SPACE_8;
                                 let parent_label=if current.parent.is_empty(){
                                     if is_root(&current.id){
                                         "최상위".to_owned()
                                     }else{"소속 확인 필요".to_owned()}
                                 }else{path_text(&cats,&current.parent)};
+                                let name_width=(location.available_width()-
+                                    theme::CATEGORY_PARENT_ACTION_RESERVE_WIDTH)
+                                    .max(0.0);
                                 let visible=typography::fit_category_path(
-                                    location,&parent_label,
-                                    (location.available_width()-
-                                        theme::CATEGORY_PARENT_ACTION_RESERVE_WIDTH)
-                                        .max(0.0),
+                                    location,&parent_label,name_width,
                                     typography::CategoryPathFont::Body
                                 );
-                                location.label(typography::body(&visible))
-                                    .on_hover_text(&parent_label);
+                                let galley=typography::category_tree_name_galley(
+                                    location,&visible,false
+                                );
+                                let (text_rect,text_response)=location.allocate_exact_size(
+                                    Vec2::new(galley.size().x.min(name_width),
+                                        theme::ACTION_STANDARD_HEIGHT),
+                                    Sense::hover()
+                                );
+                                location.painter().with_clip_rect(text_rect).galley(
+                                    egui::pos2(text_rect.left(),
+                                        text_rect.center().y-galley.size().y/2.0),
+                                    galley,theme::TEXT
+                                );
+                                text_response.on_hover_text(&parent_label);
                                 if theme::action(location,"위치 변경",
                                     theme::ButtonRole::Standard,
                                     editable&&!busy&&!is_root(&current.id)
@@ -707,7 +706,7 @@ impl CategoryManager {
                                     "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
                                 ));
                             }
-                            body.add_space(theme::SPACE_16);
+                            body.add_space(theme::SPACE_8);
                             components::soft_divider(body);
                             body.horizontal(|footer|{
                                 if theme::action(footer,"분류 삭제",

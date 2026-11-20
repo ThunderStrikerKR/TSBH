@@ -570,55 +570,6 @@ pub fn soft_divider(ui: &mut Ui) {
     );
 }
 
-/// A self-contained numeric summary card using the exact large-number
-/// hierarchy approved for the Freight > Shipping Group Assignment view.
-/// The caller chooses only its data and responsive width.
-pub fn management_summary_card(ui:&mut Ui,label:&str,count:usize,card_width:f32){
-    let height=theme::FREIGHT_SUMMARY_CARD_HEIGHT;
-    ui.allocate_ui_with_layout(
-        egui::vec2(card_width,height),
-        Layout::top_down(Align::Min),
-        |slot|{
-            slot.set_width(card_width);
-            theme::freight_summary_frame().show(slot,|card|{
-                card.spacing_mut().item_spacing.y=0.0;
-                let text_width=(card_width
-                    -2.0*theme::FREIGHT_SUMMARY_PADDING_X
-                    -2.0*theme::FRAME_STROKE_WIDTH).max(0.0);
-                let (number_row,_)=card.allocate_exact_size(
-                    egui::vec2(text_width,theme::FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT),
-                    egui::Sense::hover()
-                );
-                card.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP);
-                let (label_row,_)=card.allocate_exact_size(
-                    egui::vec2(text_width,theme::FREIGHT_SUMMARY_LABEL_LINE_HEIGHT),
-                    egui::Sense::hover()
-                );
-                let number=typography::freight_summary_large_number_galley(
-                    card,&count.to_string()
-                );
-                let caption=typography::freight_summary_small_label_galley(
-                    card,label
-                );
-                card.painter().with_clip_rect(number_row).galley(
-                    egui::pos2(
-                        number_row.center().x-number.size().x/2.0,
-                        number_row.center().y-number.size().y/2.0
-                    ),
-                    number,theme::TEXT
-                );
-                card.painter().with_clip_rect(label_row).galley(
-                    egui::pos2(
-                        label_row.center().x-caption.size().x/2.0,
-                        label_row.center().y-caption.size().y/2.0
-                    ),
-                    caption,theme::SECONDARY
-                );
-            });
-        }
-    );
-}
-
 /// The 6pt split interaction region is always the workspace (CANVAS)
 /// between PANEL cards, including the Kakao reservation boundary.
 /// Only hover/drag shows an axis cue; drag targets and saved sizing persist.

@@ -153,3 +153,6 @@ release/
 .env
 .env.local
 .env.*.local
+
+# Native egui compiler outputs (keep local builds out of source control)
+egui-app/target/

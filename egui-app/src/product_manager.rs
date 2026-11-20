@@ -10,11 +10,12 @@ use crate::{
     gateway::BandoGateway,
     management_queries::{self, ManagementProductRows},
     latest_job::LatestJob,
-    theme, typography,
+    settings_help, theme, typography,
 };
-use eframe::egui::{self, Align, Context, Layout, Ui};
+use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Pos2, Vec2};
 use serde_json::{json, Value};
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     sync::{mpsc::{self, Receiver, TryRecvError}, Arc},
     time::{Duration, Instant},
@@ -74,6 +75,111 @@ fn category_choices(catalog: &Value) -> Vec<(String,String)> {
     }
     choices.sort_by(|a,b|a.1.cmp(&b.1));
     choices
+}
+
+
+// A presentation-only three-step sort; the Rust ManagementProducts command
+// still owns the filtered membership and the default result order.
+#[derive(Clone,Copy,PartialEq,Eq)]
+enum ProductSortColumn { Name, Option, Wholesale, Semi, Retail }
+#[derive(Clone,Copy,PartialEq,Eq)]
+enum ProductSortDirection { Ascending, Descending }
+#[derive(Clone,Copy,PartialEq,Eq)]
+struct ProductSort { column:ProductSortColumn, direction:ProductSortDirection }
+impl ProductSort {
+    fn column_at(index:usize)->Option<ProductSortColumn>{
+        match index{
+            0=>Some(ProductSortColumn::Name),
+            1=>Some(ProductSortColumn::Option),
+            2=>Some(ProductSortColumn::Wholesale),
+            3=>Some(ProductSortColumn::Semi),
+            4=>Some(ProductSortColumn::Retail),
+            _=>None
+        }
+    }
+    fn next(current:Option<Self>,column:ProductSortColumn)->Option<Self>{
+        match current {
+            Some(Self{column:c,direction:ProductSortDirection::Ascending})
+                if c==column=>Some(Self{column,direction:ProductSortDirection::Descending}),
+            Some(Self{column:c,direction:ProductSortDirection::Descending})
+                if c==column=>None,
+            _=>Some(Self{column,direction:ProductSortDirection::Ascending}),
+        }
+    }
+}
+fn product_table_cells(origin:Pos2,widths:&[f32;6],height:f32)->[Rect;6]{
+    let mut x=origin.x;
+    std::array::from_fn(|i|{
+        let rect=Rect::from_min_size(
+            egui::pos2(x,origin.y),egui::vec2(widths[i],height)
+        );
+        x+=widths[i]+theme::SPACE_8;
+        rect
+    })
+}
+fn product_table_text(ui:&mut Ui,rect:Rect,text:&str,emphasized:bool,unique:impl std::hash::Hash){
+    let content=rect.shrink2(Vec2::new(theme::SPACE_8,0.0));
+    let color=if emphasized{theme::TEXT}else{theme::SECONDARY};
+    let galley=typography::freight_table_cell_galley(ui,text,emphasized,color);
+    ui.painter().with_clip_rect(content.intersect(ui.clip_rect())).galley(
+        egui::pos2(content.left(),content.center().y-galley.size().y/2.0),
+        galley,color,
+    );
+    if !text.is_empty(){
+        ui.interact(content.intersect(ui.clip_rect()),
+            ui.make_persistent_id(("product-table-text",unique)),
+            Sense::hover()).on_hover_text(text);
+    }
+}
+fn product_price_text(ui:&mut Ui,rect:Rect,value:&Value) {
+    let text=price(value);
+    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).text(
+        egui::pos2(rect.right()-theme::SPACE_8,rect.center().y),
+        egui::Align2::RIGHT_CENTER,text,
+        typography::numeric_editor_font(),theme::TEXT
+    );
+}
+fn displayed_variant<'a>(
+    product:&'a Value,selected:&HashMap<String,String>
+)->Option<&'a Value>{
+    let variants=rows(&product["variants"]);
+    let saved=selected.get(field(product,"id")).map(String::as_str);
+    variants.iter().find(|v|saved==Some(field(v,"id"))).or_else(||variants.first())
+}
+fn product_sort_order(
+    products:&[Value],selected:&HashMap<String,String>,sort:Option<ProductSort>
+)->Vec<usize>{
+    let mut order=(0..products.len()).collect::<Vec<_>>();
+    if let Some(sort)=sort{
+        order.sort_by(|&ai,&bi|{
+            let (a,b)=(&products[ai],&products[bi]);
+            let result=match sort.column{
+                ProductSortColumn::Name=>field(a,"name").to_lowercase()
+                    .cmp(&field(b,"name").to_lowercase()),
+                ProductSortColumn::Option=>{
+                    let left=displayed_variant(a,selected).map(|v|option_text(a,v)).unwrap_or_default();
+                    let right=displayed_variant(b,selected).map(|v|option_text(b,v)).unwrap_or_default();
+                    left.cmp(&right)
+                },
+                price_column=>{
+                    let tier=match price_column{
+                        ProductSortColumn::Wholesale=>"wholesale",
+                        ProductSortColumn::Semi=>"semi",
+                        ProductSortColumn::Retail=>"retail",
+                        _=>unreachable!(),
+                    };
+                    let left=displayed_variant(a,selected).and_then(|v|v[tier].as_i64());
+                    let right=displayed_variant(b,selected).and_then(|v|v[tier].as_i64());
+                    left.cmp(&right)
+                }
+            };
+            let result=if sort.direction==ProductSortDirection::Descending{
+                result.reverse()
+            }else{result};
+            if result==Ordering::Equal{ai.cmp(&bi)}else{result}
+        });
+    }
+    order
 }
 
 /// UI-only number conversion used by both table cells and detail editor.
@@ -139,6 +245,7 @@ pub struct ProductManager {
     price_mode:bool,
     price_drafts:HashMap<String,PriceDraft>,
     selected_variants:HashMap<String,String>,
+    sort:Option<ProductSort>,
     writing:Option<ProductWrite>,
     notice:Option<String>,
     result:LatestJob<ManagementProductRows>,
@@ -164,7 +271,7 @@ impl ProductManager {
             adding:false,original_selected:None,detail_prices:HashMap::new(),
             confirm_discard:false,confirm_archive:false,
             price_mode:false,price_drafts:HashMap::new(),
-            selected_variants:HashMap::new(),
+            selected_variants:HashMap::new(),sort:None,
             writing:None,notice:None,
             result:LatestJob::default(),next_query:None,error:None,
         };
@@ -529,382 +636,489 @@ impl ProductManager {
             }
             return;
         }
-        theme::section_frame().show(ui,|panel|{
-            panel.horizontal(|header|{
-                header.label(typography::section_heading("상품 가격표"));
-                header.label(typography::caption(&format!(
-                    "{}개 상품",self.products.len()
-                )));
-                header.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                    if theme::action(
-                        actions,"상품 추가",theme::ButtonRole::Primary,!saving
-                    ).clicked(){
-                        self.adding=!self.adding;
-                    }
-                    if theme::action(actions,
-                        if self.price_mode {"가격 수정 모드 종료"}else{"가격 수정 모드 켜기"},
-                        if self.price_mode {theme::ButtonRole::Primary}
-                        else {theme::ButtonRole::Standard},
-                        can_edit && !saving
-                    ).clicked(){
-                        if self.price_mode && self.has_pending_prices(){
-                            self.error=Some("저장하지 않은 가격이 있습니다. 각 가격 셀의 저장 또는 취소를 눌러주세요.".into());
-                        }else{
-                            self.price_mode=!self.price_mode;
-                            if !self.price_mode {self.price_drafts.clear();}
-                        }
-                    }
-                    theme::action(actions,"Excel 관리",theme::ButtonRole::Standard,false)
-                        .on_disabled_hover_text("Excel 관리 기능이 이전되지 않았습니다.");
-                });
-            });
-            components::soft_divider(panel);
-            if self.adding {
-                panel.horizontal(|actions|{
-                    if theme::action(
-                        actions,"직접 등록",theme::ButtonRole::Primary,
-                        can_edit&&!saving
-                    ).clicked(){
-                        begin_new=true;
-                    }
-                });
-                components::soft_divider(panel);
-            }
-            panel.horizontal_wrapped(|filter|{
-                filter.label(typography::field_label("상품 검색"));
-                let before=self.query.clone();
-                if components::flexible_text_field(
-                    filter,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                    "모델명 또는 상품명 검색"
-                ).changed(){
-                    if self.has_pending_prices(){
-                        self.query=before;
-                        self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
-                    }else{self.changed(filter.ctx());}
+        // Same hierarchy as the approved freight-assignment screen:
+        // title and three actions OUTSIDE the single bordered list card.
+        ui.horizontal(|heading|{
+            heading.label(typography::section_heading("상품 가격표"));
+            settings_help::icon(heading,"상품 가격 수정");
+            heading.label(typography::caption(&format!("{}개 상품",self.products.len())));
+            heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                if theme::action(
+                    actions,"상품 추가",theme::ButtonRole::Primary,!saving
+                ).clicked(){
+                    self.adding=!self.adding;
                 }
+                if theme::action(actions,
+                    if self.price_mode {"가격 수정 모드 종료"}else{"가격 수정 모드 켜기"},
+                    if self.price_mode {theme::ButtonRole::Primary}
+                    else {theme::ButtonRole::Standard},
+                    can_edit&&!saving
+                ).clicked(){
+                    if self.price_mode && self.has_pending_prices(){
+                        self.error=Some("저장하지 않은 가격이 있습니다. 각 가격 셀의 저장 또는 취소를 눌러주세요.".into());
+                    }else{
+                        self.price_mode=!self.price_mode;
+                        if !self.price_mode{self.price_drafts.clear();}
+                    }
+                }
+                theme::action(actions,"Excel 관리",theme::ButtonRole::Standard,false)
+                    .on_disabled_hover_text("Excel 관리 기능이 이전되지 않았습니다.");
             });
-            let categories=self.catalog.as_ref()
-                .map(category_choices).unwrap_or_default();
-            let brands=self.catalog.as_ref().map(|catalog|
-                rows(&catalog["brands"]).to_vec()).unwrap_or_default();
-            panel.horizontal_wrapped(|filters|{
-                let before_category=self.category.clone();
-                let selected=categories.iter().find(|(id,_)|id==&self.category)
-                    .map(|(_,name)|name.as_str()).unwrap_or("전체 카테고리");
-                let picker_width=theme::CATEGORY_PATH_PICKER_WIDTH;
-                let text_width=picker_width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
-                let visible=typography::fit_category_path(
-                    filters,selected,text_width,typography::CategoryPathFont::Body
-                );
-                egui::ComboBox::from_id_salt("product-admin-category")
-                    .width(picker_width)
-                    .selected_text(visible)
-                    .show_ui(filters,|combo|{
-                        combo.selectable_value(&mut self.category,
-                            String::new(),"전체 카테고리");
-                        for (id,name) in &categories {
-                            let visible=typography::fit_category_path(
-                                combo,name,text_width,
-                                typography::CategoryPathFont::Body
-                            );
+        });
+        ui.add_space(theme::SPACE_12);
+        if self.adding {
+            ui.horizontal(|actions|{
+                if theme::action(
+                    actions,"직접 등록",theme::ButtonRole::Primary,can_edit&&!saving
+                ).clicked(){begin_new=true;}
+            });
+            ui.add_space(theme::SPACE_12);
+        }
+        theme::management_list_frame().show(ui,|panel|{
+            theme::management_list_strip_frame().show(panel,|strip|{
+                strip.horizontal_wrapped(|filter|{
+                    filter.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    let before=self.query.clone();
+                    if components::flexible_text_field(
+                        filter,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+                        "모델명 또는 상품명 검색"
+                    ).changed(){
+                        if self.has_pending_prices(){
+                            self.query=before;
+                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                        }else{self.changed(filter.ctx());}
+                    }
+                    let categories=self.catalog.as_ref()
+                        .map(category_choices).unwrap_or_default();
+                    let brands=self.catalog.as_ref().map(|catalog|
+                        rows(&catalog["brands"]).to_vec()).unwrap_or_default();
+                    let before_category=self.category.clone();
+                    let selected_category=categories.iter()
+                        .find(|(id,_)|id==&self.category)
+                        .map(|(_,name)|name.as_str()).unwrap_or("전체 카테고리");
+                    let picker_width=theme::CATEGORY_PATH_PICKER_WIDTH;
+                    let text_width=picker_width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
+                    let visible=typography::fit_category_path(
+                        filter,selected_category,text_width,
+                        typography::CategoryPathFont::Body
+                    );
+                    egui::ComboBox::from_id_salt("product-admin-category")
+                        .width(picker_width)
+                        .selected_text(visible)
+                        .show_ui(filter,|combo|{
                             combo.selectable_value(
-                                &mut self.category,id.clone(),visible
-                            ).on_hover_text(name);
-                        }
-                    }).response.on_hover_text(selected);
-                if self.category!=before_category {
-                    if self.has_pending_prices(){
-                        self.category=before_category;
-                        self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
-                    }else{self.changed(filters.ctx());}
-                }
-                let before_brand=self.brand.clone();
-                let brand_text=brands.iter().find(|b|field(b,"id")==self.brand)
-                    .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
-                egui::ComboBox::from_id_salt("product-admin-brand")
-                    .selected_text(brand_text)
-                    .show_ui(filters,|combo|{
-                        combo.selectable_value(&mut self.brand,
-                            String::new(),"전체 브랜드");
-                        for brand in &brands {
-                            combo.selectable_value(&mut self.brand,
-                                field(brand,"id").to_owned(),field(brand,"name"));
-                        }
-                    });
-                if self.brand!=before_brand {
-                    if self.has_pending_prices(){
-                        self.brand=before_brand;
-                        self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
-                    }else{self.changed(filters.ctx());}
-                }
-                let before_missing=self.missing;
-                if filters.checkbox(&mut self.missing,"가격 미등록만").changed(){
-                    if self.has_pending_prices(){
-                        self.missing=before_missing;
-                        self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
-                    }else{self.changed(filters.ctx());}
-                }
+                                &mut self.category,String::new(),"전체 카테고리"
+                            );
+                            for (id,name) in &categories{
+                                let short=typography::fit_category_path(
+                                    combo,name,text_width,
+                                    typography::CategoryPathFont::Body
+                                );
+                                combo.selectable_value(&mut self.category,id.clone(),short)
+                                    .on_hover_text(name);
+                            }
+                        }).response.on_hover_text(selected_category);
+                    if self.category!=before_category{
+                        if self.has_pending_prices(){
+                            self.category=before_category;
+                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                        }else{self.changed(filter.ctx());}
+                    }
+                    let before_brand=self.brand.clone();
+                    let brand_text=brands.iter().find(|b|field(b,"id")==self.brand)
+                        .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
+                    egui::ComboBox::from_id_salt("product-admin-brand")
+                        .selected_text(brand_text)
+                        .show_ui(filter,|combo|{
+                            combo.selectable_value(
+                                &mut self.brand,String::new(),"전체 브랜드"
+                            );
+                            for brand in &brands{
+                                combo.selectable_value(
+                                    &mut self.brand,field(brand,"id").to_owned(),
+                                    field(brand,"name")
+                                );
+                            }
+                        });
+                    if self.brand!=before_brand{
+                        if self.has_pending_prices(){
+                            self.brand=before_brand;
+                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                        }else{self.changed(filter.ctx());}
+                    }
+                    let before_missing=self.missing;
+                    if filter.checkbox(&mut self.missing,"가격 미등록만").changed(){
+                        if self.has_pending_prices(){
+                            self.missing=before_missing;
+                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                        }else{self.changed(filter.ctx());}
+                    }
+                });
             });
+            // Keep the toolbar, header, and virtualized rows in one outline.
+            // Only the list body scrolls; the page title and controls do not.
+            if saving{
+                theme::management_list_strip_frame().show(panel,|status|{
+                    status.label(typography::caption("상품 변경 저장 중…"));
+                });
+            }
+            if self.result.pending(){
+                theme::management_list_strip_frame().show(panel,|status|{
+                    status.label(typography::caption("상품 가격표 조회 중…"));
+                });
+            }
             components::soft_divider(panel);
-            if saving {
-                panel.label(typography::caption("상품 변경 저장 중…"));
-            }
-            if self.result.pending() {
-                panel.label(typography::caption("상품 가격표 조회 중…"));
-            }
-            // Use the complete pane width. Render exactly one row per
-            // product, even when the product has several color/option variants.
-            let viewport_width=panel.available_width();
-            let gap=theme::SPACE_8;
+            let original_spacing=panel.spacing().item_spacing.y;
+            panel.spacing_mut().item_spacing.y=0.0;
+            panel.spacing_mut().scroll=theme::management_scroll_style();
+            let viewport_width=panel.available_width().max(1.0);
+            let gutter=panel.spacing().scroll.allocated_width()+theme::SPACE_4;
             let option_width=theme::PRODUCT_TABLE_OPTION_WIDTH;
             let price_width=if self.price_mode{
                 theme::PRODUCT_TABLE_EDIT_PRICE_WIDTH
             }else{theme::PRODUCT_TABLE_PRICE_WIDTH};
             let action_width=theme::PRODUCT_TABLE_ACTION_WIDTH;
-            // Preserve each existing column minimum even while editing.
+            let gap=theme::SPACE_8;
             let min_width=theme::PRODUCT_TABLE_NAME_MIN_WIDTH+option_width
                 +3.0*price_width+action_width+5.0*gap;
-            let table_width=viewport_width.max(theme::PRODUCT_TABLE_MIN_WIDTH)
-                .max(min_width);
+            let table_width=(viewport_width-gutter)
+                .max(theme::PRODUCT_TABLE_MIN_WIDTH).max(min_width);
             let name_width=table_width-option_width
                 -3.0*price_width-action_width-5.0*gap;
-            let row_height=theme::PRODUCT_TABLE_ROW_HEIGHT;
-            let selection_locked=self.has_pending_prices();
-
             let widths=[name_width,option_width,price_width,
                 price_width,price_width,action_width];
-            let headings=[
-                "상품명 / 상품설명","옵션","도매가",
-                "반도매가","소매가","상세"
-            ];
-            // Header and rows share their literal widths, but the header
-            // remains outside the vertically scrolling data region.
-            let (header_rect,_)=panel.allocate_exact_size(
-                egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
-                egui::Sense::hover()
+            let headings=["상품명 / 상품설명","색상/옵션","도매가",
+                "반도매가","소매가","상세"];
+            let selection_locked=self.has_pending_prices();
+            let ordered=product_sort_order(
+                &self.products,&self.selected_variants,self.sort
             );
-            let mut body_left=None;
+            let (header_rect,_)=panel.allocate_exact_size(
+                Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
+                Sense::hover()
+            );
+            let mut row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
                     .id_salt("egui-product-price-grid")
+                    .scroll_bar_visibility(
+                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                    )
+                    .max_height(panel.ctx().content_rect().height()
+                        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
                     .auto_shrink([false,false]),
-                panel,table_width,row_height,self.products.len(),
+                panel,table_width,theme::PRODUCT_TABLE_ROW_HEIGHT,ordered.len(),
                 |table,visible_rows|{
                     table.set_min_width(table_width);
+                    table.spacing_mut().item_spacing.y=0.0;
+                    theme::apply_table_row_colors(table);
                     let first=visible_rows.start;
-                    let origin=table.cursor().min;
-                    body_left=Some(origin.x);
-                    // Stable alternating row colors, keyed to real indexes.
-                    // Grid's automatic stripes otherwise restart at each
-                    // virtual window and flicker when scrolling.
-                    for index in visible_rows.clone(){
-                        let row_rect=egui::Rect::from_min_size(
+                    let origin=table.max_rect().min;
+                    for row_index in visible_rows {
+                        let product=&self.products[ordered[row_index]];
+                        let product_id=field(product,"id");
+                        let row_rect=Rect::from_min_size(
                             egui::pos2(
                                 origin.x,
-                                origin.y+(index-first) as f32*row_height
+                                origin.y+(row_index-first) as f32
+                                    *theme::PRODUCT_TABLE_ROW_HEIGHT
                             ),
-                            egui::vec2(table_width,row_height)
+                            Vec2::new(table_width,theme::PRODUCT_TABLE_ROW_HEIGHT)
                         );
-                        table.painter().rect_filled(
-                            row_rect,0.0,
-                            if index%2==0 {theme::PANEL}
-                            else {theme::TABLE_ROW_ALT_BG}
-                        );
-                    }
-                    egui::Grid::new("egui-products-price-table")
-                        .striped(false)
-                        .spacing([gap,0.0])
-                        .show(table,|grid|{
-                            for row_index in visible_rows {
-                                let product=&self.products[row_index];
-                                let product_id=field(product,"id");
+                        row_left.get_or_insert(row_rect.left());
+                        table.scope_builder(
+                            UiBuilder::new()
+                                .id_salt(("product-table-fixed-row",product_id))
+                                .max_rect(row_rect)
+                                .layout(Layout::top_down(Align::Min)),
+                            |row|{
+                                // All child widgets are anchored to shared
+                                // column rectangles. No Grid intrinsic widths
+                                // or conditional controls can move the next row.
+                                row.allocate_exact_size(
+                                    Vec2::new(table_width,theme::PRODUCT_TABLE_ROW_HEIGHT),
+                                    Sense::hover()
+                                );
+                                row.painter().rect_filled(
+                                    row_rect,0.0,
+                                    if row_index%2==0{theme::PANEL}
+                                    else{theme::TABLE_ROW_ALT_BG}
+                                );
+                                let cells=product_table_cells(
+                                    row_rect.min,&widths,theme::PRODUCT_TABLE_ROW_HEIGHT
+                                );
+                                // Capture before descendant scope borrows row mutably.
+                                let row_clip=row.clip_rect();
                                 let name=field(product,"name");
                                 let subtitle=field(product,"subtitle");
                                 let display=if subtitle.is_empty(){name.to_owned()}
                                     else{format!("{name} / {subtitle}")};
-                                grid.add_sized(
-                                    egui::Vec2::new(name_width,row_height),
-                                    egui::Label::new(typography::table_cell(&display)).truncate()
-                                ).on_hover_text(display.as_str());
+                                product_table_text(
+                                    row,cells[0],&display,true,(product_id,0)
+                                );
                                 let variants=rows(&product["variants"]);
                                 let mut selected_id=self.selected_variants
                                     .get(product_id).cloned().unwrap_or_default();
                                 if !variants.iter().any(|v|
-                                    field(v,"id")==selected_id.as_str()
-                                ){
+                                    field(v,"id")==selected_id.as_str()){
                                     selected_id=variants.first()
                                         .map(|v|field(v,"id").to_owned())
                                         .unwrap_or_default();
                                 }
-                                grid.allocate_ui_with_layout(
-                                    egui::Vec2::new(option_width,row_height),
-                                    Layout::left_to_right(Align::Center),
-                                    |cell|{
-                                        if variants.len()>1{
-                                            let chosen=variants.iter().find(|v|
-                                                field(v,"id")==selected_id.as_str()
-                                            ).unwrap_or(&variants[0]);
-                                            let preview=option_text(product,chosen);
-                                            cell.add_enabled_ui(!selection_locked,|choice|{
-                                                egui::ComboBox::from_id_salt(
-                                                    ("egui-product-variant",product_id)
-                                                )
-                                                    .width(option_width-gap)
-                                                    .selected_text(
-                                                        if preview.is_empty(){"기본"}else{&preview}
-                                                    )
-                                                    .show_ui(choice,|choices|{
-                                                        for variant in variants{
-                                                            let option=option_text(product,variant);
-                                                            choices.selectable_value(
-                                                                &mut selected_id,
-                                                                field(variant,"id").to_owned(),
-                                                                if option.is_empty(){"기본"}else{&option}
-                                                            );
-                                                        }
-                                                    });
-                                            });
-                                        }else if let Some(variant)=variants.first(){
-                                            let option=option_text(product,variant);
-                                            cell.add(egui::Label::new(
-                                                typography::table_cell(
-                                                    if option.is_empty(){"—"}else{&option}
-                                                )
-                                            ).truncate()).on_hover_text(option);
-                                        }else{
-                                            cell.label(typography::caption("—"));
-                                        }
-                                    }
+                                let variant_cell=cells[1].shrink2(
+                                    Vec2::new(theme::SPACE_4,0.0)
                                 );
+                                if variants.len()>1{
+                                    let chosen=variants.iter().find(|v|
+                                        field(v,"id")==selected_id.as_str())
+                                        .unwrap_or(&variants[0]);
+                                    let current_label=option_text(product,chosen);
+                                    let mut builder=UiBuilder::new()
+                                        .id_salt(("product-variant",product_id))
+                                        .max_rect(variant_cell)
+                                        .layout(Layout::left_to_right(Align::Center));
+                                    if selection_locked{builder=builder.disabled();}
+                                    row.scope_builder(builder,|controls|{
+                                            controls.set_clip_rect(
+                                                variant_cell.intersect(row_clip)
+                                            );
+                                            egui::ComboBox::from_id_salt(
+                                                ("egui-product-variant",product_id)
+                                            )
+                                                .width((variant_cell.width()-theme::SPACE_8).max(1.0))
+                                                .selected_text(
+                                                    if current_label.is_empty(){"기본"}
+                                                    else{&current_label}
+                                                ).show_ui(controls,|choices|{
+                                                    for variant in variants{
+                                                        let label=option_text(product,variant);
+                                                        choices.selectable_value(
+                                                            &mut selected_id,
+                                                            field(variant,"id").to_owned(),
+                                                            if label.is_empty(){"기본"}else{&label}
+                                                        );
+                                                    }
+                                                });
+                                        }
+                                    );
+                                }else if let Some(variant)=variants.first(){
+                                    let label=option_text(product,variant);
+                                    product_table_text(row,cells[1],
+                                        if label.is_empty(){"—"}else{&label},
+                                        false,(product_id,1));
+                                }else{
+                                    product_table_text(row,cells[1],"—",false,(product_id,1));
+                                }
                                 self.selected_variants.insert(
                                     product_id.to_owned(),selected_id.clone()
                                 );
                                 let selected_variant=variants.iter().find(|v|
                                     field(v,"id")==selected_id.as_str()
                                 );
-                                for tier in ["wholesale","semi","retail"]{
-                                    grid.allocate_ui_with_layout(
-                                        egui::Vec2::new(price_width,row_height),
-                                        Layout::left_to_right(Align::Center),
-                                        |cell|{
-                                            if let Some(variant)=selected_variant{
-                                                if self.price_mode{
-                                                    let key=format!(
-                                                        "{}:{}:{}",product_id,
-                                                        field(variant,"id"),tier
+                                for (offset,tier) in ["wholesale","semi","retail"]
+                                    .iter().enumerate(){
+                                    let price_rect=cells[offset+2].shrink2(
+                                        Vec2::new(theme::SPACE_4,0.0)
+                                    );
+                                    if let Some(variant)=selected_variant{
+                                        if self.price_mode {
+                                            let key=format!(
+                                                "{}:{}:{}",product_id,
+                                                field(variant,"id"),tier
+                                            );
+                                            let original=variant[*tier].as_i64();
+                                            let entry=self.price_drafts.entry(key.clone())
+                                                .or_insert_with(||PriceDraft{
+                                                    original,
+                                                    input:original.map(|v|v.to_string())
+                                                        .unwrap_or_default()
+                                                });
+                                            let mut builder=UiBuilder::new()
+                                                .id_salt(("product-price-edit",key.as_str()))
+                                                .max_rect(price_rect)
+                                                .layout(Layout::left_to_right(Align::Center));
+                                            if saving{builder=builder.disabled();}
+                                            row.scope_builder(builder,|inputs|{
+                                                    inputs.set_clip_rect(
+                                                        price_rect.intersect(row_clip)
                                                     );
-                                                    let original=variant[tier].as_i64();
-                                                    let entry=self.price_drafts.entry(key.clone())
-                                                        .or_insert_with(||PriceDraft{
-                                                            original,
-                                                            input:original.map(|v|v.to_string())
-                                                                .unwrap_or_default(),
-                                                        });
-                                                    cell.add_enabled_ui(!saving,|inputs|{
-                                                        // Widget identities must not depend on
-                                                        // which virtual rows happen to be visible.
-                                                        inputs.push_id(
-                                                            ("product-price-cell",product_id,
-                                                             field(variant,"id"),tier),
-                                                            |inputs|{
-                                                        let response=components::money_field(
-                                                            inputs,&mut entry.input,true
-                                                        );
-                                                        let enter=response.lost_focus() &&
-                                                            inputs.input(|i|i.key_pressed(egui::Key::Enter));
-                                                        if response.has_focus() &&
-                                                            inputs.input(|i|i.key_pressed(egui::Key::Escape)){
-                                                            entry.input=entry.original
-                                                                .map(|n|n.to_string()).unwrap_or_default();
-                                                        }
-                                                        if entry.dirty(){
-                                                            if theme::action(inputs,"저장",
-                                                                theme::ButtonRole::Standard,true
-                                                            ).clicked() || enter{
-                                                                match entry.parse(){
-                                                                    Ok(value)=>{
-                                                                        price_write=Some((key.clone(),
-                                                                            json!({
-                                                                                "productId":product_id,
-                                                                                "variantId":field(variant,"id"),
-                                                                                "tier":tier,
-                                                                                "price":value,
-                                                                                "expected":entry.original,
-                                                                            })
-                                                                        ));
+                                                    inputs.push_id(
+                                                        ("product-price-cell",product_id,
+                                                         field(variant,"id"),tier),
+                                                        |inputs|{
+                                                            let response=components::money_field(
+                                                                inputs,&mut entry.input,true
+                                                            );
+                                                            let enter=response.lost_focus() &&
+                                                                inputs.input(|i|
+                                                                    i.key_pressed(egui::Key::Enter));
+                                                            if response.has_focus() &&
+                                                                inputs.input(|i|
+                                                                    i.key_pressed(egui::Key::Escape)){
+                                                                entry.input=entry.original.map(|n|
+                                                                    n.to_string()).unwrap_or_default();
+                                                            }
+                                                            if entry.dirty(){
+                                                                if theme::action(inputs,"저장",
+                                                                    theme::ButtonRole::Standard,true
+                                                                ).clicked()||enter {
+                                                                    match entry.parse(){
+                                                                        Ok(value)=>{
+                                                                            price_write=Some((
+                                                                                key.clone(),json!({
+                                                                                    "productId":product_id,
+                                                                                    "variantId":field(variant,"id"),
+                                                                                    "tier":tier,"price":value,
+                                                                                    "expected":entry.original
+                                                                                })
+                                                                            ));
+                                                                        }
+                                                                        Err(message)=>self.error=Some(message),
                                                                     }
-                                                                    Err(message)=>self.error=Some(message),
+                                                                }
+                                                                if theme::action(inputs,"취소",
+                                                                    theme::ButtonRole::Quiet,true
+                                                                ).clicked(){
+                                                                    entry.input=entry.original
+                                                                        .map(|n|n.to_string())
+                                                                        .unwrap_or_default();
                                                                 }
                                                             }
-                                                            if theme::action(inputs,"취소",
-                                                                theme::ButtonRole::Quiet,true
-                                                            ).clicked(){
-                                                                entry.input=entry.original
-                                                                    .map(|n|n.to_string())
-                                                                    .unwrap_or_default();
-                                                            }
                                                         }
-                                                            }
-                                                        );
-                                                    });
-                                                }else{
-                                                    cell.label(typography::quantity(
-                                                        &price(&variant[tier])
-                                                    ));
+                                                    );
                                                 }
-                                            }else{
-                                                cell.label(typography::caption("—"));
-                                            }
+                                            );
+                                        }else{
+                                            product_price_text(
+                                                row,cells[offset+2],&variant[*tier]
+                                            );
                                         }
-                                    );
+                                    }else{
+                                        product_table_text(row,cells[offset+2],"—",
+                                            false,(product_id,offset+2));
+                                    }
                                 }
-                                grid.allocate_ui_with_layout(
-                                    egui::Vec2::new(action_width,row_height),
-                                    Layout::left_to_right(Align::Center),
-                                    |cell|{
+                                let action_rect=Rect::from_center_size(
+                                    cells[5].center(),Vec2::new(
+                                        cells[5].width()-theme::SPACE_8,
+                                        theme::ACTION_STANDARD_HEIGHT
+                                    )
+                                );
+                                let mut builder=UiBuilder::new()
+                                    .id_salt(("product-table-action",product_id))
+                                    .max_rect(action_rect)
+                                    .layout(Layout::left_to_right(Align::Center));
+                                if saving{builder=builder.disabled();}
+                                row.scope_builder(builder,|actions|{
+                                        actions.set_clip_rect(action_rect.intersect(row_clip));
                                         if theme::action(
-                                            cell,"상세 관리",theme::ButtonRole::Standard,!saving
+                                            actions,"상세 관리",
+                                            theme::ButtonRole::TableSecondary,!saving
                                         ).clicked(){
                                             open_detail=Some(product.clone());
                                         }
                                     }
                                 );
-                                grid.end_row();
+                                row.painter().line_segment(
+                                    [row_rect.left_bottom(),row_rect.right_bottom()],
+                                    egui::Stroke::new(
+                                        theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
+                                    )
+                                );
                             }
-                        });
-                    if self.products.is_empty() && !self.result.pending()
-                        && self.error.is_none(){
-                        table.label(typography::caption(
-                            if self.query.is_empty() && self.category.is_empty()
-                                && self.brand.is_empty() && !self.missing {
-                                "등록된 상품이 없습니다."
-                            } else {
-                                "조건에 맞는 상품이 없습니다."
-                            }
-                        ));
+                        );
                     }
                 }
             );
-            let header_left=body_left.unwrap_or(
+            // Paint the same six-column geometry after the scroll output,
+            // translating only the shared horizontal scroll offset.
+            let header_left=row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
+            );
+            let header_cells=product_table_cells(
+                egui::pos2(header_left,header_rect.top()),
+                &widths,header_rect.height()
             );
             let painter=panel.painter().with_clip_rect(header_rect);
             painter.rect_filled(header_rect,0.0,theme::RAISED);
-            let mut left=header_left;
-            for (heading,width) in headings.into_iter().zip(widths){
-                let col=egui::Rect::from_min_size(
-                    egui::pos2(left,header_rect.top()),
-                    egui::vec2(width,header_rect.height())
+            let mut clicked_sort=None;
+            for (index,title) in headings.iter().enumerate(){
+                let rect=header_cells[index].intersect(header_rect);
+                if rect.width()<=0.0{continue;}
+                let column=ProductSort::column_at(index);
+                let title_galley=typography::freight_table_header_galley(panel,title);
+                let arrow=column.map(|column|{
+                    let (text,color)=match self.sort
+                        .filter(|state|state.column==column).map(|sort|sort.direction){
+                        Some(ProductSortDirection::Ascending)=>("▲",theme::SELECTION),
+                        Some(ProductSortDirection::Descending)=>("▼",theme::SELECTION),
+                        None=>("↕",theme::MUTED),
+                    };
+                    (typography::freight_table_header_galley(panel,text),color)
+                });
+                let arrow_width=arrow.as_ref().map_or(0.0,|(glyph,_)|glyph.size().x);
+                let icon_gap=if arrow.is_some(){theme::SPACE_4}else{0.0};
+                let ink_width=title_galley.size().x+icon_gap+arrow_width;
+                let x=if matches!(index,2|3|4){
+                    (header_cells[index].right()-theme::SPACE_8-ink_width)
+                        .max(header_cells[index].left()+theme::SPACE_8)
+                }else if index==5{
+                    header_cells[index].center().x-ink_width/2.0
+                }else{
+                    header_cells[index].left()+theme::SPACE_8
+                };
+                let ink=painter.with_clip_rect(rect);
+                ink.galley(
+                    egui::pos2(x,rect.center().y-title_galley.size().y/2.0),
+                    title_galley.clone(),theme::SECONDARY
                 );
-                let region=col.intersect(header_rect);
-                let galley=typography::table_header_galley(panel,heading);
-                painter.with_clip_rect(region).galley(
-                    egui::pos2(
-                        col.left()+theme::SPACE_4,
-                        col.center().y-galley.size().y/2.0
-                    ),galley,theme::SECONDARY
-                );
-                left+=width+gap;
+                if let Some((glyph,color))=arrow{
+                    ink.galley(
+                        egui::pos2(x+title_galley.size().x+icon_gap,
+                            rect.center().y-glyph.size().y/2.0),
+                        glyph,color
+                    );
+                }
+                if let Some(column)=column{
+                    let response=panel.interact(
+                        rect,panel.make_persistent_id(("product-price-sort",index)),
+                        Sense::click()
+                    ).on_hover_text(match ProductSort::next(self.sort,column){
+                        Some(ProductSort{direction:ProductSortDirection::Ascending,..})
+                            =>"오름차순 정렬",
+                        Some(ProductSort{direction:ProductSortDirection::Descending,..})
+                            =>"내림차순 정렬",
+                        None=>"기본 순서로 복귀",
+                    });
+                    if response.clicked(){clicked_sort=Some(ProductSort::next(self.sort,column));}
+                }
+                if index<5{
+                    let edge=header_cells[index].right()+gap/2.0;
+                    painter.line_segment(
+                        [egui::pos2(edge,header_rect.top()),
+                         egui::pos2(edge,header_rect.bottom())],
+                        egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+                    );
+                }
+            }
+            painter.line_segment(
+                [header_rect.left_bottom(),header_rect.right_bottom()],
+                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+            );
+            if let Some(next)=clicked_sort{
+                self.sort=next;
+                panel.ctx().request_repaint();
+            }
+            panel.spacing_mut().item_spacing.y=original_spacing;
+            if self.products.is_empty() && !self.result.pending() && self.error.is_none(){
+                theme::management_list_strip_frame().show(panel,|empty|{
+                    empty.label(typography::caption(
+                        if self.query.is_empty() && self.category.is_empty()
+                            && self.brand.is_empty() && !self.missing{
+                            "등록된 상품이 없습니다."
+                        }else{"조건에 맞는 상품이 없습니다."}
+                    ));
+                });
             }
         });
         if let Some((key,data))=price_write {
@@ -1294,5 +1508,45 @@ mod tests {
         assert!(ids.iter().any(|(id,name)|id=="a"&&name.contains("보면대")));
         assert!(ids.iter().any(|(id,_)|id=="catalog-root:BANDOSTAND"));
         assert!(catalog["categories"].as_array().is_some_and(|v|v.len()==1));
+    }
+    #[test]
+    fn product_table_sort_cycles_without_changing_native_catalog_membership(){
+        let catalog=vec![
+            json!({"id":"two","name":"BD 702","variants":[{
+                "id":"v2","color":"단일","wholesale":5500,"semi":6000,"retail":9000
+            }]}),
+            json!({"id":"one","name":"BD 701","variants":[{
+                "id":"v1","color":"단일","wholesale":3500,"semi":5000,"retail":8000
+            }]}),
+        ];
+        let original=catalog.clone();
+        let selected=HashMap::new();
+        assert_eq!(product_sort_order(&catalog,&selected,None),vec![0,1]);
+        let asc=ProductSort::next(None,ProductSortColumn::Name).unwrap();
+        assert_eq!(product_sort_order(&catalog,&selected,Some(asc)),vec![1,0]);
+        let desc=ProductSort::next(Some(asc),ProductSortColumn::Name).unwrap();
+        assert_eq!(product_sort_order(&catalog,&selected,Some(desc)),vec![0,1]);
+        assert!(ProductSort::next(Some(desc),ProductSortColumn::Name).is_none());
+        let asc_price=ProductSort::next(None,ProductSortColumn::Wholesale).unwrap();
+        assert_eq!(product_sort_order(&catalog,&selected,Some(asc_price)),vec![1,0]);
+        assert_eq!(catalog,original);
+    }
+    #[test]
+    fn fixed_product_table_columns_share_identical_header_and_row_geometry(){
+        let widths=[340.0,182.0,116.0,116.0,116.0,100.0];
+        let start=egui::pos2(20.0,30.0);
+        let header=product_table_cells(start,&widths,theme::MANAGEMENT_TABLE_HEADER_HEIGHT);
+        let row=product_table_cells(
+            egui::pos2(start.x,start.y+theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
+            &widths,theme::PRODUCT_TABLE_ROW_HEIGHT
+        );
+        for i in 0..widths.len(){
+            assert_eq!(header[i].left(),row[i].left());
+            assert_eq!(header[i].right(),row[i].right());
+            assert_eq!(row[i].height(),theme::PRODUCT_TABLE_ROW_HEIGHT);
+            if i>0{
+                assert_eq!(row[i].left()-row[i-1].right(),theme::SPACE_8);
+            }
+        }
     }
 }

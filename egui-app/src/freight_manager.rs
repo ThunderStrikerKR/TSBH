@@ -99,6 +99,39 @@ impl RateSort {
     }
 }
 
+// History sort is visual only. Reset returns to newest-first order and the
+// original group-version order remains untouched.
+#[derive(Clone,Copy,PartialEq,Eq)]
+enum HistorySortColumn { Combination, RecordedAt, Charge, Actual, Basis }
+#[derive(Clone,Copy,PartialEq,Eq)]
+struct HistorySort {
+    column:HistorySortColumn,
+    direction:FreightSortDirection,
+}
+impl HistorySort {
+    fn column_at(index:usize)->Option<HistorySortColumn>{
+        match index {
+            0=>Some(HistorySortColumn::Combination),
+            1=>Some(HistorySortColumn::RecordedAt),
+            2=>Some(HistorySortColumn::Charge),
+            3=>Some(HistorySortColumn::Actual),
+            4=>Some(HistorySortColumn::Basis),
+            _=>None,
+        }
+    }
+    fn next(previous:Option<Self>,column:HistorySortColumn)->Option<Self>{
+        match previous {
+            Some(Self{column:active,direction:FreightSortDirection::Ascending})
+                if active==column=>Some(Self{
+                    column,direction:FreightSortDirection::Descending
+                }),
+            Some(Self{column:active,direction:FreightSortDirection::Descending})
+                if active==column=>None,
+            _=>Some(Self{column,direction:FreightSortDirection::Ascending}),
+        }
+    }
+}
+
 /// Compute keys before comparing: sorting large tables must not rebuild
 /// category paths or variant labels on each comparison.
 fn freight_sort_key(
@@ -424,6 +457,7 @@ pub struct FreightManager {
     group_filter: String,
     sort: Option<FreightSort>,
     rate_sort: Option<RateSort>,
+    history_sort: Option<HistorySort>,
 }
 impl FreightManager {
     fn fetch(gateway: Arc<dyn BandoGateway>,ctx:egui::Context)
@@ -479,6 +513,7 @@ impl FreightManager {
             group_filter: String::new(),
             sort: None,
             rate_sort: None,
+            history_sort: None,
         }
     }
 
@@ -782,7 +817,8 @@ impl FreightManager {
                         .auto_shrink([false,false])
                         .show(ui,|scroll|Self::show_history(
                             scroll,shipping,projection,
-                            &mut self.exception_target,enabled
+                            &mut self.exception_target,&mut self.history_sort,
+                            enabled
                         ));
                 }
                 FreightTab::Groups => {}
@@ -2182,104 +2218,418 @@ impl FreightManager {
 
     fn show_history(
         ui: &mut Ui, shipping: &Value, projection: &Value,
-        exception: &mut Option<(String,String)>,enabled:bool,
+        exception: &mut Option<(String,String)>,
+        sort:&mut Option<HistorySort>,enabled:bool,
     ) {
+        // Both sections reuse the assignment reference's fixed header, 42pt
+        // non-wrapping rows and reserved solid scrollbar. No fee computation
+        // or history mutation is performed by this view.
         theme::section_frame().show(ui, |section| {
             section.label(typography::section_heading("확인된 배송 조합"));
             components::soft_divider(section);
-            let combinations = rows(&shipping["combinations"]);
-            if combinations.is_empty() {
+            let combinations=rows(&shipping["combinations"]);
+            if combinations.is_empty(){
                 section.label(typography::caption(
                     "실제 배송 완료 후 검증한 운임 조합이 여기에 표시됩니다."
                 ));
                 return;
             }
-            egui::ScrollArea::both()
-                .id_salt("freight-verified-combination-table")
-                .max_height(section.ctx().content_rect().height()
-                    * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
-                .auto_shrink([false,false])
-                .show(section,|table|{
-                    table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
-                    theme::apply_table_row_colors(table);
-                    egui::Grid::new("freight-combination-history-grid")
-                        .striped(true)
-                        .spacing([theme::SPACE_24,theme::SPACE_8])
-                        .show(table,|grid|{
-                            for heading in ["조합","청구 운임","실제 운임","기준","수정"] {
-                                grid.label(typography::table_header(heading));
-                            }
-                            grid.end_row();
-                            for record in combinations.iter().rev() {
-                                let valid=projection["currentCombinations"]
-                                    .get(text(record,"id"))
-                                    .and_then(Value::as_bool);
-                                grid.vertical(|cell|{
-                                    cell.label(typography::table_cell(
-                                        text(record,"description")
-                                    ));
-                                    let at=text(record,"at");
-                                    let verification=if !text(record,"verifiedAt").is_empty(){
-                                        format!("실배송 검증 {}회",
-                                            record["sampleCount"].as_u64().unwrap_or(1))
-                                    }else{
-                                        "사용자 등록 기준".to_owned()
-                                    };
-                                    cell.label(typography::caption(&format!(
-                                        "{} / {}",
-                                        if at.is_empty(){"날짜 미확인"}else{at},
-                                        verification
-                                    )));
-                                });
-                                grid.label(typography::quantity(&as_fee(&record["charge"])));
-                                grid.label(typography::quantity(&as_fee(&record["actual"])));
-                                grid.label(typography::table_cell(match valid {
-                                    Some(true)=>"현재 유효",
-                                    Some(false)=>"과거 이력",
-                                    None=>"운임 기준 조회 중"
-                                }));
-                                if theme::action(grid,"예외 운임 변경",
-                                    theme::ButtonRole::Standard,enabled).clicked(){
-                                    *exception=Some((
-                                        text(record,"id").into(),
-                                        record["charge"].as_i64()
-                                            .map(|n|n.to_string()).unwrap_or_default()
-                                    ));
-                                }
-                                grid.end_row();
-                            }
-                        });
+            // Keep React's original newest-first order unless the user
+            // explicitly sorts a meaningful column.
+            let mut ordered:Vec<&Value>=combinations.iter().rev().collect();
+            if let Some(active_sort)=*sort{
+                ordered.sort_by_cached_key(|record|{
+                    let key=match active_sort.column{
+                        HistorySortColumn::Combination=>
+                            text(record,"description").to_lowercase(),
+                        HistorySortColumn::RecordedAt=>
+                            text(record,"at").to_owned(),
+                        HistorySortColumn::Charge=>record["charge"].as_i64()
+                            .map(|n|format!("{n:020}")).unwrap_or_default(),
+                        HistorySortColumn::Actual=>record["actual"].as_i64()
+                            .map(|n|format!("{n:020}")).unwrap_or_default(),
+                        HistorySortColumn::Basis=>match projection["currentCombinations"]
+                            .get(text(record,"id")).and_then(Value::as_bool){
+                                Some(true)=>"2",Some(false)=>"1",None=>"0"
+                            }.to_owned(),
+                    };
+                    (key,text(record,"id").to_owned())
                 });
+                if active_sort.direction==FreightSortDirection::Descending{
+                    ordered.reverse();
+                }
+            }
+            freight_history_table(
+                section,"freight-verified-combinations",
+                ["조합","등록일 / 검증","청구 운임","실제 운임","기준","수정"],
+                theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS,
+                [0.65,0.35,0.0,0.0,0.0,0.0],ordered.len(),Some(sort),
+                |row,cells,index|{
+                    let record=ordered[index];
+                    let id=text(record,"id");
+                    let at=text(record,"at");
+                    let verified_at=text(record,"verifiedAt");
+                    let recorded_date=at.split('T').next()
+                        .filter(|date|!date.is_empty()).unwrap_or("날짜 미확인");
+                    let samples=record["sampleCount"].as_u64().unwrap_or(1);
+                    let verification=if verified_at.is_empty(){
+                        format!("{recorded_date} · 사용자 등록")
+                    }else{
+                        format!("{recorded_date} · 실배송 검증 {samples}회")
+                    };
+                    let verification_detail=if verified_at.is_empty(){
+                        format!("등록: {at} / 사용자 등록 기준")
+                    }else{
+                        format!("등록: {at} / 검증: {verified_at} / 실배송 {samples}회")
+                    };
+                    history_cell(
+                        row,cells[0],text(record,"description"),
+                        text(record,"description"),egui::Align2::LEFT_CENTER,
+                        true,theme::TEXT,(id,0)
+                    );
+                    history_cell(
+                        row,cells[1],&verification,&verification_detail,
+                        egui::Align2::LEFT_CENTER,false,theme::SECONDARY,(id,1)
+                    );
+                    for (column,key) in [(2,"charge"),(3,"actual")]{
+                        let fee=as_fee(&record[key]);
+                        history_cell(
+                            row,cells[column],&fee,&fee,
+                            egui::Align2::RIGHT_CENTER,false,theme::TEXT,(id,column)
+                        );
+                    }
+                    let validity=projection["currentCombinations"]
+                        .get(id).and_then(Value::as_bool);
+                    let status=match validity{
+                        Some(true)=>"현재 유효",
+                        Some(false)=>"과거 이력",
+                        None=>"운임 기준 조회 중",
+                    };
+                    history_cell(
+                        row,cells[4],status,status,
+                        egui::Align2::CENTER_CENTER,false,theme::SECONDARY,(id,4)
+                    );
+                    let action_rect=cells[5].shrink2(egui::vec2(theme::SPACE_8,0.0));
+                    let history_row_clip=row.clip_rect();
+                    row.scope_builder(
+                        egui::UiBuilder::new()
+                            .id_salt(("freight-history-change",id))
+                            .max_rect(action_rect)
+                            .layout(egui::Layout::left_to_right(
+                                egui::Align::Center
+                            ).with_main_align(egui::Align::Center)),
+                        |buttons|{
+                            buttons.set_clip_rect(cells[5].intersect(history_row_clip));
+                            buttons.set_width(action_rect.width());
+                            if theme::action(
+                                buttons,"예외 운임 변경",
+                                theme::ButtonRole::TableSecondary,enabled
+                            ).clicked(){
+                                // This is the existing revise_combination
+                                // modal and Rust mutation path, unchanged.
+                                *exception=Some((
+                                    id.to_owned(),
+                                    record["charge"].as_i64()
+                                        .map(|n|n.to_string()).unwrap_or_default()
+                                ));
+                            }
+                        }
+                    );
+                }
+            );
         });
         ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui, |section| {
             section.label(typography::section_heading("이전 그룹 운임 기준"));
-            for group in rows(&shipping["groups"]).iter().filter(|g| active(g)) {
-                let history = rows(&group["history"]);
+            components::soft_divider(section);
+            // Preserve the existing group-by-group expand/collapse behavior.
+            // Expanded histories become one-row-per-version fixed tables,
+            // rather than unaligned long sentences.
+            for group in rows(&shipping["groups"]).iter().filter(|g|active(g)){
+                let group_id=text(group,"id");
+                let history=rows(&group["history"]);
                 egui::CollapsingHeader::new(format!(
-                    "{} / {}개 기준", text(group, "name"), history.len()
-                )).id_salt(("freight-history", text(group, "id")))
-                    .show(section, |body| {
-                        for old in history {
-                            let fees=(1..=6).filter_map(|n|{
-                                old["fees"].get(n.to_string()).map(|amount|
-                                    format!("{n}개 {}",
-                                        if amount.is_null(){"미확정".to_owned()}
-                                        else{as_fee(amount)})
-                                )
-                            }).collect::<Vec<_>>();
-                            body.label(typography::body(&format!(
-                                "{} / 개당 {} / {}",
-                                text(old, "at"),as_fee(&old["perItem"]),
-                                if fees.is_empty(){"운임 미등록".to_owned()}
-                                else{fees.join(" / ")}
-                            )));
+                    "{} / {}개 기준",text(group,"name"),history.len()
+                )).id_salt(("freight-history",group_id))
+                    .show(section,|body|{
+                        if history.is_empty(){
+                            body.label(typography::caption("이전 기준이 없습니다."));
+                            return;
                         }
+                        let table_id=format!("freight-history-group-{group_id}");
+                        freight_history_table(
+                            body,&table_id,
+                            ["기준 일자","최대 묶음 수량","수량별 배송비",
+                             "기존 개당 기준","사용자 참고 메모","버전"],
+                            theme::FREIGHT_GROUP_HISTORY_COL_WIDTHS,
+                            [0.10,0.0,0.55,0.0,0.35,0.0],history.len(),None,
+                            |row,cells,index|{
+                                let old=&history[index];
+                                let at=text(old,"at");
+                                let display_date=at.split('T').next()
+                                    .filter(|date|!date.is_empty())
+                                    .unwrap_or("날짜 미확인");
+                                history_cell(
+                                    row,cells[0],display_date,at,
+                                    egui::Align2::LEFT_CENTER,false,theme::TEXT,
+                                    (group_id,index,0)
+                                );
+                                let bundle=group_bundle_summary(old);
+                                history_cell(
+                                    row,cells[1],&bundle,&bundle,
+                                    egui::Align2::RIGHT_CENTER,false,theme::TEXT,
+                                    (group_id,index,1)
+                                );
+                                let fees=group_history_fee_summary(old);
+                                history_cell(
+                                    row,cells[2],&fees,&fees,
+                                    egui::Align2::LEFT_CENTER,false,theme::TEXT,
+                                    (group_id,index,2)
+                                );
+                                let each=as_fee(&old["perItem"]);
+                                history_cell(
+                                    row,cells[3],&each,&each,
+                                    egui::Align2::RIGHT_CENTER,false,theme::TEXT,
+                                    (group_id,index,3)
+                                );
+                                let note=text(old,"notes");
+                                history_cell(
+                                    row,cells[4],if note.is_empty(){"-"}else{note},
+                                    note,egui::Align2::LEFT_CENTER,false,
+                                    theme::SECONDARY,(group_id,index,4)
+                                );
+                                let version=match old.get("version"){
+                                    Some(Value::String(value))=>value.to_owned(),
+                                    Some(value) if !value.is_null()=>value.to_string(),
+                                    _=>"-".to_owned(),
+                                };
+                                history_cell(
+                                    row,cells[5],&version,&version,
+                                    egui::Align2::CENTER_CENTER,false,
+                                    theme::SECONDARY,(group_id,index,5)
+                                );
+                            }
+                        );
                     });
             }
         });
     }
+}
 
+
+fn group_history_fee_summary(rule:&Value)->String{
+    // A historic null means "unconfirmed", not "missing". Zero is a
+    // confirmed amount and must remain visible in the archived record.
+    let fees=(1..=6).filter_map(|count|{
+        rule["fees"].get(count.to_string()).map(|fee|
+            format!("{count}개 {}",if fee.is_null(){
+                "미확정".to_owned()
+            }else{as_fee(fee)})
+        )
+    }).collect::<Vec<_>>();
+    if fees.is_empty(){"운임 미등록".to_owned()}else{fees.join(" · ")}
+}
+
+/// Present a full archived value on hover even when the visible 14pt cell
+/// is clipped. This is only a view: no fee/status business decision is added.
+fn history_cell(
+    ui:&mut Ui,rect:egui::Rect,visible:&str,full:&str,
+    align:egui::Align2,emphasized:bool,color:egui::Color32,
+    id:impl std::hash::Hash
+){
+    let cell=rect.shrink2(egui::vec2(6.0,0.0));
+    let clip=cell.intersect(ui.clip_rect());
+    if clip.width()<=0.0 || clip.height()<=0.0{return;}
+    let galley=typography::freight_table_cell_galley(ui,visible,emphasized,color);
+    let x=if align==egui::Align2::RIGHT_CENTER{
+        cell.right()-galley.size().x
+    }else if align==egui::Align2::CENTER_CENTER{
+        cell.center().x-galley.size().x/2.0
+    }else{cell.left()};
+    ui.painter().with_clip_rect(clip).galley(
+        egui::pos2(x,cell.center().y-galley.size().y/2.0),galley,color
+    );
+    if !full.is_empty(){
+        ui.interact(
+            clip,ui.make_persistent_id(("freight-history-cell",id)),
+            egui::Sense::hover()
+        ).on_hover_text(full);
+    }
+}
+
+/// Common freight history table geometry, shared between combination history
+/// and expanded historical group versions. The fixed header is outside the
+/// virtual row scroll, with the same column origins and gutter reservation.
+#[allow(clippy::too_many_arguments)]
+fn freight_history_table(
+    ui:&mut Ui,id:&str,titles:[&str;6],bases:[f32;6],shares:[f32;6],
+    total_rows:usize,mut sort:Option<&mut Option<HistorySort>>,
+    mut render_row:impl FnMut(&mut Ui,&[egui::Rect;6],usize),
+){
+    let old_spacing=ui.spacing().item_spacing.y;
+    ui.spacing_mut().item_spacing.y=0.0;
+    let viewport_width=ui.available_width().max(1.0);
+    let gutter=ui.spacing().scroll.allocated_width()+theme::SPACE_4;
+    let minimum=bases.iter().sum::<f32>()
+        +5.0*theme::FREIGHT_ASSIGNMENT_COL_GAP;
+    let width=(viewport_width-gutter).max(minimum);
+    let extra=(width-minimum).max(0.0);
+    let mut widths=bases;
+    for index in 0..6{widths[index]+=extra*shares[index];}
+    let (header_rect,_)=ui.allocate_exact_size(
+        egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
+        egui::Sense::hover()
+    );
+    let mut first_row_left=None;
+    let scroll=components::virtual_fixed_rows(
+        egui::ScrollArea::both()
+            .id_salt(id)
+            .scroll_bar_visibility(
+                egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+            )
+            .max_height(ui.ctx().content_rect().height()
+                *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+            .auto_shrink([false,false]),
+        ui,width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,total_rows,
+        |table,visible_rows|{
+            table.set_min_width(width);
+            table.spacing_mut().item_spacing.y=0.0;
+            let first=visible_rows.start;
+            let origin=table.max_rect().min;
+            for index in visible_rows {
+                let row_rect=egui::Rect::from_min_size(
+                    egui::pos2(
+                        origin.x,
+                        origin.y+(index-first) as f32
+                            *theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
+                    ),
+                    egui::vec2(width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT)
+                );
+                first_row_left.get_or_insert(row_rect.left());
+                table.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt((id,index))
+                        .max_rect(row_rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                    |row|{
+                        let _=row.allocate_exact_size(
+                            egui::vec2(width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT),
+                            egui::Sense::hover()
+                        );
+                        let cells=freight_table_cells(
+                            row_rect.min,&widths,
+                            theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
+                        );
+                        row.painter().rect_filled(
+                            row_rect,0.0,if index%2==0{
+                                theme::PANEL
+                            }else{theme::TABLE_ROW_ALT_BG}
+                        );
+                        render_row(row,&cells,index);
+                        for column in 0..5{
+                            let boundary=cells[column].right()
+                                +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
+                            row.painter().line_segment(
+                                [egui::pos2(boundary,row_rect.top()),
+                                 egui::pos2(boundary,row_rect.bottom())],
+                                egui::Stroke::new(
+                                    theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
+                                )
+                            );
+                        }
+                        row.painter().line_segment(
+                            [row_rect.left_bottom(),row_rect.right_bottom()],
+                            egui::Stroke::new(
+                                theme::SOFT_DIVIDER_WIDTH,
+                                theme::DIVIDER.linear_multiply(0.70)
+                            )
+                        );
+                    }
+                );
+            }
+        }
+    );
+    ui.spacing_mut().item_spacing.y=old_spacing;
+    let left=first_row_left.unwrap_or(
+        header_rect.left()-scroll.state.offset.x
+    );
+    let columns=freight_table_cells(
+        egui::pos2(left,header_rect.top()),&widths,header_rect.height()
+    );
+    let painter=ui.painter().with_clip_rect(header_rect);
+    painter.rect_filled(header_rect,0.0,theme::RAISED);
+    for (index,title) in titles.iter().enumerate(){
+        let cell=columns[index];
+        let label=typography::freight_table_header_galley(ui,title);
+        let mut indicator=None;
+        if let (Some(slot),Some(column))=(
+            sort.as_mut(),HistorySort::column_at(index)
+        ){
+            let current=**slot;
+            let (glyph,color)=match current
+                .filter(|value|value.column==column)
+                .map(|value|value.direction){
+                    Some(FreightSortDirection::Ascending)=>
+                        ("▲",theme::SELECTION),
+                    Some(FreightSortDirection::Descending)=>
+                        ("▼",theme::SELECTION),
+                    None=>("↕",theme::MUTED),
+                };
+            let hit=cell.intersect(header_rect);
+            if hit.width()>0.0 && hit.height()>0.0{
+                let next=HistorySort::next(current,column);
+                let tooltip=match next.map(|value|value.direction){
+                    Some(FreightSortDirection::Ascending)=>"오름차순 정렬",
+                    Some(FreightSortDirection::Descending)=>"내림차순 정렬",
+                    None=>"기본 순서로 복귀",
+                };
+                if ui.interact(
+                    hit,ui.make_persistent_id((id,"history-sort",index)),
+                    egui::Sense::click()
+                ).on_hover_text(tooltip).clicked(){
+                    **slot=next;
+                    ui.ctx().request_repaint();
+                }
+            }
+            indicator=Some((
+                typography::freight_table_header_galley(ui,glyph),color
+            ));
+        }
+        let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};
+        let arrow=indicator.as_ref().map_or(0.0,|(galley,_)|galley.size().x);
+        let combined=label.size().x+gap+arrow;
+        let x=match index{
+            2|3=>cell.right()-6.0-combined,
+            4|5=>cell.center().x-combined/2.0,
+            _=>cell.left()+6.0,
+        };
+        let ink=painter.with_clip_rect(cell.intersect(header_rect));
+        ink.galley(
+            egui::pos2(x,cell.center().y-label.size().y/2.0),
+            label,theme::SECONDARY
+        );
+        if let Some((arrow_galley,color))=indicator{
+            ink.galley(
+                egui::pos2(x+combined-arrow_galley.size().x,
+                    cell.center().y-arrow_galley.size().y/2.0),
+                arrow_galley,color
+            );
+        }
+        if index<5{
+            let boundary=cell.right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
+            painter.line_segment(
+                [egui::pos2(boundary,header_rect.top()),
+                 egui::pos2(boundary,header_rect.bottom())],
+                egui::Stroke::new(
+                    theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
+                )
+            );
+        }
+    }
+    painter.line_segment(
+        [header_rect.left_bottom(),header_rect.right_bottom()],
+        egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
 }
 
 /// Render one of four independent KPI cards. Visual hierarchy is deliberately
