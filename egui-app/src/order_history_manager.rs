@@ -163,8 +163,12 @@ fn display_lines(snapshot:&HistorySnapshot,expanded:&BTreeSet<String>,
             match sort.column {
                 SortColumn::Date=>order_date(row),
                 SortColumn::Client=>order_client(row).to_lowercase(),
-                SortColumn::Shipment=>rows(&row["recipients"]).first()
-                    .map(|r|field(r,"name").to_lowercase()).unwrap_or_default(),
+                // This header now shows products, not recipient names.
+                SortColumn::Shipment=>rows(&row["recipients"]).iter()
+                    .flat_map(|recipient|rows(&recipient["items"]).iter())
+                    .next()
+                    .map(|item|model_label(field(item,"name")).to_lowercase())
+                    .unwrap_or_default(),
                 SortColumn::Status=>field(row,"status").to_owned(),
                 SortColumn::Total=>row["total"].as_i64()
                     .map(|n|format!("{:020}",n.max(0)))
@@ -205,10 +209,13 @@ fn cells(origin:Pos2,widths:&[f32;7],height:f32)->[Rect;7]{
         cell
     })
 }
-fn paint_column_dividers(ui:&Ui,rect:Rect,widths:&[f32;7]){
+fn paint_column_dividers(ui:&Ui,rect:Rect,widths:&[f32;7],detail:bool){
     let columns=cells(rect.min,widths,rect.height());
     let painter=ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
-    for column in columns.iter().take(6){
+    // Expanded rows merge columns 2–6 to show long recipient, product,
+    // freight and billing details. Do not draw lines THROUGH merged text.
+    let separators=if detail{2}else{6};
+    for column in columns.iter().take(separators){
         let x=column.right()+COL_GAP/2.0;
         painter.line_segment(
             [egui::pos2(x,rect.top()),egui::pos2(x,rect.bottom())],
@@ -882,7 +889,10 @@ impl OrderHistoryManager {
                                     draw_line(row_ui,row_rect,line,snapshot,
                                         &self.expanded,&widths,&mut pending_toggle);
                                 }
-                                paint_column_dividers(row_ui,row_rect,&widths);
+                                paint_column_dividers(
+                                    row_ui,row_rect,&widths,
+                                    !matches!(line,HistoryLine::Order(_))
+                                );
                             });
                     }
                     // Put the empty message inside the scrollable table,
@@ -898,7 +908,7 @@ impl OrderHistoryManager {
             painter.rect_filled(head_rect,0.0,theme::RAISED);
             // Freight assignment: solid 1pt separator at every
             // intermediate column boundary, in the 8pt column gap.
-            paint_column_dividers(section,head_rect,&widths);
+            paint_column_dividers(section,head_rect,&widths,false);
             // Freight title text centers in the 34pt line box ABOVE the
             // last 2pt filled rule; the table below begins without a gap.
             let header_outline_height=2.0_f32;
