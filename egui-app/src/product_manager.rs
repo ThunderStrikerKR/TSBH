@@ -652,41 +652,68 @@ impl ProductManager {
             // Use the complete pane width. Render exactly one row per
             // product, even when the product has several color/option variants.
             let viewport_width=panel.available_width();
-            let table_width=viewport_width.max(theme::PRODUCT_TABLE_MIN_WIDTH);
             let gap=theme::SPACE_8;
             let option_width=theme::PRODUCT_TABLE_OPTION_WIDTH;
             let price_width=if self.price_mode{
                 theme::PRODUCT_TABLE_EDIT_PRICE_WIDTH
             }else{theme::PRODUCT_TABLE_PRICE_WIDTH};
             let action_width=theme::PRODUCT_TABLE_ACTION_WIDTH;
-            let name_width=(table_width-option_width
-                -3.0*price_width-action_width-5.0*gap)
-                .max(theme::PRODUCT_TABLE_NAME_MIN_WIDTH);
+            // Preserve each existing column minimum even while editing.
+            let min_width=theme::PRODUCT_TABLE_NAME_MIN_WIDTH+option_width
+                +3.0*price_width+action_width+5.0*gap;
+            let table_width=viewport_width.max(theme::PRODUCT_TABLE_MIN_WIDTH)
+                .max(min_width);
+            let name_width=table_width-option_width
+                -3.0*price_width-action_width-5.0*gap;
             let row_height=theme::PRODUCT_TABLE_ROW_HEIGHT;
             let selection_locked=self.has_pending_prices();
-            egui::ScrollArea::both()
-                .id_salt("egui-product-price-grid")
-                .auto_shrink([false,false])
-                .show(panel,|table|{
+
+            let widths=[name_width,option_width,price_width,
+                price_width,price_width,action_width];
+            let headings=[
+                "상품명 / 상품설명","옵션","도매가",
+                "반도매가","소매가","상세"
+            ];
+            // Header and rows share their literal widths, but the header
+            // remains outside the vertically scrolling data region.
+            let (header_rect,_)=panel.allocate_exact_size(
+                egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
+                egui::Sense::hover()
+            );
+            let mut body_left=None;
+            let scroll_output=components::virtual_fixed_rows(
+                egui::ScrollArea::both()
+                    .id_salt("egui-product-price-grid")
+                    .auto_shrink([false,false]),
+                panel,table_width,row_height,self.products.len(),
+                |table,visible_rows|{
                     table.set_min_width(table_width);
-                    theme::apply_table_row_colors(table);
+                    let first=visible_rows.start;
+                    let origin=table.cursor().min;
+                    body_left=Some(origin.x);
+                    // Stable alternating row colors, keyed to real indexes.
+                    // Grid's automatic stripes otherwise restart at each
+                    // virtual window and flicker when scrolling.
+                    for index in visible_rows.clone(){
+                        let row_rect=egui::Rect::from_min_size(
+                            egui::pos2(
+                                origin.x,
+                                origin.y+(index-first) as f32*row_height
+                            ),
+                            egui::vec2(table_width,row_height)
+                        );
+                        table.painter().rect_filled(
+                            row_rect,0.0,
+                            if index%2==0 {theme::PANEL}
+                            else {theme::TABLE_ROW_ALT_BG}
+                        );
+                    }
                     egui::Grid::new("egui-products-price-table")
-                        .striped(true)
-                        .spacing([gap,theme::SPACE_8])
+                        .striped(false)
+                        .spacing([gap,0.0])
                         .show(table,|grid|{
-                            let widths=[name_width,option_width,price_width,
-                                price_width,price_width,action_width];
-                            for (heading,width) in [
-                                "상품명 / 상품설명","옵션","도매가",
-                                "반도매가","소매가","상세"
-                            ].into_iter().zip(widths){
-                                grid.add_sized(
-                                    egui::Vec2::new(width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
-                                    egui::Label::new(typography::table_header(heading)).truncate()
-                                );
-                            }
-                            grid.end_row();
-                            for product in &self.products{
+                            for row_index in visible_rows {
+                                let product=&self.products[row_index];
                                 let product_id=field(product,"id");
                                 let name=field(product,"name");
                                 let subtitle=field(product,"subtitle");
@@ -845,7 +872,29 @@ impl ProductManager {
                             }
                         ));
                     }
-                });
+                }
+            );
+            let header_left=body_left.unwrap_or(
+                header_rect.left()-scroll_output.state.offset.x
+            );
+            let painter=panel.painter().with_clip_rect(header_rect);
+            painter.rect_filled(header_rect,0.0,theme::RAISED);
+            let mut left=header_left;
+            for (heading,width) in headings.into_iter().zip(widths){
+                let col=egui::Rect::from_min_size(
+                    egui::pos2(left,header_rect.top()),
+                    egui::vec2(width,header_rect.height())
+                );
+                let region=col.intersect(header_rect);
+                let galley=typography::table_header_galley(panel,heading);
+                painter.with_clip_rect(region).galley(
+                    egui::pos2(
+                        col.left()+theme::SPACE_4,
+                        col.center().y-galley.size().y/2.0
+                    ),galley,theme::SECONDARY
+                );
+                left+=width+gap;
+            }
         });
         if let Some((key,data))=price_write {
             self.start_write("set_price",data,Some(key),ui.ctx().clone());
