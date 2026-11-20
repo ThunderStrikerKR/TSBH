@@ -251,6 +251,8 @@ impl FreightManager {
     }
     pub fn refresh(&mut self,ctx:egui::Context) {
         if self.receiver.is_none() && !self.busy() && !self.dirty() {
+            self.error=None;
+            self.notice=None;
             self.receiver=Some(Self::fetch(Arc::clone(&self.gateway),ctx));
         }
     }
