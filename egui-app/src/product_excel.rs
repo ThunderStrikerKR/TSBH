@@ -2,7 +2,7 @@
 //! The file format (not the mutation rules) lives here. Preview and commit
 //! always pass through the existing Rust catalog_clients business engine.
 use calamine::{open_workbook,Data,Reader,Xlsx};
-use rust_xlsxwriter::{Format,FormatColor,Workbook};
+use rust_xlsxwriter::{Color,Format,Workbook};
 use serde_json::{json,Value};
 use std::path::Path;
 
@@ -80,8 +80,8 @@ fn exported_row(product:&Value)->Result<Vec<String>,String>{
 }
 pub fn export(state:&Value)->Result<Vec<u8>,String>{
     let mut book=Workbook::new();
-    let header=Format::new().set_bold().set_font_color(FormatColor::White)
-        .set_background_color(FormatColor::RGB(0x303030));
+    let header=Format::new().set_bold().set_font_color(Color::White)
+        .set_background_color(Color::RGB(0x303030));
     let numbers=Format::new().set_num_format("#,##0");
     {
         let sheet=book.add_worksheet();

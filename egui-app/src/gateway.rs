@@ -383,7 +383,7 @@ impl BandoGateway for LocalGateway {
             return Err("상품 Excel에 저장할 변경사항이 없습니다.".into());
         }
         self.settings_data("backup",None)?;
-        self.mutate_product(revision,"apply_product_workbook",json!({"preview":preview}))
+        self.mutate_product(revision,"apply_product_workbook",serde_json::json!({"preview":preview}))
     }
     fn shipping_write_enabled(&self) -> bool {
         std::env::var("BANDO_EGUI_ENABLE_SHIPPING_WRITE")
