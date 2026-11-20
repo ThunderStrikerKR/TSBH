@@ -49,6 +49,8 @@ jobs:
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify existing Tauri app-data DB selection remains mode-isolated
         run: cargo test --manifest-path egui-app/Cargo.toml auto_database_location_tests -- --nocapture
+      - name: Verify egui product-price input conversion and non-mutating category choices
+        run: cargo test --manifest-path egui-app/Cargo.toml product_manager::tests -- --nocapture
       - name: Verify native category rename, transfer consent and cross-catalog move guard
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib category_ -- --nocapture
       - name: Verify native staff model-group validation and representative rules
