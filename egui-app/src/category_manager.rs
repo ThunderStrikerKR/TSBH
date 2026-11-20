@@ -433,11 +433,6 @@ impl CategoryManager {
                 components::flexible_text_field(search,&mut self.query,
                     theme::CATALOG_SEARCH_WIDTH,"카테고리 이름 또는 전체 경로 검색");
             });
-            if let Some(current)=self.current(&cats){
-                panel.label(typography::caption(&format!(
-                    "선택: {}",path_text(&cats,&current.id)
-                )));
-            }
             components::soft_divider(panel);
             egui::ScrollArea::vertical()
                 .id_salt("category-map-tree")
