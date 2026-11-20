@@ -15,6 +15,9 @@ fn readable_tier(tier:&str)->&'static str {
 }
 fn label_edit(ui:&mut Ui,draft:&mut Value,key:&str,label:&str) {
     ui.vertical(|ui|{
+        // React client-editor fields use a compact label/control gap;
+        // keep the shared body typeface and standard 36pt field height.
+        ui.spacing_mut().item_spacing.y=theme::SPACE_4;
         ui.label(typography::field_label(label));
         let mut input=field(draft,key).to_owned();
         if components::flexible_text_field(
@@ -382,6 +385,7 @@ impl ClientManager {
             cols[0].label(typography::field_label("가격 등급"));
             let mut tier=field(draft,"tier").to_owned();
             egui::ComboBox::from_id_salt("client-manager-tier")
+                .width(cols[0].available_width())
                 .selected_text(readable_tier(&tier))
                 .show_ui(&mut cols[0],|ui|{
                     for (key,label) in [
@@ -395,6 +399,7 @@ impl ClientManager {
             cols[1].label(typography::field_label("결제 방식"));
             let mut payment=field(draft,"payment").to_owned();
             egui::ComboBox::from_id_salt("client-manager-payment")
+                .width(cols[1].available_width())
                 .selected_text(if payment=="POSTPAID"{"후불"}else{"선입금"})
                 .show_ui(&mut cols[1],|ui|{
                     ui.selectable_value(&mut payment,"PREPAID".into(),"선입금");
@@ -413,6 +418,7 @@ impl ClientManager {
                 .find(|a|field(a,"id")==selected)
                 .map(|a|field(a,"name")).unwrap_or("미지정");
             egui::ComboBox::from_id_salt("client-manager-account")
+                .width(ui.available_width())
                 .selected_text(selected_label)
                 .show_ui(ui,|ui|{
                     ui.selectable_value(&mut selected,String::new(),"미지정");
@@ -542,7 +548,6 @@ impl ClientManager {
         let busy=self.saving.is_some();
         components::modal_window(title,"native-client-manager-editor",work_area)
             .open(&mut opened)
-            
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
             .show(ctx,|ui|{
                 if let Some(error)=&self.error {
