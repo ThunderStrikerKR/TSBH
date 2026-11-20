@@ -231,6 +231,8 @@ impl BandoGateway for LocalGateway {
         if !groups.is_object() {
             return Err("모델군 목록은 객체여야 합니다.".into());
         }
+        let current=self.load_catalog()?;
+        crate::catalog_query_bridge::validate_model_groups(&current,&groups)?;
         // React ColorGuidanceManager: full operating SQLite manual backup
         // BEFORE the per-field CAS settings_patch. Never bypass Tauri.
         self.settings_data("backup",None)?;
