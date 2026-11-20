@@ -265,6 +265,18 @@ impl AliasManager {
                                 info.label(typography::body(field(item,"text")));
                                 info.label(typography::caption(
                                     &format!("→ {target} / {scope}")));
+                                // Data-level alias collisions are an actual
+                                // conflict annotation promised by this page,
+                                // not a generic save-success/error message.
+                                if let Some(issues)=warnings.get(id).filter(|v|!v.is_empty()){
+                                    info.label(typography::caption(
+                                        &format!("충돌: {} / 영향 범위: {}",
+                                            issues.join(" / "),
+                                            if field(item,"clientId").is_empty(){
+                                                "모든 거래처의 이후 주문"
+                                            }else{"해당 거래처의 이후 주문"})
+                                    ));
+                                }
                             });
                             row.with_layout(Layout::right_to_left(Align::Center),|actions|{
                                 if theme::action(actions,"연결 정정",
