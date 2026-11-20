@@ -631,12 +631,33 @@ pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
     pressed
 }
 
-/// One common table row, with content-based secondary text. Percentages are
-/// supplied by the table's layout role, never overridden per record.
+/// Price tier badge is visual only. Rust catalog owns the actual trade tier.
+fn client_tier_badge(ui:&mut Ui,label:&str,tier:&str) {
+    let (background,foreground)=match tier {
+        "wholesale"=>(theme::CLIENT_TIER_WHOLESALE_BG,theme::CLIENT_TIER_WHOLESALE_TEXT),
+        "semi"=>(theme::CLIENT_TIER_SEMI_BG,theme::CLIENT_TIER_SEMI_TEXT),
+        "retail"=>(theme::CLIENT_TIER_RETAIL_BG,theme::CLIENT_TIER_RETAIL_TEXT),
+        "special"=>(theme::CLIENT_TIER_SPECIAL_BG,theme::CLIENT_TIER_SPECIAL_TEXT),
+        _=>(theme::RAISED,theme::SECONDARY),
+    };
+    egui::Frame::new()
+        .fill(background)
+        .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
+        .inner_margin(egui::Margin::symmetric(
+            theme::SPACE_8 as i8, theme::SPACE_4 as i8
+        ))
+        .show(ui,|badge|{
+            badge.label(typography::caption(label).color(foreground));
+        });
+}
+
+/// Client table row: React's three-column 30/38/32 proportions and
+/// tier badge, with the complete field available in a hover tooltip.
+/// The table scrolls only when the actual three-column minimum is exceeded.
 pub fn management_row(
-    ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],heading:bool
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],heading:bool,tier:Option<&str>
 ) -> Response {
-    let width=ui.available_width().max(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+    let width=ui.available_width().max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
     let height=if heading {theme::MANAGEMENT_TABLE_HEADER_HEIGHT}
         else {theme::MANAGEMENT_TABLE_ROW_HEIGHT};
     let (rect,response)=ui.allocate_exact_size(
@@ -662,13 +683,26 @@ pub fn management_row(
                 .max_rect(cell).layout(Layout::top_down(Align::Min)),
             |inner|{
                 inner.set_clip_rect(cell);
-                inner.label(if heading {
-                    typography::table_header(primary)
+                inner.spacing_mut().item_spacing.y=theme::SPACE_4;
+                if !heading && i==2 {
+                    if let Some(tier)=tier {
+                        client_tier_badge(inner,primary,tier);
+                    } else {
+                        inner.add(egui::Label::new(
+                            typography::table_cell(primary)
+                        ).truncate()).on_hover_text(*primary);
+                    }
                 } else {
-                    typography::table_cell(primary)
-                });
+                    inner.add(egui::Label::new(if heading {
+                        typography::table_header(primary)
+                    } else {
+                        typography::table_cell(primary)
+                    }).truncate()).on_hover_text(*primary);
+                }
                 if !secondary.is_empty() {
-                    inner.label(typography::caption(secondary));
+                    inner.add(egui::Label::new(
+                        typography::caption(secondary)
+                    ).truncate()).on_hover_text(*secondary);
                 }
             }
         );
