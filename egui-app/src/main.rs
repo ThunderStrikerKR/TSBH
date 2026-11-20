@@ -1957,24 +1957,31 @@ impl BandoEgui {
             // and neighboring message pane keep their established tokens.
             ui.spacing_mut().item_spacing.y = 0.0;
             if self.source_editing || !self.raw_source.is_empty() {
-                // The approved React source pane reserves an 82pt dealer
-                // band below the title. Its geometry must be allocated BEFORE
-                // the editor, so dealer information cannot overlap the raw
-                // document or push the fixed source/message splitter.
+                // One allocated body rectangle owns the client card, source
+                // editor and manual-classification action. The former sequence
+                // of allocations mixed with scope_builder() could advance the
+                // parent cursor so the document border landed on the client
+                // card's bottom border. Position all three from ONE origin.
                 let available_body = components::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
-                let client_band_height = if !self.raw_source.trim().is_empty() {
-                    available_body.min(82.0)
+                let (body_rect, _) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), available_body),
+                    Sense::hover(),
+                );
+                let has_source = !self.raw_source.trim().is_empty();
+                // Equal visible 8pt clearances: body top -> client,
+                // client -> document, document -> action, action -> bottom.
+                // Short panes preserve these gaps and reduce editor height,
+                // never overlap adjacent cards or change the dock splitter.
+                let gap = theme::SPACE_8;
+                let client_card_height = if has_source {
+                    (available_body - 4.0 * gap - theme::ACTION_STANDARD_HEIGHT)
+                        .max(0.0).min(70.0)
                 } else { 0.0 };
-                if client_band_height > 0.0 {
-                    let (band_rect, _) = ui.allocate_exact_size(
-                        Vec2::new(ui.available_width(), client_band_height),
-                        Sense::hover(),
-                    );
-                    // Match the visible space above and below the dealer
-                    // card; avoid the former -4pt optical translation.
-                    let card_rect = band_rect.shrink2(
-                        egui::vec2(0.0, theme::PANEL_GAP)
+                if has_source {
+                    let card_rect = Rect::from_min_size(
+                        egui::pos2(body_rect.left(), body_rect.top() + gap),
+                        Vec2::new(body_rect.width(), client_card_height),
                     );
                     ui.painter().rect(
                         card_rect,
@@ -2022,26 +2029,25 @@ impl BandoEgui {
                         },
                     );
                 }
-                // The React source actions belong at the BOTTOM of the source
-                // pane, not inside the adjacent "확인할 내용" review scroll.
-                // Reserve their height before allocating the editor so the
-                // fixed source/message splitter cannot be displaced.
-                let has_source = !self.raw_source.trim().is_empty();
-                // Equal 8pt gap on BOTH sides of the bottom action.
-                let source_actions_height = if has_source {
-                    theme::ACTION_STANDARD_HEIGHT + 2.0 * theme::SPACE_8
-                } else { 0.0 };
-                let editor_height = (available_body - client_band_height
-                    - source_actions_height)
-                    .min(ui.available_height().max(0.0)).max(0.0);
+                let editor_top = if has_source {
+                    body_rect.top() + gap + client_card_height + gap
+                } else {
+                    body_rect.top()
+                };
+                let editor_bottom = if has_source {
+                    (body_rect.bottom() - 2.0 * gap - theme::ACTION_STANDARD_HEIGHT)
+                        .max(editor_top)
+                } else {
+                    body_rect.bottom()
+                };
+                let viewport = Rect::from_min_max(
+                    egui::pos2(body_rect.left(), editor_top),
+                    egui::pos2(body_rect.right(), editor_bottom),
+                );
+                let editor_height = viewport.height();
                 if editor_height > 0.0 {
-                    // Reserve the entire source canvas before rendering its
-                    // scrollable text. Short originals must not collapse this
-                    // middle zone and pull the manual-classification button up.
-                    let (viewport, _) = ui.allocate_exact_size(
-                        Vec2::new(ui.available_width(), editor_height),
-                        Sense::hover(),
-                    );
+                    // The document uses its own reserved rectangle; changing
+                    // client labels, recognized text or selection never moves it.
                     let clip = ui.clip_rect().intersect(viewport);
                     // The native recognition worker owns source/recipient
                     // associations. Never infer a position by text search.
@@ -2155,22 +2161,34 @@ impl BandoEgui {
                     }
                 }
                 if has_source {
-                    ui.add_space(theme::SPACE_8);
                     let ready = self.active_id.as_deref()
                         .and_then(|id| self.drafts.iter().find(|row| row.id == id))
                         .is_some_and(|row|
                             row.analysis_raw.as_deref()==Some(self.raw_source.as_str()) &&
                             row.analysis_evidence.is_some()
                         );
-                    ui.with_layout(Layout::right_to_left(Align::Center), |actions| {
-                        if theme::action(actions,"수동 분류",ButtonRole::Standard,
-                            ready && self.manual_workspace.is_none() &&
-                            self.client_change.is_none() && self.working_sync.is_none()
-                        ).clicked() {
-                            open_manual_workspace=true;
-                        }
-                    });
-                    ui.add_space(theme::SPACE_8);
+                    let actions_rect = Rect::from_min_size(
+                        egui::pos2(
+                            body_rect.left(),
+                            body_rect.bottom() - gap - theme::ACTION_STANDARD_HEIGHT,
+                        ),
+                        Vec2::new(body_rect.width(), theme::ACTION_STANDARD_HEIGHT),
+                    );
+                    ui.scope_builder(
+                        UiBuilder::new()
+                            .id_salt("source-manual-action-fixed-slot")
+                            .max_rect(actions_rect)
+                            .layout(Layout::right_to_left(Align::Center)),
+                        |actions| {
+                            actions.set_clip_rect(actions_rect);
+                            if theme::action(actions,"수동 분류",ButtonRole::Standard,
+                                ready && self.manual_workspace.is_none() &&
+                                self.client_change.is_none() && self.working_sync.is_none()
+                            ).clicked() {
+                                open_manual_workspace=true;
+                            }
+                        },
+                    );
                 }
             } else {
                 self.source_hover=None;
