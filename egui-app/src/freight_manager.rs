@@ -1177,7 +1177,7 @@ impl FreightManager {
                         let mut current=pending.get(id).cloned()
                             .unwrap_or_else(||committed.into());
                         let before_manual_edit=current.clone();
-                        let selector_rect=cells[4].shrink2(egui::vec2(6.0,0.0));
+                        let selector_rect=cells[4].shrink2(egui::vec2(4.0,0.0));
                         let selector_clip=selector_rect.intersect(table.clip_rect());
                         table.scope_builder(
                             egui::UiBuilder::new()
@@ -1190,8 +1190,10 @@ impl FreightManager {
                                 );
                                 child.set_width(selector_rect.width());
                                 child.add_enabled_ui(enabled,|control|{
+                                    control.set_width(selector_rect.width());
                                     egui::ComboBox::from_id_salt(("freight-row-group",id))
                                         .width(selector_rect.width())
+                                        .wrap_mode(egui::TextWrapMode::Truncate)
                                         .selected_text(if current.is_empty(){
                                             "그룹 선택"
                                         }else{group_name(groups,&current)})
@@ -1310,19 +1312,28 @@ impl FreightManager {
                                 }
                             }
                         );
-                        // Low-contrast separators visually define major data
-                        // groups without making a high-contrast chessboard.
-                        for index in [1,3,4,5] {
-                            let edge=cells[index].right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
+                        // Shared 1pt dividers are drawn at the exact midpoint
+                        // of the column gaps. No opacity multiplication:
+                        // 0.30 × DIVIDER was darker than the row background,
+                        // which made the separators effectively invisible.
+                        for index in 0..7 {
+                            let edge=cells[index].right()
+                                +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                             table.painter().line_segment(
-                                [egui::pos2(edge,row_rect.top()+theme::SPACE_8),
-                                 egui::pos2(edge,row_rect.bottom()-theme::SPACE_8)],
+                                [egui::pos2(edge,row_rect.top()),
+                                 egui::pos2(edge,row_rect.bottom())],
                                 egui::Stroke::new(
-                                    theme::SOFT_DIVIDER_WIDTH,
-                                    theme::DIVIDER.linear_multiply(0.30)
+                                    theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
                                 )
                             );
                         }
+                        table.painter().line_segment(
+                            [row_rect.left_bottom(),row_rect.right_bottom()],
+                            egui::Stroke::new(
+                                theme::SOFT_DIVIDER_WIDTH,
+                                theme::DIVIDER.linear_multiply(0.70)
+                            )
+                        );
                     }
                     if filtered.is_empty(){
                         table.label(typography::caption(
@@ -1349,15 +1360,14 @@ impl FreightManager {
                     egui::pos2(region.left(),region.center().y-galley.size().y/2.0),
                     galley,theme::SECONDARY
                 );
-                if [1,3,4,5].contains(&i) {
+                if i<7 {
                     let edge=header_cells[i].right()
                         +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                     header_painter.line_segment(
-                        [egui::pos2(edge,header_rect.top()+theme::SPACE_8),
-                         egui::pos2(edge,header_rect.bottom()-theme::SPACE_8)],
+                        [egui::pos2(edge,header_rect.top()),
+                         egui::pos2(edge,header_rect.bottom())],
                         egui::Stroke::new(
-                            theme::SOFT_DIVIDER_WIDTH,
-                            theme::DIVIDER.linear_multiply(0.45)
+                            theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
                         )
                     );
                 }
