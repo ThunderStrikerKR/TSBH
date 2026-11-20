@@ -3068,9 +3068,19 @@ impl BandoEgui {
                     if let Some(error) = &self.analysis_error {
                         ui.label(typography::status(error, theme::DANGER));
                     } else if let Some(analysis) = &self.analysis {
-                        let manually_selected = self.active_id.as_deref()
-                            .and_then(|id| self.drafts.iter().find(|row| row.id == id))
-                            .is_some_and(|row| row.client_selection.as_deref() == Some("MANUAL"));
+                        let selected=self.active_id.as_deref()
+                            .and_then(|id|self.drafts.iter().find(|row|row.id==id));
+                        let manually_selected=selected.is_some_and(|row|
+                            row.client_selection.as_deref()==Some("MANUAL"));
+                        // A Rust suggestion is not an applied dealer until
+                        // the exact native change/reprice result is accepted.
+                        let automatically_selected=selected.is_some_and(|row|
+                            row.client_selection.as_deref()==Some("AUTO") &&
+                            row.client_id.as_deref()==analysis.client_match.get("clientId")
+                                .and_then(serde_json::Value::as_str));
+                        let matching_pending=self.auto_client_change.as_ref()
+                            .is_some_and(|pending|
+                                self.active_id.as_deref()==Some(pending.order_id.as_str()));
                         if analysis.directory_count == 0 {
                             ui.label(typography::status(
                                 "거래처 명단 미연결 · 자동 매칭 확인 필요",
@@ -3087,19 +3097,26 @@ impl BandoEgui {
                                     theme::DANGER,
                                 ));
                             }
-                        } else if let Some(name) = &analysis.matched_client_name {
-                            ui.label(typography::body(
-                                &format!("거래처 자동 인식 · {name}")
-                            ));
+                        } else if automatically_selected {
+                            if let Some(name)=&analysis.matched_client_name {
+                                ui.label(typography::body(
+                                    &format!("거래처 자동 인식 · {name}")
+                                ));
+                            }
                         } else {
                             ui.label(typography::status(
-                                "거래처 확인 필요", theme::SELECTED_ORDER
+                                if matching_pending {"거래처 확인 중"}
+                                else {"거래처 확인 필요"},
+                                theme::SELECTED_ORDER,
                             ));
                         }
-                        if reception_service::text(&analysis.client_match, "source") == "CONFLICT" {
+                        let match_source=reception_service::text(
+                            &analysis.client_match,"source");
+                        if match_source=="CONFLICT" || match_source=="ERROR" {
                             ui.label(typography::status(
                                 reception_service::text(&analysis.client_match, "detail"),
-                                theme::DANGER,
+                                if match_source=="CONFLICT" {theme::DANGER}
+                                else {theme::SELECTED_ORDER},
                             ));
                         }
                         if !analysis.client_candidates.is_empty() {
