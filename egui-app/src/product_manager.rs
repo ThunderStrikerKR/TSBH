@@ -9,6 +9,7 @@ use crate::{
     components,
     gateway::BandoGateway,
     management_queries::{self, ManagementProductRows},
+    latest_job::LatestJob,
     theme, typography,
 };
 use eframe::egui::{self, Align, Context, Layout, Ui};
@@ -18,8 +19,6 @@ use std::{
     sync::{mpsc::{self, Receiver, TryRecvError}, Arc},
     time::{Duration, Instant},
 };
-
-type SearchReply = (u64, Result<ManagementProductRows, String>);
 
 fn field<'a>(row: &'a Value, key: &str) -> &'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
@@ -142,13 +141,16 @@ pub struct ProductManager {
     selected_variants:HashMap<String,String>,
     writing:Option<ProductWrite>,
     notice:Option<String>,
-    result:Option<Receiver<SearchReply>>,
-    generation:u64,
+    result:LatestJob<ManagementProductRows>,
     next_query:Option<Instant>,
     error:Option<String>,
 }
 
 impl ProductManager {
+    pub fn active_tab_name(&self)->&'static str{
+        ["상품 목록","카테고리 관리","모델군 관리","별칭 관리","브랜드 관리"]
+            .get(self.tab).copied().unwrap_or("상품 관리")
+    }
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
         let mut page=Self {
             gateway,catalog:None,products:Vec::new(),
@@ -164,7 +166,7 @@ impl ProductManager {
             price_mode:false,price_drafts:HashMap::new(),
             selected_variants:HashMap::new(),
             writing:None,notice:None,
-            result:None,generation:0,next_query:None,error:None,
+            result:LatestJob::default(),next_query:None,error:None,
         };
         page.reload(ctx);
         page
@@ -185,23 +187,17 @@ impl ProductManager {
         self.reload(ctx);
     }
     fn reload(&mut self,ctx:Context) {
-        self.generation=self.generation.wrapping_add(1);
-        let generation=self.generation;
         let gateway=Arc::clone(&self.gateway);
         let cached=self.catalog.clone();
         let query=self.query.clone();
         let category=self.category.clone();
         let brand=self.brand.clone();
         let missing=self.missing;
-        let (tx,rx)=mpsc::channel();
-        self.result=Some(rx);
         self.error=None;
-        std::thread::spawn(move||{
-            let value=management_queries::query_management_products(
+        self.result.submit(ctx,move||{
+            management_queries::query_management_products(
                 gateway.as_ref(),cached,&query,&category,&brand,missing,
-            );
-            let _=tx.send((generation,value));
-            ctx.request_repaint();
+            )
         });
     }
     fn has_pending_prices(&self)->bool{
@@ -244,6 +240,8 @@ impl ProductManager {
     }
     fn poll(&mut self,ctx:&Context) {
         if let Some(catalog)=self.model_groups.poll(ctx){
+            self.model_groups.set_catalog(&catalog,ctx);
+            self.aliases.set_catalog(&catalog,ctx);
             self.catalog=Some(catalog);
             self.reload(ctx.clone());
         }
@@ -286,6 +284,8 @@ impl ProductManager {
                         "upsert_brand"=>"브랜드 정보를 저장했습니다. 기존 연결 상품은 유지됩니다.",
                         _=>"상품 변경을 저장했습니다.",
                     }).into());
+                    self.model_groups.set_catalog(&catalog,ctx);
+                    self.aliases.set_catalog(&catalog,ctx);
                     self.catalog=Some(catalog);
                     self.reload(ctx.clone());
                 }
@@ -321,29 +321,20 @@ impl ProductManager {
                 ctx.request_repaint_after(Duration::from_millis(60));
             }
         }
-        let received=self.result.as_ref().map(|rx|rx.try_recv());
-        match received {
-            Some(Ok((generation,result)))=>{
-                if generation==self.generation {
-                    match result {
-                        Ok(result)=>{
-                            self.catalog=Some(result.catalog);
-                            self.products=result.products;
-                            self.error=None;
-                        }
-                        Err(e)=>self.error=Some(e),
-                    }
+        if let Some(result)=self.result.poll(){
+            match result{
+                Ok(result)=>{
+                    self.model_groups.set_catalog(&result.catalog,ctx);
+                    self.aliases.set_catalog(&result.catalog,ctx);
+                    self.catalog=Some(result.catalog);
+                    self.products=result.products;
+                    self.error=None;
                 }
-                self.result=None;
+                Err(e)=>self.error=Some(e),
             }
-            Some(Err(TryRecvError::Disconnected))=>{
-                self.result=None;
-                self.error=Some("Rust 상품 목록 조회가 중단되었습니다.".to_owned());
-            }
-            Some(Err(TryRecvError::Empty))=>{
-                ctx.request_repaint_after(Duration::from_millis(100));
-            }
-            None=>{}
+        }
+        if self.result.pending(){
+            ctx.request_repaint_after(Duration::from_millis(100));
         }
     }
     pub fn has_modal(&self)->bool {
@@ -658,7 +649,7 @@ impl ProductManager {
             if saving {
                 panel.label(typography::caption("상품 변경 저장 중…"));
             }
-            if self.result.is_some() {
+            if self.result.pending() {
                 panel.label(typography::caption("상품 가격표 조회 중…"));
             }
             // Use the complete pane width. Render exactly one row per
@@ -881,7 +872,7 @@ impl ProductManager {
                                 grid.end_row();
                             }
                         });
-                    if self.products.is_empty() && self.result.is_none()
+                    if self.products.is_empty() && !self.result.pending()
                         && self.error.is_none(){
                         table.label(typography::caption(
                             if self.query.is_empty() && self.category.is_empty()

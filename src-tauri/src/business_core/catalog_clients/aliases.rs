@@ -3,6 +3,7 @@
 use serde_json::{json,Value};
 use unicode_normalization::UnicodeNormalization;
 use regex::Regex;
+use std::sync::LazyLock;
 use super::{field,items};
 
 fn model_key(text:&str)->String{
@@ -14,7 +15,8 @@ fn model_key(text:&str)->String{
 fn model_names(product:&Value)->Vec<String>{
     let lead=field(product,"name").split('/').next().unwrap_or("").trim();
     if lead.is_empty(){return vec![]}
-    let no_brand=Regex::new(r"(?i)^BD[\s-]+").unwrap().replace(lead,"").to_string();
+    static PREFIX:LazyLock<Regex>=LazyLock::new(||Regex::new(r"(?i)^BD[\s-]+").unwrap());
+    let no_brand=PREFIX.replace(lead,"").to_string();
     if no_brand==lead{vec![lead.to_owned()]}else{vec![lead.to_owned(),no_brand]}
 }
 fn visible(product:&Value)->bool{
@@ -42,7 +44,9 @@ fn alias_problem(record:&Value,aliases:&[Value],products:&[Value])->Vec<String>{
             out.push("다른 등록 상품명 또는 모델 표기와 충돌하는 별칭입니다.".to_owned());
         }
     }
-    let suffix=Regex::new(r"^(\d{3}(?:-\d+)?)(BK|BR|B|C|W|G)$").unwrap();
+    static SUFFIX:LazyLock<Regex>=LazyLock::new(||
+        Regex::new(r"^(\d{3}(?:-\d+)?)(BK|BR|B|C|W|G)$").unwrap());
+    let suffix=&*SUFFIX;
     if let Some(captures)=suffix.captures(&key){
         let base=captures.get(1).unwrap().as_str();
         if !products.iter().any(|p|field(p,"deletedAt").is_empty()&&

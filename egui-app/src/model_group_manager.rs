@@ -2,6 +2,7 @@
 //! Saved data stays in settings.colorGuidanceGroups, never product/order rows.
 //! Rust catalog_clients::model_groups validates; Tauri settings_patch CAS saves.
 use crate::{catalog_query_bridge,components, gateway::BandoGateway, theme, typography};
+use crate::latest_job::LatestJob;
 use eframe::egui::{self, Align, Context, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use serde_json::{json, Value};
 use std::{
@@ -36,6 +37,9 @@ pub struct ModelGroupManager {
     confirm_delete:bool,
     leave_tab:Option<usize>,
     global_approved:bool,
+    eligibility_snapshot:Option<Arc<Value>>,
+    eligibility:LatestJob<HashSet<String>>,
+    eligible:Arc<HashSet<String>>,
 }
 impl Default for ModelGroupManager{
     fn default()->Self{
@@ -43,10 +47,22 @@ impl Default for ModelGroupManager{
             selected:String::new(),new_name:String::new(),
             query:String::new(),search:String::new(),status:String::new(),
             write:None,confirm:None,after_save:None,confirm_delete:false,
-            leave_tab:None,global_approved:false}
+            leave_tab:None,global_approved:false,
+            eligibility_snapshot:None,eligibility:LatestJob::default(),eligible:Arc::default()}
     }
 }
 impl ModelGroupManager {
+    pub fn set_catalog(&mut self,catalog:&Value,ctx:&Context){
+        let snapshot=json!({"products":catalog["products"]});
+        if self.eligibility_snapshot.as_deref()==Some(&snapshot){return;}
+        let snapshot=Arc::new(snapshot);
+        self.eligibility_snapshot=Some(Arc::clone(&snapshot));
+        self.eligible=Arc::default();
+        self.eligibility.submit(ctx.clone(),move||{
+            let ids=catalog_query_bridge::eligible_model_group_products(&snapshot)?;
+            Ok(items(&ids).iter().filter_map(Value::as_str).map(str::to_owned).collect())
+        });
+    }
     pub fn sync(&mut self,catalog:&Value){
         let latest=original_groups(catalog);
         if !self.initialized || (!self.dirty()&&self.new_name.trim().is_empty()
@@ -207,10 +223,14 @@ impl ModelGroupManager {
         self.sync(catalog);
         let writable=gateway.model_group_write_enabled();
         let busy=self.busy();
-        let eligible_result=catalog_query_bridge::eligible_model_group_products(catalog);
-        let eligible:HashSet<String>=eligible_result.as_ref().ok()
-            .and_then(Value::as_array).into_iter().flatten()
-            .filter_map(Value::as_str).map(str::to_owned).collect();
+        if let Some(result)=self.eligibility.poll(){
+            match result{
+                Ok(ids)=>self.eligible=Arc::new(ids),
+                Err(error)=>self.status=error,
+            }
+        }
+        let eligible=Arc::clone(&self.eligible);
+        let eligibility_pending=self.eligibility.pending();
         let groups=self.draft.as_object().map(|m|
             m.iter().map(|(id,g)|(id.clone(),g.clone())).collect::<Vec<_>>())
             .unwrap_or_default();
@@ -313,7 +333,7 @@ impl ModelGroupManager {
                                             .filter(|p|format!("{} {}",text(p,"name"),
                                                 text(p,"subtitle")).to_lowercase().contains(&query))
                                             .take(30).cloned().collect::<Vec<_>>();
-                                        if choices.is_empty(){
+                                        if choices.is_empty()&&!eligibility_pending{
                                             body.label(typography::body("일치하는 상품이 없습니다."));
                                         }
                                         for p in choices{
@@ -496,5 +516,36 @@ impl ModelGroupManager {
                 self.save(gateway,ctx.clone());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod responsiveness_tests{
+    use super::*;
+    fn finish(manager:&mut ModelGroupManager){
+        let deadline=std::time::Instant::now()+Duration::from_secs(5);
+        while manager.eligibility.pending(){
+            if let Some(result)=manager.eligibility.poll(){
+                manager.eligible=Arc::new(result.unwrap());
+            }
+            assert!(std::time::Instant::now()<deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+    #[test]
+    fn eligibility_tracks_product_edits_and_avoids_repainting_queries(){
+        let ctx=Context::default();
+        let mut manager=ModelGroupManager::default();
+        let mut catalog=json!({"products":[{"id":"p","active":true,
+            "catalog":"BANDOSTAND","variants":[{"source":"OFFICIAL"}]}]});
+        manager.set_catalog(&catalog,&ctx);finish(&mut manager);
+        assert!(manager.eligible.contains("p"));
+        let original=Arc::clone(&manager.eligible);
+        for _ in 0..100{manager.set_catalog(&catalog,&ctx);}
+        assert!(!manager.eligibility.pending());
+        assert!(Arc::ptr_eq(&original,&manager.eligible));
+        catalog["products"][0]["deletedAt"]=json!("2026-11-20");
+        manager.set_catalog(&catalog,&ctx);finish(&mut manager);
+        assert!(!manager.eligible.contains("p"));
     }
 }

@@ -5,6 +5,13 @@ use crate::{catalog_query_bridge,category_manager::ROOTS,components,theme,typogr
 use eframe::egui::{self,Align,Context,Layout,Rect,Ui};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
+use std::sync::Arc;
+use crate::latest_job::LatestJob;
+
+type Warnings=HashMap<String,Vec<String>>;
+#[derive(Clone,PartialEq,Eq)]
+struct PickerKey{query:String,category:String,brand:String}
+struct PickerResult{brands:HashSet<String>,data:Value}
 
 fn field<'a>(v:&'a Value,k:&str)->&'a str{
     v.get(k).and_then(Value::as_str).unwrap_or("")
@@ -91,8 +98,72 @@ pub struct AliasManager{
     next_tab:Option<usize>,
     global_approved:bool,
     error:Option<String>,
+    catalog_snapshot:Option<Arc<Value>>,
+    diagnostics:LatestJob<Warnings>,
+    warnings:Arc<Warnings>,
+    picker_catalog:Option<Arc<Value>>,
+    picker_key:Option<PickerKey>,
+    picker:LatestJob<PickerResult>,
+    picker_result:Option<Arc<PickerResult>>,
 }
 impl AliasManager {
+    /// Called only when ProductManager accepts a catalog snapshot, never on paint.
+    pub fn set_catalog(&mut self,catalog:&Value,ctx:&Context){
+        if self.picker_catalog.as_deref()!=Some(catalog){
+            self.picker_catalog=Some(Arc::new(catalog.clone()));
+            self.picker_key=None;
+            self.picker_result=None;
+            self.picker.invalidate();
+        }
+        let snapshot=json!({"products":catalog["products"],"aliases":catalog["aliases"]});
+        if self.catalog_snapshot.as_deref()==Some(&snapshot){return;}
+        let snapshot=Arc::new(snapshot);
+        self.catalog_snapshot=Some(Arc::clone(&snapshot));
+        self.warnings=Arc::default();
+        self.diagnostics.submit(ctx.clone(),move||{
+            let problems=catalog_query_bridge::alias_problems(&snapshot)?;
+            Ok(rows(&problems).iter().map(|row|{
+                (field(row,"id").to_owned(),rows(&row["problems"]).iter()
+                    .filter_map(Value::as_str).map(str::to_owned).collect())
+            }).collect())
+        });
+    }
+    fn poll_diagnostics(&mut self){
+        if let Some(result)=self.diagnostics.poll(){
+            match result{
+                Ok(warnings)=>self.warnings=Arc::new(warnings),
+                Err(error)=>self.error=Some(error),
+            }
+        }
+    }
+    fn request_picker(&mut self,ctx:&Context){
+        let key=PickerKey{query:self.query.clone(),category:self.category.clone(),
+            brand:self.brand.clone()};
+        if self.picker_key.as_ref()==Some(&key){return;}
+        let Some(catalog)=self.picker_catalog.clone()else{return};
+        self.picker_key=Some(key.clone());
+        self.picker_result=None;
+        self.picker.submit(ctx.clone(),move||{
+            let classified=catalog_query_bridge::classified_products(
+                &json!({"state":&*catalog,"category":key.category}))?;
+            let brands=rows(&classified).iter().filter_map(Value::as_str)
+                .filter_map(|id|product(&catalog,id))
+                .map(|p|field(p,"brandId").to_owned()).collect();
+            let data=catalog_query_bridge::search_products(&json!({
+                "state":&*catalog,"query":key.query,"major":key.category,
+                "brand":key.brand,"excludeDemo":true
+            }))?;
+            Ok(PickerResult{brands,data})
+        });
+    }
+    fn poll_picker(&mut self){
+        if let Some(result)=self.picker.poll(){
+            match result{
+                Ok(result)=>self.picker_result=Some(Arc::new(result)),
+                Err(error)=>self.error=Some(error),
+            }
+        }
+    }
     fn dirty(&self)->bool{self.form!=self.original}
     pub fn has_overlay(&self)->bool{self.product_search||self.pending.is_some()}
     pub fn global_leave_in_progress(&self)->bool{
@@ -103,6 +174,9 @@ impl AliasManager {
     }
     pub fn take_tab(&mut self)->Option<usize>{self.next_tab.take()}
     pub fn reset_navigation(&mut self){
+        self.picker.invalidate();
+        self.picker_key=None;
+        self.picker_result=None;
         self.product_search=false;
         self.pending=None;
         self.after_save=None;
@@ -172,14 +246,8 @@ impl AliasManager {
         ->Option<Value>{
         let mut save=false;
         let mut choose=None;
-        let problems=catalog_query_bridge::alias_problems(catalog);
-        let warnings=problems.as_ref().ok().map(|list|{
-            rows(list).iter().map(|row|{
-                (field(row,"id").to_owned(),
-                    rows(&row["problems"]).iter().filter_map(Value::as_str)
-                    .map(str::to_owned).collect::<Vec<_>>())
-            }).collect::<HashMap<String,Vec<String>>>()
-        }).unwrap_or_default();
+        self.poll_diagnostics();
+        let warnings=Arc::clone(&self.warnings);
         theme::section_frame().show(ui,|card|{
             card.label(typography::section_heading("공통 / 거래처 별칭 관리"));
             card.add_space(theme::SPACE_8);
@@ -294,6 +362,7 @@ impl AliasManager {
     }
     pub fn show_dialogs(&mut self,ctx:&Context,work_area:Rect,catalog:&Value,
         editable:bool,busy:bool)->Option<Value>{
+        self.poll_picker();
         let mut save=None;
         if self.product_search{
             let mut close=false;
@@ -349,15 +418,10 @@ impl AliasManager {
                                 }else{value};
                             }
                         }
-                        let classified=catalog_query_bridge::classified_products(
-                            &json!({"state":catalog,"category":self.category})
-                        );
-                        let available=classified.as_ref().ok()
-                            .map(|ids|rows(ids).iter().filter_map(Value::as_str)
-                                .filter_map(|id|product(catalog,id))
-                                .map(|p|field(p,"brandId"))
-                                .collect::<HashSet<_>>())
-                            .unwrap_or_default();
+                        let available=self.picker_result.as_ref()
+                            .filter(|_|self.picker_key.as_ref()
+                                .is_some_and(|key|key.category==self.category))
+                            .map(|result|result.brands.clone()).unwrap_or_default();
                         let selected_brand=self.brand.clone();
                         let brand=rows(&catalog["brands"]).iter()
                             .find(|b|field(b,"id")==selected_brand)
@@ -381,18 +445,16 @@ impl AliasManager {
                             self.category.clear();
                         }
                     });
-                    let found=catalog_query_bridge::search_products(&json!({
-                        "state":catalog,"query":self.query,
-                        "major":self.category,"brand":self.brand,
-                        "excludeDemo":true
-                    }));
+                    self.request_picker(ctx);
+                    let found=self.picker_result.clone();
                     components::soft_divider(modal);
                     egui::ScrollArea::vertical()
                         .id_salt("alias-product-results")
                         .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
                         .show(modal,|results|{
                             match &found{
-                                Ok(data)=>{
+                                Some(result)=>{
+                                    let data=&result.data;
                                     let detail=rows(&data["detailLinkIds"]).iter()
                                         .filter_map(Value::as_str).collect::<HashSet<_>>();
                                     let ids=rows(&data["ids"]).iter()
@@ -426,7 +488,7 @@ impl AliasManager {
                                         }
                                     }
                                 }
-Err(_message)=>{}
+                                None=>{}
                             }
                         });
                 });
@@ -473,6 +535,65 @@ Err(_message)=>{}
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn finish(manager:&mut AliasManager){
+        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
+        while manager.diagnostics.pending(){
+            manager.poll_diagnostics();
+            assert!(std::time::Instant::now()<deadline,"alias diagnostics did not finish");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+    #[test]
+    fn product_picker_uses_latest_filter_and_reuses_completed_results(){
+        let ctx=Context::default();
+        let mut manager=AliasManager::default();
+        let catalog=json!({"products":[
+            {"id":"p1","name":"BD 709","catalog":"BANDOSTAND","active":true,
+             "variants":[{"id":"v1","source":"OFFICIAL"}]},
+            {"id":"p2","name":"BD 708","catalog":"BANDOSTAND","active":true,
+             "variants":[{"id":"v2","source":"OFFICIAL"}]}],
+             "aliases":[],"categories":[],"brands":[]});
+        manager.set_catalog(&catalog,&ctx);
+        manager.query="709".into();manager.request_picker(&ctx);
+        manager.query="708".into();manager.request_picker(&ctx);
+        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
+        while manager.picker.pending(){
+            manager.poll_picker();
+            assert!(std::time::Instant::now()<deadline);
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let result=manager.picker_result.as_ref().unwrap().clone();
+        assert_eq!(result.data["ids"],json!(["p2"]));
+        for _ in 0..100{manager.request_picker(&ctx);}
+        assert!(!manager.picker.pending());
+        assert!(Arc::ptr_eq(&result,manager.picker_result.as_ref().unwrap()));
+        manager.reset_navigation();
+        assert!(manager.picker_result.is_none());
+    }
+    #[test]
+    fn diagnostic_cache_reuses_unchanged_data_and_invalidates_without_revision(){
+        let ctx=Context::default();
+        let mut manager=AliasManager::default();
+        let mut catalog=json!({"products":[
+            {"id":"p1","name":"BD 709"},{"id":"p2","name":"BD 708"}],
+            "aliases":[{"id":"a1","text":"special","productId":"p1","clientId":null}]});
+        manager.set_catalog(&catalog,&ctx);
+        finish(&mut manager);
+        assert!(manager.warnings["a1"].is_empty());
+        let original=Arc::clone(&manager.warnings);
+        for _ in 0..100{manager.set_catalog(&catalog,&ctx);}
+        assert!(!manager.diagnostics.pending());
+        assert!(Arc::ptr_eq(&original,&manager.warnings));
+        // Same IDs and no revision: a changed product name must still recheck.
+        catalog["products"][1]["name"]=json!("special");
+        manager.set_catalog(&catalog,&ctx);
+        finish(&mut manager);
+        assert!(!manager.warnings["a1"].is_empty());
+        catalog["aliases"][0]["text"]=json!("unique");
+        manager.set_catalog(&catalog,&ctx);
+        finish(&mut manager);
+        assert!(manager.warnings["a1"].is_empty());
+    }
     #[test]
     fn category_filter_virtual_roots_are_shared_and_read_only() {
         let original=json!({"categories":[]});

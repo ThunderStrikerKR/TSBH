@@ -19,6 +19,7 @@ mod client_master;
 mod client_manager;
 mod category_manager;
 mod alias_manager;
+mod latest_job;
 mod brand_manager;
 mod model_group_manager;
 mod product_manager;
@@ -3662,6 +3663,7 @@ impl eframe::App for BandoEgui {
         self.kakao_dock.disconnect();
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let frame_started=Instant::now();
         if let Some(page)=self.product_pending_page{
             let approved=self.product_manager.as_mut()
                 .is_some_and(|manager|manager.take_category_global_leave());
@@ -3781,6 +3783,16 @@ impl eframe::App for BandoEgui {
             }
         }
         self.frameless_resize(ctx);
+        // Developer console only; never expose performance diagnostics as
+        // product notifications or include any order/customer data.
+        if cfg!(debug_assertions) && frame_started.elapsed()>Duration::from_millis(100){
+            let screen=if self.page==Page::Products{
+                self.product_manager.as_ref().map(|p|p.active_tab_name())
+                    .unwrap_or(self.page.label())
+            }else{self.page.label()};
+            eprintln!("[BANDO HUB] slow frame: screen={screen} elapsed_ms={}",
+                frame_started.elapsed().as_millis());
+        }
     }
 }
 
