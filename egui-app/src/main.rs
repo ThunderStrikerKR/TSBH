@@ -17,6 +17,7 @@ mod clipboard_intake;
 mod client_directory;
 mod client_master;
 mod client_manager;
+mod automatic_message_manager;
 mod category_manager;
 mod alias_manager;
 mod latest_job;
@@ -221,6 +222,7 @@ struct BandoEgui {
     freight_pending_page: Option<Page>,
     freight_pending_save: bool,
     product_pending_page: Option<Page>,
+    client_pending_page: Option<Page>,
     settings_pending_page: Option<Page>,
     settings_pending_save: bool,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
@@ -291,6 +293,7 @@ impl Default for BandoEgui {
             freight_pending_page: None,
             freight_pending_save: false,
             product_pending_page: None,
+            client_pending_page: None,
             settings_pending_page: None,
             settings_pending_save: false,
             manual_workspace: None,
@@ -1717,9 +1720,17 @@ impl BandoEgui {
                                         }
                                         allowed
                                     }else{true};
-                                // A client editor is modal: navigation cannot
-                                // dispose of an unsaved client draft.
-                                if product_can_leave &&
+                                // A client editor blocks navigation; a dirty
+                                // automatic-message draft opens its existing
+                                // save/discard guard instead of vanishing.
+                                let client_can_leave=if product_can_leave &&
+                                    self.page==Page::Clients && page!=Page::Clients {
+                                    let allowed=self.client_manager.as_mut()
+                                        .is_none_or(|manager|manager.request_global_leave());
+                                    if !allowed{self.client_pending_page=Some(page);}
+                                    allowed
+                                }else{true};
+                                if product_can_leave && client_can_leave &&
                                     !self.client_manager.as_ref()
                                     .is_some_and(|manager|manager.has_modal()) &&
                                     !self.freight_manager.as_ref()
@@ -3716,6 +3727,18 @@ impl eframe::App for BandoEgui {
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_started=Instant::now();
+        if let Some(page)=self.client_pending_page{
+            let approved=self.client_manager.as_mut()
+                .is_some_and(|manager|manager.take_global_approved());
+            let waiting=self.client_manager.as_ref()
+                .is_some_and(|manager|manager.global_leave_in_progress());
+            if approved{
+                self.page=page;
+                self.client_pending_page=None;
+            }else if !waiting{
+                self.client_pending_page=None;
+            }
+        }
         if let Some(page)=self.product_pending_page{
             let approved=self.product_manager.as_mut()
                 .is_some_and(|manager|manager.take_category_global_leave());
@@ -3826,7 +3849,11 @@ impl eframe::App for BandoEgui {
             }
         } else if self.page==Page::Clients {
             if let Some(manager)=self.client_manager.as_mut() {
-                if manager.has_modal() {
+                if manager.has_message_confirmation(){
+                    manager.show_message_confirmation(
+                        ctx,work_area,Arc::clone(&self.gateway)
+                    );
+                }else if manager.has_modal(){
                     components::modal_backdrop(
                         ctx,"client-manager-modal-backdrop",false
                     );
