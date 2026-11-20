@@ -480,36 +480,6 @@ impl CategoryManager {
             ui,&summary,theme::MUTED
         );
         let summary_x=rect.right()-theme::SPACE_12-summary_galley.size().x;
-        let icon_x=rect.left()+theme::SPACE_12
-            +theme::CATALOG_TREE_INDENT*depth as f32;
-        let icon_rect=egui::Rect::from_min_size(
-            egui::pos2(icon_x,rect.center().y-theme::SPACE_8),
-            Vec2::splat(theme::SPACE_16)
-        );
-        if !branches.is_empty(){
-            let center=icon_rect.center();
-            let stroke=egui::Stroke::new(1.5,theme::SECONDARY);
-            let arm=theme::SPACE_4;
-            if open{
-                ui.painter().line_segment([
-                    egui::pos2(center.x-arm,center.y-arm/2.0),
-                    egui::pos2(center.x,center.y+arm/2.0)
-                ],stroke);
-                ui.painter().line_segment([
-                    egui::pos2(center.x,center.y+arm/2.0),
-                    egui::pos2(center.x+arm,center.y-arm/2.0)
-                ],stroke);
-            }else{
-                ui.painter().line_segment([
-                    egui::pos2(center.x-arm/2.0,center.y-arm),
-                    egui::pos2(center.x+arm/2.0,center.y)
-                ],stroke);
-                ui.painter().line_segment([
-                    egui::pos2(center.x+arm/2.0,center.y),
-                    egui::pos2(center.x-arm/2.0,center.y+arm)
-                ],stroke);
-            }
-        }
         let name_x=folder_right+theme::SPACE_8;
         let name_right=(summary_x-theme::SPACE_24).max(name_x);
         let name_width=(name_right-name_x).max(0.0);
