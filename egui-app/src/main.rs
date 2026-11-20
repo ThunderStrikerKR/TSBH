@@ -2074,6 +2074,12 @@ impl BandoEgui {
             self.clipboard_monitor.kind().has_intake() && !self.clipboard_busy;
         let ocr_processing = self.ocr_processing;
         let cancel_ocr = Arc::clone(&self.clipboard_cancel);
+        let inbox_path = self.inbox_folder_path.clone();
+        let inbox_loaded = self.inbox_folder_loaded;
+        let inbox_load_error = self.inbox_folder_error.clone();
+        let inbox_open_error = self.inbox_folder_open_error.clone();
+        let mut inbox_open_request: Option<String> = None;
+        let mut inbox_copy_request: Option<String> = None;
         Self::section_with_header(ui, "발주 원문", height, |ui| {
             if theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, true).clicked() {
                 begin_new_order = true;
@@ -2335,8 +2341,27 @@ impl BandoEgui {
                     } else { 0.0 };
                 let manual_group_height = typography::SUBSECTION_LINE_HEIGHT
                     + theme::ACTION_EMPHASIZED_HEIGHT + theme::SPACE_8;
+                // The configured path and its actions take a 34pt row, while
+                // the unconfigured explanation remains one 18pt caption.
+                // Count the actual content height before distributing the
+                // four balanced spaces among the three intake groups.
+                let folder_inline = ui.available_width()
+                    >= theme::INBOX_FOLDER_INLINE_MIN_WIDTH;
+                let folder_body_height = if inbox_path.is_some() {
+                    if folder_inline {
+                        theme::ACTION_STANDARD_HEIGHT
+                    } else {
+                        typography::METADATA_LINE_HEIGHT + theme::SPACE_8
+                            + theme::ACTION_STANDARD_HEIGHT
+                    }
+                } else {
+                    typography::METADATA_LINE_HEIGHT
+                };
                 let folder_group_height = typography::SUBSECTION_LINE_HEIGHT
-                    + typography::METADATA_LINE_HEIGHT + theme::SPACE_8;
+                    + folder_body_height + theme::SPACE_8
+                    + if inbox_open_error.is_some() {
+                        theme::SPACE_8 + typography::METADATA_LINE_HEIGHT
+                    } else { 0.0 };
                 let dividers_height = 2.0 * theme::SOFT_DIVIDER_WIDTH;
                 let balanced_gap = ((intake_height - clipboard_group_height
                     - manual_group_height - folder_group_height - dividers_height)
@@ -2397,13 +2422,90 @@ impl BandoEgui {
                         intake.add_space(balanced_gap / 2.0);
                         intake.label(typography::subsection_heading("폴더 자동 인식"));
                         intake.add_space(theme::SPACE_8);
-                        intake.label(typography::caption(
-                            "설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."
-                        ));
+                        if let Some(path) = inbox_path.as_deref() {
+                            // The saved directory is real app state, not a
+                            // placeholder or a Settings unsaved draft.
+                            if folder_inline {
+                                intake.horizontal(|row| {
+                                    row.spacing_mut().item_spacing.x = theme::SPACE_8;
+                                    let path_width = (row.available_width()
+                                        - theme::INBOX_FOLDER_BUTTONS_RESERVED).max(40.0);
+                                    row.add_sized(
+                                        Vec2::new(path_width, theme::ACTION_STANDARD_HEIGHT),
+                                        egui::Label::new(typography::caption(path))
+                                            .truncate().halign(Align::Min),
+                                    ).on_hover_text(path);
+                                    if theme::action(row, "폴더 열기",
+                                        ButtonRole::Standard, true).clicked() {
+                                        inbox_open_request = Some(path.to_owned());
+                                    }
+                                    if theme::action(row, "경로 복사",
+                                        ButtonRole::Standard, true).clicked() {
+                                        inbox_copy_request = Some(path.to_owned());
+                                    }
+                                });
+                            } else {
+                                intake.add(
+                                    egui::Label::new(typography::caption(path))
+                                        .truncate().halign(Align::Min)
+                                ).on_hover_text(path);
+                                intake.add_space(theme::SPACE_8);
+                                intake.horizontal(|buttons| {
+                                    buttons.spacing_mut().item_spacing.x = theme::SPACE_8;
+                                    if theme::action(buttons, "폴더 열기",
+                                        ButtonRole::Standard, true).clicked() {
+                                        inbox_open_request = Some(path.to_owned());
+                                    }
+                                    if theme::action(buttons, "경로 복사",
+                                        ButtonRole::Standard, true).clicked() {
+                                        inbox_copy_request = Some(path.to_owned());
+                                    }
+                                });
+                            }
+                        } else if let Some(error) = inbox_load_error.as_deref() {
+                            intake.label(typography::status(error, theme::DANGER));
+                        } else if !inbox_loaded {
+                            intake.label(typography::caption(
+                                "저장된 수신 폴더 설정을 확인하고 있습니다."
+                            ));
+                        } else {
+                            intake.label(typography::caption(
+                                "설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."
+                            ));
+                        }
+                        if let Some(error) = inbox_open_error.as_deref() {
+                            intake.add_space(theme::SPACE_8);
+                            intake.label(typography::status(error, theme::DANGER));
+                        }
                         intake.add_space(balanced_gap);
                     });
             }
         });
+        // Side effects belong after section rendering, never to the stored
+        // settings. A nonexistent folder stays configured but reports why
+        // Explorer could not open it. Copy always uses the full saved path.
+        if let Some(path) = inbox_copy_request {
+            ui.ctx().copy_text(path);
+            self.inbox_folder_open_error = None;
+        }
+        if let Some(path) = inbox_open_request {
+            if !std::path::Path::new(&path).is_dir() {
+                self.inbox_folder_open_error =
+                    Some("지정된 발주 이미지 수신 폴더를 찾을 수 없습니다.".into());
+            } else {
+                #[cfg(target_os = "windows")]
+                {
+                    self.inbox_folder_open_error =
+                        std::process::Command::new("explorer").arg(&path).spawn()
+                            .err().map(|_| "발주 이미지 수신 폴더를 열 수 없습니다.".into());
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    self.inbox_folder_open_error =
+                        Some("폴더 열기는 Windows 환경에서 사용할 수 있습니다.".into());
+                }
+            }
+        }
         if begin_new_order {
             self.new_reception(ui.ctx());
         }
