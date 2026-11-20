@@ -246,6 +246,15 @@ fn paint_caption(ui:&Ui,rect:Rect,value:&str){
             rect.center().y-galley.size().y/2.0),galley,theme::MUTED
     );
 }
+/// Details stay inside the same seven-column grid rather than adding
+/// arbitrary indentation. The category occupies the client column and the
+/// full detail spans all remaining columns (no action button on detail rows).
+fn paint_detail(ui:&Ui,rect:Rect,widths:&[f32;7],category:&str,description:&str){
+    let cols=cells(rect.min,widths,rect.height());
+    paint_text(ui,cols[1],category,true,false);
+    paint_text(ui,Rect::from_min_max(cols[2].left_top(),rect.right_bottom()),
+        description,false,false);
+}
 fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
     expanded:&BTreeSet<String>,widths:&[f32;7],pending_toggle:&mut Option<String>){
     let area=rect.intersect(ui.clip_rect());
@@ -348,9 +357,9 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
         },
         HistoryLine::Recipient(_,recipient_index)=>{
             let recipient=&row["recipients"][recipient_index];
-            let caption=format!("  {}  /  배송 주소: {}",
+            let caption=format!("수취인 {} / 배송 주소 {}",
                 field(recipient,"name"),field(recipient,"address"));
-            paint_text(ui,rect,&caption,true,false);
+            paint_detail(ui,rect,widths,"수취인",&caption);
             ui.interact(area,ui.make_persistent_id(("history-recipient",id,recipient_index)),
                 Sense::hover()).on_hover_text(caption);
         },
@@ -361,18 +370,18 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 field(reference,"recipientId")==field(recipient,"id")
                 && field(reference,"itemId")==field(item,"id"))
                 .map(|ref_row|&ref_row["link"]);
-            let label=format!("    주문 당시: {} × {}{}",
+            let label=format!("{} × {}{}",
                 field(item,"name"),
                 item["quantity"].as_i64().map(|n|n.to_string())
                     .unwrap_or_else(||"수량 확인".into()),
                 match linked {
                     Some(link) if field(link,"via")=="HISTORICAL"=>
-                        format!("  /  현재 연결 상품: {}",field(link,"name")),
+                        format!(" / 현재 연결 상품 {}",field(link,"name")),
                     Some(Value::Null)|None if !field(item,"productId").is_empty()=>
-                        "  /  상품 연결 확인 필요".to_owned(),
+                        " / 상품 연결 확인 필요".to_owned(),
                     _=>String::new(),
                 });
-            paint_text(ui,rect,&label,false,false);
+            paint_detail(ui,rect,widths,"상품",&label);
             ui.interact(area,ui.make_persistent_id(("history-item",id,recipient_index,item_index)),
                 Sense::hover()).on_hover_text(label);
         },
@@ -384,18 +393,18 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let actual=shipment["actualFreight"].as_object().into_iter().flatten()
                 .filter_map(|(_,v)|v.as_i64())
                 .map(components::display_won).collect::<Vec<_>>().join(" / ");
-            let label=format!("    송장 {}  /  실제 운임 {}",
-                if tracking.is_empty(){"확인 필요"}else{&tracking},
-                if actual.is_empty(){"확인 필요"}else{&actual});
-            paint_text(ui,rect,&label,false,false);
+            let label=format!("실제 운임 {} / 운송장 {}",
+                if actual.is_empty(){"확인 필요"}else{&actual},
+                if tracking.is_empty(){"확인 필요"}else{&tracking});
+            paint_detail(ui,rect,widths,"운임 / 송장",&label);
             ui.interact(area,ui.make_persistent_id(("history-shipment",id,shipment_index)),
                 Sense::hover()).on_hover_text(label);
         },
         HistoryLine::Billing(_)=>{
             let billing=&row["billing"];
-            let label=format!("  상품대금 {}  /  고객 청구 배송비 {}  /  부가세 {}",
+            let label=format!("상품대금 {} / 고객 청구 배송비 {} / 부가세 {}",
                 won(&billing["subtotal"]),won(&billing["shipping"]),won(&billing["vat"]));
-            paint_text(ui,rect,&label,true,false);
+            paint_detail(ui,rect,widths,"청구 내역",&label);
             ui.interact(area,ui.make_persistent_id(("history-billing",id)),
                 Sense::hover()).on_hover_text(label);
         },
@@ -873,6 +882,7 @@ impl OrderHistoryManager {
                                     draw_line(row_ui,row_rect,line,snapshot,
                                         &self.expanded,&widths,&mut pending_toggle);
                                 }
+                                paint_column_dividers(row_ui,row_rect,&widths);
                             });
                     }
                     // Put the empty message inside the scrollable table,
@@ -886,6 +896,9 @@ impl OrderHistoryManager {
             let header_cells=cells(egui::pos2(left,head_rect.top()),&widths,HEADER_HEIGHT);
             let painter=section.painter().with_clip_rect(head_rect);
             painter.rect_filled(head_rect,0.0,theme::RAISED);
+            // Freight assignment: solid 1pt separator at every
+            // intermediate column boundary, in the 8pt column gap.
+            paint_column_dividers(section,head_rect,&widths);
             // Freight title text centers in the 34pt line box ABOVE the
             // last 2pt filled rule; the table below begins without a gap.
             let header_outline_height=2.0_f32;
