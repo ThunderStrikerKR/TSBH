@@ -307,13 +307,26 @@ fn shipment_panel(ui:&mut Ui,order:&Value,shipments:&[&Value]){
     }
 }
 struct AuditEntry {at:String,title:String,detail:String}
+fn audit_value(value:&Value)->String{
+    let full=match value {
+        Value::String(text)=>text.clone(),
+        Value::Null=>String::new(),
+        other=>other.to_string()
+    };
+    let max=100usize;
+    let mut short=full.chars().take(max).collect::<String>();
+    if full.chars().count()>max{short.push('…');}
+    short
+}
 fn change_entries(order:&Value,state:&Value,shipment_ids:&HashSet<&str>)->Vec<AuditEntry>{
     let mut output=Vec::new();
     for change in rows(&order["rawHistory"]){
         output.push(AuditEntry{
             at:field(change,"at").to_owned(),
             title:"발주 원문 변경".into(),
-            detail:field(change,"actor").to_owned()
+            detail:format!("담당자 {} · 변경 전 원문: {}",
+                display_or(field(change,"actor"),"미확인"),
+                audit_value(&change["raw"]))
         });
     }
     for change in rows(&order["rawCorrections"]){
@@ -335,11 +348,26 @@ fn change_entries(order:&Value,state:&Value,shipment_ids:&HashSet<&str>)->Vec<Au
         if !rows(&event["shipmentIds"]).iter().any(|sid|
             sid.as_str().is_some_and(|id|shipment_ids.contains(id))
         ){continue;}
+        let before=event.get("before").filter(|v|!v.is_null());
+        let after=event.get("after").filter(|v|!v.is_null());
+        let difference=match (before,after) {
+            (Some(old),Some(new))=>format!(
+                "변경 전 {} → 변경 후 {}",audit_value(old),audit_value(new)
+            ),
+            (Some(old),None)=>format!("변경 전 {}",audit_value(old)),
+            (None,Some(new))=>format!("변경 후 {}",audit_value(new)),
+            (None,None)=>String::new()
+        };
+        let details=[
+            field(event,"actor").to_owned(),
+            field(event,"reason").to_owned(),
+            difference
+        ].into_iter().filter(|text|!text.trim().is_empty())
+            .collect::<Vec<_>>().join(" · ");
         output.push(AuditEntry{
             at:field(event,"at").to_owned(),
             title:display_or(field(event,"action"),"업무 기록").to_owned(),
-            detail:format!("{} · {}",field(event,"actor"),field(event,"reason"))
-                .trim_end_matches(" · ").to_owned()
+            detail:details
         });
     }
     output.sort_by(|a,b|b.at.cmp(&a.at));
@@ -351,9 +379,10 @@ fn audit_panel(ui:&mut Ui,changes:&[AuditEntry]){
     }
     for change in changes{
         ui.label(typography::subsection_heading(&change.title));
-        ui.label(typography::caption(&format!(
-            "{} · {}",kst(&change.at),display_or(&change.detail,"담당자 미확인")
-        )));
+        ui.label(typography::caption(&kst(&change.at)));
+        ui.label(typography::body(
+            display_or(&change.detail,"세부 기록 없음")
+        ));
         ui.add_space(theme::SPACE_8);
     }
 }
