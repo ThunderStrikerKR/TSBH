@@ -1831,6 +1831,16 @@ impl FreightManager {
 
 }
 
+/// Returns the vertical glyph baseline inside the laid-out text.
+/// We must use font metrics instead of half the galley height, otherwise
+/// mixed Hangul and monospaced digits appear at different vertical levels.
+fn summary_glyph_baseline(galley: &egui::Galley) -> f32 {
+    galley.rows.first()
+        .and_then(|row|row.glyphs.first()
+            .map(|glyph|row.pos.y+glyph.pos.y))
+        .unwrap_or_else(||galley.size().y/2.0)
+}
+
 fn summary(ui: &mut Ui, label: &str, count: usize) {
     let card_width=theme::FREIGHT_SUMMARY_CARD_WIDTH;
     ui.allocate_ui_with_layout(
@@ -1863,17 +1873,25 @@ fn summary(ui: &mut Ui, label: &str, count: usize) {
                 let unit_x=line.right()-unit.size().x;
                 let digits_x=unit_x-theme::SPACE_4-digits.size().x;
                 let painter=cell.painter();
-                let y=line.center().y;
+                // A galley's box center is NOT its glyph baseline. CJK
+                // captions, proportional units, and monospaced digits have
+                // different ascents even at the same 16pt font size.
+                // Anchor all three galleys to the same actual glyph
+                // baseline; keep numbers right-aligned before the unit.
+                let caption_top=line.center().y-caption.size().y/2.0;
+                let baseline=caption_top+summary_glyph_baseline(&caption);
+                let digits_top=baseline-summary_glyph_baseline(&digits);
+                let unit_top=baseline-summary_glyph_baseline(&unit);
                 painter.galley(
-                    egui::pos2(line.left(),y-caption.size().y/2.0),
+                    egui::pos2(line.left(),caption_top),
                     caption,theme::SECONDARY
                 );
                 painter.galley(
-                    egui::pos2(digits_x,y-digits.size().y/2.0),
+                    egui::pos2(digits_x,digits_top),
                     digits,theme::TEXT
                 );
                 painter.galley(
-                    egui::pos2(unit_x,y-unit.size().y/2.0),
+                    egui::pos2(unit_x,unit_top),
                     unit,theme::SECONDARY
                 );
             });
