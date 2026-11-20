@@ -2,7 +2,7 @@
 //! read-only price/detail projection. Product and price writes must not target
 //! the isolated egui preview DB or bypass Tauri's operational save boundary.
 use crate::{
-    category_manager::CategoryManager,
+    category_manager::{CategoryManager,ROOTS},
     alias_manager::AliasManager,
     brand_manager::BrandManager,
     model_group_manager::ModelGroupManager,
@@ -52,10 +52,7 @@ fn category_choices(catalog: &Value) -> Vec<(String,String)> {
     // These two virtual roots are also supplied by the original native
     // category query; they are choices, not catalog writes or new products.
     let mut categories = rows(&catalog["categories"]).to_vec();
-    for (id,name) in [
-        ("catalog-root:BANDOSTAND","반도스탠드"),
-        ("catalog-root:BANDOMALL","반도몰"),
-    ] {
+    for (id,name) in ROOTS {
         if !categories.iter().any(|row|field(row,"id")==id) {
             categories.push(json!({"id":id,"name":name,"parentId":null}));
         }
