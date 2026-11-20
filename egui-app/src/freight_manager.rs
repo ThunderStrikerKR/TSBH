@@ -432,6 +432,7 @@ impl FreightManager {
                         }
                         if self.saving_for_tab{
                             if !self.dirty(){
+                                self.rate_editor=None;
                                 if let Some(target)=self.requested_tab.take(){
                                     self.tab=target;
                                 }
