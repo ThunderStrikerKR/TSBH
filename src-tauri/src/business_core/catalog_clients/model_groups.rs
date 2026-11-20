@@ -89,4 +89,39 @@ mod tests{
             "productIds":["p1","p2"],"representativeProductId":"p1"}}}});
         assert!(validate(&state).is_ok());
     }
+    #[test]
+    fn model_group_requires_two_real_products_and_explicit_representative(){
+        let mut state=json!({"products":[
+            {"id":"p1","active":true,"variants":[{"id":"v1","source":"MANUAL"}]},
+            {"id":"p2","active":true,"variants":[{"id":"v2","source":"MANUAL"}]}
+        ],"settings":{"colorGuidanceGroups":{"g":{
+            "name":"709","productIds":["p1","p2"],
+            "representativeProductId":""
+        }}}});
+        assert_eq!(validate(&state).unwrap_err(),
+            "기존 그룹도 대표모델을 직접 선택한 뒤 저장하세요.");
+        state["settings"]["colorGuidanceGroups"]["g"]["representativeProductId"]=json!("p3");
+        assert_eq!(validate(&state).unwrap_err(),
+            "모델군에 등록된 상품 중 하나를 대표모델로 지정하세요.");
+        state["settings"]["colorGuidanceGroups"]["g"]["representativeProductId"]=json!("p1");
+        assert!(validate(&state).is_ok());
+        state["settings"]["colorGuidanceGroups"]["g"]["productIds"]=json!(["p1"]);
+        assert_eq!(validate(&state).unwrap_err(),
+            "모델군에는 등록된 상품이 2개 이상 있어야 합니다.");
+    }
+    #[test]
+    fn model_group_rejects_multiple_memberships_without_modifying_products(){
+        let state=json!({"products":[
+            {"id":"p1","active":true,"variants":[{"id":"v1","source":"MANUAL"}]},
+            {"id":"p2","active":true,"variants":[{"id":"v2","source":"MANUAL"}]},
+            {"id":"p3","active":true,"variants":[{"id":"v3","source":"MANUAL"}]}
+        ],"settings":{"colorGuidanceGroups":{
+            "g1":{"name":"709","productIds":["p1","p2"],"representativeProductId":"p1"},
+            "g2":{"name":"710","productIds":["p2","p3"],"representativeProductId":"p3"}
+        }}});
+        let before=state["products"].clone();
+        assert_eq!(validate(&state).unwrap_err(),
+            "상품은 하나의 모델군에만 등록할 수 있습니다.");
+        assert_eq!(state["products"],before);
+    }
 }
