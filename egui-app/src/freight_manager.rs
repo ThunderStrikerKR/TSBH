@@ -1185,8 +1185,8 @@ impl FreightManager {
                     tools.set_width(left_rect.width());
                     tools.set_height(left_rect.height());
                     tools.spacing_mut().item_spacing.x=theme::SPACE_8;
-                    // Match the common 36pt input geometry for both search
-                    // and filter dropdowns, rather than default egui height.
+                    // Search stays at 36pt; the shared 34pt dropdown trigger
+                    // is vertically centered within the same 36pt toolbar.
                     tools.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
                 components::flexible_text_field(
                     tools,search,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
@@ -1284,8 +1284,8 @@ impl FreightManager {
                     bulk.set_width(right_controls_rect.width());
                     bulk.set_height(right_controls_rect.height());
                     bulk.spacing_mut().item_spacing.x=theme::SPACE_8;
-                    // Keep the bulk dropdown at the same 36pt control
-                    // height as the search field on the other side.
+                    // Bulk selection uses the same 34pt split-chevron
+                    // trigger as the filter and every product-row selector.
                     bulk.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
                         settings_help::icon(bulk,"배송 그룹 일괄 지정");
                         if theme::action(bulk,"선택 상품에 적용",
@@ -1538,12 +1538,10 @@ impl FreightManager {
                         let mut current=pending.get(id).cloned()
                             .unwrap_or_else(||committed.into());
                         let before_manual_edit=current.clone();
-                        // The dropdown was vertically clipped because an
-                        // Align::Center child was centered again by
-                        // add_enabled_ui(), leaving its bottom outside the
-                        // 42pt row. Reserve one 34pt control slot at y+4,
-                        // render from its TOP, and clip only to the full row.
-                        // This change does not alter any column width.
+                        // A 34pt shared dropdown is centered exactly within
+                        // the 42pt product row (4pt above and below).
+                        // Its width is owned by the shipping-group cell;
+                        // the popup does not change any table column width.
                         let selector_rect=egui::Rect::from_min_size(
                             egui::pos2(
                                 cells[4].left()+theme::SPACE_4,
