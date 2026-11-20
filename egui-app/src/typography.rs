@@ -280,6 +280,57 @@ pub fn client_table_metadata_galley(
     client_table_galley(ui,text,Role::Metadata,false,color)
 }
 
+/// Visual-only breadcrumb shortening. The underlying category path and ID
+/// stay complete; only the rendered label may drop ancestors from the LEFT.
+/// Prefer keeping whole trailing category names and the final leaf intact.
+/// If the leaf alone is wider than the cell, keep its trailing glyphs.
+#[derive(Clone,Copy)]
+pub enum CategoryPathFont { Body, Metadata, TableCell, Subsection }
+
+fn category_path_text_width(ui:&egui::Ui,text:&str,font:CategoryPathFont)->f32{
+    let (role,emphasized,color)=match font{
+        CategoryPathFont::Body=>(Role::Body,false,TEXT),
+        CategoryPathFont::Metadata=>(Role::Metadata,false,MUTED),
+        CategoryPathFont::TableCell=>(Role::TableCell,false,TEXT),
+        CategoryPathFont::Subsection=>(Role::Subsection,true,TEXT),
+    };
+    client_table_galley(ui,text,role,emphasized,color).size().x
+}
+
+pub fn fit_category_path(
+    ui:&egui::Ui,path:&str,max_width:f32,font:CategoryPathFont
+)->String{
+    if path.is_empty()||!max_width.is_finite()||max_width<=0.0{
+        return String::new();
+    }
+    if category_path_text_width(ui,path,font)<=max_width{return path.to_owned();}
+    let separator=if path.contains(" > "){" > "}
+        else if path.contains(" / "){" / "}
+        else if path.contains('>'){">"}
+        else if path.contains('/') {"/"}else{""};
+    if !separator.is_empty(){
+        let parts=path.split(separator).map(str::trim).collect::<Vec<_>>();
+        // Start with the leaf, then add increasingly many immediate parents.
+        // Do not preserve the root at the expense of the destination.
+        for start in (1..parts.len()).rev(){
+            let candidate=format!("… > {}",parts[start..].join(" > "));
+            if category_path_text_width(ui,&candidate,font)<=max_width{
+                return candidate;
+            }
+        }
+    }
+    let leaf=if separator.is_empty(){path}
+        else{path.rsplit(separator).next().unwrap_or(path).trim()};
+    for (index,_) in leaf.char_indices(){
+        let candidate=format!("…{}",&leaf[index..]);
+        if category_path_text_width(ui,&candidate,font)<=max_width{
+            return candidate;
+        }
+    }
+    if category_path_text_width(ui,"…",font)<=max_width{"…".into()}
+    else{String::new()}
+}
+
 pub fn table_cell(text: &str) -> RichText { render(text, Role::TableCell) }
 pub fn summary_value(text: &str) -> RichText { render(text, Role::SummaryValue) }
 
