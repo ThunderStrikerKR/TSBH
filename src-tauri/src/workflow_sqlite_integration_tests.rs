@@ -376,8 +376,8 @@ fn native_model_group_sqlite_roundtrip_and_stale_editor_conflict() {
 }
 
 
-/// Alias UI -> original catalog_clients::save_alias -> same revision-checked
-/// Tauri SQLite writer. No fake backend, no operating DB mutation.
+/// Alias UI -> shared Rust patch_product_v2 -> original catalog_clients::save_alias
+/// -> revision-checked SQLite writer. No fake backend or operating DB mutation.
 #[test]
 fn native_alias_sqlite_save_correction_and_stale_editor_rejection() {
     let (isolated,mut conn)=IsolatedDatabase::open();
@@ -395,8 +395,8 @@ fn native_alias_sqlite_save_correction_and_stale_editor_rejection() {
             "productId":pid,"clientId":null
         }}
     });
-    let response=egui_product_bridge::patch(&mut conn,&request)
-        .expect("the actual egui Tauri helper must save alias through Rust");
+    let response=bando_data_access::patch_product_v2(&mut conn,&request)
+        .expect("the shared Rust product writer must save the alias");
     let first=get_snapshot(&conn).unwrap();
     assert_eq!(response["revision"],json!(revision+1));
     assert_eq!(first["revision"],response["revision"]);
@@ -419,7 +419,7 @@ fn native_alias_sqlite_save_correction_and_stale_editor_rejection() {
             "productId":pid,"clientId":null
         }}
     });
-    egui_product_bridge::patch(&mut conn,&correction).unwrap();
+    bando_data_access::patch_product_v2(&mut conn,&correction).unwrap();
     let corrected=get_snapshot(&conn).unwrap();
     assert_eq!(corrected["aliases"].as_array().unwrap().len(),
         before["aliases"].as_array().unwrap().len()+1);
@@ -428,7 +428,7 @@ fn native_alias_sqlite_save_correction_and_stale_editor_rejection() {
         "별칭통합검증_수정_002");
 
     // Another alias editor carrying the obsolete revision is refused.
-    let error=egui_product_bridge::patch(&mut conn,&request)
+    let error=bando_data_access::patch_product_v2(&mut conn,&request)
         .expect_err("stale alias editor must never overwrite a newer alias");
     assert!(error.contains("다른 작업에서 상품 데이터가 수정"));
     assert_eq!(get_snapshot(&conn).unwrap(),corrected,
@@ -441,8 +441,8 @@ fn native_alias_sqlite_save_correction_and_stale_editor_rejection() {
 }
 
 
-/// React RegistrySettings -> original Rust catalog_clients::upsert_brand
-/// -> Tauri revision CAS -> real v2 SQLite persistence/reopen. No production DB.
+/// Brand editor -> shared Rust patch_product_v2 -> original catalog_clients::upsert_brand
+/// -> revision CAS -> real v2 SQLite persistence/reopen. No production DB.
 #[test]
 fn native_brand_sqlite_save_correction_collision_and_reopen() {
     let (isolated,mut conn)=IsolatedDatabase::open();
@@ -459,7 +459,7 @@ fn native_brand_sqlite_save_correction_collision_and_reopen() {
             "evidence":"https://example.com/verified-brand"
         }
     });
-    let response=egui_product_bridge::patch(&mut conn,&request)
+    let response=bando_data_access::patch_product_v2(&mut conn,&request)
         .expect("save using the actual Rust brand editor and SQLite writer");
     assert_eq!(response["revision"],json!(revision+1));
     let created=get_snapshot(&conn).unwrap();
@@ -492,7 +492,7 @@ fn native_brand_sqlite_save_correction_collision_and_reopen() {
             "evidence":"https://example.com/updated-evidence"
         }
     });
-    egui_product_bridge::patch(&mut reopened,&corrected_request)
+    bando_data_access::patch_product_v2(&mut reopened,&corrected_request)
         .expect("correct existing brand without changing its ID");
     let corrected=get_snapshot(&reopened).unwrap();
     assert_eq!(corrected["brands"].as_array().unwrap().len(),
@@ -513,7 +513,7 @@ fn native_brand_sqlite_save_correction_collision_and_reopen() {
             "korean":"수정된 한글명","aliases":"변경 별칭",
             "evidence":"http://example.com/not-https"}
     });
-    let error=egui_product_bridge::patch(&mut reopened,&invalid)
+    let error=bando_data_access::patch_product_v2(&mut reopened,&invalid)
         .expect_err("brand requires verified HTTPS evidence");
     assert!(error.contains("HTTPS"));
     assert_eq!(get_snapshot(&reopened).unwrap(),corrected);
@@ -525,12 +525,12 @@ fn native_brand_sqlite_save_correction_collision_and_reopen() {
             "korean":"새 브랜드","aliases":"EXTRAALIAS",
             "evidence":"https://example.com/other"}
     });
-    let error=egui_product_bridge::patch(&mut reopened,&duplicate)
+    let error=bando_data_access::patch_product_v2(&mut reopened,&duplicate)
         .expect_err("shared alias cannot silently merge two brands");
     assert!(error.contains("중복됩니다"));
     assert_eq!(get_snapshot(&reopened).unwrap(),corrected);
 
-    let stale=egui_product_bridge::patch(&mut reopened,&request)
+    let stale=bando_data_access::patch_product_v2(&mut reopened,&request)
         .expect_err("stale brand editor must not overwrite newer state");
     assert!(stale.contains("다른 작업에서 상품 데이터가 수정되었습니다"));
     assert_eq!(get_snapshot(&reopened).unwrap(),corrected);

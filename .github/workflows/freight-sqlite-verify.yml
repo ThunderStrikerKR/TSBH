@@ -6,6 +6,8 @@ on:
     paths:
       - .github/workflows/freight-sqlite-verify.yml
       - src-tauri/src/egui_shipping_bridge.rs
+      - src-tauri/src/workflow_sqlite_integration_tests.rs
+      - crates/bando-data-access/**
       - egui-app/src/gateway.rs
       - egui-app/src/business_state.rs
       - src-tauri/src/main.rs
@@ -34,11 +36,8 @@ jobs:
         env:
           BANDO_EGUI_SHIPPING_FIXTURE_DB: ${{ runner.temp }}\bando-freight-gateway-e2e.sqlite
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib prepare_egui_shipping_gateway_fixture -- --ignored --nocapture
-      - name: Build actual Tauri one-shot shipping helper executable
-        run: cargo build --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
-      - name: Verify egui Gateway to actual Tauri subprocess to SQLite roundtrip
+      - name: Verify egui Gateway direct shared Rust service to SQLite roundtrip
         env:
           BANDO_EGUI_BUSINESS_DB: ${{ runner.temp }}\bando-freight-gateway-e2e.sqlite
-          BANDO_EGUI_TAURI_HELPER: ${{ github.workspace }}\src-tauri\target\debug\bando_hub_tauri.exe
           BANDO_EGUI_ENABLE_SHIPPING_WRITE: '1'
-        run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui shipping_gateway_process_roundtrip -- --nocapture
+        run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui shipping_gateway_direct_roundtrip -- --nocapture
