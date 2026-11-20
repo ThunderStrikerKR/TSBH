@@ -117,6 +117,14 @@ pub const ACTION_EMPHASIZED_HEIGHT: f32 = 34.0;
 pub const ACTION_QUIET_HEIGHT: f32 = 32.0;
 // Reserve space for the single-row order total at the bottom of its pane.
 pub const SUMMARY_STRIP_HEIGHT: f32 = 58.0;
+// Reception items/freight mirrors the React 3-column table. The summary
+// remains a separate fixed-height strip below its own scrolling content.
+pub const RECEPTION_ITEMS_HEADER_HEIGHT: f32 = 32.0;
+pub const RECEPTION_ITEMS_ROW_HEIGHT: f32 = 42.0;
+pub const RECEPTION_ITEMS_QTY_MAX_WIDTH: f32 = 78.0;
+pub const RECEPTION_ITEMS_AMOUNT_MAX_WIDTH: f32 = 108.0;
+pub const RECEPTION_VAT_ROW_HEIGHT: f32 = 32.0;
+pub const RECEPTION_TOTAL_HEIGHT: f32 = 56.0;
 pub const HEADER_HEIGHT: f32 = 62.0;
 pub const NAV_HEIGHT: f32 = 38.0;
 // Original React manual workspace: max 1760, viewport side gap 36,
