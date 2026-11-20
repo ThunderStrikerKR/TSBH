@@ -813,6 +813,65 @@ pub fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
     ui.set_min_height(min_inner_height);
 }
 
+/// One measured vertical transition for every fixed-header management table.
+///
+/// Call with `item_spacing.y == 0` *from the toolbar allocation onward*.
+/// This explicitly owns the complete 8pt toolbar gap, 4pt space above the
+/// divider, 1pt divider, 4pt below, and the 36pt sticky header. Screens must
+/// not add a separate `add_space` or rely on egui's preceding item spacing.
+#[derive(Clone,Copy,Debug)]
+pub struct ManagementTableHeader {
+    pub header_rect:Rect,
+    pub header_content_rect:Rect,
+    pub viewport_width:f32,
+    pub scrollbar_gutter:f32,
+    pub table_width:f32,
+}
+
+pub fn management_sticky_table_header(
+    ui:&mut Ui,min_table_width:f32
+)->ManagementTableHeader{
+    debug_assert!(ui.spacing().item_spacing.y.abs()<0.01,
+        "table toolbar and header must use zero implicit vertical spacing");
+    let viewport_width=ui.available_width().max(1.0);
+    let scrollbar_gutter=ui.spacing().scroll.allocated_width();
+    let table_width=(viewport_width-scrollbar_gutter)
+        .max(min_table_width);
+
+    // One allocation for the full toolbar-to-header separator strip.
+    // Keeping it in a single Ui layout operation also avoids a fractional
+    // pixel difference between manual add_space and automatic item gaps.
+    let transition_height=theme::SPACE_8*2.0+theme::SOFT_DIVIDER_WIDTH;
+    let (transition,_)=ui.allocate_exact_size(
+        Vec2::new(viewport_width,transition_height),Sense::hover()
+    );
+    ui.painter().rect_filled(
+        Rect::from_min_size(
+            egui::pos2(transition.left(),
+                transition.top()+theme::SPACE_8+theme::SPACE_4),
+            Vec2::new(viewport_width,theme::SOFT_DIVIDER_WIDTH)
+        ),0.0,theme::DIVIDER
+    );
+    let (header_rect,_)=ui.allocate_exact_size(
+        Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
+        Sense::hover()
+    );
+    // The rightmost scrollbar rail is not another table column. Both the
+    // sticky header and virtualized body should use the same data width.
+    let header_content_rect=Rect::from_min_max(
+        header_rect.min,
+        egui::pos2(
+            (header_rect.right()-scrollbar_gutter)
+                .max(header_rect.left()+1.0),
+            header_rect.bottom()
+        )
+    );
+    ManagementTableHeader{
+        header_rect,header_content_rect,viewport_width,
+        scrollbar_gutter,table_width
+    }
+}
+
 /// Shared management tab roles (content width, no full-page stretching).
 pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
     let mut pressed=None;
