@@ -139,6 +139,20 @@ struct PendingClientChange {
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
 }
 
+// An automatic match is only advisory until the same native Rust order
+// mutation/reprice pipeline approves it. Keep it separate from the employee's
+// manual change, which must always take precedence.
+struct PendingAutomaticClient {
+    request: u64,
+    order_id: String,
+    source_raw: String,
+    order_type: String,
+    chat_handle: Option<String>,
+    chat_title: Option<String>,
+    client_id: String,
+    receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
+}
+
 struct PendingWorkingSync {
     order_id: String,
     source_raw: String,
@@ -198,6 +212,7 @@ struct BandoEgui {
     settings_pending_save: bool,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
     client_change: Option<PendingClientChange>,
+    auto_client_change: Option<PendingAutomaticClient>,
     working_sync: Option<PendingWorkingSync>,
     working_sync_error: Option<String>,
     analysis: Option<reception_service::ReceptionAnalysis>,
@@ -265,6 +280,7 @@ impl Default for BandoEgui {
             settings_pending_save: false,
             manual_workspace: None,
             client_change: None,
+            auto_client_change: None,
             working_sync: None,
             working_sync_error: None,
             analysis: None,
@@ -371,6 +387,9 @@ impl BandoEgui {
                 active.pricing_preview = None;
                 active.manual_model = None;
                 active.working_synced = false;
+                // Invalidate an unfinished auto-pricing response for an old
+                // raw/kind even before a new Rust analysis begins.
+                self.auto_client_change = None;
                 // Source changes revoke only automatic dealer assignment.
                 // A deliberate employee selection stays with this receipt.
                 if active.client_selection.as_deref() == Some("AUTO") {
@@ -563,6 +582,9 @@ impl BandoEgui {
             );
             return;
         }
+        // Employee selection overrides any still-running automatic match.
+        // Dropping its receiver prevents a late auto quote from taking over.
+        self.auto_client_change=None;
         let target=client_id.to_owned();
         let order_id=row.id.clone();
         let source_raw=row.raw.clone();
@@ -1042,6 +1064,7 @@ impl BandoEgui {
     }
 
     fn start_source_analysis(&mut self, context: egui::Context) {
+        self.auto_client_change=None;
         self.analysis_request = self.analysis_request.wrapping_add(1);
         let request = self.analysis_request;
         let source = self.raw_source.clone();
@@ -1110,6 +1133,7 @@ impl BandoEgui {
     }
 
     fn clear_source_analysis(&mut self) {
+        self.auto_client_change=None;
         self.analysis_request = self.analysis_request.wrapping_add(1);
         self.analysis_receiver = None;
         self.analysis_pending = false;
@@ -1121,7 +1145,129 @@ impl BandoEgui {
         self.analysis_due_at = None;
     }
 
-    fn poll_source_analysis(&mut self) {
+    /// Run the EXISTING native Tauri change_order_client → merge → reprice
+    /// → calculate_price rules after Rust title/raw matching, before marking
+    /// an automatic dealer as applied. No UI-side billing or fake totals.
+    fn start_auto_client_change(&mut self, client_id:&str, ctx:&egui::Context) {
+        if self.client_change.is_some() || self.auto_client_change.is_some() {
+            return;
+        }
+        let Some(row)=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
+            .cloned()
+        else {return;};
+        if row.client_selection.as_deref()==Some("MANUAL") ||
+           row.manual_model.is_some() ||
+           row.analysis_raw.as_deref()!=Some(row.raw.as_str()) ||
+           row.analysis_evidence.is_none() ||
+           row.client_match.as_ref().and_then(|match_info|
+               match_info.get("clientId")
+           ).and_then(serde_json::Value::as_str)!=Some(client_id) {
+            return;
+        }
+        let (sender,receiver)=mpsc::channel();
+        self.auto_client_change=Some(PendingAutomaticClient {
+            request:self.analysis_request,
+            order_id:row.id.clone(),
+            source_raw:row.raw.clone(),
+            order_type:row.order_type.clone(),
+            chat_handle:row.chat_handle.clone(),
+            chat_title:row.chat_title.clone(),
+            client_id:client_id.to_owned(),receiver,
+        });
+        let gateway=Arc::clone(&self.gateway);
+        let target=client_id.to_owned();
+        let context=ctx.clone();
+        std::thread::spawn(move||{
+            let result=native_order_change::prepare(gateway.as_ref(),&row,&target);
+            let _=sender.send(result);
+            context.request_repaint();
+        });
+    }
+
+    /// Async results are accepted only for the exact recognition request,
+    /// working receipt, source, Kakao chat, proposed client and owner state.
+    /// A manual selection in progress cancels any outstanding automatic edit.
+    fn poll_auto_client_change(&mut self,ctx:&egui::Context) {
+        let received=self.auto_client_change.as_ref()
+            .map(|pending|pending.receiver.try_recv());
+        let result=match received {
+            Some(Ok(value))=>Some(value),
+            Some(Err(mpsc::TryRecvError::Disconnected))=>
+                Some(Err("Rust 거래처 자동 연결 계산이 중단되었습니다.".into())),
+            _=>None,
+        };
+        let Some(result)=result else {
+            if self.auto_client_change.is_some() {
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+            return;
+        };
+        let Some(pending)=self.auto_client_change.take() else{return;};
+        let latest=self.drafts.iter().find(|row|row.id==pending.order_id);
+        let valid=self.analysis_request==pending.request &&
+            !self.analysis_pending &&
+            self.active_id.as_deref()==Some(pending.order_id.as_str()) &&
+            self.raw_source==pending.source_raw &&
+            self.order_type.as_str()==pending.order_type &&
+            self.client_change.is_none() &&
+            latest.is_some_and(|row|
+                row.raw==pending.source_raw &&
+                row.order_type==pending.order_type &&
+                row.chat_handle==pending.chat_handle &&
+                row.chat_title==pending.chat_title &&
+                row.client_selection.as_deref()!=Some("MANUAL") &&
+                row.manual_model.is_none() &&
+                row.analysis_raw.as_deref()==Some(row.raw.as_str()) &&
+                row.analysis_evidence.is_some() &&
+                row.client_match.as_ref().and_then(|match_info|
+                    match_info.get("clientId")
+                ).and_then(serde_json::Value::as_str)==Some(pending.client_id.as_str())
+            );
+        if !valid {return;}
+        match result {
+            Ok(result) if result.client_id==pending.client_id => {
+                if let Some(row)=self.drafts.iter_mut().find(|row|
+                    row.id==pending.order_id
+                ){
+                    row.client_id=Some(result.client_id);
+                    row.client_selection=Some("AUTO".into());
+                    row.pricing_preview=result.pricing_preview;
+                    row.working_synced=false;
+                }
+                self.queue_source_save();
+            }
+            other => {
+                // React treats failed automatic association as an unresolved
+                // suggestion, not a blocking paste error. Keep recipient
+                // recognition and Rust candidates; never show a fake dealer
+                // assignment or a fabricated price.
+                let detail=match other {
+                    Ok(_)=>"거래처 자동 연결 결과가 요청과 다릅니다. 직접 선택하세요.".to_owned(),
+                    Err(_)=>"거래처 자동 매칭에 실패했습니다. 직접 선택하세요.".to_owned(),
+                };
+                let failed=serde_json::json!({
+                    "clientId":null,"source":"ERROR","detail":detail
+                });
+                if let Some(row)=self.drafts.iter_mut().find(|row|
+                    row.id==pending.order_id
+                ){
+                    row.client_id=None;
+                    row.client_selection=None;
+                    row.pricing_preview=None;
+                    row.client_match=Some(failed.clone());
+                }
+                if let Some(analysis)=self.analysis.as_mut(){
+                    analysis.client_match=failed;
+                    analysis.matched_client_name=None;
+                    analysis.chosen_client_name=None;
+                }
+                self.queue_source_save();
+            }
+        }
+    }
+
+    fn poll_source_analysis(&mut self,ctx:&egui::Context) {
         let complete = self.analysis_receiver.as_ref()
             .map(|receiver| receiver.try_recv());
         if let Some(Err(mpsc::TryRecvError::Disconnected)) = complete {
@@ -1141,6 +1287,7 @@ impl BandoEgui {
                     // Attach the exact Rust analysis to ONLY the still-active
                     // reception. A switched/new order invalidates this worker.
                     let mut changed_snapshot = false;
+                    let mut auto_target:Option<String>=None;
                     if let Some(active_id) = self.active_id.as_deref() {
                         if let Some(item) = self.drafts.iter_mut()
                             .find(|item| item.id == active_id) {
@@ -1149,11 +1296,23 @@ impl BandoEgui {
                             item.client_match = Some(analysis.client_match.clone());
                             if item.client_selection.as_deref() != Some("MANUAL") &&
                                item.manual_model.is_none() {
-                                item.client_id = analysis.client_match.get("clientId")
-                                    .and_then(serde_json::Value::as_str)
-                                    .map(str::to_owned);
-                                item.client_selection =
-                                    item.client_id.as_ref().map(|_| "AUTO".to_owned());
+                                // Do NOT treat an advisory match as a completed
+                                // Rust order edit. Existing matching approved
+                                // pricing is retained; new matches remain
+                                // unassigned until the native quote succeeds.
+                                let proposal=analysis.client_match.get("clientId")
+                                    .and_then(serde_json::Value::as_str);
+                                let same_auto=item.client_selection.as_deref()==Some("AUTO")
+                                    && item.client_id.as_deref()==proposal
+                                    && (item.pricing_preview.is_some()
+                                        || self.gateway.isolated_client_identity_link());
+                                if !same_auto {
+                                    item.client_id=None;
+                                    item.client_selection=None;
+                                    item.pricing_preview=None;
+                                    item.working_synced=false;
+                                    auto_target=proposal.map(str::to_owned);
+                                }
                             }
                             changed_snapshot = true;
                         }
@@ -1164,6 +1323,9 @@ impl BandoEgui {
                     self.analysis = Some(analysis);
                     self.analysis_error = None;
                     self.selected_recipient = 0;
+                    if let Some(target)=auto_target {
+                        self.start_auto_client_change(&target,ctx);
+                    }
                 }
                 Err(error) => {
                     self.analysis = None;
@@ -3534,7 +3696,8 @@ impl eframe::App for BandoEgui {
                 self.product_pending_page=None;
             }
         }
-        self.poll_source_analysis();
+        self.poll_source_analysis(ctx);
+        self.poll_auto_client_change(ctx);
         if self.settings_view.as_mut().is_some_and(|view|view.take_restored()){
             // A restored operational DB invalidates every prior projected
             // price/client/order snapshot. Never keep stale native matches.
@@ -3547,6 +3710,7 @@ impl eframe::App for BandoEgui {
             self.client_chooser=None;
             self.working_sync=None;
             self.client_change=None;
+            self.auto_client_change=None;
             self.clear_source_analysis();
         }
         self.poll_workflow_board(ctx);
@@ -3564,6 +3728,7 @@ impl eframe::App for BandoEgui {
             !self.raw_source.trim().is_empty() {
             // A registered/edited/deleted client changes the same native
             // matching index that reception must see on its next frame.
+            self.auto_client_change=None;
             self.analysis_due_at=Some(Instant::now());
         }
         if self.page == Page::Reception {
