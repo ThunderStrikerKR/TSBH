@@ -1514,22 +1514,22 @@ impl BandoEgui {
                             .desired_width(ui.available_width())
                             .desired_rows(9),
                     );
-                    ui.horizontal(|ui| {
+                    ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
                         let can_apply = !review.edited_text.trim().is_empty()
                             && review.edited_text.chars().count() <= 20_000;
-                        if theme::action(ui, "원문에 추가", ButtonRole::Standard, can_apply).clicked() {
+                        if theme::action(actions, "원문 교체", ButtonRole::Primary, can_apply).clicked() {
+                            apply = Some((
+                                review.edited_text.trim().to_owned(),
+                                review.order_type, true, review.chat.clone()
+                            ));
+                        }
+                        if theme::action(actions, "원문에 추가", ButtonRole::Standard, can_apply).clicked() {
                             let appended = if self.raw_source.trim().is_empty() {
                                 review.edited_text.trim().to_owned()
                             } else {
                                 format!("{}\n{}", self.raw_source.trim_end(), review.edited_text.trim())
                             };
                             apply = Some((appended, review.order_type, false, review.chat.clone()));
-                        }
-                        if theme::action(ui, "원문 교체", ButtonRole::Primary, can_apply).clicked() {
-                            apply = Some((
-                                review.edited_text.trim().to_owned(),
-                                review.order_type, true, review.chat.clone()
-                            ));
                         }
                     });
                 });
@@ -1567,8 +1567,8 @@ impl BandoEgui {
                         ui,"변경사항 확인","취소",true
                     ){self.discard_ocr_confirm=false;}
                     ui.label("OCR 문자 인식 검토의 수정 내용을 버릴까요?");
-                    ui.horizontal(|ui| {
-                        if theme::action(ui, "변경 취소", ButtonRole::Danger, true).clicked() {
+                    ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                        if theme::action(actions, "변경 취소", ButtonRole::Danger, true).clicked() {
                             self.ocr_review = None;
                             self.discard_ocr_confirm = false;
                         }
@@ -1589,8 +1589,8 @@ impl BandoEgui {
                     ui,"발주원문 교체 확인","취소",true
                 );
                 ui.label("현재 초안과 분석 결과를 새 원문으로 교체할까요?");
-                ui.horizontal(|ui| {
-                    if theme::action(ui, "교체", ButtonRole::Primary, true).clicked() {
+                ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                    if theme::action(actions, "교체", ButtonRole::Primary, true).clicked() {
                         accept = true;
                     }
                 });
@@ -3447,19 +3447,19 @@ impl BandoEgui {
                 ));
             }
             dialog.add_space(theme::SPACE_12);
-            dialog.horizontal(|bar|{
+            dialog.with_layout(Layout::right_to_left(Align::Center),|bar|{
+                if theme::action(bar,"저장하고 이동",ButtonRole::Primary,
+                    manager.can_save_dirty()).clicked(){
+                    if manager.save_dirty(ctx.clone()){
+                        self.freight_pending_save=true;
+                    }
+                }
                 if theme::action(bar,"저장 안 함",ButtonRole::Standard,
                     !manager.busy()).clicked(){
                     manager.discard_drafts();
                     self.page=next;
                     self.freight_pending_page=None;
                     self.freight_pending_save=false;
-                }
-                if theme::action(bar,"저장하고 이동",ButtonRole::Primary,
-                    manager.can_save_dirty()).clicked(){
-                    if manager.save_dirty(ctx.clone()){
-                        self.freight_pending_save=true;
-                    }
                 }
             });
         });
@@ -3493,17 +3493,17 @@ impl BandoEgui {
                 "설정에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
             ));
             ui.add_space(theme::SPACE_12);
-            ui.horizontal(|actions|{
+            ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
+                    !view.busy()&&!view.read_only()).clicked(){
+                    self.settings_pending_save=true;
+                    view.save(Arc::clone(&self.gateway),ctx.clone());
+                }
                 if theme::action(actions,"저장 안 함",ButtonRole::Standard,
                     !view.busy()).clicked(){
                     view.discard();
                     self.page=next;
                     self.settings_pending_page=None;
-                }
-                if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
-                    !view.busy()&&!view.read_only()).clicked(){
-                    self.settings_pending_save=true;
-                    view.save(Arc::clone(&self.gateway),ctx.clone());
                 }
             });
         });
