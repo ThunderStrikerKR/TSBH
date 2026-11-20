@@ -905,6 +905,38 @@ pub fn management_sticky_table_header(
     }
 }
 
+/// Shared pinned header for the pre-existing management LIST cards
+/// (clients, products, Excel, and settlement). These cards historically
+/// reserve one additional 4pt gap beside the scrollbar; preserve that
+/// visual difference until the user resolves it against the two masters.
+/// This is not the 17pt toolbar-to-header transition used by the masters.
+pub fn management_existing_list_table_header(
+    ui:&mut Ui,min_table_width:f32
+)->ManagementTableHeader{
+    let viewport_width=ui.available_width().max(1.0);
+    let scrollbar_gutter=ui.spacing().scroll.allocated_width()
+        +theme::SPACE_4;
+    let table_width=(viewport_width-scrollbar_gutter)
+        .max(min_table_width);
+    let (header_rect,_)=ui.allocate_exact_size(
+        Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
+        Sense::hover()
+    );
+    let header_content_rect=Rect::from_min_max(
+        header_rect.min,
+        egui::pos2((header_rect.right()-scrollbar_gutter)
+            .max(header_rect.left()+1.0),header_rect.bottom())
+    );
+    debug_assert!(
+        (header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01,
+        "management list header must use the shared 36pt height"
+    );
+    ManagementTableHeader{
+        header_rect,header_content_rect,viewport_width,
+        scrollbar_gutter,table_width
+    }
+}
+
 /// One 10pt / 1.8pt-stroke chevron for selectors, date stepping and
 /// expand/collapse affordances. Rotating the same vector keeps the glyphs
 /// identical at all orientations and avoids Windows font-dependent triangles.
