@@ -405,7 +405,7 @@ impl FreightManager {
             summary(bar, "그룹 지정 완료", assigned);
             summary(bar, "그룹 미지정", products.len() - assigned);
             summary(bar, "배송 그룹", groups.len());
-            bar.label(typography::caption(format!(
+            bar.label(typography::caption(&format!(
                 "운임 기준 {}", shipping["epoch"].as_i64().unwrap_or(1)
             )));
         });
@@ -510,7 +510,7 @@ impl FreightManager {
                 components::decision_window(
                     "상품별 운임 기준 복사","freight-copy-confirm",area
                 ).show(ctx,|dialog|{
-                    dialog.label(typography::body(format!(
+                    dialog.label(typography::body(&format!(
                         "선택 상품의 개별 운임표에 {group} 기준을 복사할까요? 동급 그룹 묶음은 별도로 지정합니다."
                     )));
                     dialog.horizontal(|bar|{
@@ -719,7 +719,7 @@ impl FreightManager {
                     let count=products.iter()
                         .filter(|p|text(p,"shippingGroupId")==text(group,"id"))
                         .count();
-                    line.label(typography::caption(format!("{count}개 상품")));
+                    line.label(typography::caption(&format!("{count}개 상품")));
                     if theme::action(line,"이름 수정",theme::ButtonRole::Standard,enabled)
                         .clicked() {
                         *rename_target=Some((
@@ -778,7 +778,7 @@ impl FreightManager {
                             .map(|p|text(p,"id").to_owned()));
                     }
                 }
-                tools.label(typography::field_label(format!(
+                tools.label(typography::field_label(&format!(
                     "{}개 선택",selected.len()
                 )));
                 egui::ComboBox::from_id_salt("freight-bulk-assign")
@@ -950,7 +950,7 @@ impl FreightManager {
             }
             components::soft_divider(section);
             section.horizontal(|actions|{
-                actions.label(typography::caption(format!(
+                actions.label(typography::caption(&format!(
                     "{}개 상품의 배송 그룹을 변경합니다.",assignments.len()
                 )));
                 if theme::action(actions,"미저장 변경 초기화",
@@ -1018,7 +1018,7 @@ impl FreightManager {
                         .striped(true).spacing([theme::SPACE_24, theme::SPACE_8])
                         .show(section, |grid| {
                             for (count, amount) in &fee_rows {
-                                grid.label(typography::field_label(format!("{count}개 묶음")));
+                                grid.label(typography::field_label(&format!("{count}개 묶음")));
                                 grid.label(typography::quantity(amount));
                                 grid.end_row();
                             }
@@ -1036,7 +1036,7 @@ impl FreightManager {
         ui:&mut Ui,editor:&mut RateEditor,enabled:bool,
         event:&mut Option<(String,Value)>,close:&mut bool,
     ){
-        ui.label(typography::subsection_heading(format!("{} 운임",editor.name)));
+        ui.label(typography::subsection_heading(&format!("{} 운임",editor.name)));
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|line|{
             line.label(typography::field_label("최대 합포장 수량"));
@@ -1061,7 +1061,7 @@ impl FreightManager {
         let mut removed=None;
         for (count,amount) in editor.fees.iter_mut(){
             ui.horizontal(|line|{
-                line.label(typography::field_label(format!("{count}개 묶음")));
+                line.label(typography::field_label(&format!("{count}개 묶음")));
                 components::field(line,amount,components::FieldKind::Money,enabled);
                 if theme::action(line,"삭제",theme::ButtonRole::Standard,enabled).clicked(){
                     removed=Some(*count);
@@ -1156,10 +1156,10 @@ impl FreightManager {
                     .get(text(record, "id")).and_then(Value::as_bool).unwrap_or(false);
                 section.horizontal_wrapped(|row|{
                     row.label(typography::table_cell(text(record, "description")));
-                    row.label(typography::quantity(format!(
+                    row.label(typography::quantity(&format!(
                         "청구 {}",as_fee(&record["charge"])
                     )));
-                    row.label(typography::quantity(format!(
+                    row.label(typography::quantity(&format!(
                         "실제 {}",as_fee(&record["actual"])
                     )));
                     row.label(typography::caption(
@@ -1187,7 +1187,7 @@ impl FreightManager {
                 )).id_salt(("freight-history", text(group, "id")))
                     .show(section, |body| {
                         for old in history {
-                            body.label(typography::body(format!(
+                            body.label(typography::body(&format!(
                                 "{} / 개당 {} / {}",
                                 text(old, "at"), as_fee(&old["perItem"]),
                                 (1..=6).filter_map(|n| {
@@ -1207,6 +1207,6 @@ impl FreightManager {
 fn summary(ui: &mut Ui, label: &str, count: usize) {
     theme::section_frame().show(ui, |cell| {
         cell.label(typography::caption(label));
-        cell.label(typography::summary_value(count.to_string()));
+        cell.label(typography::summary_value(&count.to_string()));
     });
 }
