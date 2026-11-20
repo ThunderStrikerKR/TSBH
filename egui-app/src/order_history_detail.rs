@@ -128,7 +128,10 @@ fn raw_text(order:&Value)->(&'static str,&str){
     if !confirmed.is_empty(){return ("주문 확인 당시 원문",confirmed);}
     ("저장된 발주 원문",field(order,"raw"))
 }
-fn payment_panel(ui:&mut Ui,order:&Value,row:&Value,payments:&[&Value]){
+fn payment_panel(
+    ui:&mut Ui,order:&Value,row:&Value,payments:&[&Value],
+    confirmations:&[&Value]
+){
     text_kv(ui,"접수일시", &kst(field(order,"createdAt")));
     text_kv(ui,"주문 확인일시", &kst(field(order,"confirmedAt")));
     let staff=&row["display"]["employeePaymentConfirmation"];
@@ -145,17 +148,32 @@ fn payment_panel(ui:&mut Ui,order:&Value,row:&Value,payments:&[&Value]){
         let account=&payment["account"];
         let bank=field(account,"bank");
         let number=field(account,"number");
-        text_kv(ui,"입금계좌번호",
+        text_kv(ui,"실제 입금계좌",
             &format!("{} {}",bank,display_or(number,"기록 없음")));
         let holder=field(account,"holder");
         if !holder.is_empty(){text_kv(ui,"예금주",holder);}
     }
+    // An announced account is not proof that money reached this account.
+    // Show it separately so unpaid orders still expose the instructed bank.
+    for (i,confirm) in confirmations.iter().enumerate(){
+        let account=&confirm["announcedAccount"];
+        let number=field(account,"number");
+        if number.is_empty(){continue;}
+        if i==0{ui.add_space(theme::SPACE_4);}
+        text_kv(ui,"입금 안내계좌",&format!(
+            "{} {}",field(account,"bank"),number
+        ));
+    }
 }
 fn billing_panel(ui:&mut Ui,order:&Value,billing:&Value){
-    let vat=match order["applyVat"].as_bool(){
-        Some(true)=>"부가세 청구",
-        Some(false)=>"부가세 미청구",
-        None=>"부가세 여부 미확인"
+    let vat=match billing["vat"].as_i64(){
+        Some(n) if n>0=>"부가세 청구",
+        Some(0)=>"부가세 미청구",
+        _=>match order["applyVat"].as_bool(){
+            Some(true)=>"부가세 청구 설정",
+            Some(false)=>"부가세 미청구 설정",
+            None=>"부가세 여부 미확인"
+        }
     };
     text_kv(ui,"부가세 여부",vat);
     ui.add_space(theme::SPACE_4);
@@ -380,6 +398,10 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
         .filter(|payment|rows(&payment["allocations"]).iter()
             .any(|allocation|ids.contains(field(allocation,"shipmentId"))))
         .collect::<Vec<_>>();
+    let confirmations=rows(&state["workflow"]["confirmations"]).iter()
+        .filter(|confirm|rows(&confirm["shipmentIds"]).iter()
+            .any(|sid|sid.as_str().is_some_and(|id|ids.contains(id))))
+        .collect::<Vec<_>>();
     let changes=change_entries(order,state,&ids);
     let (raw_title,raw)=raw_text(order);
     let modal_size=Vec2::new(
@@ -428,7 +450,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                 |panel|audit_panel(panel,&changes)
             );
             section_panel(ui,panes.payment,"접수 및 입금 정보","payment",
-                |panel|payment_panel(panel,order,row,&payments)
+                |panel|payment_panel(panel,order,row,&payments,&confirmations)
             );
             section_panel(ui,panes.billing,"청구금액 상세","billing",
                 |panel|billing_panel(panel,order,&row["billing"])
