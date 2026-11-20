@@ -471,17 +471,6 @@ pub fn management_list_frame() -> Frame {
         .inner_margin(FRAME_STROKE_WIDTH as i8)
 }
 
-/// A compact, standalone filter strip for settlement reports.
-/// Its own 4pt inset + the date navigator's 12pt inset make the approved
-/// 16pt title/filter guide. This does not move the primary accounting card.
-pub fn management_compact_filter_frame() -> Frame {
-    Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
-        .corner_radius(CornerRadius::same(PANEL_RADIUS))
-        .inner_margin(egui::Margin::symmetric(SPACE_4 as i8, 0))
-}
-
 /// Identical inset for a management list's search toolbar and its inline
 /// loading/read-only/error status. Keeps both aligned without adding an
 /// extra bordered card or changing the data table's full-width columns.
