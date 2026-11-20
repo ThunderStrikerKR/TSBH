@@ -4,6 +4,7 @@
 use crate::{
     category_manager::CategoryManager,
     alias_manager::AliasManager,
+    brand_manager::BrandManager,
     model_group_manager::ModelGroupManager,
     components,
     gateway::{BandoGateway, ReadOperation},
@@ -153,6 +154,7 @@ pub struct ProductManager {
     category_manager:CategoryManager,
     model_groups:ModelGroupManager,
     aliases:AliasManager,
+    brands:BrandManager,
     category_next_tab:Option<usize>,
     category:String,
     brand:String,
@@ -180,7 +182,8 @@ impl ProductManager {
             query:String::new(),tab:0,
             category_manager:CategoryManager::default(),
             model_groups:ModelGroupManager::default(),
-            aliases:AliasManager::default(),category_next_tab:None,
+            aliases:AliasManager::default(),
+            brands:BrandManager::default(),category_next_tab:None,
             category:String::new(),
             brand:String::new(),missing:false,selected:None,
             adding:false,original_selected:None,detail_prices:HashMap::new(),
@@ -203,6 +206,7 @@ impl ProductManager {
         self.confirm_discard=false;
         self.next_query=None;
         self.model_groups.reset_navigation();
+        self.brands.reset_navigation();
         self.reload(ctx);
     }
     fn reload(&mut self,ctx:Context) {
@@ -278,6 +282,9 @@ impl ProductManager {
                     if job.kind=="save_alias" {
                         self.aliases.on_saved(&catalog);
                     }
+                    if job.kind=="upsert_brand" {
+                        self.brands.on_saved(&catalog);
+                    }
                     if job.kind=="upsert_product" || job.kind=="archive_product" {
                         self.selected=None;
                         self.original_selected=None;
@@ -301,6 +308,7 @@ impl ProductManager {
                         "change_category"=>"카테고리 변경사항을 저장했습니다.",
                         "delete_category"=>"빈 분류를 삭제했습니다.",
                         "save_alias"=>"별칭을 저장했습니다.",
+                        "upsert_brand"=>"브랜드 정보를 저장했습니다. 기존 연결 상품은 유지됩니다.",
                         _=>"상품 변경을 저장했습니다.",
                     }).into());
                     self.catalog=Some(catalog);
@@ -314,6 +322,9 @@ impl ProductManager {
                 }
                 if self.tab==3 {
                     self.aliases.on_failed(error.clone());
+                }
+                if self.tab==4 {
+                    self.brands.on_failed(error.clone());
                 }
                 self.error=Some(error);
             }
@@ -360,7 +371,8 @@ impl ProductManager {
         self.selected.is_some() ||
             (self.tab==1 && self.category_manager.has_overlay()) ||
             (self.tab==2 && self.model_groups.has_overlay()) ||
-            (self.tab==3 && self.aliases.has_overlay())
+            (self.tab==3 && self.aliases.has_overlay()) ||
+            (self.tab==4 && self.brands.has_overlay())
     }
     pub fn close_detail(&mut self){
         self.selected=None;
@@ -391,17 +403,22 @@ impl ProductManager {
         if self.tab==3 && !self.aliases.request_global_leave(){
             return false;
         }
+        if self.tab==4 && !self.brands.request_global_leave(){
+            return false;
+        }
         true
     }
     pub fn take_category_global_leave(&mut self)->bool{
         self.category_manager.take_global_leave_approved()
             ||self.model_groups.take_global_approval()
             ||self.aliases.take_global_approval()
+            ||self.brands.take_global_approval()
     }
     pub fn category_global_leave_in_progress(&self)->bool{
         self.category_manager.global_leave_in_progress()
             ||self.model_groups.global_leave_in_progress()
             ||self.aliases.global_leave_in_progress()
+            ||self.brands.global_leave_in_progress()
     }
     fn begin_edit(&mut self,product:Value){
         if self.has_pending_prices(){
@@ -446,7 +463,7 @@ impl ProductManager {
             ("카테고리 관리",self.tab==1,true),
             ("모델군 관리",self.tab==2,true),
             ("별칭 관리",self.tab==3,true),
-            ("브랜드 관리",false,false),
+            ("브랜드 관리",self.tab==4,true),
         ]);
         if let Some(next)=pressed {
             if next!=self.tab && self.writing.is_none() &&
@@ -460,6 +477,7 @@ impl ProductManager {
                     }
                     2=>self.model_groups.request_tab_leave(next),
                     3=>self.aliases.request_tab_leave(next),
+                    4=>self.brands.request_tab_leave(next),
                     _=>true,
                 };
                 if allowed{
@@ -491,6 +509,11 @@ impl ProductManager {
             self.query.clear();
             self.reload(ui.ctx().clone());
         }
+        if let Some(next)=self.brands.take_tab(){
+            self.tab=next;
+            self.query.clear();
+            self.reload(ui.ctx().clone());
+        }
         ui.add_space(theme::SPACE_12);
         let can_edit=self.gateway.product_write_enabled()
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
@@ -498,6 +521,16 @@ impl ProductManager {
         let mut price_write:Option<(String,Value)>=None;
         let mut open_detail:Option<Value>=None;
         let mut begin_new=false;
+        if self.tab==4 {
+            if let Some(catalog)=self.catalog.as_ref(){
+                if let Some(data)=self.brands.show_page(ui,catalog,can_edit,saving){
+                    self.start_write("upsert_brand",data,None,ui.ctx().clone());
+                }
+            }else{
+                ui.label(typography::caption("브랜드 목록을 불러오는 중입니다."));
+            }
+            return;
+        }
         if self.tab==3 {
             if let Some(catalog)=self.catalog.as_ref(){
                 if let Some(data)=self.aliases.show_page(
@@ -804,6 +837,18 @@ impl ProductManager {
         Ok(next)
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
+        if self.tab==4 {
+            if let Some(catalog)=self.catalog.clone(){
+                let editable=self.gateway.product_write_enabled()
+                    && catalog["revision"].as_u64().is_some();
+                if let Some(data)=self.brands.show_dialogs(
+                    ctx,work_area,&catalog,editable,self.writing.is_some()
+                ){
+                    self.start_write("upsert_brand",data,None,ctx.clone());
+                }
+            }
+            return;
+        }
         if self.tab==3 {
             if let Some(catalog)=self.catalog.clone(){
                 let editable=self.gateway.product_write_enabled()
