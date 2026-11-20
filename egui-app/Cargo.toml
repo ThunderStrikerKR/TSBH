@@ -17,7 +17,6 @@ url = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
 bando-data-access = { path = "../crates/bando-data-access" }
 calamine = "0.38"
-rust_xlsxwriter = "0.103"
 open = "5"
 rust_xlsxwriter = "0.91"
 uuid = { version = "1", features = ["v4"] }
