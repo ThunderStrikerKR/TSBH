@@ -1746,6 +1746,27 @@
         "responseOrders": []
       },
       "discrepancies": [],
+      "eguiOrderHistoryMigration": {
+        "commit": "dd77518201b478e16e8cc01dba50c973736b2348",
+        "scope": "egui 주문 내역 조회 전용 화면 이전: 날짜·검색·펼침·고정헤더/가상목록·운송장 복사",
+        "reactSource": "src/app/OrderHistory.tsx, src/app/DateNavigator.tsx, src/styles/management-layout.css",
+        "rustSource": "src-tauri/src/business_core/rules/history.rs::list_view",
+        "uiReference": "docs/egui-management-ui-reference.md (운임 관리 → 배송 그룹 편성)",
+        "files": [
+          "egui-app/src/order_history_manager.rs",
+          "egui-app/src/gateway.rs",
+          "egui-app/src/main.rs",
+          "egui-app/src/settings_help.rs"
+        ],
+        "evidence": {
+          "patch": "PASS: main 소스 5파일 반영",
+          "static": "PASS: 원본 React 읽기동작 / 기존 Rust 뷰 / 공통 egui 토큰·가상행 정적 대조",
+          "unit": "PENDING: egui targeted order_history_manager::tests",
+          "ci": "PENDING: 해당 커밋 Windows cargo check",
+          "windowsGui": "NOT_REQUESTED: 사용자 결정에 따라 생략"
+        },
+        "businessWrites": "NONE"
+      },
       "legacyLedgerStatus": "PARTIAL",
       "gate": {
         "patch": {
