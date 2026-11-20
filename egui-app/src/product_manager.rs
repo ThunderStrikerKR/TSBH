@@ -830,8 +830,8 @@ impl ProductManager {
                 price_width,price_width,price_width,action_width];
             let min_width=base.iter().sum::<f32>()+5.0*gap;
             // Preserve the actual price-editing minimum and existing
-            // scrollbar gap while using one central table calculator.
-            let layout=components::management_existing_list_table_header(
+            // native scrollbar allocation while using the shared table calculator.
+            let layout=components::management_list_table_header(
                 panel,theme::PRODUCT_TABLE_MIN_WIDTH.max(min_width)
             );
             let table_width=layout.table_width;
