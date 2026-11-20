@@ -285,6 +285,37 @@ pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) ->
     }).inner
 }
 
+/// UI-only money input: same 36pt control and Consolas font as `field`.
+/// Uses the React MoneyInput rule: digits (including zero) or an empty
+/// unconfirmed amount, with thousands separators only when unfocused.
+/// Invalid keystrokes never become business rules; the Rust command still
+/// validates every saved number.
+pub fn parse_money_input(raw:&str)->Option<i64>{
+    let digits=raw.trim().replace(',',"");
+    if digits.is_empty() || !digits.bytes().all(|b|b.is_ascii_digit()){
+        return None;
+    }
+    digits.parse::<i64>().ok()
+        .filter(|value|*value<=9_007_199_254_740_991)
+}
+pub fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
+    let before=value.clone();
+    let response=field(ui,value,FieldKind::Money,enabled);
+    if response.changed() {
+        let digits=value.replace(',',"");
+        if digits.is_empty() || parse_money_input(&digits).is_some(){
+            *value=digits;
+        }else{
+            *value=before;
+        }
+    }else if !response.has_focus(){
+        if let Some(amount)=parse_money_input(value) {
+            *value=display_won(amount).trim_end_matches('원').to_owned();
+        }
+    }
+    response
+}
+
 /// Shared single-line free-text editor for inline manual cells and search.
 /// Uses the same font, internal margin and height as the standard field role.
 pub fn flexible_text_field(
