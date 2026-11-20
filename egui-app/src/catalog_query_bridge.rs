@@ -46,6 +46,12 @@ pub fn validate_model_groups(catalog:&Value,groups:&Value)->Result<(),String>{
     Ok(())
 }
 
+/// Reuse the client-search module already loaded by native catalog queries.
+/// The gateway must not compile another independent copy of the same rule.
+pub fn client_candidates(payload:&Value)->Result<Value,String>{
+    client_search::execute(payload)
+}
+
 pub fn search_products(payload:&Value)->Result<Value,String>{
     native_queries::execute("search_products_with_urls",payload)
 }
