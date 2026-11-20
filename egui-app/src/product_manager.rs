@@ -687,14 +687,17 @@ impl ProductManager {
             // Use the complete pane width. Render exactly one row per
             // product, even when the product has several color/option variants.
             let viewport_width=panel.available_width();
-            let table_width=viewport_width.max(1100.0);
+            let table_width=viewport_width.max(theme::PRODUCT_TABLE_MIN_WIDTH);
             let gap=theme::SPACE_8;
-            let option_width=182.0;
-            let price_width=if self.price_mode{236.0}else{116.0};
-            let action_width=100.0;
+            let option_width=theme::PRODUCT_TABLE_OPTION_WIDTH;
+            let price_width=if self.price_mode{
+                theme::PRODUCT_TABLE_EDIT_PRICE_WIDTH
+            }else{theme::PRODUCT_TABLE_PRICE_WIDTH};
+            let action_width=theme::PRODUCT_TABLE_ACTION_WIDTH;
             let name_width=(table_width-option_width
-                -3.0*price_width-action_width-5.0*gap).max(340.0);
-            let row_height=42.0;
+                -3.0*price_width-action_width-5.0*gap)
+                .max(theme::PRODUCT_TABLE_NAME_MIN_WIDTH);
+            let row_height=theme::PRODUCT_TABLE_ROW_HEIGHT;
             let selection_locked=self.has_pending_prices();
             egui::ScrollArea::both()
                 .id_salt("egui-product-price-grid")
@@ -726,7 +729,7 @@ impl ProductManager {
                                 grid.add_sized(
                                     egui::Vec2::new(name_width,row_height),
                                     egui::Label::new(typography::table_cell(&display)).truncate()
-                                ).on_hover_text(&display);
+                                ).on_hover_text(display.as_str());
                                 let variants=rows(&product["variants"]);
                                 let mut selected_id=self.selected_variants
                                     .get(product_id).cloned().unwrap_or_default();
