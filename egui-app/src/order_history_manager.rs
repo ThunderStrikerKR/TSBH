@@ -510,9 +510,13 @@ pub struct OrderHistoryManager {
     snapshot:Option<HistorySnapshot>,
     error:Option<String>,
     query:String,
-    date:String,
-    date_input:String,
-    calendar_month:NaiveDate,
+    date_basis:HistoryDateBasis,
+    date_from:String,
+    date_to:String,
+    from_input:String,
+    to_input:String,
+    from_month:NaiveDate,
+    to_month:NaiveDate,
     expanded:BTreeSet<String>,
     sort:Option<Sort>,
 }
@@ -521,28 +525,33 @@ impl OrderHistoryManager {
         let today=seoul_today();
         let mut manager=Self {
             gateway,receiver:None,snapshot:None,error:None,
-            query:String::new(),date:today.clone(),date_input:today,
-            calendar_month:month_start(
-                NaiveDate::parse_from_str(&seoul_today(),"%Y-%m-%d")
-                    .expect("today in YYYY-MM-DD")
-            ),
+            query:String::new(),date_basis:HistoryDateBasis::Reception,
+            date_from:today.clone(),date_to:today.clone(),
+            from_input:today.clone(),to_input:today.clone(),
+            from_month:month_start(NaiveDate::parse_from_str(&today,"%Y-%m-%d")
+                .expect("today in YYYY-MM-DD")),
+            to_month:month_start(NaiveDate::parse_from_str(&today,"%Y-%m-%d")
+                .expect("today in YYYY-MM-DD")),
             expanded:BTreeSet::new(),sort:None,
         };
         manager.refresh(ctx);
         manager
     }
-    /// Navigate from an exported Excel row to the exact original order.
-    /// The caller passes the saved order's confirmed/created day, not a
-    /// guessed current-day filter. This is a presentation-only selection.
+    /// Excel rows navigate by the order's reception date. A single-day
+    /// range and Reception basis precisely identify the original order.
     pub fn open_order(&mut self,id:&str,date:&str,ctx:egui::Context){
         let parsed=seoul_date(date);
+        self.date_basis=HistoryDateBasis::Reception;
         if let Ok(day)=NaiveDate::parse_from_str(&parsed,"%Y-%m-%d"){
-            self.date=parsed.clone();
-            self.date_input=parsed;
-            self.calendar_month=month_start(day);
+            self.date_from=parsed.clone();
+            self.date_to=parsed.clone();
+            self.from_input=parsed.clone();
+            self.to_input=parsed;
+            self.from_month=month_start(day);
+            self.to_month=month_start(day);
         }else{
-            self.date.clear();
-            self.date_input.clear();
+            self.date_from.clear();self.date_to.clear();
+            self.from_input.clear();self.to_input.clear();
         }
         self.query.clear();
         self.expanded.insert(id.to_owned());
@@ -555,9 +564,11 @@ impl OrderHistoryManager {
         self.receiver=Some(receiver);
         let gateway=Arc::clone(&self.gateway);
         let query=self.query.clone();
-        let date=self.date.clone();
+        let from=self.date_from.clone();
+        let to=self.date_to.clone();
+        let basis=self.date_basis;
         std::thread::spawn(move||{
-            let answer=fetch(gateway.as_ref(),&query,&date);
+            let answer=fetch(gateway.as_ref(),&query,&from,&to,basis);
             let _=sender.send(answer);
             ctx.request_repaint();
         });
