@@ -21,6 +21,21 @@ const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
 const COLS: [f32;6] = [124.0,180.0,422.0,138.0,156.0,132.0];
 const MIN_WIDTH: f32 = 1192.0; // sum(COLS) + five 8pt gaps
+// Natural width of [date basis, previous, start date/calendar, end
+// date/calendar, next, all dates]. The search stays outside this right slot.
+const RANGE_CONTROLS_WIDTH:f32=836.0;
+const RANGE_COMPACT_START_WIDTH:f32=432.0;
+const RANGE_COMPACT_END_WIDTH:f32=408.0;
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum HistoryDateBasis { Reception, Payment }
+impl HistoryDateBasis {
+    fn key(self)->&'static str{
+        match self{Self::Reception=>"RECEPTION",Self::Payment=>"PAYMENT"}
+    }
+    fn label(self)->&'static str{
+        match self{Self::Reception=>"접수일 기준",Self::Payment=>"입금일 기준"}
+    }
+}
 
 fn field<'a>(row: &'a Value, key: &str) -> &'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
@@ -79,11 +94,14 @@ fn tracking_metadata(state:&Value)->Value{
         json!({"shipmentId":field(ship,"id"),"keys":keys})
     }).collect())
 }
-fn fetch(gateway:&dyn BandoGateway,query:&str,date:&str)
-    ->Result<HistorySnapshot,String>{
+fn fetch(
+    gateway:&dyn BandoGateway,query:&str,from:&str,to:&str,
+    basis:HistoryDateBasis
+)->Result<HistorySnapshot,String>{
     let state=gateway.load_business_state()?;
     let value=gateway.execute(ReadOperation::ListOrderHistoryView,json!({
-        "state":&state,"query":query,"date":date,
+        "state":&state,"query":query,"dateFrom":from,"dateTo":to,
+        "dateBasis":basis.key(),
         "trackingOrder":tracking_metadata(&state)
     }))?;
     let entries=value.as_array().ok_or("Rust 주문내역 조회 결과가 배열이 아닙니다.")?;
@@ -337,66 +355,151 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
     }
 }
 
-/// One right-aligned date-control group. Its visual order is fixed:
-/// reception day -> previous -> input -> next -> calendar -> all dates.
-/// All date/search semantics remain on the existing Rust history query path.
-fn history_date_controls(
-    ui:&mut Ui,date:&mut String,date_input:&mut String,
-    calendar_month:&mut NaiveDate
-)->bool {
-    let mut changed=false;
-    ui.spacing_mut().item_spacing.x=theme::SPACE_8;
-    ui.label(typography::field_label("접수일"));
-    if theme::action(ui,"‹",theme::ButtonRole::Standard,true).clicked(){
-        *date=move_date(date,-1);
-        *date_input=date.clone();
-        if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
-            *calendar_month=month_start(day);
-        }
-        changed=true;
+fn valid_date_input(value:&str)->bool{
+    value.is_empty()||NaiveDate::parse_from_str(value,"%Y-%m-%d")
+        .is_ok_and(|day|day.format("%Y-%m-%d").to_string()==value)
+}
+fn date_range_error(from:&str,to:&str)->Option<&'static str>{
+    if !valid_date_input(from)||!valid_date_input(to){
+        return Some("검색 날짜는 YYYY-MM-DD 형식으로 입력하세요.");
     }
-    if components::flexible_text_field(
-        ui,date_input,130.0,"YYYY-MM-DD"
-    ).changed(){
-        if date_input.is_empty() ||
-            NaiveDate::parse_from_str(date_input,"%Y-%m-%d").is_ok()
-        {
-            *date=date_input.clone();
-            if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
-                *calendar_month=month_start(day);
-            }
-            changed=true;
+    if !from.is_empty()&&!to.is_empty()&&from>to{
+        return Some("시작일은 종료일보다 늦을 수 없습니다.");
+    }
+    None
+}
+fn move_range(from:&mut String,to:&mut String,step:i64){
+    if from.is_empty()&&to.is_empty(){
+        let today=seoul_today();
+        *from=today.clone();*to=today;
+    }else{
+        for date in [from,to]{
+            if !date.is_empty(){*date=move_date(date,step);}
         }
     }
-    if theme::action(ui,"›",theme::ButtonRole::Standard,true).clicked(){
-        *date=move_date(date,1);
-        *date_input=date.clone();
-        if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
-            *calendar_month=month_start(day);
-        }
-        changed=true;
-    }
+}
+fn range_date_picker(
+    ui:&mut Ui,label:&str,date:&mut String,month:&mut NaiveDate,
+    id:&'static str
+)->bool{
+    ui.label(typography::field_label(label));
+    let mut changed=components::flexible_text_field(
+        ui,date,theme::SETTLEMENT_DATE_FIELD_WIDTH,"YYYY-MM-DD"
+    ).changed();
     let trigger=theme::action(
         ui,"달력",theme::ButtonRole::Standard,true
-    ).on_hover_text("접수일을 달력에서 선택");
+    ).on_hover_text(&format!("{label}을 달력에서 선택"));
     if trigger.clicked(){
-        let open=NaiveDate::parse_from_str(date,"%Y-%m-%d")
+        let day=NaiveDate::parse_from_str(date,"%Y-%m-%d")
             .unwrap_or_else(|_|NaiveDate::parse_from_str(
                 &seoul_today(),"%Y-%m-%d").expect("valid today"));
-        *calendar_month=month_start(open);
+        *month=month_start(day);
     }
-    if let Some(day)=date_calendar(
-        &trigger,calendar_month,date,"order-history-reception-date-calendar"
-    ){
+    if let Some(day)=date_calendar(&trigger,month,date,id){
         *date=day.format("%Y-%m-%d").to_string();
-        *date_input=date.clone();
         changed=true;
     }
-    if theme::action(ui,"전체 날짜",
-        theme::ButtonRole::Standard,!date.is_empty()).clicked(){
-        date.clear();
-        date_input.clear();
+    changed
+}
+fn history_date_range_leading(
+    ui:&mut Ui,basis:&mut HistoryDateBasis,
+    from:&mut String,from_month:&mut NaiveDate,
+    to:&mut String
+)->bool{
+    ui.spacing_mut().item_spacing.x=theme::SPACE_8;
+    let previous=*basis;
+    egui::ComboBox::from_id_salt("history-range-date-basis")
+        .width(115.0)
+        .selected_text(basis.label())
+        .show_ui(ui,|options|{
+            options.selectable_value(basis,HistoryDateBasis::Reception,"접수일 기준");
+            options.selectable_value(basis,HistoryDateBasis::Payment,"입금일 기준");
+        });
+    let mut changed=*basis!=previous;
+    if theme::action(ui,"‹",theme::ButtonRole::Standard,true).clicked(){
+        move_range(from,to,-1);
+        if let Ok(day)=NaiveDate::parse_from_str(from,"%Y-%m-%d"){
+            *from_month=month_start(day);
+        }
         changed=true;
+    }
+    changed |=range_date_picker(ui,"시작일",from,from_month,
+        "order-history-date-from-calendar");
+    changed
+}
+fn history_date_range_trailing(
+    ui:&mut Ui,from:&mut String,to:&mut String,
+    to_month:&mut NaiveDate
+)->bool{
+    ui.spacing_mut().item_spacing.x=theme::SPACE_8;
+    ui.label(typography::caption("~"));
+    let mut changed=range_date_picker(
+        ui,"종료일",to,to_month,"order-history-date-to-calendar"
+    );
+    if theme::action(ui,"›",theme::ButtonRole::Standard,true).clicked(){
+        move_range(from,to,1);
+        if let Ok(day)=NaiveDate::parse_from_str(to,"%Y-%m-%d"){
+            *to_month=month_start(day);
+        }
+        changed=true;
+    }
+    if theme::action(ui,"전체 날짜",theme::ButtonRole::Standard,
+        !from.is_empty()||!to.is_empty()).clicked(){
+        from.clear();to.clear();changed=true;
+    }
+    changed
+}
+/// All controls use explicit left-to-right slots even when the slot is
+/// anchored against the right edge; RTL layouts would reverse their order.
+fn history_date_controls(
+    ui:&mut Ui,basis:&mut HistoryDateBasis,
+    from:&mut String,to:&mut String,
+    from_month:&mut NaiveDate,to_month:&mut NaiveDate,
+    compact:bool
+)->bool{
+    let mut changed=false;
+    if compact{
+        let w=ui.available_width().max(1.0);
+        let (rect,_)=ui.allocate_exact_size(
+            Vec2::new(w,theme::INPUT_HEIGHT*2.0+theme::SPACE_8),
+            Sense::hover()
+        );
+        let start_width=RANGE_COMPACT_START_WIDTH.min(w);
+        let end_width=RANGE_COMPACT_END_WIDTH.min(w);
+        let first=Rect::from_min_size(
+            egui::pos2(rect.right()-start_width,rect.top()),
+            Vec2::new(start_width,theme::INPUT_HEIGHT)
+        );
+        let second=Rect::from_min_size(
+            egui::pos2(rect.right()-end_width,
+                rect.top()+theme::INPUT_HEIGHT+theme::SPACE_8),
+            Vec2::new(end_width,theme::INPUT_HEIGHT)
+        );
+        ui.scope_builder(UiBuilder::new()
+            .id_salt("history-range-start-line")
+            .max_rect(first).layout(egui::Layout::left_to_right(Align::Center)),
+            |line|{
+                changed|=history_date_range_leading(
+                    line,basis,from,from_month,to
+                );
+            });
+        ui.scope_builder(UiBuilder::new()
+            .id_salt("history-range-end-line")
+            .max_rect(second).layout(egui::Layout::left_to_right(Align::Center)),
+            |line|{
+                changed|=history_date_range_trailing(
+                    line,from,to,to_month
+                );
+            });
+    }else{
+        ui.horizontal(|line|{
+            changed|=history_date_range_leading(
+                line,basis,from,from_month,to
+            );
+            changed|=history_date_range_trailing(
+                line,from,to,to_month
+            );
+        });
     }
     changed
 }
