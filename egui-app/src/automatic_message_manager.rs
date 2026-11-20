@@ -362,7 +362,8 @@ impl AutomaticMessageManager {
     }
     fn list_height(ui:&Ui)->f32{
         (ui.ctx().content_rect().height()*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
-            .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT).max(180.0)
+            .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
+            .min((ui.available_height()-theme::SPACE_24).max(1.0))
     }
     fn provisional_visible(&self)->Vec<Value>{
         let query=self.product_search.trim().to_lowercase();
@@ -430,7 +431,8 @@ impl AutomaticMessageManager {
         let visible=self.provisional_visible();
         egui::ScrollArea::vertical().id_salt("provisional-notice-products")
             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-            .max_height(Self::list_height(ui)-theme::INPUT_HEIGHT-theme::SPACE_24)
+            .max_height((Self::list_height(ui)-theme::INPUT_HEIGHT
+                -theme::SPACE_24).max(1.0))
             .show(ui,|list|{
                 list.spacing_mut().item_spacing.y=theme::SPACE_4;
                 list.spacing_mut().interact_size.y=theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
@@ -569,7 +571,9 @@ impl AutomaticMessageManager {
         let left_width=(width*0.35).clamp(250.0,theme::FAMILY_LIST_WIDTH)
             .min((width-gap).max(160.0));
         let right_width=(width-left_width-gap).max(260.0);
-        let height=ui.available_height().max(340.0);
+        // Use the actual remaining management pane height. A 340pt
+        // minimum previously forced the footer below short windows.
+        let height=(ui.available_height()-theme::SPACE_8).max(1.0);
         let mut save=false;
         ui.horizontal(|panes|{
             panes.spacing_mut().item_spacing.x=gap;
@@ -592,7 +596,7 @@ impl AutomaticMessageManager {
                         egui::ScrollArea::vertical()
                             .id_salt("automatic-message-editor-fields")
                             .max_height((height-theme::INPUT_HEIGHT
-                                -theme::SPACE_24).max(140.0))
+                                -theme::SPACE_24*2.0).max(1.0))
                             .show(body,|fields|{
                                 if self.section==Section::General{
                                     self.general_editor(fields);
