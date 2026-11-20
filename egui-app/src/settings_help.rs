@@ -25,6 +25,61 @@ fn info(title:&str)->Option<HelpInfo>{
     let (purpose,when,steps,result,caution):(
         _,Option<&'static str>,&'static [&'static str],_,_
     )=match title {
+        "운임 관리" => (
+            "상품을 포장해 보낼 때 필요한 배송비와 합포장 기준을 관리합니다.",
+            Some("상품의 배송비가 달라졌거나 같은 상자로 보낼 수 있는 상품을 정할 때 사용합니다."),
+            &["상품별 기본 운임에서 확인된 배송비를 등록합니다.",
+              "같은 포장 기준을 쓸 상품은 배송 그룹 지정에서 묶습니다.",
+              "동급 그룹 운임표에서 그룹별 배송비를 확인하거나 수정합니다.",
+              "필요한 경우 조합 및 기준 이력을 확인합니다."],
+            Some("주문 접수 시 등록된 운임 기준을 참고할 수 있습니다."),
+            Some("실제 확인하지 않은 운임은 임의로 입력하지 않습니다.")
+        ),
+        "배송 그룹 일괄 지정" => (
+            "선택한 여러 상품을 같은 배송 그룹으로 한꺼번에 지정합니다.",
+            Some("같은 포장 기준을 사용하는 상품들을 정리할 때 사용합니다."),
+            &["변경할 상품을 체크합니다.","적용할 배송 그룹을 선택합니다.",
+              "선택 상품에 적용을 누릅니다.",
+              "아래에서 변경 내용을 확인하고 그룹 지정 저장을 누릅니다."],
+            Some("저장한 상품의 배송 그룹이 변경됩니다."),
+            Some("실제 포장 조건이 확인된 상품만 같은 그룹으로 묶습니다.")
+        ),
+        "그룹 운임표" | "배송 그룹 운임표" => (
+            "같은 배송 기준으로 묶은 상품에 적용할 운임을 등록합니다.",
+            Some("같은 포장 조건의 상품이 여러 개 있을 때 배송비를 확인하거나 수정할 때 사용합니다."),
+            &["배송 그룹을 확인합니다.","운임 수정 버튼을 누릅니다.",
+              "최대 합포장 수량과 확인된 운임을 입력합니다.","저장 버튼을 눌러 적용합니다."],
+            Some("해당 그룹의 상품들이 새 운임 기준을 참고할 수 있습니다."),
+            Some("기존 운임 기준을 종료할 때에는 운임 기준 관리에서 따로 처리합니다.")
+        ),
+        "전체 운임 기준 변경" => (
+            "지금까지 사용하던 운임 기준을 종료하고 새로운 운임을 등록할 수 있도록 합니다.",
+            Some("기존 배송비 기준을 더 이상 사용하지 않을 때만 사용합니다."),
+            &["새 운임 기준을 적용해야 하는지 확인합니다.",
+              "전체 운임 기준 변경 버튼을 누릅니다.",
+              "확인창에서 변경 범위를 확인하고 승인합니다.",
+              "새로운 배송비를 확인한 뒤 다시 등록합니다."],
+            Some("이전 운임의 자동 추천이 중단되고 새 기준을 등록할 수 있습니다."),
+            Some("기존 운임 기준 전체에 영향을 주므로 일반적인 운임 수정에는 사용하지 않습니다.")
+        ),
+        "배송 그룹 운임 수정" => (
+            "선택한 배송 그룹에 적용할 배송비를 등록하거나 수정합니다.",
+            None,
+            &["최대 묶음 수량을 선택합니다.",
+              "운임 구간 추가로 확인한 수량만 등록합니다.",
+              "저장 버튼을 눌러 운임을 반영합니다."],
+            Some("그룹에 등록된 상품들이 수정된 운임 기준을 참고할 수 있습니다."),
+            Some("확인하지 않은 운임은 빈칸으로 둡니다. 기존 기준을 아예 바꾸려면 기준 변경 작업을 먼저 합니다.")
+        ),
+        "상품별 운임" => (
+            "이 상품을 포장해 보낼 때의 배송비를 등록합니다.",
+            Some("상품별 기본 배송비와 합포장 수량을 확인했을 때 사용합니다."),
+            &["배송비를 수정할 상품을 찾습니다.",
+              "설정 버튼을 누릅니다.","확인된 합포장 수량과 배송비를 입력합니다.",
+              "기본 운임 저장을 눌러 적용합니다."],
+            Some("새 주문에서 해당 상품의 운임 기준을 참고할 수 있습니다."),
+            Some("확인되지 않은 운임은 임의로 입력하지 않습니다.")
+        ),
         "화면 글자 크기"=>(
             "반도허브에 표시되는 글자와 버튼 크기를 보기 편하게 조절합니다.",
             Some("글씨가 너무 작거나 화면에 정보가 잘 들어오지 않을 때 사용합니다."),
@@ -139,7 +194,14 @@ pub fn heading(ui:&mut Ui,title:&str){
     ui.horizontal(|heading|{
         heading.spacing_mut().item_spacing.x=theme::SPACE_8;
         heading.label(typography::section_heading(title));
-        let Some(help)=info(title) else{return;};
+        icon(heading,title);
+    });
+}
+
+/// Mouse-only clickable ? help, using the same delayed, pinnable native
+/// tooltip already used throughout Settings. The caller owns title layout.
+pub fn icon(heading:&mut Ui,title:&str){
+    let Some(help)=info(title) else{return;};
         let (rect,response)=heading.allocate_exact_size(
             Vec2::splat(theme::SETTINGS_HELP_ICON_SIZE),Sense::click()
         );
@@ -241,5 +303,4 @@ pub fn heading(ui:&mut Ui,title:&str){
             state.popup=Some(response.response.rect);
         }else{state.popup=None;}
         ctx.data_mut(|data|data.insert_temp(id,state));
-    });
 }
