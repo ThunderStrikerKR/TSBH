@@ -2338,6 +2338,9 @@ impl BandoEgui {
                 let mut include_link=false;
                 header.add_enabled(false,egui::Checkbox::new(&mut include_link,"링크 포함"));
             },|body|{
+                // All message-body spacing is explicit; default item spacing
+                // previously pushed the bottom copy buttons past the pane.
+                body.spacing_mut().item_spacing.y=0.0;
                 let button_row_height=if body.available_width()<280.0{
                     theme::ACTION_STANDARD_HEIGHT*2.0+theme::SPACING
                 }else{theme::ACTION_STANDARD_HEIGHT};
@@ -2389,6 +2392,7 @@ impl BandoEgui {
             let mut include_link = false;
             ui.add_enabled(false, egui::Checkbox::new(&mut include_link, "링크 포함"));
         }, |ui| {
+            ui.spacing_mut().item_spacing.y=0.0;
             // Empty egui Frames shrink to their contents. Allocate the real
             // message rectangle explicitly so it fills the available width
             // instead of appearing as a narrow vertical stripe.
@@ -2539,6 +2543,9 @@ impl BandoEgui {
                     pane.set_width(bottom_rect.width());
                     pane.set_height(bottom_rect.height());
                     Self::section(pane,"품목 및 운임",bottom_rect.height(),|ui|{
+                        // Footer slots must consume EXACTLY their reserved
+                        // heights, with no hidden egui spacing added between.
+                        ui.spacing_mut().item_spacing.y=0.0;
                         // React structure: 3-column product grid + freight + actions,
                         // independently scrolling above a fixed VAT and total footer.
                         let available = components::docked_section_body_height(
@@ -2855,6 +2862,7 @@ impl BandoEgui {
                 pane.set_width(bottom_rect.width());
                 pane.set_height(bottom_rect.height());
                 Self::section(pane, "품목 및 운임", remaining, |ui| {
+                    ui.spacing_mut().item_spacing.y=0.0;
                     let preview = self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
                         .and_then(|draft|draft.pricing_preview.as_ref())
