@@ -17,9 +17,9 @@ use std::{
 };
 
 const ROW_HEIGHT: f32 = theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
-// Keep one logical row per entry and reserve two points above/below each
-// row for an individual full-width block. No extra virtual rows.
-const ROW_BLOCK_INSET: f32 = theme::SPACE_4 * 0.5;
+// Expanded shipment details are discrete one-row information blocks.
+// The parent history table keeps its original paint, spacing, and height.
+const DETAIL_BLOCK_INSET: f32 = theme::SPACE_4 * 0.5;
 const EXCEL_ITEM_MARKER: &str = "◆ ";
 const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
@@ -157,29 +157,27 @@ impl Sort {
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum HistoryLine {
     Order(usize),
-    // Exactly one expanded row per recipient, aligned to the seven columns
-    // of the parent order. No second item/transport row or billing footer.
-    Recipient(usize,usize),
+    // One information block per ACTUAL shipment; None is a recipient
+    // waiting for its first shipment. Both keep the one-line detail layout.
+    Recipient(usize,usize,Option<usize>),
 }
 
-// Date-column tree branches use stable parent/recipient indices rather than
-// nearby virtual rows, so sorting and partial scrolling never mix orders.
+// Determine tree endings from the actual flat display order. This remains
+// correct when one recipient has several shipments or history is sorted.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum HistoryBranch { Root, Continue, Last }
-fn history_branch(line:HistoryLine,snapshot:&HistorySnapshot,
-    expanded:&BTreeSet<String>)->Option<HistoryBranch>{
-    match line {
-        HistoryLine::Order(index)=>{
-            let row=&snapshot.rows[index];
-            (expanded.contains(field(&row["order"],"id")) &&
-                !rows(&row["recipients"]).is_empty())
+fn history_branch(lines:&[HistoryLine],index:usize)->Option<HistoryBranch>{
+    let current=*lines.get(index)?;
+    let next=lines.get(index+1);
+    match current {
+        HistoryLine::Order(order)=>{
+            matches!(next,Some(HistoryLine::Recipient(child,_,_)) if *child==order)
                 .then_some(HistoryBranch::Root)
         },
-        HistoryLine::Recipient(index,recipient_index)=>{
-            let count=rows(&snapshot.rows[index]["recipients"]).len();
-            if count==0 || recipient_index>=count {None}
-            else if recipient_index+1==count {Some(HistoryBranch::Last)}
-            else {Some(HistoryBranch::Continue)}
+        HistoryLine::Recipient(order,_,_)=>{
+            if matches!(next,Some(HistoryLine::Recipient(child,_,_)) if *child==order) {
+                Some(HistoryBranch::Continue)
+            }else{Some(HistoryBranch::Last)}
         },
     }
 }
@@ -252,8 +250,29 @@ fn display_lines(snapshot:&HistorySnapshot,expanded:&BTreeSet<String>,
         let row=&snapshot.rows[index];
         lines.push(HistoryLine::Order(index));
         if !expanded.contains(field(&row["order"],"id")){continue}
-        for (recipient_index,_) in rows(&row["recipients"]).iter().enumerate(){
-            lines.push(HistoryLine::Recipient(index,recipient_index));
+        let shipments=rows(&snapshot.state["workflow"]["shipments"]);
+        for (recipient_index,recipient) in rows(&row["recipients"]).iter().enumerate(){
+            let recipient_id=field(recipient,"id");
+            let mut found=false;
+            for (shipment_index,shipment) in shipments.iter().enumerate(){
+                if field(shipment,"orderId")==field(&row["order"],"id") &&
+                   field(shipment,"recipientId")==recipient_id &&
+                   shipment["legacyArchived"]!=true &&
+                   !rows(&snapshot.state["workflow"]["groups"]).iter().any(|group|
+                       field(group,"id")==field(shipment,"groupId") &&
+                       !group["deletedAt"].is_null() &&
+                       group["deletedAt"].as_str()!=Some("")
+                   ) {
+                    lines.push(HistoryLine::Recipient(
+                        index,recipient_index,Some(shipment_index)
+                    ));
+                    found=true;
+                }
+            }
+            if !found{
+                // A confirmed recipient remains inspectable before export.
+                lines.push(HistoryLine::Recipient(index,recipient_index,None));
+            }
         }
     }
     lines
@@ -344,25 +363,19 @@ fn history_recipient_product_notes(row:&Value,recipient_index:usize)->String{
     }).collect::<Vec<_>>();
     notes.join("\n")
 }
-fn history_recipient_logistics(
-    snapshot:&HistorySnapshot,order_id:&str,recipient_id:&str
-)->(String,String){
-    // Keep actual freight distinct from shipment tracking. Each can be
-    // independently unknown, and neither is inferred from order billing.
-    let mut freight=Vec::new();
-    let mut tracking=Vec::new();
-    for shipment in rows(&snapshot.state["workflow"]["shipments"])
-        .iter().filter(|shipment|
-            field(shipment,"orderId")==order_id
-            && field(shipment,"recipientId")==recipient_id)
-    {
-        freight.extend(shipment["actualFreight"].as_object().into_iter()
-            .flatten().filter_map(|(_,value)|value.as_i64())
-            .map(components::display_won));
-        tracking.extend(shipment["tracking"].as_object().into_iter()
-            .flatten().filter_map(|(_,value)|value.as_str())
-            .filter(|value|!value.is_empty()).map(str::to_owned));
-    }
+fn history_shipment_logistics(shipment:Option<&Value>)->(String,String){
+    // A detail block belongs to exactly one shipment. Never merge freight or
+    // tracking from two distinct shipments for the same recipient.
+    let freight=shipment.into_iter()
+        .flat_map(|s|s["actualFreight"].as_object().into_iter())
+        .flat_map(|values|values.values())
+        .filter_map(Value::as_i64).map(components::display_won)
+        .collect::<Vec<_>>();
+    let tracking=shipment.into_iter()
+        .flat_map(|s|s["tracking"].as_object().into_iter())
+        .flat_map(|values|values.values())
+        .filter_map(Value::as_str).filter(|value|!value.is_empty())
+        .map(str::to_owned).collect::<Vec<_>>();
     (
         if freight.is_empty(){"운임 미확인".to_owned()}else{freight.join(" / ")},
         if tracking.is_empty(){"운송장 미확인".to_owned()}
@@ -373,7 +386,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
     expanded:&BTreeSet<String>,widths:&[f32;7],pending_toggle:&mut Option<String>){
     let area=rect.intersect(ui.clip_rect());
     let order_index=match line{
-        HistoryLine::Order(i)|HistoryLine::Recipient(i,_)=>i,
+        HistoryLine::Order(i)|HistoryLine::Recipient(i,_,_)=>i,
     };
     let row=&snapshot.rows[order_index];
     let id=field(&row["order"],"id");
@@ -467,7 +480,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                     }
                 });
         },
-        HistoryLine::Recipient(_,recipient_index)=>{
+        HistoryLine::Recipient(_,recipient_index,shipment_index)=>{
             let recipient=&row["recipients"][recipient_index];
             let columns=cells(rect.min,widths,rect.height());
             // 0 reception date: empty. 4 billed total and 5 payment
@@ -477,9 +490,10 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 else{recipient_name};
             let products=history_recipient_products(row,recipient_index);
             let product_notes=history_recipient_product_notes(row,recipient_index);
-            let (freight,tracking)=history_recipient_logistics(
-                snapshot,id,field(recipient,"id")
+            let shipment=shipment_index.and_then(|index|
+                rows(&snapshot.state["workflow"]["shipments"]).get(index)
             );
+            let (freight,tracking)=history_shipment_logistics(shipment);
             paint_text(ui,columns[1],name,true,false);
             paint_text(ui,columns[2],&products,true,false);
             paint_center(ui,columns[3],&freight);
@@ -490,7 +504,8 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             ui.interact(columns[1].intersect(area),
                 ui.make_persistent_id(("history-recipient",id,recipient_index)),
                 Sense::hover()).on_hover_text(
-                    format!("수취인: {name}\n배송 주소: {address}")
+                    format!("수취인: {name}\n배송 주소: {address}\n발송건: {}",
+                        shipment.map(|s|field(s,"id")).unwrap_or("발송 대기"))
                 );
             ui.interact(columns[2].intersect(area),
                 ui.make_persistent_id(("history-recipient-products",id,recipient_index)),
@@ -1069,39 +1084,42 @@ impl OrderHistoryManager {
                             .layout(egui::Layout::top_down(Align::Min)),|row_ui|{
                                 row_ui.allocate_exact_size(
                                     Vec2::new(table_width,ROW_HEIGHT),Sense::hover());
-                                // Each fixed-height row is one separate
-                                // horizontal block; all seven column positions
-                                // and the scrollbar's coordinate space stay put.
-                                let block_rect=row_rect.shrink2(
-                                    Vec2::new(1.0,ROW_BLOCK_INSET));
-                                let background=match line{
-                                    HistoryLine::Order(order_index)=>{
-                                        if order_index%2==0{theme::TABLE_ROW_ALT_BG}
-                                        else{theme::INPUT}
+                                match line {
+                                    HistoryLine::Order(_)=>{
+                                        // Original order-history TABLE appearance;
+                                        // the earlier global row-card change is reverted.
+                                        let background=if line_index%2==0{theme::PANEL}
+                                            else{theme::TABLE_ROW_ALT_BG};
+                                        row_ui.painter().rect_filled(row_rect,0.0,background);
+                                        row_ui.painter().line_segment(
+                                            [row_rect.left_bottom(),row_rect.right_bottom()],
+                                            Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER));
                                     },
-                                    // Recipient blocks retain a quieter tier
-                                    // than the parent order block.
-                                    HistoryLine::Recipient(_,_)=>theme::PANEL,
-                                };
-                                row_ui.painter().rect_filled(
-                                    row_rect,0.0,theme::CANVAS);
-                                row_ui.painter().rect(
-                                    block_rect,theme::WORKFLOW_CHIP_RADIUS as f32,
-                                    background,Stroke::new(1.0,theme::DIVIDER),
-                                    egui::StrokeKind::Inside
-                                );
+                                    HistoryLine::Recipient(_,_,_)=>{
+                                        // Only the EXPANDED shipment detail is a
+                                        // cohesive block. No interior grid lines.
+                                        row_ui.painter().rect_filled(
+                                            row_rect,0.0,theme::CANVAS);
+                                        let block_rect=row_rect.shrink2(
+                                            Vec2::new(1.0,DETAIL_BLOCK_INSET));
+                                        row_ui.painter().rect(
+                                            block_rect,theme::WORKFLOW_CHIP_RADIUS as f32,
+                                            theme::PANEL,Stroke::new(1.0,theme::DIVIDER),
+                                            egui::StrokeKind::Inside
+                                        );
+                                    }
+                                }
                                 if let Some(snapshot)=snapshot {
                                     draw_line(row_ui,row_rect,line,snapshot,
                                         &self.expanded,&widths,&mut pending_toggle);
                                 }
-                                // Column rules terminate at the block edge;
-                                // they do not fill the small gaps between rows.
-                                paint_column_dividers(
-                                    row_ui,row_rect,&widths,false,block_rect
-                                );
-                                if let Some(snapshot)=snapshot {
-                                    if let Some(branch)=history_branch(
-                                        line,snapshot,&self.expanded) {
+                                if matches!(line,HistoryLine::Order(_)) {
+                                    paint_column_dividers(
+                                        row_ui,row_rect,&widths,false,row_rect
+                                    );
+                                }
+                                if snapshot.is_some() {
+                                    if let Some(branch)=history_branch(&lines,line_index){
                                         paint_history_branch(row_ui,row_rect,&widths,branch);
                                     }
                                 }
@@ -1234,24 +1252,24 @@ mod tests{
         expanded.insert("o1".to_owned());
         // Order row + EXACTLY ONE detail row per recipient; the parent
         // already owns billed total and employee payment approval columns.
-        assert_eq!(display_lines(&snapshot,&expanded,None),vec![
+        let expanded_lines=display_lines(&snapshot,&expanded,None);
+        assert_eq!(expanded_lines,vec![
             HistoryLine::Order(0),
-            HistoryLine::Recipient(0,0),
-            HistoryLine::Recipient(0,1)
+            HistoryLine::Recipient(0,0,Some(0)),
+            HistoryLine::Recipient(0,1,None)
         ]);
-        assert_eq!(history_branch(HistoryLine::Order(0),&snapshot,&expanded),
-            Some(HistoryBranch::Root));
-        assert_eq!(history_branch(HistoryLine::Recipient(0,0),&snapshot,&expanded),
-            Some(HistoryBranch::Continue));
-        assert_eq!(history_branch(HistoryLine::Recipient(0,1),&snapshot,&expanded),
-            Some(HistoryBranch::Last));
+        assert_eq!(history_branch(&expanded_lines,0),Some(HistoryBranch::Root));
+        assert_eq!(history_branch(&expanded_lines,1),Some(HistoryBranch::Continue));
+        assert_eq!(history_branch(&expanded_lines,2),Some(HistoryBranch::Last));
         assert_eq!(history_recipient_products(&snapshot.rows[0],0),
             "◆ BD 709 / 블랙 × 4  ◆ 뮤직 트레이 × 1");
-        assert_eq!(history_recipient_logistics(&snapshot,"o1","r1"),
-            ("3,500원".to_owned(),"123456789".to_owned()));
-        assert_eq!(history_recipient_logistics(&snapshot,"o1","r2"),
+        assert_eq!(history_shipment_logistics(
+            rows(&snapshot.state["workflow"]["shipments"]).first()
+        ),("3,500원".to_owned(),"123456789".to_owned()));
+        assert_eq!(history_shipment_logistics(None),
             ("운임 미확인".to_owned(),"운송장 미확인".to_owned()));
-        // Multiple shipments for one recipient remain on ONE detail row.
+        // Multiple shipments for one recipient now occupy TWO individual
+        // one-line blocks; values cannot be merged across shipment IDs.
         let mut multiple=HistorySnapshot{
             state:snapshot.state.clone(),rows:snapshot.rows.clone()
         };
@@ -1260,9 +1278,18 @@ mod tests{
                 "tracking":{"parcel":"987654321"},
                 "actualFreight":{"parcel":2500}})
         );
-        assert_eq!(display_lines(&multiple,&expanded,None).len(),3);
-        assert_eq!(history_recipient_logistics(&multiple,"o1","r1"),
-            ("3,500원 / 2,500원".into(),"123456789 / 987654321".into()));
+        let split_lines=display_lines(&multiple,&expanded,None);
+        assert_eq!(split_lines,vec![
+            HistoryLine::Order(0),
+            HistoryLine::Recipient(0,0,Some(0)),
+            HistoryLine::Recipient(0,0,Some(1)),
+            HistoryLine::Recipient(0,1,None)
+        ]);
+        assert_eq!(history_branch(&split_lines,2),Some(HistoryBranch::Continue));
+        assert_eq!(history_branch(&split_lines,3),Some(HistoryBranch::Last));
+        assert_eq!(history_shipment_logistics(
+            rows(&multiple.state["workflow"]["shipments"]).get(1)
+        ),("2,500원".into(),"987654321".into()));
     }
     #[test]
     fn employee_approval_column_sorts_by_confirmation_date_and_keeps_unknown_last(){
