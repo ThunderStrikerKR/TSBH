@@ -96,27 +96,17 @@ pub fn read_client_index_rows(conn: &Connection) -> Result<Vec<Value>, String> {
     Ok(clients)
 }
 
-/// Read the complete v2 business snapshot through the same relational
-/// projector in every desktop host. The caller owns the SQLite connection,
-/// snapshot consistency and schema-v2 verification; this function never writes.
-pub fn read_v2_snapshot(conn: &Connection) -> Result<Value, String> {
+fn read_envelope(conn: &Connection) -> Result<Value, String> {
     let raw: String = conn.query_row(
         "SELECT payload FROM app_state WHERE id=1",
         [],
         |row| row.get(0),
     ).map_err(|_| "운영 업무 상태를 읽지 못했습니다.".to_owned())?;
-    let mut state: Value = serde_json::from_str(&raw)
-        .map_err(|_| "운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())?;
-    hydrate_v2(conn, &mut state)?;
-    Ok(state)
+    serde_json::from_str(&raw)
+        .map_err(|_| "운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())
 }
 
-/// Hydrate only an already-verified schema-v2 snapshot.
-///
-/// The caller must hold a consistent read snapshot or a write transaction.
-/// Retains array ordering, nested variants/items/recipients and the legacy
-/// app_state envelope without recomputing or modifying any business values.
-pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
+fn read_catalog_entities(conn: &Connection) -> Result<(Vec<Value>, Vec<Value>), String> {
     let mut products = read_entities(
         conn,
         "SELECT payload FROM core_products ORDER BY position,id",
@@ -126,11 +116,42 @@ pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
         "SELECT product_id,payload FROM core_product_prices ORDER BY product_id",
     )?;
     attach(&mut products, "variants", prices)?;
+    let clients = read_entities(conn, CORE_CLIENTS_SQL)?;
+    Ok((products, clients))
+}
 
-    let clients = read_entities(
-        conn,
-        CORE_CLIENTS_SQL,
-    )?;
+/// Read the complete v2 business snapshot through the same relational
+/// projector in every desktop host. The caller owns the SQLite connection,
+/// snapshot consistency and schema-v2 verification; this function never writes.
+pub fn read_v2_snapshot(conn: &Connection) -> Result<Value, String> {
+    let mut state = read_envelope(conn)?;
+    hydrate_v2(conn, &mut state)?;
+    Ok(state)
+}
+
+/// Read only product, price, client and envelope metadata for catalog screens.
+/// Excludes order, recipient and item tables: those are never returned by the
+/// egui load_catalog contract. The caller maintains one read transaction and
+/// verifies the schema before calling this function.
+pub fn read_v2_catalog_snapshot(conn: &Connection) -> Result<Value, String> {
+    let mut state = read_envelope(conn)?;
+    let (products, clients) = read_catalog_entities(conn)?;
+    let root = state.as_object_mut()
+        .ok_or("업무 상태는 객체여야 합니다.")?;
+    root.insert("products".into(), json!(products));
+    root.insert("clients".into(), json!(clients));
+    // Never leak an older compatibility envelope's core orders to a catalog.
+    root.remove("orders");
+    Ok(state)
+}
+
+/// Hydrate only an already-verified schema-v2 snapshot.
+///
+/// The caller must hold a consistent read snapshot or a write transaction.
+/// Retains array ordering, nested variants/items/recipients and the legacy
+/// app_state envelope without recomputing or modifying any business values.
+pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
+    let (products, clients) = read_catalog_entities(conn)?;
     let mut orders = read_entities(
         conn,
         "SELECT payload FROM core_orders ORDER BY position,id",
