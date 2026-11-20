@@ -1127,26 +1127,31 @@ impl FreightManager {
 
                         // A checkbox owns exactly one column rectangle; it
                         // must not be allowed to change subsequent column widths.
-                        let checkbox_rect=cells[0].shrink2(egui::vec2(4.0,0.0));
-                        let checkbox_clip=checkbox_rect.intersect(table.clip_rect());
-                        table.scope_builder(
-                            egui::UiBuilder::new()
-                                .id_salt(("freight-checkbox",id))
-                                .max_rect(checkbox_rect)
-                                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                            |child|{
-                                child.set_clip_rect(
-                                    checkbox_clip
-                                );
-                                child.add_enabled_ui(enabled,|controls|{
-                                    if controls.checkbox(&mut checked,"").changed(){
-                                        if checked {selected.insert(id.to_owned());}
-                                        else {selected.remove(id);}
-                                        *bulk_feedback=None;
-                                    }
-                                });
-                            }
+                        // Center the checkbox within the FIRST COLUMN,
+                        // not 4pt from its left edge. Keep one stable
+                        // interactive box centered vertically in the 42pt row.
+                        let check_width=table.spacing().icon_width
+                            +table.spacing().icon_spacing;
+                        let checkbox_rect=egui::Rect::from_center_size(
+                            cells[0].center(),
+                            egui::vec2(check_width,theme::INPUT_HEIGHT)
                         );
+                        let checkbox_clip=cells[0].intersect(table.clip_rect());
+                        let mut checkbox_builder=egui::UiBuilder::new()
+                            .id_salt(("freight-checkbox",id))
+                            .max_rect(checkbox_rect)
+                            .layout(egui::Layout::left_to_right(egui::Align::Min));
+                        if !enabled {
+                            checkbox_builder=checkbox_builder.disabled();
+                        }
+                        table.scope_builder(checkbox_builder,|controls|{
+                            controls.set_clip_rect(checkbox_clip);
+                            if controls.checkbox(&mut checked,"").changed(){
+                                if checked {selected.insert(id.to_owned());}
+                                else {selected.remove(id);}
+                                *bulk_feedback=None;
+                            }
+                        });
 
                         let model=model_label(text(product,"name"));
                         let subtitle=text(product,"subtitle").trim();
@@ -1368,7 +1373,12 @@ impl FreightManager {
                 let region=header_cells[i].shrink2(egui::vec2(6.0,0.0));
                 let galley=typography::table_header_galley(section,title);
                 header_painter.with_clip_rect(header_rect.intersect(region)).galley(
-                    egui::pos2(region.left(),region.center().y-galley.size().y/2.0),
+                    egui::pos2(
+                        if i==0 {
+                            header_cells[0].center().x-galley.size().x/2.0
+                        }else{region.left()},
+                        region.center().y-galley.size().y/2.0
+                    ),
                     galley,theme::SECONDARY
                 );
                 if i<7 {
