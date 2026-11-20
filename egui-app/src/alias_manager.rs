@@ -28,6 +28,44 @@ fn product<'a>(state:&'a Value,id:&str)->Option<&'a Value>{
     rows(&state["products"]).iter().find(|p|field(p,"id")==id)
 }
 fn is_client_active(v:&Value)->bool{v.get("deletedAt").is_none_or(Value::is_null)}
+fn category_levels(catalog:&Value,selected:&str)
+    ->Vec<(Option<String>,String,Vec<(String,String)>)>{
+    // React categoryFilterLevels: all selected ancestors each reveal one
+    // more dropdown, with no depth cap. Only filter widget construction is
+    // local; eligible product IDs come from native Rust catalog queries.
+    let mut all=rows(&catalog["categories"]).to_vec();
+    for (id,name) in [
+        ("catalog-root:BANDOSTAND","반도스탠드"),
+        ("catalog-root:BANDOMALL","반도몰")
+    ]{
+        if !all.iter().any(|v|field(v,"id")==id){
+            all.push(json!({"id":id,"name":name,"parentId":null,"active":true}));
+        }
+    }
+    let mut selected_path=Vec::new();
+    let mut seen=HashSet::new();
+    let mut current=selected;
+    while !current.is_empty()&&seen.insert(current.to_owned()){
+        let Some(node)=all.iter().find(|v|field(v,"id")==current)else{
+            selected_path.clear();break;
+        };
+        selected_path.insert(0,current.to_owned());
+        current=field(node,"parentId");
+    }
+    let mut levels=Vec::new();
+    for depth in 0..=selected_path.len(){
+        let parent=if depth==0{None}else{Some(selected_path[depth-1].clone())};
+        let choices=all.iter().filter(|v|{
+            v["active"]!=false &&
+            v.get("parentId").and_then(Value::as_str)==parent.as_deref()
+        }).map(|v|(field(v,"id").to_owned(),field(v,"name").to_owned()))
+          .collect::<Vec<_>>();
+        if depth>0 && choices.is_empty(){break;}
+        let value=selected_path.get(depth).cloned().unwrap_or_default();
+        levels.push((parent,value,choices));
+    }
+    levels
+}
 #[derive(Clone,PartialEq,Eq)]
 struct Form {
     text:String,
@@ -277,21 +315,33 @@ impl AliasManager {
                                 .clicked(){close=true;}
                         });
                     });
+                    let width=modal.available_width();
                     components::flexible_text_field(modal,&mut self.query,
-                        modal.available_width(),"브랜드 / 상품명 / 모델 / 별칭 검색");
+                        width,"브랜드 / 상품명 / 모델 / 별칭 검색");
                     modal.horizontal_wrapped(|filters|{
-                        let current=rows(&catalog["categories"]).iter()
-                            .find(|c|field(c,"id")==self.category)
-                            .map(|c|field(c,"name")).unwrap_or("전체 카테고리");
-                        egui::ComboBox::from_id_salt("alias-product-category")
-                            .selected_text(current).show_ui(filters,|choice|{
-                                choice.selectable_value(&mut self.category,
-                                    String::new(),"전체 카테고리");
-                                for cat in rows(&catalog["categories"]){
-                                    choice.selectable_value(&mut self.category,
-                                        field(cat,"id").to_owned(),field(cat,"name"));
-                                }
-                            });
+                        for (depth,(parent,selected,children)) in
+                            category_levels(catalog,&self.category).into_iter().enumerate(){
+                            let mut value=selected.clone();
+                            let label=children.iter()
+                                .find(|(id,_)|*id==value)
+                                .map(|(_,name)|name.as_str())
+                                .unwrap_or(if depth==0{
+                                    "전체 카테고리"
+                                }else{"현재 분류 전체"});
+                            egui::ComboBox::from_id_salt(("alias-product-category",depth))
+                                .selected_text(label).show_ui(filters,|choice|{
+                                    choice.selectable_value(&mut value,String::new(),
+                                        if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
+                                    for (id,name) in children{
+                                        choice.selectable_value(&mut value,id,name);
+                                    }
+                                });
+                            if value!=selected{
+                                self.category=if value.is_empty(){
+                                    parent.unwrap_or_default()
+                                }else{value};
+                            }
+                        }
                         let brand=rows(&catalog["brands"]).iter()
                             .find(|b|field(b,"id")==self.brand)
                             .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
