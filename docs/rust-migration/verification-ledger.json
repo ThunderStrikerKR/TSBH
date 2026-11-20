@@ -898,7 +898,116 @@
           "Full original React UI/help/field labels and compact table density require scoped static parity check",
           "Explicit production DB and Tauri helper file configuration still required; real operational write not exercised",
           "Write conflict recovery/reload and subsequent manual draft revalidation not yet proven"
-        ]
+        ],
+        "staticUiAudit": {
+          "baseline": "main 2e614815e8dc6f941cb936c327e713df64661f9b React ShippingManager.tsx, ProductFreightPanel.tsx, ShippingFeeRanges.tsx, shipping.css + applied management-layout.css; egui freight_manager.rs; Rust shipping.rs and bridge",
+          "evidenceGrade": "STATIC_DIFF_ONLY; no Windows GUI; no runtime interaction",
+          "approvedLayoutChange": "3 tabs (shipping groups / group rates / combination history), product individual rate subordinate to groups: do not treat 4->3 tab count as loss alone",
+          "parity": "NOT_COMPLETE",
+          "findings": [
+            [
+              "S01",
+              "P1",
+              "product list missing onlyMissing checkbox, maxBundle/fee registration/packable/modified columns"
+            ],
+            [
+              "S02",
+              "P1",
+              "assignment rows missing color/option values and compact internalModel/subtitle presentation"
+            ],
+            [
+              "S03",
+              "P1",
+              "group rate table replaced with cards: registration status and table management columns absent"
+            ],
+            [
+              "S04",
+              "P1",
+              "group-assigned product lacks original row Group Basis Edit shortcut"
+            ],
+            [
+              "S05",
+              "P1",
+              "group-to-product tariff copy blocks group-assigned products; React allows and Rust copies"
+            ],
+            [
+              "S06",
+              "P1",
+              "group-assigned product reset barred; original Rust reset_product_freight_rule mutates group, not the same as change_basis"
+            ],
+            [
+              "S07",
+              "P1",
+              "group delete confirmation omits itemized affected products and colors"
+            ],
+            [
+              "S08",
+              "P1",
+              "freight snapshot loads first open/own save/DB restore only, no reenter refresh/conflict reload"
+            ],
+            [
+              "S09",
+              "P1",
+              "group list uses normalized editableRules as display source, may show maxConfirmed=1 when current raw remains unconfirmed"
+            ],
+            [
+              "S10",
+              "P1",
+              "dirty rate modal blocks global navigation instead of original save/discard/cancel leave guard"
+            ],
+            [
+              "S11",
+              "P2",
+              "combination history lacks at/verifiedAt/sampleCount/user vs real verification metadata"
+            ],
+            [
+              "S12",
+              "P2",
+              "group history hides null/unconfirmed fee intervals"
+            ],
+            [
+              "S13",
+              "P2",
+              "freight screen contextual HelpTooltip controls omitted"
+            ],
+            [
+              "S14",
+              "P2",
+              "changing group filter does not clear selection unlike React"
+            ],
+            [
+              "S15",
+              "P2",
+              "MoneyInput localized comma handling/formatting vs raw egui numeric string differs"
+            ],
+            [
+              "S16",
+              "P2",
+              "empty states and footer no-change/counted save labels differ"
+            ],
+            [
+              "S17",
+              "P2",
+              "React sticky dense ManagementTable with in-list scroll differs from egui whole-page scrolling and Grid"
+            ],
+            [
+              "S18",
+              "P2",
+              "React 4-card stats with count unit and CSS sizing differ from wrapped egui frames"
+            ],
+            [
+              "S19",
+              "P2",
+              "missing individual product whitespace-insensitive search"
+            ],
+            [
+              "S20",
+              "RELEASE",
+              "shipping writes still require explicit business DB/helper/write authorization; compile PASS is not operational write proof"
+            ]
+          ],
+          "result": "SOURCE_AUDIT_FAIL_MISSING_UI_AND_BEHAVIOR; no app code changed in this comparison"
+        }
       },
       "legacyLedgerStatus": "FROZEN_SHIPPING_ORACLE_PARTIAL",
       "gate": {
