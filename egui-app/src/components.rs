@@ -123,12 +123,12 @@ pub fn paint_workflow_icon(
     let p = |x: f32, y: f32| egui::pos2(center.x + x, center.y + y);
     match icon {
         WorkflowIcon::Collapsed => {
-            painter.line_segment([p(-2.6, -4.2), p(1.7, 0.0)], stroke);
-            painter.line_segment([p(1.7, 0.0), p(-2.6, 4.2)], stroke);
+            paint_chevron_at_angle(painter,center,0.0,0.0,ink);
         }
         WorkflowIcon::Expanded => {
-            painter.line_segment([p(-4.2, -1.8), p(0.0, 2.5)], stroke);
-            painter.line_segment([p(0.0, 2.5), p(4.2, -1.8)], stroke);
+            paint_chevron_at_angle(
+                painter,center,std::f32::consts::FRAC_PI_2,1.0,ink
+            );
         }
         WorkflowIcon::PreviousStage => {
             painter.line_segment([p(-5.3, -1.6), p(-1.5, -5.2)], stroke);
@@ -872,38 +872,53 @@ pub fn management_sticky_table_header(
     }
 }
 
-/// Common chevron shape for management selectors and date stepping.
-/// Only the facing direction changes; stroke and geometry stay identical.
-/// Downward chevrons are optically raised by 1pt to compensate for the tip.
+/// One 10pt / 1.8pt-stroke chevron for selectors, date stepping and
+/// expand/collapse affordances. Rotating the same vector keeps the glyphs
+/// identical at all orientations and avoids Windows font-dependent triangles.
 #[derive(Clone,Copy)]
 pub(crate) enum ManagementChevronDirection { Down, Left, Right }
 
-pub(crate) fn paint_management_chevron(
-    painter:&egui::Painter,center:egui::Pos2,direction:ManagementChevronDirection
+fn paint_chevron_at_angle(
+    painter:&egui::Painter,center:egui::Pos2,angle:f32,optical_raise:f32,
+    ink:Color32
 ){
     const HALF_SPAN:f32=5.0;
     const DEPTH:f32=2.5;
     const STROKE:f32=1.8;
-    let (a,tip,b)=match direction {
-        ManagementChevronDirection::Down => {
-            let y=center.y-1.0;
-            (egui::pos2(center.x-HALF_SPAN,y-DEPTH),
-             egui::pos2(center.x,y+DEPTH),
-             egui::pos2(center.x+HALF_SPAN,y-DEPTH))
-        },
-        ManagementChevronDirection::Left => (
-            egui::pos2(center.x+DEPTH,center.y-HALF_SPAN),
-            egui::pos2(center.x-DEPTH,center.y),
-            egui::pos2(center.x+DEPTH,center.y+HALF_SPAN)
-        ),
-        ManagementChevronDirection::Right => (
-            egui::pos2(center.x-DEPTH,center.y-HALF_SPAN),
-            egui::pos2(center.x+DEPTH,center.y),
-            egui::pos2(center.x-DEPTH,center.y+HALF_SPAN)
-        )
+    let (s,c)=angle.sin_cos();
+    let rotated=|x:f32,y:f32|egui::pos2(
+        center.x+x*c-y*s,
+        center.y+x*s+y*c-optical_raise
+    );
+    let a=rotated(-DEPTH,-HALF_SPAN);
+    let tip=rotated(DEPTH,0.0);
+    let b=rotated(-DEPTH,HALF_SPAN);
+    painter.line_segment([a,tip],Stroke::new(STROKE,ink));
+    painter.line_segment([tip,b],Stroke::new(STROKE,ink));
+}
+
+pub(crate) fn paint_management_chevron(
+    painter:&egui::Painter,center:egui::Pos2,direction:ManagementChevronDirection
+){
+    let (angle,raise)=match direction {
+        ManagementChevronDirection::Right=>(0.0,0.0),
+        ManagementChevronDirection::Down=>(std::f32::consts::FRAC_PI_2,1.0),
+        ManagementChevronDirection::Left=>(std::f32::consts::PI,0.0),
     };
-    painter.line_segment([a,tip],Stroke::new(STROKE,theme::SECONDARY));
-    painter.line_segment([tip,b],Stroke::new(STROKE,theme::SECONDARY));
+    paint_chevron_at_angle(painter,center,angle,raise,theme::SECONDARY);
+}
+
+/// Native CollapsingHeader keeps its original click/keyboard/state/indent
+/// behavior; only its default filled triangle becomes the common line icon.
+/// Rotate smoothly with egui's animated openness (0 = right, 1 = down).
+pub(crate) fn paint_collapsing_header_icon(
+    ui:&mut Ui,openness:f32,response:&Response
+){
+    let t=openness.clamp(0.0,1.0);
+    paint_chevron_at_angle(
+        ui.painter(),response.rect.center(),
+        t*std::f32::consts::FRAC_PI_2,t,theme::SECONDARY
+    );
 }
 
 /// Reference "접수일 기준" dropdown: 34pt dark trigger, separated
