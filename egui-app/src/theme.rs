@@ -207,6 +207,9 @@ pub const MANAGEMENT_TABLE_VIEWPORT_FRACTION: f32 = 0.60;
 pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
 // Width reserved for the two original client-list actions on one toolbar row.
 pub const MANAGEMENT_TOOLBAR_ACTIONS_WIDTH: f32 = 276.0;
+// Reserve enough width for a single search field and two unchanged
+// right-aligned actions; in a narrow split-pane they stack on two lines.
+pub const MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH: f32 = 700.0;
 // Existing React TierBadge palette; color is display-only, never a pricing rule.
 pub const CLIENT_TIER_WHOLESALE_BG: Color32 = Color32::from_rgb(35,76,55);
 pub const CLIENT_TIER_WHOLESALE_TEXT: Color32 = Color32::from_rgb(166,237,192);
