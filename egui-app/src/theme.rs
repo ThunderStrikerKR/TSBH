@@ -187,6 +187,11 @@ pub const CATALOG_TREE_ROW_HEIGHT:f32 = 43.0;
 pub const CATALOG_ROOT_ROW_HEIGHT:f32 = 50.0;
 pub const CATALOG_TREE_INDENT:f32 = 24.0;
 pub const CATALOG_EDITOR_WIDTH:f32 = 430.0;
+// React product-admin-redesign.css: fixed 460pt group list / 52pt rows,
+// with an independently scrolling editor and fixed action footer.
+pub const FAMILY_LIST_WIDTH:f32 = 460.0;
+pub const FAMILY_ROW_HEIGHT:f32 = 52.0;
+pub const FAMILY_FOOTER_HEIGHT:f32 = 68.0;
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
