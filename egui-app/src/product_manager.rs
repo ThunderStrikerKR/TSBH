@@ -111,6 +111,36 @@ fn query_catalog(
     Ok(CatalogRows{catalog,products})
 }
 
+struct PriceDraft {
+    original:Option<i64>,
+    input:String,
+}
+impl PriceDraft {
+    fn dirty(&self)->bool{
+        let candidate=if self.input.trim().is_empty(){None}
+            else{self.input.trim().replace(',', "").parse::<i64>().ok()};
+        candidate!=self.original || (
+            !self.input.trim().is_empty() && candidate.is_none()
+        )
+    }
+    fn parse(&self)->Result<Option<i64>,String>{
+        let input=self.input.trim().replace(',', "");
+        if input.is_empty(){return Ok(None);}
+        let amount=input.parse::<i64>()
+            .map_err(|_|"금액은 숫자만 입력하세요.".to_owned())?;
+        if amount<0 || amount>9_007_199_254_740_991 {
+            return Err("가격은 0원 이상 안전한 정수 범위로 입력하세요.".into());
+        }
+        Ok(Some(amount))
+    }
+}
+
+struct ProductWrite {
+    kind:String,
+    key:Option<String>,
+    receiver:Receiver<Result<Value,String>>,
+}
+
 pub struct ProductManager {
     gateway:Arc<dyn BandoGateway>,
     catalog:Option<Value>,
@@ -120,6 +150,10 @@ pub struct ProductManager {
     brand:String,
     missing:bool,
     selected:Option<Value>,
+    price_mode:bool,
+    price_drafts:HashMap<String,PriceDraft>,
+    writing:Option<ProductWrite>,
+    notice:Option<String>,
     result:Option<Receiver<SearchReply>>,
     generation:u64,
     next_query:Option<Instant>,
@@ -132,6 +166,8 @@ impl ProductManager {
             gateway,catalog:None,products:Vec::new(),
             query:String::new(),category:String::new(),
             brand:String::new(),missing:false,selected:None,
+            price_mode:false,price_drafts:HashMap::new(),
+            writing:None,notice:None,
             result:None,generation:0,next_query:None,error:None,
         };
         page.reload(ctx);
@@ -165,11 +201,72 @@ impl ProductManager {
             ctx.request_repaint();
         });
     }
+    fn has_pending_prices(&self)->bool{
+        self.price_drafts.values().any(PriceDraft::dirty)
+    }
+    pub fn blocks_navigation(&self)->bool{
+        self.selected.is_some() || self.has_pending_prices()
+            || self.writing.is_some()
+    }
+    fn start_write(
+        &mut self,action:&str,data:Value,key:Option<String>,ctx:Context
+    ){
+        if self.writing.is_some(){return;}
+        let Some(revision)=self.catalog.as_ref()
+            .and_then(|catalog|catalog["revision"].as_u64()) else{
+            self.error=Some("운영 상품 리비전을 확인할 수 없습니다.".into());
+            return;
+        };
+        if !self.gateway.product_write_enabled(){
+            self.error=Some("상품 변경 저장 권한이 없습니다.".into());
+            return;
+        }
+        let gateway=Arc::clone(&self.gateway);
+        let name=action.to_owned();
+        let (tx,rx)=mpsc::channel();
+        self.writing=Some(ProductWrite{
+            kind:name.clone(),key,receiver:rx,
+        });
+        self.error=None;
+        self.notice=None;
+        std::thread::spawn(move||{
+            let result=gateway.mutate_product(revision,&name,data);
+            let _=tx.send(result);
+            ctx.request_repaint();
+        });
+    }
     fn changed(&mut self,ctx:&Context) {
         self.next_query=Some(Instant::now()+Duration::from_millis(150));
         ctx.request_repaint_after(Duration::from_millis(160));
     }
     fn poll(&mut self,ctx:&Context) {
+        let written=self.writing.as_ref().map(|job|job.receiver.try_recv());
+        match written {
+            Some(Ok(Ok(catalog)))=>{
+                if let Some(job)=self.writing.take(){
+                    if let Some(key)=job.key {
+                        self.price_drafts.remove(&key);
+                    }
+                    self.notice=Some(match job.kind.as_str(){
+                        "set_price"=>"가격 변경을 저장했습니다.",
+                        "upsert_product"=>"상품 상세 정보를 저장했습니다.",
+                        "archive_product"=>"상품을 삭제하고 과거 기록을 보존했습니다.",
+                        _=>"상품 변경을 저장했습니다.",
+                    }.into());
+                    self.catalog=Some(catalog);
+                    self.reload(ctx.clone());
+                }
+            }
+            Some(Ok(Err(error)))=>{
+                self.writing=None;
+                self.error=Some(error);
+            }
+            Some(Err(TryRecvError::Disconnected))=>{
+                self.writing=None;
+                self.error=Some("상품 저장 도우미 응답이 중단됐습니다. 재조회 후 확인하세요.".into());
+            }
+            _=>{}
+        }
         if let Some(at)=self.next_query {
             if Instant::now()>=at {
                 self.next_query=None;
@@ -218,6 +315,10 @@ impl ProductManager {
             ("브랜드 관리",false,false),
         ]);
         ui.add_space(theme::SPACE_12);
+        let can_edit=self.gateway.product_write_enabled()
+            && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
+        let saving=self.writing.is_some();
+        let mut price_write:Option<(String,Value)>=None;
         theme::section_frame().show(ui,|panel|{
             panel.horizontal(|header|{
                 header.label(typography::section_heading("상품 가격표"));
@@ -227,9 +328,19 @@ impl ProductManager {
                 header.with_layout(Layout::right_to_left(Align::Center),|actions|{
                     theme::action(actions,"상품 추가",theme::ButtonRole::Primary,false)
                         .on_disabled_hover_text("상품 저장 경로가 이전되지 않았습니다.");
-                    theme::action(actions,"가격 수정 모드 켜기",
-                        theme::ButtonRole::Standard,false)
-                        .on_disabled_hover_text("가격 변경 저장 경로가 이전되지 않았습니다.");
+                    if theme::action(actions,
+                        if self.price_mode {"가격 수정 모드 종료"}else{"가격 수정 모드 켜기"},
+                        if self.price_mode {theme::ButtonRole::Primary}
+                        else {theme::ButtonRole::Standard},
+                        can_edit && !saving
+                    ).clicked(){
+                        if self.price_mode && self.has_pending_prices(){
+                            self.error=Some("저장하지 않은 가격이 있습니다. 각 가격 셀의 저장 또는 취소를 눌러주세요.".into());
+                        }else{
+                            self.price_mode=!self.price_mode;
+                            if !self.price_mode {self.price_drafts.clear();}
+                        }
+                    }
                     theme::action(actions,"Excel 관리",theme::ButtonRole::Standard,false)
                         .on_disabled_hover_text("Excel 관리 기능이 이전되지 않았습니다.");
                 });
@@ -237,11 +348,15 @@ impl ProductManager {
             components::soft_divider(panel);
             panel.horizontal_wrapped(|filter|{
                 filter.label(typography::field_label("상품 검색"));
+                let before=self.query.clone();
                 if components::flexible_text_field(
                     filter,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                     "모델명 또는 상품명 검색"
                 ).changed(){
-                    self.changed(filter.ctx());
+                    if self.has_pending_prices(){
+                        self.query=before;
+                        self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                    }else{self.changed(filter.ctx());}
                 }
             });
             let categories=self.catalog.as_ref()
@@ -261,7 +376,12 @@ impl ProductManager {
                             combo.selectable_value(&mut self.category,id.clone(),name);
                         }
                     });
-                if self.category!=before_category {self.changed(filters.ctx());}
+                if self.category!=before_category {
+                    if self.has_pending_prices(){
+                        self.category=before_category;
+                        self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                    }else{self.changed(filters.ctx());}
+                }
                 let before_brand=self.brand.clone();
                 let brand_text=brands.iter().find(|b|field(b,"id")==self.brand)
                     .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
@@ -275,14 +395,28 @@ impl ProductManager {
                                 field(brand,"id").to_owned(),field(brand,"name"));
                         }
                     });
-                if self.brand!=before_brand {self.changed(filters.ctx());}
+                if self.brand!=before_brand {
+                    if self.has_pending_prices(){
+                        self.brand=before_brand;
+                        self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                    }else{self.changed(filters.ctx());}
+                }
+                let before_missing=self.missing;
                 if filters.checkbox(&mut self.missing,"가격 미등록만").changed(){
-                    self.changed(filters.ctx());
+                    if self.has_pending_prices(){
+                        self.missing=before_missing;
+                        self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                    }else{self.changed(filters.ctx());}
                 }
             });
             components::soft_divider(panel);
             if let Some(error)=&self.error {
                 panel.label(typography::status(error,theme::DANGER));
+            }else if let Some(notice)=&self.notice{
+                panel.label(typography::status(notice,theme::SUCCESS));
+            }
+            if saving {
+                panel.label(typography::caption("상품 변경 저장 중…"));
             }
             if self.result.is_some() {
                 panel.label(typography::caption("상품 가격표 조회 중…"));
@@ -317,9 +451,58 @@ impl ProductManager {
                                         }
                                     });
                                     for tier in ["wholesale","semi","retail"] {
-                                        grid.label(typography::quantity(
-                                            &price(&variant[tier])
-                                        ));
+                                        if self.price_mode {
+                                            let key=format!(
+                                                "{}:{}:{}",field(product,"id"),
+                                                field(variant,"id"),tier
+                                            );
+                                            let original=variant[tier].as_i64();
+                                            let entry=self.price_drafts.entry(key.clone())
+                                                .or_insert_with(||PriceDraft{
+                                                    original,
+                                                    input:original.map(|v|v.to_string())
+                                                        .unwrap_or_default(),
+                                                });
+                                            grid.horizontal(|cell|{
+                                                cell.add_enabled_ui(!saving,|inputs|{
+                                                    components::field(
+                                                        inputs,&mut entry.input,
+                                                        components::FieldKind::Money,true,
+                                                    );
+                                                    if entry.dirty() {
+                                                        if theme::action(inputs,"저장",
+                                                            theme::ButtonRole::Standard,true
+                                                        ).clicked(){
+                                                            match entry.parse(){
+                                                                Ok(value)=>{
+                                                                    price_write=Some((key.clone(),
+                                                                        json!({
+                                                                            "productId":field(product,"id"),
+                                                                            "variantId":field(variant,"id"),
+                                                                            "tier":tier,
+                                                                            "price":value,
+                                                                            "expected":entry.original,
+                                                                        })
+                                                                    ));
+                                                                }
+                                                                Err(message)=>self.error=Some(message),
+                                                            }
+                                                        }
+                                                        if theme::action(inputs,"취소",
+                                                            theme::ButtonRole::Quiet,true
+                                                        ).clicked(){
+                                                            entry.input=entry.original
+                                                                .map(|n|n.to_string())
+                                                                .unwrap_or_default();
+                                                        }
+                                                    }
+                                                });
+                                            });
+                                        }else {
+                                            grid.label(typography::quantity(
+                                                &price(&variant[tier])
+                                            ));
+                                        }
                                     }
                                     if theme::action(
                                         grid,"상세 관리",theme::ButtonRole::Standard,true
@@ -343,6 +526,9 @@ impl ProductManager {
                     }
                 });
         });
+        if let Some((key,data))=price_write {
+            self.start_write("set_price",data,Some(key),ui.ctx().clone());
+        }
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
         let Some(product)=self.selected.clone()else{return};
