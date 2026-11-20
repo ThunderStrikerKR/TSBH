@@ -435,6 +435,19 @@ pub fn reception_recipient_fields(
     }).inner
 }
 
+/// The source editor and automatic-message canvas use the SAME surface
+/// tokens. Painting a reserved rect avoids Frame::show shrinking an empty
+/// message body and moving the fixed copy-action row.
+pub fn paint_source_document_surface(ui: &Ui, rect: Rect) {
+    ui.painter().rect(
+        rect,
+        theme::CONTROL_RADIUS as f32,
+        theme::INPUT,
+        Stroke::new(theme::FRAME_STROKE_WIDTH, theme::BORDER),
+        egui::StrokeKind::Inside,
+    );
+}
+
 /// A subtle separation between data belonging to the same record.
 /// Sections themselves are framed by the caller.
 pub fn soft_divider(ui: &mut Ui) {
