@@ -23,8 +23,11 @@ const ROW_HEIGHT: f32 = theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
 const DETAIL_ACTIONS_WIDTH: f32 = 208.0;
 const DETAIL_ACTIONS_GAP: f32 = theme::SPACE_8;
 const DETAIL_RIGHT_INSET: f32 = theme::SPACE_12;
-// A one-line detail card and its adjoining 34pt buttons share a common top.
+// Detail rows do not inherit the parent's 42pt line height. Keep just 2pt
+// above/below each card: adjacent shipment cards are separated by 4pt total.
 const DETAIL_BLOCK_HEIGHT: f32 = theme::ACTION_STANDARD_HEIGHT;
+const DETAIL_ROW_VERTICAL_GAP: f32 = theme::SPACE_4;
+const DETAIL_ROW_MIN_HEIGHT: f32 = DETAIL_BLOCK_HEIGHT+DETAIL_ROW_VERTICAL_GAP;
 const EXCEL_ITEM_MARKER: &str = "◆ ";
 const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
@@ -221,7 +224,7 @@ fn history_detail_block_rect(row_rect:Rect,widths:&[f32;7])->Rect{
     let left=row_rect.left()+widths[0]-theme::SPACE_4;
     let width=(row_rect.right()-left-DETAIL_RIGHT_INSET
         -DETAIL_ACTIONS_WIDTH-DETAIL_ACTIONS_GAP).max(1.0);
-    let block_height=(row_rect.height()-2.0*theme::SPACE_4)
+    let block_height=(row_rect.height()-DETAIL_ROW_VERTICAL_GAP)
         .max(DETAIL_BLOCK_HEIGHT);
     Rect::from_min_size(
         egui::pos2(left,row_rect.center().y-block_height/2.0),
@@ -451,8 +454,11 @@ fn history_line_height(ui:&Ui,line:HistoryLine,
     let galley=typography::freight_table_wrapped_galley(
         ui,&product,(product_cell.width()-theme::SPACE_12).max(1.0)
     );
-    // 12pt outside the card + 8pt total interior breathing room.
-    (galley.size().y+5.0*theme::SPACE_4).ceil().max(ROW_HEIGHT)
+    // Product text gets 4pt inside each card edge (8pt total), plus
+    // only 2pt outside each card edge (4pt total). The 34pt actions
+    // determine the minimum for a single-line shipment.
+    (galley.size().y+3.0*theme::SPACE_4).ceil()
+        .max(DETAIL_ROW_MIN_HEIGHT)
 }
 fn paint_detail_products(ui:&Ui,rect:Rect,text:&str){
     let galley=typography::freight_table_wrapped_galley(
@@ -1818,7 +1824,7 @@ mod tests{
         let mut prior_product_width=0.0;
         for width in [MIN_WIDTH,1600.0,2100.0] {
             let row=Rect::from_min_size(
-                egui::pos2(20.0,70.0),Vec2::new(width,ROW_HEIGHT)
+                egui::pos2(20.0,70.0),Vec2::new(width,DETAIL_ROW_MIN_HEIGHT)
             );
             let block=history_detail_block_rect(row,&COLS);
             let actions=history_detail_actions_rect(row,block);
@@ -1846,7 +1852,7 @@ mod tests{
         );
         let block=history_detail_block_rect(tall,&COLS);
         let actions=history_detail_actions_rect(tall,block);
-        assert_eq!(block.height(),102.0-2.0*theme::SPACE_4);
+        assert_eq!(block.height(),102.0-DETAIL_ROW_VERTICAL_GAP);
         assert_eq!(actions.height(),theme::ACTION_STANDARD_HEIGHT);
         assert_eq!(block.center().y,actions.center().y);
     }
