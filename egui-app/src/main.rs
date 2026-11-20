@@ -2398,10 +2398,19 @@ impl BandoEgui {
             });
             return;
         }
+        // The intake standby screen has no recognized source or working
+        // order. Display only the section chrome, just like the empty review
+        // and recipient panes. Once input arrives, restore the existing
+        // message canvas and both copy actions without resetting any state.
+        let awaiting_order = self.raw_source.trim().is_empty()
+            && self.analysis.is_none();
         Self::section_with_header(ui, "복사용 자동 메시지", height, |ui| {
-            let mut include_link = false;
-            ui.add_enabled(false, egui::Checkbox::new(&mut include_link, "링크 포함"));
+            if !awaiting_order {
+                let mut include_link = false;
+                ui.add_enabled(false, egui::Checkbox::new(&mut include_link, "링크 포함"));
+            }
         }, |ui| {
+            if awaiting_order { return; }
             ui.spacing_mut().item_spacing.y=0.0;
             // Empty egui Frames shrink to their contents. Allocate the real
             // message rectangle explicitly so it fills the available width
@@ -2872,6 +2881,13 @@ impl BandoEgui {
                 pane.set_width(bottom_rect.width());
                 pane.set_height(bottom_rect.height());
                 Self::section(pane, "품목 및 운임", remaining, |ui| {
+                    // In intake standby, do not draw empty table headings,
+                    // freight controls, VAT text or a fictitious zero total.
+                    // Keep the section frame and divider exactly as-is.
+                    if self.raw_source.trim().is_empty()
+                        && self.analysis.is_none() {
+                        return;
+                    }
                     ui.spacing_mut().item_spacing.y=0.0;
                     let preview = self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
