@@ -724,7 +724,12 @@ impl ExcelManager{
                                 components::money_field(
                                     line,draft,!busy&&self.gateway.excel_write_enabled()
                                 );
-                                let dirty=*draft!=source;
+                                let parsed=if draft.trim().is_empty(){
+                                    Some(None)
+                                }else{
+                                    components::parse_money_input(draft).map(Some)
+                                };
+                                let dirty=parsed!=Some(saved);
                                 if theme::action(
                                     line,"실제 운임 저장",
                                     theme::ButtonRole::Primary,
