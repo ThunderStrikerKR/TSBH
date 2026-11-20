@@ -1759,6 +1759,7 @@ impl BandoEgui {
                                 let highlighted = response.hovered() || response.dragged();
                                 components::paint_dock_splitter(
                                     ui, splitter, true, highlighted,
+                                    if index == 0 { theme::CANVAS } else { theme::PANEL },
                                 );
                                 splitter_visuals.push((splitter, highlighted));
                                 if response.drag_started() {
@@ -1866,7 +1867,7 @@ impl BandoEgui {
         }
         components::paint_dock_splitter(
             ui, splitter_rect, false,
-            response.hovered() || response.dragged(),
+            response.hovered() || response.dragged(), theme::PANEL,
         );
         if response.drag_started() {
             self.dragging_vertical = Some(VerticalSplitDrag {
@@ -2435,6 +2436,7 @@ impl BandoEgui {
             }
             components::paint_dock_splitter(
                 ui, splitter_rect, false, response.hovered() || response.dragged(),
+                theme::PANEL,
             );
             if response.drag_started() {
                 self.dragging_detail = Some(DetailSplitDrag {
@@ -3177,7 +3179,8 @@ impl BandoEgui {
                             ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                         }
                         components::paint_dock_splitter(
-                            host,splitter,true,response.hovered()||response.dragged()
+                            host,splitter,true,response.hovered()||response.dragged(),
+                            theme::CANVAS
                         );
                         if response.drag_started() {
                             self.dragging_split=Some(HorizontalSplitDrag{
