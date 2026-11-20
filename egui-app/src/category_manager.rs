@@ -2,7 +2,7 @@
 //! tauri-stage2-products.css own the interaction and overlay layout.
 //! All add/rename/move/delete decisions are delegated to catalog_clients.
 use crate::{components,theme,typography};
-use eframe::egui::{self,Align,Context,Layout,Rect,Response,Sense,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Context,Layout,Rect,Response,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
 
@@ -41,7 +41,6 @@ pub struct CategoryManager {
     after_save:Option<Confirm>,
     switch_to_list:bool,
     global_leave_approved:bool,
-    workspace:Option<Rect>,
     delete_parent:Option<String>,
     error:Option<String>,
 }
@@ -54,7 +53,7 @@ impl Default for CategoryManager {
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
             switch_to_list:false,global_leave_approved:false,
-            workspace:None,delete_parent:None,error:None,
+            delete_parent:None,error:None,
         }
     }
 }
@@ -542,7 +541,7 @@ impl CategoryManager {
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
         let cats=categories(catalog);
-        let root=theme::section_frame().show(ui,|panel|{
+        theme::section_frame().show(ui,|panel|{
             panel.horizontal(|header|{
                 header.label(typography::section_heading("카테고리 맵"));
                 header.with_layout(Layout::right_to_left(Align::Center),|actions|{
@@ -599,133 +598,115 @@ impl CategoryManager {
                     }
                 });
         });
-        self.workspace=Some(root.response.rect);
     }
     pub fn show_overlays(&mut self,ctx:&Context,work_area:Rect,
         catalog:&Value,editable:bool,busy:bool)->Option<CategoryWrite>{
         let cats=categories(catalog);
         let mut write=None;
         if self.editor{
-            if let Some(frame)=self.workspace{
-                let width=theme::CATALOG_EDITOR_WIDTH.min(frame.width()*0.94);
-                let edit_rect=Rect::from_min_max(
-                    egui::pos2(frame.right()-width,frame.top()),frame.right_bottom()
-                );
-                egui::Area::new(egui::Id::new("native-category-editor"))
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(frame.min)
-                    .movable(false)
-                    .show(ctx,|area|{
-                        area.set_min_size(frame.size());
-                        area.painter().rect_filled(
-                            Rect::from_min_size(area.min_rect().min,frame.size()),
-                            0.0,egui::Color32::from_black_alpha(72)
-                        );
-                        let outside=Rect::from_min_max(frame.min,
-                            egui::pos2(edit_rect.left(),frame.bottom()));
-                        if area.interact(outside,
-                            area.make_persistent_id("category-editor-outside"),
-                            Sense::click()).clicked(){
-                            self.request_close_editor(&cats);
-                        }
-                        area.scope_builder(UiBuilder::new().max_rect(edit_rect)
-                            .layout(Layout::top_down(Align::Min)),|editor|{
-                                theme::section_frame().show(editor,|body|{
-                                    if let Some(current)=self.current(&cats){
-                                        body.horizontal(|heading|{
-                                            heading.label(typography::section_heading(
-                                                &current.name
-                                            ));
-                                            if theme::action(heading,"닫기 ×",
-                                                theme::ButtonRole::Standard,!busy).clicked(){
-                                                self.request_close_editor(&cats);
-                                            }
-                                        });
-                                        let breadcrumb=path_text(&cats,&current.id);
-                                        let visible=typography::fit_category_path(
-                                            body,&breadcrumb,body.available_width(),
-                                            typography::CategoryPathFont::Metadata
-                                        );
-                                        body.label(typography::caption(&visible))
-                                            .on_hover_text(&breadcrumb);
-                                        components::soft_divider(body);
-                                        body.horizontal_wrapped(|summary|{
-                                            summary.label(typography::caption(
-                                                &format!("직접 연결 상품 {}",direct_count(catalog,&current.id))
-                                            ));
-                                            summary.label(typography::caption(
-                                                &format!("하위 포함 상품 {}",total_count(catalog,&cats,&current.id))
-                                            ));
-                                            summary.label(typography::caption(
-                                                &format!("직속 하위 분류 {}",children(&cats,&current.id).len())
-                                            ));
-                                        });
-                                        body.label(typography::field_label("분류 이름"));
-                                        body.add_enabled_ui(
-                                            editable && !busy && !is_root(&current.id),
-                                            |field_ui|{
-                                                components::flexible_text_field(
-                                                    field_ui,&mut self.name,
-                                                    (width-theme::SPACE_24).max(
-                                                        theme::MANAGEMENT_SEARCH_MIN_WIDTH),
-                                                    "분류 이름"
-                                                );
-                                            }
-                                        );
-                                        body.label(typography::field_label("상위 카테고리"));
-                                        body.horizontal_wrapped(|location|{
-                                            let parent_label=if current.parent.is_empty(){
-                                                if is_root(&current.id){
-                                                    "최상위".to_owned()
-                                                }else{"소속 확인 필요".to_owned()}
-                                            }else{path_text(&cats,&current.parent)};
-                                            let visible=typography::fit_category_path(
-                                                location,&parent_label,
-                                                (location.available_width()-
-                                                    theme::CATEGORY_PARENT_ACTION_RESERVE_WIDTH)
-                                                    .max(0.0),
-                                                typography::CategoryPathFont::Body
-                                            );
-                                            location.label(typography::body(&visible))
-                                                .on_hover_text(&parent_label);
-                                            if theme::action(location,"위치 변경",
-                                                theme::ButtonRole::Standard,
-                                                editable&&!busy&&!is_root(&current.id)
-                                            ).clicked(){
-                                                self.begin_operation(&cats,catalog,Operation::Move);
-                                            }
-                                        });
-                                        if !is_root(&current.id)&&current.parent.is_empty(){
-                                            body.label(typography::caption(
-                                                "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
-                                            ));
-                                        }
-                                        body.add_space(theme::SPACE_16);
-                                        components::soft_divider(body);
-                                        body.horizontal(|footer|{
-                                            if theme::action(footer,"분류 삭제",
-                                                theme::ButtonRole::Danger,
-                                                editable&&!busy&&!is_root(&current.id)
-                                                &&children(&cats,&current.id).is_empty()
-                                                &&direct_count(catalog,&current.id)==0
-                                            ).clicked(){
-                                                self.begin_operation(&cats,catalog,Operation::Delete);
-                                            }
-                                            if theme::action(footer,"변경사항 저장",
-                                                theme::ButtonRole::Primary,
-                                                editable&&!busy&&self.rename_dirty(&cats)
-                                            ).clicked(){
-                                                match self.write_request(&cats,catalog){
-                                                    Ok(req)=>write=Some(req),
-                                                    Err(e)=>self.error=Some(e),
-                                                }
-                                            }
-                                        });
-                                    }
-                                });
+            let nested_dialog=self.operation.is_some()||self.confirm.is_some();
+            components::modal_backdrop(ctx,"category-editor-dim",false);
+            // The category editor uses the same centered, Kakao-safe modal
+            // geometry as other native dialogs, not a right-side drawer.
+            components::modal_window(
+                "선택 분류 편집","native-category-editor",work_area
+            )
+                .default_width(theme::CATALOG_EDITOR_WIDTH.min(work_area.width()))
+                .show(ctx,|modal|{
+                    modal.add_enabled_ui(!nested_dialog,|body|{
+                        if let Some(current)=self.current(&cats){
+                            body.horizontal(|heading|{
+                                heading.label(typography::section_heading(
+                                    &current.name
+                                ));
+                                if theme::action(heading,"닫기 ×",
+                                    theme::ButtonRole::Standard,!busy).clicked(){
+                                    self.request_close_editor(&cats);
+                                }
                             });
+                            let breadcrumb=path_text(&cats,&current.id);
+                            let visible=typography::fit_category_path(
+                                body,&breadcrumb,body.available_width(),
+                                typography::CategoryPathFont::Metadata
+                            );
+                            body.label(typography::caption(&visible))
+                                .on_hover_text(&breadcrumb);
+                            components::soft_divider(body);
+                            body.horizontal_wrapped(|summary|{
+                                summary.label(typography::caption(
+                                    &format!("직접 연결 상품 {}",direct_count(catalog,&current.id))
+                                ));
+                                summary.label(typography::caption(
+                                    &format!("하위 포함 상품 {}",total_count(catalog,&cats,&current.id))
+                                ));
+                                summary.label(typography::caption(
+                                    &format!("직속 하위 분류 {}",children(&cats,&current.id).len())
+                                ));
+                            });
+                            body.label(typography::field_label("분류 이름"));
+                            body.add_enabled_ui(
+                                editable && !busy && !is_root(&current.id),
+                                |field_ui|{
+                                    components::flexible_text_field(
+                                        field_ui,&mut self.name,
+                                        field_ui.available_width(),
+                                        "분류 이름"
+                                    );
+                                }
+                            );
+                            body.label(typography::field_label("상위 카테고리"));
+                            body.horizontal_wrapped(|location|{
+                                let parent_label=if current.parent.is_empty(){
+                                    if is_root(&current.id){
+                                        "최상위".to_owned()
+                                    }else{"소속 확인 필요".to_owned()}
+                                }else{path_text(&cats,&current.parent)};
+                                let visible=typography::fit_category_path(
+                                    location,&parent_label,
+                                    (location.available_width()-
+                                        theme::CATEGORY_PARENT_ACTION_RESERVE_WIDTH)
+                                        .max(0.0),
+                                    typography::CategoryPathFont::Body
+                                );
+                                location.label(typography::body(&visible))
+                                    .on_hover_text(&parent_label);
+                                if theme::action(location,"위치 변경",
+                                    theme::ButtonRole::Standard,
+                                    editable&&!busy&&!is_root(&current.id)
+                                ).clicked(){
+                                    self.begin_operation(&cats,catalog,Operation::Move);
+                                }
+                            });
+                            if !is_root(&current.id)&&current.parent.is_empty(){
+                                body.label(typography::caption(
+                                    "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
+                                ));
+                            }
+                            body.add_space(theme::SPACE_16);
+                            components::soft_divider(body);
+                            body.horizontal(|footer|{
+                                if theme::action(footer,"분류 삭제",
+                                    theme::ButtonRole::Danger,
+                                    editable&&!busy&&!is_root(&current.id)
+                                    &&children(&cats,&current.id).is_empty()
+                                    &&direct_count(catalog,&current.id)==0
+                                ).clicked(){
+                                    self.begin_operation(&cats,catalog,Operation::Delete);
+                                }
+                                if theme::action(footer,"변경사항 저장",
+                                    theme::ButtonRole::Primary,
+                                    editable&&!busy&&self.rename_dirty(&cats)
+                                ).clicked(){
+                                    match self.write_request(&cats,catalog){
+                                        Ok(req)=>write=Some(req),
+                                        Err(e)=>self.error=Some(e),
+                                    }
+                                }
+                            });
+
+                        }
                     });
-            }
+                });
         }
         if let Some(operation)=self.operation{
             let mut cancel=false;
