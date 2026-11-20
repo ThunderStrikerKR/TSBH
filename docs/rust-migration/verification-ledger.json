@@ -2920,6 +2920,34 @@
         "notApplicable": "카카오톡 창 배치·운임 계산·엑셀 실행: 관련 코드 미변경",
         "pending": "Latest CI full targeted result, real interactive click sequence (Windows GUI excluded by user)."
       }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-MANAGEMENT-OUTER-GUTTERS",
+      "scope": "접수와 엑셀 관리~설정 전체 작업공간 외곽 6pt 여백 통일",
+      "status": "SOURCE_PATCHED_STATIC_PASS_BUILD_PENDING_WINDOWS_SKIPPED",
+      "description": "사용자 제공 2026-11-20 접수/상품관리 스크린샷 기준. reception_workspace_frame(top/right/bottom 6pt)과 workspace_shell_frame(top6/right0/bottom0)의 차이 및 other_page 별도 16pt Frame을 확인. 단일 workspace_shell_frame(top/right/bottom 6pt,left0)을 접수/전체 관리 화면에 재사용하고, 관리 화면의 중첩 16pt 바깥 패딩 제거. 기존 내부 section_frame 16pt 패딩, 관리 탭 구성/간격, 4열 비율, 카카오톡 도킹 분할선, 데이터 저장 및 Rust 업무경로는 유지.",
+      "evidence": [
+        "egui-app/src/theme.rs",
+        "egui-app/src/main.rs",
+        "egui-app/src/product_manager.rs",
+        "egui-app/src/settings_view.rs",
+        "egui-app/src/freight_manager.rs",
+        "egui-app/src/client_manager.rs",
+        "docs/egui-ui-design-contract.md"
+      ],
+      "gates": {
+        "patch": "PASS theme common frame fee8baeddd44544f1bbf658ee3c9a32c48b71d01; main management outer margin 0928298faf288df21f36a39b9ed02700239de005; UI contract f8a98e4902b7c8e0cb5fe72bba09e17138729a25.",
+        "static": "PASS 14 scoped source checks: top/right/bottom shared 6pt, left 0, reception aliases same frame, management uses it without second 16pt margin, Kakao splitter/resizer preserved, internal section_frame padding unchanged.",
+        "unit": "NOT APPLICABLE: no business logic, persisted data or calculation changed.",
+        "action": "NOT VERIFIED: pixel geometry at requested viewport/DPI not measured by Windows UI (explicitly excluded).",
+        "ci": "PENDING: GitHub Tauri native CLI compile workflow for the updated main still in progress at review time; not claimed PASS.",
+        "windows": "SKIPPED by user policy unless separately requested."
+      },
+      "clauses": {
+        "apply": "0-1~0-7, 6-10, 16-27, 47-54, 57-61",
+        "notApplicable": "React-to-Rust business logic migration, SQLite contract, Kakao external HWND movement; unchanged.",
+        "pending": "Windows UI visual alignment is explicitly outside required scope; build run result not yet final."
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
