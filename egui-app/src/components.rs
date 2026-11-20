@@ -207,6 +207,11 @@ pub fn modal_window(
         ))
         .constrain_to(work_area)
         .max_size(work_area.size())
+        // All app dialogs are fixed at the approved Kakao-safe center.
+        // Scrolling inside a dialog is allowed; dragging and edge-resizing
+        // the dialog itself are not. Individual callers must not override it.
+        .movable(false)
+        .resizable(false)
         .collapsible(false)
         .frame(theme::modal_frame())
 }
