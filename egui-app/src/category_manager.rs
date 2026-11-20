@@ -471,18 +471,24 @@ impl CategoryManager {
             egui::pos2(folder_x,folder_bottom)
         ],egui::Stroke::new(1.0,theme::SECONDARY)));
         let count=total_count(catalog,cats,&item.id);
+        // Show totals immediately after the category name, not in a
+        // spreadsheet-style column at the far right of the workspace.
+        // Count includes this category and every descendant; the child
+        // count is the number of immediate subcategories.
         let summary=if branches.is_empty(){
-            format!("상품 {count}개")
+            format!("(상품 {count})")
         }else{
-            format!("하위 {} · 상품 {count}개",branches.len())
+            format!("(상품 {count} · 하위 분류 {})",branches.len())
         };
         let summary_galley=typography::client_table_metadata_galley(
-            ui,&summary,theme::MUTED
+            ui,&summary,theme::SECONDARY
         );
-        let summary_x=rect.right()-theme::SPACE_12-summary_galley.size().x;
         let name_x=folder_right+theme::SPACE_8;
-        let name_right=(summary_x-theme::SPACE_24).max(name_x);
-        let name_width=(name_right-name_x).max(0.0);
+        let right_edge=rect.right()-theme::SPACE_12;
+        // Reserve the count before fitting the name. Only the name loses
+        // its earliest characters when the tree becomes deeply nested.
+        let name_width=(right_edge-name_x-theme::SPACE_8
+            -summary_galley.size().x).max(0.0);
         let font=if is_root(&item.id){
             typography::CategoryPathFont::Subsection
         }else{typography::CategoryPathFont::Body};
@@ -492,17 +498,23 @@ impl CategoryManager {
         let name_galley=typography::category_tree_name_galley(
             ui,&visible,is_root(&item.id)
         );
+        let name_end=name_x+name_galley.size().x.min(name_width);
         let name_clip=egui::Rect::from_min_max(
             egui::pos2(name_x,rect.top()),
-            egui::pos2(name_right,rect.bottom())
+            egui::pos2(name_end.max(name_x),rect.bottom())
         );
         ui.painter().with_clip_rect(name_clip).galley(
             egui::pos2(name_x,rect.center().y-name_galley.size().y/2.0),
             name_galley,theme::TEXT
         );
-        ui.painter().with_clip_rect(rect).galley(
+        let summary_x=name_end+theme::SPACE_8;
+        let summary_clip=egui::Rect::from_min_max(
+            egui::pos2(summary_x.min(right_edge),rect.top()),
+            egui::pos2(right_edge.max(summary_x),rect.bottom())
+        );
+        ui.painter().with_clip_rect(summary_clip).galley(
             egui::pos2(summary_x,rect.center().y-summary_galley.size().y/2.0),
-            summary_galley,theme::MUTED
+            summary_galley,theme::SECONDARY
         );
         let response=response.on_hover_text(&item.name);
         if response.clicked(){
