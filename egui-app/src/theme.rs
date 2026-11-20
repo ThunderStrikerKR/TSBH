@@ -94,6 +94,13 @@ pub const SECTION_HEADER_HEIGHT: f32 = 38.0;
 pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
+// React recipient detail grid: full-width rows and paired contact cells.
+pub const RECIPIENT_LABEL_WIDTH: f32 = 68.0;
+pub const RECIPIENT_PHONE_LABEL_WIDTH: f32 = 32.0;
+pub const RECIPIENT_LABEL_GAP: f32 = 6.0;
+pub const RECIPIENT_ROW_GAP: f32 = 6.0;
+pub const RECIPIENT_PHONE_COLUMN_GAP: f32 = 8.0;
+pub const RECIPIENT_PHONE_STACK_BELOW: f32 = 330.0;
 pub const PANEL_GAP: f32 = 6.0;
 // Kakao dock toolbar: one compact row (2pt vertical gap around 22pt controls).
 // Only its body rect is passed to the Win32 dock.
