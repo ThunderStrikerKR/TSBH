@@ -325,6 +325,9 @@ impl ClientManager {
                         let contacts=[field(client,"phone"),field(client,"mobile")]
                             .into_iter().filter(|s|!s.trim().is_empty())
                             .collect::<Vec<_>>().join(" / ");
+                        let contacts=if contacts.is_empty(){
+                            "연락처 미등록".to_owned()
+                        }else{contacts};
                         let conditions=[
                             if field(client,"payment")=="POSTPAID"{"후불"}else{"선입금"},
                             if client.get("defaultApplyVat").and_then(Value::as_bool)
@@ -344,11 +347,14 @@ impl ClientManager {
                     }
                     if rows.is_empty() && !self.searching {
                         table.add_space(theme::SPACE_12);
-                        table.label(typography::caption(
-                            if self.search.is_empty() {
-                                "등록된 거래처가 없습니다."
-                            } else {"검색 결과가 없습니다."}
-                        ));
+                        table.horizontal(|empty|{
+                            empty.add_space(theme::SPACE_12);
+                            empty.label(typography::caption(
+                                if self.search.is_empty() {
+                                    "등록된 거래처가 없습니다."
+                                } else {"검색 결과가 없습니다."}
+                            ));
+                        });
                     }
                 });
         });
