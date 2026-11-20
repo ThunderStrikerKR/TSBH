@@ -45,12 +45,26 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             str_field(&payload,"query"),
             str_field(&payload,"date"),
         ),
-        "list_order_history_view" => history::list_view(
-            req(&payload,"state")?,
-            str_field(&payload,"query"),
-            str_field(&payload,"date"),
-            field(&payload,"trackingOrder"),
-        ),
+        // The legacy single-date call stays identical. The new native
+        // management UI opts into an inclusive start/end range and chooses
+        // reception-day or allocated-bank-payment-day explicitly.
+        "list_order_history_view" => {
+            if payload.get("dateFrom").is_some() ||
+                payload.get("dateTo").is_some() ||
+                payload.get("dateBasis").is_some()
+            {
+                history::list_view_range(
+                    req(&payload,"state")?,str_field(&payload,"query"),
+                    str_field(&payload,"dateFrom"),str_field(&payload,"dateTo"),
+                    str_field(&payload,"dateBasis"),field(&payload,"trackingOrder")
+                )
+            }else{
+                history::list_view(
+                    req(&payload,"state")?,str_field(&payload,"query"),
+                    str_field(&payload,"date"),field(&payload,"trackingOrder")
+                )
+            }
+        },
         "order_history_status" => Ok(json!({"status":history::status(
             req(&payload,"state")?,required_str(&payload,"orderId")?,
         )})),
