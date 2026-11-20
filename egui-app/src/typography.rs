@@ -181,6 +181,26 @@ pub fn brand_galley(ui: &egui::Ui, text: &str) -> std::sync::Arc<egui::Galley> {
 pub fn page_heading(text: &str) -> RichText { render(text, Role::Page) }
 pub fn modal_title(text: &str) -> RichText { render(text, Role::ModalTitle) }
 pub fn section_heading(text: &str) -> RichText { render(text, Role::Section) }
+
+/// Same bold face, tracking and size as the shared section heading, but
+/// laid out explicitly for the workflow card title. Its painted x-coordinate
+/// is fixed by the caller, never by a centered Label allocation.
+pub fn section_heading_galley(
+    ui: &egui::Ui, text: &str
+) -> std::sync::Arc<egui::Galley> {
+    let role = spec(Role::Section);
+    let format = egui::TextFormat {
+        font_id: FontId::new(
+            role.size, FontFamily::Name(EMPHASIS_FAMILY.into())
+        ),
+        color: role.color,
+        extra_letter_spacing: role.tracking,
+        line_height: Some(role.line),
+        ..Default::default()
+    };
+    let job = egui::text::LayoutJob::single_section(text.to_owned(), format);
+    ui.fonts_mut(|fonts| fonts.layout_job(job))
+}
 pub fn subsection_heading(text: &str) -> RichText { render(text, Role::Subsection) }
 pub fn body(text: &str) -> RichText { render(text, Role::Body) }
 pub fn field_label(text: &str) -> RichText { render(text, Role::FieldLabel) }
