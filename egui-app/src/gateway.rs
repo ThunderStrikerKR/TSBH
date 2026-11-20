@@ -20,8 +20,6 @@ mod rules;
 mod output;
 #[path = "../../src-tauri/src/business_core/catalog_clients/title_clients.rs"]
 mod native_title_clients;
-#[path = "../../src-tauri/src/business_core/catalog_clients/client_search.rs"]
-mod native_client_search;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ReadOperation {
@@ -456,7 +454,7 @@ impl BandoGateway for LocalGateway {
                 native_title_clients::execute(operation.operation(), &payload)
             }
             ReadOperation::ClientCandidates => {
-                native_client_search::execute(&payload)
+                crate::catalog_query_bridge::client_candidates(&payload)
             }
             ReadOperation::SearchProductsWithUrls => {
                 crate::catalog_query_bridge::search_products(&payload)
