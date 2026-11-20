@@ -7,7 +7,7 @@ use serde_json::Value;
 
 pub(super) fn apply_to_state(state: &mut Value) -> Result<usize, String> {
     let mapping: Value = serde_json::from_str(include_str!(
-        "../../../src-tauri/resources/product-name-enrichment-20261109.json"
+        "../../../../src-tauri/resources/product-name-enrichment-20261109.json"
     )).map_err(err)?;
     let updates = mapping["changes"].as_array()
         .ok_or("상품명 변경 목록이 누락됐습니다.")?;
@@ -42,7 +42,7 @@ pub(super) fn apply_to_state(state: &mut Value) -> Result<usize, String> {
     // Only use the full curated name when the source text matches exactly.
     // The complete, independently curated 360-item catalog is authoritative
     // only when the stored name is exactly the unedited official original.
-    let catalog: Value = serde_json::from_str(include_str!("../../../src-tauri/resources/state-seed.json"))
+    let catalog: Value = serde_json::from_str(include_str!("../../../../src-tauri/resources/state-seed.json"))
         .map_err(err)?;
     let reference = catalog["products"].as_array()
         .ok_or("공식 상품명 기준표가 누락됐습니다.")?;
@@ -159,7 +159,7 @@ pub(super) fn apply_to_state(state: &mut Value) -> Result<usize, String> {
     // default labels with exact product/price/source identifiers.
     // Bar length and overall height are different measurements (IS-3).
     let stand_specs: Value = serde_json::from_str(include_str!(
-        "../../../src-tauri/resources/microphone-stand-specifications-20261109.json"
+        "../../../../src-tauri/resources/microphone-stand-specifications-20261109.json"
     )).map_err(err)?;
     let stand_items = stand_specs["items"].as_array()
         .ok_or("마이크 스탠드 규격 목록이 누락됐습니다.")?;
