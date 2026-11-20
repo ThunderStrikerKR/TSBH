@@ -1270,11 +1270,13 @@ impl OrderHistoryManager {
             // The search toolbar itself has NO scrollbar. Align its last
             // "전체 날짜" control to the card's 16pt inner right edge.
             // Only the table header/rows below reserve the 10pt rail.
-            let toolbar_data_width=full_width;
-            let one_row=toolbar_data_width>=
+            // The toolbar owns the complete card-inner width, including
+            // the 10pt strip reserved only by the table below it.
+            let toolbar_content_width=full_width;
+            let one_row=toolbar_content_width>=
                 theme::MANAGEMENT_SEARCH_MIN_WIDTH
                 +theme::SPACE_16+RANGE_CONTROLS_WIDTH;
-            let compact=toolbar_data_width<RANGE_CONTROLS_WIDTH;
+            let compact=toolbar_content_width<RANGE_CONTROLS_WIDTH;
             let date_height=if compact{
                 theme::INPUT_HEIGHT*2.0+theme::SPACE_8
             }else{theme::INPUT_HEIGHT};
@@ -1286,7 +1288,7 @@ impl OrderHistoryManager {
             let search_rect=Rect::from_min_size(
                 toolbar_rect.min,
                 Vec2::new(theme::MANAGEMENT_SEARCH_MIN_WIDTH
-                    .min(toolbar_data_width),theme::INPUT_HEIGHT)
+                    .min(toolbar_content_width),theme::INPUT_HEIGHT)
             );
             section.scope_builder(UiBuilder::new()
                 .id_salt("history-range-search")
@@ -1300,14 +1302,10 @@ impl OrderHistoryManager {
                         "거래처 / 주문 내용 검색"
                     ).changed(){changed=true;}
                 });
-            let date_width=RANGE_CONTROLS_WIDTH.min(toolbar_data_width);
-            let date_rect=Rect::from_min_size(
-                egui::pos2(toolbar_rect.left()+toolbar_data_width-date_width,
-                    toolbar_rect.top()+if one_row{0.0}
-                    else{theme::INPUT_HEIGHT+theme::SPACE_8}),
-                Vec2::new(date_width,if one_row{
-                    theme::INPUT_HEIGHT
-                }else{date_height})
+            let date_rect=components::management_toolbar_trailing_rect(
+                toolbar_rect,RANGE_CONTROLS_WIDTH,
+                if one_row{0.0}else{theme::INPUT_HEIGHT+theme::SPACE_8},
+                if one_row{theme::INPUT_HEIGHT}else{date_height}
             );
             section.scope_builder(UiBuilder::new()
                 .id_salt("history-range-controls")
