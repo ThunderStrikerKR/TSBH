@@ -115,27 +115,33 @@ fn query_catalog(
     Ok(CatalogRows{catalog,products})
 }
 
+/// UI-only number conversion used by both table cells and detail editor.
+/// The original React PriceCell explicitly maps 0 -> null; MoneyInput in
+/// product detail does not. Native Rust remains the price mutation owner.
+fn parse_product_price(raw:&str,field_name:&str,zero_unregistered:bool)
+    ->Result<Option<i64>,String>{
+    let input=raw.trim().replace(',', "");
+    if input.is_empty(){return Ok(None);}
+    let amount=input.parse::<i64>()
+        .map_err(|_|format!("{field_name}은 숫자만 입력하세요."))?;
+    if !(0..=9_007_199_254_740_991).contains(&amount){
+        return Err("가격은 0원 이상 안전한 정수 범위로 입력하세요.".into());
+    }
+    if zero_unregistered && amount==0 {Ok(None)} else {Ok(Some(amount))}
+}
 struct PriceDraft {
     original:Option<i64>,
     input:String,
 }
 impl PriceDraft {
     fn dirty(&self)->bool{
-        let candidate=if self.input.trim().is_empty(){None}
-            else{self.input.trim().replace(',', "").parse::<i64>().ok()};
-        candidate!=self.original || (
-            !self.input.trim().is_empty() && candidate.is_none()
-        )
+        match self.parse(){
+            Ok(value)=>value!=self.original,
+            Err(_)=>true,
+        }
     }
     fn parse(&self)->Result<Option<i64>,String>{
-        let input=self.input.trim().replace(',', "");
-        if input.is_empty(){return Ok(None);}
-        let amount=input.parse::<i64>()
-            .map_err(|_|"금액은 숫자만 입력하세요.".to_owned())?;
-        if amount<0 || amount>9_007_199_254_740_991 {
-            return Err("가격은 0원 이상 안전한 정수 범위로 입력하세요.".into());
-        }
-        Ok(Some(amount))
+        parse_product_price(&self.input,"금액",true)
     }
 }
 
@@ -825,18 +831,8 @@ impl ProductManager {
             .and_then(|rows|rows.first_mut())
             .ok_or("상품의 단일 판매 구성을 확인할 수 없습니다.")?;
         for tier in ["wholesale","semi","retail"]{
-            let raw=inputs.get(tier).ok_or("상품 가격 입력이 없습니다.")?
-                .trim().replace(',', "");
-            if raw.is_empty(){
-                variant[tier]=Value::Null;
-            }else{
-                let price=raw.parse::<i64>()
-                    .map_err(|_|"가격은 숫자만 입력하세요.".to_owned())?;
-                if !(0..=9_007_199_254_740_991).contains(&price){
-                    return Err("가격은 0원 이상 안전한 정수 범위로 입력하세요.".into());
-                }
-                variant[tier]=json!(price);
-            }
+            let raw=inputs.get(tier).ok_or("상품 가격 입력이 없습니다.")?;
+            variant[tier]=json!(parse_product_price(raw,"가격",false)?);
         }
         Ok(next)
     }
@@ -1153,6 +1149,19 @@ impl ProductManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn price_draft_uses_react_price_cell_zero_as_unregistered(){
+        let empty=PriceDraft{original:None,input:"0".into()};
+        assert!(!empty.dirty());
+        assert_eq!(empty.parse().unwrap(),None);
+        let recorded=PriceDraft{original:Some(4500),input:"0".into()};
+        assert!(recorded.dirty());
+        assert_eq!(recorded.parse().unwrap(),None);
+        assert_eq!(parse_product_price("0","가격",false).unwrap(),Some(0));
+        assert_eq!(parse_product_price("4,500","금액",true).unwrap(),Some(4500));
+        assert!(parse_product_price("-1","가격",false).is_err());
+        assert!(parse_product_price("9007199254740992","가격",false).is_err());
+    }
     #[test]
     fn catalog_options_do_not_create_mutable_catalog_entries(){
         let catalog=json!({"categories":[
