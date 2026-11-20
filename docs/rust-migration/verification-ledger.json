@@ -2005,6 +2005,30 @@
         "responseOrders": []
       },
       "discrepancies": [],
+      "eguiProductListMigration": {
+        "reference": "docs/egui-management-ui-reference.md — 운임 관리 > 배송 그룹 편성",
+        "commit": "2299b1158fe825850a3a7d39db175b15abb2a9dd",
+        "compileFixCommit": "5a0bf027b7bf56c793eb0edc646530154224b2ca",
+        "scope": "상품 목록 UI: 원본 검색/카테고리/브랜드/가격 미등록 필터, 가격 수정, 상품 상세를 유지한 채 고정 헤더/42pt 행/정렬/스크롤 이전",
+        "sources": [
+          "src/ProductManager.tsx",
+          "src/styles/management-layout.css",
+          "src/styles/product-admin-redesign.css",
+          "egui-app/src/product_manager.rs",
+          "egui-app/src/theme.rs",
+          "crates/bando-data-access/src/product_commands.rs"
+        ],
+        "patch": "PASS: main에 변경 파일·실행 경로 반영",
+        "static": "PASS: 승인된 배송그룹편성 고정행 좌표·공통 타이포·버튼/검색 구조 정적 대조, 기존 가격 Rust 저장 경로 유지",
+        "unit": "PENDING: egui product_manager::tests (정렬 순환·고정행 좌표·가격 입력)",
+        "ci": "PENDING: Windows targeted cargo check run 44696930187",
+        "windowsGui": "NOT_REQUESTED: 사용자 결정에 따라 제외",
+        "notMigrated": [
+          "Excel 관리: 전체 상품 Excel 내보내기/가져오기 및 검토",
+          "상품 추가: 공식 상품 가져오기 및 Excel 대량 등록"
+        ],
+        "businessChanges": "NONE"
+      },
       "legacyLedgerStatus": "ORACLE_REVIEW_OPEN",
       "gate": {
         "patch": {
