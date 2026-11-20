@@ -666,6 +666,31 @@ pub fn paint_dock_network(
     }
 }
 
+/// Align the OUTER top border of a management page's principal card with
+/// Freight > Shipping Group Assignment. Pages without four KPI cards leave
+/// an intentional blank area. This is not table-cell padding or row geometry.
+pub fn align_management_primary_card(ui: &mut Ui, page_origin_y: f32) {
+    let target_top = page_origin_y
+        + theme::management_primary_card_top_offset(ui.available_width());
+    let remaining = target_top - ui.cursor().top();
+    if remaining > 0.5 {
+        ui.add_space(remaining);
+    }
+}
+
+/// Expand one primary list card to the bottom of the management workspace
+/// when its rows do not already require more room. Nested/multiple-card
+/// pages must not use this: their own content needs ordinary scrolling.
+pub fn management_primary_card_min_inner_height(ui: &Ui) -> f32 {
+    (ui.available_height()
+        - 2.0 * (theme::SECTION_PADDING + theme::FRAME_STROKE_WIDTH))
+        .max(0.0)
+}
+pub fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
+    ui.set_min_width(ui.available_width().max(1.0));
+    ui.set_min_height(min_inner_height);
+}
+
 /// Shared management tab roles (content width, no full-page stretching).
 pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
     let mut pressed=None;
