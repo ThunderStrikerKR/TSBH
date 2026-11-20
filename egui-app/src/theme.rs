@@ -19,7 +19,12 @@ pub const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
 pub const INPUT: Color32 = Color32::from_rgb(41, 41, 41);
 // Disabled management dropdowns use a darker field surface while keeping
 // the same height, border and split-chevron geometry as enabled dropdowns.
-pub const MANAGEMENT_DROPDOWN_DISABLED_BG: Color32 = Color32::from_rgb(34, 34, 34);
+pub const MANAGEMENT_DROPDOWN_DISABLED_BG: Color32 = Color32::from_rgb(30, 30, 30);
+// Strong disabled styling shared by management select and action controls.
+// Avoid changing the approved enabled #292929 field / #303030 button roles.
+pub const DISABLED_ACTION_BG: Color32 = Color32::from_rgb(30, 30, 30);
+pub const DISABLED_ACTION_TEXT: Color32 = Color32::from_rgb(124, 124, 124);
+pub const DISABLED_ACTION_BORDER: Color32 = Color32::from_rgb(55, 55, 55);
 pub const RAISED: Color32 = Color32::from_rgb(48, 48, 48);
 pub const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
 pub const DIVIDER: Color32 = Color32::from_rgb(63, 63, 63);
