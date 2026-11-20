@@ -376,7 +376,9 @@ fn paint_caption(ui:&Ui,rect:Rect,value:&str){
             rect.center().y-galley.size().y/2.0),galley,theme::MUTED
     );
 }
-fn history_items_one_line(items:&Value)->String{
+// One distinct product per line in EXPANDED shipment detail only.
+// The parent order summary retains its compact single-line formatter.
+fn history_items_multiline(items:&Value)->String{
     let products=rows(items).iter().map(|item|{
         format!("{EXCEL_ITEM_MARKER}{} × {}",
             field(item,"name"),
@@ -384,10 +386,10 @@ fn history_items_one_line(items:&Value)->String{
                 .unwrap_or_else(||"수량 미확인".to_owned()))
     }).collect::<Vec<_>>();
     if products.is_empty(){"상품 정보 없음".to_owned()}
-    else{products.join("  ")}
+    else{products.join("\n")}
 }
 fn history_recipient_products(row:&Value,recipient_index:usize)->String{
-    history_items_one_line(&row["recipients"][recipient_index]["items"])
+    history_items_multiline(&row["recipients"][recipient_index]["items"])
 }
 fn history_detail_products(snapshot:&HistorySnapshot,order_index:usize,
     recipient_index:usize,shipment_index:Option<usize>)->String{
@@ -399,7 +401,7 @@ fn history_detail_products(snapshot:&HistorySnapshot,order_index:usize,
         .filter(|value|value.is_object())
         .and_then(|value|value.get("items"))
         .filter(|value|value.is_array())
-        .map(history_items_one_line)
+        .map(history_items_multiline)
         .unwrap_or_else(||history_recipient_products(row,recipient_index))
 }
 fn history_line_height(ui:&Ui,line:HistoryLine,
@@ -1555,7 +1557,7 @@ mod tests{
         assert_eq!(history_branch(&expanded_lines,1),Some(HistoryBranch::Continue));
         assert_eq!(history_branch(&expanded_lines,2),Some(HistoryBranch::Last));
         assert_eq!(history_recipient_products(&snapshot.rows[0],0),
-            "◆ BD 709 / 블랙 × 4  ◆ 뮤직 트레이 × 1");
+            "◆ BD 709 / 블랙 × 4\n◆ 뮤직 트레이 × 1");
         assert_eq!(history_shipment_logistics(
             rows(&snapshot.state["workflow"]["shipments"]).first()
         ),("3,500원".to_owned(),"123456789".to_owned()));
@@ -1589,7 +1591,16 @@ mod tests{
         });
         let original=multiple.state["workflow"]["shipments"][1]
             ["recipientSnapshot"]["items"].clone();
-        assert_eq!(history_items_one_line(&original),"◆ 709 검정 × 1");
+        assert_eq!(history_items_multiline(&original),"◆ 709 검정 × 1");
+        let detailed_items=json!([
+            {"name":"BD 708-1 / 블랙 / 비타공 상판","quantity":30},
+            {"name":"Conductor / 지휘자 보면대","quantity":1},
+            {"name":"Cart-10 / 보면대카트","quantity":2}
+        ]);
+        assert_eq!(history_items_multiline(&detailed_items),
+            "◆ BD 708-1 / 블랙 / 비타공 상판 × 30\n◆ Conductor / 지휘자 보면대 × 1\n◆ Cart-10 / 보면대카트 × 2");
+        assert!(!order_items_single_line(&json!({"recipients":[{"items":detailed_items}]}))
+            .contains('\n'));
     }
     #[test]
     fn detail_block_starts_at_branch_tip_and_uses_compact_fixed_height(){
