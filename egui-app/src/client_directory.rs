@@ -10,8 +10,8 @@
 use serde_json::{json, Value};
 use std::{collections::HashSet, fs, path::PathBuf};
 
-const MAX_CLIENT_INDEX_BYTES: u64 = 2 * 1024 * 1024;
-const MAX_CLIENTS: usize = 5_000;
+const MAX_CLIENT_INDEX_BYTES: u64 = bando_data_access::CLIENT_INDEX_MAX_BYTES as u64;
+const MAX_CLIENTS: usize = bando_data_access::CLIENT_INDEX_MAX_ROWS;
 
 pub fn attach(mut catalog: Value) -> Result<Value, String> {
     let index = std::env::var_os("BANDO_EGUI_CLIENT_INDEX").filter(|v| !v.is_empty());
@@ -65,9 +65,7 @@ fn load_business_from_connection(conn: &rusqlite::Connection) -> Result<(Value, 
     if version != 2 {
         return Err("지원하지 않는 거래처 DB 버전입니다. 운영 DB를 변경하지 않았습니다.".into());
     }
-    let clients = bando_data_access::read_clients_bounded(
-        conn, MAX_CLIENTS, MAX_CLIENT_INDEX_BYTES as usize,
-    )?;
+    let clients = bando_data_access::read_client_index_rows(conn)?;
     // Only read settings; app_state may also contain other legacy data, which
     // is never selected, projected, or saved here.
     let setting: Option<String> = conn.query_row(
