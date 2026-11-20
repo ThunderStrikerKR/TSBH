@@ -363,7 +363,7 @@ impl CategoryManager {
         self.confirm=None;
     }
     fn node(&mut self,ui:&mut Ui,cats:&[Category],catalog:&Value,
-        item:&Category,depth:usize){
+        item:&Category,depth:usize,ancestor_guides:&[bool],is_last:bool){
         if !matches(cats,item,&self.query){return;}
         let branches=children(cats,&item.id);
         let open=self.expanded.contains(&item.id)||!self.query.trim().is_empty();
@@ -378,10 +378,98 @@ impl CategoryManager {
                 if self.selected==item.id {theme::RAISED}else{theme::INPUT}
             );
         }
-        // Stable tree geometry: chevron and name are LEFT-anchored by
-        // their painted coordinates. Only the category totals are RIGHT-
-        // anchored. A wide Label allocation previously centered every
-        // name halfway across the available row width.
+        // A very faint row rule groups one category and its counts without
+        // creating table-like zebra bands. Root boundaries are a little firmer.
+        let row_rule=if is_root(&item.id){theme::DIVIDER}
+            else{theme::CATALOG_TREE_ROW_RULE_COLOR};
+        ui.painter().line_segment([
+            egui::pos2(rect.left()+theme::SPACE_12,rect.bottom()-0.5),
+            egui::pos2(rect.right()-theme::SPACE_12,rect.bottom()-0.5),
+        ],egui::Stroke::new(theme::CATALOG_TREE_ROW_RULE_WIDTH,row_rule));
+
+        let icon_x=rect.left()+theme::SPACE_12
+            +theme::CATALOG_TREE_INDENT*depth as f32;
+        let icon_rect=egui::Rect::from_min_size(
+            egui::pos2(icon_x,rect.center().y-theme::SPACE_8),
+            Vec2::splat(theme::SPACE_16)
+        );
+        let tree_stroke=egui::Stroke::new(
+            theme::CATALOG_TREE_GUIDE_WIDTH,theme::CATALOG_TREE_GUIDE_COLOR
+        );
+        // TreeView-style continuation guides (│): a guide persists through
+        // descendants only when that ancestor has a following visible sibling.
+        let guide_root_x=rect.left()+theme::SPACE_12+theme::SPACE_8;
+        for (level,continued) in ancestor_guides.iter().enumerate(){
+            if *continued{
+                let x=guide_root_x+theme::CATALOG_TREE_INDENT*level as f32;
+                ui.painter().line_segment([
+                    egui::pos2(x,rect.top()),egui::pos2(x,rect.bottom())
+                ],tree_stroke);
+            }
+        }
+        if depth>0{
+            // An elbow joins the immediate parent to this category.
+            // Last siblings end at the center instead of leaving a
+            // dangling vertical line below the final child.
+            let parent_x=guide_root_x
+                +theme::CATALOG_TREE_INDENT*(depth-1) as f32;
+            ui.painter().line_segment([
+                egui::pos2(parent_x,rect.top()),
+                egui::pos2(parent_x,if is_last{rect.center().y}else{rect.bottom()})
+            ],tree_stroke);
+            ui.painter().line_segment([
+                egui::pos2(parent_x,rect.center().y),
+                egui::pos2((icon_rect.left()-theme::SPACE_4).max(parent_x),
+                    rect.center().y)
+            ],tree_stroke);
+        }
+        if open && !branches.is_empty(){
+            // Continue below an expanded parent into the first child row.
+            ui.painter().line_segment([
+                egui::pos2(icon_rect.center().x,
+                    (icon_rect.bottom()+theme::SPACE_4).min(rect.bottom())),
+                egui::pos2(icon_rect.center().x,rect.bottom())
+            ],tree_stroke);
+        }
+        if !branches.is_empty(){
+            let center=icon_rect.center();
+            let stroke=egui::Stroke::new(1.5,theme::SECONDARY);
+            let arm=theme::SPACE_4;
+            if open{
+                ui.painter().line_segment([
+                    egui::pos2(center.x-arm,center.y-arm/2.0),
+                    egui::pos2(center.x,center.y+arm/2.0)
+                ],stroke);
+                ui.painter().line_segment([
+                    egui::pos2(center.x,center.y+arm/2.0),
+                    egui::pos2(center.x+arm,center.y-arm/2.0)
+                ],stroke);
+            }else{
+                ui.painter().line_segment([
+                    egui::pos2(center.x-arm/2.0,center.y-arm),
+                    egui::pos2(center.x+arm/2.0,center.y)
+                ],stroke);
+                ui.painter().line_segment([
+                    egui::pos2(center.x+arm/2.0,center.y),
+                    egui::pos2(center.x-arm/2.0,center.y+arm)
+                ],stroke);
+            }
+        }
+        // A small monochrome folder icon mirrors the Explorer navigation
+        // pane without introducing bright decorative color or font glyphs.
+        let folder_x=icon_rect.right()+theme::SPACE_8;
+        let folder_y=rect.center().y-theme::CATALOG_TREE_FOLDER_HEIGHT/2.0;
+        let folder_right=folder_x+theme::CATALOG_TREE_FOLDER_WIDTH;
+        let folder_bottom=folder_y+theme::CATALOG_TREE_FOLDER_HEIGHT;
+        ui.painter().add(egui::Shape::closed_line(vec![
+            egui::pos2(folder_x,folder_y+theme::SPACE_4),
+            egui::pos2(folder_x,folder_y+1.0),
+            egui::pos2(folder_x+theme::SPACE_4,folder_y+1.0),
+            egui::pos2(folder_x+theme::SPACE_8-2.0,folder_y+theme::SPACE_4),
+            egui::pos2(folder_right,folder_y+theme::SPACE_4),
+            egui::pos2(folder_right,folder_bottom),
+            egui::pos2(folder_x,folder_bottom)
+        ],egui::Stroke::new(1.0,theme::SECONDARY)));
         let count=total_count(catalog,cats,&item.id);
         let summary=if branches.is_empty(){
             format!("상품 {count}개")
@@ -422,7 +510,7 @@ impl CategoryManager {
                 ],stroke);
             }
         }
-        let name_x=icon_rect.right()+theme::SPACE_8;
+        let name_x=folder_right+theme::SPACE_8;
         let name_right=(summary_x-theme::SPACE_24).max(name_x);
         let name_width=(name_right-name_x).max(0.0);
         let font=if is_root(&item.id){
@@ -457,9 +545,14 @@ impl CategoryManager {
             }
         }
         if open {
-            let next=branches.into_iter().cloned().collect::<Vec<_>>();
-            for child in next{
-                self.node(ui,cats,catalog,&child,depth+1);
+            let next=branches.into_iter()
+                .filter(|child|matches(cats,child,&self.query))
+                .cloned().collect::<Vec<_>>();
+            let mut child_guides=ancestor_guides.to_vec();
+            if depth>0{child_guides.push(!is_last);}
+            for (index,child) in next.iter().enumerate(){
+                self.node(ui,cats,catalog,child,depth+1,
+                    &child_guides,index+1==next.len());
             }
         }
     }
@@ -498,9 +591,12 @@ impl CategoryManager {
                 .auto_shrink([false,false])
                 .max_height(panel.available_height().max(theme::MANAGEMENT_TABLE_ROW_HEIGHT))
                 .show(panel,|tree|{
+                    // Adjacent rows must touch so parent/child guide lines
+                    // form one continuous tree rather than broken dashes.
+                    tree.spacing_mut().item_spacing.y=0.0;
                     for (id,_) in ROOTS{
                         if let Some(current)=cats.iter().find(|c|c.id==id){
-                            self.node(tree,&cats,catalog,current,0);
+                            self.node(tree,&cats,catalog,current,0,&[],true);
                         }
                     }
                     let legacy=cats.iter().filter(|c|c.parent.is_empty()&&!is_root(&c.id))
@@ -513,7 +609,9 @@ impl CategoryManager {
                         tree.label(typography::caption(
                             "기존 분류의 소속은 자동으로 변경하지 않습니다. 선택 후 위치를 지정하세요."
                         ));
-                        for row in &legacy{self.node(tree,&cats,catalog,row,0);}
+                        for row in &legacy{
+                            self.node(tree,&cats,catalog,row,0,&[],true);
+                        }
                     }
                 });
         });
