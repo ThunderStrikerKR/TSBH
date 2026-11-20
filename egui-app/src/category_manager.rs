@@ -4,7 +4,7 @@
 use crate::{components,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Response,Sense,Ui,UiBuilder,Vec2};
 use serde_json::{json,Value};
-use std::collections::HashSet;
+use std::collections::{HashMap,HashSet};
 
 pub(crate) const ROOTS:[(&str,&str);2]=[
     ("catalog-root:BANDOSTAND","반도스탠드"),
@@ -94,6 +94,50 @@ fn path(cats:&[Category],id:&str)->Vec<Category>{
 }
 fn path_text(cats:&[Category],id:&str)->String{
     path(cats,id).iter().map(|c|c.name.as_str()).collect::<Vec<_>>().join(" / ")
+}
+
+/// Read-only, ID-based full category paths for management tables.
+/// Use the same parentId tree (including virtual BANDOSTAND/BANDOMALL roots)
+/// as the category map; do not trust the denormalized product.category label
+/// when category IDs can resolve the current hierarchy.
+pub(crate) struct ProductCategoryPaths {
+    by_product: HashMap<String,String>,
+}
+impl ProductCategoryPaths {
+    pub(crate) fn new(state:&Value,products:&[&Value])->Self{
+        let cats=categories(state);
+        let by_id=cats.iter().map(|c|(c.id.as_str(),c))
+            .collect::<HashMap<_,_>>();
+        let mut by_product=HashMap::new();
+        for product in products{
+            // The product editor and Rust category mutation use the final
+            // category ID as the leaf of the current category path.
+            let leaf=items(product,"categories").iter().rev()
+                .filter_map(Value::as_str).find(|id|by_id.contains_key(id));
+            let display=if let Some(id)=leaf{
+                let mut names=Vec::new();
+                let mut current=id;
+                let mut visited=HashSet::new();
+                while !current.is_empty()&&visited.insert(current.to_owned()){
+                    let Some(node)=by_id.get(current)else{break};
+                    names.push(node.name.as_str());
+                    current=&node.parent;
+                }
+                names.reverse();
+                names.join(" > ")
+            }else{
+                // Legacy records without a valid category ID are not silently
+                // assigned to a root: keep their stored display as fallback.
+                field(product,"category").to_owned()
+            };
+            by_product.insert(field(product,"id").to_owned(),display);
+        }
+        Self{by_product}
+    }
+    pub(crate) fn for_product<'a>(&'a self,product:&Value)->&'a str{
+        self.by_product.get(field(product,"id"))
+            .map(String::as_str).unwrap_or("")
+    }
 }
 fn under(cats:&[Category],id:&str,ancestor:&str)->bool{
     path(cats,id).iter().any(|part|part.id==ancestor)
