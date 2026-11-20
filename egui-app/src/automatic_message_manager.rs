@@ -586,11 +586,15 @@ impl AutomaticMessageManager {
     }
     pub fn show(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,page_origin_y:f32){
         self.poll();
-        let tab=components::management_tabs(ui,&[
-            ("상황별 공통 안내",self.section==Section::General,true),
-            ("잠정 상품 선택 안내",self.section==Section::Provisional,true),
-        ]);
-        ui.add_space(theme::SPACE_12);
+        // The nested message tabs follow the same guide as the client
+        // page's main heading and tabs, without moving either editor card.
+        let tab=components::management_top_content(ui,|top|
+            components::management_tabs(top,&[
+                ("상황별 공통 안내",self.section==Section::General,true),
+                ("잠정 상품 선택 안내",self.section==Section::Provisional,true),
+            ])
+        );
+        ui.add_space(theme::SPACE_16);
         if !self.loaded{
             if let Some(error)=&self.error{
                 ui.label(typography::status(error,theme::DANGER));
