@@ -1487,11 +1487,12 @@ impl BandoEgui {
         let mut close = false;
         let mut apply: Option<(String, OrderType, bool, Option<ChatWindow>)> = None;
         if let Some(review) = self.ocr_review.as_mut() {
-            let mut open = true;
             components::modal_window("OCR 문자 인식 검토","egui-ocr-review",work_area)
-                .open(&mut open)
                 .default_width(620.0)
                 .show(ctx, |ui| {
+                    if components::modal_header(
+                        ui,"OCR 문자 인식 검토","취소",true
+                    ){close=true;}
                     ui.label(typography::caption(
                         "접수한 이미지와 인식 문구를 비교하고 오타를 고쳐 주세요."
                     ));
@@ -1514,9 +1515,6 @@ impl BandoEgui {
                             .desired_rows(9),
                     );
                     ui.horizontal(|ui| {
-                        if theme::action(ui, "닫기", ButtonRole::Standard, true).clicked() {
-                            close = true;
-                        }
                         let can_apply = !review.edited_text.trim().is_empty()
                             && review.edited_text.chars().count() <= 20_000;
                         if theme::action(ui, "원문에 추가", ButtonRole::Standard, can_apply).clicked() {
@@ -1535,7 +1533,6 @@ impl BandoEgui {
                         }
                     });
                 });
-            if !open { close = true; }
         }
         if let Some((raw, kind, replacing, chat)) = apply {
             self.ocr_review = None;
@@ -1566,11 +1563,11 @@ impl BandoEgui {
                 "변경사항 확인","ocr-review-discard-confirm",work_area
             )
                 .show(ctx, |ui| {
+                    if components::modal_header(
+                        ui,"변경사항 확인","취소",true
+                    ){self.discard_ocr_confirm=false;}
                     ui.label("OCR 문자 인식 검토의 수정 내용을 버릴까요?");
                     ui.horizontal(|ui| {
-                        if theme::action(ui, "계속 편집", ButtonRole::Standard, true).clicked() {
-                            self.discard_ocr_confirm = false;
-                        }
                         if theme::action(ui, "변경 취소", ButtonRole::Danger, true).clicked() {
                             self.ocr_review = None;
                             self.discard_ocr_confirm = false;
@@ -1588,11 +1585,11 @@ impl BandoEgui {
             "발주원문 교체 확인","egui-replace-source-confirm",work_area
         )
             .show(ctx, |ui| {
+                cancel=components::modal_header(
+                    ui,"발주원문 교체 확인","취소",true
+                );
                 ui.label("현재 초안과 분석 결과를 새 원문으로 교체할까요?");
                 ui.horizontal(|ui| {
-                    if theme::action(ui, "취소", ButtonRole::Standard, true).clicked() {
-                        cancel = true;
-                    }
                     if theme::action(ui, "교체", ButtonRole::Primary, true).clicked() {
                         accept = true;
                     }
@@ -3435,6 +3432,12 @@ impl BandoEgui {
         components::decision_window(
             "저장하지 않은 변경사항","freight-global-leave",work_area
         ).show(ctx,|dialog|{
+            if components::modal_header(
+                dialog,"저장하지 않은 변경사항","취소",!manager.busy()
+            ){
+                self.freight_pending_page=None;
+                self.freight_pending_save=false;
+            }
             dialog.label(typography::body(
                 "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
             ));
@@ -3445,11 +3448,6 @@ impl BandoEgui {
             }
             dialog.add_space(theme::SPACE_12);
             dialog.horizontal(|bar|{
-                if theme::action(bar,"취소",ButtonRole::Standard,
-                    !manager.busy()).clicked(){
-                    self.freight_pending_page=None;
-                    self.freight_pending_save=false;
-                }
                 if theme::action(bar,"저장 안 함",ButtonRole::Standard,
                     !manager.busy()).clicked(){
                     manager.discard_drafts();
@@ -3488,15 +3486,14 @@ impl BandoEgui {
         components::decision_window(
             "저장하지 않은 변경사항","settings-global-leave",work_area
         ).show(ctx,|ui|{
+            if components::modal_header(
+                ui,"저장하지 않은 변경사항","취소",!view.busy()
+            ){self.settings_pending_page=None;}
             ui.label(typography::body(
                 "설정에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
             ));
             ui.add_space(theme::SPACE_12);
             ui.horizontal(|actions|{
-                if theme::action(actions,"취소",ButtonRole::Standard,
-                    !view.busy()).clicked(){
-                    self.settings_pending_page=None;
-                }
                 if theme::action(actions,"저장 안 함",ButtonRole::Standard,
                     !view.busy()).clicked(){
                     view.discard();
