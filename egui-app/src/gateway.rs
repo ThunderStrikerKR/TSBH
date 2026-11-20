@@ -396,7 +396,21 @@ impl BandoGateway for LocalGateway {
             preview["updatedOptions"].as_u64().unwrap_or(0)==0 {
             return Err("상품 Excel에 저장할 변경사항이 없습니다.".into());
         }
-        self.settings_data("backup",None)?;
+        // Product Excel must create the original mandatory manual backup.
+        // Settings-write permission is unrelated to product-write permission.
+        // Use the native backup service, the same authorized business DB
+        // path, and then the existing revision-checked product writer.
+        let path=crate::business_state::authorized_business_write_path()?;
+        let conn=rusqlite::Connection::open_with_flags(
+            &path,rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+        ).map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|e|e.to_string())?;
+        let base=path.parent().ok_or("운영 백업 폴더를 확인할 수 없습니다.")?;
+        bando_data_access::backup_service::manual_backup(&conn,base)?;
+        drop(conn);
         self.mutate_product(revision,"apply_product_workbook",serde_json::json!({"preview":preview}))
     }
     fn shipping_write_enabled(&self) -> bool {
