@@ -1073,6 +1073,11 @@ impl FreightManager {
                 *bulk_feedback=None;
             }
             components::soft_divider(section);
+            // A management table is one continuous grid. The section's
+            // default vertical widget gap must NOT sit between the header
+            // and its first 42pt row (it made row 1 appear taller).
+            let previous_table_spacing_y=section.spacing().item_spacing.y;
+            section.spacing_mut().item_spacing.y=0.0;
             // Reserve the header OUTSIDE the scroll area. The table's
             // scroll offset is reflected only in its horizontal coordinates,
             // so wheel scrolling cannot push column titles off-screen.
@@ -1192,7 +1197,7 @@ impl FreightManager {
                         let mut checkbox_builder=egui::UiBuilder::new()
                             .id_salt(("freight-checkbox",id))
                             .max_rect(checkbox_rect)
-                            .layout(egui::Layout::left_to_right(egui::Align::Min));
+                            .layout(egui::Layout::left_to_right(egui::Align::Center));
                         if !enabled {
                             checkbox_builder=checkbox_builder.disabled();
                         }
@@ -1401,6 +1406,8 @@ impl FreightManager {
                         ));
                     }
                 });
+            // Limit the zero-gap setting to the header+rows block.
+            section.spacing_mut().item_spacing.y=previous_table_spacing_y;
             // Header and body use freight_assignment_cells() AND the body
             // scroll origin, so no egui padding / Grid sizing can drift.
             let header_left=first_row_left.unwrap_or(
