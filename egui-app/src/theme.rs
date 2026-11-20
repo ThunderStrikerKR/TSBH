@@ -365,6 +365,20 @@ pub fn section_frame() -> Frame {
 /// Search toolbar and table belong to a single management list card.
 /// The card provides only its outline; its toolbar owns inner padding,
 /// and rows can span the full width without a second 16pt inset.
+/// Management tables use a permanent, non-overlay scrollbar track.
+/// Solid scrollbars remain visible while a list has overflow and never
+/// collapse into a faint 2pt floating line when the pointer leaves.
+/// Reserve the width in layout so row buttons do not sit underneath it.
+pub fn management_scroll_style() -> egui::style::ScrollStyle {
+    let mut style=egui::style::ScrollStyle::solid();
+    style.bar_width=10.0;
+    style.handle_min_length=44.0;
+    style.bar_inner_margin=SPACE_4;
+    style.bar_outer_margin=SPACE_4;
+    style.foreground_color=true;
+    style
+}
+
 pub fn management_list_frame() -> Frame {
     Frame::new()
         .fill(PANEL)
