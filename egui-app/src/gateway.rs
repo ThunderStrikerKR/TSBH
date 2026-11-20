@@ -128,6 +128,14 @@ pub trait BandoGateway: Send + Sync {
         -> Result<Value,String> {
         Err("이 연결에서는 운영 운임 변경을 지원하지 않습니다.".into())
     }
+    /// Product changes require an explicitly enabled native Tauri helper.
+    /// A read-only external master or the egui preview catalog is never a
+    /// writable fallback.
+    fn product_write_enabled(&self)->bool {false}
+    fn mutate_product(&self,_revision:u64,_action:&str,_data:Value)
+        -> Result<Value,String>{
+        Err("이 연결에서는 운영 상품 변경을 지원하지 않습니다.".into())
+    }
     /// Full v2 business snapshot for native rules only, from an explicitly
     /// configured read-only operational DB. This must never mutate SQLite.
     fn load_business_state(&self) -> Result<Value, String> {
@@ -168,6 +176,7 @@ impl BandoGateway for LocalGateway {
             let full = crate::business_state::load()?;
             let (clients, settings) = crate::client_directory::project_index(&full)?;
             return Ok(serde_json::json!({
+                "revision":full.get("revision"),
                 "products":full.get("products"),
                 "aliases":full.get("aliases"),
                 "brands":full.get("brands"),
@@ -207,6 +216,57 @@ impl BandoGateway for LocalGateway {
     }
     fn load_business_state(&self) -> Result<Value, String> {
         crate::business_state::load()
+    }
+    fn product_write_enabled(&self)->bool{
+        std::env::var("BANDO_EGUI_ENABLE_PRODUCT_WRITE")
+            .ok().as_deref()==Some("1")
+        && std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .is_some_and(|path|!path.is_empty())
+        && std::env::var_os("BANDO_EGUI_TAURI_HELPER")
+            .is_some_and(|path|!path.is_empty())
+    }
+    fn mutate_product(&self,revision:u64,action:&str,data:Value)
+        -> Result<Value,String>{
+        use std::io::Write;
+        use std::process::{Command,Stdio};
+        if !self.product_write_enabled(){
+            return Err("운영 상품을 수정할 수 있는 연결이 아닙니다.".into());
+        }
+        let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
+            .ok_or("Tauri 상품 저장 도우미가 없습니다.")?;
+        if !std::path::Path::new(&helper).is_file(){
+            return Err("Tauri 상품 저장 도우미 실행 파일이 없습니다.".into());
+        }
+        let request=serde_json::json!({
+            "expectedRevision":revision,"action":action,"data":data,
+        }).to_string();
+        if request.len()>2_000_000 {
+            return Err("상품 변경 요청이 허용 크기를 초과했습니다.".into());
+        }
+        let mut child=Command::new(helper)
+            .arg("--bando-egui-product-patch")
+            .stdin(Stdio::piped()).stdout(Stdio::piped())
+            .stderr(Stdio::null()).spawn()
+            .map_err(|_|"Tauri 상품 저장 도우미 실행 실패".to_owned())?;
+        let mut stdin=child.stdin.take()
+            .ok_or("Tauri 상품 변경 입력을 열지 못했습니다.")?;
+        stdin.write_all(request.as_bytes()).map_err(|e|e.to_string())?;
+        drop(stdin);
+        let output=child.wait_with_output().map_err(|e|e.to_string())?;
+        if output.stdout.len()>65536 {
+            return Err("상품 변경 응답이 허용 크기를 초과했습니다.".into());
+        }
+        let response:Value=serde_json::from_slice(&output.stdout)
+            .map_err(|_|"Tauri 상품 변경 응답 형식 오류".to_owned())?;
+        if !output.status.success() || response["ok"]!=true {
+            return Err(response["error"].as_str()
+                .unwrap_or("상품 변경을 저장하지 못했습니다.").to_owned());
+        }
+        let catalog=self.load_catalog()?;
+        if catalog["revision"]!=response["result"]["revision"] {
+            return Err("상품은 저장됐지만 최신 상태 조회가 일치하지 않습니다. 새로고침하세요.".into());
+        }
+        Ok(catalog)
     }
     fn shipping_write_enabled(&self) -> bool {
         std::env::var("BANDO_EGUI_ENABLE_SHIPPING_WRITE")
