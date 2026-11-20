@@ -29,6 +29,9 @@ pub const FONT_MAIN_NAV: f32 = 18.0;
 /// Second-level management tabs remain full-size controls, visually
 /// subordinate through position and neutral styling rather than tiny text.
 pub const FONT_MANAGEMENT_TAB: f32 = 16.0;
+/// Visual hierarchy of freight KPI cards: prominent value, supporting caption.
+pub const FONT_FREIGHT_SUMMARY_NUMBER: f32 = 28.0;
+pub const FONT_FREIGHT_SUMMARY_LABEL: f32 = 13.0;
 pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
 // Shared line boxes used for balanced reception guidance geometry.
@@ -383,6 +386,40 @@ fn summary_card_secondary_galley(
         egui::text::LayoutJob::single_section(text.to_owned(), format)
     ))
 }
+/// Standalone freight metric number (e.g. 358). Keep the named bold
+/// family, independent of the older small one-line SummaryValue role.
+pub fn freight_summary_large_number_galley(
+    ui: &egui::Ui, text: &str
+) -> std::sync::Arc<egui::Galley> {
+    let format = egui::TextFormat {
+        font_id: FontId::new(
+            FONT_FREIGHT_SUMMARY_NUMBER,
+            FontFamily::Name(EMPHASIS_FAMILY.into()),
+        ),
+        color: TEXT,
+        line_height: Some(FONT_FREIGHT_SUMMARY_NUMBER + 6.0),
+        ..Default::default()
+    };
+    ui.fonts_mut(|fonts| fonts.layout_job(
+        egui::text::LayoutJob::single_section(text.to_owned(), format)
+    ))
+}
+
+/// Compact label under the large number; both use independent centered rows.
+pub fn freight_summary_small_label_galley(
+    ui: &egui::Ui, text: &str
+) -> std::sync::Arc<egui::Galley> {
+    let format = egui::TextFormat {
+        font_id: FontId::proportional(FONT_FREIGHT_SUMMARY_LABEL),
+        color: SECONDARY,
+        line_height: Some(FONT_FREIGHT_SUMMARY_LABEL + 5.0),
+        ..Default::default()
+    };
+    ui.fonts_mut(|fonts| fonts.layout_job(
+        egui::text::LayoutJob::single_section(text.to_owned(), format)
+    ))
+}
+
 pub fn summary_card_label_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
