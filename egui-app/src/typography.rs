@@ -280,6 +280,20 @@ pub fn client_table_metadata_galley(
     client_table_galley(ui,text,Role::Metadata,false,color)
 }
 
+/// Freight assignment uses the 14pt body step in both header and data rows.
+/// Keep this scoped to Freight, rather than enlarging all 13pt directory tables.
+pub fn freight_table_header_galley(
+    ui: &egui::Ui, text: &str
+) -> std::sync::Arc<egui::Galley> {
+    client_table_galley(ui,text,Role::Body,true,SECONDARY)
+}
+
+pub fn freight_table_cell_galley(
+    ui: &egui::Ui, text: &str, emphasized: bool, color: Color32
+) -> std::sync::Arc<egui::Galley> {
+    client_table_galley(ui,text,Role::Body,emphasized,color)
+}
+
 /// Exact left-anchored category tree name glyphs. Do not place a Label in
 /// a full-width allocation: egui may center its text inside that rectangle.
 /// Both root and non-root names retain their existing typography role.
@@ -298,13 +312,14 @@ pub fn category_tree_name_galley(
 /// Prefer keeping whole trailing category names and the final leaf intact.
 /// If the leaf alone is wider than the cell, keep its trailing glyphs.
 #[derive(Clone,Copy)]
-pub enum CategoryPathFont { Body, Metadata, TableCell, Subsection }
+pub enum CategoryPathFont { Body, Metadata, TableCell, FreightTableCell, Subsection }
 
 fn category_path_text_width(ui:&egui::Ui,text:&str,font:CategoryPathFont)->f32{
     let (role,emphasized,color)=match font{
         CategoryPathFont::Body=>(Role::Body,false,TEXT),
         CategoryPathFont::Metadata=>(Role::Metadata,false,MUTED),
         CategoryPathFont::TableCell=>(Role::TableCell,false,TEXT),
+        CategoryPathFont::FreightTableCell=>(Role::Body,false,TEXT),
         CategoryPathFont::Subsection=>(Role::Subsection,true,TEXT),
     };
     client_table_galley(ui,text,role,emphasized,color).size().x
