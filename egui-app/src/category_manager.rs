@@ -6,7 +6,7 @@ use eframe::egui::{self,Align,Context,Layout,Rect,Response,Sense,Ui,UiBuilder,Ve
 use serde_json::{json,Value};
 use std::collections::HashSet;
 
-const ROOTS:[(&str,&str);2]=[
+pub(crate) const ROOTS:[(&str,&str);2]=[
     ("catalog-root:BANDOSTAND","반도스탠드"),
     ("catalog-root:BANDOMALL","반도몰"),
 ];
