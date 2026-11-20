@@ -1278,13 +1278,9 @@ impl OrderHistoryManager {
             table_scroll.bar_inner_margin=0.0;
             table_scroll.bar_outer_margin=0.0;
             section.spacing_mut().scroll=table_scroll;
-            // Freight Assignment's ACTUAL vertical rhythm is:
-            // 36pt toolbar + default 8pt after-toolbar gap + 9pt
-            // (4/1/4) divider + 36pt sticky header. Previously the
-            // zero-spacing setting swallowed the 8pt gap and moved this
-            // header ~7px ABOVE the Freight reference at Windows DPI.
-            // Reserve the toolbar explicitly; keep zero implicit spacing
-            // for its remaining descendants and the virtual table.
+            // Use the identical zero-implicit-gap toolbar-to-header
+            // allocator as Freight Assignment. Do not inject extra space
+            // or move the header independently on either screen.
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
             let full_width=section.available_width().max(1.0);
@@ -1354,43 +1350,25 @@ impl OrderHistoryManager {
                 self.date_to=self.to_input.clone();
                 self.refresh(section.ctx().clone());
             }
-            // Freight's default item spacing separates its 36pt toolbar
-            // and 9pt divider. Preserve that exact 8pt here without
-            // reintroducing implicit space between divider/header/rows.
-            section.add_space(theme::SPACE_8);
-            // Loading/error/validation/empty messages must never occupy
-            // this gap; those are painted in the data viewport.
-            // Freight separator: 4pt above + 1pt rule + 4pt below.
-            let (separator,_)=section.allocate_exact_size(
-                Vec2::new(section.available_width(),
-                    theme::SPACE_8+theme::SOFT_DIVIDER_WIDTH),Sense::hover()
+            // Same measured transition as Freight > Shipping Group
+            // Assignment: toolbar gap, divider and sticky header come from
+            // ONE shared allocator instead of a separate add_space call.
+            // Invalid dates and other notices are painted inside the rows,
+            // never inserted into this vertical rhythm.
+            let table_header=components::management_sticky_table_header(
+                section,MIN_WIDTH
             );
-            section.painter().rect_filled(
-                Rect::from_min_size(
-                    egui::pos2(separator.left(),separator.top()+theme::SPACE_4),
-                    Vec2::new(separator.width(),theme::SOFT_DIVIDER_WIDTH)
-                ),0.0,theme::DIVIDER
-            );
-            let viewport=section.available_width().max(1.0);
-            let gutter=section.spacing().scroll.allocated_width();
-            let table_width=(viewport-gutter).max(MIN_WIDTH);
+            let viewport=table_header.viewport_width;
+            let gutter=table_header.scrollbar_gutter;
+            let table_width=table_header.table_width;
+            let head_rect=table_header.header_rect;
+            let header_content_rect=table_header.header_content_rect;
             let mut widths=COLS;
-            // No unused horizontal space on fixed-format columns.
+            // Fixed columns retain their widths; the product column fills
+            // the same measured data viewport as the sticky header.
             widths[2]+=(table_width-MIN_WIDTH).max(0.0);
             let headings=["접수일","거래처","배송 건 / 상품","관리 상태",
                 "청구 합계","입금 확인","처리"];
-            let (head_rect,_)=section.allocate_exact_size(
-                Vec2::new(viewport,HEADER_HEIGHT),Sense::hover());
-            // Freight Assignment paints its sticky header across the
-            // entire viewport, but the final 10pt belongs exclusively to
-            // the solid scrollbar rail — not to an eighth data column.
-            let header_content_rect=Rect::from_min_max(
-                head_rect.min,
-                egui::pos2(
-                    (head_rect.right()-gutter).max(head_rect.left()+1.0),
-                    head_rect.bottom()
-                )
-            );
             let mut header_origin=None;
             let mut pending_toggle=None;
             let mut pending_memo=None;
