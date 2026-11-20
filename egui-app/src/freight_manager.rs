@@ -1086,8 +1086,10 @@ impl FreightManager {
                 }
             });
             components::soft_divider(section);
-            egui::ScrollArea::horizontal()
+            egui::ScrollArea::both()
                 .id_salt("freight-assignment-rows")
+                .max_height(section.ctx().content_rect().height()
+                    * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
                 .auto_shrink([false,false])
                 .show(section,|table|{
                     table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
@@ -1241,7 +1243,10 @@ impl FreightManager {
                             }
                         });
                     if filtered.is_empty(){
-                        table.label(typography::caption("검색 조건에 맞는 상품이 없습니다."));
+                        table.label(typography::caption(
+                            if products.is_empty(){"등록된 상품이 없습니다."}
+                            else{"검색 조건에 맞는 상품이 없습니다."}
+                        ));
                     }
                 });
             let mut assignments=serde_json::Map::new();
@@ -1254,13 +1259,22 @@ impl FreightManager {
             }
             components::soft_divider(section);
             section.horizontal(|actions|{
-                actions.label(typography::caption(&format!(
-                    "{}개 상품의 배송 그룹을 변경합니다.",assignments.len()
-                )));
-                if theme::action(actions,"미저장 변경 초기화",
-                    theme::ButtonRole::Standard,enabled&&!assignments.is_empty()
-                ).clicked(){pending.clear();}
-                if theme::action(actions,"그룹 지정 저장",
+                actions.label(typography::caption(if assignments.is_empty() {
+                    "등록된 상품을 임의로 분류하지 않습니다. 사용자가 확인한 그룹을 지정해 주세요.".to_owned()
+                }else{
+                    format!("{}개 상품의 배송 그룹을 변경합니다.",assignments.len())
+                }.as_str()));
+                if !assignments.is_empty() &&
+                    theme::action(actions,"미저장 변경 초기화",
+                        theme::ButtonRole::Standard,enabled).clicked(){
+                    pending.clear();
+                }
+                let save_label=if assignments.is_empty(){
+                    "그룹 지정 저장".to_owned()
+                }else{
+                    format!("그룹 지정 저장 / {}개",assignments.len())
+                };
+                if theme::action(actions,&save_label,
                     theme::ButtonRole::Primary,enabled&&!assignments.is_empty()
                 ).clicked(){
                     *action=Some(("assign_products".into(),json!({
@@ -1285,8 +1299,10 @@ impl FreightManager {
         });
         ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui,|section|{
-            egui::ScrollArea::horizontal()
+            egui::ScrollArea::both()
                 .id_salt("freight-group-rates-table")
+                .max_height(section.ctx().content_rect().height()
+                    * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
                 .auto_shrink([false,false])
                 .show(section,|table|{
                     table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
@@ -1478,8 +1494,10 @@ impl FreightManager {
                 ));
                 return;
             }
-            egui::ScrollArea::horizontal()
+            egui::ScrollArea::both()
                 .id_salt("freight-verified-combination-table")
+                .max_height(section.ctx().content_rect().height()
+                    * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
                 .auto_shrink([false,false])
                 .show(section,|table|{
                     table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
