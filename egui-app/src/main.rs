@@ -4004,6 +4004,10 @@ impl eframe::App for BandoEgui {
         if self.page == Page::Reception {
             self.show_client_chooser(ctx,work_area);
             self.show_manual_workspace(ctx,work_area);
+        } else if self.page==Page::History {
+            if let Some(history)=self.order_history_manager.as_mut(){
+                history.show_memo_modal(ctx,work_area);
+            }
         } else if self.page==Page::Settings {
             if let Some(settings)=self.settings_view.as_mut(){
                 if settings.has_tab_confirmation(){
