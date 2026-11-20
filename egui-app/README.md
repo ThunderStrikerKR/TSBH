@@ -2,6 +2,15 @@
 
 현재 `main`에 존재하는 **독립 실행 UI 골격**이다. 사용자가 제공한 2026-11-19 React 접수 캡처와 `docs/egui-ui-design-contract.md`를 기준으로 한다.
 
+## 2026-11-20 — 기존 Tauri 업무 DB 자동 읽기 연결
+
+- Windows `DEV_WINDOWS_EGUI.cmd` / debug egui: 기존 Tauri의 `%APPDATA%\\com.bandostand.bandohub.tauri\\developer-test\\bando-hub-test.sqlite`가 존재할 경우 **읽기 전용으로 자동 연결**한다. 운영 DB로 대체하거나 새 테스트 DB를 만들지 않는다.
+- 정식 release egui: 기존 `%APPDATA%\\com.bandostand.bandohub.tauri\\bando-hub-v001.sqlite`가 있을 때만 **읽기 전용으로 자동 연결**한다. Tauri `tauri.conf.json`의 앱 식별자를 사용한다.
+- 이미 명시한 `BANDO_EGUI_BUSINESS_DB`는 직접 `cargo run` 시 우선 적용한다. 개발 전용 CMD는 상속된 운영 DB 경로를 초기화하여 테스트 데이터와 운영 데이터를 혼합하지 않는다.
+- 운임 저장은 기존 `BandoGateway::mutate_shipping` → Tauri CLI `--bando-egui-shipping-patch` → Rust `apply_shipping_action` → revision-checked SQLite 트랜잭션을 재사용한다. 개발용 CMD는 **기존 테스트 DB와 빌드된 Tauri debug helper가 모두 있을 때만** 운임 변경 권한을 활성화한다. 정식 운영 쓰기는 여전히 명시적인 helper와 쓰기 권한 설정을 요구한다.
+- 이 연결은 운영 DB 생성·초기화·자동 병합·스키마 마이그레이션을 수행하지 않는다. 기존 egui-preview.sqlite3의 미확정 접수 작업본은 분리 보존한다.
+- 아래의 과거 단계별 '운영 DB 수동 지정' 및 '자동 탐색 없음' 설명은 해당 당시의 개발 상태를 기록한 역사적 내용이며, **현재 DB 조회 규칙은 이 항목을 우선**한다.
+
 ## 실행
 
 Rust toolchain 설치 환경에서 저장소 루트 기준:
