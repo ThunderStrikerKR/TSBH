@@ -257,7 +257,6 @@ pub struct FreightManager {
     error: Option<String>,
     search: String,
     group_filter: String,
-    only_missing: bool,
 }
 impl FreightManager {
     fn fetch(gateway: Arc<dyn BandoGateway>,ctx:egui::Context)
@@ -311,7 +310,6 @@ impl FreightManager {
             error: None,
             search: String::new(),
             group_filter: String::new(),
-            only_missing:false,
         }
     }
 
@@ -587,7 +585,7 @@ impl FreightManager {
             Self::show_groups(
                 ui, &groups, &products, &category_paths,
                 &mut self.search, &mut self.group_filter,
-                &mut self.only_missing, &mut self.pending, &mut self.selected,
+                &mut self.pending, &mut self.selected,
                 &mut self.bulk_group, &mut self.bulk_feedback,
                 &mut self.rate_editor, &mut self.product_reset_target,
                 &mut self.error, &self.gateway, &projection["productViews"],
@@ -868,7 +866,6 @@ impl FreightManager {
         ui: &mut Ui, groups: &[Value], products: &[&Value],
         category_paths:&ProductCategoryPaths,
         search: &mut String, group_filter: &mut String,
-        only_missing:&mut bool,
         pending: &mut BTreeMap<String,String>, selected: &mut BTreeSet<String>,
         bulk_group: &mut Option<String>,
         bulk_feedback: &mut Option<String>,
@@ -940,9 +937,9 @@ impl FreightManager {
                 if before_filter!=*group_filter {
                     selected.clear();
                     *bulk_feedback=None;
-                    *only_missing=false;
                 }
-                tools.checkbox(only_missing,"그룹 미지정 상품만");
+                // The filter menu already contains "그룹 미지정만".
+                // A second checkbox is redundant and can contradict a chosen group.
 
                 }
             );
@@ -961,11 +958,10 @@ impl FreightManager {
                     && (group_filter.is_empty()
                         || (group_filter.as_str()=="none" && !grouped)
                         || text(p,"shippingGroupId")==group_filter.as_str())
-                    && (!*only_missing || !grouped)
                 }).collect();
                 // Sort by committed group membership, never by an unsaved
                 // selector value, to keep product rows stable during edits.
-                if needle.is_empty() && group_filter.is_empty() && !*only_missing {
+                if needle.is_empty() && group_filter.is_empty() {
                     filtered.sort_by_key(|p|usize::from(groups.iter().any(|g|
                         text(g,"id")==text(p,"shippingGroupId")
                     )));
