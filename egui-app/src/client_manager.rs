@@ -170,7 +170,7 @@ impl ClientManager {
             },
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
                 self.error=Some("거래처 저장 연결이 중단되었습니다.".into());
-                self.saving=None;self.saving_action=None;
+                self.saving=None;
             },
             _=>{},
         }
