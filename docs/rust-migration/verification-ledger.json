@@ -1580,7 +1580,19 @@
             "818201b14437d0dd04ed6d1e951cae24c08addaf",
             "ceb59802ed16002f41dce091287636f067a942d0",
             "34952198d27b1835006d92683c3c2e2898c574db",
-            "1634d07e0bc944b9ff6e3e353bef6eff9086f3b4"
+            "1634d07e0bc944b9ff6e3e353bef6eff9086f3b4",
+            "c3defd3962694ce2c7b022fe90bc338fe3b90ba5",
+            "cc4c8f8a990a8ad4bd1407dcbab3b81cf149ae32",
+            "81e5fa45984607c99d5634ab676da52b1ec36ac7",
+            "d9a06482c23a048e387f91de6e6b5a9562bf1112",
+            "a3b520e1bdbb2287212dec378d5c4feddf932ba0",
+            "d034871bb556c921e0dbc36633acc6917fac0f75",
+            "ea25ef3b9c6f499f9d291f64ce925c11f6dd6274",
+            "c39cef32c7e4a50046ff513b84267f1dec6c5912",
+            "26198636546e8fe2427a2719590a164435694856",
+            "dff4611b61a0f10f75b563f9a8fe3aabbd4cfacf",
+            "e2cb798e53ca86a8c5dc6518f4aaebb6af594741",
+            "50e6c3685cc7ef31952b0e43db6acf1cad0d0742"
           ],
           "files": [
             "egui-app/src/excel_manager.rs","egui-app/src/excel_service.rs",
@@ -1590,12 +1602,11 @@
             ".github/workflows/egui-targeted-check.yml"
           ]
         },
-        "static": "PASS for three-tab layout, two Rust prepare operations, 16-string XLSX serialization, save-before-finalize CAS, current-state read, history file ID validation and refusal of legacy selection. Targeted 36pt fixed header, 42pt virtual rows, solid scrollbar and 3-state sort. No Windows pixel inspection.",
-        "narrow": "Configured existing targeted GitHub workflow to include egui Excel source and excel_service::tests. Run result pending.",
-        "build": "PENDING: early 44746370556 missed module registration before main.rs update; 44746823683 failed E0631 recipient filter, fixed at 34952198. Later CI includes unrelated concurrent bando-data-access product_commands.rs changes and must be evaluated separately.",
+        "static": "PASS for three-tab layout, two Rust prepare operations, 16-string XLSX serialization, save-before-finalize CAS, current-state read, history file ID validation and refusal of legacy selection. Fixed 36pt header, 42pt virtual rows, solid scrollbar, 3-state sort, select-all checkbox. Reused original Rust workflow/correction reducers for actual freight, restore, store sent, factory delivery and reopen, with native validation/CAS. No Windows pixel inspection.",
+        "narrow": "PASS for Excel serializer test at existing run 44748059905 (16 string columns), after initial three-tab migration. Later actual-freight/workflow changes require a newer scoped build.",
+        "build": "PASS for initial Excel menu XLSX code at 44748059905 (Tauri + egui cargo check both success). Later 44748728164 found an Excel manager widget ID move (E0382), fixed at e2cb798e. Latest code at 50e6c368 requires a newer cargo check; not yet verified.",
         "notYetMigrated": [
-          "Queue per-row ActualFreightField editor and save/restore/store-sent actions",
-          "Export history fileOnly dispatch confirmation, factory delivery confirmation and reopen/reprint actions",
+          "ActualFreightField unsaved-draft page-leave confirmation has not yet reached native parity; current field retains drafts in memory while manager lives",
           "FactoryReplyImport XLSX parsing/review/backup/archive/apply",
           "FactoryReplyHistory status/linked rows/conflict approval"
         ],
