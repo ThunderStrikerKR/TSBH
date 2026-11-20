@@ -171,7 +171,7 @@ pub fn create(origin:&str,ids:&[String])->Result<Value,String>{
 /// accepted. The original Rust reducer and workflow validator remain the
 /// single authority. One SQLite CAS commit follows its verified output.
 pub fn workflow_action(
-    expected:u64,action:&str,shipment_id:&str,queue_id:&str,value:Value
+    expected:u64,action:&str,shipment_id:&str,queue_id:&str,origin:&str,value:Value
 )->Result<Value,String>{
     if !writable(){return Err("Excel 관리 변경 권한이 없습니다.".into())}
     if !matches!(action,
@@ -211,7 +211,7 @@ pub fn workflow_action(
         json!({
             "state":&source,"action":action,
             "shipmentId":shipment_id,"queueId":queue_id,
-            "origin":if action=="record_actual_freight"{"FACTORY"}else{""},
+            "origin":origin,
             "value":value,"now":now,"actor":actor,
             "eventId":Uuid::new_v4().to_string(),
             "auditEventIds":(0..2048)
