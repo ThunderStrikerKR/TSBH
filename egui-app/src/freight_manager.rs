@@ -1149,32 +1149,23 @@ impl FreightManager {
                 egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
                 egui::Sense::hover()
             );
-            // Align the far-right Apply button with the last DATA COLUMN,
-            // not the outer card edge: the 10pt scrollbar is not a column.
+            // Dual-master CONFLICT-001=C: align the rightmost toolbar
+            // control with the CARD'S INNER RIGHT EDGE, like Order History.
+            // Do not subtract the table-only 10pt scrollbar gutter here.
             // Keep the same 16pt separation between left and right tools.
-            let toolbar_data_width=(toolbar_rect.width()
-                -section.spacing().scroll.allocated_width()).max(0.0);
-            let bulk_width=500.0_f32.min(toolbar_data_width);
-            let left_width=(toolbar_data_width-bulk_width-theme::SPACE_16).max(0.0);
+            let toolbar_content_width=toolbar_rect.width().max(0.0);
+            let bulk_width=500.0_f32.min(toolbar_content_width);
+            let left_width=(toolbar_content_width-bulk_width-theme::SPACE_16).max(0.0);
             let left_rect=egui::Rect::from_min_size(
                 toolbar_rect.left_top(),
                 egui::vec2(left_width,toolbar_rect.height())
             );
-            let right_rect=egui::Rect::from_min_size(
-                egui::pos2(toolbar_rect.left()+toolbar_data_width-bulk_width,
-                    toolbar_rect.top()),
-                egui::vec2(bulk_width,toolbar_rect.height())
+            let right_rect=components::management_toolbar_trailing_rect(
+                toolbar_rect,bulk_width,0.0,toolbar_rect.height()
             );
-            // Contextual '?' controls are currently disabled. Only reserve
-            // their 8pt border clearance if they are enabled again; otherwise
-            // the rightmost visible button meets the last data-column edge.
-            let help_clearance=if settings_help::HELP_ICONS_ENABLED {
-                theme::SPACE_8
-            }else{0.0};
-            let right_controls_rect=egui::Rect::from_min_max(
-                right_rect.min,
-                egui::pos2(right_rect.right()-help_clearance,right_rect.bottom())
-            );
+            // The right controls (including optional help) own the full
+            // trailing slot; only the TABLE body/header reserve scroll space.
+            let right_controls_rect=right_rect;
             section.scope_builder(
                 egui::UiBuilder::new()
                     .id_salt("freight-assignment-search-toolbar")
@@ -1278,8 +1269,8 @@ impl FreightManager {
                 bulk_builder=bulk_builder.disabled();
             }
             section.scope_builder(bulk_builder,|bulk|{
-                    // Clip to the full toolbar but lay out controls 8pt
-                    // inside it: the 22pt ? icon is now fully visible.
+                    // Clip to the trailing card-inner slot, not the
+                    // independent table scrollbar gutter.
                     bulk.set_clip_rect(right_rect);
                     bulk.set_width(right_controls_rect.width());
                     bulk.set_height(right_controls_rect.height());
