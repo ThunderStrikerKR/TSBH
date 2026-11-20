@@ -2140,6 +2140,25 @@
         "unit": "PASS: Windows CI #44748059905 상품 Excel V2 export/import 왕복과 오류·보류 승인 차단 테스트",
         "compile": "PASS: Windows CI #44748059905 Tauri 및 egui cargo check",
         "sqliteAction": "PASS: Windows CI #44749226513 native_product_excel_backup_commit_reopen_and_stale_revision_guard on fresh isolated on-disk SQLite: preview non-mutating, manual backup, price update, existing order and absent products unchanged, reopen and stale revision rejected; production DB untouched",
+        "handoff57": {
+          "date": "2026-11-20",
+          "scope": "57차 상품 목록 > Excel 관리 이어받기. 원본 React/Tauri 상품 Excel 저장 호출 경로 대조",
+          "finding": "기존 egui 일반 Save As는 React의 save_product_sync_workbook 자동 날짜별 보관함 저장과 상이. 원본은 Excel/상품 관리/YYYY년/MM월/DD일/yyyymmdd(상품전체N).xlsx",
+          "patchCommits": [
+            "02a8c65dcb52a597b2241ca54db175d54c3099bd",
+            "be7261fdf645ecebb1c785dc62166410e9bb5244",
+            "1a785393ec7b35edc850a514f1585bb45d03a9ea",
+            "05fa887752285de912026010db4c6472ef3bbf1c",
+            "93f59172dd41ad48c8f35bc10ec341aebfd8dea4",
+            "f5588be71f46f5d14c0509885c46c681ed8ad1ed",
+            "e90685692c14c0a7d15e338757df3234aed6963a",
+            "cf593f63088e9ee8c10a28b549dd5572c22f12ba"
+          ],
+          "static": "PASS: 원본 React+Tauri 자동 저장 경로/번호 규칙에 맞추고 gateway/서비스로 파일 쓰기 이동, 공장·매장용 Excel 출력과 구분. 검토창 대용량 JSON 매 프레임 복사 제거, 원본 도움말 복구.",
+          "unit": "추가한 좁은 테스트: 상품 아카이브 경로·번호·무덮어쓰기·XLSX 왕복. CI 실행 결과 확인 전.",
+          "compile": "최신 수정 커밋 대상 CI 확인 전. 기존 Excel V2 왕복·검토·SQLite CAS 결과 PASS는 별도 유지.",
+          "windowsGui": "사용자 요청에 따라 생략"
+        },
         "windowsGui": "NOT_REQUESTED: 사용자 결정에 따라 제외",
         "notMigrated": "상품 추가의 공식 상품 가져오기 및 별도 Excel 대량 등록은 이번 Excel 관리 범위 밖"
       },
