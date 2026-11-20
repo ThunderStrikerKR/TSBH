@@ -133,6 +133,9 @@ pub struct FreightManager {
     rate_editor: Option<RateEditor>,
     basis_target: Option<Option<String>>,
     exception_target: Option<(String,String)>,
+    product_reset_target: Option<String>,
+    copy_target: Option<(String,Vec<String>)>,
+    copy_template: String,
     receiver: Option<Receiver<Result<(Value, Value), String>>>,
     state: Option<Value>,
     projection: Option<Value>,
@@ -181,6 +184,9 @@ impl FreightManager {
             rate_editor: None,
             basis_target: None,
             exception_target: None,
+            product_reset_target: None,
+            copy_target: None,
+            copy_template: String::new(),
             receiver: Some(receiver),
             state: None,
             projection: None,
@@ -299,7 +305,9 @@ impl FreightManager {
         ]) {
             if self.rate_editor.is_none() && self.rename_target.is_none()
                 && self.delete_target.is_none() && self.basis_target.is_none()
-                && self.exception_target.is_none() && self.write_receiver.is_none() {
+                && self.exception_target.is_none() && self.product_reset_target.is_none()
+                && self.copy_target.is_none() && self.write_receiver.is_none()
+                && self.pending_changes().is_empty() && self.new_name.trim().is_empty() {
                 self.tab = FreightTab::ALL[index];
             }
         }
@@ -347,7 +355,11 @@ impl FreightManager {
                     scroll, &groups, &products, &mut self.search, &mut self.group_filter,
                     &mut self.pending, &mut self.selected,
                     &mut self.bulk_group, &mut self.new_name,
-                    &mut self.rename_target, &mut self.delete_target, enabled, &mut action
+                    &mut self.rename_target, &mut self.delete_target,
+                    &mut self.rate_editor, &mut self.product_reset_target,
+                    &mut self.copy_template, &mut self.copy_target,
+                    &mut self.error, &self.gateway, &projection["productViews"],
+                    enabled, &mut action
                 ),
                 FreightTab::Rates => Self::show_rates(
                     scroll,&groups,projection,
@@ -521,7 +533,14 @@ impl FreightManager {
         pending: &mut BTreeMap<String,String>, selected: &mut BTreeSet<String>,
         bulk_group: &mut String, new_name: &mut String,
         rename_target: &mut Option<(String,String)>,
-        delete_target: &mut Option<String>, enabled:bool,
+        delete_target: &mut Option<String>,
+        rate_editor: &mut Option<RateEditor>,
+        reset_target: &mut Option<String>,
+        copy_template: &mut String,
+        copy_target: &mut Option<(String,Vec<String>)>,
+        error: &mut Option<String>,
+        gateway: &Arc<dyn BandoGateway>,
+        product_views: &Value, enabled:bool,
         action:&mut Option<(String,Value)>,
     ) {
         theme::section_frame().show(ui, |section| {
