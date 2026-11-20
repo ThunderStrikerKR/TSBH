@@ -1403,9 +1403,17 @@ impl BandoEgui {
                                 ButtonRole::Navigation
                             };
                             if theme::action(bar, page.label(), role, true).clicked() {
+                                // Price cells must commit/cancel before leaving,
+                                // and a product modal must not be discarded by nav.
+                                let product_can_leave=
+                                    if self.page==Page::Products && page!=Page::Products {
+                                        self.product_manager.as_mut()
+                                            .is_none_or(|manager|manager.allow_leave())
+                                    }else{true};
                                 // A client editor is modal: navigation cannot
                                 // dispose of an unsaved client draft.
-                                if !self.client_manager.as_ref()
+                                if product_can_leave &&
+                                    !self.client_manager.as_ref()
                                     .is_some_and(|manager|manager.has_modal()) &&
                                     !self.freight_manager.as_ref()
                                     .is_some_and(|manager|manager.blocks_navigation()) &&
