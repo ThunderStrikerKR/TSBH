@@ -17,7 +17,7 @@ mod recognition;
 #[path = "../../src-tauri/src/business_core/rules/mod.rs"]
 mod rules;
 #[path = "../../src-tauri/src/business_core/output/mod.rs"]
-mod output;
+pub(crate) mod output;
 #[path = "../../src-tauri/src/business_core/catalog_clients/title_clients.rs"]
 mod native_title_clients;
 
@@ -43,6 +43,10 @@ pub enum ReadOperation {
     ListOrderHistoryView,
     ListOrderHistory,
     PrepareSettlement,
+    PrepareFactoryExport,
+    PrepareStoreExport,
+    ReviewExportSender,
+    FactoryReplyReviewStatuses,
     ShippingManagerView,
     ProductFreightView,
     DefaultProductRule,
@@ -62,9 +66,11 @@ impl ReadOperation {
             | Self::CalculatePrice | Self::ManualClassification
             | Self::PreviewWorkflow | Self::PreviewOrder
             | Self::ReadShipments | Self::ListOrderHistoryView | Self::ListOrderHistory
-            | Self::ShippingManagerView
+            | Self::FactoryReplyReviewStatuses | Self::ShippingManagerView
             | Self::ProductFreightView | Self::DefaultProductRule => "rules",
-            Self::RenderAutomaticMessage | Self::PrepareSettlement => "output",
+            Self::RenderAutomaticMessage | Self::PrepareSettlement
+            | Self::PrepareFactoryExport | Self::PrepareStoreExport
+            | Self::ReviewExportSender => "output",
         }
     }
 
@@ -90,6 +96,10 @@ impl ReadOperation {
             Self::ListOrderHistoryView => "list_order_history_view",
             Self::ListOrderHistory => "list_order_history",
             Self::PrepareSettlement => "prepare_settlement",
+            Self::PrepareFactoryExport => "prepare_factory_export",
+            Self::PrepareStoreExport => "prepare_store_export",
+            Self::ReviewExportSender => "review_export_sender",
+            Self::FactoryReplyReviewStatuses => "factory_reply_review_statuses",
             Self::ShippingManagerView => "shipping_manager_view",
             Self::ProductFreightView => "apply_shipping_action",
             Self::DefaultProductRule => "apply_shipping_action",
@@ -132,6 +142,16 @@ pub trait BandoGateway: Send + Sync {
     }
     /// Opt-in native freight write through the shared Rust v2 transaction.
     /// Does not spawn Tauri or write to the isolated egui preview DB.
+    fn excel_write_enabled(&self)->bool{false}
+    fn export_excel(&self,_origin:&str,_ids:&[String])->Result<Value,String>{
+        Err("이 연결에서는 Excel 파일 생성 및 출력 이력 저장을 지원하지 않습니다.".into())
+    }
+    fn open_excel_file(&self,_id:&str)->Result<(),String>{
+        Err("이 연결에서는 Excel 파일 열기를 지원하지 않습니다.".into())
+    }
+    fn open_excel_folder(&self,_id:Option<&str>,_origin:Option<&str>)->Result<(),String>{
+        Err("이 연결에서는 Excel 폴더 열기를 지원하지 않습니다.".into())
+    }
     fn shipping_write_enabled(&self) -> bool { false }
     fn mutate_shipping(&self,_revision:u64,_action:&str,_data:Value)
         -> Result<Value,String> {
@@ -313,6 +333,18 @@ impl BandoGateway for LocalGateway {
         }
         Ok(catalog)
     }
+    fn excel_write_enabled(&self)->bool{crate::excel_service::writable()}
+    fn export_excel(&self,origin:&str,ids:&[String])->Result<Value,String>{
+        crate::excel_service::create(origin,ids)
+    }
+    fn open_excel_file(&self,id:&str)->Result<(),String>{
+        crate::excel_service::open_file(id)
+    }
+    fn open_excel_folder(&self,id:Option<&str>,origin:Option<&str>)->Result<(),String>{
+        if let Some(id)=id{crate::excel_service::open_directory(id)}
+        else if let Some(origin)=origin{crate::excel_service::open_daily(origin)}
+        else{Err("열어 볼 Excel 폴더를 선택하세요.".into())}
+    }
     fn shipping_write_enabled(&self) -> bool {
         std::env::var("BANDO_EGUI_ENABLE_SHIPPING_WRITE")
             .ok().as_deref()==Some("1") &&
@@ -455,6 +487,7 @@ impl BandoGateway for LocalGateway {
             | ReadOperation::ReadShipments
             | ReadOperation::ListOrderHistoryView
             | ReadOperation::ListOrderHistory
+            | ReadOperation::FactoryReplyReviewStatuses
             | ReadOperation::ShippingManagerView
             | ReadOperation::ProductFreightView
             | ReadOperation::DefaultProductRule => {
@@ -473,7 +506,9 @@ impl BandoGateway for LocalGateway {
             ReadOperation::ManagementProducts => {
                 crate::catalog_query_bridge::management_products(&payload)
             }
-            ReadOperation::RenderAutomaticMessage | ReadOperation::PrepareSettlement => {
+            ReadOperation::RenderAutomaticMessage | ReadOperation::PrepareSettlement
+            | ReadOperation::PrepareFactoryExport | ReadOperation::PrepareStoreExport
+            | ReadOperation::ReviewExportSender => {
                 output::execute(operation.operation(),payload)
             }
         }
