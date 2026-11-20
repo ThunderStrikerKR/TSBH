@@ -40,6 +40,7 @@ mod settings_view;
 mod settings_help;
 mod freight_manager;
 mod order_history_manager;
+mod daily_settlement_manager;
 mod management_queries;
 mod developer_ui_samples;
 
@@ -211,6 +212,7 @@ struct BandoEgui {
     inbox_folder_last_refresh: Option<Instant>,
     freight_manager: Option<freight_manager::FreightManager>,
     order_history_manager: Option<order_history_manager::OrderHistoryManager>,
+    daily_settlement_manager: Option<daily_settlement_manager::DailySettlementManager>,
     freight_pending_page: Option<Page>,
     freight_pending_save: bool,
     product_pending_page: Option<Page>,
@@ -279,6 +281,7 @@ impl Default for BandoEgui {
             inbox_folder_last_refresh: None,
             freight_manager: None,
             order_history_manager: None,
+            daily_settlement_manager: None,
             freight_pending_page: None,
             freight_pending_save: false,
             product_pending_page: None,
@@ -1734,6 +1737,11 @@ impl BandoEgui {
                                         // Kakao HWND ownership survives tab changes.
                                         // A return to freight must re-read staff edits made
                                         // while the page was not selected.
+                                        if page==Page::Settlement && self.page!=Page::Settlement {
+                                            if let Some(settlement)=self.daily_settlement_manager.as_mut(){
+                                                settlement.refresh(ctx.clone());
+                                            }
+                                        }
                                         if page==Page::History && self.page!=Page::History {
                                             if let Some(history)=self.order_history_manager.as_mut(){
                                                 history.refresh(ctx.clone());
@@ -3505,6 +3513,11 @@ impl BandoEgui {
     }
 
     fn other_page(&mut self, ctx: &egui::Context) {
+        if self.page==Page::Settlement && self.daily_settlement_manager.is_none(){
+            self.daily_settlement_manager=Some(daily_settlement_manager::DailySettlementManager::new(
+                Arc::clone(&self.gateway),ctx.clone()
+            ));
+        }
         if self.page==Page::History && self.order_history_manager.is_none(){
             self.order_history_manager=Some(order_history_manager::OrderHistoryManager::new(
                 Arc::clone(&self.gateway),ctx.clone()
@@ -3613,6 +3626,11 @@ impl BandoEgui {
                                 // frames retain their own content padding.
                                 Frame::new().inner_margin(0).show(main,|page|{
                                     match self.page{
+                                        Page::Settlement=>{
+                                            if let Some(settlement)=self.daily_settlement_manager.as_mut(){
+                                                settlement.show_page(page);
+                                            }
+                                        }
                                         Page::History=>{
                                             if let Some(history)=self.order_history_manager.as_mut(){
                                                 history.show_page(page);
