@@ -56,28 +56,12 @@ fn status_label(status:&str)->&str{
 fn saved_message(path:&PathBuf)->String{
     format!("독립 상품 및 가격 전체 목록을 저장했습니다: {}",path.display())
 }
-#[cfg(windows)]
 fn export_file(gateway:&dyn BandoGateway)->Result<JobResult,String>{
-    let file=rfd::FileDialog::new()
-        .set_title("현재 상품 전체 Excel 다운로드")
-        .add_filter("Excel 통합 문서",&["xlsx"])
-        .set_file_name("BANDO-HUB-상품전체.xlsx")
-        .save_file();
-    let Some(mut file)=file else{return Ok(JobResult::Cancelled)};
-    if file.extension().is_none_or(|ext|!ext.eq_ignore_ascii_case("xlsx")){
-        file.set_extension("xlsx");
-    }
-    let state=gateway.load_business_state()?;
-    let bytes=product_excel::export(&state)?;
-    if bytes.len()>product_excel::MAX_BYTES as usize{
-        return Err("상품 Excel 파일이 20MB를 초과했습니다.".into());
-    }
-    std::fs::write(&file,bytes).map_err(|e|format!("상품 Excel 파일을 저장하지 못했습니다: {e}"))?;
-    Ok(JobResult::Exported(file))
-}
-#[cfg(not(windows))]
-fn export_file(_gateway:&dyn BandoGateway)->Result<JobResult,String>{
-    Err("상품 Excel 파일 선택은 Windows 프로그램에서 지원합니다.".into())
+    // The original React action saves in the configured product archive,
+    // with a date folder and collision-safe numbered filename. It never
+    // prompts for an arbitrary Save As destination.
+    gateway.archive_product_workbook()
+        .map(|path|JobResult::Exported(PathBuf::from(path)))
 }
 #[cfg(windows)]
 fn preview_file(gateway:&dyn BandoGateway)->Result<JobResult,String>{
