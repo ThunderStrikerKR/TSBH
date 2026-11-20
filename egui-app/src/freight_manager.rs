@@ -1758,7 +1758,7 @@ impl FreightManager {
         // Its actions still use the original Rust write paths and modal editors.
         theme::section_frame().show(ui, |section| {
             section.horizontal(|heading|{
-                heading.label(typography::section_heading("배송 그룹 관리"));
+                heading.label(typography::section_heading("그룹 운임표"));
                 settings_help::icon(heading,"그룹 운임표");
                 heading.with_layout(
                     egui::Layout::right_to_left(egui::Align::Center),|right|{
@@ -1926,7 +1926,7 @@ impl FreightManager {
                                         .max_rect(rect)
                                         .layout(egui::Layout::left_to_right(
                                             egui::Align::Center
-                                        )),
+                                        ).with_main_align(egui::Align::Center)),
                                     |buttons|{
                                         buttons.set_clip_rect(
                                             cells[5].intersect(row_rect)
