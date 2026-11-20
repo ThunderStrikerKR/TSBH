@@ -836,11 +836,12 @@ impl FreightManager {
                 components::modal_backdrop(ctx,"freight-rename-backdrop",false);
                 components::decision_window("배송 그룹명","freight-rename",area)
                     .show(ctx,|modal|{
+                        if components::modal_header(modal,"배송 그룹명","취소",enabled){
+                            close_rename=true;
+                        }
                         components::field(modal,name,components::FieldKind::Text,enabled);
                         modal.add_space(theme::SPACE_12);
                         modal.horizontal(|controls|{
-                            if theme::action(controls,"취소",theme::ButtonRole::Quiet,enabled)
-                                .clicked(){close_rename=true;}
                             if theme::action(controls,"이름 수정",theme::ButtonRole::Primary,
                                 enabled&&!name.trim().is_empty()).clicked(){
                                 action=Some(("rename_group".into(),json!({
@@ -856,6 +857,9 @@ impl FreightManager {
                 components::modal_backdrop(ctx,"freight-delete-backdrop",false);
                 components::decision_window("배송 그룹 삭제","freight-delete",area)
                     .show(ctx,|modal|{
+                        if components::modal_header(
+                            modal,"배송 그룹 삭제","취소",enabled
+                        ){close_delete=true;}
                         modal.label(typography::section_heading(name));
                         if !affected.is_empty(){
                             modal.label(typography::status(
@@ -885,8 +889,6 @@ impl FreightManager {
                         }
                         modal.add_space(theme::SPACE_12);
                         modal.horizontal(|controls|{
-                            if theme::action(controls,"취소",theme::ButtonRole::Quiet,enabled)
-                                .clicked(){close_delete=true;}
                             if theme::action(controls,if !affected.is_empty(){
                                 "상품 연결을 미지정으로 변경하고 삭제"
                             }else{"그룹 삭제"},theme::ButtonRole::Danger,enabled)
@@ -902,14 +904,13 @@ impl FreightManager {
                 components::decision_window(
                     "운임 기준 변경","freight-product-reset",area
                 ).show(ctx,|dialog|{
+                    if components::modal_header(
+                        dialog,"운임 기준 변경","취소",enabled
+                    ){close_product_reset=true;}
                     dialog.label(typography::body(
                         "이 상품의 새 운임 기준을 시작하고 이전 자동 추천을 중단할까요?"
                     ));
                     dialog.horizontal(|bar|{
-                        if theme::action(bar,"취소",
-                            theme::ButtonRole::Standard,enabled).clicked(){
-                            close_product_reset=true;
-                        }
                         if theme::action(bar,"기준 변경",
                             theme::ButtonRole::Danger,enabled).clicked(){
                             action=Some(("reset_product_freight_rule".into(),
@@ -931,12 +932,21 @@ impl FreightManager {
                 components::modal_backdrop(ctx,"freight-rate-backdrop",false);
                 components::modal_window(if editor.product{"기본 운임 설정"}else{"배송 그룹 운임 수정"},"freight-rate-modal",area)
                     .resizable(false).show(ctx,|modal|{
+                        let title=if editor.product{
+                            "기본 운임 설정"
+                        }else{"배송 그룹 운임 수정"};
+                        if components::modal_header(
+                            modal,title,"취소",enabled
+                        ){
+                            if editor.dirty(){editor.ask_discard=true;}
+                            else{close_editor=true;}
+                        }
                         egui::ScrollArea::vertical()
                             .id_salt("freight-rate-editor-scroll")
                             .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
                             .show(modal,|body|{
                                 Self::rate_dialog(
-                                    body,editor,enabled,&mut action,&mut close_editor
+                                    body,editor,enabled,&mut action
                                 );
                             });
                     });
@@ -945,14 +955,13 @@ impl FreightManager {
                     components::decision_window(
                         "저장하지 않은 운임","freight-discard-confirm",area
                     ).show(ctx,|dialog|{
+                        if components::modal_header(
+                            dialog,"저장하지 않은 운임","취소",enabled
+                        ){editor.ask_discard=false;}
                         dialog.label(typography::body(
                             "운임 수정사항을 저장하지 않고 닫을까요?"
                         ));
                         dialog.horizontal(|bar|{
-                            if theme::action(bar,"계속 수정",
-                                theme::ButtonRole::Standard,enabled).clicked(){
-                                editor.ask_discard=false;
-                            }
                             if theme::action(bar,"저장 안 함",
                                 theme::ButtonRole::Danger,enabled).clicked(){
                                 close_editor=true;
@@ -979,16 +988,15 @@ impl FreightManager {
                 components::decision_window(
                     "운임 기준 변경","freight-basis-confirm",area
                 ).show(ctx,|dialog|{
+                    if components::modal_header(
+                        dialog,"운임 기준 변경","취소",enabled
+                    ){close_basis=true;}
                     let warning=match name {
                         None=>"전체 운임 기준을 변경하면 이전 운임의 자동 추천을 중단합니다. 새 운임을 다시 확인해 등록해야 합니다.",
                         Some(_)=>"선택한 그룹의 이전 운임 추천을 중단하고 새 운임 기준으로 변경합니다."
                     };
                     dialog.label(typography::body(warning));
                     dialog.horizontal(|bar|{
-                        if theme::action(bar,"취소",
-                            theme::ButtonRole::Standard,enabled).clicked(){
-                            close_basis=true;
-                        }
                         if theme::action(bar,"기준 변경",
                             theme::ButtonRole::Danger,enabled).clicked(){
                             action=Some(("change_basis".into(),match target{
@@ -1010,13 +1018,12 @@ impl FreightManager {
                 components::decision_window(
                     "새로 확인된 청구 운임 (원)","freight-exception",ui.max_rect()
                 ).show(ctx,|dialog|{
+                    if components::modal_header(
+                        dialog,"새로 확인된 청구 운임 (원)","취소",enabled
+                    ){close=true;}
                     components::money_field(dialog,amount,enabled);
                     dialog.add_space(theme::SPACE_12);
                     dialog.horizontal(|bar|{
-                        if theme::action(bar,"취소",
-                            theme::ButtonRole::Standard,enabled).clicked(){
-                            close=true;
-                        }
                         if theme::action(bar,"예외 운임 변경",
                             theme::ButtonRole::Primary,enabled).clicked(){
                             match components::parse_money_input(amount){
@@ -1044,6 +1051,9 @@ impl FreightManager {
             components::decision_window(
                 "저장하지 않은 변경사항","freight-tab-leave",ui.max_rect()
             ).show(ctx,|dialog|{
+                cancel=components::modal_header(
+                    dialog,"저장하지 않은 변경사항","취소",enabled
+                );
                 dialog.label(typography::body(
                     "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
                 ));
@@ -1054,8 +1064,6 @@ impl FreightManager {
                 }
                 dialog.add_space(theme::SPACE_12);
                 dialog.horizontal(|bar|{
-                    if theme::action(bar,"취소",theme::ButtonRole::Standard,enabled)
-                        .clicked(){cancel=true;}
                     if theme::action(bar,"저장 안 함",
                         theme::ButtonRole::Standard,enabled).clicked(){discard=true;}
                     if theme::action(bar,"저장하고 이동",
@@ -2109,7 +2117,7 @@ impl FreightManager {
 
     fn rate_dialog(
         ui:&mut Ui,editor:&mut RateEditor,enabled:bool,
-        event:&mut Option<(String,Value)>,close:&mut bool,
+        event:&mut Option<(String,Value)>,
     ){
         ui.horizontal(|title|{
             title.label(typography::subsection_heading(&format!("{} 운임",editor.name)));
@@ -2199,10 +2207,6 @@ impl FreightManager {
         });
         ui.add_space(theme::SPACE_12);
         ui.horizontal(|bar|{
-            if theme::action(bar,"닫기",theme::ButtonRole::Standard,enabled).clicked(){
-                if editor.dirty(){editor.ask_discard=true;}
-                else{*close=true;}
-            }
             if theme::action(bar,"확인한 운임 저장",theme::ButtonRole::Primary,
                 enabled&&editor.dirty()).clicked(){
                 match editor.write_action(){
