@@ -14,6 +14,7 @@ mod relational_write;
 mod storage;
 mod client_commands;
 mod product_commands;
+mod settings_commands;
 pub mod shipping_action;
 pub use validation::{
     valid_state, validate_brands, validate_clients,
@@ -23,6 +24,8 @@ pub use relational_write::store_v2_relational;
 pub use storage::write_v2_snapshot;
 pub use client_commands::mutate_client_v2;
 pub use product_commands::{patch_product_v2,patch_model_groups_v2,apply_product_price};
+pub(crate) use product_commands::validate_native_model_groups;
+pub use settings_commands::{apply_settings_changes,patch_settings_v2};
 
 
 fn read_entities(conn: &Connection, sql: &str) -> Result<Vec<Value>, String> {
