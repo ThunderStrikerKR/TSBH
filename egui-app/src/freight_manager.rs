@@ -1686,6 +1686,16 @@ impl FreightManager {
             );
             let header_painter=section.painter().with_clip_rect(header_content_rect);
             header_painter.rect_filled(header_content_rect,0.0,theme::RAISED);
+            // The 2pt rule is INSIDE the 36pt header. Center every heading,
+            // sort arrow and select-all checkbox in the remaining 34pt,
+            // never in the full 36pt including its visible bottom border.
+            let header_outline_height=2.0_f32;
+            let header_text_rect=egui::Rect::from_min_max(
+                header_content_rect.min,
+                egui::pos2(header_content_rect.right(),
+                    header_content_rect.bottom()-header_outline_height),
+            );
+            let header_text_center_y=header_text_rect.center().y;
             for (i,title) in titles.iter().enumerate(){
                 if !title.is_empty(){
                     let region=header_cells[i];
@@ -1699,7 +1709,7 @@ impl FreightManager {
                             Some(FreightSortDirection::Descending)=>("▼",theme::SELECTION),
                             None=>("↕",theme::MUTED),
                         };
-                        let visible=region.intersect(header_content_rect);
+                        let visible=region.intersect(header_text_rect);
                         if visible.width()>0.0 && visible.height()>0.0 {
                             let next=FreightSort::next(*sort,column);
                             let tooltip=match next.map(|value|value.direction){
@@ -1738,10 +1748,10 @@ impl FreightManager {
                     }else{
                         region.center().x-total_width/2.0
                     };
-                    let ink=header_painter.with_clip_rect(header_content_rect.intersect(region));
+                    let ink=header_painter.with_clip_rect(header_text_rect.intersect(region));
                     ink.galley(
                         egui::pos2(
-                            left,region.center().y-label.size().y/2.0
+                            left,header_text_center_y-label.size().y/2.0
                         ),
                         label.clone(),theme::SECONDARY
                     );
@@ -1749,7 +1759,7 @@ impl FreightManager {
                         ink.galley(
                             egui::pos2(
                                 left+label.size().x+gap,
-                                region.center().y-arrow.size().y/2.0
+                                header_text_center_y-arrow.size().y/2.0
                             ),
                             arrow,color
                         );
@@ -1776,7 +1786,7 @@ impl FreightManager {
                 egui::Rect::from_min_max(
                     egui::pos2(
                         header_content_rect.left(),
-                        header_content_rect.bottom()-2.0
+                        header_content_rect.bottom()-header_outline_height
                     ),
                     header_content_rect.right_bottom(),
                 ),
@@ -1792,10 +1802,10 @@ impl FreightManager {
             let header_check_width=section.spacing().icon_width
                 +section.spacing().icon_spacing;
             let header_check_rect=egui::Rect::from_center_size(
-                header_cells[0].center(),
+                egui::pos2(header_cells[0].center().x,header_text_center_y),
                 egui::vec2(
                     header_check_width,
-                    header_cells[0].height().min(theme::INPUT_HEIGHT)
+                    header_text_rect.height().min(theme::INPUT_HEIGHT)
                 )
             );
             let mut header_check_builder=egui::UiBuilder::new()
@@ -1807,7 +1817,7 @@ impl FreightManager {
             }
             section.scope_builder(header_check_builder,|header_check|{
                 header_check.set_clip_rect(
-                    header_cells[0].intersect(header_content_rect)
+                    header_cells[0].intersect(header_text_rect)
                 );
                 if header_check.checkbox(&mut all_filtered,"")
                     .on_hover_text("현재 검색·필터 결과 전체 선택 / 해제")
