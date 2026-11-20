@@ -3592,6 +3592,17 @@ impl eframe::App for BandoEgui {
 }
 
 fn main() -> eframe::Result<()> {
+    // Connect to the EXISTING Tauri v2 database before creating any gateway
+    // or background worker. Debug uses only the developer-test DB, release
+    // uses only the production DB. This never creates an operating DB.
+    match business_state::bind_existing_tauri_database() {
+        Ok(Some(_)) => {},
+        Ok(None) => {},
+        Err(error) => {
+            eprintln!("[BANDO HUB] 기존 Tauri 업무 DB 자동 연결 실패: {error}");
+            std::process::exit(2);
+        }
+    }
     let backend = match gateway::from_environment() {
         Ok(backend) => backend,
         Err(error) => {
