@@ -723,8 +723,8 @@ impl ManualWorkspace {
                         ui,"배송 건수 줄이기","취소",true
                     );
                     ui.label("마지막 배송 건의 입력값과 원문 배정을 제거할까요?");
-                    ui.horizontal(|ui|{
-                        if theme::action(ui,"확인",ButtonRole::Danger,true).clicked(){
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                        if theme::action(actions,"확인",ButtonRole::Danger,true).clicked(){
                             confirm=true;
                         }
                     });
@@ -755,9 +755,13 @@ impl ManualWorkspace {
                         ui,"전체 초기화","취소",true
                     );
                     ui.label("구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.");
-                    confirm=theme::action(
-                        ui,"확인",ButtonRole::Primary,true
-                    ).clicked();
+                    confirm=ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                            theme::action(
+                                actions,"확인",ButtonRole::Primary,true
+                            ).clicked()
+                        }
+                    ).inner;
                 });
             if cancel{self.reset_pending=false;}
             if confirm {
@@ -796,8 +800,8 @@ impl ManualWorkspace {
                         ui,"수동 분류 변경 취소","취소",true
                     ){confirm=false;}
                     ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
-                    ui.horizontal(|ui|{
-                        if theme::action(ui,"변경 취소",ButtonRole::Standard,true).clicked(){
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                        if theme::action(actions,"변경 취소",ButtonRole::Standard,true).clicked(){
                             discard_confirmed=true;
                         }
                     });
