@@ -181,6 +181,7 @@ impl BandoGateway for LocalGateway {
                 "aliases":full.get("aliases"),
                 "brands":full.get("brands"),
                 "categories":full.get("categories"),
+                "shipping":full.get("shipping"),
                 "clients":clients,
                 "settings":settings,
             }));
