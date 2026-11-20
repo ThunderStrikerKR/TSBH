@@ -265,7 +265,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             paint_text(ui,columns[2],&summary,true,false);
             let response=ui.interact(columns[2].intersect(area),
                 ui.make_persistent_id(("order-history-toggle",id)),Sense::click())
-                .on_hover_text(&summary);
+                .on_hover_text(summary.as_str());
             if response.clicked(){*pending_toggle=Some(id.to_owned());}
             paint_center(ui,columns[3],field(row,"status"));
             let total=won(&row["total"]);
