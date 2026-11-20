@@ -310,7 +310,7 @@ impl ClientManager {
         ui.add_space(theme::SPACE_16);
         if self.show_messages{
             if let Some(manager)=self.messages.as_mut(){
-                manager.show(ui,gateway);
+                manager.show(ui,gateway,page_origin_y);
             }
             return;
         }
