@@ -265,3 +265,112 @@ fn native_prepaid_stage_rejection_leaves_sqlite_order_and_audit_untouched() {
     assert_eq!(get_snapshot(&reopened).unwrap(),saved);
     drop(reopened);
 }
+
+
+/// The egui model-family editor saves through this exact Tauri settings_patch
+/// function. Use the REAL v2 relational SQLite initializer and disk reopen,
+/// not an in-memory mock or an operational database.
+#[test]
+fn native_model_group_sqlite_roundtrip_and_stale_editor_conflict() {
+    let (isolated, mut conn) = IsolatedDatabase::open();
+    let before = get_snapshot(&conn).expect("initial real SQLite snapshot");
+    let product_ids: Vec<String> = before["products"].as_array().unwrap().iter()
+        .filter(|p| {
+            p["active"] != false &&
+            p.get("deletedAt").is_none_or(Value::is_null) &&
+            p.get("supersededBy").is_none_or(Value::is_null) &&
+            p["catalog"] != "DEMO" &&
+            p["variants"].as_array().is_some_and(|v| v.len() == 1
+                && v.iter().all(|unit|unit["source"] != "DEMO"))
+        })
+        .filter_map(|p|p["id"].as_str().map(str::to_owned))
+        .take(2).collect();
+    assert_eq!(product_ids.len(), 2,
+        "the real product seed must include two independent registered SKUs");
+
+    let baseline = before["settings"].get("colorGuidanceGroups")
+        .cloned().unwrap_or(Value::Null);
+    let mut proposed = baseline.as_object().cloned().unwrap_or_default();
+    let group_id = "synthetic-model-group-sqlite-roundtrip";
+    assert!(!proposed.contains_key(group_id));
+    proposed.insert(group_id.into(),json!({
+        "name": "합성 모델군 / 타공·민판",
+        "productIds": product_ids,
+        "representativeProductId": product_ids[0]
+    }));
+    let proposed=Value::Object(proposed);
+
+    // React's actual save order: validate, backup, per-key settings CAS.
+    let mut candidate=before.clone();
+    candidate["settings"]["colorGuidanceGroups"]=proposed.clone();
+    assert_eq!(business_core::catalog_clients::execute(
+        "validate_model_groups",json!({"state":candidate})).unwrap()["valid"],true);
+    let backup=backup_manager::manual_backup(&conn,&isolated.root)
+        .expect("create a full SQLite backup before changing a model group");
+    let backup_conn=Connection::open_with_flags(
+        &backup,rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    assert_eq!(get_snapshot(&backup_conn).unwrap(),before,
+        "pre-save backup must contain the unchanged source snapshot");
+    drop(backup_conn);
+
+    let committed=apply_settings_patch(&mut conn,true,
+        &json!({"colorGuidanceGroups":proposed}),
+        &json!({"colorGuidanceGroups":baseline}))
+        .expect("persist the valid family via Tauri's settings patch");
+    assert_eq!(committed["settings"]["colorGuidanceGroups"],proposed);
+    assert_eq!(committed["revision"].as_u64(),
+        before["revision"].as_u64().map(|n|n+1));
+    for field in ["products","orders","clients","aliases","queue","exports"] {
+        assert_eq!(committed[field],before[field],
+            "family edits must not change {field}");
+    }
+    drop(conn);
+
+    // A fresh connection must hydrate precisely what the UI will reload.
+    let mut reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),committed);
+
+    // Unrelated setting edits advance the global revision but must NOT
+    // invalidate a model-family draft: CAS is per settings key.
+    let earlier_operator=committed["settings"].get("operatorName")
+        .cloned().unwrap_or(Value::Null);
+    let unrelated=apply_settings_patch(&mut reopened,true,
+        &json!({"operatorName":"동시 편집 B"}),
+        &json!({"operatorName":earlier_operator})).unwrap();
+    assert_eq!(unrelated["settings"]["colorGuidanceGroups"],proposed);
+
+    // Editor A can save from its original group baseline despite that change.
+    let mut from_a=proposed.clone();
+    from_a[group_id]["name"]=json!("모델군 A의 저장값");
+    let winner=apply_settings_patch(&mut reopened,true,
+        &json!({"colorGuidanceGroups":from_a}),
+        &json!({"colorGuidanceGroups":proposed}))
+        .expect("independent settings key must not block this save");
+    assert_eq!(winner["settings"]["operatorName"],"동시 편집 B");
+
+    // Editor B submits a conflicting change using the STALE group baseline.
+    let mut from_b=proposed.clone();
+    from_b[group_id]["representativeProductId"]=json!(product_ids[1]);
+    let error=apply_settings_patch(&mut reopened,true,
+        &json!({"colorGuidanceGroups":from_b}),
+        &json!({"colorGuidanceGroups":proposed}))
+        .expect_err("stale group editor must be rejected");
+    assert!(error.contains("colorGuidanceGroups 설정이 다른 화면에서 수정됐습니다"),
+        "reject the stale field without overwriting editor A: {error}");
+    assert_eq!(get_snapshot(&reopened).unwrap(),winner,
+        "stale save cannot increment revision or mutate any rows");
+
+    // Delete the saved group, then reopen SQLite one more time.
+    let mut after_delete=from_a.clone();
+    after_delete.as_object_mut().unwrap().remove(group_id);
+    let removed=apply_settings_patch(&mut reopened,true,
+        &json!({"colorGuidanceGroups":after_delete}),
+        &json!({"colorGuidanceGroups":from_a})).unwrap();
+    assert!(removed["settings"]["colorGuidanceGroups"].get(group_id).is_none());
+    assert_eq!(removed["products"],before["products"]);
+    assert_eq!(removed["orders"],before["orders"]);
+    drop(reopened);
+    let final_conn=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&final_conn).unwrap(),removed);
+    drop(final_conn);
+}
