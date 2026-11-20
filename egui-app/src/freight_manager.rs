@@ -27,6 +27,71 @@ impl FreightTab {
     const ALL: [Self; 3] = [Self::Groups, Self::Rates, Self::History];
 }
 
+// Sort only meaningful text columns. No sorting control on selection or
+// the per-product action column; default keeps unassigned groups first.
+#[derive(Clone,Copy,PartialEq,Eq)]
+enum FreightSortColumn { Product, ColorOption, Category, ShippingGroup }
+
+#[derive(Clone,Copy,PartialEq,Eq)]
+enum FreightSortDirection { Ascending, Descending }
+
+#[derive(Clone,Copy,PartialEq,Eq)]
+struct FreightSort {
+    column: FreightSortColumn,
+    direction: FreightSortDirection,
+}
+
+impl FreightSort {
+    fn column_at(index:usize)->Option<FreightSortColumn>{
+        match index {
+            1=>Some(FreightSortColumn::Product),
+            2=>Some(FreightSortColumn::ColorOption),
+            3=>Some(FreightSortColumn::Category),
+            4=>Some(FreightSortColumn::ShippingGroup),
+            _=>None,
+        }
+    }
+
+    /// One header click advances: default -> ascending -> descending ->
+    /// default. Clicking a different column begins with ascending.
+    fn next(previous:Option<Self>,column:FreightSortColumn)->Option<Self>{
+        match previous {
+            Some(Self{column:active,direction:FreightSortDirection::Ascending})
+                if active==column=>Some(Self{
+                    column,direction:FreightSortDirection::Descending
+                }),
+            Some(Self{column:active,direction:FreightSortDirection::Descending})
+                if active==column=>None,
+            _=>Some(Self{column,direction:FreightSortDirection::Ascending}),
+        }
+    }
+}
+
+/// Compute keys before comparing: sorting large tables must not rebuild
+/// category paths or variant labels on each comparison.
+fn freight_sort_key(
+    product:&Value,column:FreightSortColumn,groups:&[Value],
+    category_paths:&ProductCategoryPaths
+)->(String,String){
+    let value=match column {
+        FreightSortColumn::Product=>{
+            let model=model_label(text(product,"name"));
+            let subtitle=text(product,"subtitle").trim();
+            if subtitle.is_empty()||subtitle==text(product,"name"){
+                model.to_owned()
+            }else{format!("{model} / {subtitle}")}
+        },
+        FreightSortColumn::ColorOption=>variant_colors(product),
+        FreightSortColumn::Category=>category_paths.for_product(product).to_owned(),
+        FreightSortColumn::ShippingGroup=>{
+            let assigned=text(product,"shippingGroupId");
+            if assigned.is_empty(){"그룹 미지정".to_owned()}
+            else{group_name(groups,assigned).to_owned()}
+        },
+    };
+    (value.to_lowercase(),text(product,"id").to_owned())
+}
+
 fn text<'a>(row: &'a Value, key: &str) -> &'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
 }
@@ -296,6 +361,7 @@ pub struct FreightManager {
     error: Option<String>,
     search: String,
     group_filter: String,
+    sort: Option<FreightSort>,
 }
 impl FreightManager {
     fn fetch(gateway: Arc<dyn BandoGateway>,ctx:egui::Context)
@@ -349,6 +415,7 @@ impl FreightManager {
             error: None,
             search: String::new(),
             group_filter: String::new(),
+            sort: None,
         }
     }
 
@@ -628,7 +695,7 @@ impl FreightManager {
         if self.tab == FreightTab::Groups {
             Self::show_groups(
                 ui, &groups, &products, &category_paths,
-                &mut self.search, &mut self.group_filter,
+                &mut self.search, &mut self.group_filter, &mut self.sort,
                 &mut self.pending, &mut self.selected,
                 &mut self.bulk_group, &mut self.bulk_feedback,
                 &mut self.rate_editor, &mut self.product_reset_target,
@@ -910,6 +977,7 @@ impl FreightManager {
         ui: &mut Ui, groups: &[Value], products: &[&Value],
         category_paths:&ProductCategoryPaths,
         search: &mut String, group_filter: &mut String,
+        sort:&mut Option<FreightSort>,
         pending: &mut BTreeMap<String,String>, selected: &mut BTreeSet<String>,
         bulk_group: &mut Option<String>,
         bulk_feedback: &mut Option<String>,
@@ -1009,9 +1077,19 @@ impl FreightManager {
                         || (group_filter.as_str()=="none" && !grouped)
                         || text(p,"shippingGroupId")==group_filter.as_str())
                 }).collect();
-                // Sort by committed group membership, never by an unsaved
-                // selector value, to keep product rows stable during edits.
-                if needle.is_empty() && group_filter.is_empty() {
+                // Apply the chosen column to the entire filtered set BEFORE
+                // virtualizing; every page of the scroll area has one order.
+                // Cached keys avoid repeated category traversal during sort.
+                if let Some(active)=*sort {
+                    filtered.sort_by_cached_key(|p|
+                        freight_sort_key(p,active.column,groups,category_paths)
+                    );
+                    if active.direction==FreightSortDirection::Descending {
+                        filtered.reverse();
+                    }
+                } else if needle.is_empty() && group_filter.is_empty() {
+                    // Original default: group-unassigned products first.
+                    // Use committed membership to avoid shifting rows mid-edit.
                     filtered.sort_by_key(|p|usize::from(groups.iter().any(|g|
                         text(g,"id")==text(p,"shippingGroupId")
                     )));
