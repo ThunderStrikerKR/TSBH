@@ -1123,6 +1123,16 @@ impl FreightManager {
         let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
         theme::section_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
+            // Assignment is one continuous zebra table. The standard solid
+            // scrollbar reserves 4pt of margin on EACH side of its rail,
+            // creating a dark detached strip after the "설정" column.
+            // Keep the 10pt thumb width but dock its rail flush with the
+            // table rows. The 6pt inset on the last action cell still
+            // separates clickable buttons from the scroll hit target.
+            let mut table_scroll=theme::management_scroll_style();
+            table_scroll.bar_inner_margin=0.0;
+            table_scroll.bar_outer_margin=0.0;
+            section.spacing_mut().scroll=table_scroll;
             // The parent page title and active "배송 그룹 편성" tab already
             // establish context. Start directly with the search/bulk toolbar:
             // do not leave an empty title row or its implicit vertical gap.
@@ -1330,10 +1340,9 @@ impl FreightManager {
             // scroll offset is reflected only in its horizontal coordinates,
             // so wheel scrolling cannot push column titles off-screen.
             let viewport_width=section.available_width().max(1.0);
-            // Solid scrollbar margins already reserve a non-overlapping
-            // rail. Adding another 12pt here made the final "설정" column
-            // look detached from the scrollbar. Use the actual reserved
-            // width only; the button's 6pt inset keeps a safe visual gap.
+            // Exactly the scrollbar's allocated 10pt rail, with no extra
+            // gap between the final action column and the scroll handle.
+            // Header and rows use the SAME measured content width.
             let scrollbar_gutter=section.spacing().scroll.allocated_width();
             let table_width=(viewport_width-scrollbar_gutter)
                 .max(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH);
@@ -1684,8 +1693,11 @@ impl FreightManager {
                 egui::pos2(header_left,header_rect.top()),
                 &widths,header_rect.height()
             );
-            let header_painter=section.painter().with_clip_rect(header_content_rect);
-            header_painter.rect_filled(header_content_rect,0.0,theme::RAISED);
+            // Paint the header background through the complete table viewport,
+            // including the scrollbar rail. Only text/checkbox interaction
+            // stays inside the column content rect, not the scrollbar.
+            let header_painter=section.painter().with_clip_rect(header_rect);
+            header_painter.rect_filled(header_rect,0.0,theme::RAISED);
             // The 2pt rule is INSIDE the 36pt header. Center every heading,
             // sort arrow and select-all checkbox in the remaining 34pt,
             // never in the full 36pt including its visible bottom border.
@@ -1785,10 +1797,10 @@ impl FreightManager {
             header_painter.rect_filled(
                 egui::Rect::from_min_max(
                     egui::pos2(
-                        header_content_rect.left(),
-                        header_content_rect.bottom()-header_outline_height
+                        header_rect.left(),
+                        header_rect.bottom()-header_outline_height
                     ),
-                    header_content_rect.right_bottom(),
+                    header_rect.right_bottom(),
                 ),
                 0.0,
                 theme::TABLE_HEADER_OUTLINE,
