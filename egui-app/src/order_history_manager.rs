@@ -1878,17 +1878,23 @@ mod tests{
     #[test]
     fn detail_products_and_actions_share_edges_and_vertical_alignment(){
         // All horizontal space except two controls and deliberate spacers
-        // goes to the card. This must hold on narrow and wide desktops.
+        // goes to the card, regardless of the text width.
         let mut prior_product_width=0.0;
+        let spacing=DetailSpacing {
+            top:DETAIL_GROUP_GAP,bottom:DETAIL_GROUP_GAP
+        };
         for width in [MIN_WIDTH,1600.0,2100.0] {
             let row=Rect::from_min_size(
-                egui::pos2(20.0,70.0),Vec2::new(width,DETAIL_ROW_MIN_HEIGHT)
+                egui::pos2(20.0,70.0),
+                Vec2::new(width,DETAIL_BLOCK_HEIGHT+spacing.top+spacing.bottom)
             );
-            let block=history_detail_block_rect(row,&COLS);
+            let block=history_detail_block_rect(row,&COLS,spacing);
             let actions=history_detail_actions_rect(row,block);
             let branch_x=row.left()+COLS[0]-theme::SPACE_12;
             assert_eq!(block.left(),branch_x+theme::SPACE_8);
             assert_eq!(block.height(),DETAIL_BLOCK_HEIGHT);
+            assert_eq!(block.top()-row.top(),DETAIL_GROUP_GAP);
+            assert_eq!(row.bottom()-block.bottom(),DETAIL_GROUP_GAP);
             assert_eq!(actions.height(),theme::ACTION_STANDARD_HEIGHT);
             assert!((block.top()-actions.top()).abs()<0.01);
             assert!((block.right()+DETAIL_ACTIONS_GAP-actions.left()).abs()<0.01);
@@ -1903,16 +1909,59 @@ mod tests{
                 assert!((pair[1].left()-pair[0].right()-theme::SPACE_8).abs()<0.01);
             }
         }
-        // Multiline product details grow their card without changing the
-        // centered 34pt action buttons or their 8pt horizontal gap.
+        // A multiline card keeps the same external spacing; actions remain
+        // vertically centered even when card and row heights increase.
         let tall=Rect::from_min_size(
             egui::pos2(20.0,70.0),Vec2::new(MIN_WIDTH,102.0)
         );
-        let block=history_detail_block_rect(tall,&COLS);
+        let block=history_detail_block_rect(tall,&COLS,spacing);
         let actions=history_detail_actions_rect(tall,block);
-        assert_eq!(block.height(),102.0-DETAIL_ROW_VERTICAL_GAP);
+        assert_eq!(block.height(),102.0-2.0*DETAIL_GROUP_GAP);
         assert_eq!(actions.height(),theme::ACTION_STANDARD_HEIGHT);
         assert_eq!(block.center().y,actions.center().y);
+    }
+    #[test]
+    fn expanded_group_uses_equal_8pt_top_between_and_bottom_gaps(){
+        let lines=vec![
+            HistoryLine::Order(0),
+            HistoryLine::Recipient(0,0,Some(0)),
+            HistoryLine::Recipient(0,1,Some(1)),
+            HistoryLine::Order(1),
+            HistoryLine::Recipient(1,0,None),
+            HistoryLine::Order(2),
+        ];
+        let first=history_detail_spacing(&lines,1);
+        let last=history_detail_spacing(&lines,2);
+        let single=history_detail_spacing(&lines,4);
+        assert_eq!((first.top,first.bottom),
+            (DETAIL_GROUP_GAP,DETAIL_GROUP_GAP/2.0));
+        assert_eq!((last.top,last.bottom),
+            (DETAIL_GROUP_GAP/2.0,DETAIL_GROUP_GAP));
+        assert_eq!((single.top,single.bottom),
+            (DETAIL_GROUP_GAP,DETAIL_GROUP_GAP));
+
+        let parent_bottom=42.0;
+        let first_row=Rect::from_min_size(
+            egui::pos2(0.0,parent_bottom),
+            Vec2::new(MIN_WIDTH,DETAIL_BLOCK_HEIGHT+first.top+first.bottom)
+        );
+        let first_card=history_detail_block_rect(first_row,&COLS,first);
+        let last_row=Rect::from_min_size(
+            egui::pos2(0.0,first_row.bottom()),
+            Vec2::new(MIN_WIDTH,DETAIL_BLOCK_HEIGHT+last.top+last.bottom)
+        );
+        let last_card=history_detail_block_rect(last_row,&COLS,last);
+        assert_eq!(first_card.top()-parent_bottom,DETAIL_GROUP_GAP);
+        assert_eq!(last_card.top()-first_card.bottom(),DETAIL_GROUP_GAP);
+        assert_eq!(last_row.bottom()-last_card.bottom(),DETAIL_GROUP_GAP);
+        // One-card group is padded equally on BOTH outside edges.
+        let single_row=Rect::from_min_size(
+            egui::pos2(0.0,0.0),
+            Vec2::new(MIN_WIDTH,DETAIL_BLOCK_HEIGHT+single.top+single.bottom)
+        );
+        let single_card=history_detail_block_rect(single_row,&COLS,single);
+        assert_eq!(single_card.top()-single_row.top(),DETAIL_GROUP_GAP);
+        assert_eq!(single_row.bottom()-single_card.bottom(),DETAIL_GROUP_GAP);
     }
     #[test]
     fn expanding_another_order_closes_the_previous_one(){
