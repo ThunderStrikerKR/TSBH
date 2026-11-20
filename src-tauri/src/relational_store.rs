@@ -117,6 +117,17 @@ fn required_id<'a>(entry: &'a Value, label: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("{label} ID가 비어 있습니다."))
 }
 
+// The v1 migration still serializes legacy product records in this module.
+// The v2 writer owns its own equivalent helper in the shared storage crate.
+fn payload(value: &Value, child: Option<&str>) -> Result<String, String> {
+    let mut stripped = value.clone();
+    if let Some(child) = child {
+        stripped.as_object_mut()
+            .ok_or("업무 데이터가 객체가 아닙니다.")?.remove(child);
+    }
+    serde_json::to_string(&stripped).map_err(err)
+}
+
 pub(super) fn store(tx: &Transaction<'_>, state: &Value) -> Result<(), String> {
     // Shared with egui's direct native freight writer.
     bando_data_access::store_v2_relational(tx,state)
