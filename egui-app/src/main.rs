@@ -2466,18 +2466,15 @@ impl BandoEgui {
                             .max_height(components::docked_section_body_height(recipient_height))
                             .id_salt(("native-workflow-recipient-readonly",ship.id.as_str()))
                             .show(ui,|contents|{
-                                for (label,field) in [
-                                    ("이름","name"),("주소","address"),
-                                    ("휴대전화","mobile"),("전화","phone"),
-                                    ("요청 메시지","note")
-                                ]{
-                                    let value=reception_service::text(&ship.recipient,field);
-                                    if value.is_empty() && field!="name"{continue;}
-                                    contents.horizontal(|line|{
-                                        line.label(typography::field_label(label));
-                                        line.label(typography::body(value));
-                                    });
-                                }
+                                let mut name = reception_service::text(&ship.recipient,"name").to_owned();
+                                let mut address = reception_service::text(&ship.recipient,"address").to_owned();
+                                let mut mobile = reception_service::text(&ship.recipient,"mobile").to_owned();
+                                let mut phone = reception_service::text(&ship.recipient,"phone").to_owned();
+                                let mut note = reception_service::text(&ship.recipient,"note").to_owned();
+                                components::reception_recipient_fields(
+                                    contents, &mut name, &mut address, &mut mobile,
+                                    &mut phone, &mut note,
+                                );
                             });
                     });
                 }
@@ -2752,45 +2749,39 @@ impl BandoEgui {
                                 });
                         }
                         if let Some(recipient) = recipients.get(self.selected_recipient) {
-                            ui.spacing_mut().item_spacing.y = theme::SPACE_4;
                             let mut name = reception_service::text(recipient, "name").to_owned();
                             let mut address = reception_service::text(recipient, "address").to_owned();
                             let mut mobile = reception_service::text(recipient, "mobile").to_owned();
                             let mut phone = reception_service::text(recipient, "phone").to_owned();
                             let mut note = reception_service::text(recipient, "note").to_owned();
-                            let recipient_id=reception_service::text(recipient,"id");
-                            for (label,value,kind,field) in [
-                                ("이름",&mut name,components::FieldKind::Text,"name"),
-                                ("주소",&mut address,components::FieldKind::Address,"address"),
-                                ("휴대전화",&mut mobile,components::FieldKind::Telephone,"mobile"),
-                            ] {
-                                let response=components::labeled_field(ui,label,value,kind,false);
-                                let key=source_highlight::key(recipient_id,recipient_id,field);
-                                if response.hovered() {
-                                    hovered_detail=Some(key.clone());
-                                }
-                                source_highlight::paint_active(
-                                    ui,&response,&key,self.link_hover.active.as_ref()
-                                );
-                            }
-                            if !phone.trim().is_empty() {
-                                let response=components::labeled_field(
-                                    ui,"전화",&mut phone,components::FieldKind::Telephone,false
-                                );
-                                let key=source_highlight::key(recipient_id,recipient_id,"phone");
-                                if response.hovered() {hovered_detail=Some(key.clone());}
-                                source_highlight::paint_active(
-                                    ui,&response,&key,self.link_hover.active.as_ref()
-                                );
-                            }
-                            let response=components::labeled_field(
-                                ui,"요청 메시지",&mut note,components::FieldKind::Text,false
-                            );
-                            let key=source_highlight::key(recipient_id,recipient_id,"note");
-                            if response.hovered() {hovered_detail=Some(key.clone());}
-                            source_highlight::paint_active(
-                                ui,&response,&key,self.link_hover.active.as_ref()
-                            );
+                            let recipient_id = reception_service::text(recipient, "id");
+                            // Match the React contact grid and allow only its
+                            // content to scroll when the user narrows this pane.
+                            egui::ScrollArea::vertical()
+                                .id_salt("recognized-recipient-fields")
+                                .max_height(components::docked_section_body_height(recipient_height)
+                                    .min(ui.available_height().max(0.0)))
+                                .auto_shrink([false, false])
+                                .show(ui, |fields| {
+                                    let responses = components::reception_recipient_fields(
+                                        fields, &mut name, &mut address, &mut mobile,
+                                        &mut phone, &mut note,
+                                    );
+                                    for (response, field) in responses.into_iter().zip([
+                                        "name", "address", "mobile", "phone", "note",
+                                    ]) {
+                                        let key = source_highlight::key(
+                                            recipient_id, recipient_id, field,
+                                        );
+                                        if response.hovered() {
+                                            hovered_detail = Some(key.clone());
+                                        }
+                                        source_highlight::paint_active(
+                                            fields, &response, &key,
+                                            self.link_hover.active.as_ref(),
+                                        );
+                                    }
+                                });
                         }
                     }
                 });
