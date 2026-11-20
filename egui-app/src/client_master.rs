@@ -64,7 +64,8 @@ fn read_local(conn:&Connection) -> Result<(u64,Value),String> {
 /// clients live ONLY in the independently identified egui preview database.
 pub fn load() -> Result<Value,String> {
     if external_business() {
-        let state=crate::business_state::load()?;
+        // Client-management needs product references, not order history.
+        let state=crate::business_state::load_catalog()?;
         return Ok(json!({
             "revision":state.get("revision").and_then(Value::as_u64).unwrap_or(0),
             "clients":state.get("clients").cloned().unwrap_or_else(||json!([])),
