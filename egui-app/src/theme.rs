@@ -104,7 +104,9 @@ pub const SECTION_CONTENT_GAP: f32 = SPACE_4;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 // React recipient detail grid: full-width rows and paired contact cells.
-pub const RECIPIENT_LABEL_WIDTH: f32 = 68.0;
+// Three-character labels (휴대폰/메시지) fit with a compact 56pt column.
+// All recipient rows share this left-aligned label width.
+pub const RECIPIENT_LABEL_WIDTH: f32 = 56.0;
 pub const RECIPIENT_PHONE_LABEL_WIDTH: f32 = 32.0;
 pub const RECIPIENT_LABEL_GAP: f32 = 6.0;
 pub const RECIPIENT_ROW_GAP: f32 = 6.0;
