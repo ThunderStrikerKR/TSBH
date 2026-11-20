@@ -538,14 +538,20 @@ impl ProductManager {
                                                 });
                                             grid.horizontal(|cell|{
                                                 cell.add_enabled_ui(!saving,|inputs|{
-                                                    components::field(
-                                                        inputs,&mut entry.input,
-                                                        components::FieldKind::Money,true,
+                                                    let response=components::money_field(
+                                                        inputs,&mut entry.input,true,
                                                     );
+                                                    let enter=response.lost_focus() &&
+                                                        inputs.input(|i|i.key_pressed(egui::Key::Enter));
+                                                    if response.has_focus() &&
+                                                        inputs.input(|i|i.key_pressed(egui::Key::Escape)){
+                                                        entry.input=entry.original.map(|n|n.to_string())
+                                                            .unwrap_or_default();
+                                                    }
                                                     if entry.dirty() {
                                                         if theme::action(inputs,"저장",
                                                             theme::ButtonRole::Standard,true
-                                                        ).clicked(){
+                                                        ).clicked() || enter {
                                                             match entry.parse(){
                                                                 Ok(value)=>{
                                                                     price_write=Some((key.clone(),
@@ -704,7 +710,7 @@ impl ProductManager {
                             if category_id!=before{
                                 draft["categories"]=if category_id.is_empty(){
                                     json!([])
-                                }else{json!([category_id])};
+                                }else{json!([category_id.clone()])};
                                 draft["category"]=json!(categories.iter().find(|(id,_)|
                                     id==&category_id).map(|(_,name)|name.as_str())
                                     .unwrap_or(""));
@@ -797,8 +803,7 @@ impl ProductManager {
                                 let text=prices.entry(tier.to_owned())
                                     .or_insert_with(String::new);
                                 line.add_enabled_ui(editable&&!busy,|input|{
-                                    components::field(input,text,
-                                        components::FieldKind::Money,true);
+                                    components::money_field(input,text,true);
                                 });
                             });
                         }
