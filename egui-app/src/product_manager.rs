@@ -704,10 +704,7 @@ impl ProductManager {
                 .auto_shrink([false,false])
                 .show(panel,|table|{
                     table.set_min_width(table_width);
-                    // Only soften the product table's alternating rows.
-                    // Do not change global egui visuals for other views.
-                    table.style_mut().visuals.faint_bg_color =
-                        theme::PRODUCT_TABLE_STRIPE_BG;
+                    theme::apply_table_row_colors(table);
                     egui::Grid::new("egui-products-price-table")
                         .striped(true)
                         .spacing([gap,theme::SPACE_8])
