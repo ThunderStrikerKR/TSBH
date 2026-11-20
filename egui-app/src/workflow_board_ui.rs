@@ -180,19 +180,24 @@ fn workflow_header(
             if open{components::WorkflowIcon::Expanded}
             else{components::WorkflowIcon::Collapsed},theme::SECONDARY
         );
-        // A label aligned to the LEFT edge of a fixed text rectangle.
-        // Do not center the label within the overall heading allocation.
+        // Anchor the actual glyphs to the LEFT, immediately after the
+        // fold arrow. Label/put layout can center short names inside the
+        // reserved heading rectangle even with halign(Min).
+        // Draw with the standard Section typography galley and clip only
+        // the text, not the title hit area or the neighboring status lamps.
         let text_left=title_rect.left()
             +theme::WORKFLOW_TOGGLE_ICON_WIDTH+theme::SPACE_4;
         let text_rect=Rect::from_min_max(
             Pos2::new(text_left,title_rect.top()),
             title_rect.max,
         );
-        bar.put(
-            text_rect,
-            egui::Label::new(typography::section_heading(title))
-                .truncate().halign(Align::Min)
+        let galley=typography::section_heading_galley(bar,title);
+        let text_pos=Pos2::new(
+            text_rect.left(),
+            text_rect.center().y-galley.size().y/2.0,
         );
+        bar.painter().with_clip_rect(text_rect)
+            .galley(text_pos,galley,theme::TEXT);
         let heading=bar.interact(
             title_rect,Id::new(("workflow-header",id)),
             egui::Sense::click()
