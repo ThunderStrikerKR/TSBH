@@ -1,7 +1,7 @@
 //! React AliasManager.tsx and ProductSearchDialog.tsx replacement.
 //! Alias collision, product matching and persistence decisions remain in
 //! original catalog_clients Rust. This UI owns only explicit operator edits.
-use crate::{catalog_query_bridge,components,theme,typography};
+use crate::{catalog_query_bridge,category_manager::ROOTS,components,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Ui};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
@@ -34,10 +34,7 @@ fn category_levels(catalog:&Value,selected:&str)
     // more dropdown, with no depth cap. Only filter widget construction is
     // local; eligible product IDs come from native Rust catalog queries.
     let mut all=rows(&catalog["categories"]).to_vec();
-    for (id,name) in [
-        ("catalog-root:BANDOSTAND","반도스탠드"),
-        ("catalog-root:BANDOMALL","반도몰")
-    ]{
+    for (id,name) in ROOTS {
         if !all.iter().any(|v|field(v,"id")==id){
             all.push(json!({"id":id,"name":name,"parentId":null,"active":true}));
         }
