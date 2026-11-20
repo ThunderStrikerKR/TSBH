@@ -139,6 +139,11 @@ pub fn writable()->bool{
     business_state::authorized_business_write_path().is_ok()
 }
 pub fn create(origin:&str,ids:&[String])->Result<Value,String>{
+    // The PRODUCT archive uses only the shared file-naming helper; product
+    // workbooks must never enter the factory/store shipment export contract.
+    if !matches!(origin,"FACTORY"|"STORE"){
+        return Err("공장 또는 매장 발송만 선택할 수 있습니다.".into());
+    }
     if !writable(){return Err("Excel 출력 권한 또는 운영 DB 연결이 없습니다.".into())}
     if ids.is_empty()||ids.len()>500{return Err("배송 건 1~500개를 선택하세요.".into())}
     let (operation,_,_)=kind(origin)?;
