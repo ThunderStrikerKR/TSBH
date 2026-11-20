@@ -162,7 +162,7 @@ fn payment_panel(
         let account=&payment["account"];
         let bank=field(account,"bank");
         let number=field(account,"number");
-        text_kv(ui,"실제 입금계좌",
+        text_kv(ui,"입금계좌번호",
             &format!("{} {}",bank,display_or(number,"기록 없음")));
         let holder=field(account,"holder");
         if !holder.is_empty(){text_kv(ui,"예금주",holder);}
@@ -174,7 +174,7 @@ fn payment_panel(
         let number=field(account,"number");
         if number.is_empty(){continue;}
         if i==0{ui.add_space(theme::SPACE_4);}
-        text_kv(ui,"입금 안내계좌",&format!(
+        text_kv(ui,"안내 계좌번호",&format!(
             "{} {}",field(account,"bank"),number
         ));
     }
@@ -333,7 +333,12 @@ fn change_entries(order:&Value,state:&Value,shipment_ids:&HashSet<&str>)->Vec<Au
         output.push(AuditEntry{
             at:field(change,"at").to_owned(),
             title:"발주 원문 정정".into(),
-            detail:format!("{} · {}",field(change,"actor"),field(change,"reason"))
+            detail:format!(
+                "담당자 {} · {} · 변경 전 {} → 변경 후 {}",
+                display_or(field(change,"actor"),"미확인"),
+                display_or(field(change,"reason"),"정정 사유 미기록"),
+                audit_value(&change["before"]),audit_value(&change["after"])
+            )
         });
     }
     for history in rows(&order["billingHistory"]){
