@@ -501,14 +501,16 @@ impl ModelGroupManager {
                         dialog,"모델군 관리","취소",!self.busy()
                     );
                     dialog.label(typography::body("모델군 관리의 변경사항을 저장할까요?"));
-                    dialog.horizontal(|actions|{
-                        discard=theme::action(actions,"저장 안 함",
-                            theme::ButtonRole::Standard,!self.busy()).clicked();
-                        save=theme::action(actions,"저장",
-                            theme::ButtonRole::Primary,
-                            gateway.model_group_write_enabled()&&!self.busy()&&self.dirty()
-                            &&self.new_name.trim().is_empty()).clicked();
-                    });
+                    dialog.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                            save=theme::action(actions,"저장",
+                                theme::ButtonRole::Primary,
+                                gateway.model_group_write_enabled()&&!self.busy()&&self.dirty()
+                                &&self.new_name.trim().is_empty()).clicked();
+                            discard=theme::action(actions,"저장 안 함",
+                                theme::ButtonRole::Standard,!self.busy()).clicked();
+                        }
+                    );
                 });
             if cancel{self.confirm=None;self.status.clear();}
             else if discard{
