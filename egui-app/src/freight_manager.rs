@@ -1965,6 +1965,12 @@ impl FreightManager {
                 }
             }
             let header_rect=rate_layout.header_rect;
+            // Single group-rates list: fill the remaining card, reserving
+            // one 36pt strip for the empty-state label below the table.
+            let footer_reserve=if groups.is_empty(){theme::INPUT_HEIGHT}else{0.0};
+            let scroll_max_height=components::management_single_list_scroll_height(
+                section,card_min_height,footer_reserve
+            );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
@@ -1972,8 +1978,7 @@ impl FreightManager {
                     .scroll_bar_visibility(
                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                     )
-                    .max_height(section.ctx().content_rect().height()
-                        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+                    .max_height(scroll_max_height)
                     .auto_shrink([false,false]),
                 section,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,
                 ordered.len(),|table,visible_rows|{
