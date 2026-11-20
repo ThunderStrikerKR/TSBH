@@ -464,9 +464,13 @@ fn history_date_segment(
             .corner_radius(0)
     )
 }
-/// A date selector is a single framed horizontal group. Its internal LTR
-/// layout is independent of the right-aligned parent toolbar. Children are
-/// laid out once (not re-inserted with absolute Ui::put rectangles).
+/// Reserve exactly one 36pt outer row. Frame::show combined with an
+/// additional horizontal/with_layout child could grow the measured row by
+/// 4pt on Windows and push it below the 36pt search field. Allocate the
+/// outer rectangle ONCE, then draw four LTR controls in its 34pt interior.
+/// This differs from the former broken Ui::put approach: the child Ui owns
+/// one normal, sequential left-to-right layout; the parent cursor advances
+/// only for its explicitly reserved 36pt rectangle.
 fn range_date_picker_rtl(
     ui:&mut Ui,label:&str,date:&mut String,month:&mut NaiveDate,
     id:&'static str
@@ -474,68 +478,81 @@ fn range_date_picker_rtl(
     const PREV:f32=28.0;
     const NEXT:f32=28.0;
     const CALENDAR:f32=36.0;
+    const FRAME_INSET:f32=1.0;
+    const GROUP_WIDTH:f32=PREV+HISTORY_DATE_FIELD_WIDTH+NEXT
+        +CALENDAR+FRAME_INSET*2.0;
+    const INNER_HEIGHT:f32=theme::ACTION_STANDARD_HEIGHT;
+    let (outer,_)=ui.allocate_exact_size(
+        Vec2::new(GROUP_WIDTH,theme::INPUT_HEIGHT),Sense::hover()
+    );
+    let inner=outer.shrink(FRAME_INSET);
+    debug_assert!((INNER_HEIGHT+FRAME_INSET*2.0-theme::INPUT_HEIGHT).abs()<0.01);
+
+    ui.painter().rect_filled(
+        outer,theme::CONTROL_RADIUS as f32,theme::INPUT
+    );
     let mut changed=false;
-    egui::Frame::new()
-        .fill(theme::INPUT)
-        .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
-        .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
-        .inner_margin(egui::Margin::same(1))
-        .show(ui,|group|{
-            group.spacing_mut().item_spacing=Vec2::ZERO;
-            // Parent date-toolbar layout is LTR and so is the inside of
-            // each framed segment. Do not inherit the old RTL cursor.
-            group.with_layout(egui::Layout::left_to_right(Align::Center),|row|{
-                row.spacing_mut().item_spacing=Vec2::ZERO;
-                let prev=history_date_segment(row,"‹",PREV)
-                    .on_hover_text(&format!("{label} 하루 전"));
-                if prev.clicked(){
-                    *date=move_date(date,-1);
-                    changed=true;
-                }
-                let edit=row.add_sized(
-                    Vec2::new(HISTORY_DATE_FIELD_WIDTH,
-                        theme::ACTION_STANDARD_HEIGHT),
-                    egui::TextEdit::singleline(date)
-                        .font(egui::TextStyle::Body)
-                        .frame(false)
-                        .horizontal_align(Align::Center)
-                        .vertical_align(Align::Center)
-                        .margin(egui::Margin::symmetric(2,2))
-                        .hint_text("YYYY-MM-DD")
-                        .desired_width(HISTORY_DATE_FIELD_WIDTH)
-                ).on_hover_text(&format!("{label} 직접 입력"));
-                changed|=edit.changed();
-                let next=history_date_segment(row,"›",NEXT)
-                    .on_hover_text(&format!("{label} 하루 뒤"));
-                if next.clicked(){
-                    *date=move_date(date,1);
-                    changed=true;
-                }
-                let trigger=history_date_segment(row,"📅",CALENDAR)
-                    .on_hover_text(&format!("{label}을 달력에서 선택"));
-                if trigger.clicked(){
-                    let day=NaiveDate::parse_from_str(date,"%Y-%m-%d")
-                        .unwrap_or_else(|_|NaiveDate::parse_from_str(
-                            &seoul_today(),"%Y-%m-%d").expect("valid today"));
-                    *month=month_start(day);
-                }
-                if let Some(day)=components::date_calendar(
-                    &trigger,month,date,id
-                ){
-                    *date=day.format("%Y-%m-%d").to_string();
-                    changed=true;
-                }
-                // The buttons have no individual borders; keep the subtle
-                // internal separators from the approved grouped design.
-                for x in [prev.rect.right(),edit.rect.right(),next.rect.right()]{
-                    row.painter().line_segment(
-                        [egui::pos2(x,prev.rect.top()+4.0),
-                         egui::pos2(x,prev.rect.bottom()-4.0)],
-                        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-                    );
-                }
-            });
-        });
+    ui.scope_builder(
+        UiBuilder::new()
+            .id_salt(("history-date-control",id))
+            .max_rect(inner)
+            .layout(egui::Layout::left_to_right(Align::Center)),
+        |row|{
+            row.set_width(inner.width());
+            row.set_height(inner.height());
+            row.spacing_mut().item_spacing=Vec2::ZERO;
+            let prev=history_date_segment(row,"‹",PREV)
+                .on_hover_text(&format!("{label} 하루 전"));
+            if prev.clicked(){
+                *date=move_date(date,-1);
+                changed=true;
+            }
+            let edit=row.add_sized(
+                Vec2::new(HISTORY_DATE_FIELD_WIDTH,INNER_HEIGHT),
+                egui::TextEdit::singleline(date)
+                    .font(egui::TextStyle::Body)
+                    .frame(false)
+                    .horizontal_align(Align::Center)
+                    .vertical_align(Align::Center)
+                    .margin(egui::Margin::symmetric(2,2))
+                    .hint_text("YYYY-MM-DD")
+                    .desired_width(HISTORY_DATE_FIELD_WIDTH)
+            ).on_hover_text(&format!("{label} 직접 입력"));
+            changed|=edit.changed();
+            let next=history_date_segment(row,"›",NEXT)
+                .on_hover_text(&format!("{label} 하루 뒤"));
+            if next.clicked(){
+                *date=move_date(date,1);
+                changed=true;
+            }
+            let trigger=history_date_segment(row,"📅",CALENDAR)
+                .on_hover_text(&format!("{label}을 달력에서 선택"));
+            if trigger.clicked(){
+                let day=NaiveDate::parse_from_str(date,"%Y-%m-%d")
+                    .unwrap_or_else(|_|NaiveDate::parse_from_str(
+                        &seoul_today(),"%Y-%m-%d").expect("valid today"));
+                *month=month_start(day);
+            }
+            if let Some(day)=components::date_calendar(
+                &trigger,month,date,id
+            ){
+                *date=day.format("%Y-%m-%d").to_string();
+                changed=true;
+            }
+            for x in [prev.rect.right(),edit.rect.right(),next.rect.right()]{
+                row.painter().line_segment(
+                    [egui::pos2(x,inner.top()+4.0),
+                     egui::pos2(x,inner.bottom()-4.0)],
+                    Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+                );
+            }
+        }
+    );
+    ui.painter().rect_stroke(
+        outer.shrink(0.5),theme::CONTROL_RADIUS as f32,
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
+        egui::StrokeKind::Inside
+    );
     changed
 }
 /// A full-height custom combo trigger, with a distinct right-hand arrow
