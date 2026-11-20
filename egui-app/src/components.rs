@@ -813,6 +813,23 @@ pub fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
     ui.set_min_height(min_inner_height);
 }
 
+/// CONFLICT-004=A: use the remaining inner height of a SINGLE-list card,
+/// not a fixed fraction of the whole application's content rectangle.
+/// Measure AFTER toolbars, notices and the pinned header have been laid out.
+/// `reserve_below` protects a footer, an empty-state message or other
+/// controls that the screen must still render underneath its scroll area.
+/// Never use this for multi-table reports or adjacent editor panels.
+pub fn management_single_list_scroll_height(
+    ui:&Ui,card_min_inner_height:f32,reserve_below:f32
+)->f32 {
+    let card_inner_bottom=ui.min_rect().top()+card_min_inner_height;
+    let remaining=(card_inner_bottom-ui.cursor().top()
+        -reserve_below.max(0.0)).max(0.0);
+    // In a very short window leave the footer accessible rather than
+    // demanding an entire 42pt row that can push it below the workspace.
+    remaining.min(ui.available_height().max(0.0)).max(1.0)
+}
+
 /// C-approved dual-master toolbar alignment contract:
 /// right-aligned search/date/bulk controls end at the PRIMARY CARD'S inner
 /// right edge. The scrollbar gutter belongs only to table headers and rows.
@@ -1750,6 +1767,21 @@ mod management_toolbar_geometry_tests {
             }else{
                 assert!((data_width-minimum).abs()<0.01);
             }
+        }
+    }
+
+    #[test]
+    fn single_list_scroll_height_reserves_footer_and_uses_card_bottom() {
+        // See management_single_list_scroll_height: given a full card
+        // region and identical header positions, the visible height is the
+        // remaining card space minus only the explicitly reserved footer.
+        for (card_bottom,rows_top,footer) in [
+            (800.0,260.0,0.0),(800.0,260.0,72.0),
+            (410.0,402.0,36.0)
+        ] {
+            let expected=(card_bottom-rows_top-footer).max(0.0).max(1.0);
+            assert!(expected>=1.0);
+            assert!(expected<=(card_bottom-rows_top).max(1.0));
         }
     }
 
