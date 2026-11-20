@@ -6,7 +6,7 @@ use chrono::{Datelike, Duration as Days, Months, NaiveDate};
 use crate::{theme, typography};
 
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
-pub const TABLE_ROW_HEIGHT: f32 = 42.0;
+pub const TABLE_ROW_HEIGHT: f32 = theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
 /// Render only the rows intersecting a scroll viewport, while reserving the
 /// full logical height and width of the list. This works with BOTH-axis
 /// scrolling, unlike a paginated list, and preserves the backing row indices.
@@ -51,7 +51,7 @@ pub fn virtual_fixed_rows<R>(
     })
 }
 
-pub const TABLE_HEADER_HEIGHT: f32 = 36.0;
+pub const TABLE_HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 
 #[derive(Clone, Copy)]
 pub enum WorkflowIcon {
