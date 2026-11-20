@@ -169,7 +169,6 @@ struct BandoEgui {
     brand_texture: Option<egui::TextureHandle>,
     gateway: Arc<dyn gateway::BandoGateway>,
     page: Page,
-    notifications_open: bool,
     layout: layout::LayoutState,
     dragging_split: Option<HorizontalSplitDrag>,
     dragging_vertical: Option<VerticalSplitDrag>,
@@ -239,7 +238,6 @@ impl Default for BandoEgui {
             brand_texture: None,
             gateway: Arc::new(gateway::LocalGateway),
             page: Page::Reception,
-            notifications_open: false,
             layout: layout::LayoutState::load(),
             dragging_split: None,
             dragging_vertical: None,
@@ -1052,11 +1050,6 @@ impl BandoEgui {
                 source_autosave::SaveStatus::Saved(revision) => {
                     let _ = revision;
                     self.source_save_error = None;
-                    // Saving another field must not silently dismiss an
-                    // outstanding clipboard/OCR error notification.
-                    if self.clipboard_error.is_none() {
-                        self.notifications_open = false;
-                    }
                 }
                 source_autosave::SaveStatus::Failed(error) => {
                     self.source_save_error = Some(error);
@@ -1780,12 +1773,10 @@ impl BandoEgui {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                             }
                             actions.add_space(theme::SPACE_8);
-                            if theme::action(
-                                actions, "알림", ButtonRole::Standard,
-                                self.source_save_error.is_some() || self.clipboard_error.is_some(),
-                            ).clicked() {
-                                self.notifications_open = !self.notifications_open;
-                            }
+                            // No auto-generated error/success messages.
+                            theme::action(
+                                actions, "알림", ButtonRole::Standard, false
+                            );
                             // Unoccupied header space has the same drag and
                             // double-click behavior as the original titlebar.
                             let empty = actions.available_width();
@@ -1801,23 +1792,6 @@ impl BandoEgui {
                 );
             });
 
-        if self.notifications_open &&
-            (self.source_save_error.is_some() || self.clipboard_error.is_some())
-        {
-            egui::Window::new("알림")
-                .id(egui::Id::new("native_ui_preview_notifications"))
-                .collapsible(false)
-                .movable(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    if let Some(error) = &self.source_save_error {
-                        ui.label(typography::status(error, theme::DANGER));
-                    }
-                    if let Some(error) = &self.clipboard_error {
-                        ui.label(typography::status(error, theme::DANGER));
-                    }
-                });
-        }
     }
 
     fn frameless_resize(&self, ctx: &egui::Context) {
