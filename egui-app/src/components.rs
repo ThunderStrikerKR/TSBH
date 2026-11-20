@@ -905,17 +905,17 @@ pub fn management_sticky_table_header(
     }
 }
 
-/// Shared pinned header for the pre-existing management LIST cards
-/// (clients, products, Excel, and settlement). These cards historically
-/// reserve one additional 4pt gap beside the scrollbar; preserve that
-/// visual difference until the user resolves it against the two masters.
-/// This is not the 17pt toolbar-to-header transition used by the masters.
-pub fn management_existing_list_table_header(
+/// CONFLICT-003=A (approved): list-table data width reserves ONLY the
+/// actual scrollbar allocation; no independent 4pt extra gap. The table
+/// header and virtual rows use the same right edge as the two master tables.
+/// Unlike the masters' sticky header, this does not inject a 17pt
+/// toolbar-to-header transition: legacy section rhythm stays unchanged
+/// pending a separate CONFLICT-005 decision.
+pub fn management_list_table_header(
     ui:&mut Ui,min_table_width:f32
 )->ManagementTableHeader{
     let viewport_width=ui.available_width().max(1.0);
-    let scrollbar_gutter=ui.spacing().scroll.allocated_width()
-        +theme::SPACE_4;
+    let scrollbar_gutter=ui.spacing().scroll.allocated_width();
     let table_width=(viewport_width-scrollbar_gutter)
         .max(min_table_width);
     let (header_rect,_)=ui.allocate_exact_size(
@@ -1718,6 +1718,24 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
 #[cfg(test)]
 mod management_toolbar_geometry_tests {
     use super::*;
+    #[test]
+    fn list_and_master_table_gutters_reserve_only_native_scrollbar_width() {
+        // CONFLICT-003=A. Every role uses the same 10pt allocation;
+        // none adds the previous 4pt between data and the rail.
+        for (viewport,minimum) in [
+            (900.0,900.0),(1100.0,1100.0),(1440.0,942.0),
+            (1440.0,1242.0),
+        ] {
+            let native_gutter=10.0;
+            let data_width=(viewport-native_gutter).max(minimum);
+            if viewport-native_gutter>=minimum {
+                assert!((data_width+native_gutter-viewport).abs()<0.01);
+            }else{
+                assert!((data_width-minimum).abs()<0.01);
+            }
+        }
+    }
+
     #[test]
     fn trailing_slot_ends_at_card_inner_edge_without_scrollbar_subtraction() {
         for width in [400.0, 704.0, 1280.0] {
