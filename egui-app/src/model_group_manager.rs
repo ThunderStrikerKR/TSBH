@@ -495,10 +495,11 @@ impl ModelGroupManager {
             components::modal_backdrop(ctx,"family-unsaved-dim",true);
             components::decision_window("모델군 관리","family-unsaved-confirm",rect)
                 .show(ctx,|dialog|{
+                    cancel=components::modal_header(
+                        dialog,"모델군 관리","취소",!self.busy()
+                    );
                     dialog.label(typography::body("모델군 관리의 변경사항을 저장할까요?"));
                     dialog.horizontal(|actions|{
-                        cancel=theme::action(actions,"취소",
-                            theme::ButtonRole::Standard,!self.busy()).clicked();
                         discard=theme::action(actions,"저장 안 함",
                             theme::ButtonRole::Standard,!self.busy()).clicked();
                         save=theme::action(actions,"저장",
