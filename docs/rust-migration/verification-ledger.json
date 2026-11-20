@@ -865,6 +865,18 @@
           "introducedAt": "5b65a7ef65429cdf33ef66875e6ed37ad73d9dfc"
         }
       ],
+      "eguiFreightMigration": {
+        "scope": "2026-11-20 freight group composition vs separate group rates; individual freight subordinate",
+        "status": "PARTIAL_CODE_COMMITTED_BUILD_UNVERIFIED",
+        "code": "egui-app/src/freight_manager.rs, egui-app/src/gateway.rs, src-tauri/src/egui_shipping_bridge.rs, src-tauri/src/lib.rs, src-tauri/src/main.rs",
+        "implemented": "Rust-backed groups/products/rates/combination read; group create, rename, delete, product assignments via explicit revision-checked Tauri SQLite bridge",
+        "open": "Group rate editor, basis/combination revision UI, product fallback, leave-guard, targeted compiler/action check",
+        "evidence": "https://github.com/ThunderStrikerKR/TSBH/commit/697db39eff7964abb22a0df07f90ae80e2973e76",
+        "static": "React ShippingManager+ShippingFeeRanges+shipping.css and Rust shipping.rs + gateway source inspection",
+        "unit": "NOT_RUN",
+        "build": "NOT_RUN",
+        "windows": "SKIPPED_BY_USER_POLICY"
+      },
       "legacyLedgerStatus": "FROZEN_SHIPPING_ORACLE_PARTIAL",
       "gate": {
         "patch": {
