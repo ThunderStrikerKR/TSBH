@@ -574,7 +574,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let summary=order_items_single_line(row);
             // The order disclosure uses the same stroked chevron as
             // workflow cards, category trees, date arrows and dropdowns.
-            // Keep its original center and summary-text inset unchanged.
+            // Keep the existing chevron center and the row's click area.
             let center=egui::pos2(columns[2].left()+11.0,columns[2].center().y);
             components::paint_management_chevron(
                 &ui.painter().with_clip_rect(columns[2].intersect(area)),
@@ -583,10 +583,10 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                     components::ManagementChevronDirection::Down
                 }else{components::ManagementChevronDirection::Right}
             );
-            // Preserve the existing column boundaries and row height; only
-            // reserve room for the icon inside the product cell.
+            // The 10pt arrow reaches 16pt from the cell's left edge when
+            // expanded. Reserve a 4pt text gap without changing column or row.
             let summary_rect=Rect::from_min_max(
-                egui::pos2(columns[2].left()+14.0,columns[2].top()),
+                egui::pos2(columns[2].left()+20.0,columns[2].top()),
                 columns[2].right_bottom()
             );
             paint_text(ui,summary_rect,&summary,true,false);
