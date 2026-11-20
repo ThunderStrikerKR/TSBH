@@ -312,6 +312,8 @@ pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
 pub enum ButtonRole {
     Primary,
     Standard,
+    /// Subdued repeated row action: standard 34pt target, muted ink/surface.
+    TableSecondary,
     Emphasized,
     Quiet,
     Danger,
@@ -517,6 +519,12 @@ fn action_with_min_width(
     let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
         ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, Color32::from_rgb(238, 238, 238), BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32, BORDER)),
+        ButtonRole::TableSecondary => (
+            ACTION_STANDARD_HEIGHT,
+            Color32::from_rgb(35, 35, 35),
+            SECONDARY,
+            Stroke::new(1.0, DIVIDER),
+        ),
         ButtonRole::Emphasized => (ACTION_EMPHASIZED_HEIGHT, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Quiet => (ACTION_QUIET_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::Danger => (34.0, Color32::from_rgb(84, 44, 48), DANGER, Stroke::NONE),
