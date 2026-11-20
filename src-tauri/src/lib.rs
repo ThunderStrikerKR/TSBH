@@ -516,46 +516,7 @@ fn receipt_archive(db: State<'_, Database>) -> Result<Value, String> {
 /// Same archive projection for both React IPC and the egui read-only CLI.
 /// Includes legacy/unverified records without fabricating audit evidence.
 fn receipt_archive_from_conn(conn:&Connection)->Result<Value,String>{
-    let mut statement = conn.prepare("SELECT id,order_id,record FROM receipt_archive ORDER BY rowid DESC LIMIT 10000").map_err(err)?;
-    let mut rows = statement.query([]).map_err(err)?;
-    let mut archive = Vec::new();
-    while let Some(row) = rows.next().map_err(err)? {
-        let id: String = row.get(0).map_err(err)?;
-        let order_id: String = row.get(1).map_err(err)?;
-        let record: String = row.get(2).map_err(err)?;
-        archive.push(json!({"id":id,"orderId":order_id,"record":serde_json::from_str::<Value>(&record).map_err(err)?}));
-    }
-    // Historical orders may predate the independent audit table. Display their
-    // current snapshot as unverified reference data; never fabricate an audit row.
-    let known: std::collections::HashSet<String> = archive.iter()
-        .filter_map(|row| row["id"].as_str().map(str::to_owned)).collect();
-    let snapshot = get_snapshot(&conn)?;
-    for order in snapshot["orders"].as_array().into_iter().flatten() {
-        if order["confirmedAt"].as_str().is_none() { continue; }
-        let Some(order_id) = order["id"].as_str() else { continue; };
-        if !known.contains(&format!("receipt:{order_id}")) {
-            let original = order["receipt"]["original"].as_str()
-                .or_else(|| order["rawHistory"].get(0).and_then(|r| r["raw"].as_str()))
-                .or_else(|| order["raw"].as_str()).unwrap_or("");
-            archive.push(json!({"id":format!("legacy:{order_id}"),"orderId":order_id,
-                "record":{"original":original,
-                    "at":order["receipt"]["at"].as_str().or_else(||order["createdAt"].as_str()).unwrap_or(""),
-                    "actor":"과거 주문 / 최초 접수 검증 불가",
-                    "legacy":true,"verified":false}}));
-        }
-        for correction in order["rawCorrections"].as_array().into_iter().flatten() {
-            let Some(cid) = correction["id"].as_str() else { continue; };
-            if known.contains(&format!("correction:{cid}")) { continue; }
-            let mut reference = correction.clone();
-            if let Some(fields) = reference.as_object_mut() {
-                fields.insert("legacy".into(), json!(true));
-                fields.insert("verified".into(), json!(false));
-            }
-            archive.push(json!({"id":format!("legacy-correction:{cid}"),
-                "orderId":order_id,"record":reference}));
-        }
-    }
-    Ok(json!(archive))
+    bando_data_access::audit_service::receipt_archive_from_conn(conn)
 }
 
 #[tauri::command]
@@ -1034,67 +995,6 @@ fn start_automatic_backup(app: tauri::AppHandle) {
                     Err(reason) => eprintln!("반도허브 자동 백업 DB 잠금 실패: {reason}"),
                 };
             });
-}
-
-/// Legacy one-shot egui adapters remain for full data backup/restore and reception only.
-pub fn run_egui_settings_data() -> i32 {
-    use std::io::{Read,Write};
-    let result=(|| -> Result<Value,String> {
-        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .filter(|p|!p.is_empty()).map(PathBuf::from)
-            .ok_or("운영 DB 파일 경로가 설정되지 않았습니다.")?;
-        if !path.is_file(){return Err("운영 DB 파일이 없습니다.".into());}
-        let base=path.parent().ok_or("운영 DB 보관 폴더가 없습니다.")?;
-        let mut input=Vec::new();
-        std::io::stdin().take(16_385).read_to_end(&mut input).map_err(err)?;
-        if input.is_empty() || input.len()>16_384 {
-            return Err("데이터 관리 요청이 허용 범위를 초과했습니다.".into());
-        }
-        let request:Value=serde_json::from_slice(&input)
-            .map_err(|_|"데이터 관리 요청 JSON이 올바르지 않습니다.".to_owned())?;
-        let operation=request.get("operation").and_then(Value::as_str)
-            .ok_or("데이터 관리 명령이 없습니다.")?;
-        let write=matches!(operation,"backup"|"restore");
-        if write && std::env::var("BANDO_EGUI_ENABLE_SETTINGS_WRITE")
-            .ok().as_deref()!=Some("1"){
-            return Err("운영 데이터 백업·복원에는 명시적 변경 권한이 필요합니다.".into());
-        }
-        let flags=if write{rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE}
-            else{rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY};
-        let mut conn=Connection::open_with_flags(&path,flags)
-            .map_err(|_|"데이터 관리 DB를 열지 못했습니다.".to_owned())?;
-        conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(err)?;
-        if !write{conn.execute_batch("PRAGMA query_only=ON;").map_err(err)?;}
-        let version:i64=conn.query_row(
-            "SELECT version FROM core_schema WHERE key='business-core'",
-            [],|row|row.get(0),
-        ).map_err(|_|"DB 스키마 버전을 확인할 수 없습니다.".to_owned())?;
-        if version!=2{return Err("지원하지 않는 업무 DB 버전입니다.".into());}
-        match operation{
-            "archive"=>receipt_archive_from_conn(&conn),
-            "backups"=>Ok(json!(backup_manager::list_backups(base)?)),
-            "backup"=>Ok(json!(backup_manager::manual_backup(&conn,base)?)),
-            "restore"=>{
-                let filename=request.get("filename").and_then(Value::as_str)
-                    .filter(|name|!name.is_empty())
-                    .ok_or("복원할 백업 파일을 선택하세요.")?;
-                backup_manager::restore_backup(&mut conn,base,filename)?;
-                Ok(json!({"restored":true}))
-            }
-            _=>Err("허용하지 않은 데이터 관리 명령입니다.".into())
-        }
-    })();
-    let response=match &result{
-        Ok(payload)=>json!({"ok":true,"result":payload}),
-        Err(message)=>json!({"ok":false,"error":message}),
-    };
-    // Preserve strict machine-readable stdout and reject huge archive output.
-    let bytes=response.to_string();
-    let output=if bytes.len()>16_000_000 {
-        json!({"ok":false,"error":"감사 기록 응답이 16MB를 초과했습니다."}).to_string()
-    }else{bytes};
-    let _=std::io::stdout().write_all(output.as_bytes());
-    if result.is_ok() && output==response.to_string(){0}else{2}
 }
 
 pub fn run_egui_reception_commit() -> i32 {
