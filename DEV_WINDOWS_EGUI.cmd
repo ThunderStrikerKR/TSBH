@@ -34,7 +34,7 @@ rem A failed build leaves the UI usable for reads, but prevents spawning the
 rem stale executable. Do not launch a web server or touch production SQLite.
 if exist "%APPDATA%\com.bandostand.bandohub.tauri\developer-test\bando-hub-test.sqlite" (
   echo [FREIGHT] Checking native shipping helper build...
-  cargo build --quiet --manifest-path "src-tauri\Cargo.toml" --bin bando_hub_tauri
+  cargo build --quiet --manifest-path "src-tauri\Cargo.toml" --bin bando_hub_tauri --target-dir "%~dp0src-tauri\target"
   if errorlevel 1 (
     echo [FREIGHT] Native helper build failed. Shipping changes are disabled.
     echo [FREIGHT] Old helper will NOT be launched.
