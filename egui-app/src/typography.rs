@@ -34,6 +34,11 @@ pub const FONT_FREIGHT_SUMMARY_NUMBER: f32 = 28.0;
 pub const FONT_FREIGHT_SUMMARY_LABEL: f32 = 13.0;
 pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
+/// Visual offset for management dropdown captions, calibrated against the
+/// 34pt trigger's visible glyph bounds rather than the 22pt Body line box.
+/// Keep this shared: date-basis, product-filter and freight-group selectors
+/// must not acquire separate screen-local Y corrections.
+pub const MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y: f32 = 2.0;
 // Shared line boxes used for balanced reception guidance geometry.
 pub const SUBSECTION_LINE_HEIGHT: f32 = 21.0;
 pub const METADATA_LINE_HEIGHT: f32 = 18.0;
