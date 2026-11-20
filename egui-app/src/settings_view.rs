@@ -465,10 +465,11 @@ impl SettingsView{
             });
     }
     fn show_basic(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>){
-        ui.add_enabled_ui(editable,|form|{
-            // React uses ONE settings.card around basic section content.
-            // Do not create a border around every nested settings heading.
-            theme::section_frame().show(form,|form|{
+        // The React settings.card owns the fields AND their save control.
+        // Only the inputs are disabled during a save, never the visible
+        // action row itself; otherwise the saving state is hidden.
+        theme::section_frame().show(ui,|card|{
+            card.add_enabled_ui(editable,|form|{
             let available=form.available_width();
             if available>theme::SETTINGS_TOP_TWO_COL_MIN_WIDTH{
                 // React settings-basic-top-grid: 1fr : 1.4fr,
@@ -566,8 +567,8 @@ impl SettingsView{
                 self.show_accounts(content);
             });
             });
+            self.save_bar(card,gateway);
         });
-        self.save_bar(ui,gateway);
     }
     fn scale_selector(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
         ui.label(typography::field_label("전체 UI 크기"));
