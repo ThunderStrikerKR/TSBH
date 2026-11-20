@@ -319,17 +319,6 @@ pub fn modal_backdrop(
     });
 }
 
-pub fn modal_actions(ui:&mut Ui, cancel:&str, proceed:&str,
-    proceed_role:theme::ButtonRole, enabled:bool) -> (bool,bool) {
-    let mut cancelled=false;
-    let mut submitted=false;
-    ui.horizontal(|ui|{
-        cancelled=theme::action(ui,cancel,theme::ButtonRole::Quiet,true).clicked();
-        submitted=theme::action(ui,proceed,proceed_role,enabled).clicked();
-    });
-    (cancelled,submitted)
-}
-
 /// Uses the same height, font and focus styling for every single-line field.
 /// Disabled preview controls cannot edit business data.
 pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
