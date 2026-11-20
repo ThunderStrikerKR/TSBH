@@ -1933,15 +1933,15 @@ impl FreightManager {
             // '배송 그룹 편성' reference. Only row contents differ.
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
-            let viewport_width=section.available_width().max(1.0);
-            let gutter=section.spacing().scroll.allocated_width()+theme::SPACE_4;
-            let table_width=(viewport_width-gutter)
-                .max(theme::FREIGHT_RATE_TABLE_MIN_WIDTH);
-            let extra=(table_width-theme::FREIGHT_RATE_TABLE_MIN_WIDTH).max(0.0);
-            let mut widths=theme::FREIGHT_RATE_COL_WIDTHS;
-            widths[0]+=extra*0.40;
-            widths[2]+=extra*0.20;
-            widths[4]+=extra*0.40;
+            let rate_layout=components::management_existing_list_table_header(
+                section,theme::FREIGHT_RATE_TABLE_MIN_WIDTH
+            );
+            let table_width=rate_layout.table_width;
+            let widths=theme::management_weighted_columns(
+                theme::FREIGHT_RATE_COL_WIDTHS,
+                [0.40,0.0,0.20,0.0,0.40,0.0],
+                table_width,theme::FREIGHT_ASSIGNMENT_COL_GAP
+            );
             let titles=[
                 "배송 그룹","최대 묶음 수량","수량별 배송비",
                 "운임 상태","참고 메모 / 최근 수정","관리"
@@ -1964,10 +1964,7 @@ impl FreightManager {
                     ordered.reverse();
                 }
             }
-            let (header_rect,_)=section.allocate_exact_size(
-                egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
-                egui::Sense::hover()
-            );
+            let header_rect=rate_layout.header_rect;
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
