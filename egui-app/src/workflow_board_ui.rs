@@ -656,7 +656,8 @@ pub fn show(
         let mut hovered_row=None;
         let area=egui::Area::new(Id::new(("workflow-card-overlay",group.id.clone())))
             .order(egui::Order::Foreground)
-            .fixed_pos(Pos2::new(pos.x,pos.y));
+            .fixed_pos(Pos2::new(pos.x,pos.y))
+            .movable(false);
         let response=area.show(ui.ctx(),|ui|{
             // The temporary card can grow downward, but must not bleed
             // over the source/details panes or the app header.
