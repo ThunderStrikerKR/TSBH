@@ -306,6 +306,9 @@ fn attach(parents:&mut [Value],key:&str,mut children:HashMap<String,Vec<Value>>)
 pub(super) fn hydrate(conn:&Connection,state:&mut Value)->Result<(),String>{
     let version=schema_version(conn)?;
     if version==0 { return Ok(()); }
+    // Schema v2 hydration is shared by the Tauri and egui hosts.
+    // Legacy v1 migration remains on the original implementation below.
+    if version==2 { return bando_data_access::hydrate_v2(conn,state); }
     let mut products=read_entities(conn,"SELECT payload FROM core_products ORDER BY position,id")?;
     let variants=read_children(conn,if version==1 {
         "SELECT product_id,payload FROM core_variants ORDER BY product_id,position,id"
