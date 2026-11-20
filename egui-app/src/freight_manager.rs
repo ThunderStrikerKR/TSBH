@@ -498,7 +498,18 @@ impl FreightManager {
             !self.save_dirty(ui.ctx().clone()) {
             self.saving_for_tab=false;
         }
-        ui.label(typography::page_heading("운임 관리"));
+        ui.horizontal(|heading|{
+            heading.label(typography::page_heading("운임 관리"));
+            if let Some(state)=self.state.as_ref(){
+                heading.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),|right|{
+                        right.label(typography::caption(&format!(
+                            "운임 기준 {}",
+                            state["shipping"]["epoch"].as_i64().unwrap_or(1)
+                        )));
+                    });
+            }
+        });
         ui.add_space(theme::SPACE_12);
         if let Some(index) = components::management_tabs(ui, &[
             ("배송 그룹 편성", self.tab == FreightTab::Groups, true),
@@ -541,15 +552,23 @@ impl FreightManager {
             let id = text(p, "shippingGroupId");
             !id.is_empty() && groups.iter().any(|g| text(g, "id") == id)
         }).count();
-        ui.horizontal_wrapped(|bar| {
-            summary(bar, "등록 상품", products.len());
-            summary(bar, "그룹 지정 완료", assigned);
-            summary(bar, "그룹 미지정", products.len() - assigned);
-            summary(bar, "배송 그룹", groups.len());
-            bar.label(typography::caption(&format!(
-                "운임 기준 {}", shipping["epoch"].as_i64().unwrap_or(1)
-            )));
-        });
+        if ui.available_width() < theme::MANAGEMENT_TABLE_MIN_WIDTH / 2.0 {
+            ui.columns(2,|cols|{
+                summary(&mut cols[0],"등록 상품",products.len());
+                summary(&mut cols[1],"그룹 지정 완료",assigned);
+            });
+            ui.columns(2,|cols|{
+                summary(&mut cols[0],"그룹 미지정",products.len()-assigned);
+                summary(&mut cols[1],"배송 그룹",groups.len());
+            });
+        }else{
+            ui.columns(4,|cols|{
+                summary(&mut cols[0],"등록 상품",products.len());
+                summary(&mut cols[1],"그룹 지정 완료",assigned);
+                summary(&mut cols[2],"그룹 미지정",products.len()-assigned);
+                summary(&mut cols[3],"배송 그룹",groups.len());
+            });
+        }
         ui.add_space(theme::SPACE_12);
         let enabled=self.gateway.shipping_write_enabled()&&self.write_receiver.is_none();
         let mut action:Option<(String,Value)>=None;
@@ -1532,7 +1551,12 @@ impl FreightManager {
 
 fn summary(ui: &mut Ui, label: &str, count: usize) {
     theme::section_frame().show(ui, |cell| {
-        cell.label(typography::caption(label));
-        cell.label(typography::summary_value(&count.to_string()));
+        cell.horizontal_wrapped(|line|{
+            line.label(typography::caption(label));
+            line.with_layout(egui::Layout::right_to_left(egui::Align::Center),|right|{
+                right.label(typography::caption("개"));
+                right.label(typography::summary_value(&count.to_string()));
+            });
+        });
     });
 }
