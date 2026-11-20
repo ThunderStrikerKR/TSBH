@@ -222,6 +222,30 @@ impl ClientManager {
             self.original=None;
         }
     }
+    /// Keep the existing actions in their approved order, anchored right.
+    /// Rendering alone is refactored; Excel remains disabled until migrated.
+    fn list_toolbar_actions(&mut self,ui:&mut Ui) {
+        ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
+            if theme::action(actions,"＋ 거래처 등록",ButtonRole::Primary,
+                self.ready && self.editable() && self.saving.is_none()
+            ).clicked(){
+                self.begin(empty_client());
+            }
+            theme::action(actions,"Excel 관리",ButtonRole::Standard,false)
+                .on_disabled_hover_text("Excel 관리 기능은 이전되지 않았습니다.");
+        });
+    }
+
+    fn list_search(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,reserve:f32) {
+        ui.label(typography::field_label("검색"));
+        let width=(ui.available_width()-reserve).max(60.0);
+        if components::flexible_text_field(
+            ui,&mut self.search,width,"상호 / 주소 / 전화번호 / 별칭 검색"
+        ).changed(){
+            self.query(gateway,ui.ctx().clone());
+        }
+    }
+
     pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>) {
         self.poll(Arc::clone(&gateway),ui.ctx());
         ui.label(typography::page_heading("거래처 관리"));
@@ -231,26 +255,33 @@ impl ClientManager {
             ("자동 메시지 편집",false,false),
         ]);
         ui.add_space(theme::SPACE_12);
-        theme::section_frame().show(ui,|section|{
-            section.horizontal(|toolbar|{
-                toolbar.label(typography::field_label("검색"));
-                let width=(toolbar.available_width()-
-                    theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH)
-                    .max(theme::MANAGEMENT_SEARCH_MIN_WIDTH);
-                if components::flexible_text_field(
-                    toolbar,&mut self.search,width,
-                    "상호 / 주소 / 전화번호 / 별칭 검색"
-                ).changed() {
-                    self.query(Arc::clone(&gateway),toolbar.ctx().clone());
-                }
-                theme::action(toolbar,"Excel 관리",ButtonRole::Standard,false)
-                    .on_disabled_hover_text("Excel 관리 기능은 이전되지 않았습니다.");
-                if theme::action(toolbar,"＋ 거래처 등록",ButtonRole::Primary,
-                    self.ready && self.editable() && self.saving.is_none()
-                ).clicked(){
-                    self.begin(empty_client());
-                }
-            });
+        // React client-list-panel: ONE bordered surface owns both the
+        // searchable toolbar and the scrolling table, with no doubled
+        // 16pt section padding around the rows.
+        theme::management_list_frame().show(ui,|section|{
+            section.spacing_mut().item_spacing.y=0.0;
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(
+                    theme::SPACE_12 as i8,theme::SPACE_8 as i8
+                ))
+                .show(section,|tools|{
+                    if tools.available_width() <
+                        theme::MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH {
+                        // Keep the search usable with the Kakao split widened.
+                        // Only the toolbar wraps, never the table columns.
+                        tools.horizontal(|search|{
+                            self.list_search(search,Arc::clone(&gateway),0.0);
+                        });
+                        tools.add_space(theme::SPACE_8);
+                        self.list_toolbar_actions(tools);
+                    }else{
+                        tools.horizontal(|bar|{
+                            self.list_search(bar,Arc::clone(&gateway),
+                                theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH);
+                            self.list_toolbar_actions(bar);
+                        });
+                    }
+                });
             components::soft_divider(section);
             if let Some(error)=&self.error {
                 section.label(typography::status(error,theme::DANGER));
@@ -279,10 +310,10 @@ impl ClientManager {
                 .id_salt("client-management-table")
                 .auto_shrink([false,false])
                 .show(section,|table|{
-                    table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+                    table.set_min_width(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
                     components::management_row(table,"client-management-header",[
                         ("거래처",""),("발송인 정보",""),("거래 조건","")
-                    ],true);
+                    ],true,None);
                     for client in &rows {
                         let name=field(client,"name");
                         let display=field(client,"displayName");
@@ -292,7 +323,6 @@ impl ClientManager {
                             .into_iter().filter(|s|!s.trim().is_empty())
                             .collect::<Vec<_>>().join(" / ");
                         let conditions=[
-                            readable_tier(field(client,"tier")),
                             if field(client,"payment")=="POSTPAID"{"후불"}else{"선입금"},
                             if client.get("defaultApplyVat").and_then(Value::as_bool)
                                 .unwrap_or(false) {"부가세 포함"} else {"부가세 별도"},
@@ -304,8 +334,8 @@ impl ClientManager {
                             .collect::<Vec<_>>().join(" / ");
                         if components::management_row(table,field(client,"id"),[
                             (name,description),(address,&contacts),
-                            (&conditions,"")
-                        ],false).clicked() {
+                            (readable_tier(field(client,"tier")),&conditions)
+                        ],false,Some(field(client,"tier"))).clicked() {
                             self.begin(client.clone());
                         }
                     }
