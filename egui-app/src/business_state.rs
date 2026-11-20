@@ -56,7 +56,7 @@ fn tauri_database_path(roaming:&std::path::Path, developer_test:bool)->Result<Pa
         return Err("Tauri 데이터 폴더가 별도로 지정돼 있어 자동 연결을 중단했습니다.".into());
     }
     let identifier=config.get("identifier").and_then(Value::as_str)
-        .filter(|id|!id.is_empty() && !id.contains(['/', '\\']))
+        .filter(|id|!id.is_empty() && !id.contains('/') && !id.contains('\\'))
         .ok_or("Tauri 프로그램 식별자가 올바르지 않습니다.")?;
     let root=roaming.join(identifier);
     Ok(if developer_test {
