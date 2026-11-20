@@ -840,8 +840,8 @@ pub fn management_toolbar_trailing_rect(
 /// One measured vertical transition for every fixed-header management table.
 ///
 /// Call with `item_spacing.y == 0` *from the toolbar allocation onward*.
-/// This explicitly owns the complete 8pt toolbar gap, 4pt space above the
-/// divider, 1pt divider, 4pt below, and the 36pt sticky header. Screens must
+/// This owns the symmetric 16pt toolbar-to-divider breathing room,
+/// 1pt divider, 4pt after it, and 36pt sticky header. Screens must
 /// not add a separate `add_space` or rely on egui's preceding item spacing.
 #[derive(Clone,Copy,Debug)]
 pub struct ManagementTableHeader {
@@ -877,14 +877,16 @@ pub fn management_sticky_table_header(
     // One allocation for the full toolbar-to-header separator strip.
     // Keeping it in a single Ui layout operation also avoids a fractional
     // pixel difference between manual add_space and automatic item gaps.
-    let transition_height=theme::SPACE_8*2.0+theme::SOFT_DIVIDER_WIDTH;
+    let transition_height=theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
+        +theme::SOFT_DIVIDER_WIDTH
+        +theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP;
     let (transition,_)=ui.allocate_exact_size(
         Vec2::new(viewport_width,transition_height),Sense::hover()
     );
     ui.painter().rect_filled(
         Rect::from_min_size(
             egui::pos2(transition.left(),
-                transition.top()+theme::SPACE_8+theme::SPACE_4),
+                transition.top()+theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP),
             Vec2::new(viewport_width,theme::SOFT_DIVIDER_WIDTH)
         ),0.0,theme::DIVIDER
     );
