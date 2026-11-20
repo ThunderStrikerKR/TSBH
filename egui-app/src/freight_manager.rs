@@ -45,9 +45,8 @@ fn freight_assignment_cells(
     })
 }
 
-/// The task table keeps the same font sizing as the shared typography rules:
-/// primary product identity is bold, category stays 13pt but softer,
-/// and colors/options remain normal.
+/// This table uses the standard 14pt body step for data and headers.
+/// Product names use bold emphasis, while categories stay secondary.
 #[derive(Clone,Copy)]
 enum FreightCellRole { Primary, Normal, Category }
 
@@ -60,13 +59,13 @@ fn freight_assignment_text(
     let clipped=rect.shrink2(egui::vec2(6.0,0.0));
     let (galley,color)=match role {
         FreightCellRole::Primary=>(
-            typography::client_table_cell_galley(ui,value,true),theme::TEXT
+            typography::freight_table_cell_galley(ui,value,true,theme::TEXT),theme::TEXT
         ),
         FreightCellRole::Normal=>(
-            typography::client_table_cell_galley(ui,value,false),theme::TEXT
+            typography::freight_table_cell_galley(ui,value,false,theme::TEXT),theme::TEXT
         ),
         FreightCellRole::Category=>(
-            typography::client_table_cell_galley(ui,value,false),theme::SECONDARY
+            typography::freight_table_cell_galley(ui,value,false,theme::SECONDARY),theme::SECONDARY
         ),
     };
     ui.painter().with_clip_rect(clipped).galley(
@@ -1188,7 +1187,7 @@ impl FreightManager {
                         let visible_category=typography::fit_category_path(
                             table,category,
                             (cells[3].width()-theme::SPACE_12).max(0.0),
-                            typography::CategoryPathFont::TableCell
+                            typography::CategoryPathFont::FreightTableCell
                         );
                         freight_assignment_text(
                             table,cells[3],&visible_category,category,
@@ -1373,7 +1372,7 @@ impl FreightManager {
             for (i,title) in titles.iter().enumerate(){
                 if !title.is_empty(){
                     let region=header_cells[i];
-                    let galley=typography::table_header_galley(section,title);
+                    let galley=typography::freight_table_header_galley(section,title);
                     header_painter.with_clip_rect(header_rect.intersect(region)).galley(
                         egui::pos2(
                             region.center().x-galley.size().x/2.0,
