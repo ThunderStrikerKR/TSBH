@@ -682,6 +682,49 @@ pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
     pressed
 }
 
+/// Select a row in an editor's left-hand list. This is NOT a table
+/// record: it has a 14pt item title and a separate 12pt state caption,
+/// following the original 48pt message-template chooser hierarchy.
+/// Painting is confined to the reserved fixed-height rectangle, so hover
+/// and selected styles never change the following row positions.
+pub fn management_chooser_row(
+    ui:&mut Ui,id:&str,title:&str,status:&str,selected:bool
+)->Response{
+    let width=ui.available_width().max(1.0);
+    let (rect,response)=ui.allocate_exact_size(
+        Vec2::new(width,theme::MANAGEMENT_CHOOSER_ROW_HEIGHT),Sense::click()
+    );
+    let background=if selected {
+        theme::SELECTION.linear_multiply(0.22)
+    }else if response.hovered(){theme::INPUT}else{theme::PANEL};
+    let painter=ui.painter().with_clip_rect(rect);
+    painter.rect_filled(rect,theme::CONTROL_RADIUS as f32,background);
+    if selected{
+        painter.rect_stroke(
+            rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
+            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::SELECTION),
+            egui::StrokeKind::Inside
+        );
+    }
+    let primary=typography::client_table_cell_galley(ui,title,true);
+    let secondary=typography::client_table_metadata_galley(
+        ui,status,theme::MUTED
+    );
+    let lines=primary.size().y+secondary.size().y+theme::SPACE_4;
+    let x=rect.left()+theme::SPACE_12;
+    let y=rect.center().y-lines/2.0;
+    let content_rect=Rect::from_min_max(
+        egui::pos2(x,rect.top()),egui::pos2(rect.right()-theme::SPACE_12,rect.bottom())
+    );
+    let ink=painter.with_clip_rect(content_rect);
+    ink.galley(egui::pos2(x,y),primary,theme::TEXT);
+    ink.galley(
+        egui::pos2(x,y+lines-secondary.size().y),
+        secondary,theme::MUTED
+    );
+    response.on_hover_text(format!("{title} / {status}"))
+}
+
 /// The tier palette belongs to the shared design system. Badge geometry is
 /// painted inside the client column and cannot expand the row's layout.
 fn client_tier_colors(tier:&str)->(Color32,Color32) {
