@@ -16,7 +16,7 @@ use std::{
     sync::{mpsc::{self, Receiver, TryRecvError}, Arc},
 };
 
-const ROW_HEIGHT: f32 = theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
+const ROW_HEIGHT: f32 = theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
 // An expanded detail is a contiguous card + two-button group. Do not cap
 // the card at 780/1140pt: that used to leave a huge empty strip to its right.
 // Give the actions a fixed slot and allocate ALL remaining width to products.
