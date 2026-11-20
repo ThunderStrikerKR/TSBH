@@ -63,14 +63,15 @@ fn attach(
 
 const CORE_CLIENTS_SQL: &str = "SELECT payload FROM core_clients ORDER BY position,id";
 
+/// The name-only client index has a deliberately smaller read budget than
+/// the operational snapshot. Share these limits with the egui JSON index.
+pub const CLIENT_INDEX_MAX_ROWS: usize = 5_000;
+pub const CLIENT_INDEX_MAX_BYTES: usize = 2 * 1024 * 1024;
+
 /// Read only the client master, with strict bounds for the separate
 /// contact-light name index. Unlike the full business snapshot, this query
 /// does not open order, product or pricing tables.
-pub fn read_clients_bounded(
-    conn: &Connection,
-    max_clients: usize,
-    max_bytes: usize,
-) -> Result<Vec<Value>, String> {
+pub fn read_client_index_rows(conn: &Connection) -> Result<Vec<Value>, String> {
     let mut stmt = conn.prepare(CORE_CLIENTS_SQL)
         .map_err(|_| "거래처 목록을 읽을 수 없습니다.".to_owned())?;
     let mut query = stmt.query([])
@@ -79,18 +80,15 @@ pub fn read_clients_bounded(
     let mut bytes = 0usize;
     while let Some(row) = query.next()
         .map_err(|_| "거래처 목록 읽기에 실패했습니다.".to_owned())? {
-        if clients.len() >= max_clients {
-            return Err(format!("거래처 목록이 최대 {max_clients}건을 초과했습니다."));
+        if clients.len() >= CLIENT_INDEX_MAX_ROWS {
+            return Err("거래처 목록이 최대 5,000건을 초과했습니다.".into());
         }
         let raw: String = row.get(0)
             .map_err(|_| "거래처 자료가 손상됐습니다.".to_owned())?;
         bytes = bytes.checked_add(raw.len())
             .ok_or("거래처 목록 크기를 확인할 수 없습니다.")?;
-        if bytes > max_bytes {
-            return Err(format!(
-                "거래처 목록이 최대 {}MB를 초과했습니다.",
-                max_bytes / (1024 * 1024)
-            ));
+        if bytes > CLIENT_INDEX_MAX_BYTES {
+            return Err("거래처 목록이 최대 2MB를 초과했습니다.".into());
         }
         clients.push(serde_json::from_str::<Value>(&raw)
             .map_err(|_| "거래처 JSON 자료가 손상됐습니다.".to_owned())?);
