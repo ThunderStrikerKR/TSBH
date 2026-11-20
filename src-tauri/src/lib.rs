@@ -129,6 +129,11 @@ fn valid_state(s: &Value) -> Result<(), String> {
     Ok(())
 }
 fn write_snapshot(conn: &mut Connection, mut state: Value, expected_revision: u64, validate_orders: bool) -> Result<Value, String> {
+    // Schema v2 has one authoritative writer shared with the egui host.
+    // Keep the original code below only for legacy/pre-migration databases.
+    if relational_store::active(conn)? {
+        return bando_data_access::write_v2_snapshot(conn,state,expected_revision,validate_orders);
+    }
     valid_state(&state)?;
     let tx = conn.transaction().map_err(err)?;
     let current = get_snapshot(&tx)?;
