@@ -575,6 +575,46 @@ impl ExcelManager{
                                         }
                                     }
                                 }
+                                if let Some(state)=state{
+                                    for value in rows(&record["queueEntryIds"]){
+                                        let Some(queue_id)=value.as_str() else{continue};
+                                        let Some(queue)=find(&state["workflow"]["queue"],queue_id)
+                                            else{continue};
+                                        if queue["fileOnly"]!=true{continue;}
+                                        let origin=text(queue,"origin");
+                                        let shipment_id=text(queue,"shipmentId");
+                                        let choices:Vec<(&str,&str,&str)>=if origin=="STORE"{
+                                            vec![(
+                                                "매장 발송 확인","mark_store_sent",
+                                                "이 매장 발송 파일의 상품을 실제 발송했나요? 파일 작성만으로 발송 완료 처리하지 않습니다."
+                                            )]
+                                        }else{
+                                            vec![(
+                                                "실제 공장 전달 확인","mark_factory_delivered",
+                                                "이 발송 파일을 실제 공장에 전달했나요? 실제 전달 여부를 직접 확인한 후에만 전달 완료로 표시합니다."
+                                            ),(
+                                                "전달 전 정정 / 재출력","reopen_unsent_export",
+                                                "아직 공장에 전달하지 않은 출력본을 폐기하고 다시 작성할까요? 기존 출력 이력은 보존됩니다."
+                                            )]
+                                        };
+                                        for (label,action,message) in choices{
+                                            if theme::action(bar,label,
+                                                theme::ButtonRole::Standard,
+                                                !busy&&self.gateway.excel_write_enabled()
+                                            ).clicked(){
+                                                self.pending_confirmation=Some(
+                                                    PendingConfirmation{
+                                                        message:message.into(),
+                                                        action:action.into(),
+                                                        shipment_id:shipment_id.into(),
+                                                        queue_id:queue_id.into(),
+                                                        origin:origin.into(),
+                                                    }
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
                             });
                         });
                     }
@@ -817,5 +857,45 @@ impl ExcelManager{
             });
         }
         if go_settings{self.open_settings=true;}
+        // Existing React confirmations: these transitions represent
+        // actual sending/delivery or reopening an already printed document.
+        let mut accepted=false;
+        let mut dismissed=false;
+        if let Some(confirmation)=self.pending_confirmation.as_ref(){
+            components::modal_backdrop(ui.ctx(),"excel-confirm-backdrop",false);
+            components::decision_window(
+                "발송 상태 확인","excel-existing-status-confirm",ui.max_rect()
+            ).show(ui.ctx(),|dialog|{
+                dialog.label(typography::body(&confirmation.message));
+                dialog.add_space(theme::SPACE_12);
+                dialog.horizontal(|bar|{
+                    if theme::action(bar,"취소",
+                        theme::ButtonRole::Standard,true).clicked(){
+                        dismissed=true;
+                    }
+                    if theme::action(bar,"확인",
+                        theme::ButtonRole::Primary,
+                        !busy&&self.gateway.excel_write_enabled()).clicked(){
+                        accepted=true;
+                    }
+                });
+            });
+        }
+        if dismissed{self.pending_confirmation=None;}
+        if accepted{
+            if let Some(confirm)=self.pending_confirmation.take(){
+                let Some(revision)=self.result.as_ref()
+                    .and_then(|snapshot|snapshot.state["revision"].as_u64()) else{
+                    self.error=Some("업무 DB 리비전을 확인할 수 없습니다.".into());
+                    return;
+                };
+                self.task("workflow",ui.ctx().clone(),move|gateway|{
+                    gateway.mutate_excel_workflow(
+                        revision,&confirm.action,&confirm.shipment_id,
+                        &confirm.queue_id,&confirm.origin,Value::Null
+                    )
+                });
+            }
+        }
     }
 }
