@@ -1633,14 +1633,17 @@ impl FreightManager {
                         let rule=effective.map(|entry|&entry["rule"])
                             .unwrap_or(&Value::Null);
                         let ready=effective.is_some();
-                        // The action column's buttons and labels cannot expand
-                        // their cell, wrap, or shift the other five columns.
-                        let actions_rect=cells[5].shrink2(egui::vec2(6.0,0.0));
+                        // In the 144pt Settings cell, keep equal 12pt
+                        // left/right insets around the complete action.
+                        // The button stays within this 120pt slot; no
+                        // table/card edge or neighboring column moves.
+                        let actions_rect=cells[5].shrink2(
+                            egui::vec2(theme::SPACE_12,0.0)
+                        );
                         let actions_clip=actions_rect.intersect(row.clip_rect());
-                        // Center the single "기본 운임 설정" action on the
-                        // "설정" column's x-axis without stretching its 34pt
-                        // height to the full 42pt row. Main-axis justification
-                        // fills the existing inset cell width ONLY.
+                        // Center the single "기본 운임 설정" action within
+                        // the 120pt inset slot, preserving its 34pt height
+                        // inside the 42pt row. Only the slot is justified.
                         // Preserve the original two-button layout if the
                         // legacy "기준 변경" action is also present.
                         let action_layout=if rule.is_object(){
