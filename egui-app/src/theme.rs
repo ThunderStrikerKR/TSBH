@@ -198,12 +198,24 @@ pub const FAMILY_FOOTER_HEIGHT:f32 = 68.0;
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
+// The three-column dealer list has its own content minimum (30/38/32).
+// Do not force freight/product's 1320pt table width onto the client list.
+pub const MANAGEMENT_CLIENT_TABLE_MIN_WIDTH: f32 = 900.0;
 // React shipping.css constrains lengthy freight lists to a 60vh scroll
 // region; native management tables keep both axes inside that region.
 pub const MANAGEMENT_TABLE_VIEWPORT_FRACTION: f32 = 0.60;
 pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
 // Width reserved for the two original client-list actions on one toolbar row.
 pub const MANAGEMENT_TOOLBAR_ACTIONS_WIDTH: f32 = 276.0;
+// Existing React TierBadge palette; color is display-only, never a pricing rule.
+pub const CLIENT_TIER_WHOLESALE_BG: Color32 = Color32::from_rgb(35,76,55);
+pub const CLIENT_TIER_WHOLESALE_TEXT: Color32 = Color32::from_rgb(166,237,192);
+pub const CLIENT_TIER_SEMI_BG: Color32 = Color32::from_rgb(83,69,28);
+pub const CLIENT_TIER_SEMI_TEXT: Color32 = Color32::from_rgb(255,227,147);
+pub const CLIENT_TIER_RETAIL_BG: Color32 = Color32::from_rgb(84,44,48);
+pub const CLIENT_TIER_RETAIL_TEXT: Color32 = Color32::from_rgb(255,178,185);
+pub const CLIENT_TIER_SPECIAL_BG: Color32 = Color32::from_rgb(68,48,92);
+pub const CLIENT_TIER_SPECIAL_TEXT: Color32 = Color32::from_rgb(218,181,255);
 pub const MANAGEMENT_MODAL_BODY_MAX_HEIGHT: f32 = 670.0;
 pub const MANAGEMENT_CLIENT_COLS: [f32; 3] = [0.30, 0.38, 0.32];
 pub const MANUAL_TABLE_MIN_WIDTH: f32 = 1180.0;
@@ -284,6 +296,17 @@ pub fn section_frame() -> Frame {
         .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
         .corner_radius(CornerRadius::same(PANEL_RADIUS))
         .inner_margin(SECTION_PADDING)
+}
+
+/// Search toolbar and table belong to a single management list card.
+/// The card provides only its outline; its toolbar owns inner padding,
+/// and rows can span the full width without a second 16pt inset.
+pub fn management_list_frame() -> Frame {
+    Frame::new()
+        .fill(PANEL)
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
+        .corner_radius(CornerRadius::same(PANEL_RADIUS))
+        .inner_margin(FRAME_STROKE_WIDTH as i8)
 }
 
 /// The same outer gutter for Reception and every management page:
