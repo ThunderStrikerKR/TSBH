@@ -187,14 +187,16 @@ pub const MANAGEMENT_TAB_HEIGHT: f32 = 38.0;
 // with Freight > Shipping Group Assignment (the approved reference).
 // The offset starts at the management page's content origin, not at the
 // window origin, so resizing the Kakao pane never changes its alignment.
-// Keep the title line and inter-block spacing explicit: page heading,
-// 12pt gap, 38pt tabs, 16pt gap, 80pt freight summary and 16pt gap.
+// The approved Freight > Shipping Group Assignment uses the ACTUAL
+// management-page title inset (16pt total including the 6pt workspace
+// gutter), then 8pt title-to-tabs, 12pt tabs-to-KPIs and 16pt KPIs-to-card.
+// The three top-content frames also each advance the parent by the default
+// 8pt item spacing. Do not revive the older 12pt/16pt pre-title-inset layout.
 pub const MANAGEMENT_REFERENCE_HEADING_LINE_HEIGHT: f32 =
     typography::FONT_PAGE_HEADING + 8.0;
 pub fn management_primary_card_top_offset(available_width: f32) -> f32 {
-    // KPI cards live on the approved 16pt content guide, so their true
-    // horizontal room excludes both insets. Use the SAME width here to
-    // reserve the correct number of wrapped KPI rows in narrow split panes.
+    // KPIs are inset 16pt on each side. Wrapped rows must use this same
+    // interior width or the reference card jumps at narrow split widths.
     let card_content_width=(available_width-2.0*SECTION_PADDING).max(0.0);
     let cards_per_row = (((card_content_width + SPACE_8) /
         (FREIGHT_SUMMARY_CARD_WIDTH + SPACE_8)).floor() as usize).clamp(1, 4);
@@ -202,7 +204,8 @@ pub fn management_primary_card_top_offset(available_width: f32) -> f32 {
     let summary_height = rows as f32 * FREIGHT_SUMMARY_CARD_HEIGHT
         + rows.saturating_sub(1) as f32 * SPACE_8;
     MANAGEMENT_REFERENCE_HEADING_LINE_HEIGHT
-        + SPACE_12 + MANAGEMENT_TAB_HEIGHT + SPACE_16
+        + (SPACE_16-PANEL_GAP) + SPACE_8
+        + MANAGEMENT_TAB_HEIGHT + SPACE_12
         + summary_height + SPACE_16 + SPACING * 3.0
 }
 
@@ -725,16 +728,16 @@ mod management_primary_card_geometry_tests {
     #[test]
     fn standard_workspace_matches_freight_primary_card_anchor() {
         // Title + tabs + four single-row KPI cards + their shared spacing.
-        assert!((management_primary_card_top_offset(1200.0)-214.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(1200.0)-216.0).abs()<0.01);
     }
 
     #[test]
     fn narrower_workspaces_reserve_space_for_wrapped_freight_kpis() {
-        assert!((management_primary_card_top_offset(650.0)-302.0).abs()<0.01);
-        assert!((management_primary_card_top_offset(250.0)-478.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(650.0)-304.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(250.0)-480.0).abs()<0.01);
         // A 950pt pane fits four cards before the 16pt + 16pt page inset,
         // but only three inside it; reserve the wrapped second row.
-        assert!((management_primary_card_top_offset(950.0)-302.0).abs()<0.01);
-        assert!((management_primary_card_top_offset(968.0)-214.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(950.0)-304.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(968.0)-216.0).abs()<0.01);
     }
 }
