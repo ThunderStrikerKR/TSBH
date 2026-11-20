@@ -3004,6 +3004,36 @@
         "notApplicable": "KakaoTalk window layout, freight, order matching, OCR: no relevant source change",
         "pending": "Live Windows GUI intentionally excluded by user policy. Full process egui -> Tauri product helper was not separately launched for brand; backend direct-helper patch -> native SQLite tested. Operating DB untouched. No required source-level or narrow test failures remain for current brand scope."
       }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-CLIENT-MANAGER-UI-CLEANUP",
+      "scope": "거래처관리 Rust egui 목록·검색·상세입력 UI 정렬 (React 실제 CSS 대조)",
+      "status": "SOURCE_PATCHED_STATIC_PASS_BUILD_PENDING",
+      "description": "src/ClientManager.tsx+ManagementUI.TierBadge+styles/management-layout.css/client-editor.css의 실제 UI 기준으로 egui 거래처관리 디자인 정리. 전체 작업공간 6pt 외곽 기준 유지. 3열 30/38/32 표의 1320pt 강제 스크롤을 해당 목록 전용 900pt 최소폭으로 축소(나머지 표 토큰 유지), 단일 카드 내 검색/버튼과 목록 배치, 좁은 카카오 분할 폭에서 검색-버튼 두 줄 배치, 도매/반도매/소매/특수 원본 팔레트 배지, 거래조건 보조문구 및 긴 데이터 툴팁, 연락처 미등록/빈 목록 안내, 모달 필드 사이 4pt 및 ComboBox 열 폭 맞춤. Rust ClientCandidates/mutate_client_master 검색·저장·revision·상세창 이탈 계약과 미이전 Excel/자동메시지 탭 비활성 상태 유지. 관련 없는 페이지와 운영 DB 변경 없음.",
+      "evidence": [
+        "src/ClientManager.tsx",
+        "src/ManagementUI.tsx",
+        "src/styles/management-layout.css",
+        "src/styles/client-editor.css",
+        "src/ui/design-system.json",
+        "egui-app/src/client_manager.rs",
+        "egui-app/src/components.rs",
+        "egui-app/src/theme.rs",
+        "docs/egui-ui-design-contract.md",
+        "docs/management-layout-rules.md"
+      ],
+      "gates": {
+        "patch": "PASS: shared theme/list tokens d83c5ffa2c588b377ef7ca60bfe63bf4eb2f4d32, compact toolbar bbfe96871bcfe21729c709612fb79cce3e739227; tier badge row b60fc9d7c7f68c9ee204b30ef818e032c88a5e8f; list layout 6d405e11bf680e8856d262b2dc93e9377372d85a; modal control width 9c2e304353e208790c96376bd67f2e59c8ce45b9; contact empty state 6b0f98445fb3c92ab17306c905d1dd6ee86d8bbe; contract 7a358021524ea03201a666bba86e315b2f4990ba.",
+        "static": "PASS: 17 scoped assertions against latest React actual TSX/CSS, theme, current egui sources. management_row call sites only 2 and both updated, original Rust search/mutate and modal confirm preserved, same 30/38/32 column shares and original TierBadge colors.",
+        "unit": "NOT EXECUTED: visual-only change, no new Rust business logic; targeted action checks not run.",
+        "ci": "PENDING: current main Tauri CLI build workflow queued/in progress at last lookup, no PASS claimed.",
+        "windows": "SKIPPED: per user-excluded Windows GUI direct verification."
+      },
+      "clauses": {
+        "applicable": "0-1~0-7, 1-5, 6-11, 16-23, 27-32, 47-54, 57-61",
+        "notApplicable": "Kakao native HWND movement, price/freight/order calculations and SQLite writing unchanged; test-only Windows GUI excluded.",
+        "pending": "React 자동 메시지 편집과 Excel 거래처 관리 are not yet migrated; no UI-only change purports to activate them."
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
