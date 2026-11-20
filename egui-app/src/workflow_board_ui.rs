@@ -134,6 +134,10 @@ fn workflow_card<R>(
             theme::WORKFLOW_CARD_PADDING_Y as i8
         ));
     let response=frame.show(ui,|card|{
+        // The surrounding list has zero automatic vertical spacing so
+        // adjacent cards use the exact 4pt gap token. Restore normal
+        // spacing INSIDE each card (header/action/content rows).
+        card.spacing_mut().item_spacing.y=theme::SPACING;
         card.set_min_width(
             (outer-theme::WORKFLOW_CARD_PADDING_X*2.0
                 -theme::SOFT_DIVIDER_WIDTH*2.0).max(0.0)
@@ -591,6 +595,10 @@ pub fn show(
     snapshot:Option<&BoardSnapshot>,
     drafts:&[WorkingReception],active_id:Option<&str>,state:&mut BoardUi
 )->Option<Event>{
+    // Prevent implicit vertical item spacing from doubling the explicit
+    // WORKFLOW_CARD_GAP between order bundles. This is scoped to the list
+    // inside its own ScrollArea; workflow_card restores internal spacing.
+    ui.spacing_mut().item_spacing.y=0.0;
     let mut event=None;
     let mut trigger=None;
     let mut overlay=None;
