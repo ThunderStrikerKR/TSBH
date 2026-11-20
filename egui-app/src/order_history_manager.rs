@@ -776,6 +776,14 @@ impl OrderHistoryManager {
             let snapshot=self.snapshot.as_ref();
             let lines=snapshot.map(|data|display_lines(data,&self.expanded,self.sort))
                 .unwrap_or_default();
+            let empty_message=if self.snapshot.as_ref()
+                .is_some_and(|data|data.rows.is_empty()){
+                Some(if self.query.is_empty()
+                    && self.date_from.is_empty()&&self.date_to.is_empty()
+                    && self.date_basis==HistoryDateBasis::Reception{
+                    "저장된 주문이 없습니다."
+                }else{"조건에 맞는 주문이 없습니다."})
+            }else{None};
             // Use the exact remaining primary-card height. The old 60vh
             // cap left a dark blank strip beneath long order histories.
             let card_inner_bottom=section.min_rect().top()+card_min_height;
@@ -830,6 +838,12 @@ impl OrderHistoryManager {
                                         &self.expanded,&widths,&mut pending_toggle);
                                 }
                             });
+                    }
+                    // Put the empty message inside the scrollable table,
+                    // like Freight; placing it after a full-height ScrollArea
+                    // would extend the entire outer card past the page bottom.
+                    if let Some(message)=empty_message{
+                        body.label(typography::caption(message));
                     }
                 });
             let left=header_origin.unwrap_or(head_rect.left()-output.state.offset.x);
@@ -886,18 +900,9 @@ impl OrderHistoryManager {
                     egui::pos2(head_rect.left(),
                         head_rect.bottom()-header_outline_height),
                     head_rect.right_bottom()
-                ),0.0,theme::BORDER
+                ),0.0,theme::TABLE_HEADER_OUTLINE
             );
             section.spacing_mut().item_spacing.y=old_gap;
-            if self.snapshot.as_ref().is_some_and(|s|s.rows.is_empty()) {
-                theme::management_list_strip_frame().show(section,|empty|{
-                    empty.label(typography::caption(if self.query.is_empty()
-                        && self.date_from.is_empty()&&self.date_to.is_empty()
-                        && self.date_basis==HistoryDateBasis::Reception{
-                        "저장된 주문이 없습니다."
-                    }else{"조건에 맞는 주문이 없습니다."}));
-                });
-            }
             if let Some(order_id)=pending_toggle {
                 if !self.expanded.insert(order_id.clone()){
                     self.expanded.remove(&order_id);
