@@ -374,3 +374,68 @@ fn native_model_group_sqlite_roundtrip_and_stale_editor_conflict() {
     assert_eq!(get_snapshot(&final_conn).unwrap(),removed);
     drop(final_conn);
 }
+
+
+/// Alias UI -> original catalog_clients::save_alias -> same revision-checked
+/// Tauri SQLite writer. No fake backend, no operating DB mutation.
+#[test]
+fn native_alias_sqlite_save_correction_and_stale_editor_rejection() {
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let before=get_snapshot(&conn).expect("production SQLite initial snapshot");
+    let p=before["products"].as_array().unwrap().iter()
+        .find(|p|p["active"]!=false&&
+            p["variants"].as_array().is_some_and(|v|v.len()==1))
+        .expect("registered seeded product");
+    let pid=p["id"].as_str().unwrap();
+    let revision=before["revision"].as_u64().unwrap();
+    let request=json!({
+        "expectedRevision":revision,"action":"save_alias",
+        "data":{"record":{
+            "id":"","text":"별칭통합검증_가상표기_001",
+            "productId":pid,"clientId":null
+        }}
+    });
+    let response=egui_product_bridge::patch(&mut conn,&request)
+        .expect("the actual egui Tauri helper must save alias through Rust");
+    let first=get_snapshot(&conn).unwrap();
+    assert_eq!(response["revision"],json!(revision+1));
+    assert_eq!(first["revision"],response["revision"]);
+    let record=first["aliases"].as_array().unwrap().iter()
+        .find(|v|v["text"]=="별칭통합검증_가상표기_001").unwrap();
+    let alias_id=record["id"].as_str().unwrap().to_owned();
+    assert_eq!(record["productId"],pid);
+    assert_eq!(record["variantId"],p["variants"][0]["id"]);
+    assert!(record["clientId"].is_null());
+    assert!(record["createdAt"].is_string());
+    assert_eq!(first["products"],before["products"]);
+    assert_eq!(first["orders"],before["orders"]);
+
+    // Edit same alias ID without creating a duplicate row.
+    let correction=json!({
+        "expectedRevision":revision+1,"action":"save_alias",
+        "data":{"record":{
+            "id":alias_id,
+            "text":"별칭통합검증_수정_002",
+            "productId":pid,"clientId":null
+        }}
+    });
+    egui_product_bridge::patch(&mut conn,&correction).unwrap();
+    let corrected=get_snapshot(&conn).unwrap();
+    assert_eq!(corrected["aliases"].as_array().unwrap().len(),
+        before["aliases"].as_array().unwrap().len()+1);
+    assert_eq!(corrected["aliases"].as_array().unwrap()
+        .iter().find(|v|v["id"]==alias_id).unwrap()["text"],
+        "별칭통합검증_수정_002");
+
+    // Another alias editor carrying the obsolete revision is refused.
+    let error=egui_product_bridge::patch(&mut conn,&request)
+        .expect_err("stale alias editor must never overwrite a newer alias");
+    assert!(error.contains("다른 작업에서 상품 데이터가 수정"));
+    assert_eq!(get_snapshot(&conn).unwrap(),corrected,
+        "failed stale write must leave revisions, aliases and orders untouched");
+    drop(conn);
+
+    let reopen=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopen).unwrap(),corrected);
+    drop(reopen);
+}
