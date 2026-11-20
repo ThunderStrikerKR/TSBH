@@ -167,6 +167,81 @@ pub fn create(origin:&str,ids:&[String])->Result<Value,String>{
         "Excel 파일은 저장됐지만 출력 이력 기록에 실패했습니다. 이 파일을 사용하지 마세요: {saved} / {e}"
     ))
 }
+/// Only actions exposed by the original React Excel queue/history are
+/// accepted. The original Rust reducer and workflow validator remain the
+/// single authority. One SQLite CAS commit follows its verified output.
+pub fn workflow_action(
+    expected:u64,action:&str,shipment_id:&str,queue_id:&str,value:Value
+)->Result<Value,String>{
+    if !writable(){return Err("Excel 관리 변경 권한이 없습니다.".into())}
+    if !matches!(action,
+        "record_actual_freight"|"restore_shipment"|"mark_store_sent"|
+        "mark_factory_delivered"|"reopen_unsent_export"){
+        return Err("Excel 관리에서 허용되지 않은 업무 변경입니다.".into())
+    }
+    let mut db=conn()?;
+    let state=bando_data_access::read_v2_snapshot(&db)?;
+    let revision=state["revision"].as_u64().ok_or("업무 DB revision 누락")?;
+    if revision!=expected{
+        return Err("다른 작업에서 업무 데이터가 변경되었습니다. 목록을 다시 확인하세요.".into())
+    }
+    let now=Local::now().to_rfc3339();
+    let actor=state["settings"]["operatorName"].as_str().unwrap_or("").trim();
+    let actor=if actor.is_empty(){"사용자(이름 미설정)"}else{actor};
+    let before=state.clone();
+    let mut source=state;
+    if action=="restore_shipment"{
+        // Original nativeReconcileWorkflow call precedes restore_shipment,
+        // but NOT mark_store_sent nor direct actual-freight recording.
+        let count=(12*source["workflow"]["shipments"].as_array().map_or(0,Vec::len)
+            +8*source["orders"].as_array().map_or(0,Vec::len)+64).max(256);
+        if count>15_000{return Err("재검증 이벤트가 너무 많습니다.".into())}
+        let ids=(0..count).map(|_|Uuid::new_v4().to_string()).collect::<Vec<_>>();
+        source=crate::gateway::rules::execute(
+            "reconcile_workflow",json!({
+                "state":&source,"now":now,"eventIds":ids
+            })
+        )?["state"].clone();
+    }
+    let payload=if matches!(action,"mark_factory_delivered"|"reopen_unsent_export"){
+        json!({"state":&source,"action":action,"shipmentId":shipment_id,
+            "now":now,"ids":(0..3).map(|_|Uuid::new_v4().to_string())
+                .collect::<Vec<_>>()})
+    }else{
+        json!({
+            "state":&source,"action":action,
+            "shipmentId":shipment_id,"queueId":queue_id,
+            "origin":if action=="record_actual_freight"{"FACTORY"}else{""},
+            "value":value,"now":now,"actor":actor,
+            "eventId":Uuid::new_v4().to_string(),
+            "auditEventIds":(0..2048)
+                .map(|_|Uuid::new_v4().to_string()).collect::<Vec<_>>(),
+            "newGroupId":Uuid::new_v4().to_string(),
+            "confirmationId":Uuid::new_v4().to_string(),
+            "noticeId":Uuid::new_v4().to_string(),
+        })
+    };
+    let operation=if matches!(action,"mark_factory_delivered"|"reopen_unsent_export"){
+        "apply_correction_action"
+    }else{"apply_workflow_action"};
+    let result=crate::gateway::rules::execute(operation,payload)?;
+    let next=result["state"].clone();
+    crate::gateway::rules::execute("validate_workflow",
+        json!({"state":&next,"before":&before}))?;
+    let mut new=next;
+    new["revision"]=json!(revision);
+    let committed=bando_data_access::write_v2_snapshot(&mut db,new,revision,true)?;
+    let current=committed["revision"].as_u64().ok_or("업무 저장 revision 누락")?;
+    drop(db);
+    let fresh=business_state::load()?;
+    if fresh["revision"].as_u64()!=Some(current){
+        return Err("업무 변경은 저장됐지만 최신 데이터가 달라졌습니다. 재조회하세요.".into())
+    }
+    let shipment_reads=crate::gateway::rules::execute("read_shipments",
+        json!({"state":&fresh}))?;
+    Ok(json!({"state":fresh,"shipmentReads":shipment_reads,"action":action}))
+}
+
 pub fn open_file(id:&str)->Result<(),String>{
     let state=business_state::load()?;
     let path=recorded_export::resolve_export_path(&state,id)?;
