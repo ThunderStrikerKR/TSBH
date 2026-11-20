@@ -434,53 +434,25 @@ fn validate_color_guidance(state: &Value) -> Result<(), String> {
 fn apply_settings_patch(
     conn: &mut Connection, is_test: bool, changes: &Value, expected: &Value
 ) -> Result<Value, String> {
-    let changes = changes.as_object().ok_or("설정 변경 형식 오류")?;
-    let expected = expected.as_object().ok_or("설정 기준값 형식 오류")?;
-    if changes.is_empty() { return get_snapshot(conn); }
-    if is_test && (changes.contains_key("excelDirectory") || changes.contains_key("factoryReplyDirectory") || changes.contains_key("orderImageInboxDirectory")) {
-        return Err("격리 작업공간의 Excel 보관 경로는 변경할 수 없습니다.".into());
+    // Schema v2 writes use the SAME native Rust transaction as egui.
+    // Older databases keep Tauri's migration-compatible snapshot writer,
+    // but the field CAS and all business rules are still shared.
+    if relational_store::active(conn)? {
+        return bando_data_access::patch_settings_v2(conn,is_test,changes,expected);
     }
-    let allowed = ["senderPostcode", "excelDirectory", "factoryReplyDirectory", "orderImageInboxDirectory",
-        "colorGuidanceGroups", "automaticMessageTemplates", "provisionalProductNotices", "kakaoTitleMappings", "kakaoTitleEnabled",
-        "panelRatios", "receptionVerticalRatio", "operatorName", "uiScale", "accounts",
-        "defaultAccountId", "senderName", "senderAddress", "senderPhone", "senderMobile",
-        "rounding", "brandAccounts", "specialPolicy"];
-    let mut state = get_snapshot(conn)?;
-    let revision = state["revision"].as_u64().unwrap_or(0);
-    for (field, updated) in changes {
-        if !allowed.contains(&field.as_str()) || !expected.contains_key(field) {
-            return Err("허용되지 않은 설정 변경이거나 기준값이 누락되었습니다.".into());
-        }
-        let before = state["settings"].get(field.as_str()).unwrap_or(&Value::Null);
-        if before != &expected[field] && before != updated {
-            return Err(format!("{} 설정이 다른 화면에서 수정됐습니다. 다시 불러온 뒤 저장하세요.",field));
-        }
+    let state=get_snapshot(conn)?;
+    if changes.as_object().is_some_and(serde_json::Map::is_empty){
+        return Ok(state);
     }
-    {
-        let settings = state["settings"].as_object_mut().ok_or("설정 데이터 오류")?;
-        for (field, updated) in changes {
-            if updated.is_null() { settings.remove(field); }
-            else { settings.insert(field.clone(), updated.clone()); }
-        }
-    }
-    if changes.contains_key("colorGuidanceGroups") {
-        // Canonical model-group policy is the same native business engine
-        // used by the editor. Do not reject new SKU-based groups using the
-        // legacy color/price-group validation rules.
-        business_core::catalog_clients::execute(
-            "validate_model_groups", json!({"state":&state})
-        )?;
-    }
-    if changes.contains_key("automaticMessageTemplates") { bando_data_access::validate_message_templates(&state)?; }
-    if changes.contains_key("provisionalProductNotices") { bando_data_access::validate_provisional_product_notices(&state)?; }
-    if ["accounts", "defaultAccountId", "brandAccounts"].iter().any(|k| changes.contains_key(*k)) {
-        validate_accounts(&state)?;
-    }
-    write_snapshot(conn, state, revision, true)
+    let revision=state["revision"].as_u64().ok_or("운영 DB revision 오류")?;
+    let updated=bando_data_access::apply_settings_changes(
+        state,is_test,changes,expected
+    )?;
+    write_snapshot(conn,updated,revision,true)
 }
 
-/// The existing Tauri command and the opt-in native egui helper share
-/// EXACTLY the same validation, per-field CAS and revision-checked writer.
+/// React/Tauri and native egui share the same settings validation,
+/// per-field CAS and revision-checked v2 SQLite writer.
 #[tauri::command]
 fn settings_patch(
     db: State<'_, Database>, changes: Value, expected: Value
