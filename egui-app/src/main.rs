@@ -4006,6 +4006,7 @@ impl eframe::App for BandoEgui {
             self.show_manual_workspace(ctx,work_area);
         } else if self.page==Page::History {
             if let Some(history)=self.order_history_manager.as_mut(){
+                history.show_order_detail_modal(ctx,work_area);
                 history.show_memo_modal(ctx,work_area);
             }
         } else if self.page==Page::Settings {
