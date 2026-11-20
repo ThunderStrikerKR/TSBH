@@ -482,7 +482,7 @@ fn history_shipment_logistics(shipment:Option<&Value>)->(String,String){
 }
 fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
     expanded:&BTreeSet<String>,widths:&[f32;7],pending_toggle:&mut Option<String>,
-    pending_memo:&mut Option<MemoEditor>){
+    pending_memo:&mut Option<MemoEditor>,pending_detail:&mut Option<String>){
     let area=rect.intersect(ui.clip_rect());
     let order_index=match line{
         HistoryLine::Order(i)|HistoryLine::Recipient(i,_,_)=>i,
@@ -587,20 +587,26 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 ui.make_persistent_id(("history-payment-confirmation",id)),
                 Sense::hover()).on_hover_text(approval_help);
             let message=field(&row["display"],"trackingMessage");
-            // Match the action inset of the Freight Settings column.
-            // No expansion of the table or the fixed 42pt row height.
+            // Both order-level actions stay in the 42pt parent row.
+            // The frequent whole-order copy is FIRST and remains identical
+            // to the original Rust-generated trackingMessage.
             let control=columns[6].shrink2(
-                Vec2::new(theme::SPACE_12,theme::SPACE_4)
+                Vec2::new(theme::SPACE_8,theme::SPACE_4)
             );
             ui.scope_builder(UiBuilder::new()
-                .id_salt(("order-history-copy",id))
+                .id_salt(("order-history-actions",id))
                 .max_rect(control)
                 .layout(egui::Layout::left_to_right(Align::Center)
                     .with_main_justify(true)),|actions|{
                     actions.set_clip_rect(control.intersect(area));
+                    actions.spacing_mut().item_spacing.x=theme::SPACE_4;
                     if theme::action(actions,"운송장 복사",
                         theme::ButtonRole::TableSecondary,!message.is_empty()).clicked(){
                         actions.ctx().copy_text(message.to_owned());
+                    }
+                    if theme::action(actions,"발주서 상세",
+                        theme::ButtonRole::TableSecondary,true).clicked(){
+                        *pending_detail=Some(id.to_owned());
                     }
                 });
         },
@@ -985,6 +991,7 @@ pub struct OrderHistoryManager {
     to_month:NaiveDate,
     expanded:BTreeSet<String>,
     sort:Option<Sort>,
+    detail_order_id:Option<String>,
     memo_editor:Option<MemoEditor>,
     memo_save_job:Option<MemoSaveJob>,
     memo_error:Option<String>,
@@ -1002,6 +1009,7 @@ impl OrderHistoryManager {
             to_month:month_start(NaiveDate::parse_from_str(&today,"%Y-%m-%d")
                 .expect("today in YYYY-MM-DD")),
             expanded:BTreeSet::new(),sort:None,
+            detail_order_id:None,
             memo_editor:None,memo_save_job:None,memo_error:None,
         };
         manager.refresh(ctx);
@@ -1305,6 +1313,7 @@ impl OrderHistoryManager {
             let mut header_origin=None;
             let mut pending_toggle=None;
             let mut pending_memo=None;
+            let mut pending_detail=None;
             let snapshot=self.snapshot.as_ref();
             let lines=snapshot.map(|data|display_lines(data,&self.expanded,self.sort))
                 .unwrap_or_default();
@@ -1419,7 +1428,7 @@ impl OrderHistoryManager {
                                         if let Some(snapshot)=snapshot {
                                             draw_line(row_ui,row_rect,line,snapshot,
                                                 &self.expanded,&widths,&mut pending_toggle,
-                                                &mut pending_memo);
+                                                &mut pending_memo,&mut pending_detail);
                                         }
                                         if matches!(line,HistoryLine::Order(_)) {
                                             paint_column_dividers(
@@ -1528,6 +1537,9 @@ impl OrderHistoryManager {
             if let Some(editor)=pending_memo {
                 self.memo_editor=Some(editor);
                 self.memo_error=None;
+            }
+            if let Some(order_id)=pending_detail {
+                self.detail_order_id=Some(order_id);
             }
         });
     }
