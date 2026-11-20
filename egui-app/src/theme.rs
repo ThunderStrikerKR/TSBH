@@ -91,9 +91,15 @@ pub const BRAND_ICON_OPTICAL_CENTER_Y: f32 = 2.0;
 pub const BRAND_WORDMARK_GAP: f32 = 3.0;
 pub const HEADER_DRAG_STRIP: f32 = 8.0;
 pub const SECTION_PADDING: f32 = SPACE_16;
+// Reception's title row is deliberately compact. Left/right inset stays
+// 16pt, but the top/bottom inset is 8pt; these tokens do not affect the
+// Settings card or its typography.
+pub const RECEPTION_PANE_PADDING_Y: f32 = SPACE_8;
 pub const NESTED_PADDING: f32 = SPACE_12;
-pub const SECTION_HEADER_HEIGHT: f32 = 38.0;
-pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
+// The 34pt title row still fully accommodates the standard "+ 새 주문"
+// button and other header controls without shortening their labels.
+pub const SECTION_HEADER_HEIGHT: f32 = 34.0;
+pub const SECTION_CONTENT_GAP: f32 = SPACE_4;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 // React recipient detail grid: full-width rows and paired contact cells.
@@ -267,15 +273,20 @@ pub fn workspace_shell_frame() -> Frame {
 }
 
 /// Reception's large fixed regions are WORKSPACE (CANVAS), not cards.
-/// The pane dividers already define their boundaries. Do not introduce
-/// card strokes, rounding or outer gaps here. Keep the established 16pt
-/// content inset and splitter coordinates intact.
+/// Their dividers own the borders. Preserve the 16pt horizontal inset and
+/// exact splitter geometry, but use an 8pt vertical inset so section titles
+/// do not waste height above and below their actual line boxes.
 pub fn docked_pane_frame() -> Frame {
     Frame::new()
         .fill(CANVAS)
         .stroke(Stroke::NONE)
         .corner_radius(CornerRadius::same(0))
-        .inner_margin(SECTION_PADDING)
+        .inner_margin(egui::Margin {
+            left: SECTION_PADDING as i8,
+            right: SECTION_PADDING as i8,
+            top: RECEPTION_PANE_PADDING_Y as i8,
+            bottom: RECEPTION_PANE_PADDING_Y as i8,
+        })
 }
 
 /// The reserved KakaoTalk area is also workspace, whether connected or
