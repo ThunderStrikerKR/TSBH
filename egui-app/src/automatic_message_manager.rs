@@ -300,8 +300,8 @@ impl AutomaticMessageManager {
     }
     pub fn has_confirmation(&self)->bool{self.pending.is_some()}
     pub fn global_leave_in_progress(&self)->bool{
-        matches!(self.pending,Some(Destination::GlobalPage))
-            ||matches!(self.after_save,Some(Destination::GlobalPage))
+        matches!(self.pending.as_ref(),Some(Destination::GlobalPage))
+            ||matches!(self.after_save.as_ref(),Some(Destination::GlobalPage))
     }
     fn discard_active(&mut self){
         match self.section{
