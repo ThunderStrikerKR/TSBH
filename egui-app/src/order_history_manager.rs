@@ -17,12 +17,14 @@ use std::{
 };
 
 const ROW_HEIGHT: f32 = theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
-// Detail product names take extra horizontal room on wider workspaces.
-// Reserve an independent right-hand action area for memo/tracking buttons;
-// longer names still wrap instead of being clipped.
-const DETAIL_BLOCK_MAX_WIDTH: f32 = 1140.0;
-const DETAIL_ACTIONS_MIN_WIDTH: f32 = 240.0;
-const DETAIL_BLOCK_HEIGHT: f32 = ROW_HEIGHT - 3.0 * theme::SPACE_4;
+// An expanded detail is a contiguous card + two-button group. Do not cap
+// the card at 780/1140pt: that used to leave a huge empty strip to its right.
+// Give the actions a fixed slot and allocate ALL remaining width to products.
+const DETAIL_ACTIONS_WIDTH: f32 = 208.0;
+const DETAIL_ACTIONS_GAP: f32 = theme::SPACE_8;
+const DETAIL_RIGHT_INSET: f32 = theme::SPACE_12;
+// A one-line detail card and its adjoining 34pt buttons share a common top.
+const DETAIL_BLOCK_HEIGHT: f32 = theme::ACTION_STANDARD_HEIGHT;
 const EXCEL_ITEM_MARKER: &str = "◆ ";
 const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
@@ -184,6 +186,17 @@ enum HistoryLine {
     Recipient(usize,usize,Option<usize>),
 }
 
+// Expanded order is an accordion: opening a different order closes the
+// previous one; clicking the already-open order collapses it.
+fn toggle_history_expansion(expanded:&mut BTreeSet<String>,order_id:&str){
+    if expanded.len()==1 && expanded.contains(order_id){
+        expanded.clear();
+    }else{
+        expanded.clear();
+        expanded.insert(order_id.to_owned());
+    }
+}
+
 // Determine tree endings from the actual flat display order. This remains
 // correct when one recipient has several shipments or history is sorted.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -206,10 +219,9 @@ fn history_branch(lines:&[HistoryLine],index:usize)->Option<HistoryBranch>{
 // The branch tip and the shipment block share the SAME horizontal anchor.
 fn history_detail_block_rect(row_rect:Rect,widths:&[f32;7])->Rect{
     let left=row_rect.left()+widths[0]-theme::SPACE_4;
-    let width=(row_rect.right()-left-theme::SPACE_12
-        -DETAIL_ACTIONS_MIN_WIDTH)
-        .min(DETAIL_BLOCK_MAX_WIDTH).max(1.0);
-    let block_height=(row_rect.height()-3.0*theme::SPACE_4)
+    let width=(row_rect.right()-left-DETAIL_RIGHT_INSET
+        -DETAIL_ACTIONS_WIDTH-DETAIL_ACTIONS_GAP).max(1.0);
+    let block_height=(row_rect.height()-2.0*theme::SPACE_4)
         .max(DETAIL_BLOCK_HEIGHT);
     Rect::from_min_size(
         egui::pos2(left,row_rect.center().y-block_height/2.0),
@@ -218,6 +230,14 @@ fn history_detail_block_rect(row_rect:Rect,widths:&[f32;7])->Rect{
 }
 // The expanded shipment is a compact standalone summary, not seven table
 // cells stretched across the history grid.
+fn history_detail_actions_rect(row_rect:Rect,block:Rect)->Rect{
+    Rect::from_min_max(
+        egui::pos2(block.right()+DETAIL_ACTIONS_GAP,
+            row_rect.center().y-theme::ACTION_STANDARD_HEIGHT/2.0),
+        egui::pos2(row_rect.right()-DETAIL_RIGHT_INSET,
+            row_rect.center().y+theme::ACTION_STANDARD_HEIGHT/2.0),
+    )
+}
 fn history_detail_cells(block:Rect)->[Rect;4]{
     let content=block.shrink2(Vec2::new(theme::SPACE_12,0.0));
     let recipient=96.0;
@@ -664,12 +684,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             // Actions live OUTSIDE the compact shipment card. Both actions
             // target this one shipment; the order-level copy remains separate.
             let block=history_detail_block_rect(rect,widths);
-            let actions_rect=Rect::from_min_max(
-                egui::pos2(block.right()+theme::SPACE_8,
-                    rect.center().y-theme::ACTION_STANDARD_HEIGHT/2.0),
-                egui::pos2(rect.right()-theme::SPACE_4,
-                    rect.center().y+theme::ACTION_STANDARD_HEIGHT/2.0)
-            );
+            let actions_rect=history_detail_actions_rect(rect,block);
             let memo_text=shipment.map(|s|field(s,"managementMemo")).unwrap_or("");
             ui.scope_builder(UiBuilder::new()
                 .id_salt(("history-shipment-actions",id,recipient_index,shipment_index))
@@ -1032,6 +1047,8 @@ impl OrderHistoryManager {
             self.from_input.clear();self.to_input.clear();
         }
         self.query.clear();
+        // Navigating from Excel must not leave another order expanded.
+        self.expanded.clear();
         self.expanded.insert(id.to_owned());
         self.refresh(ctx);
     }
@@ -1696,9 +1713,7 @@ impl OrderHistoryManager {
             );
             section.spacing_mut().item_spacing.y=old_gap;
             if let Some(order_id)=pending_toggle {
-                if !self.expanded.insert(order_id.clone()){
-                    self.expanded.remove(&order_id);
-                }
+                toggle_history_expansion(&mut self.expanded,&order_id);
             }
             if let Some(editor)=pending_memo {
                 self.memo_editor=Some(editor);
