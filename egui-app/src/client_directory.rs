@@ -65,26 +65,9 @@ fn load_business_from_connection(conn: &rusqlite::Connection) -> Result<(Value, 
     if version != 2 {
         return Err("지원하지 않는 거래처 DB 버전입니다. 운영 DB를 변경하지 않았습니다.".into());
     }
-    let mut stmt = conn.prepare("SELECT payload FROM core_clients ORDER BY position,id")
-        .map_err(|_| "거래처 목록을 읽을 수 없습니다.".to_owned())?;
-    let mut query = stmt.query([])
-        .map_err(|_| "거래처 목록 조회에 실패했습니다.".to_owned())?;
-    let mut clients = Vec::new();
-    let mut size = 0usize;
-    while let Some(row) = query.next()
-        .map_err(|_| "거래처 목록 읽기에 실패했습니다.".to_owned())? {
-        if clients.len() >= MAX_CLIENTS {
-            return Err("거래처 목록이 최대 5,000건을 초과했습니다.".into());
-        }
-        let text: String = row.get(0)
-            .map_err(|_| "거래처 자료가 손상됐습니다.".to_owned())?;
-        size = size.checked_add(text.len()).ok_or("거래처 목록 크기를 확인할 수 없습니다.")?;
-        if size > MAX_CLIENT_INDEX_BYTES as usize {
-            return Err("거래처 목록이 최대 2MB를 초과했습니다.".into());
-        }
-        clients.push(serde_json::from_str::<Value>(&text)
-            .map_err(|_| "거래처 JSON 자료가 손상됐습니다.".to_owned())?);
-    }
+    let clients = bando_data_access::read_clients_bounded(
+        conn, MAX_CLIENTS, MAX_CLIENT_INDEX_BYTES as usize,
+    )?;
     // Only read settings; app_state may also contain other legacy data, which
     // is never selected, projected, or saved here.
     let setting: Option<String> = conn.query_row(
