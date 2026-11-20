@@ -98,7 +98,6 @@ pub struct AliasManager{
 impl AliasManager {
     fn dirty(&self)->bool{self.form!=self.original}
     pub fn has_overlay(&self)->bool{self.product_search||self.pending.is_some()}
-    pub fn block_navigation(&self)->bool{self.product_search||self.pending.is_some()}
     pub fn global_leave_in_progress(&self)->bool{
         self.pending==Some(Exit::Global)||self.after_save==Some(Exit::Global)
     }
