@@ -696,7 +696,7 @@ impl ProductManager {
                         }
                     }
                 });
-        });
+            });
         });
         ui.add_space(theme::SPACE_12);
         if self.adding {
