@@ -89,9 +89,7 @@ fn order_client(row:&Value)->&str{
     row["client"]["name"].as_str().unwrap_or("과거 거래처")
 }
 fn display_client_name(name:&str)->String{
-    let mut chars=name.chars();
-    let shown=chars.by_ref().take(10).collect::<String>();
-    if chars.next().is_some(){format!("{shown}…")}else{shown}
+    name.chars().take(10).collect()
 }
 fn order_items_single_line(row:&Value,expanded:bool)->String{
     let items=rows(&row["recipients"]).iter()
@@ -104,9 +102,6 @@ fn order_items_single_line(row:&Value,expanded:bool)->String{
     let lead=if expanded{"▾"}else{"▸"};
     if items.is_empty(){format!("{lead} 품목 없음")}
     else{format!("{lead} {}",items.join(" / "))}
-}
-fn item_count(row:&Value)->usize{
-    rows(&row["recipients"]).iter().map(|r|rows(&r["items"]).len()).sum()
 }
 fn tracking_metadata(state:&Value)->Value{
     Value::Array(rows(&state["workflow"]["shipments"]).iter().map(|ship|{
@@ -210,6 +205,17 @@ fn cells(origin:Pos2,widths:&[f32;7],height:f32)->[Rect;7]{
         cell
     })
 }
+fn paint_column_dividers(ui:&Ui,rect:Rect,widths:&[f32;7]){
+    let columns=cells(rect.min,widths,rect.height());
+    let painter=ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+    for column in columns.iter().take(6){
+        let x=column.right()+COL_GAP/2.0;
+        painter.line_segment(
+            [egui::pos2(x,rect.top()),egui::pos2(x,rect.bottom())],
+            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+        );
+    }
+}
 fn paint_text(ui:&Ui,rect:Rect,value:&str,emphasized:bool,right:bool){
     if rect.width()<=0.0{return}
     let color=if emphasized{theme::TEXT}else{theme::SECONDARY};
@@ -254,37 +260,21 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
         HistoryLine::Order(_)=>{
             let columns=cells(rect.min,widths,rect.height());
             paint_text(ui,columns[0],&order_date(row),false,false);
-            paint_text(ui,columns[1],order_client(row),true,false);
+            paint_text(ui,columns[1],&display_client_name(order_client(row)),
+                true,false);
             ui.interact(columns[1].intersect(area),
                 ui.make_persistent_id(("history-client-name",id)),Sense::hover())
                 .on_hover_text(order_client(row));
-            let recipients=rows(&row["recipients"]);
-            let first=recipients.first().map(|r|field(r,"name"))
-                .unwrap_or("수취인 미확인");
-            let toggled=expanded.contains(id);
-            let lead=if toggled{"▾"}else{"▸"};
-            let main=format!("{lead} {first} · 배송 {}건 · {}품목",
-                rows(&row["shipmentIds"]).len(),item_count(row));
-            let product_preview=recipients.iter()
-                .flat_map(|r|rows(&r["items"]).iter())
-                .take(2)
-                .map(|item|format!("{} × {}",
-                    model_label(field(item,"name")),
-                    item["quantity"].as_i64().map(|n|n.to_string())
-                        .unwrap_or_else(||"수량 확인".into())))
-                .collect::<Vec<_>>().join(" / ");
-            let remaining=item_count(row).saturating_sub(2);
-            let preview=if remaining>0{format!("{product_preview} 외 {remaining}품목")}
-                else{product_preview};
-            // Exactly one baseline in this column, even with multiple
-            // products. Clip overflow horizontally; the complete value
-            // remains available on hover and by expanding the order.
-            let summary=if preview.is_empty(){main}
-                else{format!("{main} / {preview}")};
+            // Main list: ONLY product name × quantity, all items in one line.
+            // Click anywhere except the action button to expand all details.
+            let summary=order_items_single_line(row,expanded.contains(id));
             paint_text(ui,columns[2],&summary,true,false);
-            let response=ui.interact(columns[2].intersect(area),
+            let open_area=Rect::from_min_max(
+                rect.left_top(),egui::pos2(columns[6].left(),rect.bottom())
+            ).intersect(area);
+            let response=ui.interact(open_area,
                 ui.make_persistent_id(("order-history-toggle",id)),Sense::click())
-                .on_hover_text(summary.as_str());
+                .on_hover_text(format!("{summary}\n클릭하여 수취인·품목·운임 상세보기"));
             if response.clicked(){*pending_toggle=Some(id.to_owned());}
             paint_center(ui,columns[3],field(row,"status"));
             let total=won(&row["total"]);
@@ -313,10 +303,11 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let approval=&row["display"]["employeePaymentConfirmation"];
             let approval_day=field(approval,"date");
             let partial=approval["partial"]==true;
+            // This column is date-only: YYYY-MM-DD maximum. Partial
+            // approvals are distinguished by muted tint and clear tooltip,
+            // never by adding an extra label that widens the date column.
             let approval_label=if approval_day.is_empty(){
                 "미확인".to_owned()
-            }else if partial{
-                format!("일부 {approval_day}")
             }else{
                 approval_day.to_owned()
             };
@@ -326,7 +317,8 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             }else{
                 let actors=rows(&approval["actors"]).iter()
                     .filter_map(Value::as_str).collect::<Vec<_>>().join(", ");
-                format!("직원 입금 확인일: {approval_day}\n승인 배송 건: {}/{}{}",
+                format!("직원 입금 확인일: {approval_day}\n{}\n승인 배송 건: {}/{}{}",
+                    if partial{"일부 배송 건만 승인됨"}else{"전체 배송 건 승인됨"},
                     approval["approvedShipments"].as_u64().unwrap_or(0),
                     approval["totalShipments"].as_u64().unwrap_or(0),
                     if actors.is_empty(){String::new()}
