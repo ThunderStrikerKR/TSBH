@@ -1151,9 +1151,9 @@ impl OrderHistoryManager {
                         body.add_space(theme::SPACE_8);
                         body.label(typography::section_heading("발주 원문"));
                         let raw=field(order,"raw");
-                        body.label(typography::body(&if raw.is_empty(){
-                            "보존된 발주 원문이 없습니다.".to_owned()
-                        }else{raw.to_owned()}));
+                        body.label(typography::body(if raw.is_empty(){
+                            "보존된 발주 원문이 없습니다."
+                        }else{raw}));
                         body.separator();
 
                         body.label(typography::section_heading("입금 처리"));
@@ -1797,22 +1797,36 @@ mod tests{
             .contains('\n'));
     }
     #[test]
-    fn detail_block_starts_at_branch_tip_and_uses_compact_fixed_height(){
+    fn detail_products_expand_without_overlapping_shipment_actions(){
+        // At minimum table width, parent actions remain intact; the detail
+        // product column is already wider than the previous 780pt block.
         let row=Rect::from_min_size(
-            egui::pos2(20.0,70.0),Vec2::new(1200.0,ROW_HEIGHT)
+            egui::pos2(20.0,70.0),Vec2::new(MIN_WIDTH,ROW_HEIGHT)
         );
         let block=history_detail_block_rect(row,&COLS);
         let branch_x=row.left()+COLS[0]-theme::SPACE_12;
         assert_eq!(block.left(),branch_x+theme::SPACE_8);
-        assert_eq!(block.width(),DETAIL_BLOCK_MAX_WIDTH);
         assert_eq!(block.height(),DETAIL_BLOCK_HEIGHT);
         assert_eq!(block.center().y,row.center().y);
+        assert!(block.right()+DETAIL_ACTIONS_MIN_WIDTH
+            +theme::SPACE_12<=row.right()+0.01);
         let fields=history_detail_cells(block);
+        assert!(fields[1].width()>460.0);
         assert!(fields[0].left()>block.left());
         assert!(fields[3].right()<block.right());
         for pair in fields.windows(2) {
             assert!((pair[1].left()-pair[0].right()-theme::SPACE_8).abs()<0.01);
         }
+        // Wide windows now use the whole 1140pt card cap, but never take
+        // space reserved for the adjacent memo/tracking controls.
+        let wide=Rect::from_min_size(
+            row.min,Vec2::new(1700.0,ROW_HEIGHT)
+        );
+        let wide_block=history_detail_block_rect(wide,&COLS);
+        assert_eq!(wide_block.width(),DETAIL_BLOCK_MAX_WIDTH);
+        assert!(history_detail_cells(wide_block)[1].width()>700.0);
+        assert!(wide_block.right()+DETAIL_ACTIONS_MIN_WIDTH
+            +theme::SPACE_12<=wide.right()+0.01);
     }
     #[test]
     fn employee_approval_column_sorts_by_confirmation_date_and_keeps_unknown_last(){
