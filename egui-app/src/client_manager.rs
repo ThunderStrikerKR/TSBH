@@ -344,7 +344,7 @@ impl ClientManager {
         // A single outlined section owns its heading, a stable search/
         // action toolbar, a permanently visible header and its own rows.
         components::align_management_primary_card(ui,page_origin_y);
-        let card_min_height=components::management_primary_card_min_inner_height(ui);
+        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::FRAME_STROKE_WIDTH);
         theme::management_list_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().item_spacing.y=0.0;
