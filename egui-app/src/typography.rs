@@ -28,6 +28,9 @@ pub const FONT_METADATA: f32 = 12.0;
 pub const FONT_MAIN_NAV: f32 = 16.0;
 pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
+// Shared line boxes used for balanced reception guidance geometry.
+pub const SUBSECTION_LINE_HEIGHT: f32 = 21.0;
+pub const METADATA_LINE_HEIGHT: f32 = 18.0;
 
 const EMPHASIS_FAMILY: &str = "bando-ui-emphasis";
 const BRAND_FAMILY: &str = "bando-brand-display";
@@ -97,7 +100,7 @@ fn spec(role: Role) -> TypeSpec {
             color: TEXT, weight: Weight::Emphasis,
         },
         Role::Subsection => TypeSpec {
-            size: FONT_SUBSECTION_HEADING, line: 21.0, tracking: -0.10,
+            size: FONT_SUBSECTION_HEADING, line: SUBSECTION_LINE_HEIGHT, tracking: -0.10,
             color: TEXT, weight: Weight::Emphasis,
         },
         Role::Body => TypeSpec {
@@ -109,7 +112,7 @@ fn spec(role: Role) -> TypeSpec {
             color: SECONDARY, weight: Weight::Emphasis,
         },
         Role::Metadata => TypeSpec {
-            size: FONT_METADATA, line: 18.0, tracking: 0.0,
+            size: FONT_METADATA, line: METADATA_LINE_HEIGHT, tracking: 0.0,
             color: MUTED, weight: Weight::Regular,
         },
         Role::TableHeader => TypeSpec {
