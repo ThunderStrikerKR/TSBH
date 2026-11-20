@@ -467,6 +467,18 @@ pub fn management_list_frame() -> Frame {
         .inner_margin(SECTION_PADDING as i8)
 }
 
+/// A compact, standalone page filter strip for reports that also place
+/// KPI cards above the primary data card. Unlike a large management list,
+/// this filter is not the main content box and should not consume 16pt
+/// vertical padding twice before the reference card anchor.
+pub fn management_compact_filter_frame() -> Frame {
+    Frame::new()
+        .fill(PANEL)
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
+        .corner_radius(CornerRadius::same(PANEL_RADIUS))
+        .inner_margin(egui::Margin::symmetric(SPACE_12 as i8, 0))
+}
+
 /// Vertical spacing for list toolbars and inline statuses; no additional
 /// horizontal inset because management_list_frame now owns the same 16pt
 /// content origin as Freight Assignment. Header and rows stay aligned.
