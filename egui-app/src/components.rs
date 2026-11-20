@@ -915,17 +915,23 @@ pub fn management_dropdown(
          egui::pos2(arrow_left,rect.bottom()-5.0)],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
     );
-    // Center the chevron's full 4pt-high drawing bounds on the trigger's
-    // geometric center, matching the optically centered label beside it.
+    // A V-shaped chevron has more visual weight toward its tip, so its
+    // optical center sits above the trigger's geometric center. Keep its
+    // dimensions and alignment shared across all management dropdowns.
+    const CHEVRON_HALF_WIDTH:f32=5.0;
+    const CHEVRON_HALF_HEIGHT:f32=2.5;
+    const CHEVRON_STROKE:f32=1.8;
+    const CHEVRON_OPTICAL_OFFSET_Y:f32=-1.0;
     let x=rect.right()-15.0;
-    let y=rect.center().y;
+    let y=rect.center().y+CHEVRON_OPTICAL_OFFSET_Y;
+    let left=egui::pos2(x-CHEVRON_HALF_WIDTH,y-CHEVRON_HALF_HEIGHT);
+    let tip=egui::pos2(x,y+CHEVRON_HALF_HEIGHT);
+    let right=egui::pos2(x+CHEVRON_HALF_WIDTH,y-CHEVRON_HALF_HEIGHT);
     painter.line_segment(
-        [egui::pos2(x-4.0,y-2.0),egui::pos2(x,y+2.0)],
-        Stroke::new(1.5,theme::SECONDARY)
+        [left,tip],Stroke::new(CHEVRON_STROKE,theme::SECONDARY)
     );
     painter.line_segment(
-        [egui::pos2(x,y+2.0),egui::pos2(x+4.0,y-2.0)],
-        Stroke::new(1.5,theme::SECONDARY)
+        [tip,right],Stroke::new(CHEVRON_STROKE,theme::SECONDARY)
     );
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
