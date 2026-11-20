@@ -1420,6 +1420,18 @@ impl BandoEgui {
                                         self.freight_pending_save=false;
                                     }else{
                                         // Kakao HWND ownership survives tab changes.
+                                        // A return to freight must re-read staff edits made
+                                        // while the page was not selected.
+                                        if page==Page::Freight && self.page!=Page::Freight {
+                                            if let Some(manager)=self.freight_manager.as_mut(){
+                                                manager.refresh(ctx.clone());
+                                            }
+                                        }
+                                        if self.page==Page::Freight && page!=Page::Freight {
+                                            if let Some(manager)=self.freight_manager.as_mut(){
+                                                manager.discard_drafts();
+                                            }
+                                        }
                                         self.page=page;
                                     }
                                 }
