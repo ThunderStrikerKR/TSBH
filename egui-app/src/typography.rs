@@ -206,6 +206,26 @@ pub fn body(text: &str) -> RichText { render(text, Role::Body) }
 pub fn field_label(text: &str) -> RichText { render(text, Role::FieldLabel) }
 pub fn caption(text: &str) -> RichText { render(text, Role::Metadata) }
 pub fn table_header(text: &str) -> RichText { render(text, Role::TableHeader) }
+
+/// Measured header glyphs for the fixed three-column receipt table.
+/// Unlike Label::halign in Ui::put, this galley is painted at each column's
+/// literal left/right anchor, using the existing bold field-label font.
+pub fn table_header_galley(
+    ui: &egui::Ui, text: &str
+) -> std::sync::Arc<egui::Galley> {
+    let role = spec(Role::TableHeader);
+    let format = egui::TextFormat {
+        font_id: FontId::new(
+            role.size, FontFamily::Name(EMPHASIS_FAMILY.into())
+        ),
+        color: role.color,
+        extra_letter_spacing: role.tracking,
+        line_height: Some(role.line),
+        ..Default::default()
+    };
+    let job = egui::text::LayoutJob::single_section(text.to_owned(), format);
+    ui.fonts_mut(|fonts| fonts.layout_job(job))
+}
 pub fn table_cell(text: &str) -> RichText { render(text, Role::TableCell) }
 pub fn summary_value(text: &str) -> RichText { render(text, Role::SummaryValue) }
 pub fn quantity(text: &str) -> RichText { render(text, Role::Quantity) }
