@@ -27,6 +27,12 @@ pub fn search_products(payload:&Value)->Result<Value,String>{
     native_queries::execute("search_products_with_urls",payload)
 }
 
+/// Use React ProductManager's exact Rust query, not a second egui filter.
+/// The IDs are joined back to catalog rows for display only.
+pub fn management_products(payload:&Value)->Result<Value,String>{
+    native_queries::execute("management_products",payload)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
