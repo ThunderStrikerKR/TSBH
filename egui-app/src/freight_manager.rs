@@ -1145,22 +1145,31 @@ impl FreightManager {
                 egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
                 egui::Sense::hover()
             );
-            let bulk_width=500.0_f32.min(toolbar_rect.width());
-            let left_width=(toolbar_rect.width()-bulk_width-theme::SPACE_16).max(0.0);
+            // Align the far-right Apply button with the last DATA COLUMN,
+            // not the outer card edge: the 10pt scrollbar is not a column.
+            // Keep the same 16pt separation between left and right tools.
+            let toolbar_data_width=(toolbar_rect.width()
+                -section.spacing().scroll.allocated_width()).max(0.0);
+            let bulk_width=500.0_f32.min(toolbar_data_width);
+            let left_width=(toolbar_data_width-bulk_width-theme::SPACE_16).max(0.0);
             let left_rect=egui::Rect::from_min_size(
                 toolbar_rect.left_top(),
                 egui::vec2(left_width,toolbar_rect.height())
             );
             let right_rect=egui::Rect::from_min_size(
-                egui::pos2(toolbar_rect.right()-bulk_width,toolbar_rect.top()),
+                egui::pos2(toolbar_rect.left()+toolbar_data_width-bulk_width,
+                    toolbar_rect.top()),
                 egui::vec2(bulk_width,toolbar_rect.height())
             );
-            // Keep the help icon's circular stroke clear of the toolbar's
-            // right clip boundary. The control layout is right-to-left, so
-            // without this inset the icon is placed flush against that clip.
+            // Contextual '?' controls are currently disabled. Only reserve
+            // their 8pt border clearance if they are enabled again; otherwise
+            // the rightmost visible button meets the last data-column edge.
+            let help_clearance=if settings_help::HELP_ICONS_ENABLED {
+                theme::SPACE_8
+            }else{0.0};
             let right_controls_rect=egui::Rect::from_min_max(
                 right_rect.min,
-                egui::pos2(right_rect.right()-theme::SPACE_8,right_rect.bottom())
+                egui::pos2(right_rect.right()-help_clearance,right_rect.bottom())
             );
             section.scope_builder(
                 egui::UiBuilder::new()
@@ -1396,8 +1405,13 @@ impl FreightManager {
             // still begin immediately below the 36pt sticky header.
             // This replaces the former 3pt paint-over hack, so the handle's
             // visual bounds and mouse hit bounds agree at every DPI.
-            let scroll_max_height=section.ctx().content_rect().height()
-                * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
+            // Use the PRIMARY CARD's actual remaining inner height after
+            // toolbar, 9pt separator and fixed 36pt header. A global 60vh
+            // limit left an artificial strip of empty card below the list.
+            // This does not expand the outer card or move the page heading.
+            let card_inner_bottom=section.min_rect().top()+card_min_height;
+            let scroll_max_height=(card_inner_bottom-section.cursor().top())
+                .max(theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
             let scroll_area_bounds=section.available_rect_before_wrap();
             let scroll_track_bottom=(scroll_area_bounds.top()+scroll_max_height)
                 .min(scroll_area_bounds.bottom());
@@ -1623,11 +1637,23 @@ impl FreightManager {
                         // their cell, wrap, or shift the other five columns.
                         let actions_rect=cells[5].shrink2(egui::vec2(6.0,0.0));
                         let actions_clip=actions_rect.intersect(row.clip_rect());
+                        // The common case has a single "기본 운임 설정"
+                        // action: give it a centered, full-cell hit target
+                        // aligned exactly with the centered "설정" heading.
+                        // Preserve the original right-to-left multi-action
+                        // behavior if the legacy "기준 변경" action is present.
+                        let action_layout=if rule.is_object(){
+                            egui::Layout::right_to_left(egui::Align::Center)
+                        }else{
+                            egui::Layout::centered_and_justified(
+                                egui::Direction::LeftToRight
+                            )
+                        };
                         row.scope_builder(
                             egui::UiBuilder::new()
                                 .id_salt(("freight-actions",id))
                                 .max_rect(actions_rect)
-                                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+                                .layout(action_layout),
                             |actions|{
                                 actions.set_clip_rect(
                                     actions_clip
