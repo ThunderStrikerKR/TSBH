@@ -649,9 +649,9 @@ impl CategoryManager {
                                 direct_count(catalog,&current.id),
                                 children(&cats,&current.id).len()
                             )));
-                            body.add_space(theme::SPACE_12);
+                            // Default 8pt item gaps around the single divider
+                            // already provide enough breathing room.
                             components::soft_divider(body);
-                            body.add_space(theme::SPACE_12);
                             body.label(typography::field_label("분류 이름"));
                             body.add_enabled_ui(
                                 editable && !busy && !is_root(&current.id),
@@ -662,7 +662,7 @@ impl CategoryManager {
                                     );
                                 }
                             );
-                            body.add_space(theme::SPACE_12);
+                            body.add_space(theme::SPACE_4);
                             body.label(typography::field_label("상위 카테고리"));
                             body.horizontal(|location|{
                                 // Align category text to the button's vertical
@@ -706,7 +706,7 @@ impl CategoryManager {
                                     "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
                                 ));
                             }
-                            body.add_space(theme::SPACE_16);
+                            body.add_space(theme::SPACE_8);
                             components::soft_divider(body);
                             body.horizontal(|footer|{
                                 if theme::action(footer,"분류 삭제",
