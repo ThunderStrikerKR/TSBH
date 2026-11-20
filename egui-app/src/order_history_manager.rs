@@ -442,7 +442,7 @@ fn range_date_picker_rtl(
     // The RTL parent reverses insertion order. Screen order for EACH date:
     // [‹] [YYYY-MM-DD] [›] [달력], without visible "시작일/종료일" labels.
     let trigger=theme::action(
-        ui,"달력",theme::ButtonRole::Standard,true
+        ui,"📅",theme::ButtonRole::Standard,true
     ).on_hover_text(&format!("{label}을 달력에서 선택"));
     if trigger.clicked(){
         let day=NaiveDate::parse_from_str(date,"%Y-%m-%d")
@@ -481,14 +481,29 @@ fn history_date_range_leading_rtl(
         ui,"시작일",from,from_month,"order-history-date-from-calendar"
     );
     let previous=*basis;
-    // 115pt caused the Korean label/dropdown affordance to clip.
-    // Use a full-width content slot; never shorten selected_text.
-    egui::ComboBox::from_id_salt("history-range-date-basis")
-        .width(150.0)
-        .selected_text(basis.label())
-        .show_ui(ui,|options|{
-            options.selectable_value(basis,HistoryDateBasis::Reception,"접수일 기준");
-            options.selectable_value(basis,HistoryDateBasis::Payment,"입금일 기준");
+    // The default ComboBox trigger was shorter than the adjacent 34pt
+    // buttons. Changing its width alone never fixed the clipped look.
+    // Use a full-height standard button and a separately-layered menu.
+    let trigger=theme::action_with_min_width(
+        ui,&format!("{}  ▾",basis.label()),
+        theme::ButtonRole::Standard,true,160.0
+    ).on_hover_text("조회 날짜 기준 선택");
+    egui::Popup::menu(&trigger)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|options|{
+            options.set_min_width(160.0);
+            if options.selectable_label(
+                *basis==HistoryDateBasis::Reception,"접수일 기준"
+            ).clicked(){
+                *basis=HistoryDateBasis::Reception;
+                options.close();
+            }
+            if options.selectable_label(
+                *basis==HistoryDateBasis::Payment,"입금일 기준"
+            ).clicked(){
+                *basis=HistoryDateBasis::Payment;
+                options.close();
+            }
         });
     changed||*basis!=previous
 }
@@ -731,7 +746,7 @@ impl OrderHistoryManager {
                         .max_rect(range_rect)
                         .layout(egui::Layout::left_to_right(Align::Center)),
                         |dates|{
-                            dates.set_clip_rect(range_rect);
+                            // Popup menus must not inherit a 36pt row clip.
                             changed|=history_date_controls(
                                 dates,&mut self.date_basis,
                                 &mut self.from_input,&mut self.to_input,
@@ -766,7 +781,7 @@ impl OrderHistoryManager {
                         .max_rect(range_rect)
                         .layout(egui::Layout::left_to_right(Align::Center)),
                         |dates|{
-                            dates.set_clip_rect(range_rect);
+                            // Popup menus must not inherit a 36pt row clip.
                             changed|=history_date_controls(
                                 dates,&mut self.date_basis,
                                 &mut self.from_input,&mut self.to_input,
@@ -895,13 +910,26 @@ impl OrderHistoryManager {
                                 );
                             });
                     }
-                    // Put the empty message inside the scrollable table,
-                    // like Freight; placing it after a full-height ScrollArea
-                    // would extend the entire outer card past the page bottom.
-                    if let Some(message)=empty_message{
-                        body.label(typography::caption(message));
-                    }
+                    // No virtual rows are inserted for an empty result;
+                    // the empty-state label is painted centered below.
                 });
+            if let Some(message)=empty_message{
+                let empty_rect=Rect::from_min_size(
+                    scroll_bounds.min,
+                    Vec2::new(
+                        (viewport-gutter).max(1.0).min(scroll_bounds.width()),
+                        scroll_max_height.min(scroll_bounds.height())
+                            .max(ROW_HEIGHT)
+                    )
+                );
+                let galley=typography::freight_table_cell_galley(
+                    section,message,false,theme::MUTED
+                );
+                let origin=empty_rect.center()-galley.size()/2.0;
+                section.painter()
+                    .with_clip_rect(empty_rect.intersect(section.clip_rect()))
+                    .galley(origin,galley,theme::MUTED);
+            }
             let left=header_origin.unwrap_or(head_rect.left()-output.state.offset.x);
             let header_cells=cells(egui::pos2(left,head_rect.top()),&widths,HEADER_HEIGHT);
             let painter=section.painter().with_clip_rect(head_rect);
