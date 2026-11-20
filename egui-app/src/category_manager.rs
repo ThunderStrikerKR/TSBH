@@ -134,7 +134,9 @@ impl CategoryManager {
         match self.operation {
             Some(Operation::Add)=>!self.new_name.trim().is_empty(),
             Some(Operation::Move)=>!self.target.is_empty()
-                && self.target!=current.parent,
+                && self.target!=if current.parent.is_empty(){
+                    ROOTS[0].0
+                }else{current.parent.as_str()},
             _=>false,
         }
     }
@@ -275,9 +277,14 @@ impl CategoryManager {
         } else if self.operation.is_none() {
             self.editor=false;
         }
+        let operation_was_open=self.operation.is_some();
         self.operation=None;
         self.confirm=None;
-        self.name=self.current(&cats).map(|c|c.name).unwrap_or_default();
+        // React keeps the inline rename draft when an unrelated add/move
+        // operation succeeds; it must not be silently overwritten by refresh.
+        if !operation_was_open || kind=="delete_category"{
+            self.name=self.current(&cats).map(|c|c.name).unwrap_or_default();
+        }
         self.new_name.clear();
         self.transfer=false;
         self.error=None;
