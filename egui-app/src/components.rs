@@ -651,15 +651,15 @@ fn client_tier_badge(ui:&mut Ui,label:&str,tier:&str) {
         });
 }
 
-/// Client table row: React's three-column 30/38/32 proportions and
-/// tier badge, with the complete field available in a hover tooltip.
-/// The table scrolls only when the actual three-column minimum is exceeded.
+/// React client directory: 30/38/32 columns, now one visual line per
+/// client. Keep the name, optional invoice name, address, contacts, tier and
+/// terms in their original columns; clipped values have full hover text.
 pub fn management_row(
     ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],heading:bool,tier:Option<&str>
 ) -> Response {
     let width=ui.available_width().max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
     let height=if heading {theme::MANAGEMENT_TABLE_HEADER_HEIGHT}
-        else {theme::MANAGEMENT_TABLE_ROW_HEIGHT};
+        else {theme::MANAGEMENT_CLIENT_ROW_HEIGHT};
     let (rect,response)=ui.allocate_exact_size(
         Vec2::new(width,height),if heading {Sense::hover()} else {Sense::click()}
     );
@@ -674,35 +674,61 @@ pub fn management_row(
     for (i,(primary,secondary)) in columns.iter().enumerate() {
         let col_width=rect.width()*theme::MANAGEMENT_CLIENT_COLS[i];
         let cell=Rect::from_min_size(
-            egui::pos2(x+theme::SPACE_12,rect.top()+theme::SPACE_8),
-            Vec2::new((col_width-theme::SPACE_24).max(1.0),
-                (height-theme::SPACE_8).max(1.0))
+            egui::pos2(x+theme::SPACE_12,rect.top()),
+            Vec2::new((col_width-theme::SPACE_24).max(1.0),height)
         );
         ui.scope_builder(
             egui::UiBuilder::new().id_salt(("management-row-column",row_id,i))
-                .max_rect(cell).layout(Layout::top_down(Align::Min)),
+                .max_rect(cell).layout(Layout::left_to_right(Align::Center)),
             |inner|{
                 inner.set_clip_rect(cell);
-                inner.spacing_mut().item_spacing.y=theme::SPACE_4;
-                if !heading && i==2 {
+                inner.spacing_mut().item_spacing.x=theme::SPACE_8;
+                if heading {
+                    inner.add(egui::Label::new(
+                        typography::table_header(primary)
+                    ).truncate()).on_hover_text(*primary);
+                }else if i==2 {
                     if let Some(tier)=tier {
                         client_tier_badge(inner,primary,tier);
-                    } else {
+                    }else{
                         inner.add(egui::Label::new(
                             typography::table_cell(primary)
                         ).truncate()).on_hover_text(*primary);
                     }
-                } else {
-                    inner.add(egui::Label::new(if heading {
-                        typography::table_header(primary)
-                    } else {
-                        typography::table_cell(primary)
-                    }).truncate()).on_hover_text(*primary);
-                }
-                if !secondary.is_empty() {
+                    if !secondary.is_empty() {
+                        inner.add(egui::Label::new(
+                            typography::caption(secondary)
+                        ).truncate()).on_hover_text(*secondary);
+                    }
+                }else if secondary.is_empty() || primary.is_empty() {
+                    let visible=if primary.is_empty(){secondary}else{primary};
                     inner.add(egui::Label::new(
-                        typography::caption(secondary)
-                    ).truncate()).on_hover_text(*secondary);
+                        typography::table_cell(visible)
+                    ).truncate()).on_hover_text(*visible);
+                }else{
+                    // The address stays ahead of its contact, just as in
+                    // React, but neither field is allowed to wrap. Reserve
+                    // a readable slice for phone numbers instead of letting
+                    // a long street address conceal them.
+                    let first_share=if i==1 {0.69}else{0.64};
+                    let first_width=(cell.width()-theme::SPACE_8).max(1.0)*first_share;
+                    let second_width=(cell.width()-theme::SPACE_8-first_width).max(1.0);
+                    inner.add_sized(
+                        Vec2::new(first_width,height),
+                        egui::Label::new(
+                            if i==0 {
+                                typography::table_cell(primary).strong()
+                            }else{
+                                typography::table_cell(primary)
+                            }
+                        ).truncate()
+                    ).on_hover_text(*primary);
+                    inner.add_sized(
+                        Vec2::new(second_width,height),
+                        egui::Label::new(
+                            typography::caption(secondary)
+                        ).truncate()
+                    ).on_hover_text(*secondary);
                 }
             }
         );
