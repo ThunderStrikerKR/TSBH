@@ -868,11 +868,9 @@ impl FreightManager {
     fn show_groups(
         ui: &mut Ui, groups: &[Value], products: &[&Value],
         search: &mut String, group_filter: &mut String,
-        only_missing:&mut bool, group_rules:&Value,
+        only_missing:&mut bool,
         pending: &mut BTreeMap<String,String>, selected: &mut BTreeSet<String>,
-        bulk_group: &mut String, new_name: &mut String,
-        rename_target: &mut Option<(String,String)>,
-        delete_target: &mut Option<String>,
+        bulk_group: &mut String,
         rate_editor: &mut Option<RateEditor>,
         reset_target: &mut Option<String>,
         copy_template: &mut String,
@@ -882,78 +880,6 @@ impl FreightManager {
         product_views: &Value, enabled:bool,
         action:&mut Option<(String,Value)>,
     ) {
-        // Group tariffs are the primary source for all assigned products.
-        // Put their editable quantity/rate summary next to the group itself.
-        theme::section_frame().show(ui, |section| {
-            section.label(typography::section_heading("배송 그룹 관리"));
-            section.label(typography::caption(
-                "그룹 소속 상품은 공통 묶음포장 수량과 수량별 배송비를 적용합니다."
-            ));
-            section.add_space(theme::SPACE_12);
-            section.horizontal_wrapped(|tools|{
-                tools.label(typography::field_label("새 배송 그룹명"));
-                tools.add_enabled_ui(enabled,|field|{
-                    components::flexible_text_field(
-                        field,new_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 배송 그룹명"
-                    );
-                });
-                if theme::action(tools,"배송 그룹 추가",theme::ButtonRole::Primary,
-                    enabled&&!new_name.trim().is_empty()).clicked(){
-                    *action=Some(("create_group".into(),json!({
-                        "name":new_name.trim()
-                    })));
-                }
-            });
-            section.add_space(theme::SPACE_12);
-            components::soft_divider(section);
-            if groups.is_empty(){
-                section.label(typography::caption(
-                    "그룹을 등록한 다음 최대 묶음 수량과 수량별 배송비를 설정하세요."
-                ));
-            }
-            for group in groups {
-                let id=text(group,"id");
-                let count=products.iter()
-                    .filter(|p|text(p,"shippingGroupId")==id).count();
-                section.add_space(theme::SPACE_8);
-                section.horizontal_wrapped(|line|{
-                    line.label(typography::body(text(group,"name")));
-                    line.label(typography::caption(&format!("{count}개 상품")));
-                    if theme::action(
-                        line,"묶음 수량·배송비 설정",theme::ButtonRole::Standard,enabled
-                    ).clicked(){
-                        match group_rules.get(id).filter(|value|value.is_object()){
-                            Some(rule)=>*rate_editor=Some(RateEditor::new(
-                                id,text(group,"name"),rule
-                            )),
-                            None=>*error=Some(
-                                "그룹 운임 기준을 읽지 못했습니다. 새로고침 후 확인하세요.".into()
-                            ),
-                        }
-                    }
-                    if theme::action(line,"이름 수정",theme::ButtonRole::Quiet,enabled)
-                        .clicked(){
-                        *rename_target=Some((id.into(),text(group,"name").into()));
-                    }
-                    if theme::action(line,"삭제",theme::ButtonRole::Danger,enabled)
-                        .clicked(){
-                        *delete_target=Some(id.into());
-                    }
-                });
-                section.horizontal_wrapped(|info|{
-                    info.label(typography::field_label("최대 묶음"));
-                    info.label(typography::quantity(
-                        &group_bundle_summary(&group["current"])
-                    ));
-                    info.add_space(theme::SPACE_8);
-                    info.label(typography::field_label("수량별 배송비"));
-                    info.label(typography::caption(
-                        &group_fee_summary(&group["current"])
-                    ));
-                });
-                components::soft_divider(section);
-            }
-        });
         ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui, |section| {
             section.horizontal(|title|{
@@ -1295,11 +1221,91 @@ impl FreightManager {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn show_rates(
-        ui: &mut Ui, groups: &[Value], projection: &Value,
+        ui: &mut Ui, groups: &[Value], products: &[&Value], projection: &Value,
+        new_name: &mut String,
+        rename_target: &mut Option<(String,String)>,
+        delete_target: &mut Option<String>,
         editor: &mut Option<RateEditor>,
-        basis: &mut Option<Option<String>>,enabled:bool,
+        basis: &mut Option<Option<String>>,
+        error: &mut Option<String>,enabled:bool,
+        action: &mut Option<(String,Value)>,
     ) {
+        let group_rules=&projection["editableRules"];
+        // Group tariffs are the primary source for all assigned products.
+        // Put their editable quantity/rate summary next to the group itself.
+        theme::section_frame().show(ui, |section| {
+            section.label(typography::section_heading("배송 그룹 관리"));
+            section.label(typography::caption(
+                "그룹 소속 상품은 공통 묶음포장 수량과 수량별 배송비를 적용합니다."
+            ));
+            section.add_space(theme::SPACE_12);
+            section.horizontal_wrapped(|tools|{
+                tools.label(typography::field_label("새 배송 그룹명"));
+                tools.add_enabled_ui(enabled,|field|{
+                    components::flexible_text_field(
+                        field,new_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 배송 그룹명"
+                    );
+                });
+                if theme::action(tools,"배송 그룹 추가",theme::ButtonRole::Primary,
+                    enabled&&!new_name.trim().is_empty()).clicked(){
+                    *action=Some(("create_group".into(),json!({
+                        "name":new_name.trim()
+                    })));
+                }
+            });
+            section.add_space(theme::SPACE_12);
+            components::soft_divider(section);
+            if groups.is_empty(){
+                section.label(typography::caption(
+                    "그룹을 등록한 다음 최대 묶음 수량과 수량별 배송비를 설정하세요."
+                ));
+            }
+            for group in groups {
+                let id=text(group,"id");
+                let count=products.iter()
+                    .filter(|p|text(p,"shippingGroupId")==id).count();
+                section.add_space(theme::SPACE_8);
+                section.horizontal_wrapped(|line|{
+                    line.label(typography::body(text(group,"name")));
+                    line.label(typography::caption(&format!("{count}개 상품")));
+                    if theme::action(
+                        line,"묶음 수량·배송비 설정",theme::ButtonRole::Standard,enabled
+                    ).clicked(){
+                        match group_rules.get(id).filter(|value|value.is_object()){
+                            Some(rule)=>*editor=Some(RateEditor::new(
+                                id,text(group,"name"),rule
+                            )),
+                            None=>*error=Some(
+                                "그룹 운임 기준을 읽지 못했습니다. 새로고침 후 확인하세요.".into()
+                            ),
+                        }
+                    }
+                    if theme::action(line,"이름 수정",theme::ButtonRole::Quiet,enabled)
+                        .clicked(){
+                        *rename_target=Some((id.into(),text(group,"name").into()));
+                    }
+                    if theme::action(line,"삭제",theme::ButtonRole::Danger,enabled)
+                        .clicked(){
+                        *delete_target=Some(id.into());
+                    }
+                });
+                section.horizontal_wrapped(|info|{
+                    info.label(typography::field_label("최대 묶음"));
+                    info.label(typography::quantity(
+                        &group_bundle_summary(&group["current"])
+                    ));
+                    info.add_space(theme::SPACE_8);
+                    info.label(typography::field_label("수량별 배송비"));
+                    info.label(typography::caption(
+                        &group_fee_summary(&group["current"])
+                    ));
+                });
+                components::soft_divider(section);
+            }
+        });
+        ui.add_space(theme::SPACE_12);
         ui.horizontal(|bar|{
             bar.label(typography::section_heading("그룹 운임표"));
             settings_help::icon(bar,"그룹 운임표");
