@@ -906,7 +906,8 @@ pub fn management_dropdown(
     );
     painter.with_clip_rect(text_clip).galley(
         egui::pos2(rect.left()+theme::SPACE_12,
-            rect.center().y-caption.size().y/2.0),
+            rect.center().y-caption.size().y/2.0
+                +typography::MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y),
         caption,if enabled{theme::TEXT}else{theme::SECONDARY}
     );
     painter.line_segment(
@@ -914,8 +915,10 @@ pub fn management_dropdown(
          egui::pos2(arrow_left,rect.bottom()-5.0)],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
     );
+    // Center the chevron's full 4pt-high drawing bounds on the trigger's
+    // geometric center, matching the optically centered label beside it.
     let x=rect.right()-15.0;
-    let y=rect.center().y+1.0;
+    let y=rect.center().y;
     painter.line_segment(
         [egui::pos2(x-4.0,y-2.0),egui::pos2(x,y+2.0)],
         Stroke::new(1.5,theme::SECONDARY)
