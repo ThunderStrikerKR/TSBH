@@ -1,0 +1,404 @@
+//! React AliasManager.tsx and ProductSearchDialog.tsx replacement.
+//! Alias collision, product matching and persistence decisions remain in
+//! original catalog_clients Rust. This UI owns only explicit operator edits.
+use crate::{catalog_query_bridge,components,theme,typography};
+use eframe::egui::{self,Align,Context,Layout,Rect,Ui};
+use serde_json::{json,Value};
+use std::collections::{HashMap,HashSet};
+
+fn field<'a>(v:&'a Value,k:&str)->&'a str{
+    v.get(k).and_then(Value::as_str).unwrap_or("")
+}
+fn rows(v:&Value)->&[Value]{
+    v.as_array().map(Vec::as_slice).unwrap_or(&[])
+}
+fn display_model(name:&str)->String{
+    // UI-only equivalent of React matching.ts::internalModel.
+    let text=name.strip_prefix("[가상]").map(str::trim_start).unwrap_or(name);
+    let no_bd=text.get(..2).is_some_and(|s|s.eq_ignore_ascii_case("BD"));
+    if no_bd {
+        let rest=&text[2..];
+        if rest.chars().next().is_some_and(|c|c.is_whitespace()||c.is_ascii_digit()){
+            return rest.trim_start().to_owned();
+        }
+    }
+    text.to_owned()
+}
+fn product<'a>(state:&'a Value,id:&str)->Option<&'a Value>{
+    rows(&state["products"]).iter().find(|p|field(p,"id")==id)
+}
+fn is_client_active(v:&Value)->bool{v.get("deletedAt").is_none_or(Value::is_null)}
+#[derive(Clone,PartialEq,Eq)]
+struct Form {
+    text:String,
+    target:String,
+    scope:String,
+    editing:Option<String>,
+}
+impl Default for Form {
+    fn default()->Self{
+        Self{text:String::new(),target:String::new(),
+            scope:"common".into(),editing:None}
+    }
+}
+#[derive(Clone,PartialEq,Eq)]
+enum Exit {Select(String),Tab(usize),Global}
+#[derive(Default)]
+pub struct AliasManager{
+    form:Form,
+    original:Form,
+    product_search:bool,
+    query:String,
+    category:String,
+    brand:String,
+    pending:Option<Exit>,
+    after_save:Option<Exit>,
+    next_tab:Option<usize>,
+    global_approved:bool,
+    error:Option<String>,
+}
+impl AliasManager {
+    fn dirty(&self)->bool{self.form!=self.original}
+    pub fn has_overlay(&self)->bool{self.product_search||self.pending.is_some()}
+    pub fn block_navigation(&self)->bool{self.product_search||self.pending.is_some()}
+    pub fn global_leave_in_progress(&self)->bool{
+        self.pending==Some(Exit::Global)||self.after_save==Some(Exit::Global)
+    }
+    pub fn take_global_approval(&mut self)->bool{
+        std::mem::take(&mut self.global_approved)
+    }
+    pub fn take_tab(&mut self)->Option<usize>{self.next_tab.take()}
+    pub fn reset_navigation(&mut self){
+        self.product_search=false;
+        self.pending=None;
+        self.after_save=None;
+        self.query.clear();self.category.clear();self.brand.clear();
+        self.error=None;
+    }
+    pub fn request_tab_leave(&mut self,tab:usize)->bool{
+        if self.product_search{return false;}
+        if self.dirty(){self.pending=Some(Exit::Tab(tab));false}
+        else{self.reset_navigation();true}
+    }
+    pub fn request_global_leave(&mut self)->bool{
+        if self.product_search{return false;}
+        if self.dirty(){self.pending=Some(Exit::Global);false}
+        else{self.reset_navigation();true}
+    }
+    fn apply_exit(&mut self,next:Exit,catalog:&Value){
+        match next{
+            Exit::Select(id)=>{
+                if let Some(row)=rows(&catalog["aliases"])
+                    .iter().find(|a|field(a,"id")==id){
+                    self.form=Form{
+                        text:field(row,"text").into(),
+                        target:field(row,"productId").into(),
+                        scope:if field(row,"clientId").is_empty(){
+                            "common".into()
+                        }else{field(row,"clientId").into()},
+                        editing:Some(id),
+                    };
+                    self.original=self.form.clone();
+                }
+            }
+            Exit::Tab(tab)=>{self.reset_navigation();self.next_tab=Some(tab);}
+            Exit::Global=>{self.reset_navigation();self.global_approved=true;}
+        }
+    }
+    fn choose(&mut self,id:String,catalog:&Value){
+        if self.form.editing.as_deref()==Some(&id){return;}
+        if self.dirty(){self.pending=Some(Exit::Select(id));}
+        else{self.apply_exit(Exit::Select(id),catalog);}
+    }
+    fn save_request(&self)->Value{
+        json!({"record":{
+            "id":self.form.editing.as_deref().unwrap_or(""),
+            "text":self.form.text,
+            "productId":self.form.target,
+            "clientId":if self.form.scope=="common"{
+                Value::Null
+            }else{json!(self.form.scope)}
+        }})
+    }
+    pub fn on_saved(&mut self,catalog:&Value){
+        // React: reset fields, preserve the selected scope after save.
+        let scope=self.form.scope.clone();
+        self.form=Form{scope,..Form::default()};
+        self.original=self.form.clone();
+        self.error=None;
+        if let Some(next)=self.after_save.take(){self.apply_exit(next,catalog);}
+    }
+    pub fn on_failed(&mut self,message:String){
+        self.error=Some(message);
+        self.after_save=None;
+    }
+    pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool)
+        ->Option<Value>{
+        let mut save=false;
+        let mut choose=None;
+        let problems=catalog_query_bridge::alias_problems(catalog);
+        let warnings=problems.as_ref().ok().map(|list|{
+            rows(list).iter().map(|row|{
+                (field(row,"id").to_owned(),
+                    rows(&row["problems"]).iter().filter_map(Value::as_str)
+                    .map(str::to_owned).collect::<Vec<_>>())
+            }).collect::<HashMap<String,Vec<String>>>()
+        }).unwrap_or_default();
+        theme::section_frame().show(ui,|card|{
+            card.label(typography::section_heading("공통 / 거래처 별칭 관리"));
+            card.add_space(theme::SPACE_8);
+            card.label(typography::body(
+                "넓은 상품 종류명과 실제 개별 상품에 충돌하는 별칭은 등록하지 않습니다. 기존 충돌은 삭제하지 않고 아래에 표시합니다."
+            ));
+            card.add_space(theme::SPACE_12);
+            // Like the React auto-fit grid, controls wrap within the form
+            // while sharing the existing management field/button tokens.
+            card.horizontal_wrapped(|form|{
+                form.vertical(|v|{
+                    v.label(typography::field_label("별칭"));
+                    v.add_enabled_ui(editable&&!busy,|input|{
+                        components::flexible_text_field(
+                            input,&mut self.form.text,
+                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,"관리 별칭");
+                    });
+                });
+                form.vertical(|v|{
+                    v.label(typography::field_label("적용 범위"));
+                    let scope_name=if self.form.scope=="common"{
+                        "회사 공통 별칭"
+                    }else{
+                        rows(&catalog["clients"]).iter()
+                            .find(|c|field(c,"id")==self.form.scope)
+                            .map(|c|field(c,"name"))
+                            .unwrap_or("거래처 확인 필요")
+                    };
+                    v.add_enabled_ui(editable&&!busy,|input|{
+                        egui::ComboBox::from_id_salt("alias-client-scope")
+                            .width(theme::MANAGEMENT_SEARCH_MIN_WIDTH)
+                            .selected_text(scope_name)
+                            .show_ui(input,|choices|{
+                                choices.selectable_value(&mut self.form.scope,
+                                    "common".to_owned(),"회사 공통 별칭");
+                                for client in rows(&catalog["clients"])
+                                    .iter().filter(|c|is_client_active(c)){
+                                    choices.selectable_value(&mut self.form.scope,
+                                        field(client,"id").to_owned(),field(client,"name"));
+                                }
+                            });
+                    });
+                });
+                form.vertical(|v|{
+                    v.label(typography::field_label("연결 상품"));
+                    let label=product(catalog,&self.form.target)
+                        .map(|p|display_model(field(p,"name")))
+                        .unwrap_or_else(||"등록 상품 선택".into());
+                    if theme::action(v,&label,theme::ButtonRole::Standard,
+                        editable&&!busy).clicked(){
+                        self.product_search=true;
+                        self.query.clear();self.category.clear();self.brand.clear();
+                    }
+                });
+                form.vertical(|v|{
+                    // Align the single primary action with the shared field
+                    // baseline without altering any shared button dimensions.
+                    v.add_space(theme::SPACE_24);
+                    if theme::action(v,"별칭 저장",theme::ButtonRole::Primary,
+                        editable&&!busy).clicked(){save=true;}
+                });
+            });
+            card.add_space(theme::SPACE_16);
+            if let Err(error)=problems{
+                card.label(typography::status(&error,theme::DANGER));
+            }
+            if let Some(error)=&self.error{
+                card.label(typography::status(error,theme::DANGER));
+            }
+            components::soft_divider(card);
+            egui::ScrollArea::vertical()
+                .id_salt("alias-registered-list")
+                .auto_shrink([false,false])
+                .show(card,|list|{
+                    for item in rows(&catalog["aliases"]){
+                        let id=field(item,"id");
+                        let target=product(catalog,field(item,"productId"))
+                            .map(|p|display_model(field(p,"name")))
+                            .unwrap_or_else(||"과거 상품".into());
+                        let scope=if field(item,"clientId").is_empty(){
+                            "회사 공통"
+                        }else{
+                            rows(&catalog["clients"]).iter()
+                                .find(|c|field(c,"id")==field(item,"clientId"))
+                                .map(|c|field(c,"name")).unwrap_or("")
+                        };
+                        list.horizontal(|row|{
+                            row.vertical(|info|{
+                                info.label(typography::body(field(item,"text")));
+                                info.label(typography::caption(
+                                    &format!("→ {target} / {scope}")));
+                                if let Some(issues)=warnings.get(id).filter(|v|!v.is_empty()){
+                                    info.label(typography::status(
+                                        &format!("{} / 영향 범위: {}",
+                                            issues.join(" / "),
+                                            if field(item,"clientId").is_empty(){
+                                                "모든 거래처의 이후 주문"
+                                            }else{"해당 거래처의 이후 주문"}),
+                                        theme::DANGER,
+                                    ));
+                                }
+                            });
+                            row.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                                if theme::action(actions,"연결 정정",
+                                    theme::ButtonRole::Standard,!busy).clicked(){
+                                    choose=Some(id.to_owned());
+                                }
+                            });
+                        });
+                        components::soft_divider(list);
+                    }
+                });
+        });
+        if let Some(id)=choose{self.choose(id,catalog);}
+        save.then(||self.save_request())
+    }
+    pub fn show_dialogs(&mut self,ctx:&Context,work_area:Rect,catalog:&Value,
+        editable:bool,busy:bool)->Option<Value>{
+        let mut save=None;
+        if self.product_search{
+            let mut close=false;
+            let mut chosen=None;
+            components::modal_backdrop(ctx,"alias-product-search-dim",false);
+            components::modal_window("상품 검색","alias-product-search",work_area)
+                .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
+                .show(ctx,|modal|{
+                    modal.horizontal(|head|{
+                        head.label(typography::section_heading("상품 검색"));
+                        head.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                            if theme::action(actions,"닫기",theme::ButtonRole::Standard,!busy)
+                                .clicked(){close=true;}
+                        });
+                    });
+                    components::flexible_text_field(modal,&mut self.query,
+                        modal.available_width(),"브랜드 / 상품명 / 모델 / 별칭 검색");
+                    modal.horizontal_wrapped(|filters|{
+                        let current=rows(&catalog["categories"]).iter()
+                            .find(|c|field(c,"id")==self.category)
+                            .map(|c|field(c,"name")).unwrap_or("전체 카테고리");
+                        egui::ComboBox::from_id_salt("alias-product-category")
+                            .selected_text(current).show_ui(filters,|choice|{
+                                choice.selectable_value(&mut self.category,
+                                    String::new(),"전체 카테고리");
+                                for cat in rows(&catalog["categories"]){
+                                    choice.selectable_value(&mut self.category,
+                                        field(cat,"id").to_owned(),field(cat,"name"));
+                                }
+                            });
+                        let brand=rows(&catalog["brands"]).iter()
+                            .find(|b|field(b,"id")==self.brand)
+                            .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
+                        egui::ComboBox::from_id_salt("alias-product-brand")
+                            .selected_text(brand).show_ui(filters,|choice|{
+                                choice.selectable_value(&mut self.brand,
+                                    String::new(),"전체 브랜드");
+                                for b in rows(&catalog["brands"]){
+                                    choice.selectable_value(&mut self.brand,
+                                        field(b,"id").to_owned(),field(b,"name"));
+                                }
+                            });
+                        if !self.category.is_empty() &&
+                            theme::action(filters,"카테고리 초기화",
+                                theme::ButtonRole::Standard,true).clicked(){
+                            self.category.clear();
+                        }
+                    });
+                    let found=catalog_query_bridge::search_products(&json!({
+                        "state":catalog,"query":self.query,
+                        "major":self.category,"brand":self.brand,
+                        "excludeDemo":true
+                    }));
+                    components::soft_divider(modal);
+                    egui::ScrollArea::vertical()
+                        .id_salt("alias-product-results")
+                        .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
+                        .show(modal,|results|{
+                            match &found{
+                                Ok(data)=>{
+                                    let detail=rows(&data["detailLinkIds"]).iter()
+                                        .filter_map(Value::as_str).collect::<HashSet<_>>();
+                                    let ids=rows(&data["ids"]).iter()
+                                        .filter_map(Value::as_str).take(100)
+                                        .collect::<Vec<_>>();
+                                    if ids.is_empty(){
+                                        results.label(typography::body("검색 결과가 없습니다."));
+                                    }
+                                    for id in ids{
+                                        if let Some(p)=product(catalog,id){
+                                            results.horizontal(|row|{
+                                                if theme::action(row,
+                                                    &display_model(field(p,"name")),
+                                                    theme::ButtonRole::Standard,editable&&!busy)
+                                                    .clicked(){chosen=Some(id.to_owned());}
+                                                let description=if field(p,"subtitle").is_empty(){
+                                                    field(p,"specification")
+                                                }else{field(p,"subtitle")};
+                                                row.label(typography::caption(description));
+                                                if detail.contains(id){
+                                                    if let Some(url)=rows(&p["variants"]).first()
+                                                        .and_then(|v|v["url"].as_str()){
+                                                        if theme::action(row,"상세보기 ↗",
+                                                            theme::ButtonRole::Quiet,true).clicked(){
+                                                            ctx.open_url(egui::OpenUrl::new_tab(url));
+                                                        }
+                                                    }
+                                                }
+                                            });
+                                            components::soft_divider(results);
+                                        }
+                                    }
+                                }
+                                Err(message)=>{
+                                    results.label(typography::status(message,theme::DANGER));
+                                }
+                            }
+                        });
+                });
+            if close{self.product_search=false;}
+            if let Some(id)=chosen{
+                self.form.target=id;
+                self.product_search=false;
+            }
+        }
+        if let Some(exit)=self.pending.clone(){
+            let mut cancel=false;
+            let mut discard=false;
+            let mut save_now=false;
+            components::modal_backdrop(ctx,"alias-unsaved-dim",true);
+            components::decision_window(
+                "상품 별칭","alias-unsaved-confirm",work_area
+            ).show(ctx,|dialog|{
+                dialog.label(typography::body("상품 별칭 변경사항을 저장할까요?"));
+                if let Some(message)=&self.error{
+                    dialog.label(typography::status(message,theme::DANGER));
+                }
+                dialog.horizontal(|actions|{
+                    cancel=theme::action(actions,"취소",
+                        theme::ButtonRole::Standard,!busy).clicked();
+                    discard=theme::action(actions,"저장 안 함",
+                        theme::ButtonRole::Standard,!busy).clicked();
+                    save_now=theme::action(actions,"저장",
+                        theme::ButtonRole::Primary,editable&&!busy).clicked();
+                });
+            });
+            if cancel{self.pending=None;}
+            else if discard{
+                self.form=self.original.clone();
+                self.pending=None;
+                self.apply_exit(exit,catalog);
+            }else if save_now{
+                self.pending=None;
+                self.after_save=Some(exit);
+                save=Some(self.save_request());
+            }
+        }
+        save
+    }
+}
