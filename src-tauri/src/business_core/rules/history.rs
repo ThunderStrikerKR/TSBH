@@ -492,6 +492,41 @@ mod tests {
         assert_eq!(view[0]["display"]["paymentEvidenceMissing"],false);
     }
     #[test]
+    fn employee_payment_approval_uses_confirmed_at_not_paid_at_and_respects_rechecks(){
+        let mut state=json!({"workflow":{
+            "shipments":[{"id":"s1","orderId":"o1"},{"id":"s2","orderId":"o1"}],
+            "confirmations":[
+                {"id":"c1","confirmedAt":"2026-11-19T16:30:00Z",
+                 "actor":"직원 A","shipmentIds":["s1","s2"]},
+                {"id":"c2","confirmedAt":"2026-11-20T18:00:00Z",
+                 "actor":"직원 B","shipmentIds":["s2"]}
+            ],
+            "events":[{"action":"입금 승인 재확인 필요",
+                "before":"c1","shipmentIds":["s2"]}],
+            "payments":[{"paidAt":"2026-11-15T02:00:00Z",
+                "allocations":[{"shipmentId":"s1","amount":500}]}]
+        }});
+        let ids=HashSet::from(["s1","s2"]);
+        let approval=employee_payment_confirmation(&state,&ids);
+        assert_eq!(approval["date"],"2026-11-21");
+        assert_eq!(approval["partial"],false);
+        assert_eq!(approval["approvedShipments"],2);
+        assert_eq!(approval["actors"],json!(["직원 A","직원 B"]));
+
+        // Reconfirm invalidation affects only the targeted shipment.
+        state["workflow"]["confirmations"].as_array_mut().unwrap().pop();
+        let partial=employee_payment_confirmation(&state,&ids);
+        assert_eq!(partial["date"],"2026-11-20");
+        assert_eq!(partial["partial"],true);
+        assert_eq!(partial["approvedShipments"],1);
+
+        // A recorded bank transfer by itself never populates staff approval.
+        state["workflow"]["confirmations"]=json!([]);
+        assert!(employee_payment_confirmation(&state,&ids).is_null());
+        assert!(employee_payment_confirmation(&state,&HashSet::new()).is_null());
+    }
+
+    #[test]
     fn date_range_reception_and_real_payment_allocations_are_distinct() {
         let state=json!({
             "orders":[
