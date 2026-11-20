@@ -2417,7 +2417,7 @@ impl BandoEgui {
                         intake.add_space(theme::SPACE_8);
                         if let Some(path) = inbox_path.as_deref() {
                             intake.label(typography::caption(
-                                "발주서 이미지를 지정한 폴더에 저장하세요."
+                                "발주서 이미지나 엑셀파일을 지정한 폴더에 저장하면 자동 인식합니다."
                             ));
                             intake.add_space(theme::SPACE_8);
                             intake.horizontal(|buttons| {
