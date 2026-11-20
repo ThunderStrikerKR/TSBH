@@ -784,10 +784,18 @@ pub fn reception_freight_row(
         let mut amount_text = amount
             .map(|value| display_won(value).trim_end_matches('원').to_owned())
             .unwrap_or_else(||"—".to_owned());
-        line.add_enabled(false,
-            egui::TextEdit::singleline(&mut amount_text)
-                .desired_width(84.0).font(typography::numeric_editor_font())
-        );
+        // Match shared 36pt input geometry; the previous bare TextEdit
+        // rendered at native text height and looked misaligned beside labels.
+        line.add_enabled_ui(false, |cell| {
+            cell.add_sized(
+                Vec2::new(84.0, theme::INPUT_HEIGHT),
+                egui::TextEdit::singleline(&mut amount_text)
+                    .font(typography::numeric_editor_font())
+                    .vertical_align(Align::Center)
+                    .margin(egui::Margin::symmetric(8, 2))
+                    .desired_width(84.0),
+            )
+        });
         line.label(typography::caption("원"));
         if let Some(collect) = collect {
             line.label(typography::caption(
@@ -817,7 +825,7 @@ pub fn reception_item_actions(ui: &mut Ui, dispatch_origin: Option<&str>) {
                         label, typography::FONT_STANDARD_ACTION, false,
                         if selected { theme::TEXT } else { theme::MUTED }
                     ))
-                    .min_size(Vec2::new(42.0, 28.0))
+                    .min_size(Vec2::new(42.0, theme::ACTION_STANDARD_HEIGHT))
                     .fill(if selected { theme::RAISED } else { theme::PANEL })
                     .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,
                         if selected { theme::BORDER } else { theme::DIVIDER }))
@@ -865,40 +873,45 @@ pub fn reception_total_footer(
         [rect.left_top(), rect.right_top()],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER),
     );
+    // Both summary lines occupy fixed vertical centers. The item table and
+    // VAT row no longer push this footer below the pane's bottom boundary.
     let left = rect.left() + theme::SPACE_8;
     let right = rect.right() - theme::SPACE_8;
+    let right_start = (right - 148.0).max(left + 50.0);
     let amount = total.map(display_won).unwrap_or_else(|| "—".to_owned());
     ui.painter().text(
-        egui::pos2(left, rect.top() + 15.0), egui::Align2::LEFT_CENTER,
+        egui::pos2(left, rect.top() + 17.0), egui::Align2::LEFT_CENTER,
         "총 주문", egui::FontId::proportional(typography::FONT_FIELD_LABEL),
         theme::TEXT,
     );
-    // The React right-hand sum/VAT column has a fixed 148pt budget.
-    // Labels clip within it rather than colliding with the count/title.
-    let right_column = Rect::from_min_max(
-        egui::pos2((right-148.0).max(left+50.0),rect.top()+2.0),
-        egui::pos2(right,rect.top()+29.0),
+    let first_amount = Rect::from_min_max(
+        egui::pos2(right_start, rect.top()), egui::pos2(right, rect.top() + 30.0),
     );
-    ui.put(right_column, egui::Label::new(
-        egui::RichText::new(amount).monospace().size(18.0).color(theme::TEXT),
-    ).halign(Align::Max).truncate());
-    let count_text = count.map(|n| n.to_string())
-        .unwrap_or_else(|| "—".to_owned());
-    let count_column=Rect::from_min_max(
-        egui::pos2(left,rect.top()+31.0),
-        egui::pos2((right-148.0).max(left+50.0),rect.bottom()-1.0),
+    ui.painter().with_clip_rect(first_amount).text(
+        egui::pos2(right, rect.top() + 17.0), egui::Align2::RIGHT_CENTER,
+        &amount, egui::FontId::monospace(18.0), theme::TEXT,
     );
-    ui.put(count_column, egui::Label::new(
-        egui::RichText::new(format!("| 택배 {:>3}건 |", count_text))
-            .monospace().size(11.0).color(theme::SECONDARY),
-    ).halign(Align::Min).truncate());
-    let vat_column=Rect::from_min_max(
-        egui::pos2((right-148.0).max(left+50.0),rect.top()+31.0),
-        egui::pos2(right,rect.bottom()-1.0),
+    // A missing shipment count is unknown, not zero.
+    let count_text = count.map(|n| format!("배송 {n}건"))
+        .unwrap_or_else(|| "배송 건수 미확정".to_owned());
+    let second_left = Rect::from_min_max(
+        egui::pos2(left, rect.top() + 30.0),
+        egui::pos2(right_start, rect.bottom()),
     );
-    ui.put(vat_column, egui::Label::new(
-        egui::RichText::new(vat).size(10.0).color(theme::SECONDARY),
-    ).halign(Align::Max).truncate());
+    ui.painter().with_clip_rect(second_left).text(
+        egui::pos2(left, rect.top() + 43.0), egui::Align2::LEFT_CENTER,
+        count_text, egui::FontId::proportional(typography::FONT_METADATA),
+        theme::SECONDARY,
+    );
+    let second_right = Rect::from_min_max(
+        egui::pos2(right_start, rect.top() + 30.0),
+        egui::pos2(right, rect.bottom()),
+    );
+    ui.painter().with_clip_rect(second_right).text(
+        egui::pos2(right, rect.top() + 43.0), egui::Align2::RIGHT_CENTER,
+        vat, egui::FontId::proportional(typography::FONT_METADATA),
+        theme::SECONDARY,
+    );
     if !note.trim().is_empty() {
         response.on_hover_text(note);
     }
