@@ -423,9 +423,6 @@ impl CategoryManager {
                     "선택: {}",path_text(&cats,&current.id)
                 )));
             }
-            if let Some(error)=&self.error{
-                panel.label(typography::status(error,theme::DANGER));
-            }
             components::soft_divider(panel);
             egui::ScrollArea::vertical()
                 .id_salt("category-map-tree")
@@ -540,9 +537,6 @@ impl CategoryManager {
                                                 "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
                                             ));
                                         }
-                                        if let Some(error)=&self.error{
-                                            body.label(typography::status(error,theme::DANGER));
-                                        }
                                         body.add_space(theme::SPACE_16);
                                         components::soft_divider(body);
                                         body.horizontal(|footer|{
@@ -627,9 +621,6 @@ impl CategoryManager {
                                 ));
                             },
                         };
-                    }
-                    if let Some(error)=&self.error{
-                        modal.label(typography::status(error,theme::DANGER));
                     }
                     modal.add_space(theme::SPACE_16);
                     modal.horizontal(|actions|{
