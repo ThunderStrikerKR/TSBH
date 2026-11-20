@@ -269,7 +269,13 @@ impl CategoryManager {
             }
         }
     }
-    pub fn on_saved(&mut self,kind:&str,catalog:&Value){
+    pub fn on_saved(&mut self,kind:&str,catalog:&Value)->&'static str{
+        let success=match (kind,self.operation){
+            ("delete_category",_)=>"빈 분류를 삭제했습니다.",
+            ("change_category",Some(Operation::Add))=>"하위 분류를 추가했습니다.",
+            ("change_category",Some(Operation::Move))=>"분류 위치를 변경했습니다.",
+            _=>"분류 이름을 변경했습니다.",
+        };
         let cats=categories(catalog);
         if kind=="delete_category"{
             self.selected=self.delete_parent.take()
@@ -292,6 +298,7 @@ impl CategoryManager {
         if let Some(next)=self.after_save.take(){
             self.apply_confirm(next,&cats);
         }
+        success
     }
     fn apply_confirm(&mut self,intent:Confirm,cats:&[Category]){
         match intent{
