@@ -123,8 +123,14 @@ impl ProductSearch{
                             let label=children.iter().find(|c|field(c,"id")==selected)
                                 .map(|c|field(c,"name"))
                                 .unwrap_or(if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
+                            let width=theme::CATEGORY_PATH_PICKER_WIDTH;
+                            let text_width=width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
+                            let visible=typography::fit_category_path(
+                                ui,label,text_width,typography::CategoryPathFont::Body
+                            );
                             egui::ComboBox::from_id_salt(("manual-product-category",depth))
-                                .selected_text(label)
+                                .width(width)
+                                .selected_text(visible)
                                 .show_ui(ui,|ui|{
                                     let reset=if depth==0{String::new()}else{parent.clone()};
                                     if ui.selectable_label(selected.is_empty(),
@@ -135,14 +141,19 @@ impl ProductSearch{
                                     }
                                     for row in &children {
                                         let id=field(row,"id");
+                                        let full=field(row,"name");
+                                        let visible=typography::fit_category_path(
+                                            ui,full,text_width,
+                                            typography::CategoryPathFont::Body
+                                        );
                                         if !id.is_empty() &&
-                                            ui.selectable_label(selected==id,field(row,"name"))
-                                                .clicked() {
+                                            ui.selectable_label(selected==id,visible)
+                                                .on_hover_text(full).clicked() {
                                             self.major=id.to_owned();
                                             changed=true;
                                         }
                                     }
-                                });
+                                }).response.on_hover_text(label);
                         }
                         if !self.major.is_empty() &&
                             theme::action(ui,"카테고리 초기화",ButtonRole::Quiet,true).clicked() {
