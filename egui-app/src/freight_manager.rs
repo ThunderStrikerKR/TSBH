@@ -1191,7 +1191,7 @@ impl FreightManager {
                     }else if group_filter.as_str()=="none" {
                         "그룹 미지정"
                     }else{group_name(groups,group_filter)},
-                    148.0,true,"상품 표시 범위 선택",|menu|{
+                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,"상품 표시 범위 선택",|menu|{
                         components::management_dropdown_option(
                             menu,group_filter,String::new(),"전체 상품"
                         );
