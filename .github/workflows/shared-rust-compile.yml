@@ -1,0 +1,30 @@
+name: Shared Rust compile verification
+on:
+  push:
+    branches:
+      - refactor/shared-rust-data-access-20261120
+    paths:
+      - .github/workflows/shared-rust-compile.yml
+      - egui-app/**
+      - crates/bando-data-access/**
+      - src-tauri/**
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: shared-rust-compile-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compile-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Compile native Tauri executable
+        run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
+      - name: Compile egui application
+        run: cargo check --manifest-path egui-app/Cargo.toml
