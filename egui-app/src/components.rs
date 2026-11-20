@@ -609,7 +609,7 @@ pub fn reception_item_row(
 /// that a backend edit command exists in egui.
 pub fn reception_freight_row(
     ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
-    remote: Option<bool>,
+    remote: Option<bool>, inquiry_visible: bool,
 ) {
     ui.horizontal_wrapped(|line| {
         line.spacing_mut().item_spacing = Vec2::new(theme::SPACE_4, theme::SPACE_4);
@@ -631,13 +631,16 @@ pub fn reception_freight_row(
             let mut read_only = checked;
             line.add_enabled(false, egui::Checkbox::new(&mut read_only, "도서/산간"));
         }
+        if inquiry_visible {
+            theme::action(line, "공장에 운임 문의", theme::ButtonRole::Standard, false);
+        }
     });
 }
 
 /// Original React lower action row. Keep its already-approved actions
 /// visible but disabled until the actual native editing commands are wired.
 pub fn reception_item_actions(ui: &mut Ui, dispatch_origin: Option<&str>) {
-    ui.horizontal(|bar| {
+    ui.horizontal_wrapped(|bar| {
         bar.spacing_mut().item_spacing.x = theme::SPACE_4;
         theme::action(bar, "＋ 상품 추가", theme::ButtonRole::Standard, false);
         bar.with_layout(Layout::right_to_left(Align::Center), |right| {
@@ -703,10 +706,15 @@ pub fn reception_total_footer(
         "총 주문", egui::FontId::proportional(typography::FONT_FIELD_LABEL),
         theme::TEXT,
     );
-    ui.painter().text(
-        egui::pos2(right, rect.top() + 15.0), egui::Align2::RIGHT_CENTER,
-        amount, egui::FontId::monospace(18.0), theme::TEXT,
+    // The React right-hand sum/VAT column has a fixed 148pt budget.
+    // Labels clip within it rather than colliding with the count/title.
+    let right_column = Rect::from_min_max(
+        egui::pos2((right-148.0).max(left+50.0),rect.top()+2.0),
+        egui::pos2(right,rect.top()+29.0),
     );
+    ui.put(right_column, egui::Label::new(
+        egui::RichText::new(amount).monospace().size(18.0).color(theme::TEXT),
+    ).halign(Align::Max).truncate());
     let count_text = count.map(|n| n.to_string())
         .unwrap_or_else(|| "—".to_owned());
     ui.painter().text(
@@ -714,10 +722,13 @@ pub fn reception_total_footer(
         format!("| 택배 {:>3}건 |", count_text),
         egui::FontId::monospace(11.0), theme::SECONDARY,
     );
-    ui.painter().text(
-        egui::pos2(right, rect.top() + 42.0), egui::Align2::RIGHT_CENTER,
-        vat, egui::FontId::proportional(10.0), theme::SECONDARY,
+    let vat_column=Rect::from_min_max(
+        egui::pos2((right-148.0).max(left+50.0),rect.top()+31.0),
+        egui::pos2(right,rect.bottom()-1.0),
     );
+    ui.put(vat_column, egui::Label::new(
+        egui::RichText::new(vat).size(10.0).color(theme::SECONDARY),
+    ).halign(Align::Max).truncate());
     if !note.trim().is_empty() {
         response.on_hover_text(note);
     }
