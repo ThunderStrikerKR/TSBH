@@ -597,21 +597,58 @@ impl SettingsView{
             .and_then(Value::as_array).cloned().unwrap_or_default();
         let mut delete=None;
         for (index,account) in accounts.iter_mut().enumerate(){
-            ui.horizontal(|line|{
-                line.label(typography::field_label(
-                    &format!("계좌 {}",index+1)
-                ));
-                line.with_layout(Layout::right_to_left(Align::Center),|right|{
-                    if theme::action(right,"계좌 삭제",ButtonRole::Danger,true).clicked(){
-                        delete=Some(index);
+            // Match the original React account-row four-track grid.
+            // The delete button is aligned with the input controls,
+            // not placed above a separate three-column form.
+            if ui.available_width()>=theme::SETTINGS_ACCOUNT_ROW_MIN_WIDTH{
+                ui.horizontal(|row|{
+                    row.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    let usable=(row.available_width()
+                        -theme::SETTINGS_ACCOUNT_DELETE_WIDTH
+                        -3.0*theme::SPACE_8).max(0.0);
+                    let weights=theme::SETTINGS_ACCOUNT_COL_RATIOS;
+                    let total=weights.iter().sum::<f32>();
+                    for (column,(key,label)) in [
+                        ("bank","은행명"),("number","계좌번호"),
+                        ("holder","예금주")
+                    ].into_iter().enumerate(){
+                        let width=usable*weights[column]/total;
+                        row.allocate_ui_with_layout(
+                            Vec2::new(width,theme::SPACE_24),
+                            Layout::top_down(Align::Min),|field_ui|{
+                                field_ui.set_width(width);
+                                edit_input(field_ui,account,key,label);
+                            }
+                        );
                     }
+                    row.allocate_ui_with_layout(
+                        Vec2::new(theme::SETTINGS_ACCOUNT_DELETE_WIDTH,
+                            theme::SPACE_24),
+                        Layout::top_down(Align::Min),|delete_ui|{
+                            // Match the bottom alignment of input control,
+                            // after its field label.
+                            delete_ui.add_space(theme::SPACE_24);
+                            if theme::action_full_width(
+                                delete_ui,"계좌 삭제",ButtonRole::Danger,true
+                            ).clicked(){
+                                delete=Some(index);
+                            }
+                        }
+                    );
                 });
-            });
-            ui.columns(3,|cols|{
-                edit_input(&mut cols[0],account,"bank","은행명");
-                edit_input(&mut cols[1],account,"number","계좌번호");
-                edit_input(&mut cols[2],account,"holder","예금주");
-            });
+            }else{
+                // Narrow cards must never squeeze an account number
+                // down to character-by-character wrapping.
+                ui.label(typography::field_label(&format!("계좌 {}",index+1)));
+                edit_input(ui,account,"bank","은행명");
+                edit_input(ui,account,"number","계좌번호");
+                edit_input(ui,account,"holder","예금주");
+                if theme::action(
+                    ui,"계좌 삭제",ButtonRole::Danger,true
+                ).clicked(){
+                    delete=Some(index);
+                }
+            }
             ui.add_space(theme::SPACE_8);
             components::soft_divider(ui);
         }
