@@ -76,6 +76,46 @@ fn patch(conn:&mut Connection, request:&Value)->Result<Value,String>{
             result.get("state").filter(|s|s.is_object()).cloned()
                 .ok_or("Rust 상품 저장 결과 형식 오류")?
         }
+        "change_category" | "delete_category"=>{
+            // React CategoryManager supplies virtual catalog roots in its
+            // state. The same roots must be present before native validation,
+            // while retaining every existing category and product ID.
+            let mut state=before.clone();
+            let cats=state["categories"].as_array_mut()
+                .ok_or("운영 카테고리 목록을 확인할 수 없습니다.")?;
+            for (id,name) in [
+                ("catalog-root:BANDOSTAND","반도스탠드"),
+                ("catalog-root:BANDOMALL","반도몰"),
+            ]{
+                if !cats.iter().any(|c|c["id"].as_str()==Some(id)){
+                    cats.push(json!({"id":id,"name":name,"parentId":null}));
+                }
+            }
+            let payload=if action=="change_category" {
+                let category_id=data["categoryId"].as_str().unwrap_or("");
+                let id=if category_id.is_empty(){
+                    unique_id("category")?
+                }else{category_id.to_owned()};
+                json!({
+                    "state":state,
+                    "categoryId":id,
+                    "name":required(data,"name")?,
+                    "parentId":data.get("parentId").unwrap_or(&Value::Null),
+                    "transfer":data.get("transfer")==Some(&Value::Bool(true)),
+                    "guardCatalogMove":data.get("guardCatalogMove")==Some(&Value::Bool(true)),
+                    "guardError":data.get("guardError").and_then(Value::as_str).unwrap_or(""),
+                })
+            }else{
+                json!({
+                    "state":state,
+                    "categoryId":required(data,"categoryId")?,
+                    "destination":"",
+                })
+            };
+            let result=business_core::execute("catalog_clients",action,payload)?;
+            result.get("state").filter(|v|v.is_object()).cloned()
+                .ok_or("Rust 카테고리 처리 결과 형식 오류")?
+        }
         "archive_product"=>{
             let product_id=required(data,"productId")?;
             let result=business_core::execute(
