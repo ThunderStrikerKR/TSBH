@@ -1123,10 +1123,9 @@ impl FreightManager {
         let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
         theme::section_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
-            section.horizontal(|title|{
-                title.label(typography::section_heading("상품별 배송 그룹 지정"));
-                settings_help::icon(title,"상품별 운임");
-            });
+            // The parent page title and active "배송 그룹 편성" tab already
+            // establish context. Start directly with the search/bulk toolbar:
+            // do not leave an empty title row or its implicit vertical gap.
             // Reserve a single toolbar rectangle. Left filters and right
             // bulk controls receive independent fixed-height child UIs.
             // Mixing left-to-right and right-to-left layouts in ONE row
