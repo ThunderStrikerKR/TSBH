@@ -302,8 +302,10 @@ fn history_recipient_products(row:&Value,recipient_index:usize)->String{
                 " (상품 연결 확인 필요)".to_owned(),
             _=>String::new()
         };
+        // Keep the original order-line name in DETAILS. Only the main
+        // summary simplifies product/model prefixes.
         format!("{} × {}{}",
-            model_label(field(item,"name")),
+            field(item,"name"),
             item["quantity"].as_i64().map(|n|n.to_string())
                 .unwrap_or_else(||"수량 확인".to_owned()),status)
     }).collect::<Vec<_>>();
@@ -1166,6 +1168,51 @@ impl OrderHistoryManager {
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn expanded_order_groups_two_recipients_and_preserves_full_delivery_details(){
+        let snapshot=HistorySnapshot{
+            state:json!({"workflow":{"shipments":[
+                {"id":"s1","orderId":"o1","recipientId":"r1",
+                 "tracking":{"parcel":"123456789"},
+                 "actualFreight":{"parcel":3500}}
+            ]}}),
+            rows:vec![json!({
+                "order":{"id":"o1"},
+                "recipients":[
+                    {"id":"r1","name":"수취인 가","address":"광주",
+                     "items":[{"id":"i1","name":"BD 709 / 블랙","quantity":4},
+                              {"id":"i2","name":"뮤직 트레이","quantity":1}]},
+                    {"id":"r2","name":"수취인 나","address":"담양",
+                     "items":[{"id":"i3","name":"BD 803","quantity":2}]}
+                ],
+                "billing":{"subtotal":268000,"shipping":9000,"vat":0},
+                "total":277000
+            })]
+        };
+        let mut expanded=BTreeSet::new();
+        assert_eq!(display_lines(&snapshot,&expanded,None),vec![
+            HistoryLine::Order(0)
+        ]);
+        expanded.insert("o1".to_owned());
+        // Formerly 1 + 3 lines per recipient + billing = 8 rows.
+        // Now one header + one detail row per delivery + billing = 6.
+        assert_eq!(display_lines(&snapshot,&expanded,None),vec![
+            HistoryLine::Order(0),
+            HistoryLine::Recipient(0,0),
+            HistoryLine::RecipientDetails(0,0),
+            HistoryLine::Recipient(0,1),
+            HistoryLine::RecipientDetails(0,1),
+            HistoryLine::Billing(0)
+        ]);
+        assert_eq!(history_recipient_products(&snapshot.rows[0],0),
+            "BD 709 / 블랙 × 4  /  뮤직 트레이 × 1");
+        assert!(history_recipient_freight(&snapshot,"o1","r1")
+            .contains("123456789"));
+        assert!(history_recipient_freight(&snapshot,"o1","r1")
+            .contains("3,500원"));
+        assert_eq!(history_recipient_freight(&snapshot,"o1","r2"),
+            "실제 운임 확인 필요 · 운송장 확인 필요");
+    }
     #[test]
     fn employee_approval_column_sorts_by_confirmation_date_and_keeps_unknown_last(){
         let snapshot=HistorySnapshot{
