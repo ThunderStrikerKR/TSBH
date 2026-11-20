@@ -1887,15 +1887,15 @@ fn summary(ui: &mut Ui, label: &str, count: usize) {
         egui::Layout::top_down(egui::Align::Min),
         |slot|{
             slot.set_width(card_width);
-            theme::section_frame().show(slot,|cell|{
-                let content_width=card_width-2.0*theme::SECTION_PADDING
+            theme::freight_summary_frame().show(slot,|cell|{
+                let content_width=card_width-2.0*theme::FREIGHT_SUMMARY_PADDING_X
                     -2.0*theme::FRAME_STROKE_WIDTH;
-                // The frame margins plus this single 22pt content row
-                // preserve the existing 56pt card height. Every glyph is
-                // positioned against ONE centerline, not nested rows whose
-                // baseline and allocation depend on text length.
+                // Padding, line height and total card height are calculated
+                // from the same 16pt summary font size. The one-line row
+                // remains a shared baseline for labels, digits and units.
                 let (line,_)=cell.allocate_exact_size(
-                    egui::vec2(content_width,22.0),egui::Sense::hover()
+                    egui::vec2(content_width,theme::FREIGHT_SUMMARY_LINE_HEIGHT),
+                    egui::Sense::hover()
                 );
                 let caption=typography::summary_card_label_galley(
                     cell,label
