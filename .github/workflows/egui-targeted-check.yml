@@ -1,4 +1,4 @@
-# Targeted Windows compile: Settings account four-column editor, recommendations and in-card save actions.
+# Targeted Windows compile: final egui Settings four-tab layout, conflict recovery, saved-folder semantics.
 name: Tauri native CLI executable compile check
 on:
   push:
