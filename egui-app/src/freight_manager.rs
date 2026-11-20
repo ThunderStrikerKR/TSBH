@@ -229,7 +229,7 @@ impl FreightManager {
             let outcome=(|| {
                 let state=gateway.load_business_state()?;
                 let shipping=state.get("shipping")
-                    .filter(Value::is_object)
+                    .filter(|value|value.is_object())
                     .ok_or("운영 DB에서 운임 기준을 찾을 수 없습니다.")?;
                 let mut projection=gateway.execute(
                     ReadOperation::ShippingManagerView,
