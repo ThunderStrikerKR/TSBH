@@ -509,9 +509,11 @@ impl FreightManager {
         theme::section_frame().show(ui, |section| {
             section.horizontal(|tools|{
                 tools.label(typography::field_label("새 배송 그룹명"));
-                components::flexible_text_field(
-                    tools,new_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 배송 그룹명"
-                );
+                tools.add_enabled_ui(enabled,|field|{
+                    components::flexible_text_field(
+                        field,new_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 배송 그룹명"
+                    );
+                });
                 if theme::action(tools,"배송 그룹 추가",theme::ButtonRole::Primary,
                     enabled&&!new_name.trim().is_empty()).clicked(){
                     *action=Some(("create_group".into(),json!({
@@ -774,15 +776,17 @@ impl FreightManager {
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|line|{
             line.label(typography::field_label("최대 합포장 수량"));
-            egui::ComboBox::from_id_salt("freight-rate-max")
-                .selected_text(editor.max_bundle
-                    .map(|v|format!("{v}개")).unwrap_or_else(||"미확정".into()))
-                .show_ui(line,|choice|{
-                    choice.selectable_value(&mut editor.max_bundle,None,"미확정");
-                    for n in 1..=6 {
-                        choice.selectable_value(&mut editor.max_bundle,Some(n),format!("{n}개"));
-                    }
-                });
+            line.add_enabled_ui(enabled,|input|{
+                egui::ComboBox::from_id_salt("freight-rate-max")
+                    .selected_text(editor.max_bundle
+                        .map(|v|format!("{v}개")).unwrap_or_else(||"미확정".into()))
+                    .show_ui(input,|choice|{
+                        choice.selectable_value(&mut editor.max_bundle,None,"미확정");
+                        for n in 1..=6 {
+                            choice.selectable_value(&mut editor.max_bundle,Some(n),format!("{n}개"));
+                        }
+                    });
+            });
         });
         if editor.max_bundle.is_none(){
             ui.label(typography::caption("최대 묶음 수량을 먼저 선택하세요."));
@@ -812,16 +816,18 @@ impl FreightManager {
         ).collect::<Vec<_>>();
         if !available.is_empty(){
             ui.horizontal(|line|{
-                egui::ComboBox::from_id_salt("freight-rate-add-count")
-                    .selected_text(editor.add_count
-                        .map(|n|format!("{n}개")).unwrap_or_else(||"묶음 수량 선택".into()))
-                    .show_ui(line,|choice|{
-                        for count in &available{
-                            choice.selectable_value(
-                                &mut editor.add_count,Some(*count),format!("{count}개")
-                            );
-                        }
-                    });
+                line.add_enabled_ui(enabled,|input|{
+                    egui::ComboBox::from_id_salt("freight-rate-add-count")
+                        .selected_text(editor.add_count
+                            .map(|n|format!("{n}개")).unwrap_or_else(||"묶음 수량 선택".into()))
+                        .show_ui(input,|choice|{
+                            for count in &available{
+                                choice.selectable_value(
+                                    &mut editor.add_count,Some(*count),format!("{count}개")
+                                );
+                            }
+                        });
+                });
                 if theme::action(line,"운임 구간 추가",
                     theme::ButtonRole::Standard,enabled&&editor.add_count.is_some()
                 ).clicked(){
@@ -833,10 +839,12 @@ impl FreightManager {
         }
         ui.add_space(theme::SPACE_12);
         ui.label(typography::field_label("사용자 참고 메모"));
-        components::flexible_text_field(
-            ui,&mut editor.notes,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-            "포장할 때 참고할 사항 (선택)"
-        );
+        ui.add_enabled_ui(enabled,|input|{
+            components::flexible_text_field(
+                input,&mut editor.notes,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+                "포장할 때 참고할 사항 (선택)"
+            );
+        });
         if let Some(error)=&editor.error {
             ui.label(typography::status(error,theme::DANGER));
         }
