@@ -1275,7 +1275,6 @@ impl BandoEgui {
             let mut open = true;
             components::modal_window("OCR 문자 인식 검토","egui-ocr-review",work_area)
                 .open(&mut open)
-                .resizable(true)
                 .default_width(620.0)
                 .show(ctx, |ui| {
                     ui.label(typography::caption(
@@ -1595,6 +1594,7 @@ impl BandoEgui {
             egui::Window::new("알림")
                 .id(egui::Id::new("native_ui_preview_notifications"))
                 .collapsible(false)
+                .movable(false)
                 .resizable(false)
                 .show(ctx, |ui| {
                     if let Some(error) = &self.source_save_error {
