@@ -59,6 +59,8 @@ pub struct ClientManager {
     matches:Vec<String>,
     search:String,
     searching:bool,
+    // None = Rust/source order; false = ascending; true = descending.
+    sort:Option<(usize,bool)>,
     error:Option<String>,
     changed:bool,
     draft:Option<Value>,
@@ -80,7 +82,7 @@ impl ClientManager {
         Self {
             state:Value::Null,ready:false,loading:Some(rx),saving:None,
             search_rx:None,generation:0,matches:Vec::new(),search:String::new(),
-            searching:false,error:None,changed:false,
+            searching:false,sort:None,error:None,changed:false,
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
         }
@@ -229,10 +231,10 @@ impl ClientManager {
         });
     }
 
-    fn list_search(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,reserve:f32) {
-        // The placeholder already states the search purpose; an extra
-        // external '검색' label wastes the first column's left alignment.
-        let width=(ui.available_width()-reserve).max(60.0)
+    fn list_search(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>) {
+        // The placeholder is sufficient. The toolbar owns a fixed
+        // left-hand rectangle, so no guesswork about button widths here.
+        let width=ui.available_width().max(60.0)
             .min(theme::MANAGEMENT_CLIENT_SEARCH_MAX_WIDTH);
         if components::flexible_text_field(
             ui,&mut self.search,width,"상호 / 주소 / 전화번호 / 별칭 검색"
@@ -245,14 +247,42 @@ impl ClientManager {
         self.poll(Arc::clone(&gateway),ui.ctx());
         ui.label(typography::page_heading("거래처 관리"));
         ui.add_space(theme::SPACE_12);
+        // Keep the existing second tab disabled until its native workflow
+        // is actually migrated; a visual refresh must not fake availability.
         components::management_tabs(ui,&[
             ("거래처 목록",true,true),
             ("자동 메시지 편집",false,false),
         ]);
-        ui.add_space(theme::SPACE_12);
-        // React client-list-panel: ONE bordered surface owns both the
-        // searchable toolbar and the scrolling table, with no doubled
-        // 16pt section padding around the rows.
+        ui.add_space(theme::SPACE_16);
+
+        // A filtered copy keeps Rust's search IDs authoritative.
+        // Sorting changes display order only, never the backing master.
+        let mut rows=self.clients().iter()
+            .filter(|row|field(row,"deletedAt").is_empty())
+            .filter(|row|self.search.trim().is_empty() ||
+                (!self.searching && self.matches.iter()
+                    .any(|id|id==field(row,"id"))))
+            .cloned().collect::<Vec<_>>();
+        if let Some((column,descending))=self.sort{
+            rows.sort_by(|left,right|{
+                let a=match column {
+                    0=>field(left,"name"),
+                    1=>field(left,"address"),
+                    _=>readable_tier(field(left,"tier")),
+                };
+                let b=match column {
+                    0=>field(right,"name"),
+                    1=>field(right,"address"),
+                    _=>readable_tier(field(right,"tier")),
+                };
+                let compared=a.to_lowercase().cmp(&b.to_lowercase())
+                    .then_with(||field(left,"id").cmp(field(right,"id")));
+                if descending{compared.reverse()}else{compared}
+            });
+        }
+
+        // A single outlined section owns its heading, a stable search/
+        // action toolbar, a permanently visible header and its own rows.
         theme::management_list_frame().show(ui,|section|{
             section.spacing_mut().item_spacing.y=0.0;
             egui::Frame::new()
@@ -260,90 +290,194 @@ impl ClientManager {
                     theme::SPACE_12 as i8,theme::SPACE_8 as i8
                 ))
                 .show(section,|tools|{
-                    if tools.available_width() <
-                        theme::MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH {
-                        // Keep the search usable with the Kakao split widened.
-                        // Only the toolbar wraps, never the table columns.
+                    tools.horizontal(|heading|{
+                        heading.label(typography::section_heading("등록 거래처"));
+                        heading.with_layout(
+                            Layout::right_to_left(Align::Center),|right|{
+                                let status=if !self.ready{
+                                    "불러오는 중".to_owned()
+                                }else if self.searching{
+                                    "검색 중".to_owned()
+                                }else{
+                                    format!("{}개",rows.len())
+                                };
+                                right.label(typography::caption(&status));
+                            }
+                        );
+                    });
+                    tools.add_space(theme::SPACE_8);
+                    let toolbar_width=tools.available_width().max(1.0);
+                    if toolbar_width<theme::MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH {
+                        // On narrow Kakao-split layouts only the toolbar
+                        // stacks; columns and table header never wrap.
                         tools.horizontal(|search|{
-                            self.list_search(search,Arc::clone(&gateway),0.0);
+                            self.list_search(search,Arc::clone(&gateway));
                         });
                         tools.add_space(theme::SPACE_8);
                         self.list_toolbar_actions(tools);
                     }else{
-                        tools.horizontal(|bar|{
-                            self.list_search(bar,Arc::clone(&gateway),
-                                theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH);
-                            self.list_toolbar_actions(bar);
-                        });
+                        let (toolbar_rect,_)=tools.allocate_exact_size(
+                            egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
+                            egui::Sense::hover()
+                        );
+                        let actions_width=theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH;
+                        let search_rect=egui::Rect::from_min_size(
+                            toolbar_rect.min,
+                            egui::vec2(
+                                toolbar_width-actions_width-theme::SPACE_16,
+                                toolbar_rect.height()
+                            )
+                        );
+                        let action_rect=egui::Rect::from_min_size(
+                            egui::pos2(toolbar_rect.right()-actions_width,
+                                toolbar_rect.top()),
+                            egui::vec2(actions_width,toolbar_rect.height())
+                        );
+                        tools.scope_builder(
+                            egui::UiBuilder::new()
+                                .id_salt("client-management-search-slot")
+                                .max_rect(search_rect)
+                                .layout(Layout::left_to_right(Align::Center)),
+                            |search|{
+                                search.set_clip_rect(search_rect);
+                                search.set_width(search_rect.width());
+                                self.list_search(search,Arc::clone(&gateway));
+                            }
+                        );
+                        tools.scope_builder(
+                            egui::UiBuilder::new()
+                                .id_salt("client-management-actions-slot")
+                                .max_rect(action_rect)
+                                .layout(Layout::left_to_right(Align::Center)),
+                            |actions|{
+                                actions.set_clip_rect(action_rect);
+                                actions.set_width(action_rect.width());
+                                self.list_toolbar_actions(actions);
+                            }
+                        );
                     }
                 });
             components::soft_divider(section);
-            // Do not inject unsolicited success/error text after actions.
-            // Retain failure state so an unsuccessful save cannot close the
-            // editor or be treated as a committed change.
-            if !self.ready {
-                theme::management_list_strip_frame().show(section,|strip|{
-                    strip.label(typography::caption("거래처 명단을 불러오는 중입니다."));
-                });
-                return;
-            }
-            let rows=self.clients().iter()
-                .filter(|row|field(row,"deletedAt").is_empty())
-                .filter(|row|self.search.trim().is_empty() ||
-                    (!self.searching && self.matches.iter()
-                    .any(|id|id==field(row,"id"))))
-                .cloned().collect::<Vec<_>>();
-            if self.searching {
-                section.label(typography::caption("거래처 검색 중…"));
-            }
-            egui::ScrollArea::both()
-                .id_salt("client-management-table")
-                .auto_shrink([false,false])
-                .show(section,|table|{
-                    table.set_min_width(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
-                    components::management_row(table,"client-management-header",[
-                        ("거래처",""),("발송인 정보",""),("거래 조건","")
-                    ],true,None);
-                    for (index,client) in rows.iter().enumerate() {
-                        let name=field(client,"name");
-                        let display=field(client,"displayName");
-                        let description=if display!=name {display} else {""};
-                        let address=field(client,"address");
-                        let contacts=[field(client,"phone"),field(client,"mobile")]
-                            .into_iter().filter(|s|!s.trim().is_empty())
-                            .collect::<Vec<_>>().join(" / ");
-                        let contacts=if contacts.is_empty(){
-                            "연락처 미등록".to_owned()
-                        }else{contacts};
-                        let conditions=[
-                            if field(client,"payment")=="POSTPAID"{"후불"}else{"선입금"},
-                            if client.get("defaultApplyVat").and_then(Value::as_bool)
-                                .unwrap_or(false) {"부가세 포함"} else {"부가세 별도"},
-                            if client.get("shippingFeeExcluded").and_then(Value::as_bool)
-                                .unwrap_or(false) {"운임 청구 제외"} else {""},
-                            if client.get("active")==Some(&Value::Bool(false))
-                                {"거래 중지"}else{""}
-                        ].into_iter().filter(|t|!t.is_empty())
-                            .collect::<Vec<_>>().join(" / ");
-                        if components::management_row_striped(table,field(client,"id"),[
-                            (name,description),(address,&contacts),
-                            (readable_tier(field(client,"tier")),&conditions)
-                        ],Some(field(client,"tier")),index).clicked() {
-                            self.begin(client.clone());
-                        }
+
+            // Match Freight Assignment's header + independently scrolling
+            // 42pt rows. Header x coordinates follow the scroll offset;
+            // scrolling vertically never hides or moves column names.
+            let viewport_width=section.available_width().max(1.0);
+            let gutter=section.spacing().scroll.allocated_width()+theme::SPACE_4;
+            let table_width=(viewport_width-gutter)
+                .max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
+            let (header_rect,_)=section.allocate_exact_size(
+                egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
+                egui::Sense::hover()
+            );
+            let mut chosen=None;
+            let scroll_output=components::virtual_fixed_rows(
+                egui::ScrollArea::both()
+                    .id_salt("client-management-table-rows")
+                    .scroll_bar_visibility(
+                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                    )
+                    .max_height(section.ctx().content_rect().height()
+                        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+                    .auto_shrink([false,false]),
+                section,table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT,
+                rows.len().max(1),
+                |table,visible_rows|{
+                    table.set_min_width(table_width);
+                    table.spacing_mut().item_spacing.y=0.0;
+                    let first=visible_rows.start;
+                    let origin=table.max_rect().min;
+                    for index in visible_rows{
+                        let row_rect=egui::Rect::from_min_size(
+                            egui::pos2(
+                                origin.x,
+                                origin.y+(index-first) as f32
+                                    *theme::MANAGEMENT_CLIENT_ROW_HEIGHT
+                            ),
+                            egui::vec2(
+                                table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT
+                            )
+                        );
+                        table.scope_builder(
+                            egui::UiBuilder::new()
+                                .id_salt(("client-management-fixed-row",index))
+                                .max_rect(row_rect)
+                                .layout(Layout::top_down(Align::Min)),
+                            |row|{
+                                row.set_clip_rect(table.clip_rect());
+                                if let Some(client)=rows.get(index){
+                                    let name=field(client,"name");
+                                    let display=field(client,"displayName");
+                                    let description=if display!=name {display}else{""};
+                                    let address=field(client,"address");
+                                    let contacts=[
+                                        field(client,"phone"),field(client,"mobile")
+                                    ].into_iter().filter(|v|!v.trim().is_empty())
+                                        .collect::<Vec<_>>().join(" / ");
+                                    let contacts=if contacts.is_empty(){
+                                        "연락처 미등록".to_owned()
+                                    }else{contacts};
+                                    let conditions=[
+                                        if field(client,"payment")=="POSTPAID"{
+                                            "후불"
+                                        }else{"선입금"},
+                                        if client.get("defaultApplyVat")
+                                            .and_then(Value::as_bool)
+                                            .unwrap_or(false){
+                                            "부가세 포함"
+                                        }else{"부가세 별도"},
+                                        if client.get("shippingFeeExcluded")
+                                            .and_then(Value::as_bool)
+                                            .unwrap_or(false){
+                                            "운임 청구 제외"
+                                        }else{""},
+                                        if client.get("active")==Some(
+                                            &Value::Bool(false)){
+                                            "거래 중지"
+                                        }else{""}
+                                    ].into_iter().filter(|v|!v.is_empty())
+                                        .collect::<Vec<_>>().join(" / ");
+                                    if components::management_row_striped(
+                                        row,field(client,"id"),[
+                                            (name,description),(address,&contacts),
+                                            (readable_tier(field(client,"tier")),&conditions)
+                                        ],Some(field(client,"tier")),index
+                                    ).clicked(){
+                                        chosen=Some(client.clone());
+                                    }
+                                }else{
+                                    let status=if !self.ready{
+                                        "거래처 명단을 불러오는 중입니다."
+                                    }else if self.searching{
+                                        "거래처 검색 중…"
+                                    }else if self.search.trim().is_empty(){
+                                        "등록된 거래처가 없습니다."
+                                    }else{
+                                        "검색 결과가 없습니다."
+                                    };
+                                    row.add_space(theme::SPACE_12);
+                                    row.horizontal(|empty|{
+                                        empty.add_space(theme::SPACE_12);
+                                        empty.label(typography::caption(status));
+                                    });
+                                }
+                            }
+                        );
                     }
-                    if rows.is_empty() && !self.searching {
-                        table.add_space(theme::SPACE_12);
-                        table.horizontal(|empty|{
-                            empty.add_space(theme::SPACE_12);
-                            empty.label(typography::caption(
-                                if self.search.is_empty() {
-                                    "등록된 거래처가 없습니다."
-                                } else {"검색 결과가 없습니다."}
-                            ));
-                        });
-                    }
-                });
+                }
+            );
+            let header_left=header_rect.left()-scroll_output.state.offset.x;
+            if let Some(column)=components::management_client_header(
+                section,header_rect,header_left,table_width,self.sort
+            ){
+                self.sort=match self.sort{
+                    Some((old,false)) if old==column=>Some((column,true)),
+                    Some((old,true)) if old==column=>None,
+                    _=>Some((column,false))
+                };
+                section.ctx().request_repaint();
+            }
+            if let Some(client)=chosen{self.begin(client);}
         });
     }
     fn editor_fields(&mut self,ui:&mut Ui,draft:&mut Value) {
