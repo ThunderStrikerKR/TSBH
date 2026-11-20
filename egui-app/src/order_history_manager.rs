@@ -370,7 +370,7 @@ fn date_range_error(from:&str,to:&str)->Option<&'static str>{
 }
 fn move_range(from:&mut String,to:&mut String,step:i64){
     if from.is_empty()&&to.is_empty(){
-        let today=seoul_today();
+        let today=move_date(&seoul_today(),step);
         *from=today.clone();*to=today;
     }else{
         for date in [from,to]{
@@ -500,6 +500,17 @@ fn history_date_controls(
                 line,from,to,to_month
             );
         });
+    }
+    // Previous/next moves BOTH ends of the window. Keep each calendar's
+    // visible month synchronized without undoing unsaved month navigation
+    // in a still-open popup (which does not set changed).
+    if changed{
+        if let Ok(day)=NaiveDate::parse_from_str(from,"%Y-%m-%d"){
+            *from_month=month_start(day);
+        }
+        if let Ok(day)=NaiveDate::parse_from_str(to,"%Y-%m-%d"){
+            *to_month=month_start(day);
+        }
     }
     changed
 }
