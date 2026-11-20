@@ -280,6 +280,19 @@ pub fn client_table_metadata_galley(
     client_table_galley(ui,text,Role::Metadata,false,color)
 }
 
+/// Exact left-anchored category tree name glyphs. Do not place a Label in
+/// a full-width allocation: egui may center its text inside that rectangle.
+/// Both root and non-root names retain their existing typography role.
+pub fn category_tree_name_galley(
+    ui:&egui::Ui,text:&str,root:bool
+)->std::sync::Arc<egui::Galley>{
+    if root {
+        client_table_galley(ui,text,Role::Subsection,true,TEXT)
+    }else{
+        client_table_galley(ui,text,Role::Body,false,TEXT)
+    }
+}
+
 /// Visual-only breadcrumb shortening. The underlying category path and ID
 /// stay complete; only the rendered label may drop ancestors from the LEFT.
 /// Prefer keeping whole trailing category names and the final leaf intact.
