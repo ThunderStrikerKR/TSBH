@@ -27,14 +27,16 @@ pub struct ClientChooser {
     generation: u64,
     searching: bool,
     error: Option<String>,
+    selecting: Option<String>,
 }
 
 fn text<'a>(row:&'a Value,key:&str)->&'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
 }
 fn active(row:&Value)->bool {
-    row.get("deletedAt").is_none_or(Value::is_null)
-        || text(row,"deletedAt").is_empty()
+    row.get("deletedAt").is_none_or(|deleted|
+        deleted.is_null() || deleted.as_str()==Some("")
+    ) && row.get("active")!=Some(&Value::Bool(false))
 }
 
 impl ClientChooser {
@@ -55,13 +57,24 @@ impl ClientChooser {
             order_id, query:String::new(),
             clients:Vec::new(),results:Vec::new(),loaded:false,
             loading:receiver,search_result:None,generation:0,
-            searching:false,error:None,
+            searching:false,error:None,selecting:None,
         }
     }
 
     pub fn contains(&self, id:&str)->bool {
         self.loaded && self.clients.iter().any(|c| text(c,"id")==id && active(c))
     }
+    /// Only a successful native result closes the chooser. Keep selection
+    /// and search state intact across Rust errors for an immediate retry.
+    pub fn begin_selection(&mut self,id:&str) {
+        self.selecting=Some(id.to_owned());
+        self.error=None;
+    }
+    pub fn selection_failed(&mut self,message:String) {
+        self.selecting=None;
+        self.error=Some(message);
+    }
+    pub fn is_selecting(&self)->bool { self.selecting.is_some() }
 
     fn search(&mut self, gateway:Arc<dyn BandoGateway>, ctx:Context) {
         self.generation=self.generation.wrapping_add(1);
@@ -139,6 +152,7 @@ impl ClientChooser {
         self.poll(Arc::clone(&gateway),ctx);
         let mut is_open=true;
         let mut chosen:Option<String>=None;
+        let busy=self.selecting.is_some();
         components::modal_window("거래처 변경","egui-reception-client-chooser",work_area)
             .open(&mut is_open)
             
@@ -149,13 +163,16 @@ impl ClientChooser {
                     .find(|c|Some(text(c,"id"))==current_id)
                     .map(|c|text(c,"name")).unwrap_or("미선택");
                 ui.label(typography::body(&format!("현재 거래처: {currently}")));
-                let response=ui.add(
+                let response=ui.add_enabled(!busy,
                     egui::TextEdit::singleline(&mut self.query)
                         .hint_text("상호 / 별칭 / 주소 / 전화번호 검색")
                         .desired_width(ui.available_width())
                 );
                 if response.changed()&&self.loaded {
                     self.search(Arc::clone(&gateway),ctx.clone());
+                }
+                if busy {
+                    ui.label(typography::caption("거래처 적용 중…"));
                 }
                 if let Some(e)=&self.error {
                     ui.label(typography::status(e,theme::DANGER));
@@ -186,7 +203,7 @@ impl ClientChooser {
                                     } else { name.to_owned() };
                                     if theme::action(ui,&title,
                                         if selected {ButtonRole::ActiveNavigation}
-                                        else {ButtonRole::Quiet},true).clicked() {
+                                        else {ButtonRole::Quiet},!busy).clicked() {
                                         chosen=Some(id.to_owned());
                                     }
                                     ui.label(typography::caption(
@@ -210,7 +227,7 @@ impl ClientChooser {
         if let Some(id)=chosen {
             if self.contains(&id) {return Some(Choice::Selected(id));}
         }
-        if !is_open {return Some(Choice::Closed);}
+        if !is_open && !busy {return Some(Choice::Closed);}
         None
     }
 }
