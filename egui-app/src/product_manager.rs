@@ -3,6 +3,7 @@
 //! the isolated egui preview DB or bypass Tauri's operational save boundary.
 use crate::{
     category_manager::CategoryManager,
+    model_group_manager::ModelGroupManager,
     components,
     gateway::{BandoGateway, ReadOperation},
     theme, typography,
@@ -149,6 +150,8 @@ pub struct ProductManager {
     query:String,
     tab:usize,
     category_manager:CategoryManager,
+    model_groups:ModelGroupManager,
+    category_next_tab:Option<usize>,
     category:String,
     brand:String,
     missing:bool,
@@ -173,7 +176,9 @@ impl ProductManager {
         let mut page=Self {
             gateway,catalog:None,products:Vec::new(),
             query:String::new(),tab:0,
-            category_manager:CategoryManager::default(),category:String::new(),
+            category_manager:CategoryManager::default(),
+            model_groups:ModelGroupManager::default(),category_next_tab:None,
+            category:String::new(),
             brand:String::new(),missing:false,selected:None,
             adding:false,original_selected:None,detail_prices:HashMap::new(),
             confirm_discard:false,confirm_archive:false,
@@ -194,6 +199,7 @@ impl ProductManager {
         self.confirm_archive=false;
         self.confirm_discard=false;
         self.next_query=None;
+        self.model_groups.reset_navigation();
         self.reload(ctx);
     }
     fn reload(&mut self,ctx:Context) {
@@ -255,6 +261,10 @@ impl ProductManager {
         ctx.request_repaint_after(Duration::from_millis(160));
     }
     fn poll(&mut self,ctx:&Context) {
+        if let Some(catalog)=self.model_groups.poll(ctx){
+            self.catalog=Some(catalog);
+            self.reload(ctx.clone());
+        }
         let written=self.writing.as_ref().map(|job|job.receiver.try_recv());
         match written {
             Some(Ok(Ok(catalog)))=>{
@@ -338,7 +348,8 @@ impl ProductManager {
     }
     pub fn has_modal(&self)->bool {
         self.selected.is_some() ||
-            (self.tab==1 && self.category_manager.has_overlay())
+            (self.tab==1 && self.category_manager.has_overlay()) ||
+            (self.tab==2 && self.model_groups.has_overlay())
     }
     pub fn close_detail(&mut self){
         self.selected=None;
@@ -359,19 +370,22 @@ impl ProductManager {
         }
         if self.tab==1 {
             if let Some(catalog)=self.catalog.as_ref(){
-                if !self.category_manager.request_global_leave(catalog){
-                    return false;
-                }
+                if !self.category_manager.request_global_leave(catalog){return false;}
             }
             self.category_manager.clear_for_leave();
+        }
+        if self.tab==2 && !self.model_groups.request_global_leave(){
+            return false;
         }
         true
     }
     pub fn take_category_global_leave(&mut self)->bool{
         self.category_manager.take_global_leave_approved()
+            ||self.model_groups.take_global_approval()
     }
     pub fn category_global_leave_in_progress(&self)->bool{
         self.category_manager.global_leave_in_progress()
+            ||self.model_groups.global_leave_in_progress()
     }
     fn begin_edit(&mut self,product:Value){
         if self.has_pending_prices(){
@@ -414,35 +428,44 @@ impl ProductManager {
         let pressed=components::management_tabs(ui,&[
             ("상품 목록",self.tab==0,true),
             ("카테고리 관리",self.tab==1,true),
-            ("모델군 관리",false,false),
+            ("모델군 관리",self.tab==2,true),
             ("별칭 관리",false,false),
             ("브랜드 관리",false,false),
         ]);
         if let Some(next)=pressed {
             if next!=self.tab && self.writing.is_none() &&
-                !self.selected.is_some()&&!self.has_pending_prices(){
-                if self.tab==1 && next==0 {
-                    let allowed=self.catalog.as_ref()
-                        .is_none_or(|catalog|
-                            self.category_manager.request_tab_leave(catalog));
-                    if allowed {
-                        self.tab=0;
-                        self.query.clear();
+                self.selected.is_none() && !self.has_pending_prices(){
+                let allowed=match self.tab{
+                    1=>{
+                        let proceed=self.catalog.as_ref()
+                            .is_none_or(|c|self.category_manager.request_tab_leave(c));
+                        if !proceed{self.category_next_tab=Some(next);}
+                        proceed
+                    }
+                    2=>self.model_groups.request_tab_leave(next),
+                    _=>true,
+                };
+                if allowed{
+                    if self.tab==1{
                         self.category_manager.clear_for_leave();
                         self.category_manager.clear_search();
-                        self.reload(ui.ctx().clone());
                     }
-                }else if next==1 {
-                    self.tab=1;
+                    self.tab=next;
                     self.query.clear();
-                    self.category_manager.clear_search();
+                    if next==1{self.category_manager.clear_search();}
+                    self.reload(ui.ctx().clone());
                 }
             }else if self.has_pending_prices(){
                 self.error=Some("가격 수정값을 저장하거나 취소한 뒤 탭을 이동하세요.".into());
             }
         }
         if self.category_manager.take_switch_to_list(){
-            self.tab=0;
+            self.tab=self.category_next_tab.take().unwrap_or(0);
+            self.query.clear();
+            self.reload(ui.ctx().clone());
+        }
+        if let Some(next)=self.model_groups.take_tab_change(){
+            self.tab=next;
             self.query.clear();
             self.reload(ui.ctx().clone());
         }
@@ -453,6 +476,14 @@ impl ProductManager {
         let mut price_write:Option<(String,Value)>=None;
         let mut open_detail:Option<Value>=None;
         let mut begin_new=false;
+        if self.tab==2 {
+            if let Some(catalog)=self.catalog.as_ref(){
+                self.model_groups.show_page(ui,catalog,Arc::clone(&self.gateway));
+            }else{
+                ui.label(typography::caption("모델군 목록을 불러오는 중입니다."));
+            }
+            return;
+        }
         if self.tab==1 {
             if let Some(catalog)=self.catalog.as_ref(){
                 if let Some(error)=&self.error{
@@ -739,6 +770,10 @@ impl ProductManager {
         Ok(next)
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
+        if self.tab==2{
+            self.model_groups.show_dialogs(ctx,work_area,Arc::clone(&self.gateway));
+            return;
+        }
         if self.tab==1 {
             if let Some(catalog)=self.catalog.clone(){
                 let can_edit=self.gateway.product_write_enabled()
