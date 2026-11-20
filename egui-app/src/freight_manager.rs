@@ -57,20 +57,57 @@ fn freight_assignment_text(
     role:FreightCellRole,id:impl std::hash::Hash
 ) {
     let clipped=rect.shrink2(egui::vec2(6.0,0.0));
-    let (galley,color)=match role {
-        FreightCellRole::Primary=>(
-            typography::freight_table_cell_galley(ui,value,true,theme::TEXT),theme::TEXT
-        ),
-        FreightCellRole::Normal=>(
-            typography::freight_table_cell_galley(ui,value,false,theme::TEXT),theme::TEXT
-        ),
-        FreightCellRole::Category=>(
-            typography::freight_table_cell_galley(ui,value,false,theme::SECONDARY),theme::SECONDARY
-        ),
-    };
-    ui.painter().with_clip_rect(clipped).galley(
-        egui::pos2(clipped.left(),clipped.center().y-galley.size().y/2.0),galley,color
-    );
+    let painter=ui.painter().with_clip_rect(clipped);
+    match role {
+        FreightCellRole::Category=>{
+            // Show ancestry as secondary context, but emphasize the leaf.
+            // Keep the original category text intact on hover. The leading
+            // truncation is calculated using both actual glyph widths.
+            let (prefix,leaf)=match value.rfind('>'){
+                Some(index) if !value[index+1..].trim().is_empty() =>
+                    value.split_at(index+1),
+                _=>("",value),
+            };
+            let prefix_galley=typography::freight_table_cell_galley(
+                ui,prefix,false,theme::MUTED
+            );
+            let leaf_galley=typography::freight_table_cell_galley(
+                ui,leaf,true,theme::SECONDARY
+            );
+            let y=clipped.center().y-prefix_galley.size().y.max(
+                leaf_galley.size().y
+            )/2.0;
+            painter.galley(
+                egui::pos2(clipped.left(),y),
+                prefix_galley.clone(),theme::MUTED
+            );
+            painter.galley(
+                egui::pos2(clipped.left()+prefix_galley.size().x,y),
+                leaf_galley,theme::SECONDARY
+            );
+        }
+        other=>{
+            let (galley,color)=match other {
+                FreightCellRole::Primary=>(
+                    typography::freight_table_cell_galley(
+                        ui,value,true,theme::TEXT
+                    ),theme::TEXT
+                ),
+                FreightCellRole::Normal=>(
+                    typography::freight_table_cell_galley(
+                        ui,value,false,theme::TEXT
+                    ),theme::TEXT
+                ),
+                FreightCellRole::Category=>unreachable!(),
+            };
+            painter.galley(
+                egui::pos2(
+                    clipped.left(),
+                    clipped.center().y-galley.size().y/2.0
+                ),galley,color
+            );
+        }
+    }
     if !value.is_empty(){
         let hover_id=ui.make_persistent_id(("freight-cell",id));
         ui.interact(clipped,hover_id,egui::Sense::hover())
