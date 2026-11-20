@@ -359,8 +359,17 @@ impl BandoGateway for LocalGateway {
                 .unwrap_or("운임 변경을 저장하지 못했습니다.").to_owned());
         }
         // Re-read the authoritative state after commit, never optimistic UI
-        // state or a second SQLite write performed by egui.
+        // state or a second SQLite write performed by egui. Another writer
+        // may commit between helper success and this read: a mismatched
+        // revision must never be presented as our saved freight revision.
+        let committed_revision=reply["result"]["revision"].as_u64()
+            .ok_or("운임 저장 도우미가 확정 리비전을 반환하지 않았습니다.")?;
         let state=self.load_business_state()?;
+        if state["revision"].as_u64()!=Some(committed_revision) {
+            return Err(
+                "운임은 저장됐지만 이후 다른 작업에서 데이터가 다시 수정되었습니다. 최신 상태를 불러와 확인하세요.".into()
+            );
+        }
         let shipping=state.get("shipping").ok_or("최신 운임 조회 실패")?;
         let mut projection=self.execute(
             ReadOperation::ShippingManagerView,
