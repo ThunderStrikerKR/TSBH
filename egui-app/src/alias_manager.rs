@@ -243,12 +243,6 @@ impl AliasManager {
                 });
             });
             card.add_space(theme::SPACE_16);
-            if let Err(error)=problems{
-                card.label(typography::status(&error,theme::DANGER));
-            }
-            if let Some(error)=&self.error{
-                card.label(typography::status(error,theme::DANGER));
-            }
             components::soft_divider(card);
             egui::ScrollArea::vertical()
                 .id_salt("alias-registered-list")
@@ -271,16 +265,6 @@ impl AliasManager {
                                 info.label(typography::body(field(item,"text")));
                                 info.label(typography::caption(
                                     &format!("→ {target} / {scope}")));
-                                if let Some(issues)=warnings.get(id).filter(|v|!v.is_empty()){
-                                    info.label(typography::status(
-                                        &format!("{} / 영향 범위: {}",
-                                            issues.join(" / "),
-                                            if field(item,"clientId").is_empty(){
-                                                "모든 거래처의 이후 주문"
-                                            }else{"해당 거래처의 이후 주문"}),
-                                        theme::DANGER,
-                                    ));
-                                }
                             });
                             row.with_layout(Layout::right_to_left(Align::Center),|actions|{
                                 if theme::action(actions,"연결 정정",
@@ -417,9 +401,7 @@ impl AliasManager {
                                         }
                                     }
                                 }
-                                Err(message)=>{
-                                    results.label(typography::status(message,theme::DANGER));
-                                }
+Err(_message)=>{}
                             }
                         });
                 });
@@ -438,9 +420,6 @@ impl AliasManager {
                 "상품 별칭","alias-unsaved-confirm",work_area
             ).show(ctx,|dialog|{
                 dialog.label(typography::body("상품 별칭 변경사항을 저장할까요?"));
-                if let Some(message)=&self.error{
-                    dialog.label(typography::status(message,theme::DANGER));
-                }
                 dialog.horizontal(|actions|{
                     cancel=theme::action(actions,"취소",
                         theme::ButtonRole::Standard,!busy).clicked();
