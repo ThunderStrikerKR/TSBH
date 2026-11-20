@@ -88,9 +88,9 @@ fn compare_rows(
     }
 }
 
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum Direction{Ascending,Descending}
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 struct Sort{column:usize,direction:Direction}
 impl Sort{
     // Reference: default ↕ -> ascending ▲ -> descending ▼ -> default ↕.
@@ -397,7 +397,7 @@ impl DailySettlementManager{
             Some(Ok(Ok(report)))=>{
                 // Old async results are unreachable because refresh drops the
                 // previous receiver. Still verify the requested date.
-                if report["date"].as_str()==Some(&self.date){
+                if report["date"].as_str()==Some(self.date.as_str()){
                     self.report=Some(report);
                     self.error=None;
                 }
