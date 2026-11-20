@@ -163,6 +163,12 @@ impl CategoryManager {
     pub fn take_global_leave_approved(&mut self)->bool{
         std::mem::take(&mut self.global_leave_approved)
     }
+    pub fn global_leave_in_progress(&self)->bool{
+        self.confirm==Some(Confirm::GlobalLeave)
+            || self.after_save==Some(Confirm::GlobalLeave)
+    }
+    pub fn clear_search(&mut self){self.query.clear();}
+
     pub fn clear_for_leave(&mut self){
         self.editor=false;
         self.operation=None;
