@@ -57,13 +57,6 @@ pub fn paint_workflow_icon(
     }
 }
 
-/// Repaint the common center of two splitter rules in one parent layer.
-/// A crossbar clipped by its child pane cannot leave a dark open seam.
-pub fn paint_dock_junction(ui: &Ui, joint: Rect, vertical_active: bool) {
-    paint_dock_axis_line(ui, joint, false, false);
-    paint_dock_axis_line(ui, joint, true, vertical_active);
-}
-
 /// A compact KakaoTalk identity mark, used only as a visual menu prefix.
 /// The native Kakao HWND and order-matching logic remain unchanged.
 pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
@@ -379,12 +372,9 @@ pub fn paint_dock_network(
     verticals: &[(Rect, bool)],
     bridges: &[(usize, usize, f32)],
 ) {
-    // All interactive splitter surfaces were already reserved and painted
-    // by their owning pane. This final pass is strictly decorative.
-    for &(rect, highlighted) in verticals {
-        paint_dock_axis_line(ui, rect, true, highlighted);
-    }
-    let mut intersections: Vec<(usize, f32)> = Vec::new();
+    // Paint each horizontal bridge only between the CENTER AXES of its
+    // two vertical boundaries. Full-width junction squares used to extend
+    // the horizontal rule past the vertical line and create protruding tips.
     for &(left, right, center_y) in bridges {
         if left >= verticals.len() || right >= verticals.len() { continue; }
         let x_start = verticals[left].0.center().x;
@@ -394,24 +384,11 @@ pub fn paint_dock_network(
             egui::pos2(x_end, center_y + crate::layout::SPLITTER / 2.0),
         );
         paint_dock_axis_line(ui, area, false, false);
-        for index in [left, right] {
-            if !intersections.iter().any(|&(existing, y)| {
-                existing == index && (y - center_y).abs() < 0.01
-            }) {
-                intersections.push((index, center_y));
-            }
-        }
     }
-    // The intersection painter owns BOTH endpoint corners of EVERY bridge.
-    // Centering one bar independently inside a clipped child rect no longer
-    // leaves a discontinuity between two neighboring strokes.
-    for (index, center_y) in intersections {
-        let gutter = verticals[index].0;
-        let joint = Rect::from_center_size(
-            egui::pos2(gutter.center().x, center_y),
-            Vec2::splat(crate::layout::SPLITTER),
-        );
-        paint_dock_junction(ui, joint, verticals[index].1);
+    // Draw the continuous vertical rules last. This seals T joints with
+    // snapped pixels without extending the horizontal tips past the axis.
+    for &(rect, highlighted) in verticals {
+        paint_dock_axis_line(ui, rect, true, highlighted);
     }
 }
 
