@@ -11,6 +11,7 @@ mod isolated_shipping_sqlite_verification {
     use super::*;
     use crate::{initialize_database, relational_store};
     use std::time::{SystemTime, UNIX_EPOCH};
+    use std::path::PathBuf;
 
     /// Narrow integration verification of the actual v2 relational SQLite
     /// transaction. Uses a unique temporary file seeded by the normal native
