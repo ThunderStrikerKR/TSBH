@@ -79,6 +79,17 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
 /// The live catalog requires a real v2 Tauri DB. A seed fallback would mix
 /// unrelated product IDs with prices and freight rules.
 pub fn load() -> Result<Value,String> {
+    load_projection(false)
+}
+
+/// The operational catalog does not require order/recipient/item records.
+/// Keep the same path, schema, revision and read-only transaction checks as
+/// the full business snapshot, but avoid loading unrelated customer orders.
+pub fn load_catalog() -> Result<Value,String> {
+    load_projection(true)
+}
+
+fn load_projection(catalog_only:bool) -> Result<Value,String> {
     let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
         .filter(|p|!p.is_empty())
         .map(PathBuf::from)
@@ -104,9 +115,13 @@ pub fn load() -> Result<Value,String> {
         "SELECT version FROM core_schema WHERE key='business-core'",[],|r|r.get(0)
     ).map_err(|_|"운영 DB 스키마 버전을 확인하지 못했습니다.".to_owned())?;
     if version!=2 {return Err("지원되지 않는 운영 DB 스키마입니다. 아무 것도 저장하지 않았습니다.".into());}
-    // Share app_state parsing and relation hydration with the Tauri host.
-    // Keep the existing consistent read-only transaction and v2 guard.
-    let state=bando_data_access::read_v2_snapshot(&conn)?;
+    // Share the same app_state and catalog-hydration rules with Tauri.
+    // Only the full business read needs order, recipient and item tables.
+    let state=if catalog_only {
+        bando_data_access::read_v2_catalog_snapshot(&conn)?
+    }else{
+        bando_data_access::read_v2_snapshot(&conn)?
+    };
     let revision=state.get("revision").and_then(Value::as_u64)
         .ok_or("운영 DB revision을 확인할 수 없습니다.")?;
     if revision==u64::MAX{return Err("운영 DB revision 범위를 확인할 수 없습니다.".into());}
