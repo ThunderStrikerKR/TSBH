@@ -1162,8 +1162,14 @@ impl FreightManager {
                         let category=if category.trim().is_empty(){
                             "분류 미지정"
                         }else{category};
+                        let visible_category=typography::fit_category_path(
+                            table,category,
+                            (cells[3].width()-theme::SPACE_12).max(0.0),
+                            typography::CategoryPathFont::TableCell
+                        );
                         freight_assignment_text(
-                            table,cells[3],category,category,false,false,(id,3)
+                            table,cells[3],&visible_category,category,
+                            false,false,(id,3)
                         );
 
                         // The group selector's own child UI shares the same
