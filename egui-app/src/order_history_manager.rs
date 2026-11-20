@@ -1020,7 +1020,11 @@ impl OrderHistoryManager {
                                         if line_index%2==0{theme::PANEL}
                                         else{theme::TABLE_ROW_ALT_BG}
                                     },
-                                    HistoryLine::Recipient(_,_)=>theme::WORKFLOW_SELECTED_BG,
+                                    // Expanded recipient rows are subordinate
+                                    // to the parent order: use the darkest
+                                    // existing surface tier, never the brighter
+                                    // selected workflow card background.
+                                    HistoryLine::Recipient(_,_)=>theme::CANVAS,
                                 };
                                 row_ui.painter().rect_filled(row_rect,0.0,background);
                                 row_ui.painter().line_segment(
