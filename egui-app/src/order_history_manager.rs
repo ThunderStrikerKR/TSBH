@@ -289,6 +289,34 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                     ui.make_persistent_id(("history-billing-caution",id)),
                     Sense::hover()).on_hover_text(cautions.join("\n"));
             }
+            // Staff confirmation is NOT the bank transfer's paidAt date.
+            // It comes from the Rust projection of workflow.confirmations.
+            let approval=&row["display"]["employeePaymentConfirmation"];
+            let approval_day=field(approval,"date");
+            let partial=approval["partial"]==true;
+            let approval_label=if approval_day.is_empty(){
+                "미확인".to_owned()
+            }else if partial{
+                format!("일부 {approval_day}")
+            }else{
+                approval_day.to_owned()
+            };
+            paint_center(ui,columns[5],&approval_label);
+            let approval_help=if approval_day.is_empty(){
+                "직원이 승인한 입금 확인 기록이 없습니다.".to_owned()
+            }else{
+                let actors=rows(field(approval,"actors")).iter()
+                    .filter_map(Value::as_str).collect::<Vec<_>>().join(", ");
+                format!("직원 입금 확인일: {approval_day}\\n승인 배송 건: {}/{}{}",
+                    approval["approvedShipments"].as_u64().unwrap_or(0),
+                    approval["totalShipments"].as_u64().unwrap_or(0),
+                    if actors.is_empty(){String::new()}
+                    else{format!("\\n승인 직원: {actors}")}
+                )
+            };
+            ui.interact(columns[5].intersect(area),
+                ui.make_persistent_id(("history-payment-confirmation",id)),
+                Sense::hover()).on_hover_text(approval_help);
             let message=field(&row["display"],"trackingMessage");
             // Match the action inset of the Freight Settings column.
             // No expansion of the table or the fixed 42pt row height.
