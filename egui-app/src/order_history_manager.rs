@@ -449,67 +449,96 @@ fn date_range_error(from:&str,to:&str)->Option<&'static str>{
     }
     None
 }
-/// Place controls in reverse insertion order inside an RTL parent.
-/// Actual left-to-right order is:
-/// date basis → [‹ start-date › calendar] → ~ → [‹ end-date › calendar]
-/// → all dates. Each arrow changes only its adjacent date.
+/// Two compact, visually grouped date editors. The RTL parent reverses
+/// insertion order so the visible order for EACH group remains
+/// [‹] [YYYY-MM-DD] [›] [📅], with only 2pt between neighboring controls.
 fn range_date_picker_rtl(
     ui:&mut Ui,label:&str,date:&mut String,month:&mut NaiveDate,
     id:&'static str
 )->bool{
-    // The RTL parent reverses insertion order. Screen order for EACH date:
-    // [‹] [YYYY-MM-DD] [›] [달력], without visible "시작일/종료일" labels.
-    let trigger=theme::action(
-        ui,"📅",theme::ButtonRole::Standard,true
-    ).on_hover_text(&format!("{label}을 달력에서 선택"));
-    if trigger.clicked(){
-        let day=NaiveDate::parse_from_str(date,"%Y-%m-%d")
-            .unwrap_or_else(|_|NaiveDate::parse_from_str(
-                &seoul_today(),"%Y-%m-%d").expect("valid today"));
-        *month=month_start(day);
-    }
-    let mut changed=components::date_calendar(
-        &trigger,month,date,id
-    ).is_some_and(|day|{
-        *date=day.format("%Y-%m-%d").to_string();
-        true
-    });
-    if theme::action(ui,"›",theme::ButtonRole::Standard,true)
-        .on_hover_text(&format!("{label} 하루 뒤")).clicked(){
-        *date=move_date(date,1);
-        changed=true;
-    }
-    changed|=components::flexible_text_field(
-        ui,date,theme::SETTLEMENT_DATE_FIELD_WIDTH,"YYYY-MM-DD"
-    ).on_hover_text(&format!("{label} 직접 입력"))
-        .changed();
-    if theme::action(ui,"‹",theme::ButtonRole::Standard,true)
-        .on_hover_text(&format!("{label} 하루 전")).clicked(){
-        *date=move_date(date,-1);
-        changed=true;
-    }
-    changed
+    ui.scope(|group|{
+        group.spacing_mut().item_spacing.x=HISTORY_DATE_GROUP_GAP;
+        let trigger=theme::action(
+            group,"📅",theme::ButtonRole::Standard,true
+        ).on_hover_text(&format!("{label}을 달력에서 선택"));
+        if trigger.clicked(){
+            let day=NaiveDate::parse_from_str(date,"%Y-%m-%d")
+                .unwrap_or_else(|_|NaiveDate::parse_from_str(
+                    &seoul_today(),"%Y-%m-%d").expect("valid today"));
+            *month=month_start(day);
+        }
+        let mut changed=components::date_calendar(
+            &trigger,month,date,id
+        ).is_some_and(|day|{
+            *date=day.format("%Y-%m-%d").to_string();
+            true
+        });
+        if theme::action(group,"›",theme::ButtonRole::Standard,true)
+            .on_hover_text(&format!("{label} 하루 뒤")).clicked(){
+            *date=move_date(date,1);
+            changed=true;
+        }
+        // This is always a ten-character ISO date. Center the glyphs and
+        // remove the 132pt settlement field sizing from this toolbar.
+        changed|=group.add_sized(
+            Vec2::new(HISTORY_DATE_FIELD_WIDTH,theme::INPUT_HEIGHT),
+            egui::TextEdit::singleline(date)
+                .font(egui::TextStyle::Body)
+                .horizontal_align(Align::Center)
+                .vertical_align(Align::Center)
+                .margin(egui::Margin::symmetric(4,2))
+                .hint_text("YYYY-MM-DD")
+                .desired_width(HISTORY_DATE_FIELD_WIDTH)
+        ).on_hover_text(&format!("{label} 직접 입력")).changed();
+        if theme::action(group,"‹",theme::ButtonRole::Standard,true)
+            .on_hover_text(&format!("{label} 하루 전")).clicked(){
+            *date=move_date(date,-1);
+            changed=true;
+        }
+        changed
+    }).inner
 }
-fn history_date_range_leading_rtl(
-    ui:&mut Ui,basis:&mut HistoryDateBasis,
-    from:&mut String,from_month:&mut NaiveDate
-)->bool{
-    ui.spacing_mut().item_spacing.x=theme::SPACE_8;
-    let changed=range_date_picker_rtl(
-        ui,"시작일",from,from_month,"order-history-date-from-calendar"
-    );
+/// A full-height custom combo trigger, with a distinct right-hand arrow
+/// section. The old "label ▾" button looked like an ordinary action,
+/// while egui's default ComboBox had a visibly short, clipped trigger.
+fn history_basis_dropdown(ui:&mut Ui,basis:&mut HistoryDateBasis)->bool{
     let previous=*basis;
-    // The default ComboBox trigger was shorter than the adjacent 34pt
-    // buttons. Changing its width alone never fixed the clipped look.
-    // Use a full-height standard button and a separately-layered menu.
-    let trigger=theme::action_with_min_width(
-        ui,&format!("{}  ▾",basis.label()),
-        theme::ButtonRole::Standard,true,160.0
+    let trigger=ui.add_sized(
+        Vec2::new(HISTORY_DATE_BASIS_WIDTH,theme::ACTION_STANDARD_HEIGHT),
+        egui::Button::new("")
+            .fill(theme::RAISED)
+            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
+            .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
     ).on_hover_text("조회 날짜 기준 선택");
+    let rect=trigger.rect;
+    let painter=ui.painter().with_clip_rect(rect);
+    let label=typography::freight_table_cell_galley(
+        ui,basis.label(),false,theme::TEXT
+    );
+    painter.galley(
+        egui::pos2(rect.left()+12.0,rect.center().y-label.size().y/2.0),
+        label,theme::TEXT
+    );
+    let arrow_left=rect.right()-30.0;
+    painter.line_segment(
+        [egui::pos2(arrow_left,rect.top()+5.0),
+         egui::pos2(arrow_left,rect.bottom()-5.0)],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    let x=rect.right()-15.0;
+    let y=rect.center().y+1.0;
+    painter.line_segment(
+        [egui::pos2(x-4.0,y-2.0),egui::pos2(x,y+2.0)],
+        Stroke::new(1.5,theme::SECONDARY)
+    );
+    painter.line_segment(
+        [egui::pos2(x,y+2.0),egui::pos2(x+4.0,y-2.0)],
+        Stroke::new(1.5,theme::SECONDARY)
+    );
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|options|{
-            options.set_min_width(160.0);
+            options.set_min_width(HISTORY_DATE_BASIS_WIDTH);
             if options.selectable_label(
                 *basis==HistoryDateBasis::Reception,"접수일 기준"
             ).clicked(){
@@ -523,7 +552,17 @@ fn history_date_range_leading_rtl(
                 options.close();
             }
         });
-    changed||*basis!=previous
+    *basis!=previous
+}
+fn history_date_range_leading_rtl(
+    ui:&mut Ui,basis:&mut HistoryDateBasis,
+    from:&mut String,from_month:&mut NaiveDate
+)->bool{
+    ui.spacing_mut().item_spacing.x=theme::SPACE_8;
+    let changed=range_date_picker_rtl(
+        ui,"시작일",from,from_month,"order-history-date-from-calendar"
+    );
+    changed|history_basis_dropdown(ui,basis)
 }
 fn history_date_range_trailing_rtl(
     ui:&mut Ui,from:&mut String,to:&mut String,
