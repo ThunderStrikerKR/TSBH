@@ -1,4 +1,4 @@
-# Targeted Windows compile: final egui Settings four-tab layout, conflict recovery, saved-folder semantics.
+# Targeted Windows compile: Settings conflict reload, account layout, and borrow-corrected shared freight labels.
 name: Tauri native CLI executable compile check
 on:
   push:
