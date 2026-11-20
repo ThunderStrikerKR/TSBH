@@ -67,6 +67,38 @@ impl FreightSort {
     }
 }
 
+// Group management reuses the assignment table's 3-step sort interaction.
+// Sorting changes presentation only, not the stored order of shipping groups.
+#[derive(Clone,Copy,PartialEq,Eq)]
+enum RateSortColumn { Group, Bundle, Status }
+
+#[derive(Clone,Copy,PartialEq,Eq)]
+struct RateSort {
+    column:RateSortColumn,
+    direction:FreightSortDirection,
+}
+impl RateSort {
+    fn column_at(index:usize)->Option<RateSortColumn>{
+        match index {
+            0=>Some(RateSortColumn::Group),
+            1=>Some(RateSortColumn::Bundle),
+            3=>Some(RateSortColumn::Status),
+            _=>None,
+        }
+    }
+    fn next(previous:Option<Self>,column:RateSortColumn)->Option<Self>{
+        match previous {
+            Some(Self{column:active,direction:FreightSortDirection::Ascending})
+                if active==column=>Some(Self{
+                    column,direction:FreightSortDirection::Descending
+                }),
+            Some(Self{column:active,direction:FreightSortDirection::Descending})
+                if active==column=>None,
+            _=>Some(Self{column,direction:FreightSortDirection::Ascending}),
+        }
+    }
+}
+
 /// Compute keys before comparing: sorting large tables must not rebuild
 /// category paths or variant labels on each comparison.
 fn freight_sort_key(
@@ -97,7 +129,7 @@ fn text<'a>(row: &'a Value, key: &str) -> &'a str {
 }
 /// Shared geometry for header and item rows. Each label/control uses this
 /// exact column rectangle; no intrinsic egui Grid sizing can shift a column.
-fn freight_assignment_cells(
+fn freight_table_cells(
     origin: egui::Pos2, widths: &[f32;6], height:f32
 ) -> [egui::Rect;6] {
     let mut x=origin.x;
@@ -228,6 +260,33 @@ fn as_fee(value: &Value) -> String {
     value.as_i64().map(components::display_won)
         .unwrap_or_else(|| "미등록".to_owned())
 }
+fn group_rate_registered(rule:&Value)->bool{
+    rule["perItem"].as_i64().is_some() ||
+        rule["fees"].as_object().is_some_and(|fees|
+            fees.values().any(Value::is_number))
+}
+
+// Text, numeric, status and metadata share one fixed-height cell geometry.
+fn freight_rate_cell(
+    ui:&mut Ui,rect:egui::Rect,value:&str,align:egui::Align2,
+    emphasized:bool,color:egui::Color32,id:impl std::hash::Hash
+){
+    let cell=rect.shrink2(egui::vec2(6.0,0.0));
+    let galley=typography::freight_table_cell_galley(ui,value,emphasized,color);
+    let x=match align {
+        egui::Align2::RIGHT_CENTER=>cell.right()-galley.size().x,
+        egui::Align2::CENTER_CENTER=>cell.center().x-galley.size().x/2.0,
+        _=>cell.left(),
+    };
+    ui.painter().with_clip_rect(cell).galley(
+        egui::pos2(x,cell.center().y-galley.size().y/2.0),galley,color
+    );
+    if !value.is_empty(){
+        ui.interact(cell,ui.make_persistent_id(("freight-rate-cell",id)),
+            egui::Sense::hover()).on_hover_text(value);
+    }
+}
+
 fn group_name<'a>(groups: &'a [Value], id: &str) -> &'a str {
     groups.iter().find(|g| active(g) && text(g, "id") == id)
         .map(|g| text(g, "name")).unwrap_or("그룹 미지정")
@@ -362,6 +421,7 @@ pub struct FreightManager {
     search: String,
     group_filter: String,
     sort: Option<FreightSort>,
+    rate_sort: Option<RateSort>,
 }
 impl FreightManager {
     fn fetch(gateway: Arc<dyn BandoGateway>,ctx:egui::Context)
@@ -416,6 +476,7 @@ impl FreightManager {
             search: String::new(),
             group_filter: String::new(),
             sort: None,
+            rate_sort: None,
         }
     }
 
@@ -703,21 +764,27 @@ impl FreightManager {
                 enabled, &mut action
             );
         }else{
-            egui::ScrollArea::vertical()
-                .id_salt(("freight-management", self.tab as u8))
-                .auto_shrink([false,false])
-                .show(ui,|scroll|match self.tab {
-                    FreightTab::Rates => Self::show_rates(
-                        scroll,&groups,&products,projection,
-                        &mut self.new_name,&mut self.rename_target,
-                        &mut self.delete_target,&mut self.rate_editor,
-                        &mut self.basis_target,&mut self.error,enabled,&mut action
-                    ),
-                    FreightTab::History => Self::show_history(
-                        scroll,shipping,projection,&mut self.exception_target,enabled
-                    ),
-                    FreightTab::Groups => {}
-                });
+            match self.tab {
+                // Management's table scrolls its rows only. A page-wide outer
+                // scroll used to move the header away with the old duplicate list.
+                FreightTab::Rates => Self::show_rates(
+                    ui,&groups,&products,projection,
+                    &mut self.new_name,&mut self.rename_target,
+                    &mut self.delete_target,&mut self.rate_editor,
+                    &mut self.basis_target,&mut self.rate_sort,
+                    &mut self.error,enabled,&mut action
+                ),
+                FreightTab::History => {
+                    egui::ScrollArea::vertical()
+                        .id_salt(("freight-management",self.tab as u8))
+                        .auto_shrink([false,false])
+                        .show(ui,|scroll|Self::show_history(
+                            scroll,shipping,projection,
+                            &mut self.exception_target,enabled
+                        ));
+                }
+                FreightTab::Groups => {}
+            }
         }
         if self.tab==FreightTab::Groups || self.tab==FreightTab::Rates {
             // Group rename/delete confirmations belong to the management
@@ -1283,7 +1350,7 @@ impl FreightManager {
                         let id=text(product,"id");
                         let committed=text(product,"shippingGroupId");
                         let mut checked=selected.contains(id);
-                        let cells=freight_assignment_cells(
+                        let cells=freight_table_cells(
                             row_rect.min,&widths,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
                         );
                         let background=if checked {theme::WORKFLOW_SELECTED_BG}
@@ -1530,12 +1597,12 @@ impl FreightManager {
                 });
             // Limit the zero-gap setting to the header+rows block.
             section.spacing_mut().item_spacing.y=previous_table_spacing_y;
-            // Header and body use freight_assignment_cells() AND the body
+            // Header and body use freight_table_cells() AND the body
             // scroll origin, so no egui padding / Grid sizing can drift.
             let header_left=first_row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
             );
-            let header_cells=freight_assignment_cells(
+            let header_cells=freight_table_cells(
                 egui::pos2(header_left,header_rect.top()),
                 &widths,header_rect.height()
             );
@@ -1680,159 +1747,325 @@ impl FreightManager {
         delete_target: &mut Option<String>,
         editor: &mut Option<RateEditor>,
         basis: &mut Option<Option<String>>,
+        sort: &mut Option<RateSort>,
         error: &mut Option<String>,enabled:bool,
         action: &mut Option<(String,Value)>,
     ) {
         let group_rules=&projection["editableRules"];
-        // Group tariffs are the primary source for all assigned products.
-        // Put their editable quantity/rate summary next to the group itself.
+        // A single group table replaces the duplicate group cards + audit grid.
+        // Its actions still use the original Rust write paths and modal editors.
         theme::section_frame().show(ui, |section| {
-            section.label(typography::section_heading("배송 그룹 관리"));
-            section.label(typography::caption(
-                "그룹 소속 상품은 공통 묶음포장 수량과 수량별 배송비를 적용합니다."
-            ));
-            section.add_space(theme::SPACE_12);
-            section.horizontal_wrapped(|tools|{
+            section.horizontal(|heading|{
+                heading.label(typography::section_heading("배송 그룹 관리"));
+                settings_help::icon(heading,"그룹 운임표");
+                heading.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),|right|{
+                        settings_help::icon(right,"전체 운임 기준 변경");
+                        if theme::action(
+                            right,"전체 운임 기준 변경",theme::ButtonRole::Danger,enabled
+                        ).clicked(){
+                            *basis=Some(None);
+                        }
+                    }
+                );
+            });
+            section.horizontal(|tools|{
+                tools.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
                 tools.label(typography::field_label("새 배송 그룹명"));
                 tools.add_enabled_ui(enabled,|field|{
                     components::flexible_text_field(
-                        field,new_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 배송 그룹명"
+                        field,new_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+                        "새 배송 그룹명"
                     );
                 });
-                if theme::action(tools,"배송 그룹 추가",theme::ButtonRole::Primary,
-                    enabled&&!new_name.trim().is_empty()).clicked(){
-                    *action=Some(("create_group".into(),json!({
-                        "name":new_name.trim()
-                    })));
-                }
-            });
-            section.add_space(theme::SPACE_12);
-            components::soft_divider(section);
-            if groups.is_empty(){
-                section.label(typography::caption(
-                    "그룹을 등록한 다음 최대 묶음 수량과 수량별 배송비를 설정하세요."
-                ));
-            }
-            for group in groups {
-                let id=text(group,"id");
-                let count=products.iter()
-                    .filter(|p|text(p,"shippingGroupId")==id).count();
-                section.add_space(theme::SPACE_8);
-                section.horizontal_wrapped(|line|{
-                    line.label(typography::body(text(group,"name")));
-                    line.label(typography::caption(&format!("{count}개 상품")));
-                    if theme::action(
-                        line,"묶음 수량·배송비 설정",theme::ButtonRole::Standard,enabled
-                    ).clicked(){
-                        match group_rules.get(id).filter(|value|value.is_object()){
-                            Some(rule)=>*editor=Some(RateEditor::new(
-                                id,text(group,"name"),rule
-                            )),
-                            None=>*error=Some(
-                                "그룹 운임 기준을 읽지 못했습니다. 새로고침 후 확인하세요.".into()
-                            ),
+                tools.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),|right|{
+                        if theme::action(
+                            right,"배송 그룹 추가",theme::ButtonRole::Primary,
+                            enabled&&!new_name.trim().is_empty()
+                        ).clicked(){
+                            *action=Some(("create_group".into(),json!({
+                                "name":new_name.trim()
+                            })));
                         }
                     }
-                    if theme::action(line,"이름 수정",theme::ButtonRole::Quiet,enabled)
-                        .clicked(){
-                        *rename_target=Some((id.into(),text(group,"name").into()));
-                    }
-                    if theme::action(line,"삭제",theme::ButtonRole::Danger,enabled)
-                        .clicked(){
-                        *delete_target=Some(id.into());
-                    }
+                );
+            });
+            components::soft_divider(section);
+
+            // Same fixed header / 42pt virtual row contract as the
+            // '배송 그룹 편성' reference. Only row contents differ.
+            let old_gap=section.spacing().item_spacing.y;
+            section.spacing_mut().item_spacing.y=0.0;
+            let viewport_width=section.available_width().max(1.0);
+            let gutter=section.spacing().scroll.allocated_width()+theme::SPACE_4;
+            let table_width=(viewport_width-gutter)
+                .max(theme::FREIGHT_RATE_TABLE_MIN_WIDTH);
+            let extra=(table_width-theme::FREIGHT_RATE_TABLE_MIN_WIDTH).max(0.0);
+            let mut widths=theme::FREIGHT_RATE_COL_WIDTHS;
+            widths[0]+=extra*0.40;
+            widths[2]+=extra*0.20;
+            widths[4]+=extra*0.40;
+            let titles=[
+                "배송 그룹","최대 묶음 수량","수량별 배송비",
+                "운임 상태","참고 메모 / 최근 수정","관리"
+            ];
+            let mut ordered:Vec<&Value>=groups.iter().collect();
+            if let Some(active)=*sort {
+                ordered.sort_by_cached_key(|group|{
+                    let key=match active.column {
+                        RateSortColumn::Group=>text(group,"name").to_lowercase(),
+                        RateSortColumn::Bundle=>group["current"]["maxBundle"]
+                            .as_i64().filter(|_|group["current"]["maxConfirmed"]==true)
+                            .map(|n|format!("{n:012}")).unwrap_or_default(),
+                        RateSortColumn::Status=>if group_rate_registered(&group["current"]){
+                            "1".to_owned()
+                        }else{"0".to_owned()},
+                    };
+                    (key,text(group,"id").to_owned())
                 });
-                section.horizontal_wrapped(|info|{
-                    info.label(typography::field_label("최대 묶음"));
-                    info.label(typography::quantity(
-                        &group_bundle_summary(&group["current"])
-                    ));
-                    info.add_space(theme::SPACE_8);
-                    info.label(typography::field_label("수량별 배송비"));
-                    info.label(typography::caption(
-                        &group_fee_summary(&group["current"])
-                    ));
-                });
-                components::soft_divider(section);
+                if active.direction==FreightSortDirection::Descending{
+                    ordered.reverse();
+                }
             }
-        });
-        ui.add_space(theme::SPACE_12);
-        ui.horizontal(|bar|{
-            bar.label(typography::section_heading("그룹 운임표"));
-            settings_help::icon(bar,"그룹 운임표");
-            if theme::action(bar,"전체 운임 기준 변경",theme::ButtonRole::Danger,enabled)
-                .clicked(){*basis=Some(None);}
-            settings_help::icon(bar,"전체 운임 기준 변경");
-        });
-        ui.add_space(theme::SPACE_12);
-        theme::section_frame().show(ui,|section|{
-            egui::ScrollArea::both()
-                .id_salt("freight-group-rates-table")
-                .max_height(section.ctx().content_rect().height()
-                    * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
-                .auto_shrink([false,false])
-                .show(section,|table|{
-                    table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
-                    theme::apply_table_row_colors(table);
-                    egui::Grid::new("freight-group-rates-grid")
-                        .striped(true)
-                        .spacing([theme::SPACE_24,theme::SPACE_8])
-                        .show(table,|grid|{
-                            for heading in [
-                                "배송 그룹","최대 묶음 수량","운임 등록 상태",
-                                "사용자 참고 메모","최근 수정","관리"
-                            ] {
-                                grid.label(typography::table_header(heading));
-                            }
-                            grid.end_row();
-                            for group in groups {
-                                let id=text(group,"id");
-                                let name=text(group,"name");
-                                // The raw current tariff owns status and confirmation.
-                                // editableRules is only for opening a writable dialog:
-                                // legacy perItem normalization can make an unconfirmed
-                                // raw group look "maxConfirmed = 1" if displayed.
+            let (header_rect,_)=section.allocate_exact_size(
+                egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
+                egui::Sense::hover()
+            );
+            let mut first_row_left=None;
+            let scroll_output=components::virtual_fixed_rows(
+                egui::ScrollArea::both()
+                    .id_salt("freight-group-rates-rows")
+                    .scroll_bar_visibility(
+                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                    )
+                    .max_height(section.ctx().content_rect().height()
+                        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+                    .auto_shrink([false,false]),
+                section,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,
+                ordered.len(),|table,visible_rows|{
+                    table.set_min_width(table_width);
+                    table.spacing_mut().item_spacing.y=0.0;
+                    let origin=table.max_rect().min;
+                    let first_index=visible_rows.start;
+                    for index in visible_rows {
+                        let group=ordered[index];
+                        let id=text(group,"id");
+                        let row_rect=egui::Rect::from_min_size(
+                            egui::pos2(
+                                origin.x,
+                                origin.y+(index-first_index) as f32
+                                    *theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
+                            ),
+                            egui::vec2(
+                                table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
+                            )
+                        );
+                        first_row_left.get_or_insert(row_rect.left());
+                        table.scope_builder(
+                            egui::UiBuilder::new()
+                                .id_salt(("freight-rate-row",id))
+                                .max_rect(row_rect)
+                                .layout(egui::Layout::top_down(egui::Align::Min)),
+                            |row|{
+                                let _=row.allocate_exact_size(
+                                    egui::vec2(
+                                        table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
+                                    ),
+                                    egui::Sense::hover()
+                                );
+                                let cells=freight_table_cells(
+                                    row_rect.min,&widths,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
+                                );
+                                row.painter().rect_filled(
+                                    row_rect,0.0,
+                                    if index%2==0 {theme::PANEL}
+                                    else {theme::TABLE_ROW_ALT_BG}
+                                );
+                                let count=products.iter().filter(|p|
+                                    text(p,"shippingGroupId")==id
+                                ).count();
+                                let identity=format!("{} · {count}개 상품",text(group,"name"));
+                                freight_rate_cell(
+                                    row,cells[0],&identity,egui::Align2::LEFT_CENTER,
+                                    true,theme::TEXT,(id,0)
+                                );
                                 let current=&group["current"];
-                                let editable=projection["editableRules"].get(id)
-                                    .unwrap_or(current);
-                                let max=if current["maxConfirmed"]==true {
-                                    current["maxBundle"].as_i64()
-                                        .map(|n|format!("{n}개"))
-                                        .unwrap_or_else(||"확인 필요".into())
-                                }else{"확인 필요".into()};
-                                let registered=current["perItem"].as_i64().is_some() ||
-                                    current["fees"].as_object().is_some_and(|fees|
-                                        fees.values().any(Value::is_number));
+                                freight_rate_cell(
+                                    row,cells[1],&group_bundle_summary(current),
+                                    egui::Align2::RIGHT_CENTER,false,theme::TEXT,(id,1)
+                                );
+                                let fees=group_fee_summary(current);
+                                freight_rate_cell(
+                                    row,cells[2],&fees,egui::Align2::LEFT_CENTER,
+                                    false,theme::TEXT,(id,2)
+                                );
+                                freight_rate_cell(
+                                    row,cells[3],
+                                    if group_rate_registered(current){"등록"}else{"미등록"},
+                                    egui::Align2::CENTER_CENTER,false,theme::SECONDARY,(id,3)
+                                );
                                 let note=text(current,"notes");
                                 let date=text(current,"at").split('T').next().unwrap_or("");
-                                grid.label(typography::table_cell(name));
-                                grid.label(typography::table_cell(&max));
-                                grid.label(typography::table_cell(
-                                    if registered{"등록"}else{"미등록"}
-                                ));
-                                grid.label(typography::caption(
-                                    if note.is_empty(){"-"}else{note}
-                                ));
-                                grid.label(typography::table_cell(
-                                    if date.is_empty(){"-"}else{date}
-                                ));
-                                grid.horizontal_wrapped(|actions|{
-                                    if theme::action(actions,"운임 수정",
-                                        theme::ButtonRole::Standard,enabled).clicked(){
-                                        *editor=Some(RateEditor::new(id,name,editable));
+                                let metadata=match (note.is_empty(),date.is_empty()){
+                                    (true,true)=>"-".to_owned(),
+                                    (true,false)=>date.to_owned(),
+                                    (false,true)=>note.to_owned(),
+                                    (false,false)=>format!("{note} · {date}"),
+                                };
+                                freight_rate_cell(
+                                    row,cells[4],&metadata,egui::Align2::LEFT_CENTER,
+                                    false,theme::SECONDARY,(id,4)
+                                );
+                                let rect=cells[5].shrink2(egui::vec2(6.0,0.0));
+                                row.scope_builder(
+                                    egui::UiBuilder::new()
+                                        .id_salt(("freight-rate-actions",id))
+                                        .max_rect(rect)
+                                        .layout(egui::Layout::left_to_right(
+                                            egui::Align::Center
+                                        )),
+                                    |buttons|{
+                                        buttons.set_clip_rect(
+                                            cells[5].intersect(row_rect)
+                                        );
+                                        buttons.set_width(rect.width());
+                                        buttons.set_height(rect.height());
+                                        buttons.spacing_mut().item_spacing.x=
+                                            theme::SPACE_8;
+                                        if theme::action(
+                                            buttons,"운임 수정",
+                                            theme::ButtonRole::TableSecondary,enabled
+                                        ).clicked(){
+                                            match group_rules.get(id)
+                                                .filter(|rule|rule.is_object()){
+                                                Some(rule)=>*editor=Some(
+                                                    RateEditor::new(
+                                                        id,text(group,"name"),rule
+                                                    )
+                                                ),
+                                                None=>*error=Some(
+                                                    "그룹 운임 기준을 읽지 못했습니다. 새로고침 후 확인하세요.".into()
+                                                ),
+                                            }
+                                        }
+                                        if theme::action(
+                                            buttons,"기준 변경",
+                                            theme::ButtonRole::TableSecondary,enabled
+                                        ).clicked(){*basis=Some(Some(id.to_owned()));}
+                                        if theme::action(
+                                            buttons,"이름 수정",
+                                            theme::ButtonRole::TableSecondary,enabled
+                                        ).clicked(){
+                                            *rename_target=Some((
+                                                id.to_owned(),text(group,"name").to_owned()
+                                            ));
+                                        }
+                                        if theme::action(
+                                            buttons,"삭제",theme::ButtonRole::Danger,enabled
+                                        ).clicked(){*delete_target=Some(id.to_owned());}
                                     }
-                                    if theme::action(actions,"기준 변경",
-                                        theme::ButtonRole::Standard,enabled).clicked(){
-                                        *basis=Some(Some(id.to_owned()));
-                                    }
-                                });
-                                grid.end_row();
+                                );
+                                for col in 0..5{
+                                    let x=cells[col].right()
+                                        +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
+                                    row.painter().line_segment(
+                                        [egui::pos2(x,row_rect.top()),
+                                         egui::pos2(x,row_rect.bottom())],
+                                        egui::Stroke::new(
+                                            theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
+                                        )
+                                    );
+                                }
+                                row.painter().line_segment(
+                                    [row_rect.left_bottom(),row_rect.right_bottom()],
+                                    egui::Stroke::new(
+                                        theme::SOFT_DIVIDER_WIDTH,
+                                        theme::DIVIDER.linear_multiply(0.70)
+                                    )
+                                );
                             }
-                        });
-                    if groups.is_empty(){
-                        table.label(typography::caption("등록된 배송 그룹이 없습니다."));
+                        );
                     }
+                }
+            );
+            section.spacing_mut().item_spacing.y=old_gap;
+            let left=first_row_left.unwrap_or(
+                header_rect.left()-scroll_output.state.offset.x
+            );
+            let header_cells=freight_table_cells(
+                egui::pos2(left,header_rect.top()),&widths,header_rect.height()
+            );
+            let painter=section.painter().with_clip_rect(header_rect);
+            painter.rect_filled(header_rect,0.0,theme::RAISED);
+            for (index,title) in titles.iter().enumerate(){
+                let cell=header_cells[index];
+                let galley=typography::freight_table_header_galley(section,title);
+                let sort_column=RateSort::column_at(index);
+                let indicator=sort_column.map(|column|{
+                    let selected=sort.filter(|current|current.column==column);
+                    let (label,color)=match selected.map(|value|value.direction){
+                        Some(FreightSortDirection::Ascending)=>("▲",theme::SELECTION),
+                        Some(FreightSortDirection::Descending)=>("▼",theme::SELECTION),
+                        None=>("↕",theme::MUTED),
+                    };
+                    let hit=cell.intersect(header_rect);
+                    if hit.width()>0.0 && hit.height()>0.0{
+                        let next=RateSort::next(*sort,column);
+                        let tooltip=match next.map(|value|value.direction){
+                            Some(FreightSortDirection::Ascending)=>"오름차순 정렬",
+                            Some(FreightSortDirection::Descending)=>"내림차순 정렬",
+                            None=>"기본 순서로 복귀",
+                        };
+                        if section.interact(
+                            hit,section.make_persistent_id(("freight-rate-sort",index)),
+                            egui::Sense::click()
+                        ).on_hover_text(tooltip).clicked(){
+                            *sort=next;
+                            section.ctx().request_repaint();
+                        }
+                    }
+                    (typography::freight_table_header_galley(section,label),color)
                 });
+                let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};
+                let arrow_width=indicator.as_ref().map_or(0.0,|(g,_)|g.size().x);
+                let total=galley.size().x+gap+arrow_width;
+                let x=match index{
+                    1=>cell.right()-6.0-total,
+                    3|5=>cell.center().x-total/2.0,
+                    _=>cell.left()+6.0,
+                };
+                let ink=painter.with_clip_rect(cell.intersect(header_rect));
+                ink.galley(
+                    egui::pos2(x,cell.center().y-galley.size().y/2.0),
+                    galley,theme::SECONDARY
+                );
+                if let Some((arrow,color))=indicator{
+                    ink.galley(
+                        egui::pos2(x+total-arrow.size().x,
+                            cell.center().y-arrow.size().y/2.0),
+                        arrow,color
+                    );
+                }
+                if index<5{
+                    let x=cell.right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
+                    painter.line_segment(
+                        [egui::pos2(x,header_rect.top()),
+                         egui::pos2(x,header_rect.bottom())],
+                        egui::Stroke::new(
+                            theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
+                        )
+                    );
+                }
+            }
+            painter.line_segment(
+                [header_rect.left_bottom(),header_rect.right_bottom()],
+                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+            );
+            if groups.is_empty(){
+                section.add_space(theme::SPACE_12);
+                section.label(typography::caption("등록된 배송 그룹이 없습니다."));
+            }
         });
     }
 
