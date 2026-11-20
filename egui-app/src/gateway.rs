@@ -204,6 +204,14 @@ pub trait BandoGateway: Send + Sync {
     fn commit_working_reception(&self, _request: Value) -> Result<Value,String> {
         Err("운영 미확정 접수 저장 연결이 설정되지 않았습니다.".into())
     }
+    /// A per-shipment employee management memo is writable only through
+    /// the existing authorized operational shipment DB boundary.
+    fn shipment_memo_write_enabled(&self)->bool{false}
+    fn save_shipment_management_memo(
+        &self,_revision:u64,_shipment_id:&str,_memo:&str
+    )->Result<Value,String>{
+        Err("이 연결에서는 발송 건 관리 메모 저장을 지원하지 않습니다.".into())
+    }
     /// The currently open, unconfirmed source in a separate storage domain.
     /// This never creates a confirmed business order.
     fn load_working_source(&self) -> Result<WorkingSource, String>;
@@ -367,6 +375,14 @@ impl BandoGateway for LocalGateway {
         )
     }
     fn excel_write_enabled(&self)->bool{crate::excel_service::writable()}
+    fn shipment_memo_write_enabled(&self)->bool{
+        crate::order_history_memo::writable()
+    }
+    fn save_shipment_management_memo(
+        &self,revision:u64,shipment_id:&str,memo:&str
+    )->Result<Value,String>{
+        crate::order_history_memo::save(revision,shipment_id,memo)
+    }
     fn export_excel(&self,origin:&str,ids:&[String])->Result<Value,String>{
         crate::excel_service::create(origin,ids)
     }
