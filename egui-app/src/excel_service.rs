@@ -187,7 +187,7 @@ pub fn workflow_action(
     }
     let now=Local::now().to_rfc3339();
     let actor=state["settings"]["operatorName"].as_str().unwrap_or("").trim();
-    let actor=if actor.is_empty(){"사용자(이름 미설정)"}else{actor};
+    let actor=if actor.is_empty(){"사용자(이름 미설정)".to_owned()}else{actor.to_owned()};
     let before=state.clone();
     let mut source=state;
     if action=="restore_shipment"{
