@@ -2756,6 +2756,42 @@
         "notApplicable": "카카오톡 도킹 / 주문 OCR 및 운임 계산 실행 경로는 미변경",
         "pending": "source SHA specific latest cargo checks, three narrowed model groups tests, actual operating SQLite action."
       }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-CLIENT-LINK-01",
+      "scope": "53차 접수 흐름 1단계: 거래처 자동 연결 확인 및 수동 거래처 선택·저장",
+      "status": "PARTIAL_SOURCE_PATCHED_STATIC_PASS_EXECUTION_PENDING",
+      "description": "React SourceDocument.tsx → nativeAutoReceptionClient/reception_client_candidates → order_edit_rules(change_order_client)와 ClientChooser.tsx 성공/실패 동작을 실제 입력 경로 기준으로 대조. 기존 egui Rust matcher 경로는 재사용. 기존 egui chooser가 Rust 비동기 변경이 끝나기 전에 닫히던 문제를 수정: 적용 중 검색/재선택/닫기 차단, 성공 시에만 닫기, 실패 시 오류를 같은 chooser에서 표시하고 재시도. 선택 도중 카카오톡 HWND/제목이 변경된 응답은 폐기. 격리 egui 고객 명단만 있는 경우에는 명시적 직원 선택으로 ID만 자동저장하며 실제 금액/운임을 확정하지 않음. 명시적 운영 DB 연결 시 기존 Rust change_order_client→merge→reprice→calculate_price 순서를 유지. 자동매칭 후보가 없으면 미선택으로 두며 가짜 가격을 만들지 않음. 전체 접수 흐름 이전 완료가 아닌 거래처 연결 첫 단위 반영.",
+      "evidence": [
+        "src/SourceDocument.tsx",
+        "src/OrderDesk.tsx",
+        "src/ClientChooser.tsx",
+        "src/orders/useOrderDesk.tsx",
+        "src/native-title-clients.ts",
+        "src/styles/receipt-layout.css",
+        "src-tauri/src/business_core/catalog_clients/title_clients.rs",
+        "src-tauri/src/business_core/rules/order_edit.rs",
+        "egui-app/src/kakao_context.rs",
+        "egui-app/src/reception_service.rs",
+        "egui-app/src/client_chooser.rs",
+        "egui-app/src/native_order_change.rs",
+        "egui-app/src/gateway.rs",
+        "egui-app/src/main.rs",
+        "egui-app/src/preview_store.rs"
+      ],
+      "gates": {
+        "patch": "PASS: chooser f7c69cf153082557ec1d4cf11a1ebe2b2965be61; async result/stale Kakao guard 7dfe495e6ab3a68b6bfede1174cfef7bcc3964c8; Rust capability e0de2f193b2281f0cfd3f9d48ad394896bbe4b4c; Rust identity-only preview 0b0f95ed2702dd093a01b936d8286ecba16d3c84; preserving nullable quote eec876d7b0091159a391abaa62a3acdeeebc1f2e.",
+        "static": "PASS (scoped): React SourceDocument client-match/candidates and ClientChooser selection UI compared with existing title_clients.rs Rust path and egui UI call chain. Client IDs guarded by exact chooser catalog and Rust current active index; old async response checks order/raw/order type/chat title/handle; full Rust reprice only with business DB.",
+        "unit": "NOT EXECUTED: manual ID link and stale HWND response narrow tests unavailable in current GitHub source-edit session.",
+        "action": "NOT EXECUTED: egui isolated customer selection -> restart -> reselect persistence, configured live DB change and native repricing not exercised. Do not claim transaction-level completion.",
+        "ci": "NOT VERIFIED: cargo check for latest commit not executed in this session.",
+        "windows": "SKIPPED per explicit user policy: Windows GUI/drag/DPI check is not required."
+      },
+      "clauses": {
+        "apply": "0-1 through 0-7; 1-5; 6-10; 12-15; 16-22 for unchanged client card; 38-43; 47-54; 57-61",
+        "notApplicable": "카카오톡 실물 도킹/외부 창 이동, 수취인·품목 UI 배치와 운임 규칙 수정: this slice keeps those paths unchanged.",
+        "pending": "Scoped Rust cargo check and DB-backed action evidence; production confirmed order client mutation (only current isolated preview + opt-in existing working commit path); subsequent source/recipient/product/price/freight feature migration."
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
