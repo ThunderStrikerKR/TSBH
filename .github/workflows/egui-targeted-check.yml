@@ -31,3 +31,5 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify isolated v2 SQLite freight save, prices, history and revision guard
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib isolated_shipping_sqlite_verification -- --nocapture
