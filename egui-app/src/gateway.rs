@@ -123,8 +123,8 @@ pub trait BandoGateway: Send + Sync {
     fn settings_data(&self,_operation:&str,_filename:Option<&str>)->Result<Value,String>{
         Err("이 연결은 업무 감사 기록·백업을 지원하지 않습니다.".into())
     }
-    /// Opt-in, revision-checked operational freight write through Tauri's
-    /// existing Rust rule/SQLite transaction. Never writes the preview DB.
+    /// Opt-in native freight write through the shared Rust v2 transaction.
+    /// Does not spawn Tauri or write to the isolated egui preview DB.
     fn shipping_write_enabled(&self) -> bool { false }
     fn mutate_shipping(&self,_revision:u64,_action:&str,_data:Value)
         -> Result<Value,String> {
