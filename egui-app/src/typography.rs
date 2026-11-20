@@ -283,18 +283,18 @@ pub fn client_table_metadata_galley(
 pub fn table_cell(text: &str) -> RichText { render(text, Role::TableCell) }
 pub fn summary_value(text: &str) -> RichText { render(text, Role::SummaryValue) }
 
-/// Freight overview cards reuse the standard 14pt body role for labels
-/// and the 13pt table-cell role for units. All glyphs use the summary
-/// value's 23pt line box, so 14/16/13pt text shares one vertical center.
+/// Freight overview card label and unit use the same 16pt size as
+/// SummaryValue. All three use the shared 23pt line box and a single
+/// centerline; numbers stay monospaced and right-aligned in the caller.
 fn summary_card_secondary_galley(
-    ui: &egui::Ui, text: &str, role: Role
+    ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
-    let style = spec(role);
+    let style = spec(Role::SummaryValue);
     let format = egui::TextFormat {
         font_id: FontId::new(style.size, FontFamily::Proportional),
         color: SECONDARY,
-        extra_letter_spacing: style.tracking,
-        line_height: Some(spec(Role::SummaryValue).line),
+        extra_letter_spacing: 0.0,
+        line_height: Some(style.line),
         ..Default::default()
     };
     ui.fonts_mut(|fonts| fonts.layout_job(
@@ -304,12 +304,12 @@ fn summary_card_secondary_galley(
 pub fn summary_card_label_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
-    summary_card_secondary_galley(ui, text, Role::Body)
+    summary_card_secondary_galley(ui, text)
 }
 pub fn summary_card_unit_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
-    summary_card_secondary_galley(ui, text, Role::TableCell)
+    summary_card_secondary_galley(ui, text)
 }
 
 /// Produce the same summary font as summary_value(), but as measured glyphs
