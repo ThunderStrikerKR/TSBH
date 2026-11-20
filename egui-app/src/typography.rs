@@ -278,7 +278,9 @@ fn client_table_galley(
 pub fn client_table_cell_galley(
     ui: &egui::Ui, text: &str, emphasized: bool,
 ) -> std::sync::Arc<egui::Galley> {
-    client_table_galley(ui,text,Role::TableCell,emphasized,TEXT)
+    // Match the approved Freight Assignment 14pt data rows.
+    // Only the client directory's primary values use this role.
+    client_table_galley(ui,text,Role::Body,emphasized,TEXT)
 }
 pub fn client_table_metadata_galley(
     ui: &egui::Ui, text: &str, color: Color32,
