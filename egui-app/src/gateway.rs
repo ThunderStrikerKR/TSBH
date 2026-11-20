@@ -214,7 +214,9 @@ impl BandoGateway for LocalGateway {
         crate::settings_store::patch(changes,expected)
     }
     fn model_group_write_enabled(&self)->bool{
-        crate::settings_store::writable_business()
+        // Retain the required manual backup permission until backup itself
+        // is migrated. The model-family SAVE no longer uses settings CLI.
+        self.product_write_enabled() && crate::settings_store::writable_business()
     }
     fn patch_model_groups(&self,groups:Value,expected:Value)->Result<Value,String>{
         if !self.model_group_write_enabled(){
@@ -225,18 +227,31 @@ impl BandoGateway for LocalGateway {
         }
         let current=self.load_catalog()?;
         crate::catalog_query_bridge::validate_model_groups(&current,&groups)?;
-        // React ColorGuidanceManager: full operating SQLite manual backup
-        // BEFORE the per-field CAS settings_patch. Never bypass Tauri.
+        // React ColorGuidanceManager requires an operating DB backup BEFORE
+        // each model-family change. Keep this existing backup operation.
         self.settings_data("backup",None)?;
-        self.patch_settings(
-            serde_json::json!({"colorGuidanceGroups":groups}),
-            serde_json::json!({"colorGuidanceGroups":expected})
+        // The settings CLI is no longer involved in saving model families.
+        // The shared service implements the original per-key CAS + native
+        // Rust model-group validation inside one revision-checked writer.
+        use rusqlite::{Connection,OpenFlags};
+        let path=crate::business_state::authorized_business_write_path()?;
+        let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+            .map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|e|e.to_string())?;
+        let saved=bando_data_access::patch_model_groups_v2(
+            &mut conn,&groups,&expected
         )?;
+        let revision=saved["revision"].as_u64()
+            .ok_or("모델군 저장 결과 revision 오류")?;
+        drop(conn);
         let catalog=self.load_catalog()?;
-        // An unrelated process may commit another group edit between
-        // settings_patch and this read. A non-null key alone is NOT proof
-        // that the editor's exact draft survived the SQLite round trip.
-        if catalog["settings"]["colorGuidanceGroups"]!=groups{
+        // A non-null key alone is NOT proof that the editor's exact draft
+        // survived a concurrent commit or the SQLite round trip.
+        if catalog["revision"].as_u64()!=Some(revision) ||
+            catalog["settings"]["colorGuidanceGroups"]!=groups{
             return Err("모델군 저장 후 최신 데이터가 일치하지 않습니다. 다시 불러온 뒤 확인하세요.".into());
         }
         Ok(catalog)
