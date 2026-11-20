@@ -1375,17 +1375,33 @@ impl FreightManager {
                     header_rect.bottom(),
                 ),
             );
+            // Shorten only the native SCROLLBAR TRACK at its upper edge.
+            // egui 0.33.3 supports a separate scroll_bar_rect: scrolling rows
+            // still begin immediately below the 36pt sticky header.
+            // This replaces the former 3pt paint-over hack, so the handle's
+            // visual bounds and mouse hit bounds agree at every DPI.
+            let scroll_max_height=section.ctx().content_rect().height()
+                * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
+            let scroll_area_bounds=section.available_rect_before_wrap();
+            let scroll_track_bottom=(scroll_area_bounds.top()+scroll_max_height)
+                .min(scroll_area_bounds.bottom());
+            let scroll_track_top=(scroll_area_bounds.top()+3.0)
+                .min(scroll_track_bottom-1.0);
+            let scroll_track=egui::Rect::from_min_max(
+                egui::pos2(scroll_area_bounds.left(),scroll_track_top),
+                egui::pos2(scroll_area_bounds.right(),scroll_track_bottom),
+            );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
+                    .scroll_bar_rect(scroll_track)
                     .id_salt("freight-assignment-rows")
                     // The solid track stays visible without hovering and
                     // takes its own space rather than covering row controls.
                     .scroll_bar_visibility(
                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                     )
-                    .max_height(section.ctx().content_rect().height()
-                        * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+                    .max_height(scroll_max_height)
                     .auto_shrink([false,false]),
                 section,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,
                 filtered.len(),
@@ -1845,31 +1861,6 @@ impl FreightManager {
                     *bulk_feedback=None;
                 }
             });
-            // The solid vertical thumb begins precisely at the body scroll
-            // origin. At integer/DPI-rounded pixels its rounded top can touch
-            // the 2pt header outline, making it look as if it intrudes upward
-            // into "설정". Mask just the first 3pt of the SCROLLBAR RAIL,
-            // using the ordinary row surface. No spacer is inserted: header,
-            // zebra row origins, 42pt heights and all hit targets stay fixed.
-            // The thumb remains fully interactive over the actual track.
-            if (filtered.len() as f32 * theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT)
-                > section.ctx().content_rect().height()
-                    * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION
-            {
-                let rail_top_clearance=header_outline_height+1.0;
-                section.painter().rect_filled(
-                    egui::Rect::from_min_max(
-                        egui::pos2(header_content_rect.right(),header_rect.bottom()),
-                        egui::pos2(
-                            header_rect.right(),
-                            header_rect.bottom()+rail_top_clearance,
-                        ),
-                    ),
-                    0.0,
-                    theme::PANEL,
-                );
-            }
-
             // Assignment is persisted immediately from the product selector
             // or the single bulk Apply button above. Do not render a second
             // save footer, a redundant 'reset drafts' action, or guidance text.
