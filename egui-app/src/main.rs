@@ -3944,6 +3944,9 @@ impl eframe::App for BandoEgui {
             self.working_sync=None;
             self.client_change=None;
             self.auto_client_change=None;
+            // Invalidate deletion replies from a different restored DB/catalog.
+            self.source_clear_confirm=None;
+            self.source_clear_job=None;
             self.clear_source_analysis();
         }
         self.poll_workflow_board(ctx);
