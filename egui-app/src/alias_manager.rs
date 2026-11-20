@@ -248,7 +248,7 @@ impl AliasManager {
         let mut choose=None;
         self.poll_diagnostics();
         let warnings=Arc::clone(&self.warnings);
-        let card_min_height=components::management_primary_card_min_inner_height(ui);
+        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
         theme::section_frame().show(ui,|card|{
             components::fill_management_primary_card(card,card_min_height);
             card.label(typography::section_heading("공통 / 거래처 별칭 관리"));
