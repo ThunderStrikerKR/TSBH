@@ -1330,12 +1330,28 @@ impl FreightManager {
             if *bulk_group!=previous_group {
                 *bulk_feedback=None;
             }
-            components::soft_divider(section);
-            // A management table is one continuous grid. The section's
-            // default vertical widget gap must NOT sit between the header
-            // and its first 42pt row (it made row 1 appear taller).
+            // Own the toolbar-to-header rhythm in ONE explicit 9pt strip:
+            // 4pt above a 1pt divider and 4pt below it. The old divider
+            // inherited 8pt item spacing on BOTH sides, visually separating
+            // the filters from the table they control.
+            // Keep zero implicit vertical spacing through the fixed header
+            // and virtual rows, then restore it after the table block.
             let previous_table_spacing_y=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
+            let (separator_rect,_)=section.allocate_exact_size(
+                egui::vec2(section.available_width(),
+                    theme::SPACE_8+theme::SOFT_DIVIDER_WIDTH),
+                egui::Sense::hover(),
+            );
+            section.painter().rect_filled(
+                egui::Rect::from_min_size(
+                    egui::pos2(separator_rect.left(),
+                        separator_rect.top()+theme::SPACE_4),
+                    egui::vec2(separator_rect.width(),theme::SOFT_DIVIDER_WIDTH),
+                ),
+                0.0,
+                theme::DIVIDER,
+            );
             // Reserve the header OUTSIDE the scroll area. The table's
             // scroll offset is reflected only in its horizontal coordinates,
             // so wheel scrolling cannot push column titles off-screen.
