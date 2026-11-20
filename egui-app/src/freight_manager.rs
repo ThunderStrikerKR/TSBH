@@ -368,12 +368,12 @@ impl FreightManager {
             ("그룹 운임표", self.tab == FreightTab::Rates, true),
             ("조합 / 기준 이력", self.tab == FreightTab::History, true),
         ]) {
-            if self.rate_editor.is_none() && self.rename_target.is_none()
-                && self.delete_target.is_none() && self.basis_target.is_none()
-                && self.exception_target.is_none() && self.product_reset_target.is_none()
-                && self.copy_target.is_none() && self.write_receiver.is_none()
-                && self.pending_changes().is_empty() && self.new_name.trim().is_empty() {
-                self.tab = FreightTab::ALL[index];
+            if !self.has_modal() && !self.busy() {
+                let next=FreightTab::ALL[index];
+                if self.tab!=next {
+                    if self.dirty() { self.requested_tab=Some(next); }
+                    else { self.tab=next; }
+                }
             }
         }
         ui.add_space(theme::SPACE_12);
@@ -631,6 +631,49 @@ impl FreightManager {
                 });
             }
             if close{self.exception_target=None;}
+        }
+        if let Some(next)=self.requested_tab {
+            let mut cancel=false;
+            let mut discard=false;
+            let mut save=false;
+            let can_save=enabled&&self.new_name.trim().is_empty()
+                && !self.pending_changes().is_empty();
+            let ctx=ui.ctx();
+            components::modal_backdrop(ctx,"freight-tab-leave-backdrop",false);
+            components::decision_window(
+                "저장하지 않은 변경사항","freight-tab-leave",ui.max_rect()
+            ).show(ctx,|dialog|{
+                dialog.label(typography::body(
+                    "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
+                ));
+                if !self.new_name.trim().is_empty(){
+                    dialog.label(typography::caption(
+                        "새 배송 그룹을 등록하려면 배송 그룹 추가를 눌러 주세요."
+                    ));
+                }
+                dialog.add_space(theme::SPACE_12);
+                dialog.horizontal(|bar|{
+                    if theme::action(bar,"취소",theme::ButtonRole::Standard,enabled)
+                        .clicked(){cancel=true;}
+                    if theme::action(bar,"저장 안 함",
+                        theme::ButtonRole::Standard,enabled).clicked(){discard=true;}
+                    if theme::action(bar,"저장하고 이동",
+                        theme::ButtonRole::Primary,can_save).clicked(){save=true;}
+                });
+            });
+            if cancel{self.requested_tab=None;}
+            else if discard{
+                self.discard_drafts();
+                self.tab=next;
+            }else if save{
+                let changes=self.pending_changes();
+                if !changes.is_empty(){
+                    self.saving_for_tab=true;
+                    action=Some(("assign_products".into(),json!({
+                        "assignments":changes
+                    })));
+                }
+            }
         }
         if let Some((kind,data))=action {
             self.write(kind,data,ui.ctx().clone());
