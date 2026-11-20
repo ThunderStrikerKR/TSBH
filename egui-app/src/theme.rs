@@ -183,6 +183,25 @@ pub const NAV_HEIGHT: f32 = 44.0;
 // Both navigation levels remain comfortable click targets; hierarchy comes
 // from placement, active colors and the 18pt/16pt typography difference.
 pub const MANAGEMENT_TAB_HEIGHT: f32 = 38.0;
+// The top of every management page's primary outlined content card aligns
+// with Freight > Shipping Group Assignment (the approved reference).
+// The offset starts at the management page's content origin, not at the
+// window origin, so resizing the Kakao pane never changes its alignment.
+// Keep the title line and inter-block spacing explicit: page heading,
+// 12pt gap, 38pt tabs, 16pt gap, 80pt freight summary and 16pt gap.
+pub const MANAGEMENT_REFERENCE_HEADING_LINE_HEIGHT: f32 =
+    typography::FONT_PAGE_HEADING + 8.0;
+pub fn management_primary_card_top_offset(available_width: f32) -> f32 {
+    let cards_per_row = (((available_width + SPACE_8) /
+        (FREIGHT_SUMMARY_CARD_WIDTH + SPACE_8)).floor() as usize).clamp(1, 4);
+    let rows = 4_usize.div_ceil(cards_per_row);
+    let summary_height = rows as f32 * FREIGHT_SUMMARY_CARD_HEIGHT
+        + rows.saturating_sub(1) as f32 * SPACE_8;
+    MANAGEMENT_REFERENCE_HEADING_LINE_HEIGHT
+        + SPACE_12 + MANAGEMENT_TAB_HEIGHT + SPACE_16
+        + summary_height + SPACE_16 + SPACING * 3.0
+}
+
 // Original React manual workspace: max 1760, viewport side gap 36,
 // source-to-sheet columns 34:66 (.manual-workspace .manual-columns).
 pub const MANUAL_DIALOG_MAX_WIDTH: f32 = 1760.0;
