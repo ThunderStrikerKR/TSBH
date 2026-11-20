@@ -461,6 +461,7 @@ impl SettingsView{
         {self.error=Some("폴더 열기는 Windows 환경에서 사용할 수 있습니다.".into());}
     }
     pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
+        let page_origin_y=ui.cursor().top();
         self.poll(ui.ctx(),Arc::clone(&gateway));
         ui.label(typography::page_heading("설정"));
         ui.add_space(theme::SPACE_12);
@@ -495,6 +496,9 @@ impl SettingsView{
             return;
         }
         if self.source.is_null(){return;}
+        // Settings may contain multiple cards. Align the first card's top
+        // without forcing any one section to fill or hide later sections.
+        components::align_management_primary_card(ui,page_origin_y);
         egui::ScrollArea::vertical()
             .id_salt(("settings-view",self.tab.label()))
             .auto_shrink([false,false])
