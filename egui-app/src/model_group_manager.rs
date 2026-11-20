@@ -477,10 +477,12 @@ impl ModelGroupManager {
                     cancel=components::modal_header(dialog,"그룹 삭제","취소",true);
                     dialog.label(typography::body(
                         "이 그룹을 삭제할까요? 기존 주문과 상품은 유지됩니다."));
-                    dialog.horizontal(|actions|{
-                        delete=theme::action(actions,"삭제",
-                            theme::ButtonRole::Danger,true).clicked();
-                    });
+                    dialog.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                            delete=theme::action(actions,"삭제",
+                                theme::ButtonRole::Danger,true).clicked();
+                        }
+                    );
                 });
             if cancel{self.confirm_delete=false;}
             else if delete{
