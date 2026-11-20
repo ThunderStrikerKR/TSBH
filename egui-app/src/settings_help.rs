@@ -2,7 +2,7 @@
 //! Matches React HelpTooltip: 500ms hover, 180ms leave, mouse click pin,
 //! outside pointer/keyboard/wheel dismissal. It is NOT an alert or modal.
 use crate::{theme,typography};
-use eframe::egui::{self,Align,Align2,Color32,Frame,Id,Pos2,Rect,Sense,Stroke,Ui,Vec2};
+use eframe::egui::{self,Align,Align2,Color32,Frame,Pos2,Rect,Sense,Stroke,Ui,Vec2};
 use std::time::{Duration,Instant};
 
 #[derive(Clone,Default)]
@@ -220,7 +220,7 @@ pub fn icon(heading:&mut Ui,title:&str){
         );
         // Use only pointer intent. Keyboard focus must not open this help.
         let ctx=heading.ctx().clone();
-        let id=Id::new(("settings-help-tooltip",title));
+        let id=heading.make_persistent_id(("settings-help-tooltip",title));
         let mut state=ctx.data_mut(|data|
             data.get_temp::<TooltipState>(id).unwrap_or_default()
         );
