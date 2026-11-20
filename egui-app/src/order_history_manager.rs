@@ -226,9 +226,11 @@ fn cells(origin:Pos2,widths:&[f32;7],height:f32)->[Rect;7]{
         cell
     })
 }
-fn paint_column_dividers(ui:&Ui,rect:Rect,widths:&[f32;7],detail:bool){
+fn paint_column_dividers(
+    ui:&Ui,rect:Rect,widths:&[f32;7],detail:bool,content_clip:Rect
+){
     let columns=cells(rect.min,widths,rect.height());
-    let painter=ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+    let painter=ui.painter().with_clip_rect(content_clip.intersect(ui.clip_rect()));
     // Expanded rows merge columns 2–6 to show long recipient, product,
     // freight and billing details. Do not draw lines THROUGH merged text.
     let separators=if detail{2}else{6};
@@ -816,11 +818,13 @@ impl OrderHistoryManager {
             table_scroll.bar_inner_margin=0.0;
             table_scroll.bar_outer_margin=0.0;
             section.spacing_mut().scroll=table_scroll;
-            // No additional list-strip margin: the card already owns 16pt.
-            // A 36pt toolbar and a single 9pt separator match Freight.
-            // Freight baseline: ONE reserved toolbar rectangle, then 9pt
-            // separator and fixed header. Nested section.scope() previously
-            // added implicit vertical spacing and shifted the date controls.
+            // Freight Assignment's ACTUAL vertical rhythm is:
+            // 36pt toolbar + default 8pt after-toolbar gap + 9pt
+            // (4/1/4) divider + 36pt sticky header. Previously the
+            // zero-spacing setting swallowed the 8pt gap and moved this
+            // header ~7px ABOVE the Freight reference at Windows DPI.
+            // Reserve the toolbar explicitly; keep zero implicit spacing
+            // for its remaining descendants and the virtual table.
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
             let full_width=section.available_width().max(1.0);
@@ -884,13 +888,13 @@ impl OrderHistoryManager {
                 self.date_to=self.to_input.clone();
                 self.refresh(section.ctx().clone());
             }
-            // Loading, error, validation and empty-result messages must
-            // never insert a row BETWEEN the toolbar and fixed table header.
-            // All four states are painted later at the data area's center.
-            // Freight baseline: 4pt above + 1pt dividing rule + 4pt
-            // below, followed immediately by the fixed 36pt table header.
-            // Implicit spacing was already disabled BEFORE the toolbar.
-            // Reserve exactly 9pt (4pt/1pt/4pt), matching Freight.
+            // Freight's default item spacing separates its 36pt toolbar
+            // and 9pt divider. Preserve that exact 8pt here without
+            // reintroducing implicit space between divider/header/rows.
+            section.add_space(theme::SPACE_8);
+            // Loading/error/validation/empty messages must never occupy
+            // this gap; those are painted in the data viewport.
+            // Freight separator: 4pt above + 1pt rule + 4pt below.
             let (separator,_)=section.allocate_exact_size(
                 Vec2::new(section.available_width(),
                     theme::SPACE_8+theme::SOFT_DIVIDER_WIDTH),Sense::hover()
@@ -911,6 +915,16 @@ impl OrderHistoryManager {
                 "청구 합계","입금 확인","처리"];
             let (head_rect,_)=section.allocate_exact_size(
                 Vec2::new(viewport,HEADER_HEIGHT),Sense::hover());
+            // Freight Assignment paints its sticky header across the
+            // entire viewport, but the final 10pt belongs exclusively to
+            // the solid scrollbar rail — not to an eighth data column.
+            let header_content_rect=Rect::from_min_max(
+                head_rect.min,
+                egui::pos2(
+                    (head_rect.right()-gutter).max(head_rect.left()+1.0),
+                    head_rect.bottom()
+                )
+            );
             let mut header_origin=None;
             let mut pending_toggle=None;
             let snapshot=self.snapshot.as_ref();
@@ -987,7 +1001,8 @@ impl OrderHistoryManager {
                                 }
                                 paint_column_dividers(
                                     row_ui,row_rect,&widths,
-                                    !matches!(line,HistoryLine::Order(_))
+                                    !matches!(line,HistoryLine::Order(_)),
+                                    row_rect
                                 );
                             });
                     }
@@ -1015,14 +1030,20 @@ impl OrderHistoryManager {
             let header_cells=cells(egui::pos2(left,head_rect.top()),&widths,HEADER_HEIGHT);
             let painter=section.painter().with_clip_rect(head_rect);
             painter.rect_filled(head_rect,0.0,theme::RAISED);
-            // Freight assignment: solid 1pt separator at every
-            // intermediate column boundary, in the 8pt column gap.
-            paint_column_dividers(section,head_rect,&widths,false);
-            // Freight title text centers in the 34pt line box ABOVE the
-            // last 2pt filled rule; the table below begins without a gap.
+            // The rail is never painted as a data column. Keep column
+            // separators within the same measured data viewport as rows.
+            paint_column_dividers(
+                section,head_rect,&widths,false,header_content_rect
+            );
+            // Freight centers headings in the 34pt area above its
+            // INSIDE-the-header 2pt outline, excluding the right rail.
             let header_outline_height=2.0_f32;
-            let header_text_center_y=head_rect.top()
-                +(head_rect.height()-header_outline_height)/2.0;
+            let header_text_rect=Rect::from_min_max(
+                header_content_rect.min,
+                egui::pos2(header_content_rect.right(),
+                    header_content_rect.bottom()-header_outline_height)
+            );
+            let header_text_center_y=header_text_rect.center().y;
             let mut next_sort=None;
             for (index,title) in headings.iter().enumerate(){
                 let sort_col=match index{
@@ -1031,7 +1052,7 @@ impl OrderHistoryManager {
                     4=>Some(SortColumn::Total),
                     5=>Some(SortColumn::PaymentConfirmation),_=>None,
                 };
-                let cell=header_cells[index].intersect(head_rect);
+                let cell=header_cells[index].intersect(header_text_rect);
                 let indicator=sort_col.map(|column|{
                     match self.sort.filter(|state|state.column==column)
                         .map(|s|s.direction){
@@ -1051,9 +1072,10 @@ impl OrderHistoryManager {
                     (header_cells[index].center().x-label.size().x/2.0)
                         .max(header_cells[index].left()+6.0)
                 }else{header_cells[index].left()+6.0};
-                painter.galley(egui::pos2(x,
-                    header_text_center_y-label.size().y/2.0),
-                    label,theme::SECONDARY);
+                painter.with_clip_rect(cell).galley(
+                    egui::pos2(x,header_text_center_y-label.size().y/2.0),
+                    label,theme::SECONDARY
+                );
                 if let Some(column)=sort_col {
                     let response=section.interact(cell,
                         section.make_persistent_id(("order-history-sort",index)),
