@@ -290,9 +290,11 @@ pub const MANAGEMENT_CHOOSER_ROW_HEIGHT: f32 = 48.0;
 // in ordinary management panes without an unnecessary horizontal scrollbar.
 pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 6] =
     // Reserve room for the 14pt "색상/옵션" header and its sort arrow.
-    // +21pt to color/option (83 -> 104) comes entirely from product
-    // (239 -> 218); category, other columns and total width stay fixed.
-    [44.0, 218.0, 104.0, 258.0, 150.0, 128.0];
+    // Keep the approved 942pt table width while giving the final action
+    // column 12pt symmetric insets on both sides of its full label.
+    // Transfer 16pt from product (218 -> 202) to Settings (128 -> 144);
+    // the other four columns and the overall table width are unchanged.
+    [44.0, 202.0, 104.0, 258.0, 150.0, 144.0];
 pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
 // Width for the single-line bulk shipping-group selector.
 pub const FREIGHT_BULK_GROUP_WIDTH: f32 = 200.0;
