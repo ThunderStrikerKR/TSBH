@@ -725,7 +725,7 @@ impl FreightManager {
         // The workspace shell already provides 6pt above this page.
         // Add only the missing amount: heading top is 16pt below the
         // global navigation, not 16pt ON TOP of the shell's existing 6pt.
-        ui.add_space((theme::SPACE_16-theme::PANEL_GAP).max(0.0));
+        components::management_page_title_top_gap(ui);
         freight_top_content(ui,|top|{
             top.horizontal(|heading|{
                 heading.label(typography::page_heading("운임 관리"));
@@ -2665,12 +2665,7 @@ fn freight_history_table(
 /// leaves the section frame's OUTER border at the shared 59th-round anchor.
 /// Keeping the inset local avoids moving Reception or other management pages.
 fn freight_top_content<R>(ui:&mut Ui,add:impl FnOnce(&mut Ui)->R)->R{
-    egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(theme::SECTION_PADDING as i8,0))
-        .show(ui,|inset|{
-            inset.set_min_width(inset.available_width());
-            add(inset)
-        }).inner
+    components::management_top_content(ui,add)
 }
 
 /// Render one of four independent KPI cards. Visual hierarchy is deliberately
