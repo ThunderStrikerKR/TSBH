@@ -294,9 +294,9 @@ fn report_table<const N:usize>(
     let previous_gap=ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y=0.0;
     let minimum=base.iter().sum::<f32>()+(N.saturating_sub(1)) as f32*COL_GAP;
-    // Keep existing table size and list scrollbar inset; the shared
-    // layout helper owns their 36pt header and measured data width.
-    let layout=components::management_existing_list_table_header(ui,minimum);
+    // Keep existing column minima; the shared 36pt header now uses the
+    // same zero-extra scrollbar reservation as both master tables.
+    let layout=components::management_list_table_header(ui,minimum);
     let width=layout.table_width;
     let widths=theme::management_single_stretch_columns(
         base,width,COL_GAP,stretch_column
