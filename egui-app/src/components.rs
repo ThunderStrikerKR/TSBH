@@ -16,6 +16,56 @@ pub enum WorkflowIcon {
     Trash,
 }
 
+/// Neutral secondary actions inside a workflow card share one compact
+/// Standard-size control. Keep their existing disabled functionality.
+#[derive(Clone, Copy)]
+pub enum WorkflowAuxiliaryAction {
+    Manage,
+    Delete,
+    PreviousStage,
+}
+
+/// A single painted/interactive frame for the three grey workflow controls.
+/// The two glyphs and the text label are drawn only after the same disabled
+/// egui Button has reserved the same 34pt height, 6pt radius and 1pt border.
+pub fn workflow_auxiliary_button(ui: &mut Ui, action: WorkflowAuxiliaryAction) -> Response {
+    let width = match action {
+        WorkflowAuxiliaryAction::Manage => theme::WORKFLOW_MANAGE_WIDTH,
+        WorkflowAuxiliaryAction::Delete | WorkflowAuxiliaryAction::PreviousStage =>
+            theme::WORKFLOW_TRASH_WIDTH,
+    };
+    let response = ui.scope(|ui| {
+        ui.spacing_mut().button_padding = Vec2::ZERO;
+        ui.add_enabled(
+            false,
+            egui::Button::new("")
+                .min_size(Vec2::new(width, theme::WORKFLOW_AUX_CONTROL_HEIGHT))
+                .fill(theme::RAISED)
+                .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH, theme::BORDER))
+                .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS)),
+        )
+    }).inner;
+
+    match action {
+        WorkflowAuxiliaryAction::Manage => {
+            ui.painter().text(
+                response.rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "관리",
+                egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
+                theme::MUTED,
+            );
+        }
+        WorkflowAuxiliaryAction::Delete => paint_workflow_icon(
+            ui.painter(), response.rect.center(), WorkflowIcon::Trash, theme::MUTED,
+        ),
+        WorkflowAuxiliaryAction::PreviousStage => paint_workflow_icon(
+            ui.painter(), response.rect.center(), WorkflowIcon::PreviousStage, theme::MUTED,
+        ),
+    }
+    response
+}
+
 /// Draw workflow glyphs as stable vectors; the UI font may not contain
 /// Unicode chevrons, trash or curved-arrow symbols on Windows.
 pub fn paint_workflow_icon(
