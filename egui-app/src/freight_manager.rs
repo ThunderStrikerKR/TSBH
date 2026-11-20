@@ -111,15 +111,6 @@ fn variant_colors(product:&Value)->String {
     }
     labels.join(" / ")
 }
-fn modified_date(value:&Value)->&str {
-    let timestamp=value.as_str().unwrap_or("");
-    if timestamp.is_empty(){"-"}else{timestamp.split('T').next().unwrap_or("-")}
-}
-fn registered_fee(rule:&Value)->bool {
-    rule["perItem"].as_i64().is_some() ||
-        rule["fees"].as_object().is_some_and(|fees|fees.values().any(Value::is_number))
-}
-
 fn as_fee(value: &Value) -> String {
     value.as_i64().map(components::display_won)
         .unwrap_or_else(|| "미등록".to_owned())
