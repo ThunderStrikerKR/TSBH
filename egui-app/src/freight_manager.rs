@@ -146,31 +146,47 @@ pub struct FreightManager {
     group_filter: String,
 }
 impl FreightManager {
-    pub fn new(gateway: Arc<dyn BandoGateway>, ctx: egui::Context) -> Self {
-        let (sender, receiver) = mpsc::channel();
-        let loader=Arc::clone(&gateway);
-        std::thread::spawn(move || {
-            let outcome = (|| {
-                let state = loader.load_business_state()?;
-                let shipping = state.get("shipping")
-                    .filter(|value| value.is_object())
+    fn fetch(gateway: Arc<dyn BandoGateway>,ctx:egui::Context)
+        -> Receiver<Result<(Value,Value),String>> {
+        let (sender,receiver)=mpsc::channel();
+        std::thread::spawn(move||{
+            let outcome=(|| {
+                let state=gateway.load_business_state()?;
+                let shipping=state.get("shipping")
+                    .filter(Value::is_object)
                     .ok_or("운영 DB에서 운임 기준을 찾을 수 없습니다.")?;
-                let mut projection = loader.execute(
+                let mut projection=gateway.execute(
                     ReadOperation::ShippingManagerView,
-                    json!({"state":state,"shipping":shipping}),
+                    json!({"state":state,"shipping":shipping})
                 )?;
-                let product_view=loader.execute(
+                let product_view=gateway.execute(
                     ReadOperation::ProductFreightView,
                     json!({"action":"product_freight_view","state":{
                         "products":state["products"],"shipping":shipping
                     }})
                 )?;
                 projection["productViews"]=product_view["views"].clone();
-                Ok((state, projection))
+                Ok((state,projection))
             })();
-            let _ = sender.send(outcome);
+            let _=sender.send(outcome);
             ctx.request_repaint();
         });
+        receiver
+    }
+    pub fn refresh(&mut self,ctx:egui::Context) {
+        if self.receiver.is_none() && !self.busy() && !self.dirty() {
+            self.receiver=Some(Self::fetch(Arc::clone(&self.gateway),ctx));
+        }
+    }
+    fn refresh_after_conflict(&mut self,ctx:egui::Context) {
+        // Keep local drafts while loading the authoritative newer revision.
+        // Never reissue the failed write automatically.
+        if self.receiver.is_none() {
+            self.receiver=Some(Self::fetch(Arc::clone(&self.gateway),ctx));
+        }
+    }
+    pub fn new(gateway: Arc<dyn BandoGateway>, ctx: egui::Context) -> Self {
+        let receiver=Self::fetch(Arc::clone(&gateway),ctx);
         Self {
             tab: FreightTab::Groups,
             gateway,
@@ -253,7 +269,7 @@ impl FreightManager {
         self.busy()
     }
 
-    fn poll(&mut self) {
+    fn poll(&mut self,ctx:egui::Context) {
         if let Some(receiver)=self.receiver.as_ref(){
             match receiver.try_recv() {
                 Ok(Ok((state, projection))) => {
@@ -325,10 +341,16 @@ impl FreightManager {
                     self.write_receiver=None;
                 }
                 Ok(Err(error))=>{
-                    self.error=Some(error);
+                    let conflict=error.contains("다른 작업에서 데이터가 수정되었습니다.");
+                    self.error=Some(if conflict {
+                        "다른 작업에서 운임 데이터가 수정되었습니다. 최신 값을 다시 불러옵니다. 현재 입력은 유지되므로 변경 내용을 비교한 뒤 저장하세요.".into()
+                    }else{error});
                     self.write_receiver=None;
                     self.write_action=None;
                     self.saving_for_tab=false;
+                    if conflict {
+                        self.refresh_after_conflict(ctx);
+                    }
                 }
                 Err(TryRecvError::Disconnected)=>{
                     self.error=Some("운임 저장 작업이 중단되었습니다. 데이터 재조회를 확인하세요.".into());
@@ -365,7 +387,7 @@ impl FreightManager {
     }
 
     pub fn show_page(&mut self, ui: &mut Ui) {
-        self.poll();
+        self.poll(ui.ctx().clone());
         ui.label(typography::page_heading("운임 관리"));
         ui.add_space(theme::SPACE_12);
         if let Some(index) = components::management_tabs(ui, &[
