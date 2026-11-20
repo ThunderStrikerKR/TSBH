@@ -345,10 +345,10 @@ pub fn labeled_field(
     }).inner
 }
 
-/// Recipient grid: name/address/note span a full row, while mobile and
-/// landline ALWAYS share one horizontal line. A narrow pane scrolls this
-/// contact row horizontally rather than stacking or clipping inputs.
-/// The landline control is rendered even when no number was recognized.
+/// Recipient grid: name/address/note fill the remaining row width. Mobile
+/// and landline use compact, content-sized inputs on ONE line, left-aligned
+/// to the same label/input columns. Only exceptionally narrow panes need
+/// horizontal scrolling. The landline is always rendered, even if empty.
 /// Return whole field-row responses so source evidence highlighting keeps
 /// its existing exact field-level targets.
 pub fn reception_recipient_fields(
@@ -360,7 +360,8 @@ pub fn reception_recipient_fields(
     note: &mut String,
 ) -> [Response; 5] {
     fn row(
-        ui: &mut Ui, label: &str, value: &mut String, label_width: f32
+        ui: &mut Ui, label: &str, value: &mut String,
+        label_width: f32, fixed_input_width: Option<f32>,
     ) -> Response {
         ui.horizontal(|line| {
             line.spacing_mut().item_spacing.x = theme::RECIPIENT_LABEL_GAP;
@@ -368,10 +369,12 @@ pub fn reception_recipient_fields(
                 Vec2::new(label_width, theme::INPUT_HEIGHT),
                 egui::Label::new(typography::field_label(label)),
             );
-            let width = line.available_width().max(1.0);
-            // This field keeps the shared 36pt control height, font and
-            // insets, but fills the column instead of using the generic
-            // 180pt text-field cap.
+            // Full rows use all remaining width. Only the two contact
+            // inputs use fixed widths sized for their actual phone numbers.
+            // All rows retain the same input start position and height.
+            let width = fixed_input_width.unwrap_or_else(|| {
+                line.available_width().max(1.0)
+            });
             let edit = egui::TextEdit::singleline(value)
                 .font(egui::TextStyle::Body)
                 .vertical_align(Align::Center)
@@ -387,11 +390,16 @@ pub fn reception_recipient_fields(
     ui.scope(|fields| {
         fields.spacing_mut().item_spacing.y = theme::RECIPIENT_ROW_GAP;
         fields.spacing_mut().item_spacing.x = theme::RECIPIENT_PHONE_COLUMN_GAP;
-        let name_response = row(fields, "이름", name, theme::RECIPIENT_LABEL_WIDTH);
-        let address_response = row(fields, "주소", address, theme::RECIPIENT_LABEL_WIDTH);
-        // Keep a two-column contact row at every viewport width. The inner
-        // horizontal scroller preserves readable input widths in narrow panes
-        // without changing the parent recipient pane or other field rows.
+        let name_response = row(
+            fields, "이름", name, theme::RECIPIENT_LABEL_WIDTH, None,
+        );
+        let address_response = row(
+            fields, "주소", address, theme::RECIPIENT_LABEL_WIDTH, None,
+        );
+        // No 50/50 stretching and no 420pt minimum. The mobile input is
+        // 150pt and the landline input 120pt, including their inner padding.
+        // A 390pt contact row fits within the regular recipient section;
+        // only a manually narrowed pane needs localized horizontal scroll.
         let contact_width = fields.available_width()
             .max(theme::RECIPIENT_PHONE_ROW_MIN_WIDTH);
         let (mobile_response, phone_response) = egui::ScrollArea::horizontal()
@@ -400,14 +408,26 @@ pub fn reception_recipient_fields(
             .auto_shrink([false, true])
             .show(fields, |contacts| {
                 contacts.set_min_width(contact_width);
-                contacts.columns(2, |columns| {
+                contacts.horizontal(|contact_line| {
+                    contact_line.spacing_mut().item_spacing.x =
+                        theme::RECIPIENT_PHONE_COLUMN_GAP;
                     (
-                        row(&mut columns[0], "휴대폰", mobile, theme::RECIPIENT_LABEL_WIDTH),
-                        row(&mut columns[1], "전화", phone, theme::RECIPIENT_PHONE_LABEL_WIDTH),
+                        row(
+                            contact_line, "휴대폰", mobile,
+                            theme::RECIPIENT_LABEL_WIDTH,
+                            Some(theme::RECIPIENT_MOBILE_INPUT_WIDTH),
+                        ),
+                        row(
+                            contact_line, "전화", phone,
+                            theme::RECIPIENT_PHONE_LABEL_WIDTH,
+                            Some(theme::RECIPIENT_PHONE_INPUT_WIDTH),
+                        ),
                     )
-                })
+                }).inner
             }).inner;
-        let note_response = row(fields, "요청 메시지", note, theme::RECIPIENT_LABEL_WIDTH);
+        let note_response = row(
+            fields, "요청 메시지", note, theme::RECIPIENT_LABEL_WIDTH, None,
+        );
         [
             name_response, address_response, mobile_response,
             phone_response, note_response,
