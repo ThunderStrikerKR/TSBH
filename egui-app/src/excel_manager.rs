@@ -202,8 +202,9 @@ fn table<const N:usize>(
     ui:&mut Ui,id:&str,titles:[&str;N],base:[f32;N],
     align:[Align2;N],stretch:usize,rows:usize,
     sort:&mut Option<Sort>,sort_enabled:[bool;N],
+    header_selection:Option<(bool,bool)>,
     mut render:impl FnMut(&mut Ui,[Rect;N],usize)
-){
+)->Option<bool>{
     let old_gap=ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y=0.0;
     let viewport=ui.available_width().max(1.0);
@@ -259,6 +260,7 @@ fn table<const N:usize>(
                 Some(Direction::Up)=>" ▲",Some(Direction::Down)=>" ▼",None=>" ↕"
             }
         }else{""};
+        let title=if i==0&&header_selection.is_some(){""}else{title};
         let galley=typography::freight_table_header_galley(ui,&format!("{title}{suffix}"));
         let x=if align[i]==Align2::RIGHT_CENTER{
             h.right()-theme::SPACE_8-galley.size().x
@@ -278,6 +280,16 @@ fn table<const N:usize>(
     if let Some(next)=clicked{*sort=next;}
     painter.line_segment([header.left_bottom(),header.right_bottom()],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER));
+    if let Some((all,enabled))=header_selection{
+        let mut checked=all;
+        let rect=heads[0].shrink2(Vec2::new(theme::SPACE_8,theme::SPACE_4))
+            .intersect(header);
+        let response=ui.add_enabled_ui(enabled,|controls|
+            controls.put(rect,egui::Checkbox::without_text(&mut checked))
+        ).inner;
+        if response.clicked(){return Some(checked)}
+    }
+    None
 }
 #[derive(Default)]
 struct Snapshot{state:Value,shipments:Value}
@@ -477,12 +489,12 @@ impl ExcelManager{
                 sort_history(&mut history,self.sort_history);
                 let indexes=0..history.len();
                 let order_list=history.clone();
-                table(section,"excel-history-table",
+                let _=table(section,"excel-history-table",
                     ["작성 날짜","작성 건수","파일 / 주문","조회"],
                     HISTORY,[Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
                         Align2::LEFT_CENTER,Align2::CENTER_CENTER],
                     2,indexes.len(),&mut self.sort_history,
-                    [true,true,true,false],|row,cells,i|{
+                    [true,true,true,false],None,|row,cells,i|{
                         let entry=&order_list[i];
                         let id=text(entry,"id");
                         cell(row,cells[0],&datetime(text(entry,"at")),
@@ -547,14 +559,15 @@ impl ExcelManager{
                     .map(|r|r.id().to_owned()).collect();
                 self.selected.retain(|id|visible.contains(id));
                 let chosen=self.selected.len();
-                        let records=queued.clone();
-                table(section,"excel-queue-table",
+                let all=!visible.is_empty()&&chosen==visible.len();
+                let records=queued.clone();
+                let toggle_all=table(section,"excel-queue-table",
                     ["선택","거래처 / 발주","수취인 / 배송 품목","금액","처리"],
                     QUEUE,[Align2::CENTER_CENTER,Align2::LEFT_CENTER,
                         Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
                         Align2::CENTER_CENTER],
                     2,records.len(),&mut self.sort_queue,
-                    [false,true,true,true,false],
+                    [false,true,true,true,false],Some((all,!visible.is_empty())),
                     |row,cells,index|{
                         let entry=&records[index];
                         let id=entry.id().to_owned();
@@ -602,6 +615,10 @@ impl ExcelManager{
                             });
                     }
                 );
+                if let Some(checked)=toggle_all{
+                    if checked{self.selected=visible;}
+                    else{self.selected.clear();}
+                }
                 if records.is_empty()&&self.receiver.is_none(){
                     section.add_space(theme::SPACE_8);
                     section.label(typography::caption(
