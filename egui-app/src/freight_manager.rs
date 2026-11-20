@@ -1859,14 +1859,14 @@ fn summary(ui: &mut Ui, label: &str, count: usize) {
                 let (line,_)=cell.allocate_exact_size(
                     egui::vec2(content_width,22.0),egui::Sense::hover()
                 );
-                let caption=typography::client_table_metadata_galley(
-                    cell,label,theme::MUTED
+                let caption=typography::summary_card_label_galley(
+                    cell,label
                 );
                 let digits=typography::summary_value_galley(
                     cell,&count.to_string()
                 );
-                let unit=typography::client_table_metadata_galley(
-                    cell,"개",theme::MUTED
+                let unit=typography::summary_card_unit_galley(
+                    cell,"개"
                 );
                 // Right-align the number to the unit: "358개" remains
                 // adjacent, and the last digit shares the same x-position
@@ -1877,7 +1877,7 @@ fn summary(ui: &mut Ui, label: &str, count: usize) {
                 let y=line.center().y;
                 painter.galley(
                     egui::pos2(line.left(),y-caption.size().y/2.0),
-                    caption,theme::MUTED
+                    caption,theme::SECONDARY
                 );
                 painter.galley(
                     egui::pos2(digits_x,y-digits.size().y/2.0),
@@ -1885,7 +1885,7 @@ fn summary(ui: &mut Ui, label: &str, count: usize) {
                 );
                 painter.galley(
                     egui::pos2(unit_x,y-unit.size().y/2.0),
-                    unit,theme::MUTED
+                    unit,theme::SECONDARY
                 );
             });
         }
