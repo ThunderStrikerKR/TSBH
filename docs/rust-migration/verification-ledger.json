@@ -3385,5 +3385,48 @@
     "src/matching.ts, order-types.ts, workflow-view.ts의 데이터 표시용 보조 함수: 실제 업무 결정이 확인될 때만 activeUnresolved로 승격",
     "원문 정정 전용 모달은 운영 경로에서 쓰이지 않아 복원하지 않음. UI 정책이 새로 승인되기 전에는 미완료 기능으로 처리하지 않음",
     "과거 문서의 24개 회귀 실패와 TypeScript 차등 비교 실패는 현행 코드의 실제 버그로 재판정하지 않음"
-  ]
+  ],
+  "eguiAutomaticMessageEditor20261120": {
+    "task": "거래처 관리 > 자동 메시지 편집 (상황별 공통 안내 / 잠정 상품 선택 안내)",
+    "baseline": {
+      "react": [
+        "src/ClientManager.tsx",
+        "src/AutomaticMessageTemplateManager.tsx",
+        "src/ProvisionalProductNoticeManager.tsx",
+        "src/automatic-message-templates.ts",
+        "src/provisional-product-notices.ts"
+      ],
+      "actualCss": [
+        "src/styles/product-admin-redesign.css",
+        "src/styles/client-editor.css",
+        "src/styles/management-layout.css"
+      ],
+      "nativeValidation": "src-tauri/src/business_core/rules/message_template_validation.rs",
+      "nativeOutput": [
+        "src-tauri/src/business_core/output/messages.rs",
+        "src-tauri/src/business_core/output/automatic_full.rs"
+      ],
+      "nativeSave": "crates/bando-data-access/src/settings_commands.rs",
+      "uiReference": "docs/egui-management-ui-reference.md"
+    },
+    "patches": {
+      "nativeSettingsAndValidation": "b9704379ed8ecf066c62c154565135da5bb99e59",
+      "gatewayValidationRouting": "af94b2b18468704495e8ea00ee54ce28ab7dc49a",
+      "editorInitial": "a8dc32c037d5da8541719afd8190a0429d147e25",
+      "menuActivation": "b55912e50803734c764f433dcdbe45e6c8a1f54a",
+      "globalNavigationGuard": "b7b16bb087b783899d0c13c5f6c563f361e0e834",
+      "twoLineList": "8665e98a044a99979e09a5377ecfe7e0a8daa562",
+      "latestUiDocument": "e2411651ed3aeb90f83f35aefcccb963adc52108"
+    },
+    "gates": {
+      "patch": "COMMITTED: main; new native 20-template and per-product editors, settings whitelist, Rust validation, CAS and backup paths",
+      "static": "PASS_SCOPED: 20/20 React template IDs/labels/default bodies match egui definitions and native output plus native validation; 25 targeted path checks and delimiter balance for 8 changed Rust sources",
+      "action": "NOT_EXECUTED: no direct end-to-end settings save/reload/leave test",
+      "unit": "NOT_EXECUTED: no additional regression tests created",
+      "ci": "PARTIAL_PREVIOUS: Native Rust data-access and egui targeted check succeeded at b7b16bb087b783899d0c13c5f6c563f361e0e834; latest editor UI and docs commits not covered by that success",
+      "windows": "NOT_EXECUTED_BY_USER_POLICY: do not require Windows GUI"
+    },
+    "verdict": "CODE_REFLECTED_STATIC_PASS__LATEST_CI_AND_ACTION_NOT_VERIFIED",
+    "remaining": "Check target cargo compilation for final SHA and verify save/reload in operating and isolated modes; no claim of Windows pixel parity."
+  }
 }
