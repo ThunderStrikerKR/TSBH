@@ -1118,10 +1118,11 @@
             "0804b7f786a61aebd559b877ca0cfd26c2f2ee1a"
           ],
           "static": "PASS: Tauri identifier and exact live/test filenames match, auto-bind precedes gateway, read-only preflight, no operational create or migration, developer launcher isolation",
-          "unit": "PENDING: auto_database_location_tests via targeted Windows workflow",
-          "build": "PENDING: latest relevant egui cargo check",
-          "action": "NOT_RUN: no Windows GUI or actual Tauri operational DB opened",
-          "windows": "SKIPPED_PER_USER_POLICY"
+          "unit": "PASS: cargo test --manifest-path egui-app/Cargo.toml auto_database_location_tests (debug/prod paths distinct)",
+          "build": "PASS: Tauri executable and standalone egui cargo check for commit fb753ca60a95d835f143af71da929a79f946b4a0",
+          "action": "NOT_RUN: production DB not opened, Windows GUI excluded",
+          "windows": "SKIPPED_PER_USER_POLICY",
+          "ciRun": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44656606193"
         }
       },
       "legacyLedgerStatus": "FROZEN_SHIPPING_ORACLE_PARTIAL",
