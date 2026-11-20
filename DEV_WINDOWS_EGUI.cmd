@@ -12,9 +12,29 @@ if errorlevel 1 (
 )
 
 echo.
-echo BANDO HUB egui UI Preview - Isolated from the production database
-echo Existing React/Tauri code and SQLite data are NOT modified.
+echo BANDO HUB egui - isolated Tauri developer-test connection
+echo Existing React/Tauri code and production SQLite data are NOT modified.
 echo.
+
+rem The egui developer launcher only reads the EXISTING Tauri developer-test
+rem DB. Never attach the production DB, and never create/reset Tauri data here.
+set "BANDO_EGUI_DEVELOPER_TEST=1"
+rem A native Tauri helper can save shipping changes to the isolated TEST DB.
+rem Enable it only when both the test DB and the compiled debug helper exist,
+rem and only when the caller did not explicitly override the business DB.
+if not defined BANDO_EGUI_BUSINESS_DB (
+  if not defined BANDO_EGUI_CLIENT_INDEX (
+    if exist "%APPDATA%\com.bandostand.bandohub.tauri\developer-test\bando-hub-test.sqlite" (
+      if exist "%~dp0src-tauri\target\debug\bando_hub_tauri.exe" (
+        if not defined BANDO_EGUI_TAURI_HELPER set "BANDO_EGUI_TAURI_HELPER=%~dp0src-tauri\target\debug\bando_hub_tauri.exe"
+        if not defined BANDO_EGUI_ENABLE_SHIPPING_WRITE set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=1"
+        echo [FREIGHT] Isolated Tauri developer-test SQLite bridge enabled.
+      )
+    ) else (
+      echo [FREIGHT] No developer-test SQLite found. The production DB will NOT be used.
+    )
+  )
+)
 
 rem Reuse an EXISTING, packaged BANDO OCR runtime without copying or
 rem modifying any React/Tauri files. An explicit user override wins.
