@@ -872,6 +872,77 @@ pub fn management_sticky_table_header(
     }
 }
 
+/// Reference "접수일 기준" dropdown: 34pt dark trigger, separated
+/// right-hand chevron, 1pt outline, 6pt corner radius. This replaces native
+/// ComboBox triggers where management screens need the same visual language.
+/// The caller retains its existing option values and change handling.
+pub fn management_dropdown(
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    options:impl FnOnce(&mut Ui)
+)->Response {
+    // Keep exact toolbar/cell width without stretching the subsequent action
+    // or exceeding a narrow selector slot.
+    let width=width.min(ui.available_width()).max(1.0);
+    let trigger=ui.add_enabled(
+        enabled,
+        egui::Button::new("")
+            .min_size(Vec2::new(width,theme::ACTION_STANDARD_HEIGHT))
+            .fill(theme::RAISED)
+            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
+            .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
+    );
+    let trigger=if tooltip.is_empty(){trigger}
+        else{trigger.on_hover_text(tooltip)};
+    let rect=trigger.rect;
+    let painter=ui.painter().with_clip_rect(rect);
+    let arrow_left=rect.right()-30.0;
+    let caption=typography::freight_table_cell_galley(
+        ui,label,false,if enabled{theme::TEXT}else{theme::SECONDARY}
+    );
+    let text_clip=Rect::from_min_max(
+        rect.min+Vec2::new(theme::SPACE_12,0.0),
+        egui::pos2((arrow_left-theme::SPACE_4).max(rect.left()+theme::SPACE_12),
+            rect.bottom())
+    );
+    painter.with_clip_rect(text_clip).galley(
+        egui::pos2(rect.left()+theme::SPACE_12,
+            rect.center().y-caption.size().y/2.0),
+        caption,if enabled{theme::TEXT}else{theme::SECONDARY}
+    );
+    painter.line_segment(
+        [egui::pos2(arrow_left,rect.top()+5.0),
+         egui::pos2(arrow_left,rect.bottom()-5.0)],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    let x=rect.right()-15.0;
+    let y=rect.center().y+1.0;
+    painter.line_segment(
+        [egui::pos2(x-4.0,y-2.0),egui::pos2(x,y+2.0)],
+        Stroke::new(1.5,theme::SECONDARY)
+    );
+    painter.line_segment(
+        [egui::pos2(x,y+2.0),egui::pos2(x+4.0,y-2.0)],
+        Stroke::new(1.5,theme::SECONDARY)
+    );
+    egui::Popup::menu(&trigger)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|menu|{
+            menu.set_min_width(width);
+            options(menu);
+        });
+    trigger
+}
+
+/// Select a value and close its popup on the same click. All selectors share
+/// this action so menus don't remain open after immediate per-row autosave.
+pub fn management_dropdown_option<T:PartialEq>(
+    ui:&mut Ui,current:&mut T,value:T,label:&str
+){
+    if ui.selectable_value(current,value,label).clicked(){
+        ui.close();
+    }
+}
+
 /// Shared management tab roles (content width, no full-page stretching).
 pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
     let mut pressed=None;
