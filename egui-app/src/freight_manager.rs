@@ -1093,17 +1093,22 @@ impl FreightManager {
                 egui::Sense::hover()
             );
             let mut first_row_left=None;
-            let scroll_output=egui::ScrollArea::both()
-                .id_salt("freight-assignment-rows")
-                .max_height(section.ctx().content_rect().height()
-                    * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
-                .auto_shrink([false,false])
-                .show(section,|table|{
+            let scroll_output=components::virtual_fixed_rows(
+                egui::ScrollArea::both()
+                    .id_salt("freight-assignment-rows")
+                    .max_height(section.ctx().content_rect().height()
+                        * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+                    .auto_shrink([false,false]),
+                section,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,
+                filtered.len(),
+                |table,visible_rows|{
                     table.set_min_width(table_width);
                     table.spacing_mut().item_spacing.y=0.0;
-                    // The same semantic zebra token as every management table.
                     theme::apply_table_row_colors(table);
-                    for (row_index,product) in filtered.iter().enumerate(){
+                    // Rows outside the viewport keep their selections and
+                    // pending assignments, but create no widget this frame.
+                    for row_index in visible_rows{
+                        let product=filtered[row_index];
                         let id=text(product,"id");
                         let committed=text(product,"shippingGroupId");
                         let mut checked=selected.contains(id);
