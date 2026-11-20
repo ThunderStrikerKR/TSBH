@@ -357,11 +357,15 @@ impl ProductManager {
                     return false;
                 }
             }
+            self.category_manager.clear_for_leave();
         }
         true
     }
     pub fn take_category_global_leave(&mut self)->bool{
         self.category_manager.take_global_leave_approved()
+    }
+    pub fn category_global_leave_in_progress(&self)->bool{
+        self.category_manager.global_leave_in_progress()
     }
     fn begin_edit(&mut self,product:Value){
         if self.has_pending_prices(){
@@ -419,11 +423,13 @@ impl ProductManager {
                         self.tab=0;
                         self.query.clear();
                         self.category_manager.clear_for_leave();
+                        self.category_manager.clear_search();
                         self.reload(ui.ctx().clone());
                     }
                 }else if next==1 {
                     self.tab=1;
                     self.query.clear();
+                    self.category_manager.clear_search();
                 }
             }else if self.has_pending_prices(){
                 self.error=Some("가격 수정값을 저장하거나 취소한 뒤 탭을 이동하세요.".into());
