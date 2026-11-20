@@ -246,7 +246,10 @@ impl FreightManager {
                             }
                             "save_group_rule"|"save_product_rule"=>self.rate_editor=None,
                             "reset_product_freight_rule"=>self.product_reset_target=None,
-                            "copy_group_rule"=>self.copy_target=None,
+                            "copy_group_rule"=>{
+                                self.copy_target=None;
+                                self.selected.clear();
+                            },
                             "change_basis"=>self.basis_target=None,
                             "revise_combination"=>self.exception_target=None,
                             _=>{}
@@ -374,6 +377,8 @@ impl FreightManager {
             let ctx=ui.ctx();
             let mut close_rename=false;
             let mut close_delete=false;
+            let mut close_product_reset=false;
+            let mut close_copy=false;
             if let Some((id,name))=self.rename_target.as_mut(){
                 components::modal_backdrop(ctx,"freight-rename-backdrop",false);
                 components::decision_window("배송 그룹명","freight-rename",area)
@@ -417,18 +422,62 @@ impl FreightManager {
                             }
                         });
                     });
+            }else if let Some(pid)=self.product_reset_target.as_ref(){
+                components::modal_backdrop(ctx,"freight-reset-backdrop",false);
+                components::decision_window(
+                    "운임 기준 변경","freight-product-reset",area
+                ).show(ctx,|dialog|{
+                    dialog.label(typography::body(
+                        "이 상품의 새 운임 기준을 시작하고 이전 자동 추천을 중단할까요?"
+                    ));
+                    dialog.horizontal(|bar|{
+                        if theme::action(bar,"취소",
+                            theme::ButtonRole::Standard,enabled).clicked(){
+                            close_product_reset=true;
+                        }
+                        if theme::action(bar,"기준 변경",
+                            theme::ButtonRole::Danger,enabled).clicked(){
+                            action=Some(("reset_product_freight_rule".into(),
+                                json!({"productId":pid})));
+                        }
+                    });
+                });
+            }else if let Some((group_id,ids))=self.copy_target.as_ref(){
+                let group=group_name(&groups,group_id);
+                components::modal_backdrop(ctx,"freight-copy-backdrop",false);
+                components::decision_window(
+                    "상품별 운임 기준 복사","freight-copy-confirm",area
+                ).show(ctx,|dialog|{
+                    dialog.label(typography::body(format!(
+                        "선택 상품의 개별 운임표에 {group} 기준을 복사할까요? 동급 그룹 묶음은 별도로 지정합니다."
+                    )));
+                    dialog.horizontal(|bar|{
+                        if theme::action(bar,"취소",
+                            theme::ButtonRole::Standard,enabled).clicked(){
+                            close_copy=true;
+                        }
+                        if theme::action(bar,"상품별 기준으로 복사",
+                            theme::ButtonRole::Primary,enabled).clicked(){
+                            action=Some(("copy_group_rule".into(),json!({
+                                "groupId":group_id,"productIds":ids
+                            })));
+                        }
+                    });
+                });
             }
             if close_rename{self.rename_target=None;}
             if close_delete{self.delete_target=None;}
+            if close_product_reset{self.product_reset_target=None;}
+            if close_copy{self.copy_target=None;}
         }
-        if self.tab==FreightTab::Rates {
+        if self.rate_editor.is_some() || self.tab==FreightTab::Rates {
             let area=ui.max_rect();
             let ctx=ui.ctx();
             let mut close_editor=false;
             let mut close_basis=false;
             if let Some(editor)=self.rate_editor.as_mut(){
                 components::modal_backdrop(ctx,"freight-rate-backdrop",false);
-                components::modal_window("배송 그룹 운임 수정","freight-rate-modal",area)
+                components::modal_window(if editor.product{"기본 운임 설정"}else{"배송 그룹 운임 수정"},"freight-rate-modal",area)
                     .resizable(false).show(ctx,|modal|{
                         egui::ScrollArea::vertical()
                             .id_salt("freight-rate-editor-scroll")
@@ -648,7 +697,7 @@ impl FreightManager {
                 }
             });
             section.horizontal_wrapped(|tools|{
-                let mut available=groups.iter().any(|g|text(g,"id")==copy_template);
+                let mut available=groups.iter().any(|g|text(g,"id")==copy_template.as_str());
                 if !available {copy_template.clear();available=false;}
                 egui::ComboBox::from_id_salt("freight-copy-group-tariff")
                     .selected_text(if available{group_name(groups,copy_template)}
