@@ -95,6 +95,14 @@ impl ClientManager {
         self.draft.is_some() || self.messages.as_ref()
             .is_some_and(|message|self.show_messages && message.has_confirmation())
     }
+    pub fn has_message_confirmation(&self)->bool{
+        self.show_messages && self.messages.as_ref()
+            .is_some_and(AutomaticMessageManager::has_confirmation)
+    }
+    pub fn global_leave_in_progress(&self)->bool{
+        self.show_messages && self.messages.as_ref()
+            .is_some_and(AutomaticMessageManager::global_leave_in_progress)
+    }
     pub fn show_message_confirmation(
         &mut self,ctx:&Context,area:egui::Rect,gateway:Arc<dyn BandoGateway>
     ){
