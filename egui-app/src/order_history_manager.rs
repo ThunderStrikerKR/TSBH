@@ -1162,24 +1162,31 @@ mod tests{
             HistoryLine::Order(0)
         ]);
         expanded.insert("o1".to_owned());
-        // Formerly 1 + 3 lines per recipient + billing = 8 rows.
-        // Now one header + one detail row per delivery + billing = 6.
+        // Order row + EXACTLY ONE detail row per recipient; the parent
+        // already owns billed total and employee payment approval columns.
         assert_eq!(display_lines(&snapshot,&expanded,None),vec![
             HistoryLine::Order(0),
             HistoryLine::Recipient(0,0),
-            HistoryLine::RecipientDetails(0,0),
-            HistoryLine::Recipient(0,1),
-            HistoryLine::RecipientDetails(0,1),
-            HistoryLine::Billing(0)
+            HistoryLine::Recipient(0,1)
         ]);
         assert_eq!(history_recipient_products(&snapshot.rows[0],0),
             "BD 709 / 블랙 × 4  /  뮤직 트레이 × 1");
-        assert!(history_recipient_freight(&snapshot,"o1","r1")
-            .contains("123456789"));
-        assert!(history_recipient_freight(&snapshot,"o1","r1")
-            .contains("3,500원"));
-        assert_eq!(history_recipient_freight(&snapshot,"o1","r2"),
-            "실제 운임 확인 필요 · 운송장 확인 필요");
+        assert_eq!(history_recipient_logistics(&snapshot,"o1","r1"),
+            ("3,500원".to_owned(),"123456789".to_owned()));
+        assert_eq!(history_recipient_logistics(&snapshot,"o1","r2"),
+            ("운임 미확인".to_owned(),"운송장 미확인".to_owned()));
+        // Multiple shipments for one recipient remain on ONE detail row.
+        let mut multiple=HistorySnapshot{
+            state:snapshot.state.clone(),rows:snapshot.rows.clone()
+        };
+        multiple.state["workflow"]["shipments"].as_array_mut().unwrap().push(
+            json!({"id":"s2","orderId":"o1","recipientId":"r1",
+                "tracking":{"parcel":"987654321"},
+                "actualFreight":{"parcel":2500}})
+        );
+        assert_eq!(display_lines(&multiple,&expanded,None).len(),3);
+        assert_eq!(history_recipient_logistics(&multiple,"o1","r1"),
+            ("3,500원 / 2,500원".into(),"123456789 / 987654321".into()));
     }
     #[test]
     fn employee_approval_column_sorts_by_confirmation_date_and_keeps_unknown_last(){
@@ -1259,6 +1266,6 @@ mod tests{
         let mut expanded=BTreeSet::new();
         assert_eq!(display_lines(&snapshot,&expanded,None).len(),1);
         expanded.insert("o1".into());
-        assert_eq!(display_lines(&snapshot,&expanded,None).len(),4);
+        assert_eq!(display_lines(&snapshot,&expanded,None).len(),2);
     }
 }
