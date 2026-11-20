@@ -112,6 +112,11 @@ pub const BRAND_ICON_OPTICAL_CENTER_Y: f32 = 2.0;
 pub const BRAND_WORDMARK_GAP: f32 = 3.0;
 pub const HEADER_DRAG_STRIP: f32 = 8.0;
 pub const SECTION_PADDING: f32 = SPACE_16;
+// Make the toolbar's visible upper/lower breathing room symmetric:
+// 16pt section inset above, 16pt to the divider below the 36pt toolbar.
+// Keep the 4pt space after the 1pt divider separate from this balance.
+pub const MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP: f32 = SECTION_PADDING;
+pub const MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP: f32 = SPACE_4;
 // Reception's title row is deliberately compact. Left/right inset stays
 // 16pt, but the top/bottom inset is 8pt; these tokens do not affect the
 // Settings card or its typography.
