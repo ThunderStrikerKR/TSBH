@@ -105,8 +105,10 @@ impl ProductSearch{
             .default_width(theme::MANUAL_SEARCH_DIALOG_WIDTH
                 .min((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP).max(0.0)))
             .constrain_to(work_area)
-            .open(&mut open)
             .show(ctx,|ui|{
+                if components::modal_header(ui,"상품 검색","닫기",true){
+                    open=false;
+                }
                 let width=ui.available_width();
                 if components::flexible_text_field(
                     ui,&mut self.query,width,
