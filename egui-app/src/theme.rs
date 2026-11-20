@@ -272,10 +272,13 @@ pub const FAMILY_LIST_WIDTH:f32 = 460.0;
 pub const FAMILY_ROW_HEIGHT:f32 = 52.0;
 pub const FAMILY_FOOTER_HEIGHT:f32 = 68.0;
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
+/// Single-line management data rows, shared by the approved masters and
+/// other compact lists. The 58pt two-line management rows are a different role.
+pub const MANAGEMENT_COMPACT_ROW_HEIGHT: f32 = 42.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 // Product table: a full-width, single-line record per product. Wide names
 // claim the remaining width while price-editing may scroll horizontally.
-pub const PRODUCT_TABLE_ROW_HEIGHT:f32 = 42.0;
+pub const PRODUCT_TABLE_ROW_HEIGHT:f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 pub const PRODUCT_TABLE_MIN_WIDTH:f32 = 1100.0;
 pub const PRODUCT_TABLE_NAME_MIN_WIDTH:f32 = 340.0;
 pub const PRODUCT_TABLE_OPTION_WIDTH:f32 = 182.0;
@@ -285,31 +288,79 @@ pub const PRODUCT_TABLE_PRICE_WIDTH:f32 = 116.0;
 pub const PRODUCT_TABLE_EDIT_PRICE_WIDTH:f32 = 264.0;
 pub const PRODUCT_TABLE_ACTION_WIDTH:f32 = 100.0;
 // Client directory explicitly uses one compact, non-wrapping record per row.
-pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
+pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 // Text-heavy chooser lists show a primary title and a small status line.
 // React automatic-message/product-notice rows use a 48pt compact role.
 pub const MANAGEMENT_CHOOSER_ROW_HEIGHT: f32 = 48.0;
-// Freight assignment is a task-oriented table, not an auto-sized 11-column
-// audit grid. Every header and row uses the SAME widths to keep controls
-// readable without wrapped names or vertical buttons.
-// Assignment table: selection, product, color/option, category, group,
-// action. The redundant "그룹 지정" status column is intentionally absent.
-// Compact minimum widths preserve one product per row and let the table fit
-// in ordinary management panes without an unnecessary horizontal scrollbar.
+// Dual-master table geometry contract, approved on 2026-11-21.
+// Source of truth: table widths, minimums and spare-width distribution live
+// here; neither master screen may redefine them in its view implementation.
+// The identical HEADER (36pt) and compact parent ROW (42pt) are shared roles,
+// while expandable details and toolbar wrapping are EXPLICIT exceptions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManagementMasterRowPolicy { Fixed, ExpandableDetails }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManagementMasterToolbarPolicy { SingleLine, ResponsiveDateWrap }
+
+#[derive(Clone, Copy, Debug)]
+pub struct ManagementMasterTableSpec<const N: usize> {
+    pub base_columns: [f32; N],
+    pub growth_shares: [f32; N],
+    pub min_width: f32,
+    pub row_policy: ManagementMasterRowPolicy,
+    pub toolbar_policy: ManagementMasterToolbarPolicy,
+}
+
+impl<const N: usize> ManagementMasterTableSpec<N> {
+    /// Returns per-column widths for a measured DATA viewport, which already
+    /// excludes the table scrollbar. Never use it for toolbar-right alignment.
+    pub fn widths_for(&self, table_width: f32) -> [f32; N] {
+        let extra = (table_width - self.min_width).max(0.0);
+        let mut widths = self.base_columns;
+        for (width, share) in widths.iter_mut().zip(self.growth_shares) {
+            *width += extra * share;
+        }
+        widths
+    }
+}
+
+// Freight > Shipping Group Assignment: selection, product, color/option,
+// category, shipping group, settings. Fixed 42pt rows; 6 columns + 5 gaps.
+// CONFLICT-002: keep the currently approved 202pt product / 144pt settings.
+pub const FREIGHT_ASSIGNMENT_MASTER_TABLE: ManagementMasterTableSpec<6> =
+    ManagementMasterTableSpec {
+        base_columns: [44.0, 202.0, 104.0, 258.0, 150.0, 144.0],
+        growth_shares: [0.0, 0.64, 0.0, 0.36, 0.0, 0.0],
+        min_width: 942.0,
+        row_policy: ManagementMasterRowPolicy::Fixed,
+        toolbar_policy: ManagementMasterToolbarPolicy::SingleLine,
+    };
+
+// Order History: date, client, shipment/product, management status,
+// billed total, payment confirmation, actions. Expandable DETAIL rows
+// retain their variable heights; only the parent row uses compact 42pt.
+pub const ORDER_HISTORY_MASTER_TABLE: ManagementMasterTableSpec<7> =
+    ManagementMasterTableSpec {
+        base_columns: [112.0, 156.0, 300.0, 126.0, 124.0, 112.0, 264.0],
+        growth_shares: [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+        min_width: 1242.0,
+        row_policy: ManagementMasterRowPolicy::ExpandableDetails,
+        toolbar_policy: ManagementMasterToolbarPolicy::ResponsiveDateWrap,
+    };
+
+// Compatibility aliases: existing consumers continue to receive the
+// SAME approved dimensions, never a second independently edited set.
 pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 6] =
-    // Reserve room for the 14pt "색상/옵션" header and its sort arrow.
-    // Keep the approved 942pt table width while giving the final action
-    // column 12pt symmetric insets on both sides of its full label.
-    // Transfer 16pt from product (218 -> 202) to Settings (128 -> 144);
-    // the other four columns and the overall table width are unchanged.
-    [44.0, 202.0, 104.0, 258.0, 150.0, 144.0];
+    FREIGHT_ASSIGNMENT_MASTER_TABLE.base_columns;
 pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
-// Width for the single-line bulk shipping-group selector.
 pub const FREIGHT_BULK_GROUP_WIDTH: f32 = 200.0;
-pub const FREIGHT_ASSIGNMENT_ROW_HEIGHT: f32 = 42.0;
-// Six columns plus five 8pt gaps: 902 + 40 = 942pt.
-// Any extra width is shared by product name and category.
-pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 = 942.0;
+pub const FREIGHT_ASSIGNMENT_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
+pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 =
+    FREIGHT_ASSIGNMENT_MASTER_TABLE.min_width;
+pub const ORDER_HISTORY_COL_WIDTHS: [f32; 7] =
+    ORDER_HISTORY_MASTER_TABLE.base_columns;
+pub const ORDER_HISTORY_TABLE_MIN_WIDTH: f32 =
+    ORDER_HISTORY_MASTER_TABLE.min_width;
 // Shipping-group management has its own six-column grid. These proportions
 // reserve all four existing per-group actions in a single 42pt row, and keep
 // numeric/status columns readable without copying the assignment widths.
@@ -749,6 +800,30 @@ pub fn label_value(ui: &mut Ui, label: &str, value: &str) {
 #[cfg(test)]
 mod management_primary_card_geometry_tests {
     use super::*;
+
+    #[test]
+    fn approved_master_table_specs_preserve_columns_and_spare_space() {
+        let freight = FREIGHT_ASSIGNMENT_MASTER_TABLE;
+        let history = ORDER_HISTORY_MASTER_TABLE;
+        // Column minima include N-1 of the standard 8pt gaps.
+        let freight_min: f32 = freight.base_columns.iter().sum::<f32>()
+            + (freight.base_columns.len() - 1) as f32 * FREIGHT_ASSIGNMENT_COL_GAP;
+        let history_min: f32 = history.base_columns.iter().sum::<f32>()
+            + (history.base_columns.len() - 1) as f32 * SPACE_8;
+        assert!((freight_min - freight.min_width).abs() < 0.01);
+        assert!((history_min - history.min_width).abs() < 0.01);
+        assert!((freight.growth_shares.iter().sum::<f32>() - 1.0).abs() < 0.01);
+        assert!((history.growth_shares.iter().sum::<f32>() - 1.0).abs() < 0.01);
+        let freight_wide = freight.widths_for(freight.min_width + 100.0);
+        assert!((freight_wide[1] - 266.0).abs() < 0.01);
+        assert!((freight_wide[3] - 294.0).abs() < 0.01);
+        let history_wide = history.widths_for(history.min_width + 100.0);
+        assert!((history_wide[2] - 400.0).abs() < 0.01);
+        assert_eq!(freight.row_policy, ManagementMasterRowPolicy::Fixed);
+        assert_eq!(history.row_policy, ManagementMasterRowPolicy::ExpandableDetails);
+        assert_eq!(freight.toolbar_policy, ManagementMasterToolbarPolicy::SingleLine);
+        assert_eq!(history.toolbar_policy, ManagementMasterToolbarPolicy::ResponsiveDateWrap);
+    }
 
     #[test]
     fn standard_workspace_matches_freight_primary_card_anchor() {
