@@ -229,7 +229,9 @@ pub const CATEGORY_PATH_PICKER_TEXT_PADDING:f32 = 32.0;
 // Reserve the right-side change-location action when painting a category
 // ancestor path in the editable category detail pane.
 pub const CATEGORY_PARENT_ACTION_RESERVE_WIDTH:f32 = 128.0;
-pub const CATALOG_EDITOR_WIDTH:f32 = 430.0;
+// Compact KPI cards in the category editor use the freight reference's
+// large-number style; on narrow work areas entire cards wrap together.
+pub const CATEGORY_MODAL_STATS_MIN_WIDTH:f32 = 144.0;
 // React product-admin-redesign.css: fixed 460pt group list / 52pt rows,
 // with an independently scrolling editor and fixed action footer.
 pub const FAMILY_LIST_WIDTH:f32 = 460.0;
