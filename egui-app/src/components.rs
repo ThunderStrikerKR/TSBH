@@ -402,13 +402,22 @@ pub fn reception_recipient_fields(
             .desired_width(width)
     }
 
+    fn label_cell(ui: &mut Ui, text: &str, width: f32) -> Response {
+        let (rect, response) = ui.allocate_exact_size(
+            Vec2::new(width, theme::INPUT_HEIGHT), Sense::hover(),
+        );
+        let galley = typography::field_label_galley(ui, text);
+        ui.painter().with_clip_rect(rect).galley(
+            egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
+            galley, theme::SECONDARY,
+        );
+        response
+    }
+
     fn row(ui: &mut Ui, label: &str, value: &mut String) -> Response {
         ui.horizontal(|line| {
             line.spacing_mut().item_spacing.x = theme::RECIPIENT_LABEL_GAP;
-            let title = line.add_sized(
-                Vec2::new(theme::RECIPIENT_LABEL_WIDTH, theme::INPUT_HEIGHT),
-                egui::Label::new(typography::field_label(label)),
-            );
+            let title = label_cell(line, label, theme::RECIPIENT_LABEL_WIDTH);
             let width = line.available_width().max(1.0);
             let input = line.add_enabled_ui(false, |cell| {
                 cell.add_sized(
@@ -450,9 +459,8 @@ pub fn reception_recipient_fields(
                     line.spacing_mut().item_spacing.y = 0.0;
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
-                    let mobile_label = line.add_sized(
-                        Vec2::new(theme::RECIPIENT_LABEL_WIDTH, theme::INPUT_HEIGHT),
-                        egui::Label::new(typography::field_label("휴대폰")),
+                    let mobile_label = label_cell(
+                        line, "휴대폰", theme::RECIPIENT_LABEL_WIDTH,
                     );
                     let mobile_input = line.add_enabled_ui(false, |cell| {
                         cell.add_sized(
@@ -463,9 +471,8 @@ pub fn reception_recipient_fields(
                     // Only the gap between the TWO contact groups is 8pt.
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_PHONE_COLUMN_GAP;
-                    let phone_label = line.add_sized(
-                        Vec2::new(theme::RECIPIENT_PHONE_LABEL_WIDTH, theme::INPUT_HEIGHT),
-                        egui::Label::new(typography::field_label("전화")),
+                    let phone_label = label_cell(
+                        line, "전화", theme::RECIPIENT_PHONE_LABEL_WIDTH,
                     );
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
@@ -481,7 +488,7 @@ pub fn reception_recipient_fields(
                     )
                 }).inner
             }).inner;
-        let note_response = row(fields, "요청 메시지", note);
+        let note_response = row(fields, "메시지", note);
         [
             name_response, address_response,
             mobile_response, phone_response, note_response,
