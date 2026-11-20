@@ -207,13 +207,13 @@ fn table<const N:usize>(
 )->Option<bool>{
     let old_gap=ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y=0.0;
-    let viewport=ui.available_width().max(1.0);
-    let reserved=ui.spacing().scroll.allocated_width()+theme::SPACE_4;
     let minimum=base.iter().sum::<f32>()+(N-1) as f32*GAP;
-    let width=(viewport-reserved).max(minimum);
-    let mut widths=base;
-    widths[stretch]+=(width-minimum).max(0.0);
-    let (header,_)=ui.allocate_exact_size(Vec2::new(viewport,HEADER),Sense::hover());
+    // The pre-existing 4pt rail inset stays intact until the user
+    // resolves that difference from the two approved master tables.
+    let layout=components::management_existing_list_table_header(ui,minimum);
+    let width=layout.table_width;
+    let widths=theme::management_single_stretch_columns(base,width,GAP,stretch);
+    let header=layout.header_rect;
     let mut left=None;
     let output=components::virtual_fixed_rows(
         egui::ScrollArea::both().id_salt(id)
