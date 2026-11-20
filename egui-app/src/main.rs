@@ -2264,7 +2264,6 @@ impl BandoEgui {
         let inbox_path = self.inbox_folder_path.clone();
         let inbox_loaded = self.inbox_folder_loaded;
         let inbox_load_error = self.inbox_folder_error.clone();
-        let inbox_open_error = self.inbox_folder_open_error.clone();
         let mut inbox_open_request: Option<String> = None;
         let mut inbox_copy_request: Option<String> = None;
         Self::section_with_header(ui, "발주 원문", height, |ui| {
@@ -2539,9 +2538,7 @@ impl BandoEgui {
                 };
                 let folder_group_height = typography::SUBSECTION_LINE_HEIGHT
                     + folder_body_height + theme::SPACE_8
-                    + if inbox_open_error.is_some() {
-                        theme::SPACE_8 + typography::METADATA_LINE_HEIGHT
-                    } else { 0.0 };
+;
                 let dividers_height = 2.0 * theme::SOFT_DIVIDER_WIDTH;
                 let balanced_gap = ((intake_height - clipboard_group_height
                     - manual_group_height - folder_group_height - dividers_height)
@@ -2618,8 +2615,8 @@ impl BandoEgui {
                                     inbox_open_request = Some(path.to_owned());
                                 }
                             });
-                        } else if let Some(error) = inbox_load_error.as_deref() {
-                            intake.label(typography::status(error, theme::DANGER));
+                        } else if inbox_load_error.is_some() {
+                            // Preserve failure state without extra UI message.
                         } else if !inbox_loaded {
                             intake.label(typography::caption(
                                 "저장된 수신 폴더 설정을 확인하고 있습니다."
@@ -2628,10 +2625,6 @@ impl BandoEgui {
                             intake.label(typography::caption(
                                 "설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."
                             ));
-                        }
-                        if let Some(error) = inbox_open_error.as_deref() {
-                            intake.add_space(theme::SPACE_8);
-                            intake.label(typography::status(error, theme::DANGER));
                         }
                         intake.add_space(balanced_gap);
                     });
@@ -2722,9 +2715,6 @@ impl BandoEgui {
                                     if let Some(message)=group.automatic_text.as_deref(){
                                         content.add(egui::Label::new(typography::body(message))
                                             .selectable(true));
-                                    }
-                                    if let Some(error)=group.automatic_error.as_deref(){
-                                        content.label(typography::status(error,theme::DANGER));
                                     }
                                 });
                         },
@@ -3001,9 +2991,6 @@ impl BandoEgui {
                         .max_height(components::docked_section_body_height(review_height))
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                    if let Some(message)=&self.working_sync_error {
-                        ui.label(typography::status(message,theme::DANGER));
-                    }
                     if let Some(row)=self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|row|row.id==id))
                     {
@@ -3041,8 +3028,8 @@ impl BandoEgui {
                             }
                         }
                     }
-                    if let Some(error) = &self.analysis_error {
-                        ui.label(typography::status(error, theme::DANGER));
+                    if self.analysis_error.is_some() {
+                        // Failed analysis stays internal; do not show stale output.
                     } else if let Some(analysis) = &self.analysis {
                         let selected=self.active_id.as_deref()
                             .and_then(|id|self.drafts.iter().find(|row|row.id==id));
@@ -3067,11 +3054,6 @@ impl BandoEgui {
                                 ui.label(typography::body(
                                     &format!("거래처 직접 선택 · {name}")
                                 ));
-                            } else {
-                                ui.label(typography::status(
-                                    "선택한 거래처를 현재 명단에서 찾지 못했습니다.",
-                                    theme::DANGER,
-                                ));
                             }
                         } else if automatically_selected {
                             if let Some(name)=&analysis.matched_client_name {
@@ -3084,15 +3066,6 @@ impl BandoEgui {
                                 if matching_pending {"거래처 확인 중"}
                                 else {"거래처 확인 필요"},
                                 theme::SELECTED_ORDER,
-                            ));
-                        }
-                        let match_source=reception_service::text(
-                            &analysis.client_match,"source");
-                        if match_source=="CONFLICT" || match_source=="ERROR" {
-                            ui.label(typography::status(
-                                reception_service::text(&analysis.client_match, "detail"),
-                                if match_source=="CONFLICT" {theme::DANGER}
-                                else {theme::SELECTED_ORDER},
                             ));
                         }
                         if !analysis.client_candidates.is_empty() {
@@ -3387,9 +3360,6 @@ impl BandoEgui {
         let height=ui.available_height();
         let mut event=None;
         Self::section(ui,"처리 중인 주문",height,|ui|{
-            if let Some(error)=self.workflow_error.as_deref(){
-                ui.label(typography::status(error,theme::DANGER));
-            }
             egui::ScrollArea::vertical()
                 .id_salt("working-receptions-list")
                 .auto_shrink([false,false])
@@ -3460,9 +3430,6 @@ impl BandoEgui {
                 dialog.label(typography::caption(
                     "새 배송 그룹명은 배송 그룹 추가를 눌러 등록해야 합니다."
                 ));
-            }
-            if let Some(error)=manager.last_error(){
-                dialog.label(typography::status(error,theme::DANGER));
             }
             dialog.add_space(theme::SPACE_12);
             dialog.horizontal(|bar|{
