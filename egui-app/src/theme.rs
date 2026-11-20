@@ -17,6 +17,9 @@ pub const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
 // Never use INPUT/RAISED (fields/buttons) as a table zebra fill.
 pub const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
 pub const INPUT: Color32 = Color32::from_rgb(41, 41, 41);
+// Disabled management dropdowns use a darker field surface while keeping
+// the same height, border and split-chevron geometry as enabled dropdowns.
+pub const MANAGEMENT_DROPDOWN_DISABLED_BG: Color32 = Color32::from_rgb(34, 34, 34);
 pub const RAISED: Color32 = Color32::from_rgb(48, 48, 48);
 pub const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
 pub const DIVIDER: Color32 = Color32::from_rgb(63, 63, 63);
