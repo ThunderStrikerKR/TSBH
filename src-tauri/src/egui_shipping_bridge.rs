@@ -1,74 +1,10 @@
-//! Narrow, explicit egui freight write bridge.
-//! The authoritative Tauri business snapshot is loaded inside the write
-//! boundary. Never trust a UI-submitted shipping state or product price.
-use super::{business_core, err, get_snapshot, write_snapshot};
-use rusqlite::{Connection, OpenFlags};
+//! Isolated native freight transaction fixtures.
+//! Freight command normalization and persistence are now shared with egui.
+//! No production CLI writer is retained in this module.
+use super::{business_core, get_snapshot, write_snapshot};
+use rusqlite::Connection;
 use serde_json::{json,Value};
 use bando_data_access::shipping_action::action_payload;
-use std::{
-    io::{Read, Write},
-    path::PathBuf,
-};
-
-pub(super) fn run() -> i32 {
-    let result=(|| -> Result<Value,String> {
-        if std::env::var("BANDO_EGUI_ENABLE_SHIPPING_WRITE")
-            .ok().as_deref()!=Some("1") {
-            return Err("운영 운임 변경 권한이 설정되지 않았습니다.".into());
-        }
-        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .filter(|value|!value.is_empty()).map(PathBuf::from)
-            .ok_or("운영 DB 경로가 지정되지 않았습니다.")?;
-        if !path.is_file(){return Err("운영 DB 파일이 없습니다.".into());}
-        let mut bytes=Vec::new();
-        std::io::stdin().take(2_000_001).read_to_end(&mut bytes).map_err(err)?;
-        if bytes.is_empty() || bytes.len()>2_000_000 {
-            return Err("운임 변경 요청 크기가 허용 범위를 초과했습니다.".into());
-        }
-        let request:Value=serde_json::from_slice(&bytes)
-            .map_err(|_|"운임 변경 요청 JSON이 올바르지 않습니다.".to_owned())?;
-        let expected=request["expectedRevision"].as_u64()
-            .ok_or("운임 변경 비교 리비전이 없습니다.")?;
-        let action=required(&request,"action")?;
-        let data=request.get("data").ok_or("운임 변경 내용이 없습니다.")?;
-        let mut conn=Connection::open_with_flags(
-            &path,OpenFlags::SQLITE_OPEN_READ_WRITE
-        ).map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
-        conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(err)?;
-        conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(err)?;
-        let version:i64=conn.query_row(
-            "SELECT version FROM core_schema WHERE key='business-core'",
-            [],|row|row.get(0),
-        ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
-        if version!=2 {return Err("지원하지 않는 운영 DB 버전입니다.".into());}
-        let before=get_snapshot(&conn)?;
-        let revision=before["revision"].as_u64().ok_or("운영 DB 리비전 오류")?;
-        if revision!=expected {
-            return Err("다른 작업에서 데이터가 수정되었습니다. 다시 불러오세요.".into());
-        }
-        let payload=action_payload(action,data,&before)?;
-        let result=business_core::execute("rules","apply_shipping_action",payload)?;
-        let mut next=if result.get("state").is_some() {
-            result["state"].clone()
-        } else if let Some(shipping)=result.get("shipping"){
-            let mut snapshot=before.clone();
-            snapshot["shipping"]=shipping.clone();
-            snapshot
-        } else {return Err("Rust 운임 처리 결과를 확인할 수 없습니다.".into());};
-        // This is the same revision-checked, transactionally persisted native
-        // state path used by Tauri. Prices and unrelated data are not reset.
-        next["revision"]=json!(revision);
-        let committed=write_snapshot(&mut conn,next,expected,true)?;
-        Ok(json!({"revision":committed["revision"]}))
-    })();
-    let response=match &result{
-        Ok(value)=>json!({"ok":true,"result":value}),
-        Err(message)=>json!({"ok":false,"error":message}),
-    };
-    let _=std::io::stdout().write_all(response.to_string().as_bytes());
-    if result.is_ok(){0}else{2}
-}
-
 
 #[cfg(test)]
 mod isolated_shipping_sqlite_verification {
