@@ -1,6 +1,7 @@
 //! Shipment-scoped management notes for the order history screen.
 //! Never write to a preview DB or bypass the native revision transaction.
 use crate::{business_state,excel_service,gateway};
+use chrono::Utc;
 use rusqlite::{Connection,OpenFlags};
 use serde_json::{json,Value};
 use std::time::Duration;
@@ -44,9 +45,16 @@ pub fn save(expected_revision:u64,shipment_id:&str,memo:&str)
         return Err("보관 처리된 발송 건은 변경할 수 없습니다.".into());
     }
     if shipment["managementMemo"].as_str().unwrap_or("")==memo{
-        return Ok(json!({"revision":revision,"shipmentId":shipment_id,"memo":memo}));
+        return Ok(json!({
+            "revision":revision,"shipmentId":shipment_id,"memo":memo,
+            "updatedAt":shipment["managementMemoUpdatedAt"]
+        }));
     }
+    // The memo text and its last edited time commit atomically; unchanged
+    // text must not create a fake new edit timestamp.
+    let updated_at=Utc::now().to_rfc3339();
     shipment["managementMemo"]=json!(memo);
+    shipment["managementMemoUpdatedAt"]=json!(updated_at);
     // Preserve the existing workflow invariants before an atomic v2 CAS
     // write. The database writer performs the second revision check.
     gateway::rules::execute("validate_workflow",
@@ -64,10 +72,13 @@ pub fn save(expected_revision:u64,shipment_id:&str,memo:&str)
     }
     let stored=fresh["workflow"]["shipments"].as_array()
         .and_then(|ships|ships.iter().find(|item|
-            item["id"].as_str()==Some(shipment_id)))
-        .and_then(|item|item["managementMemo"].as_str());
-    if stored!=Some(memo){
-        return Err("저장 후 관리 메모를 확인하지 못했습니다. 목록을 새로고침하세요.".into());
+            item["id"].as_str()==Some(shipment_id)));
+    if stored.and_then(|row|row["managementMemo"].as_str())!=Some(memo) ||
+       stored.and_then(|row|row["managementMemoUpdatedAt"].as_str())!=Some(&updated_at){
+        return Err("저장 후 관리 메모와 갱신시각을 확인하지 못했습니다. 목록을 새로고침하세요.".into());
     }
-    Ok(json!({"revision":saved_revision,"shipmentId":shipment_id,"memo":memo}))
+    Ok(json!({
+        "revision":saved_revision,"shipmentId":shipment_id,
+        "memo":memo,"updatedAt":updated_at
+    }))
 }
