@@ -90,7 +90,7 @@ fn records(state:&Value,reads:&Value,tab:Tab,search:&str)->Vec<QueueRow>{
         let Some(order)=find(&state["orders"],text(ship,"orderId")) else {continue};
         let Some(original)=find(&order["recipients"],text(ship,"recipientId")) else {continue};
         let recipient=q.get("snapshot").and_then(|s|s.get("recipient"))
-            .filter(Value::is_object).unwrap_or(original);
+            .filter(|value|value.is_object()).unwrap_or(original);
         let client=rows(&reads["shipments"]).iter()
             .find(|r|text(r,"shipmentId")==text(ship,"id"))
             .and_then(|r|r.get("client")).cloned().unwrap_or(Value::Null);
