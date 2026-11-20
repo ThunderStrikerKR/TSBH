@@ -337,4 +337,54 @@ mod isolated_shipping_sqlite_verification {
         drop(reopened);
         std::fs::remove_file(path).unwrap();
     }
+
+    /// Only run when Windows CI explicitly supplies an unused test DB path.
+    /// Creates a real v2 Tauri DB through the native initializer so a separate
+    /// egui test process can exercise the shipped one-shot CLI end to end.
+    #[test]
+    #[ignore = "explicit isolated E2E fixture; requires BANDO_EGUI_SHIPPING_FIXTURE_DB"]
+    fn prepare_egui_shipping_gateway_fixture() {
+        let raw=std::env::var_os("BANDO_EGUI_SHIPPING_FIXTURE_DB")
+            .expect("explicit CI-only fixture path is required");
+        let path=PathBuf::from(raw);
+        assert!(path.is_absolute(),"isolated fixture must have an absolute path");
+        assert_eq!(
+            path.file_name().and_then(|name|name.to_str()),
+            Some("bando-freight-gateway-e2e.sqlite"),
+            "refuse any operational DB filename"
+        );
+        assert!(!path.exists(),"refuse to overwrite an existing DB");
+        let mut conn=initialize_database(&path).expect("initialize isolated Tauri v2 DB");
+        assert!(relational_store::active(&conn).unwrap());
+        let mut state=get_snapshot(&conn).unwrap();
+        let product=state["products"].as_array_mut().unwrap().first_mut().unwrap();
+        let variant=product["variants"].as_array_mut().unwrap().first_mut().unwrap();
+        let prior_price=variant["retail"].as_i64().unwrap();
+        variant["retail"]=json!(prior_price+1234);
+        // Include one locally deleted product in the fixture. The shipping
+        // mutation must not restore it or silently rewrite its record.
+        let removed=state["products"].as_array_mut().unwrap().get_mut(1).unwrap();
+        removed["deletedAt"]=json!("2026-11-20T00:00:00+09:00");
+        let original_revision=state["revision"].as_u64().unwrap();
+        write_snapshot(&mut conn,state,original_revision,true)
+            .expect("staff price/deletion edit saved to test DB");
+        let before=get_snapshot(&conn).unwrap();
+        let payload=action_payload("create_group",&json!({
+            "name":"격리 전체 경로 검증"
+        }),&before).unwrap();
+        let response=business_core::execute("rules","apply_shipping_action",payload)
+            .expect("native freight group creation");
+        let mut next=before.clone();
+        next["shipping"]=response["shipping"].clone();
+        write_snapshot(&mut conn,next,before["revision"].as_u64().unwrap(),true)
+            .expect("commit isolated shipping group");
+        let ready=get_snapshot(&conn).unwrap();
+        assert_eq!(ready["products"][0]["variants"][0]["retail"],json!(prior_price+1234));
+        assert!(!ready["products"][1]["deletedAt"].is_null());
+        assert!(ready["shipping"]["groups"].as_array().unwrap()
+            .iter().any(|g|g["name"]=="격리 전체 경로 검증"));
+        relational_store::verify(&conn).expect("test price-row integrity");
+        // The second process opens this same file. Never clean or reset it
+        // here, and never use any installed Bando DB.
+    }
 }
