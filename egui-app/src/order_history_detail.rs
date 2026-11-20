@@ -77,7 +77,6 @@ fn section_panel(
                     egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                 )
                 .show(pane,|scroll|{
-                    scroll.set_min_width((inner.width()-theme::SPACE_4).max(1.0));
                     body(scroll);
                 });
         });
@@ -183,7 +182,7 @@ fn shipment_values(ship:&Value)->(String,String){
     let freight=ship["actualFreight"].as_object().into_iter()
         .flat_map(|o|o.values())
         .filter_map(Value::as_i64)
-        .map(|amount|components::display_won(&amount)).collect::<Vec<_>>();
+        .map(components::display_won).collect::<Vec<_>>();
     let tracking=ship["tracking"].as_object().into_iter()
         .flat_map(|o|o.values()).filter_map(Value::as_str)
         .filter(|s|!s.is_empty()).collect::<Vec<_>>();
