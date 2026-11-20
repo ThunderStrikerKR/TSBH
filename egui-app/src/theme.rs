@@ -217,10 +217,11 @@ pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
 // Freight assignment is a task-oriented table, not an auto-sized 11-column
 // audit grid. Every header and row uses the SAME widths to keep controls
 // readable without wrapped names or vertical buttons.
+// Ordered columns: selection, product, color/option, category, group,
+// freight/bundle, assignment status, action. Keep the total at 1255pt
+// including the seven 8pt column gaps; all reclaimed width goes to category.
 pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 8] =
-    // Restore the original group-selector width (155pt). The reclaimed
-    // 25pt belongs to category text, not the dropdown.
-    [44.0, 280.0, 160.0, 115.0, 155.0, 195.0, 90.0, 160.0];
+    [44.0, 280.0, 69.0, 262.0, 155.0, 195.0, 66.0, 128.0];
 pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
 // Width for the single-line bulk shipping-group selector.
 pub const FREIGHT_BULK_GROUP_WIDTH: f32 = 200.0;
