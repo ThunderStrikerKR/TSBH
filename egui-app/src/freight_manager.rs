@@ -1241,8 +1241,10 @@ impl FreightManager {
                                 // Retain the optimistic value only until Rust
                                 // confirms success or reports a failure.
                                 pending.insert(id.to_owned(),current.clone());
+                                let mut assignment=serde_json::Map::new();
+                                assignment.insert(id.to_owned(),json!(current));
                                 *action=Some(("assign_products".into(),json!({
-                                    "assignments":{id:current}
+                                    "assignments":assignment
                                 })));
                             }else{
                                 pending.remove(id);
