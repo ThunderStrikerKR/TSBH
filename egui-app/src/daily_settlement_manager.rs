@@ -512,15 +512,8 @@ impl DailySettlementManager{
             .auto_shrink([false,false])
             .show(ui,|body|{
                 theme::section_frame().show(body,|section|{
-                    section.horizontal(|heading|{
-                        // The selected day is already shown in the date
-                        // field directly below; don't repeat it in the title.
-                        heading.label(typography::section_heading(
-                            "일일 결산 조회"
-                        ));
-                        settings_help::icon(heading,"일일 결산");
-                    });
-                    section.add_space(theme::SPACE_8);
+                    // The date selector is the first element of the
+                    // settlement card. No redundant title/help row above it.
                     // Like Order History, the date picker is inside the
                     // same large outlined section as the report table.
                     date_changed=settlement_date_toolbar(
