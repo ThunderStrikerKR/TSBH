@@ -885,7 +885,7 @@
         "gate": {
           "patch": "COMMITTED_SCOPED",
           "static": "SOURCE_PATHS_CHECKED_PARTIAL_UI",
-          "action": "NOT_RUN",
+          "action": "PASS_ISOLATED_REAL_GATEWAY_TO_TAURI_CLI_ROUNDTRIP",
           "compile": "PASS_SCOPED_TAURI_AND_EGUI_F30DC9ABB",
           "windows": "NOT_REQUESTED_SKIPPED"
         },
@@ -1006,7 +1006,7 @@
               "shipping writes still require explicit business DB/helper/write authorization; compile PASS is not operational write proof"
             ]
           ],
-          "result": "SOURCE CHECKS PASS; TARGETED TAURI+EGUI BUILD PASS; ISOLATED V2 SQLITE FREIGHT TRANSACTION PASS; S17 STICKY HEADER, LIVE USER GUI AND PRODUCTION DB LINKAGE NOT VERIFIED",
+          "result": "SOURCE CHECKS PASS; SCOPED TAURI+EGUI BUILD PASS; ISOLATED V2 SQLITE INTERNAL TRANSACTION PASS; REAL EGUI GATEWAY->TAURI CLI SUBPROCESS->SQLITE ROUNDTRIP PASS; STICKY HEADER AND RELEASE HELPER CONFIG OUT OF SCOPE",
           "latestApprovedContract": "docs/egui-ui-design-contract.md 2026-11-20 group-first rates; no individual edit/reset button for group members; unassigned-product priority",
           "p1Resolution": [
             "S01 PATCH: group-assignment product list has max bundle, rate registration, packaging, modified columns; latest approved group-unassigned filter",
@@ -1142,9 +1142,11 @@
           "firstRun": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661513730",
           "latestRun": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661763073",
           "verified": "Native v2 SQLite internal save PASS, fixture with staff-edited retail price and product deletion marker PASS, actual Tauri CLI binary BUILD PASS, gateway subprocess save/reload/invalid and stale revision/disabled-write PASS (first run; 1 passed 0 failed).",
-          "latestRevisionGuard": "PATCHED: require helper committed revision equals authoritative egui reload revision; recheck CI is pending.",
+          "latestRevisionGuard": "PASS: helper's committed revision checked against read-only egui re-query, full gateway subprocess integration re-tested on 5a656c4f78dab0b8bc45d66d839bddd86b0e1dc9",
           "datastore": "Isolated Windows runner temporary DB only; rejects existing test-file overwrite and refuses an operational filename; no customer files loaded or modified.",
-          "remaining": "Latest revision-comparison patch pending independent CI; production environment helper packaging, Windows GUI and manual editor conflict flow are outside this scoped Q1 verification."
+          "remaining": "Not a production DB test; Windows GUI click/hover omitted per user policy. Release-mode helper auto-configuration and freight table header remain separate scopes, not blocked by Q1.",
+          "latestRunCommit": "5a656c4f78dab0b8bc45d66d839bddd86b0e1dc9",
+          "finalResult": "PASS: Tauri isolated SQLite internal test 1/1, native fixture preparation 1/1, actual Tauri binary build PASS, egui Gateway subprocess-save-and-reload 1/1. Includes stale CAS reject, unknown operation reject, disabled-write reject, retail/deletion flag/order/client/history preservation."
         }
       },
       "legacyLedgerStatus": "FROZEN_SHIPPING_ORACLE_PARTIAL",
