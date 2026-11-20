@@ -38,6 +38,7 @@ mod settings_store;
 mod settings_view;
 mod settings_help;
 mod freight_manager;
+mod management_queries;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
