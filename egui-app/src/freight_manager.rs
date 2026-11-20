@@ -201,7 +201,8 @@ pub struct FreightManager {
     notice: Option<String>,
     pending: BTreeMap<String,String>,
     selected: BTreeSet<String>,
-    bulk_group: String,
+    bulk_group: Option<String>,
+    bulk_feedback: Option<String>,
     new_name: String,
     rename_target: Option<(String,String)>,
     delete_target: Option<String>,
@@ -271,7 +272,8 @@ impl FreightManager {
             notice: None,
             pending: BTreeMap::new(),
             selected: BTreeSet::new(),
-            bulk_group: String::new(),
+            bulk_group: None,
+            bulk_feedback: None,
             new_name: String::new(),
             rename_target: None,
             delete_target: None,
@@ -329,6 +331,8 @@ impl FreightManager {
     pub fn discard_drafts(&mut self){
         self.pending.clear();
         self.selected.clear();
+        self.bulk_group=None;
+        self.bulk_feedback=None;
         self.new_name.clear();
         self.rate_editor=None;
         self.rename_target=None;
@@ -415,6 +419,8 @@ impl FreightManager {
                             "assign_products"=>{
                                 self.pending.clear();
                                 self.selected.clear();
+                                self.bulk_group=None;
+                                self.bulk_feedback=None;
                             }
                             "save_group_rule"|"save_product_rule"=>self.rate_editor=None,
                             "reset_product_freight_rule"=>self.product_reset_target=None,
@@ -563,7 +569,8 @@ impl FreightManager {
             Self::show_groups(
                 ui, &groups, &products, &mut self.search, &mut self.group_filter,
                 &mut self.only_missing, &mut self.pending, &mut self.selected,
-                &mut self.bulk_group, &mut self.rate_editor, &mut self.product_reset_target,
+                &mut self.bulk_group, &mut self.bulk_feedback,
+                &mut self.rate_editor, &mut self.product_reset_target,
                 &mut self.error, &self.gateway, &projection["productViews"],
                 enabled, &mut action
             );
@@ -843,7 +850,8 @@ impl FreightManager {
         search: &mut String, group_filter: &mut String,
         only_missing:&mut bool,
         pending: &mut BTreeMap<String,String>, selected: &mut BTreeSet<String>,
-        bulk_group: &mut String,
+        bulk_group: &mut Option<String>,
+        bulk_feedback: &mut Option<String>,
         rate_editor: &mut Option<RateEditor>,
         reset_target: &mut Option<String>,
         error: &mut Option<String>,
@@ -885,6 +893,7 @@ impl FreightManager {
                     });
                 if before_filter!=*group_filter {
                     selected.clear();
+                    *bulk_feedback=None;
                     *only_missing=false;
                 }
                 tools.checkbox(only_missing,"그룹 미지정 상품만");
@@ -911,10 +920,16 @@ impl FreightManager {
                     text(g,"id")==text(p,"shippingGroupId")
                 )));
             }
-            // One compact, non-wrapping bulk-action row: select visible
-            // products, choose ONE group, and stage the assignment. The old
-            // second row for copying tariff templates is intentionally
-            // removed; it duplicated the per-product freight workflow.
+            // Explicit choice is mandatory. None means not selected;
+            // Some("") means the user deliberately requested group removal.
+            // Both individual assignment and bulk assignment only stage
+            // changes, leaving the original group until "그룹 지정 저장".
+            if bulk_group.as_deref().is_some_and(|id|
+                !id.is_empty() && !groups.iter().any(|g|text(g,"id")==id)
+            ) {
+                *bulk_group=None;
+                *bulk_feedback=None;
+            }
             section.horizontal(|tools|{
                 tools.spacing_mut().item_spacing.x=theme::SPACE_8;
                 let mut all=!filtered.is_empty()
@@ -922,6 +937,7 @@ impl FreightManager {
                 tools.add_enabled_ui(enabled,|control|{
                     if control.checkbox(&mut all,"").changed(){
                         selected.clear();
+                        *bulk_feedback=None;
                         if all {
                             selected.extend(filtered.iter()
                                 .map(|p|text(p,"id").to_owned()));
@@ -931,26 +947,57 @@ impl FreightManager {
                 tools.label(typography::field_label(&format!(
                     "{}개 선택",selected.len()
                 )));
+                let previous_group=bulk_group.clone();
                 tools.add_enabled_ui(enabled,|control|{
                     egui::ComboBox::from_id_salt("freight-bulk-assign")
                         .width(theme::FREIGHT_BULK_GROUP_WIDTH)
-                        .selected_text(if bulk_group.is_empty(){
-                            "미지정으로 변경"
-                        }else{group_name(groups,bulk_group)})
+                        .selected_text(match bulk_group.as_deref(){
+                            None=>"배송 그룹 선택",
+                            Some("")=>"미지정으로 변경",
+                            Some(id)=>group_name(groups,id),
+                        })
                         .show_ui(control,|combo|{
-                            combo.selectable_value(bulk_group,String::new(),"미지정으로 변경");
+                            combo.selectable_value(
+                                bulk_group,Some(String::new()),"미지정으로 변경"
+                            );
                             for group in groups {
                                 combo.selectable_value(
-                                    bulk_group,text(group,"id").into(),text(group,"name")
+                                    bulk_group,Some(text(group,"id").to_owned()),
+                                    text(group,"name")
                                 );
                             }
                         });
                 });
+                if *bulk_group!=previous_group {
+                    *bulk_feedback=None;
+                }
                 if theme::action(tools,"선택 상품에 적용",
-                    theme::ButtonRole::Standard,enabled&&!selected.is_empty()
+                    theme::ButtonRole::Standard,
+                    enabled&&!selected.is_empty()&&bulk_group.is_some()
                 ).clicked(){
-                    for id in selected.iter(){
-                        pending.insert(id.clone(),bulk_group.clone());
+                    if let Some(target)=bulk_group.as_deref(){
+                        let (mut newly,mut moved,mut removed,mut unchanged)=(0,0,0,0);
+                        for product in products.iter().copied()
+                            .filter(|product|selected.contains(text(product,"id"))) {
+                            let id=text(product,"id");
+                            let original=text(product,"shippingGroupId");
+                            if original==target {
+                                // Applying the persisted group also clears an
+                                // earlier unsaved change for the same product.
+                                pending.remove(id);
+                                unchanged+=1;
+                            }else{
+                                pending.insert(id.to_owned(),target.to_owned());
+                                if target.is_empty(){removed+=1;}
+                                else if original.is_empty(){newly+=1;}
+                                else{moved+=1;}
+                            }
+                        }
+                        *bulk_feedback=Some(if target.is_empty(){
+                            format!("그룹 해제 {removed}건 · 변경 없음 {unchanged}건")
+                        }else{
+                            format!("신규 지정 {newly}건 · 그룹 변경 {moved}건 · 변경 없음 {unchanged}건")
+                        });
                     }
                 }
                 settings_help::icon(tools,"배송 그룹 일괄 지정");
@@ -1011,6 +1058,7 @@ impl FreightManager {
                                 ).changed() && enabled {
                                     if checked {selected.insert(id.into());}
                                     else {selected.remove(id);}
+                                    *bulk_feedback=None;
                                 }
                                 // Name and subtitle share ONE truncated line,
                                 // with the full original available on hover.
@@ -1175,11 +1223,16 @@ impl FreightManager {
             }
             components::soft_divider(section);
             section.horizontal(|actions|{
-                actions.label(typography::caption(if assignments.is_empty() {
+                // Reuse the existing footer, not another toolbar row or
+                // popup, to report the staged result of the last bulk action.
+                let summary=if let Some(feedback)=bulk_feedback.as_deref(){
+                    format!("{feedback} · 저장 대기 {}건",assignments.len())
+                }else if assignments.is_empty(){
                     "등록된 상품을 임의로 분류하지 않습니다. 사용자가 확인한 그룹을 지정해 주세요.".to_owned()
                 }else{
                     format!("{}개 상품의 배송 그룹을 변경합니다.",assignments.len())
-                }.as_str()));
+                };
+                actions.label(typography::caption(&summary));
                 let save_label=if assignments.is_empty(){
                     "그룹 지정 저장".to_owned()
                 }else{
