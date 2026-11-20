@@ -46,7 +46,8 @@ fn freight_assignment_cells(
 /// One non-wrapping line anchored 6pt from the shared column origin. Keep
 /// the full content on hover without changing the cell's layout footprint.
 fn freight_assignment_text(
-    ui:&mut Ui,rect:egui::Rect,value:&str,emphasis:bool,secondary:bool,id:impl std::hash::Hash
+    ui:&mut Ui,rect:egui::Rect,value:&str,full_text:&str,
+    emphasis:bool,secondary:bool,id:impl std::hash::Hash
 ) {
     let clipped=rect.shrink2(egui::vec2(6.0,0.0));
     let (galley,color)=if secondary {
@@ -60,7 +61,7 @@ fn freight_assignment_text(
     if !value.is_empty(){
         let hover_id=ui.make_persistent_id(("freight-cell",id));
         ui.interact(clipped,hover_id,egui::Sense::hover())
-            .on_hover_text(value);
+            .on_hover_text(full_text);
     }
 }
 
