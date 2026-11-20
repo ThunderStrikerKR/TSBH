@@ -512,7 +512,7 @@ impl ClientManager {
         let busy=self.saving.is_some();
         components::modal_window(title,"native-client-manager-editor",work_area)
             .open(&mut opened)
-            .resizable(true)
+            
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
             .show(ctx,|ui|{
                 if let Some(error)=&self.error {
