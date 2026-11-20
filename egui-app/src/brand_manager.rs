@@ -117,7 +117,9 @@ impl BrandManager {
         ->Option<Value>{
         let mut save=false;
         let mut select=None;
+        let card_min_height=components::management_primary_card_min_inner_height(ui);
         theme::section_frame().show(ui,|card|{
+            components::fill_management_primary_card(card,card_min_height);
             card.label(typography::section_heading("브랜드 관리"));
             card.add_space(theme::SPACE_8);
             card.label(typography::body(
