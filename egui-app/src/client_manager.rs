@@ -396,10 +396,11 @@ impl ClientManager {
                                 toolbar_rect.height()
                             )
                         );
-                        let action_rect=egui::Rect::from_min_size(
-                            egui::pos2(toolbar_rect.right()-actions_width,
-                                toolbar_rect.top()),
-                            egui::vec2(actions_width,toolbar_rect.height())
+                        // Apply CONFLICT-001=C to the client-list action
+                        // slot too: the last control ends at the toolbar's
+                        // card-inner right edge, without a table rail offset.
+                        let action_rect=components::management_toolbar_trailing_rect(
+                            toolbar_rect,actions_width,0.0,toolbar_rect.height()
                         );
                         tools.scope_builder(
                             egui::UiBuilder::new()
