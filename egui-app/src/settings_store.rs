@@ -110,6 +110,7 @@ pub fn load()->Result<Value,String>{
         return Ok(json!({
             "revision":revision,"settings":settings,
             "readOnly":!writable_business(),"mode":"business",
+            "dataAvailable":backup_helper_available(),
             "usedAccounts":used_accounts(&state["clients"])
         }));
     }
@@ -119,7 +120,7 @@ pub fn load()->Result<Value,String>{
     // business DB can provide actual account usage references.
     Ok(json!({
         "revision":revision,"settings":settings,
-        "readOnly":false,"mode":"isolated",
+        "readOnly":false,"mode":"isolated","dataAvailable":false,
         "usedAccounts":[]
     }))
 }
