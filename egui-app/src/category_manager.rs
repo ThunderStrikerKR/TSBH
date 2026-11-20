@@ -115,16 +115,9 @@ impl ProductCategoryPaths {
             let leaf=items(product,"categories").iter().rev()
                 .filter_map(Value::as_str).find(|id|by_id.contains_key(id));
             let display=if let Some(id)=leaf{
-                let mut names=Vec::new();
-                let mut current=id;
-                let mut visited=HashSet::new();
-                while !current.is_empty()&&visited.insert(current.to_owned()){
-                    let Some(node)=by_id.get(current)else{break};
-                    names.push(node.name.as_str());
-                    current=&node.parent;
-                }
-                names.reverse();
-                names.join(" > ")
+                // Identical ancestor traversal to the Category Map.
+                path(&cats,id).iter().map(|node|node.name.as_str())
+                    .collect::<Vec<_>>().join(" > ")
             }else{
                 // Legacy records without a valid category ID are not silently
                 // assigned to a root: keep their stored display as fallback.
