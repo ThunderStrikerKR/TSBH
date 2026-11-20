@@ -295,8 +295,18 @@ impl CategoryManager {
     }
     fn apply_confirm(&mut self,intent:Confirm,cats:&[Category]){
         match intent{
-            Confirm::CloseEditor=>self.editor=false,
-            Confirm::CloseOperation=>self.operation=None,
+            Confirm::CloseEditor=>{
+                self.editor=false;
+                self.name=self.current(cats).map(|c|c.name).unwrap_or_default();
+            }
+            Confirm::CloseOperation=>{
+                // React closeOperation discards only the operation draft.
+                // Do not erase an unrelated unsaved inline rename.
+                self.operation=None;
+                self.new_name.clear();
+                self.target.clear();
+                self.transfer=false;
+            }
             Confirm::SwitchTab=>{
                 self.clear_for_leave();
                 self.switch_to_list=true;
@@ -307,9 +317,6 @@ impl CategoryManager {
             }
         }
         self.confirm=None;
-        if intent==Confirm::CloseEditor || intent==Confirm::CloseOperation{
-            self.discard(cats);
-        }
     }
     fn node(&mut self,ui:&mut Ui,cats:&[Category],catalog:&Value,
         item:&Category,depth:usize){
