@@ -368,3 +368,12 @@
 - 거래처 검증·신규/수정·소프트 삭제·검색 판단을 egui에 재구현하지 않는다. Tauri와 egui에서 같은 Rust 소유 모듈을 호출하고 저장 revision을 확인한다.
 - 개발용 격리 DB와 운영 DB 거래처를 자동 병합하지 않는다. 운영 DB를 명시적으로 연결한 경우 읽기 전용 경계를 지키며, 연결되지 않은 모듈/탭을 가짜로 작동시키지 않는다.
 - 문서·Cargo 컴파일 성공은 Windows 실제 UI 디자인/작업 흐름 최종 합격의 근거가 아니다.
+
+### 52차 상품관리: React 상품 가격표 및 Rust/egui 기능 이전 (2026-11-20)
+
+- **기준 소스:** `src/ProductManager.tsx`, `src/Classification.tsx`, `src/PriceCell.tsx`, `src/ProductDetailComponents.tsx`, `src/styles/product-admin-redesign.css`, `src/styles/tauri-stage2-products.css`, `src/styles/management-layout.css`. 상품별 단일 판매 구성 및 공통 타이포그래피·버튼·모달·관리 표 규칙을 따른다.
+- **egui 부분 이전:** `egui-app/src/product_manager.rs`에서 상품 가격표, Rust `management_products`를 쓰는 검색·카테고리·브랜드·미등록 가격 필터, 도매·반도매·소매 단가, 가격 수정 모드, `상품 추가 → 직접 등록`, 상세 편집·보존 삭제를 제공한다. Rust가 검색 결과 ID를 선정하며 UI는 표시한다.
+- **저장:** `src-tauri/src/egui_product_bridge.rs`는 `BANDO_EGUI_ENABLE_PRODUCT_WRITE=1`과 명시적 `BANDO_EGUI_BUSINESS_DB`·`BANDO_EGUI_TAURI_HELPER`를 요구한다. 기존 Tauri `price_set`의 이전 값 비교(CAS)와 `upsert_product_from_editor`·`archive_product`, `write_snapshot` revision-checked SQLite 커밋을 재사용한다. 격리 egui 프리뷰 DB는 운영 상품 저장 대상이 아니다.
+- **미저장 상태:** 가격 셀별 저장·취소와 Enter/Escape, 저장 중 재클릭 차단, 상품 상세 수정 후 닫기 확인, 미저장 가격과 모달 열림 상태에서 전역 페이지 이탈 방지를 적용한다.
+- **미이전:** Excel 관리, 공식 상품 URL 수집·미리보기, 이미지 업로드, 카테고리 관리·모델군 관리·별칭 관리·브랜드 관리의 완전한 저장 경로는 아직 구현되지 않았다. 빈 UI를 작동하는 것처럼 보고하거나 부분 이전을 전체 완료라 부르지 않는다.
+- **검증:** GitHub PATCH 및 React/CSS/Rust 정적 비교 수준. Rust 대상 컴파일과 SQLite 상품 수정·삭제·재조회·충돌 실행은 미수행이며, Windows GUI 실화면은 최신 사용자 결정에 따라 생략한다.
