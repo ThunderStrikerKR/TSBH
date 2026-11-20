@@ -1076,6 +1076,7 @@ impl FreightManager {
                                 cell(grid,3,&colors,false);
                                 let mut current=pending.get(id).cloned()
                                     .unwrap_or_else(||committed.into());
+                                let before_manual_edit=current.clone();
                                 grid.add_enabled_ui(enabled,|control|{
                                     egui::ComboBox::from_id_salt(("freight-row-group",id))
                                         .width(widths[4])
@@ -1094,6 +1095,10 @@ impl FreightManager {
                                             }
                                         });
                                 });
+                                if current!=before_manual_edit {
+                                    // A per-item edit invalidates the previous bulk result.
+                                    *bulk_feedback=None;
+                                }
                                 if current!=committed {
                                     pending.insert(id.into(),current);
                                 }else{pending.remove(id);}
