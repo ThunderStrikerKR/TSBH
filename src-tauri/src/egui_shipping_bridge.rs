@@ -20,6 +20,23 @@ fn unique(tag: &str, index: usize) -> Result<String, String> {
         .map_err(err)?.as_nanos();
     Ok(format!("egui-freight-{tag}-{}-{nanos}-{index}",std::process::id()))
 }
+fn validate_rate_input(rule:&Value)->Result<(),String>{
+    if !rule["maxBundle"].is_null() &&
+        !rule["maxBundle"].as_i64().is_some_and(|v|(1..=6).contains(&v)){
+        return Err("최대 묶음 수량은 1~6개 중에서 선택하세요.".into());
+    }
+    let fees=rule["fees"].as_object().ok_or("수량별 운임표 형식 오류")?;
+    for (quantity,amount) in fees {
+        if quantity.parse::<i64>().ok().is_none_or(|n|!(1..=6).contains(&n)){
+            return Err("운임 구간 수량이 올바르지 않습니다.".into());
+        }
+        if !amount.is_null() &&
+            !amount.as_i64().is_some_and(|n|(0..=9_007_199_254_740_991).contains(&n)){
+            return Err("올바른 운임을 입력하세요.".into());
+        }
+    }
+    Ok(())
+}
 fn action_payload(action: &str, data: &Value, before: &Value) -> Result<Value, String> {
     let shipping=before.get("shipping").filter(|v|v.is_object())
         .ok_or("운영 운임 기준이 없습니다.")?;
@@ -68,8 +85,10 @@ fn action_payload(action: &str, data: &Value, before: &Value) -> Result<Value, S
         }
         "save_group_rule" => {
             payload["groupId"]=json!(required(data,"groupId")?);
-            payload["rule"]=data.get("rule").filter(|v|v.is_object())
-                .ok_or("운임표 수정 내용이 없습니다.")?.clone();
+            let rule=data.get("rule").filter(|v|v.is_object())
+                .ok_or("운임표 수정 내용이 없습니다.")?;
+            validate_rate_input(rule)?;
+            payload["rule"]=rule.clone();
             payload["versionId"]=json!(unique("rate",0)?);
         }
         "change_basis" => {
@@ -98,7 +117,7 @@ fn action_payload(action: &str, data: &Value, before: &Value) -> Result<Value, S
         "revise_combination" => {
             payload["combinationId"]=json!(required(data,"combinationId")?);
             payload["charge"]=data.get("charge").and_then(Value::as_i64)
-                .filter(|v|*v>=0).map(|v|json!(v))
+                .filter(|v|(0..=9_007_199_254_740_991).contains(v)).map(|v|json!(v))
                 .ok_or("올바른 청구 운임을 입력하세요.")?;
             payload["newId"]=json!(unique("combination",0)?);
         }
