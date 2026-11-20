@@ -256,9 +256,10 @@ pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
 // Compact minimum widths preserve one product per row and let the table fit
 // in ordinary management panes without an unnecessary horizontal scrollbar.
 pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 6] =
-    // +20% colors: 69 -> 83, +20% category: 215 -> 258.
-    // Both gains (-57pt) come entirely from product: 296 -> 239.
-    [44.0, 239.0, 83.0, 258.0, 150.0, 128.0];
+    // Reserve room for the 14pt "색상/옵션" header and its sort arrow.
+    // +21pt to color/option (83 -> 104) comes entirely from product
+    // (239 -> 218); category, other columns and total width stay fixed.
+    [44.0, 218.0, 104.0, 258.0, 150.0, 128.0];
 pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
 // Width for the single-line bulk shipping-group selector.
 pub const FREIGHT_BULK_GROUP_WIDTH: f32 = 200.0;
