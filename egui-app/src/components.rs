@@ -643,8 +643,10 @@ fn client_tier_badge(ui:&mut Ui,label:&str,tier:&str) {
     egui::Frame::new()
         .fill(background)
         .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
+        // One-line client rows need a small inline chip rather than a
+        // near full-height block. Keep tier color and 12pt metadata type.
         .inner_margin(egui::Margin::symmetric(
-            theme::SPACE_8 as i8, theme::SPACE_4 as i8
+            theme::SPACE_4 as i8, (theme::SPACE_4 / 2.0) as i8
         ))
         .show(ui,|badge|{
             badge.label(typography::caption(label).color(foreground));
@@ -686,7 +688,7 @@ pub fn management_row(
                 if heading {
                     inner.add(egui::Label::new(
                         typography::table_header(primary)
-                    ).truncate()).on_hover_text(*primary);
+                    ).truncate().halign(Align::Min)).on_hover_text(*primary);
                 }else if i==2 {
                     if let Some(tier)=tier {
                         client_tier_badge(inner,primary,tier);
@@ -727,13 +729,13 @@ pub fn management_row(
                             }else{
                                 typography::table_cell(primary)
                             }
-                        ).truncate()
+                        ).truncate().halign(Align::Min)
                     ).on_hover_text(*primary);
                     inner.add_sized(
                         Vec2::new(second_width,height),
                         egui::Label::new(
                             typography::caption(secondary)
-                        ).truncate()
+                        ).truncate().halign(Align::Min)
                     ).on_hover_text(*secondary);
                 }
             }
