@@ -742,15 +742,16 @@ impl CategoryManager {
                         match operation{
                             Operation::Add=>{
                                 let location_path=path_text(&cats,&current.id);
-                                modal.horizontal(|line|{
-                                    line.label(typography::field_label("생성 위치:"));
-                                    let visible=typography::fit_category_path(
-                                        line,&location_path,line.available_width(),
-                                        typography::CategoryPathFont::Body
-                                    );
-                                    line.label(typography::body(&visible))
-                                        .on_hover_text(&location_path);
-                                });
+                                modal.label(typography::field_label("생성 위치"));
+                                // Use the full modal width for the path, rather
+                                // than splitting one line with the location label.
+                                let visible=typography::fit_category_path(
+                                    modal,&location_path,modal.available_width(),
+                                    typography::CategoryPathFont::Body
+                                );
+                                modal.add(egui::Label::new(
+                                    typography::body(&visible)
+                                ).truncate()).on_hover_text(&location_path);
                                 components::flexible_text_field(modal,&mut self.new_name,
                                     theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 하위 분류 이름");
                                 let count=direct_count(catalog,&current.id);
