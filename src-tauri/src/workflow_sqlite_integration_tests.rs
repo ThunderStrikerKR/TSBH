@@ -439,3 +439,102 @@ fn native_alias_sqlite_save_correction_and_stale_editor_rejection() {
     assert_eq!(get_snapshot(&reopen).unwrap(),corrected);
     drop(reopen);
 }
+
+
+/// React RegistrySettings -> original Rust catalog_clients::upsert_brand
+/// -> Tauri revision CAS -> real v2 SQLite persistence/reopen. No production DB.
+#[test]
+fn native_brand_sqlite_save_correction_collision_and_reopen() {
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let before=get_snapshot(&conn).expect("real SQLite initial snapshot");
+    let revision=before["revision"].as_u64().unwrap();
+    let request=json!({
+        "expectedRevision":revision,
+        "action":"upsert_brand",
+        "data":{
+            "editing":null,
+            "name":"SYNTHETIC_BRAND_20261120_ORIGINAL",
+            "korean":"검증용 상표",
+            "aliases":"검증상표, UNIQUEALIAS77, 검증상표",
+            "evidence":"https://example.com/verified-brand"
+        }
+    });
+    let response=egui_product_bridge::patch(&mut conn,&request)
+        .expect("save using the actual Rust brand editor and SQLite writer");
+    assert_eq!(response["revision"],json!(revision+1));
+    let created=get_snapshot(&conn).unwrap();
+    assert_eq!(created["brands"].as_array().unwrap().len(),
+        before["brands"].as_array().unwrap().len()+1);
+    let brand=created["brands"].as_array().unwrap().iter()
+        .find(|b|b["name"]=="SYNTHETIC_BRAND_20261120_ORIGINAL").unwrap();
+    let id=brand["id"].as_str().unwrap().to_owned();
+    assert!(!id.is_empty());
+    assert_eq!(brand["korean"],"검증용 상표");
+    assert_eq!(brand["aliases"],json!(["검증상표","UNIQUEALIAS77"]));
+    assert_eq!(brand["evidenceUrl"],"https://example.com/verified-brand");
+    for key in ["products","aliases","orders","clients","settings"]{
+        assert_eq!(created[key],before[key],"brand insert must not mutate {key}");
+    }
+    drop(conn);
+
+    // Fresh process-like connection reads the exact new brand and references.
+    let mut reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),created);
+
+    let corrected_request=json!({
+        "expectedRevision":revision+1,
+        "action":"upsert_brand",
+        "data":{
+            "editing":id,
+            "name":"SYNTHETIC_BRAND_20261120_CORRECTED",
+            "korean":"수정된 한글명",
+            "aliases":"변경 별칭, EXTRAALIAS",
+            "evidence":"https://example.com/updated-evidence"
+        }
+    });
+    egui_product_bridge::patch(&mut reopened,&corrected_request)
+        .expect("correct existing brand without changing its ID");
+    let corrected=get_snapshot(&reopened).unwrap();
+    assert_eq!(corrected["brands"].as_array().unwrap().len(),
+        created["brands"].as_array().unwrap().len());
+    let brand=corrected["brands"].as_array().unwrap().iter()
+        .find(|b|b["id"]==id).expect("same id after correction");
+    assert_eq!(brand["name"],"SYNTHETIC_BRAND_20261120_CORRECTED");
+    assert_eq!(brand["aliases"],json!(["변경 별칭","EXTRAALIAS"]));
+    for key in ["products","aliases","orders","clients","settings"]{
+        assert_eq!(corrected[key],before[key],"brand edit must not mutate {key}");
+    }
+
+    // Invalid evidence and duplicate names are rejected before write_snapshot.
+    let invalid=json!({
+        "expectedRevision":revision+2,
+        "action":"upsert_brand",
+        "data":{"editing":id,"name":"SYNTHETIC_BRAND_20261120_CORRECTED",
+            "korean":"수정된 한글명","aliases":"변경 별칭",
+            "evidence":"http://example.com/not-https"}
+    });
+    let error=egui_product_bridge::patch(&mut reopened,&invalid)
+        .expect_err("brand requires verified HTTPS evidence");
+    assert!(error.contains("HTTPS"));
+    assert_eq!(get_snapshot(&reopened).unwrap(),corrected);
+
+    let duplicate=json!({
+        "expectedRevision":revision+2,
+        "action":"upsert_brand",
+        "data":{"editing":null,"name":"ANOTHER_NEW_BRAND_20261120",
+            "korean":"새 브랜드","aliases":"EXTRAALIAS",
+            "evidence":"https://example.com/other"}
+    });
+    let error=egui_product_bridge::patch(&mut reopened,&duplicate)
+        .expect_err("shared alias cannot silently merge two brands");
+    assert!(error.contains("중복됩니다"));
+    assert_eq!(get_snapshot(&reopened).unwrap(),corrected);
+
+    let stale=egui_product_bridge::patch(&mut reopened,&request)
+        .expect_err("stale brand editor must not overwrite newer state");
+    assert!(stale.contains("다른 작업에서 상품 데이터가 수정되었습니다"));
+    assert_eq!(get_snapshot(&reopened).unwrap(),corrected);
+    drop(reopened);
+    let after_restart=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&after_restart).unwrap(),corrected);
+}
