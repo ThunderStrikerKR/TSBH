@@ -61,6 +61,7 @@ struct RateEditor {
     add_count: Option<i64>,
     error: Option<String>,
     ask_discard: bool,
+    product: bool,
 }
 impl RateEditor {
     fn new(id:&str,name:&str,rule:&Value)->Self {
@@ -72,8 +73,13 @@ impl RateEditor {
             id:id.to_owned(),name:name.to_owned(),original:rule.clone(),
             max_bundle:rule["maxBundle"].as_i64(),
             fees,notes:text(rule,"notes").to_owned(),
-            add_count:None,error:None,ask_discard:false
+            add_count:None,error:None,ask_discard:false,product:false
         }
+    }
+    fn new_product(id:&str,name:&str,rule:&Value)->Self {
+        let mut editor=Self::new(id,name,rule);
+        editor.product=true;
+        editor
     }
     fn dirty(&self)->bool{
         if self.original["maxBundle"].as_i64()!=self.max_bundle
@@ -144,10 +150,17 @@ impl FreightManager {
                 let shipping = state.get("shipping")
                     .filter(|value| value.is_object())
                     .ok_or("운영 DB에서 운임 기준을 찾을 수 없습니다.")?;
-                let projection = loader.execute(
+                let mut projection = loader.execute(
                     ReadOperation::ShippingManagerView,
                     json!({"state":state,"shipping":shipping}),
                 )?;
+                let product_view=loader.execute(
+                    ReadOperation::ProductFreightView,
+                    json!({"action":"product_freight_view","state":{
+                        "products":state["products"],"shipping":shipping
+                    }})
+                )?;
+                projection["productViews"]=product_view["views"].clone();
                 Ok((state, projection))
             })();
             let _ = sender.send(outcome);
@@ -210,6 +223,9 @@ impl FreightManager {
                             "delete_group"=>"그룹을 삭제하고 과거 운임 기록을 보존했습니다.",
                             "assign_products"=>"배송 그룹 지정을 저장했습니다.",
                             "save_group_rule"=>"운임표를 저장했습니다. 변경 전 기준은 이력으로 보존됩니다.",
+                            "save_product_rule"=>"기본 운임을 저장했습니다. 이전 기준은 이력으로 보존합니다.",
+                            "reset_product_freight_rule"=>"새 운임 기준을 시작했습니다. 확인된 운임을 다시 입력하세요.",
+                            "copy_group_rule"=>"선택 상품에 확인된 공통 운임 기준을 복사했습니다.",
                             "change_basis"=>"운임 기준을 변경했습니다.",
                             "revise_combination"=>"새 예외 운임을 저장하고 이전 값을 이력으로 보존했습니다.",
                             _=>"운임 변경사항을 저장했습니다."
@@ -222,7 +238,9 @@ impl FreightManager {
                                 self.pending.clear();
                                 self.selected.clear();
                             }
-                            "save_group_rule"=>self.rate_editor=None,
+                            "save_group_rule"|"save_product_rule"=>self.rate_editor=None,
+                            "reset_product_freight_rule"=>self.product_reset_target=None,
+                            "copy_group_rule"=>self.copy_target=None,
                             "change_basis"=>self.basis_target=None,
                             "revise_combination"=>self.exception_target=None,
                             _=>{}
@@ -859,9 +877,14 @@ impl FreightManager {
                 match editor.draft(){
                     Ok(rule)=>{
                         editor.error=None;
-                        *event=Some(("save_group_rule".into(),json!({
-                            "groupId":editor.id,"rule":rule
-                        })));
+                        *event=Some((
+                            if editor.product {"save_product_rule"} else {"save_group_rule"}.into(),
+                            if editor.product {
+                                json!({"productId":editor.id,"rule":rule})
+                            } else {
+                                json!({"groupId":editor.id,"rule":rule})
+                            }
+                        ));
                     }
                     Err(message)=>editor.error=Some(message)
                 }
