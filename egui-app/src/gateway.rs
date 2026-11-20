@@ -145,6 +145,10 @@ pub trait BandoGateway: Send + Sync {
     fn load_business_state(&self) -> Result<Value, String> {
         Err("서버에는 실제 주문 수정 미리보기 계약이 아직 없습니다.".into())
     }
+    /// Explicit client ID selection may be persisted in the isolated egui
+    /// receipt when no business DB is configured; it is NOT native pricing,
+    /// freight, order commit or an alternative to the Tauri writer.
+    fn isolated_client_identity_link(&self) -> bool { false }
     /// A production working reception requires a separate, explicitly
     /// configured native Tauri executable and user action. Never send to an
     /// unimplemented HTTPS endpoint or silently fall back to direct SQL.
@@ -251,6 +255,10 @@ impl BandoGateway for LocalGateway {
     }
     fn load_business_state(&self) -> Result<Value, String> {
         crate::business_state::load()
+    }
+    fn isolated_client_identity_link(&self)->bool {
+        std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .is_none_or(|value|value.is_empty())
     }
     fn product_write_enabled(&self)->bool{
         std::env::var("BANDO_EGUI_ENABLE_PRODUCT_WRITE")
