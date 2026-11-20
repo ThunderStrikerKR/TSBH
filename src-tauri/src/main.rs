@@ -9,9 +9,6 @@ fn main() {
     if std::env::args().any(|arg| arg == "--bando-egui-settings-patch") {
         std::process::exit(bando_hub_tauri_lib::run_egui_settings_patch());
     }
-    if std::env::args().any(|arg| arg == "--bando-egui-shipping-patch") {
-        std::process::exit(bando_hub_tauri_lib::run_egui_shipping_patch());
-    }
     if std::env::args().any(|arg| arg == "--bando-egui-product-patch") {
         std::process::exit(bando_hub_tauri_lib::run_egui_product_patch());
     }
