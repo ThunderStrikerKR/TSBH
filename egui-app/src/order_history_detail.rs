@@ -59,24 +59,38 @@ fn section_panel(
         Stroke::new(1.0,theme::DIVIDER),egui::StrokeKind::Inside
     );
     let inner=rect.shrink2(Vec2::new(INSET_X,INSET_Y));
-    let clip=inner.intersect(ui.clip_rect());
+    let parent_clip=ui.clip_rect();
+    // Separate title/body rectangles avoid implicit layout spacing and
+    // prevent a nested scroller from overlapping the pane's bottom border.
+    let title_rect=Rect::from_min_size(
+        inner.min,Vec2::new(inner.width(),PANE_TITLE_HEIGHT-theme::SPACE_4)
+    );
+    let scroll_rect=Rect::from_min_max(
+        egui::pos2(inner.left(),inner.top()+PANE_TITLE_HEIGHT),inner.max
+    );
+    ui.scope_builder(UiBuilder::new()
+        .id_salt(("history-detail-heading",id))
+        .max_rect(title_rect)
+        .layout(Layout::top_down(Align::Min)),|heading|{
+            heading.set_clip_rect(title_rect.intersect(parent_clip));
+            heading.label(typography::section_heading(title));
+        });
     ui.scope_builder(UiBuilder::new()
         .id_salt(("history-detail-pane",id))
-        .max_rect(inner)
-        .layout(Layout::top_down(Align::Min)),|pane|{
-            pane.set_clip_rect(clip);
-            pane.set_width(inner.width());
-            pane.label(typography::section_heading(title));
-            pane.add_space(theme::SPACE_4);
-            let scroller_height=(inner.height()-PANE_TITLE_HEIGHT).max(1.0);
+        .max_rect(scroll_rect)
+        .layout(Layout::top_down(Align::Min)),|content|{
+            content.set_clip_rect(scroll_rect.intersect(parent_clip));
+            content.set_width(scroll_rect.width());
+            content.spacing_mut().item_spacing.y=0.0;
             egui::ScrollArea::vertical()
                 .id_salt(("history-detail-scroll",id))
-                .max_height(scroller_height)
+                .max_height(scroll_rect.height().max(1.0))
                 .auto_shrink([false,false])
                 .scroll_bar_visibility(
                     egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                 )
-                .show(pane,|scroll|{
+                .show(content,|scroll|{
+                    scroll.spacing_mut().item_spacing.y=theme::SPACE_4;
                     body(scroll);
                 });
         });
