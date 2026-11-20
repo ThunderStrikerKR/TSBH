@@ -206,7 +206,9 @@ pub const MANAGEMENT_CLIENT_TABLE_MIN_WIDTH: f32 = 900.0;
 pub const MANAGEMENT_TABLE_VIEWPORT_FRACTION: f32 = 0.60;
 pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
 // Width reserved for the two original client-list actions on one toolbar row.
-pub const MANAGEMENT_TOOLBAR_ACTIONS_WIDTH: f32 = 276.0;
+// Match the actual two button widths plus their shared spacing, rather
+// than leaving a large unused gap after the search field.
+pub const MANAGEMENT_TOOLBAR_ACTIONS_WIDTH: f32 = 236.0;
 // Reserve enough width for a single search field and two unchanged
 // right-aligned actions; in a narrow split-pane they stack on two lines.
 pub const MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH: f32 = 700.0;
@@ -310,6 +312,15 @@ pub fn management_list_frame() -> Frame {
         .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
         .corner_radius(CornerRadius::same(PANEL_RADIUS))
         .inner_margin(FRAME_STROKE_WIDTH as i8)
+}
+
+/// Identical inset for a management list's search toolbar and its inline
+/// loading/read-only/error status. Keeps both aligned without adding an
+/// extra bordered card or changing the data table's full-width columns.
+pub fn management_list_strip_frame() -> Frame {
+    Frame::new().inner_margin(egui::Margin::symmetric(
+        SPACE_12 as i8, SPACE_8 as i8
+    ))
 }
 
 /// The same outer gutter for Reception and every management page:
