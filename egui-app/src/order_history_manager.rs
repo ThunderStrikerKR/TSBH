@@ -19,10 +19,12 @@ use std::{
 const ROW_HEIGHT: f32 = theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
 const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
-// Seven columns, with an explicit employee approval DATE to the right of
-// the billed total. Preserve the approved 8pt inter-column spacing.
-const COLS: [f32;7] = [124.0,170.0,350.0,128.0,144.0,152.0,140.0];
-const MIN_WIDTH: f32 = 1256.0; // sum(COLS) + six 8pt gaps
+// Compact fixed-width metadata columns; the shipping / product column takes
+// ALL remaining width (including when the main pane is resized).
+// Date text is YYYY-MM-DD; client name shows at most ten characters;
+// status is one of four known values; invoice is at most 10M KRW.
+const COLS: [f32;7] = [112.0,144.0,300.0,126.0,124.0,112.0,132.0];
+const MIN_WIDTH: f32 = 1098.0; // sum(COLS) + six 8pt gaps
 // Natural width of [date basis, previous, start date/calendar, end
 // date/calendar, next, all dates]. The search stays outside this right slot.
 const RANGE_CONTROLS_WIDTH:f32=940.0;
@@ -85,6 +87,23 @@ fn order_date(row:&Value)->String{
 }
 fn order_client(row:&Value)->&str{
     row["client"]["name"].as_str().unwrap_or("과거 거래처")
+}
+fn display_client_name(name:&str)->String{
+    let mut chars=name.chars();
+    let shown=chars.by_ref().take(10).collect::<String>();
+    if chars.next().is_some(){format!("{shown}…")}else{shown}
+}
+fn order_items_single_line(row:&Value,expanded:bool)->String{
+    let items=rows(&row["recipients"]).iter()
+        .flat_map(|recipient|rows(&recipient["items"]).iter())
+        .map(|item|format!("{} × {}",
+            model_label(field(item,"name")),
+            item["quantity"].as_i64().map(|quantity|quantity.to_string())
+                .unwrap_or_else(||"수량 미확인".to_owned())))
+        .collect::<Vec<_>>();
+    let lead=if expanded{"▾"}else{"▸"};
+    if items.is_empty(){format!("{lead} 품목 없음")}
+    else{format!("{lead} {}",items.join(" / "))}
 }
 fn item_count(row:&Value)->usize{
     rows(&row["recipients"]).iter().map(|r|rows(&r["items"]).len()).sum()
@@ -790,9 +809,8 @@ impl OrderHistoryManager {
             let gutter=section.spacing().scroll.allocated_width();
             let table_width=(viewport-gutter).max(MIN_WIDTH);
             let mut widths=COLS;
-            let extra=(table_width-MIN_WIDTH).max(0.0);
-            widths[1]+=extra*0.25;
-            widths[2]+=extra*0.75;
+            // No unused horizontal space on fixed-format columns.
+            widths[2]+=(table_width-MIN_WIDTH).max(0.0);
             let headings=["접수일","거래처","배송 건 / 상품","관리 상태",
                 "청구 합계","입금 확인","처리"];
             let (head_rect,_)=section.allocate_exact_size(
