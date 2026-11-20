@@ -865,10 +865,16 @@ impl FreightManager {
                 title.label(typography::section_heading("상품별 배송 그룹 지정"));
                 settings_help::icon(title,"상품별 운임");
             });
-            // Keep search/filter on the left and the bulk-assignment
-            // controls right-aligned on THE SAME toolbar row. On ordinary
-            // management widths no labels or actions wrap to a second row.
-            let filtered=section.horizontal(|tools|{
+            // Reserve the toolbar's full 36pt control height *before*
+            // rendering either group. A content-sized horizontal row made
+            // the left text field set the height after the smaller right
+            // controls had already been placed, drifting their baselines.
+            // Both clusters now share this exact vertical center line.
+            let toolbar_width=section.available_width();
+            let filtered=section.allocate_ui_with_layout(
+                egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |tools|{
                 tools.spacing_mut().item_spacing.x=theme::SPACE_8;
                 components::flexible_text_field(
                     tools,search,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
