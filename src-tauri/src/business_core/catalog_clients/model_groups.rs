@@ -9,6 +9,11 @@ fn registered(p:&Value)->bool{
     field(p,"deletedAt").is_empty() &&
     field(p,"supersededBy").is_empty()
 }
+fn eligible_product(p:&Value)->bool{
+    registered(p) && field(p,"catalog")!="DEMO" &&
+    items(p,"variants").len()==1 &&
+    items(p,"variants").iter().all(|v|field(v,"source")!="DEMO")
+}
 fn validate_product_ids(state:&Value,ids:&[Value],rep:&str)->Result<(),String>{
     if ids.len()<2{
         return Err("모델군에는 등록된 상품이 2개 이상 있어야 합니다.".into())
@@ -20,10 +25,7 @@ fn validate_product_ids(state:&Value,ids:&[Value],rep:&str)->Result<(),String>{
     let all=items(state,"products");
     if ids.iter().any(|id|{
         let Some(id)=id.as_str()else{return true};
-        !all.iter().any(|p|field(p,"id")==id&&
-            registered(p)&&field(p,"catalog")!="DEMO" &&
-            items(p,"variants").len()==1 &&
-            items(p,"variants").iter().all(|v|field(v,"source")!="DEMO"))
+        !all.iter().any(|p|field(p,"id")==id && eligible_product(p))
     }){
         return Err("등록된 독립 판매 상품만 모델군에 추가할 수 있습니다.".into())
     }
@@ -69,6 +71,12 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("현재 상태가 없습니다.")?;
     match operation{
         "validate_model_groups"=>{validate(state)?;Ok(json!({"valid":true}))},
+        "eligible_model_group_product_ids"=>{
+            Ok(json!(items(state,"products").iter()
+                .filter(|p|eligible_product(p))
+                .map(|p|field(p,"id"))
+                .filter(|id|!id.is_empty()).collect::<Vec<_>>()))
+        },
         "validate_model_group_products"=>{
             validate_product_ids(state,items(payload,"productIds"),
                 field(payload,"representativeProductId"))?;
@@ -80,6 +88,23 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn eligible_ids_share_exact_validator_rules_and_exclude_demo_or_multi_sale(){
+        let state=json!({"products":[
+            {"id":"ok","active":true,"catalog":"BANDOSTAND",
+                "variants":[{"id":"v1","source":"MANUAL"}]},
+            {"id":"demo","active":true,"catalog":"DEMO",
+                "variants":[{"id":"v2","source":"DEMO"}]},
+            {"id":"two","active":true,"catalog":"BANDOSTAND",
+                "variants":[{"id":"a","source":"MANUAL"},{"id":"b","source":"MANUAL"}]},
+            {"id":"deleted","active":false,"catalog":"BANDOSTAND",
+                "variants":[{"id":"v3","source":"MANUAL"}]}
+        ]});
+        let ids=execute("eligible_model_group_product_ids",&json!({"state":state.clone()})).unwrap();
+        assert_eq!(ids,json!(["ok"]));
+        let bad=validate_product_ids(&state,&[json!("ok"),json!("demo")],"ok");
+        assert!(bad.is_err());
+    }
     #[test]
     fn two_products_of_same_color_but_distinct_prices_can_group(){
         let state=json!({"products":[
