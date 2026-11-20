@@ -315,6 +315,7 @@ pub struct ExcelManager{
     sort_queue:Option<Sort>,
     sort_history:Option<Sort>,
     history_detail:Option<String>,
+    managed_queue:Option<String>,
     open_order:Option<String>,
     open_settings:bool,
     pending_confirmation:Option<PendingConfirmation>,
@@ -326,6 +327,7 @@ impl ExcelManager{
             preview:None,error:None,notice:None,tab:Tab::Factory,
             query:String::new(),selected:BTreeSet::new(),
             sort_queue:None,sort_history:None,history_detail:None,
+            managed_queue:None,
             open_order:None,open_settings:false,
             pending_confirmation:None,
         };
@@ -468,6 +470,7 @@ impl ExcelManager{
                 self.selected.clear();self.query.clear();
                 self.sort_history=None;self.sort_queue=None;
                 self.history_detail=None;
+                self.managed_queue=None;
             }
         }
         ui.add_space(theme::SPACE_16);
@@ -476,6 +479,7 @@ impl ExcelManager{
         let mut open_daily=false;
         let mut open_history=None;
         let mut workflow_action:Option<(String,String,String,String)>=None;
+        let mut manage_clicked=None;
         let mut open_order=None;
         let mut copy_path=None;
             let mut go_settings=false;
@@ -634,32 +638,10 @@ impl ExcelManager{
                                     theme::ButtonRole::TableSecondary,true).clicked(){
                                     open_order=Some(entry.order_id().to_owned());
                                 }
-                                // The existing React management disclosure
-                                // includes actual freight, restore, store-sent.
-                                // Only verified native actions may appear here.
-                                if selectable && text(&entry.order,"orderType")!="RETAIL" {
-                                    if theme::action(buttons,"이관 복구",
-                                        theme::ButtonRole::TableSecondary,
-                                        !busy&&self.gateway.excel_write_enabled()
-                                    ).clicked(){
-                                        workflow_action=Some((
-                                            "restore_shipment".into(),
-                                            text(&entry.shipment,"id").to_owned(),
-                                            id.clone(),self.tab.origin().into()
-                                        ));
-                                    }
-                                }
-                                if selectable && self.tab==Tab::Store {
-                                    if theme::action(buttons,"발송 확인",
-                                        theme::ButtonRole::TableSecondary,
-                                        !busy&&self.gateway.excel_write_enabled()
-                                    ).clicked(){
-                                        workflow_action=Some((
-                                            "mark_store_sent".into(),
-                                            text(&entry.shipment,"id").to_owned(),
-                                            id.clone(),self.tab.origin().into()
-                                        ));
-                                    }
+                                if selectable && theme::action(
+                                    buttons,"관리",theme::ButtonRole::TableSecondary,true
+                                ).clicked(){
+                                    manage_clicked=Some(id.clone());
                                 }
                             });
                     }
@@ -667,6 +649,42 @@ impl ExcelManager{
                 if let Some(checked)=toggle_all{
                     if checked{self.selected=visible;}
                     else{self.selected.clear();}
+                }
+                if let Some(id)=manage_clicked.take(){
+                    self.managed_queue=if self.managed_queue.as_deref()==Some(&id){
+                        None
+                    }else{Some(id)};
+                }
+                if let Some(id)=self.managed_queue.as_deref(){
+                    if let Some(entry)=records.iter().find(|r|!r.legacy&&r.id()==id){
+                        theme::management_list_strip_frame().show(section,|details|{
+                            details.horizontal(|line|{
+                                line.label(typography::subsection_heading("관리"));
+                                if text(&entry.order,"orderType")!="RETAIL"{
+                                    if theme::action(line,"이관 복구",
+                                        theme::ButtonRole::Standard,
+                                        !busy&&self.gateway.excel_write_enabled()
+                                    ).clicked(){
+                                        workflow_action=Some((
+                                            "restore_shipment".into(),
+                                            text(&entry.shipment,"id").into(),
+                                            id.into(),self.tab.origin().into()
+                                        ));
+                                    }
+                                }
+                                if self.tab==Tab::Store&&theme::action(
+                                    line,"매장 발송 확인",theme::ButtonRole::Standard,
+                                    !busy&&self.gateway.excel_write_enabled()
+                                ).clicked(){
+                                    workflow_action=Some((
+                                        "mark_store_sent".into(),
+                                        text(&entry.shipment,"id").into(),
+                                        id.into(),self.tab.origin().into()
+                                    ));
+                                }
+                            });
+                        });
+                    }
                 }
                 if records.is_empty()&&self.receiver.is_none(){
                     section.add_space(theme::SPACE_8);
