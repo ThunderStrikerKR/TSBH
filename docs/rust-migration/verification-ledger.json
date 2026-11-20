@@ -2822,6 +2822,39 @@
         "notApplicable": "카카오톡 실물 도킹/외부 창 이동, 수취인·품목 UI 배치와 운임 규칙 수정: this slice keeps those paths unchanged.",
         "pending": "Scoped Rust cargo check and DB-backed action evidence; production confirmed order client mutation (only current isolated preview + opt-in existing working commit path); subsequent source/recipient/product/price/freight feature migration."
       }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-CLIENT-AUTO-02",
+      "scope": "발주서 접수 2단계: Rust 자동 거래처 매칭 → 검증된 원주문 변경·가격 계산",
+      "status": "SOURCE_PATCHED_STATIC_PASS_EXECUTION_PENDING",
+      "description": "React SourceDocument의 붙여넣기→auto_match_reception_client→change_order_client 및 Native chooser 흐름 대조. 기존 egui는 Rust 후보 ID를 AUTO로 바로 저장하고 주문 변경·재계산을 호출하지 않아, 추천과 검증 완료를 혼동함. egui 메인 화면에 PendingAutomaticClient를 추가하여 native_order_change::prepare의 change_order_client→merge_reception_analysis→reprice_order→calculate_price가 성공한 뒤에만 AUTO와 견적을 미확정 작업본에 저장. 운영 DB가 명시되지 않은 경우 기존 독립 ID 검증만 수행하고 가격은 미확정. 분석 요청/원문/접수 유형/작업 ID/Kakao HWND 및 제목/후보ID/직원 MANUAL 선택과 맞지 않는 비동기 응답은 폐기하며, 실패 시 분석·후보를 보존하고 비차단 오류 안내. 운영 DB 직접 쓰기는 없음. 표시용 분석과 실제 고객별 재인식 증거 동기화, 저장된 견적 revision 확인, 실제 DB roundtrip은 미완료.",
+      "evidence": [
+        "src/SourceDocument.tsx",
+        "src/orders/useOrderDesk.tsx",
+        "src/ClientChooser.tsx",
+        "src/styles/receipt-layout.css",
+        "src-tauri/src/business_core/catalog_clients/title_clients.rs",
+        "egui-app/src/reception_service.rs",
+        "egui-app/src/native_order_change.rs",
+        "egui-app/src/gateway.rs",
+        "egui-app/src/main.rs",
+        "egui-app/src/source_autosave.rs",
+        "egui-app/src/preview_store.rs",
+        "docs/egui-ui-design-contract.md"
+      ],
+      "gates": {
+        "patch": "PASS: guarded native automatic link c5dea6b3a580ded3aa017762844bb7a0b7bba821; UI proposed-vs-applied state 140ecacdb030e4d3840c455fc1b3bfdc2a70d43d; design contract 083015d6af542917fb2cd7ddd8bb8bb0e77fea9d.",
+        "static": "PASS: exact source path inspected, Rust business ownership preserved, native adapter reused, source request token and HWND/title identity guarded, manual dealer selection cancels auto, price stored only on native success.",
+        "unit": "NOT EXECUTED: isolated and opt-in DB auto client action scenarios not run.",
+        "action": "NOT EXECUTED: actual DB save/reload and native quote result not observed.",
+        "ci": "NOT VERIFIED on current latest commit; GitHub workflow status checked separately.",
+        "windows": "SKIPPED as instructed by user."
+      },
+      "clauses": {
+        "applicable": "0-1~0-7, 5-15, 24-26, 38-46, 47-54, 57-61",
+        "notApplicable": "Kakao docking layout; product/management/freight sections; modal placement unchanged.",
+        "pending": "Targeted cargo check and DB action; native customer-specific alias evidence UI sync; persisted quote revision revalidation."
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
