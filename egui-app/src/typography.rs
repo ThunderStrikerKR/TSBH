@@ -246,6 +246,40 @@ pub fn table_header_galley(
     let job = egui::text::LayoutJob::single_section(text.to_owned(), format);
     ui.fonts_mut(|fonts| fonts.layout_job(job))
 }
+/// Measured text for tightly packed client directory rows. Unlike egui
+/// labels inside fixed subcells, a galley can be painted at the exact same
+/// left coordinate as the column header without implicit centering.
+fn client_table_galley(
+    ui: &egui::Ui, text: &str, role: Role, emphasis: bool, color: Color32,
+) -> std::sync::Arc<egui::Galley> {
+    let style=spec(role);
+    let font_family=if emphasis {
+        FontFamily::Name(EMPHASIS_FAMILY.into())
+    } else {
+        FontFamily::Proportional
+    };
+    let format=egui::TextFormat {
+        font_id: FontId::new(style.size,font_family),
+        color,
+        extra_letter_spacing: style.tracking,
+        line_height: Some(style.line),
+        ..Default::default()
+    };
+    ui.fonts_mut(|fonts|fonts.layout_job(
+        egui::text::LayoutJob::single_section(text.to_owned(),format)
+    ))
+}
+pub fn client_table_cell_galley(
+    ui: &egui::Ui, text: &str, emphasized: bool,
+) -> std::sync::Arc<egui::Galley> {
+    client_table_galley(ui,text,Role::TableCell,emphasized,TEXT)
+}
+pub fn client_table_metadata_galley(
+    ui: &egui::Ui, text: &str, color: Color32,
+) -> std::sync::Arc<egui::Galley> {
+    client_table_galley(ui,text,Role::Metadata,false,color)
+}
+
 pub fn table_cell(text: &str) -> RichText { render(text, Role::TableCell) }
 pub fn summary_value(text: &str) -> RichText { render(text, Role::SummaryValue) }
 pub fn quantity(text: &str) -> RichText { render(text, Role::Quantity) }

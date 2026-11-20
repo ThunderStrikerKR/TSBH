@@ -631,31 +631,33 @@ pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
     pressed
 }
 
-/// Price tier badge is visual only. Rust catalog owns the actual trade tier.
-fn client_tier_badge(ui:&mut Ui,label:&str,tier:&str) {
-    let (background,foreground)=match tier {
+/// The tier palette belongs to the shared design system. Badge geometry is
+/// painted inside the client column and cannot expand the row's layout.
+fn client_tier_colors(tier:&str)->(Color32,Color32) {
+    match tier {
         "wholesale"=>(theme::CLIENT_TIER_WHOLESALE_BG,theme::CLIENT_TIER_WHOLESALE_TEXT),
         "semi"=>(theme::CLIENT_TIER_SEMI_BG,theme::CLIENT_TIER_SEMI_TEXT),
         "retail"=>(theme::CLIENT_TIER_RETAIL_BG,theme::CLIENT_TIER_RETAIL_TEXT),
         "special"=>(theme::CLIENT_TIER_SPECIAL_BG,theme::CLIENT_TIER_SPECIAL_TEXT),
         _=>(theme::RAISED,theme::SECONDARY),
-    };
-    egui::Frame::new()
-        .fill(background)
-        .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
-        // One-line client rows need a small inline chip rather than a
-        // near full-height block. Keep tier color and 12pt metadata type.
-        .inner_margin(egui::Margin::symmetric(
-            theme::SPACE_4 as i8, (theme::SPACE_4 / 2.0) as i8
-        ))
-        .show(ui,|badge|{
-            badge.label(typography::caption(label).color(foreground));
-        });
+    }
 }
 
-/// React client directory: 30/38/32 columns, now one visual line per
-/// client. Keep the name, optional invoice name, address, contacts, tier and
-/// terms in their original columns; clipped values have full hover text.
+/// Paint a measured text line at a literal left boundary. The header and
+/// values call the same helper, so layout alignment never depends on egui's
+/// Label allocation/halign behavior inside a wide subcell.
+fn paint_client_line(
+    ui:&Ui,cell:Rect,x:f32,galley:std::sync::Arc<egui::Galley>,color:Color32
+) {
+    let y=cell.center().y-galley.size().y/2.0;
+    ui.painter().with_clip_rect(cell).galley(
+        egui::pos2(x,y),galley,color
+    );
+}
+
+/// Three React-derived client columns (30/38/32), with the heading and all
+/// data anchored at identical left edges. Every client occupies one row.
+/// Address/alias/contact text clips inside its own region without wrapping.
 pub fn management_row(
     ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],heading:bool,tier:Option<&str>
 ) -> Response {
@@ -672,74 +674,94 @@ pub fn management_row(
         [rect.left_bottom(),rect.right_bottom()],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
     );
+
     let mut x=rect.left();
     for (i,(primary,secondary)) in columns.iter().enumerate() {
         let col_width=rect.width()*theme::MANAGEMENT_CLIENT_COLS[i];
-        let cell=Rect::from_min_size(
+        let cell=Rect::from_min_max(
             egui::pos2(x+theme::SPACE_12,rect.top()),
-            Vec2::new((col_width-theme::SPACE_24).max(1.0),height)
+            egui::pos2(x+col_width-theme::SPACE_12,rect.bottom())
         );
-        ui.scope_builder(
-            egui::UiBuilder::new().id_salt(("management-row-column",row_id,i))
-                .max_rect(cell).layout(Layout::left_to_right(Align::Center)),
-            |inner|{
-                inner.set_clip_rect(cell);
-                inner.spacing_mut().item_spacing.x=theme::SPACE_8;
-                if heading {
-                    inner.add(egui::Label::new(
-                        typography::table_header(primary)
-                    ).truncate().halign(Align::Min)).on_hover_text(*primary);
-                }else if i==2 {
-                    if let Some(tier)=tier {
-                        client_tier_badge(inner,primary,tier);
-                    }else{
-                        inner.add(egui::Label::new(
-                            typography::table_cell(primary)
-                        ).truncate()).on_hover_text(*primary);
-                    }
-                    if !secondary.is_empty() {
-                        inner.add(egui::Label::new(
-                            typography::caption(secondary)
-                        ).truncate()).on_hover_text(*secondary);
-                    }
-                }else if secondary.is_empty() || primary.is_empty() {
-                    let visible=if primary.is_empty(){secondary}else{primary};
-                    // React always emphasizes the dealer's primary name,
-                    // including when there is no separate invoice name.
-                    let label=if i==0 && !primary.is_empty() {
-                        typography::table_cell(visible).strong()
-                    }else{
-                        typography::table_cell(visible)
-                    };
-                    inner.add(egui::Label::new(label).truncate())
-                        .on_hover_text(*visible);
-                }else{
-                    // The address stays ahead of its contact, just as in
-                    // React, but neither field is allowed to wrap. Reserve
-                    // a readable slice for phone numbers instead of letting
-                    // a long street address conceal them.
-                    let first_share=if i==1 {0.69}else{0.64};
-                    let first_width=(cell.width()-theme::SPACE_8).max(1.0)*first_share;
-                    let second_width=(cell.width()-theme::SPACE_8-first_width).max(1.0);
-                    inner.add_sized(
-                        Vec2::new(first_width,height),
-                        egui::Label::new(
-                            if i==0 {
-                                typography::table_cell(primary).strong()
-                            }else{
-                                typography::table_cell(primary)
-                            }
-                        ).truncate().halign(Align::Min)
-                    ).on_hover_text(*primary);
-                    inner.add_sized(
-                        Vec2::new(second_width,height),
-                        egui::Label::new(
-                            typography::caption(secondary)
-                        ).truncate().halign(Align::Min)
-                    ).on_hover_text(*secondary);
-                }
+        // In particular, heading '발송인 정보' and the first address
+        // glyph both start at cell.left(), never at its centered label rect.
+        if heading {
+            paint_client_line(
+                ui,cell,cell.left(),typography::table_header_galley(ui,primary),
+                theme::SECONDARY
+            );
+        }else if i==2 {
+            // Inline tier badge: intrinsic text width + 4pt horizontal and
+            // 2pt vertical inset. No full-width or full-height badge block.
+            let (fill,ink)=client_tier_colors(tier.unwrap_or(""));
+            let badge_text=typography::client_table_metadata_galley(ui,primary,ink);
+            let badge_width=(badge_text.size().x+theme::SPACE_8).min(cell.width());
+            let badge_height=badge_text.size().y+theme::SPACE_4;
+            let badge=Rect::from_min_size(
+                egui::pos2(cell.left(),cell.center().y-badge_height/2.0),
+                Vec2::new(badge_width,badge_height)
+            );
+            ui.painter().rect_filled(badge,theme::CONTROL_RADIUS as f32,fill);
+            paint_client_line(
+                ui,badge,cell.left()+theme::SPACE_4,badge_text,ink
+            );
+            if !secondary.is_empty() {
+                let second=Rect::from_min_max(
+                    egui::pos2((badge.right()+theme::SPACE_8).min(cell.right()),cell.top()),
+                    cell.max
+                );
+                paint_client_line(
+                    ui,second,second.left(),
+                    typography::client_table_metadata_galley(ui,secondary,theme::MUTED),
+                    theme::MUTED
+                );
             }
-        );
+        }else if primary.is_empty() || secondary.is_empty() {
+            let visible=if primary.is_empty(){secondary}else{primary};
+            if !visible.is_empty() {
+                let galley=if primary.is_empty() {
+                    typography::client_table_metadata_galley(ui,visible,theme::MUTED)
+                }else{
+                    typography::client_table_cell_galley(ui,visible,i==0)
+                };
+                paint_client_line(
+                    ui,cell,cell.left(),galley,
+                    if primary.is_empty(){theme::MUTED}else{theme::TEXT}
+                );
+            }
+        }else{
+            // Only the *second* datum is offset. Primary text always uses
+            // the exact header start and is not centered within its share.
+            let available=(cell.width()-theme::SPACE_8).max(0.0);
+            let first_width=available*if i==1 {0.69}else{0.64};
+            let first=Rect::from_min_size(
+                cell.min,Vec2::new(first_width,cell.height())
+            );
+            let second=Rect::from_min_max(
+                egui::pos2((first.right()+theme::SPACE_8).min(cell.right()),cell.top()),
+                cell.max
+            );
+            paint_client_line(
+                ui,first,first.left(),
+                typography::client_table_cell_galley(ui,primary,i==0),
+                theme::TEXT
+            );
+            paint_client_line(
+                ui,second,second.left(),
+                typography::client_table_metadata_galley(ui,secondary,theme::MUTED),
+                theme::MUTED
+            );
+        }
+        // Keep full, unclipped information accessible without changing the
+        // row-wide click-to-edit behavior or inserting extra visible controls.
+        if !heading {
+            let full=if secondary.is_empty(){primary.to_string()}
+                else if primary.is_empty(){secondary.to_string()}
+                else{format!("{primary} / {secondary}")};
+            if !full.is_empty() {
+                let hover_id=ui.make_persistent_id(("management-row-hover",row_id,i));
+                ui.interact(cell,hover_id,Sense::hover()).on_hover_text(full);
+            }
+        }
         x+=col_width;
     }
     response
