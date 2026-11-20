@@ -99,7 +99,7 @@ fn order_client(row:&Value)->&str{
 fn display_client_name(name:&str)->String{
     name.chars().take(10).collect()
 }
-fn order_items_single_line(row:&Value,expanded:bool)->String{
+fn order_items_single_line(row:&Value)->String{
     let items=rows(&row["recipients"]).iter()
         .flat_map(|recipient|rows(&recipient["items"]).iter())
         .map(|item|format!("{EXCEL_ITEM_MARKER}{} × {}",
@@ -107,9 +107,8 @@ fn order_items_single_line(row:&Value,expanded:bool)->String{
             item["quantity"].as_i64().map(|quantity|quantity.to_string())
                 .unwrap_or_else(||"수량 미확인".to_owned())))
         .collect::<Vec<_>>();
-    let lead=if expanded{"▾"}else{"▸"};
-    if items.is_empty(){format!("{lead} 품목 없음")}
-    else{format!("{lead} {}",items.join("  "))}
+    if items.is_empty(){"품목 없음".to_owned()}
+    else{items.join("  ")}
 }
 fn tracking_metadata(state:&Value)->Value{
     Value::Array(rows(&state["workflow"]["shipments"]).iter().map(|ship|{
@@ -402,8 +401,33 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .on_hover_text(order_client(row));
             // Main list: ONLY product name × quantity, all items in one line.
             // Click anywhere except the action button to expand all details.
-            let summary=order_items_single_line(row,expanded.contains(id));
-            paint_text(ui,columns[2],&summary,true,false);
+            let summary=order_items_single_line(row);
+            // Draw the disclosure indicator as geometry, not as a font glyph.
+            // Windows fonts may render ▸/▾ as an empty square.
+            let center=egui::pos2(columns[2].left()+11.0,columns[2].center().y);
+            let corners=if expanded.contains(id) {
+                vec![
+                    egui::pos2(center.x-4.0,center.y-2.0),
+                    egui::pos2(center.x+4.0,center.y-2.0),
+                    egui::pos2(center.x,center.y+3.0),
+                ]
+            }else{
+                vec![
+                    egui::pos2(center.x-2.0,center.y-4.0),
+                    egui::pos2(center.x-2.0,center.y+4.0),
+                    egui::pos2(center.x+3.0,center.y),
+                ]
+            };
+            ui.painter().with_clip_rect(columns[2].intersect(area)).add(
+                egui::Shape::convex_polygon(corners,theme::SECONDARY,Stroke::NONE)
+            );
+            // Preserve the existing column boundaries and row height; only
+            // reserve room for the icon inside the product cell.
+            let summary_rect=Rect::from_min_max(
+                egui::pos2(columns[2].left()+14.0,columns[2].top()),
+                columns[2].right_bottom()
+            );
+            paint_text(ui,summary_rect,&summary,true,false);
             let open_area=Rect::from_min_max(
                 rect.left_top(),egui::pos2(columns[6].left(),rect.bottom())
             ).intersect(area);
@@ -1365,10 +1389,8 @@ mod tests{
             {"items":[{"name":"BD 709","quantity":2},{"name":"Desk TS","quantity":1}]},
             {"items":[{"name":"GT","quantity":3}]}
         ]});
-        assert_eq!(order_items_single_line(&sample,false),
-            "▸ ◆ 709 × 2  ◆ Desk TS × 1  ◆ GT × 3");
-        assert_eq!(order_items_single_line(&sample,true),
-            "▾ ◆ 709 × 2  ◆ Desk TS × 1  ◆ GT × 3");
+        assert_eq!(order_items_single_line(&sample),
+            "◆ 709 × 2  ◆ Desk TS × 1  ◆ GT × 3");
         assert_eq!(model_label("BD 709 / 블랙"),"709 / 블랙");
         assert_eq!(won(&Value::Null),"확인 필요");
         let leap=NaiveDate::from_ymd_opt(2024,2,1).unwrap();
