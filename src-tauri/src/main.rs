@@ -6,9 +6,6 @@ fn main() {
     if std::env::args().any(|arg| arg == "--bando-egui-reception-commit") {
         std::process::exit(bando_hub_tauri_lib::run_egui_reception_commit());
     }
-    if std::env::args().any(|arg| arg == "--bando-egui-settings-patch") {
-        std::process::exit(bando_hub_tauri_lib::run_egui_settings_patch());
-    }
     if std::env::args().any(|arg| arg == "--bando-egui-settings-data") {
         std::process::exit(bando_hub_tauri_lib::run_egui_settings_data());
     }
