@@ -298,6 +298,23 @@ pub fn workspace_shell_frame() -> Frame {
         })
 }
 
+/// Reception alone has a uniform 6pt outer gutter on its top, right and
+/// bottom. The left KakaoTalk reserve continues flush with the workspace
+/// edge; management pages keep their previous shell geometry. All four
+/// reception panes share this one inset, preserving internal splitter hit
+/// widths, independent saved ratios and KakaoTalk's measured HWND slot.
+pub fn reception_workspace_frame() -> Frame {
+    Frame::new()
+        .fill(CANVAS)
+        .stroke(Stroke::NONE)
+        .inner_margin(egui::Margin {
+            left: 0,
+            right: PANEL_GAP as i8,
+            top: PANEL_GAP as i8,
+            bottom: PANEL_GAP as i8,
+        })
+}
+
 /// Return reception panes to the Settings-inspired PANEL card tier.
 /// No outer margin: the 6pt splitter hit area is the only reserved gutter.
 /// Compensate the 1pt outline in inner margins so 16pt horizontal and 8pt
