@@ -124,7 +124,7 @@ impl ProductSearch{
         let mut chosen=None;
         let mut changed=false;
         components::modal_window("상품 검색","native-manual-product-search",work_area)
-            .resizable(true)
+            
             .default_width(theme::MANUAL_SEARCH_DIALOG_WIDTH
                 .min((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP).max(0.0)))
             .constrain_to(work_area)
