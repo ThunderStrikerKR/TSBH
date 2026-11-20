@@ -374,6 +374,7 @@ impl ClientManager {
                 egui::Sense::hover()
             );
             let mut chosen=None;
+            let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
                     .id_salt("client-management-table-rows")
@@ -402,6 +403,7 @@ impl ClientManager {
                                 table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT
                             )
                         );
+                        first_row_left.get_or_insert(row_rect.left());
                         table.scope_builder(
                             egui::UiBuilder::new()
                                 .id_salt(("client-management-fixed-row",index))
@@ -470,7 +472,9 @@ impl ClientManager {
                     }
                 }
             );
-            let header_left=header_rect.left()-scroll_output.state.offset.x;
+            let header_left=first_row_left.unwrap_or(
+                header_rect.left()-scroll_output.state.offset.x
+            );
             if let Some(column)=components::management_client_header(
                 section,header_rect,header_left,table_width,self.sort
             ){
