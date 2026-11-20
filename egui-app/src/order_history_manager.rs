@@ -507,6 +507,7 @@ impl OrderHistoryManager {
         }
     }
     pub fn show_page(&mut self,ui:&mut Ui){
+        let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=theme::management_scroll_style();
         self.poll();
         ui.horizontal(|heading|{
@@ -515,7 +516,10 @@ impl OrderHistoryManager {
         });
         ui.add_space(theme::SPACE_12);
         let mut changed=false;
+        components::align_management_primary_card(ui,page_origin_y);
+        let card_min_height=components::management_primary_card_min_inner_height(ui);
         theme::management_list_frame().show(ui,|section|{
+            components::fill_management_primary_card(section,card_min_height);
             theme::management_list_strip_frame().show(section,|toolbar|{
                 toolbar.horizontal(|tools|{
                     tools.spacing_mut().item_spacing.x=theme::SPACE_8;
