@@ -16,7 +16,7 @@ permissions:
   contents: read
 concurrency:
   group: egui-native-targeted-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   tauri-cli-windows-check:
     runs-on: windows-latest
