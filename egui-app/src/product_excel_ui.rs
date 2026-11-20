@@ -226,13 +226,9 @@ impl ProductExcelUi {
             .default_width(work_area.width().min(1070.0))
             .show(ctx,|ui|{
                 ui.set_min_width(work_area.width().min(900.0));
-                ui.horizontal(|header|{
-                    header.label(typography::section_heading("상품 전체 Excel 변경 검토"));
-                    header.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                        if theme::action(buttons,"닫기",theme::ButtonRole::Quiet,
-                            !self.busy()).clicked(){close=true;}
-                    });
-                });
+                close=components::modal_header(
+                    ui,"상품 전체 Excel 변경 검토","취소",!self.busy()
+                );
                 ui.label(typography::table_cell(&self.filename));
                 ui.horizontal_wrapped(|counts|{
                     for (title,value) in [
@@ -337,14 +333,15 @@ impl ProductExcelUi {
             components::modal_backdrop(ctx,"egui-product-excel-confirm-backdrop",true);
             let mut cancel=false;
             let mut approve=false;
-            components::modal_window("상품 변경사항 반영",
+            components::decision_window("상품 변경사항 반영",
                 "egui-product-excel-confirm",work_area).show(ctx,|modal|{
+                cancel=components::modal_header(
+                    modal,"상품 변경사항 반영","취소",!self.busy()
+                );
                 modal.label(typography::table_cell(&format!(
                     "신규 상품 {adds}개, 상품 정보 및 가격 수정 {updates}개를 반영할까요? Excel에서 누락된 상품은 그대로 유지합니다."
                 )));
-                modal.horizontal(|buttons|{
-                    if theme::action(buttons,"취소",theme::ButtonRole::Quiet,
-                        !self.busy()).clicked(){cancel=true;}
+                modal.with_layout(Layout::right_to_left(Align::Center),|buttons|{
                     if theme::action(buttons,"반영",theme::ButtonRole::Primary,
                         self.can_apply()&&can_edit).clicked(){approve=true;}
                 });
