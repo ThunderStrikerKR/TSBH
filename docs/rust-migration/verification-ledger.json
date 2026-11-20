@@ -1020,7 +1020,7 @@
             "S09 PATCH: display raw group current fields, not normalized editableRule status",
             "S10 PATCH: modal Save/Discard/Cancel and global/subtab leave-guard saving rate then pending assignment"
           ],
-          "compilation": "PASS: https://github.com/ThunderStrikerKR/TSBH/actions/runs/44652949560 (Tauri executable and egui cargo check). Later changes require independent recheck.",
+          "compilation": "PASS: https://github.com/ThunderStrikerKR/TSBH/actions/runs/44653185696 (Tauri executable and egui cargo check, source commit 61d9dd680fc64320992cc41e60109d5aaf5f743b). Subsequent unrelated UI file changes may require a fresh compile.",
           "action": "NOT_RUN (operational SQLite writes explicitly forbidden in this scope)",
           "files": [
             "egui-app/src/freight_manager.rs",
@@ -1089,7 +1089,9 @@
               "Not the CLI environment-variable/stdin subprocess end-to-end path",
               "Not live production file",
               "No Windows GUI and no sticky header behavioral verification"
-            ]
+            ],
+            "testResult": "1 passed; 0 failed; 263 filtered out; 1.12s (Windows GitHub Actions job log)",
+            "runConclusion": "SUCCESS"
           }
         }
       },
