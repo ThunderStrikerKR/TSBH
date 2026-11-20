@@ -1544,14 +1544,64 @@ impl FreightManager {
             for (i,title) in titles.iter().enumerate(){
                 if !title.is_empty(){
                     let region=header_cells[i];
-                    let galley=typography::freight_table_header_galley(section,title);
-                    header_painter.with_clip_rect(header_rect.intersect(region)).galley(
+                    let label=typography::freight_table_header_galley(section,title);
+                    let indicator=FreightSort::column_at(i).map(|column|{
+                        // Always display a sort affordance, including before
+                        // any column is selected. Only one column is active.
+                        let current=sort.filter(|value|value.column==column);
+                        let (glyph,color)=match current.map(|state|state.direction){
+                            Some(FreightSortDirection::Ascending)=>("▲",theme::SELECTION),
+                            Some(FreightSortDirection::Descending)=>("▼",theme::SELECTION),
+                            None=>("↕",theme::MUTED),
+                        };
+                        let visible=region.intersect(header_rect);
+                        if visible.width()>0.0 && visible.height()>0.0 {
+                            let next=FreightSort::next(*sort,column);
+                            let tooltip=match next.map(|value|value.direction){
+                                Some(FreightSortDirection::Ascending)=>"오름차순 정렬",
+                                Some(FreightSortDirection::Descending)=>"내림차순 정렬",
+                                None=>"기본 순서로 복귀",
+                            };
+                            let response=section.interact(
+                                visible,section.make_persistent_id(("freight-sort-column",i)),
+                                egui::Sense::click()
+                            ).on_hover_text(tooltip);
+                            if response.clicked(){
+                                *sort=next;
+                                // Header appears after virtual rows in this
+                                // layout; apply the new order next frame.
+                                section.ctx().request_repaint();
+                            }
+                            if response.hovered(){
+                                header_painter.rect_stroke(
+                                    visible.shrink(1.0),2.0,
+                                    egui::Stroke::new(1.0,theme::BORDER),
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
+                        }
+                        (typography::freight_table_header_galley(section,glyph),color)
+                    });
+                    let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};
+                    let arrow_width=indicator.as_ref().map_or(0.0,|(g,_)|g.size().x);
+                    let total_width=label.size().x+gap+arrow_width;
+                    let left=region.center().x-total_width/2.0;
+                    let ink=header_painter.with_clip_rect(header_rect.intersect(region));
+                    ink.galley(
                         egui::pos2(
-                            region.center().x-galley.size().x/2.0,
-                            region.center().y-galley.size().y/2.0
+                            left,region.center().y-label.size().y/2.0
                         ),
-                        galley,theme::SECONDARY
+                        label.clone(),theme::SECONDARY
                     );
+                    if let Some((arrow,color))=indicator{
+                        ink.galley(
+                            egui::pos2(
+                                left+label.size().x+gap,
+                                region.center().y-arrow.size().y/2.0
+                            ),
+                            arrow,color
+                        );
+                    }
                 }
                 if i<5 {
                     let edge=header_cells[i].right()
