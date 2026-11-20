@@ -1067,10 +1067,10 @@ pub fn management_dropdown(
 /// this action so menus don't remain open after immediate per-row autosave.
 pub fn management_dropdown_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str
-){
-    if ui.selectable_value(current,value,label).clicked(){
-        ui.close();
-    }
+)->Response {
+    let response=ui.selectable_value(current,value,label);
+    if response.clicked(){ui.close();}
+    response
 }
 
 /// Shared management tab roles (content width, no full-page stretching).
