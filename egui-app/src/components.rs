@@ -240,6 +240,7 @@ pub fn modal_backdrop(
     let area=egui::Area::new(egui::Id::new(id))
         .order(if nested {egui::Order::Foreground}else{egui::Order::Middle})
         .fixed_pos(viewport.min)
+        .movable(false)
         // The backdrop cannot rise above the dialog after an outside click.
         .interactable(false)
         .sense(egui::Sense::hover());
