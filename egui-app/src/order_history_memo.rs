@@ -74,7 +74,7 @@ pub fn save(expected_revision:u64,shipment_id:&str,memo:&str)
         .and_then(|ships|ships.iter().find(|item|
             item["id"].as_str()==Some(shipment_id)));
     if stored.and_then(|row|row["managementMemo"].as_str())!=Some(memo) ||
-       stored.and_then(|row|row["managementMemoUpdatedAt"].as_str())!=Some(&updated_at){
+       stored.and_then(|row|row["managementMemoUpdatedAt"].as_str())!=Some(updated_at.as_str()){
         return Err("저장 후 관리 메모와 갱신시각을 확인하지 못했습니다. 목록을 새로고침하세요.".into());
     }
     Ok(json!({
