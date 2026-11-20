@@ -866,6 +866,23 @@
         }
       ],
       "eguiFreightMigration": {
+        "groupManagementUi58": {
+          "date": "2026-11-20",
+          "scope": "운임 관리 > 배송 그룹 관리: 승인된 배송 그룹 편성 화면의 관리 표/정보 밀도 계약 적용",
+          "patchCommits": [
+            "1ba87bfac116a483124d6335bf7ef679d5d89151",
+            "d980dbfe20950bcd7cc109cb936bf28321efbc54",
+            "d994d198e93ce023955ceb85f4418755a8be3f22",
+            "7be66c36eeb8c07bd8dae55511304b79011be8c7"
+          ],
+          "files": ["egui-app/src/freight_manager.rs", "egui-app/src/theme.rs"],
+          "patch": "CODE_COMMITTED: duplicate group edit list and grid unified; shared fixed 36pt header/42pt virtual rows, solid non-floating scroll, six columns, aligned values, per-row group actions, 3-state sort. No shipping command/SQLite changes.",
+          "static": "PASS SCOPED: React ShippingManager.tsx and shipping.css, latest egui assignment reference, management UI contract and current Rust group read/write path reviewed; create, edit, rename, delete and basis-change event routes retained.",
+          "action": "NOT_EXECUTED: live native UI and DB writes excluded; command names/routes statically retained.",
+          "ci": "PENDING: targeted GitHub egui compilation for latest patch commit not yet confirmed; do not treat this as build pass.",
+          "windows": "SKIPPED: user-approved no-Windows-GUI policy.",
+          "assessment": "PATCHED_STATIC_REVIEWED; compilation and real appearance not verified, do not label completed."
+        },
         "scope": "2026-11-20 grouped freight assignment/rates and individual fallback; latest source and explicit user instructions",
         "status": "P1_P2_SCOPED_BUILD_AND_ISOLATED_SQLITE_PASS_UI_PARITY_PARTIAL",
         "existingReference": [
