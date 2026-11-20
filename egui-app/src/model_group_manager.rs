@@ -412,14 +412,14 @@ impl ModelGroupManager {
                                     else{"변경사항 없음"}
                                 }else{&self.status}));
                                 footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                                    if theme::action(buttons,"닫기",
-                                        theme::ButtonRole::Standard,!busy).clicked(){
-                                        self.request_exit(Exit::Close);
-                                    }
                                     if self.dirty()&&theme::action(buttons,
                                         if busy{"저장 중"}else{"변경사항 저장"},
                                         theme::ButtonRole::Primary,writable&&!busy).clicked(){
                                         save=true;
+                                    }
+                                    if theme::action(buttons,"닫기",
+                                        theme::ButtonRole::Standard,!busy).clicked(){
+                                        self.request_exit(Exit::Close);
                                     }
                                 });
                             });
