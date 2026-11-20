@@ -118,6 +118,10 @@ pub trait BandoGateway: Send + Sync {
     fn patch_settings(&self,_changes:Value,_expected:Value)->Result<Value,String>{
         Err("이 연결은 설정 저장을 지원하지 않습니다.".into())
     }
+    fn model_group_write_enabled(&self)->bool {false}
+    fn patch_model_groups(&self,_groups:Value,_expected:Value)->Result<Value,String>{
+        Err("이 연결에서는 모델군 저장을 지원하지 않습니다.".into())
+    }
     fn settings_data(&self,_operation:&str,_filename:Option<&str>)->Result<Value,String>{
         Err("이 연결은 업무 감사 기록·백업을 지원하지 않습니다.".into())
     }
@@ -174,7 +178,12 @@ impl BandoGateway for LocalGateway {
             .is_some_and(|value| !value.is_empty())
         {
             let full = crate::business_state::load()?;
-            let (clients, settings) = crate::client_directory::project_index(&full)?;
+            let (clients, mut settings) = crate::client_directory::project_index(&full)?;
+            // Model-group settings are safe catalog metadata, not client
+            // contacts. Retain the REAL settings field for native CAS rather
+            // than the client-index-only projection.
+            settings["colorGuidanceGroups"]=full["settings"]
+                .get("colorGuidanceGroups").cloned().unwrap_or(Value::Null);
             return Ok(serde_json::json!({
                 "revision":full.get("revision"),
                 "products":full.get("products"),
@@ -211,6 +220,29 @@ impl BandoGateway for LocalGateway {
     }
     fn patch_settings(&self,changes:Value,expected:Value)->Result<Value,String>{
         crate::settings_store::patch(changes,expected)
+    }
+    fn model_group_write_enabled(&self)->bool{
+        crate::settings_store::writable_business()
+    }
+    fn patch_model_groups(&self,groups:Value,expected:Value)->Result<Value,String>{
+        if !self.model_group_write_enabled(){
+            return Err("모델군 설정 변경 권한이 없습니다.".into());
+        }
+        if !groups.is_object() {
+            return Err("모델군 목록은 객체여야 합니다.".into());
+        }
+        // React ColorGuidanceManager: full operating SQLite manual backup
+        // BEFORE the per-field CAS settings_patch. Never bypass Tauri.
+        self.settings_data("backup",None)?;
+        self.patch_settings(
+            serde_json::json!({"colorGuidanceGroups":groups}),
+            serde_json::json!({"colorGuidanceGroups":expected})
+        )?;
+        let catalog=self.load_catalog()?;
+        if catalog["settings"].get("colorGuidanceGroups").is_none(){
+            return Err("모델군 저장 후 상태를 다시 확인할 수 없습니다.".into());
+        }
+        Ok(catalog)
     }
     fn settings_data(&self,operation:&str,filename:Option<&str>)->Result<Value,String>{
         crate::settings_store::data(operation,filename)
