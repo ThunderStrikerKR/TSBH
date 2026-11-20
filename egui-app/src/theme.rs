@@ -267,6 +267,12 @@ pub const FREIGHT_ASSIGNMENT_ROW_HEIGHT: f32 = 42.0;
 // Six columns plus five 8pt gaps: 902 + 40 = 942pt.
 // Any extra width is shared by product name and category.
 pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 = 942.0;
+// Shipping-group management has its own six-column grid. These proportions
+// reserve all four existing per-group actions in a single 42pt row, and keep
+// numeric/status columns readable without copying the assignment widths.
+pub const FREIGHT_RATE_COL_WIDTHS: [f32;6] =
+    [195.0,130.0,195.0,105.0,240.0,360.0];
+pub const FREIGHT_RATE_TABLE_MIN_WIDTH:f32 = 1265.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
 // The three-column dealer list has its own content minimum (30/38/32).
 // Do not force freight/product's 1320pt table width onto the client list.
