@@ -1585,7 +1585,14 @@ impl FreightManager {
                     let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};
                     let arrow_width=indicator.as_ref().map_or(0.0,|(g,_)|g.size().x);
                     let total_width=label.size().x+gap+arrow_width;
-                    let left=region.center().x-total_width/2.0;
+                    // Text columns share the same 6pt leading inset as
+                    // freight_assignment_text() in each body cell. The
+                    // group selector and action columns remain centered.
+                    let left=if matches!(i,1|2|3) {
+                        region.left()+6.0
+                    }else{
+                        region.center().x-total_width/2.0
+                    };
                     let ink=header_painter.with_clip_rect(header_rect.intersect(region));
                     ink.galley(
                         egui::pos2(
