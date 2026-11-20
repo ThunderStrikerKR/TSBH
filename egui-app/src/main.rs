@@ -621,7 +621,7 @@ impl BandoEgui {
                     ) {
                         row.client_id=Some(result.client_id);
                         row.client_selection=Some("MANUAL".into());
-                        row.pricing_preview=Some(result.pricing_preview);
+                        row.pricing_preview=result.pricing_preview;
                         row.manual_model=None;
                         row.working_synced=false;
                         row.analysis_raw=None;
