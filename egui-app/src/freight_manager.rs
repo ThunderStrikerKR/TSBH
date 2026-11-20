@@ -308,6 +308,7 @@ impl FreightManager {
         self.busy() || self.has_other_modal() || self.requested_tab.is_some()
     }
     pub fn has_rate_modal(&self)->bool{self.rate_editor.is_some()}
+    pub fn last_error(&self)->Option<&str>{self.error.as_deref()}
 
     pub fn discard_drafts(&mut self){
         self.pending.clear();
