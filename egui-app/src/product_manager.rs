@@ -605,8 +605,7 @@ impl ProductManager {
             self.query.clear();
             self.reload(ui.ctx().clone());
         }
-        // Match the Freight management tab-to-content spacing.
-        ui.add_space(theme::SPACE_16);
+        ui.add_space(theme::SPACE_12);
         let can_edit=self.gateway.product_write_enabled()
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
         let saving=self.writing.is_some()||self.excel.busy();
