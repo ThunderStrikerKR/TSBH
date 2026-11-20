@@ -430,14 +430,13 @@ impl ClientManager {
             // Match Freight Assignment's header + independently scrolling
             // 42pt rows. Header x coordinates follow the scroll offset;
             // scrolling vertically never hides or moves column names.
-            let viewport_width=section.available_width().max(1.0);
-            let gutter=section.spacing().scroll.allocated_width()+theme::SPACE_4;
-            let table_width=(viewport_width-gutter)
-                .max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
-            let (header_rect,_)=section.allocate_exact_size(
-                egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
-                egui::Sense::hover()
+            // Read the existing list-card gutter and 36pt pinned header
+            // from the shared SSOT helper; keep the approved 900pt minimum.
+            let layout=components::management_existing_list_table_header(
+                section,theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH
             );
+            let table_width=layout.table_width;
+            let header_rect=layout.header_rect;
             let mut chosen=None;
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
