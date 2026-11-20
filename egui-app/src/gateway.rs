@@ -175,6 +175,11 @@ pub trait BandoGateway: Send + Sync {
         -> Result<Value,String>{
         Err("이 연결에서는 운영 상품 변경을 지원하지 않습니다.".into())
     }
+    /// Export product workbook to the configured, dated Excel archive.
+    /// Download is read-only with respect to the business DB.
+    fn archive_product_workbook(&self)->Result<String,String>{
+        Err("이 연결에서는 상품 Excel 보관함 저장을 지원하지 않습니다.".into())
+    }
     /// Preview the parsed product workbook using the original native catalog engine.
     fn preview_product_workbook(&self,_source:Value)->Result<Value,String>{
         Err("상품 Excel 변경 검토를 지원하지 않는 연결입니다.".into())
@@ -372,6 +377,12 @@ impl BandoGateway for LocalGateway {
         if let Some(id)=id{crate::excel_service::open_directory(id)}
         else if let Some(origin)=origin{crate::excel_service::open_daily(origin)}
         else{Err("열어 볼 Excel 폴더를 선택하세요.".into())}
+    }
+    fn archive_product_workbook(&self)->Result<String,String>{
+        let state=self.load_business_state()?;
+        let bytes=crate::product_excel::export(&state)?;
+        let path=crate::excel_service::archive_product_workbook(&state,&bytes)?;
+        Ok(path.to_string_lossy().to_string())
     }
     fn preview_product_workbook(&self,source:Value)->Result<Value,String>{
         if source.to_string().len()>40_000_000{
