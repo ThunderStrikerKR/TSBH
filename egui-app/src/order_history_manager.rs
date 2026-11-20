@@ -72,6 +72,12 @@ fn seoul_date(raw:&str)->String{
     raw.get(..10).filter(|date|NaiveDate::parse_from_str(date,"%Y-%m-%d").is_ok())
         .unwrap_or("").to_owned()
 }
+fn memo_last_updated_label(raw:&str)->String{
+    DateTime::parse_from_rfc3339(raw).ok()
+        .map(|stamp|stamp.with_timezone(&FixedOffset::east_opt(9*3600).unwrap())
+            .format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_else(||"기록 없음".to_owned())
+}
 fn move_date(value:&str,step:i64)->String{
     let fallback=seoul_today();
     let base=if value.is_empty(){fallback.as_str()}else{value};
@@ -142,6 +148,7 @@ struct MemoEditor {
     expected_revision:Option<u64>,
     original:String,
     draft:String,
+    updated_at:String,
 }
 struct MemoSaveJob {
     shipment_id:String,
@@ -670,6 +677,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                                 expected_revision:snapshot.state["revision"].as_u64(),
                                 original:memo_text.to_owned(),
                                 draft:memo_text.to_owned(),
+                                updated_at:field(ship,"managementMemoUpdatedAt").to_owned(),
                             });
                         }
                     }
@@ -1082,19 +1090,22 @@ impl OrderHistoryManager {
             .default_width(520.0_f32.min(work_area.width()))
             .show(ctx,|ui|{
                 cancel=components::modal_header(ui,"관리 메모","취소",!busy);
-                ui.label(typography::caption(
-                    "현재 발송 건에만 적용되는 내부 관리 메모입니다."
-                ));
-                ui.add_space(theme::SPACE_8);
                 if let Some(editor)=self.memo_editor.as_mut(){
-                    ui.add_enabled_ui(!busy,|fields|{
-                        fields.add_sized(
-                            Vec2::new(fields.available_width(),136.0),
-                            egui::TextEdit::multiline(&mut editor.draft)
-                                .desired_rows(5)
-                                .hint_text("관리 메모를 입력하세요")
-                        );
-                    });
+                    ui.label(typography::caption(&format!(
+                        "마지막 갱신: {}",
+                        memo_last_updated_label(&editor.updated_at)
+                    )));
+                    ui.add_space(theme::SPACE_8);
+                    // Use the full modal content width. The former nested
+                    // enabled UI could shrink the TextEdit to a narrow slot.
+                    // Twelve visible lines make this a real memo editor.
+                    let editor_width=ui.available_width().max(1.0);
+                    ui.add_enabled(!busy,
+                        egui::TextEdit::multiline(&mut editor.draft)
+                            .desired_width(editor_width)
+                            .desired_rows(12)
+                            .hint_text("관리 메모를 입력하세요")
+                    );
                     ui.label(typography::caption(&format!(
                         "{} / 2,000자",editor.draft.chars().count()
                     )));
@@ -1656,6 +1667,9 @@ mod tests{
     #[test]
     fn seoul_date_move_and_read_only_projection_labels(){
         assert_eq!(seoul_date("2026-11-19T16:00:00Z"),"2026-11-20");
+        assert_eq!(memo_last_updated_label("2026-11-20T16:30:00+00:00"),
+            "2026-11-21 01:30");
+        assert_eq!(memo_last_updated_label(""),"기록 없음");
         assert_eq!(move_date("2026-11-01",-1),"2026-10-31");
         assert_eq!(HistoryDateBasis::Reception.key(),"RECEPTION");
         assert_eq!(HistoryDateBasis::Payment.label(),"입금일 기준");
