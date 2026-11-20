@@ -752,7 +752,7 @@ impl CategoryManager {
                                         .on_hover_text(&location_path);
                                 });
                                 components::flexible_text_field(modal,&mut self.new_name,
-                                    theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 분류 이름");
+                                    theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 하위 분류 이름");
                                 let count=direct_count(catalog,&current.id);
                                 if count>0{
                                     modal.checkbox(&mut self.transfer,
