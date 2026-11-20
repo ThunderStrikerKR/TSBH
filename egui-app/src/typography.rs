@@ -310,6 +310,28 @@ pub fn freight_table_cell_galley(
     client_table_galley(ui,text,Role::Body,emphasized,color)
 }
 
+/// Order-history shipment details use the same table font with true
+/// measured wrapping. The row height is derived from THIS galley, so a long
+/// product list never overlaps the next shipment.
+pub fn freight_table_wrapped_galley(
+    ui:&egui::Ui,text:&str,max_width:f32,
+)->std::sync::Arc<egui::Galley>{
+    let style=spec(Role::Body);
+    let format=egui::TextFormat{
+        font_id:FontId::new(
+            style.size,FontFamily::Name(EMPHASIS_FAMILY.into())
+        ),
+        color:TEXT,
+        extra_letter_spacing:style.tracking,
+        line_height:Some(style.line),
+        ..Default::default()
+    };
+    let mut job=egui::text::LayoutJob::single_section(text.to_owned(),format);
+    job.wrap.max_width=max_width.max(1.0);
+    job.wrap.break_anywhere=true;
+    ui.fonts_mut(|fonts|fonts.layout_job(job))
+}
+
 /// Exact left-anchored category tree name glyphs. Do not place a Label in
 /// a full-width allocation: egui may center its text inside that rectangle.
 /// Both root and non-root names retain their existing typography role.
