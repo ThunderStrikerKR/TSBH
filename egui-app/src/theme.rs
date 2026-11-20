@@ -100,7 +100,9 @@ pub const RECIPIENT_PHONE_LABEL_WIDTH: f32 = 32.0;
 pub const RECIPIENT_LABEL_GAP: f32 = 6.0;
 pub const RECIPIENT_ROW_GAP: f32 = 6.0;
 pub const RECIPIENT_PHONE_COLUMN_GAP: f32 = 8.0;
-pub const RECIPIENT_PHONE_STACK_BELOW: f32 = 330.0;
+// Minimum combined width that fits both contact labels and telephone inputs.
+// Narrow panes scroll the contact row; the labels never wrap into two rows.
+pub const RECIPIENT_PHONE_ROW_MIN_WIDTH: f32 = 420.0;
 pub const PANEL_GAP: f32 = 6.0;
 // Kakao dock toolbar: one compact row (2pt vertical gap around 22pt controls).
 // Only its body rect is passed to the Win32 dock.
