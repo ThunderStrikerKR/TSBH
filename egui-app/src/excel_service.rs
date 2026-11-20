@@ -239,7 +239,8 @@ pub fn workflow_action(
     }
     let shipment_reads=crate::gateway::rules::execute("read_shipments",
         json!({"state":&fresh}))?;
-    Ok(json!({"state":fresh,"shipmentReads":shipment_reads,"action":action}))
+    Ok(json!({"state":fresh,"shipmentReads":shipment_reads,
+        "action":action,"queueId":queue_id,"shipmentId":shipment_id}))
 }
 
 pub fn open_file(id:&str)->Result<(),String>{
