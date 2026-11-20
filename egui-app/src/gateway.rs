@@ -325,9 +325,9 @@ impl BandoGateway for LocalGateway {
             return Err("운영 운임을 변경할 수 있는 연결이 아닙니다.".into());
         }
         let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .filter(|value|!value.is_empty())
+            .filter(|value|!value.is_empty()).map(std::path::PathBuf::from)
             .ok_or("운영 DB 경로가 지정되지 않았습니다.")?;
-        if !std::path::Path::new(&path).is_file(){
+        if !path.is_file(){
             return Err("운영 DB 파일이 없습니다.".into());
         }
         // Preserve the existing helper's request-size contract.
