@@ -17,6 +17,10 @@ use std::{
 };
 
 const ROW_HEIGHT: f32 = theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
+// Keep one logical row per entry and reserve two points above/below each
+// row for an individual full-width block. No extra virtual rows.
+const ROW_BLOCK_INSET: f32 = theme::SPACE_4 * 0.5;
+const EXCEL_ITEM_MARKER: &str = "◆ ";
 const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
 // Compact fixed-width metadata columns; the shipping / product column takes
@@ -98,14 +102,14 @@ fn display_client_name(name:&str)->String{
 fn order_items_single_line(row:&Value,expanded:bool)->String{
     let items=rows(&row["recipients"]).iter()
         .flat_map(|recipient|rows(&recipient["items"]).iter())
-        .map(|item|format!("{} × {}",
+        .map(|item|format!("{EXCEL_ITEM_MARKER}{} × {}",
             model_label(field(item,"name")),
             item["quantity"].as_i64().map(|quantity|quantity.to_string())
                 .unwrap_or_else(||"수량 미확인".to_owned())))
         .collect::<Vec<_>>();
     let lead=if expanded{"▾"}else{"▸"};
     if items.is_empty(){format!("{lead} 품목 없음")}
-    else{format!("{lead} {}",items.join(" / "))}
+    else{format!("{lead} {}",items.join("  "))}
 }
 fn tracking_metadata(state:&Value)->Value{
     Value::Array(rows(&state["workflow"]["shipments"]).iter().map(|ship|{
@@ -156,6 +160,56 @@ enum HistoryLine {
     // Exactly one expanded row per recipient, aligned to the seven columns
     // of the parent order. No second item/transport row or billing footer.
     Recipient(usize,usize),
+}
+
+// Date-column tree branches use stable parent/recipient indices rather than
+// nearby virtual rows, so sorting and partial scrolling never mix orders.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum HistoryBranch { Root, Continue, Last }
+fn history_branch(line:HistoryLine,snapshot:&HistorySnapshot,
+    expanded:&BTreeSet<String>)->Option<HistoryBranch>{
+    match line {
+        HistoryLine::Order(index)=>{
+            let row=&snapshot.rows[index];
+            (expanded.contains(field(&row["order"],"id")) &&
+                !rows(&row["recipients"]).is_empty())
+                .then_some(HistoryBranch::Root)
+        },
+        HistoryLine::Recipient(index,recipient_index)=>{
+            let count=rows(&snapshot.rows[index]["recipients"]).len();
+            if count==0 || recipient_index>=count {None}
+            else if recipient_index+1==count {Some(HistoryBranch::Last)}
+            else {Some(HistoryBranch::Continue)}
+        },
+    }
+}
+fn paint_history_branch(ui:&Ui,row_rect:Rect,widths:&[f32;7],
+    branch:HistoryBranch){
+    let painter=ui.painter().with_clip_rect(row_rect.intersect(ui.clip_rect()));
+    // The last 12pt of the reception-date cell is blank even when a
+    // YYYY-MM-DD is present; do not displace the date or column divider.
+    let x=row_rect.left()+widths[0]-theme::SPACE_12;
+    let center=row_rect.center().y;
+    let stroke=Stroke::new(1.25,theme::MUTED);
+    match branch{
+        HistoryBranch::Root=>{
+            painter.circle_filled(egui::pos2(x,center),2.0,theme::MUTED);
+            painter.line_segment([
+                egui::pos2(x,center),egui::pos2(x,row_rect.bottom())],stroke);
+        },
+        HistoryBranch::Continue=>{
+            painter.line_segment([
+                egui::pos2(x,row_rect.top()),egui::pos2(x,row_rect.bottom())],stroke);
+            painter.line_segment([
+                egui::pos2(x,center),egui::pos2(x+theme::SPACE_8,center)],stroke);
+        },
+        HistoryBranch::Last=>{
+            painter.line_segment([
+                egui::pos2(x,row_rect.top()),egui::pos2(x,center)],stroke);
+            painter.line_segment([
+                egui::pos2(x,center),egui::pos2(x+theme::SPACE_8,center)],stroke);
+        },
+    }
 }
 fn display_lines(snapshot:&HistorySnapshot,expanded:&BTreeSet<String>,
     sorting:Option<Sort>)->Vec<HistoryLine>{
@@ -264,13 +318,13 @@ fn history_recipient_products(row:&Value,recipient_index:usize)->String{
     // This table cell contains ONLY original item names and quantities.
     let recipient=&row["recipients"][recipient_index];
     let products=rows(&recipient["items"]).iter().map(|item|{
-        format!("{} × {}",
+        format!("{EXCEL_ITEM_MARKER}{} × {}",
             field(item,"name"),
             item["quantity"].as_i64().map(|n|n.to_string())
                 .unwrap_or_else(||"수량 미확인".to_owned()))
     }).collect::<Vec<_>>();
     if products.is_empty(){"상품 정보 없음".to_owned()}
-    else{products.join("  /  ")}
+    else{products.join("  ")}
 }
 fn history_recipient_product_notes(row:&Value,recipient_index:usize)->String{
     let recipient=&row["recipients"][recipient_index];
@@ -1015,30 +1069,42 @@ impl OrderHistoryManager {
                             .layout(egui::Layout::top_down(Align::Min)),|row_ui|{
                                 row_ui.allocate_exact_size(
                                     Vec2::new(table_width,ROW_HEIGHT),Sense::hover());
+                                // Each fixed-height row is one separate
+                                // horizontal block; all seven column positions
+                                // and the scrollbar's coordinate space stay put.
+                                let block_rect=row_rect.shrink2(
+                                    Vec2::new(1.0,ROW_BLOCK_INSET));
                                 let background=match line{
-                                    HistoryLine::Order(_)=>{
-                                        if line_index%2==0{theme::PANEL}
-                                        else{theme::TABLE_ROW_ALT_BG}
+                                    HistoryLine::Order(order_index)=>{
+                                        if order_index%2==0{theme::TABLE_ROW_ALT_BG}
+                                        else{theme::INPUT}
                                     },
-                                    // Expanded recipient rows are subordinate
-                                    // to the parent order: use the darkest
-                                    // existing surface tier, never the brighter
-                                    // selected workflow card background.
-                                    HistoryLine::Recipient(_,_)=>theme::CANVAS,
+                                    // Recipient blocks retain a quieter tier
+                                    // than the parent order block.
+                                    HistoryLine::Recipient(_,_)=>theme::PANEL,
                                 };
-                                row_ui.painter().rect_filled(row_rect,0.0,background);
-                                row_ui.painter().line_segment(
-                                    [row_rect.left_bottom(),row_rect.right_bottom()],
-                                    Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER));
+                                row_ui.painter().rect_filled(
+                                    row_rect,0.0,theme::CANVAS);
+                                row_ui.painter().rect(
+                                    block_rect,theme::WORKFLOW_CHIP_RADIUS as f32,
+                                    background,Stroke::new(1.0,theme::DIVIDER),
+                                    egui::StrokeKind::Inside
+                                );
                                 if let Some(snapshot)=snapshot {
                                     draw_line(row_ui,row_rect,line,snapshot,
                                         &self.expanded,&widths,&mut pending_toggle);
                                 }
+                                // Column rules terminate at the block edge;
+                                // they do not fill the small gaps between rows.
                                 paint_column_dividers(
-                                    row_ui,row_rect,&widths,
-                                    false,
-                                    row_rect
+                                    row_ui,block_rect,&widths,false,block_rect
                                 );
+                                if let Some(snapshot)=snapshot {
+                                    if let Some(branch)=history_branch(
+                                        line,snapshot,&self.expanded) {
+                                        paint_history_branch(row_ui,row_rect,&widths,branch);
+                                    }
+                                }
                             });
                     }
                     // No virtual rows are inserted for an empty result;
@@ -1173,8 +1239,14 @@ mod tests{
             HistoryLine::Recipient(0,0),
             HistoryLine::Recipient(0,1)
         ]);
+        assert_eq!(history_branch(HistoryLine::Order(0),&snapshot,&expanded),
+            Some(HistoryBranch::Root));
+        assert_eq!(history_branch(HistoryLine::Recipient(0,0),&snapshot,&expanded),
+            Some(HistoryBranch::Continue));
+        assert_eq!(history_branch(HistoryLine::Recipient(0,1),&snapshot,&expanded),
+            Some(HistoryBranch::Last));
         assert_eq!(history_recipient_products(&snapshot.rows[0],0),
-            "BD 709 / 블랙 × 4  /  뮤직 트레이 × 1");
+            "◆ BD 709 / 블랙 × 4  ◆ 뮤직 트레이 × 1");
         assert_eq!(history_recipient_logistics(&snapshot,"o1","r1"),
             ("3,500원".to_owned(),"123456789".to_owned()));
         assert_eq!(history_recipient_logistics(&snapshot,"o1","r2"),
@@ -1249,9 +1321,9 @@ mod tests{
             {"items":[{"name":"GT","quantity":3}]}
         ]});
         assert_eq!(order_items_single_line(&sample,false),
-            "▸ 709 × 2 / Desk TS × 1 / GT × 3");
+            "▸ ◆ 709 × 2  ◆ Desk TS × 1  ◆ GT × 3");
         assert_eq!(order_items_single_line(&sample,true),
-            "▾ 709 × 2 / Desk TS × 1 / GT × 3");
+            "▾ ◆ 709 × 2  ◆ Desk TS × 1  ◆ GT × 3");
         assert_eq!(model_label("BD 709 / 블랙"),"709 / 블랙");
         assert_eq!(won(&Value::Null),"확인 필요");
         let leap=NaiveDate::from_ymd_opt(2024,2,1).unwrap();
