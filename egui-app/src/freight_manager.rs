@@ -722,25 +722,34 @@ impl FreightManager {
             !self.save_dirty(ui.ctx().clone()) {
             self.saving_for_tab=false;
         }
-        ui.horizontal(|heading|{
-            heading.label(typography::page_heading("운임 관리"));
-            settings_help::icon(heading,"운임 관리");
-            if let Some(state)=self.state.as_ref(){
-                heading.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),|right|{
-                        right.label(typography::caption(&format!(
-                            "운임 기준 {}",
-                            state["shipping"]["epoch"].as_i64().unwrap_or(1)
-                        )));
-                    });
-            }
+        // The workspace shell already provides 6pt above this page.
+        // Add only the missing amount: heading top is 16pt below the
+        // global navigation, not 16pt ON TOP of the shell's existing 6pt.
+        ui.add_space((theme::SPACE_16-theme::PANEL_GAP).max(0.0));
+        freight_top_content(ui,|top|{
+            top.horizontal(|heading|{
+                heading.label(typography::page_heading("운임 관리"));
+                settings_help::icon(heading,"운임 관리");
+                if let Some(state)=self.state.as_ref(){
+                    heading.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),|right|{
+                            right.label(typography::caption(&format!(
+                                "운임 기준 {}",
+                                state["shipping"]["epoch"].as_i64().unwrap_or(1)
+                            )));
+                        });
+                }
+            });
         });
         ui.add_space(theme::SPACE_12);
-        if let Some(index) = components::management_tabs(ui, &[
-            ("배송 그룹 편성", self.tab == FreightTab::Groups, true),
-            ("배송 그룹 관리", self.tab == FreightTab::Rates, true),
-            ("조합 / 기준 이력", self.tab == FreightTab::History, true),
-        ]) {
+        let selected_tab=freight_top_content(ui,|top|
+            components::management_tabs(top, &[
+                ("배송 그룹 편성", self.tab == FreightTab::Groups, true),
+                ("배송 그룹 관리", self.tab == FreightTab::Rates, true),
+                ("조합 / 기준 이력", self.tab == FreightTab::History, true),
+            ])
+        );
+        if let Some(index) = selected_tab {
             if !self.has_other_modal() && !self.busy() &&
                 self.requested_tab.is_none() {
                 let next=FreightTab::ALL[index];
@@ -771,17 +780,19 @@ impl FreightManager {
             let id = text(p, "shippingGroupId");
             !id.is_empty() && groups.iter().any(|g| text(g, "id") == id)
         }).count();
-        // Keep all summary cards at their intrinsic width, starting at the
-        // left edge. A narrow pane wraps whole cards rather than stretching
-        // every card to one quarter of a very wide workspace.
-        ui.horizontal_wrapped(|strip|{
-            strip.spacing_mut().item_spacing=egui::vec2(
-                theme::SPACE_8,theme::SPACE_8
-            );
-            summary(strip,"등록 상품",products.len());
-            summary(strip,"그룹 지정 완료",assigned);
-            summary(strip,"그룹 미지정",products.len()-assigned);
-            summary(strip,"배송 그룹",groups.len());
+        // KPI cards follow the same 16pt content guide as the page heading
+        // and sub-tabs. Their individual 228pt widths and 8pt gaps stay intact.
+        // On narrow panes the four complete cards still wrap, never compress.
+        freight_top_content(ui,|top|{
+            top.horizontal_wrapped(|strip|{
+                strip.spacing_mut().item_spacing=egui::vec2(
+                    theme::SPACE_8,theme::SPACE_8
+                );
+                summary(strip,"등록 상품",products.len());
+                summary(strip,"그룹 지정 완료",assigned);
+                summary(strip,"그룹 미지정",products.len()-assigned);
+                summary(strip,"배송 그룹",groups.len());
+            });
         });
         // One 16pt boundary between the stats strip and the next section.
         // show_groups() must not add a second top margin on top of this.
@@ -2642,6 +2653,20 @@ fn freight_history_table(
         [header_rect.left_bottom(),header_rect.right_bottom()],
         egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
     );
+}
+
+/// Only Freight management currently trials the 16pt page-title inset.
+/// The heading, all three sub-tabs and four KPI cards share the same left
+/// guide as the content INSIDE the 16pt section frame. This intentionally
+/// leaves the section frame's OUTER border at the shared 59th-round anchor.
+/// Keeping the inset local avoids moving Reception or other management pages.
+fn freight_top_content<R>(ui:&mut Ui,add:impl FnOnce(&mut Ui)->R)->R{
+    egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(theme::SECTION_PADDING as i8,0))
+        .show(ui,|inset|{
+            inset.set_min_width(inset.available_width());
+            add(inset)
+        }).inner
 }
 
 /// Render one of four independent KPI cards. Visual hierarchy is deliberately
