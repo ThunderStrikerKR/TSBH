@@ -218,7 +218,7 @@ impl BandoGateway for LocalGateway {
         // is migrated. The model-family SAVE no longer uses settings CLI.
         self.product_write_enabled() &&
         crate::settings_store::writable_business() &&
-        crate::settings_store::backup_helper_available()
+        crate::settings_store::data_service_available()
     }
     fn patch_model_groups(&self,groups:Value,expected:Value)->Result<Value,String>{
         if !self.model_group_write_enabled(){
