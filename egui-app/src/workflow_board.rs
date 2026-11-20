@@ -122,7 +122,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                     "state":&state,"orderId":order_id,
                 }))?;
                 let total=field(&preview,"total").as_i64();
-                order_totals.insert(order_id,total);
+                order_totals.insert(order_id.clone(),total);
                 total
             };
             display_shipments.push(ShipmentRow{
