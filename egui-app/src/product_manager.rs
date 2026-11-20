@@ -814,32 +814,31 @@ impl ProductManager {
             let original_spacing=panel.spacing().item_spacing.y;
             panel.spacing_mut().item_spacing.y=0.0;
             panel.spacing_mut().scroll=theme::management_scroll_style();
-            let viewport_width=panel.available_width().max(1.0);
-            let gutter=panel.spacing().scroll.allocated_width()+theme::SPACE_4;
             let option_width=theme::PRODUCT_TABLE_OPTION_WIDTH;
             let price_width=if self.price_mode{
                 theme::PRODUCT_TABLE_EDIT_PRICE_WIDTH
             }else{theme::PRODUCT_TABLE_PRICE_WIDTH};
             let action_width=theme::PRODUCT_TABLE_ACTION_WIDTH;
             let gap=theme::SPACE_8;
-            let min_width=theme::PRODUCT_TABLE_NAME_MIN_WIDTH+option_width
-                +3.0*price_width+action_width+5.0*gap;
-            let table_width=(viewport_width-gutter)
-                .max(theme::PRODUCT_TABLE_MIN_WIDTH).max(min_width);
-            let name_width=table_width-option_width
-                -3.0*price_width-action_width-5.0*gap;
-            let widths=[name_width,option_width,price_width,
-                price_width,price_width,action_width];
+            let base=[theme::PRODUCT_TABLE_NAME_MIN_WIDTH,option_width,
+                price_width,price_width,price_width,action_width];
+            let min_width=base.iter().sum::<f32>()+5.0*gap;
+            // Preserve the actual price-editing minimum and existing
+            // scrollbar gap while using one central table calculator.
+            let layout=components::management_existing_list_table_header(
+                panel,theme::PRODUCT_TABLE_MIN_WIDTH.max(min_width)
+            );
+            let table_width=layout.table_width;
+            let widths=theme::management_single_stretch_columns(
+                base,table_width,gap,0
+            );
             let headings=["상품명 / 상품설명","색상/옵션","도매가",
                 "반도매가","소매가","상세"];
             let selection_locked=self.has_pending_prices();
             let ordered=product_sort_order(
                 &self.products,&self.selected_variants,self.sort
             );
-            let (header_rect,_)=panel.allocate_exact_size(
-                Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
-                Sense::hover()
-            );
+            let header_rect=layout.header_rect;
             let mut row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
