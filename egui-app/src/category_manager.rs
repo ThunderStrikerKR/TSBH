@@ -430,7 +430,6 @@ impl CategoryManager {
             ));
             panel.add_space(theme::SPACE_8);
             panel.horizontal_wrapped(|search|{
-                search.label(typography::field_label("카테고리 검색"));
                 components::flexible_text_field(search,&mut self.query,
                     theme::CATALOG_SEARCH_WIDTH,"카테고리 이름 또는 전체 경로 검색");
             });
