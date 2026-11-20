@@ -280,12 +280,20 @@ pub fn section_frame() -> Frame {
 /// four panes and window edges. One shared thin frame joins the existing
 /// splitter strokes; all internal pane proportions and hit regions stay put.
 pub fn workspace_shell_frame() -> Frame {
-    // The global navigation already defines the top edge. A second frame
-    // stroke drew an unwanted divider immediately underneath the navbar.
+    // Match the 6pt CANVAS gutter between reception sections beneath the
+    // global navigation too. No extra separator stroke: all four pane tops
+    // (including the native KakaoTalk slot) share this same y offset.
+    // The layout receives the remaining height after this top inset, so
+    // saved splitter ratios and native HWND region measurement remain valid.
     Frame::new()
         .fill(CANVAS)
         .stroke(Stroke::NONE)
-        .inner_margin(0)
+        .inner_margin(egui::Margin {
+            left: 0,
+            right: 0,
+            top: PANEL_GAP as i8,
+            bottom: 0,
+        })
 }
 
 /// Return reception panes to the Settings-inspired PANEL card tier.
