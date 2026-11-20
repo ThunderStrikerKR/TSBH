@@ -672,10 +672,9 @@ impl CategoryManager {
                             body.add_enabled_ui(
                                 editable && !busy && !is_root(&current.id),
                                 |field_ui|{
+                                    let input_width=field_ui.available_width();
                                     components::flexible_text_field(
-                                        field_ui,&mut self.name,
-                                        field_ui.available_width(),
-                                        "분류 이름"
+                                        field_ui,&mut self.name,input_width,"분류 이름"
                                     );
                                 }
                             );
@@ -752,27 +751,40 @@ impl CategoryManager {
                     if let Some(current)=self.current(&cats){
                         match operation{
                             Operation::Add=>{
+                                // Freight composition reference: identify the
+                                // target first, then group the actual input,
+                                // and keep the mandatory consent as its own
+                                // clearly separated information block.
                                 let location_path=path_text(&cats,&current.id);
                                 modal.label(typography::field_label("생성 위치"));
-                                // Use the full modal width for the path, rather
-                                // than splitting one line with the location label.
+                                let path_width=modal.available_width();
                                 let visible=typography::fit_category_path(
-                                    modal,&location_path,modal.available_width(),
+                                    modal,&location_path,path_width,
                                     typography::CategoryPathFont::Body
                                 );
                                 modal.add(egui::Label::new(
                                     typography::body(&visible)
                                 ).truncate()).on_hover_text(&location_path);
-                                components::flexible_text_field(modal,&mut self.new_name,
-                                    theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 하위 분류 이름");
+                                modal.add_space(theme::SPACE_12);
+                                components::soft_divider(modal);
+                                modal.add_space(theme::SPACE_12);
+                                let input_width=modal.available_width();
+                                components::flexible_text_field(
+                                    modal,&mut self.new_name,input_width,
+                                    "새 하위 분류 이름"
+                                );
                                 let count=direct_count(catalog,&current.id);
                                 if count>0{
-                                    modal.checkbox(&mut self.transfer,
-                                        if children(&cats,&current.id).is_empty(){
-                                            format!("직접 연결된 상품 {count}개를 새 하위 분류로 이전하는 데 동의합니다.")
-                                        }else{
-                                            format!("기존 직접 연결 상품 {count}개는 현재 분류에 남습니다. 하위 분류 추가를 확인했습니다.")
-                                        });
+                                    modal.add_space(theme::SPACE_12);
+                                    theme::modal_nested_frame().show(modal,|notice|{
+                                        notice.checkbox(&mut self.transfer,
+                                            if children(&cats,&current.id).is_empty(){
+                                                format!("직접 연결된 상품 {count}개를 새 하위 분류로 이전하는 데 동의합니다.")
+                                            }else{
+                                                format!("기존 직접 연결 상품 {count}개는 현재 분류에 남습니다. 하위 분류 추가를 확인했습니다.")
+                                            }
+                                        );
+                                    });
                                 }
                             }
                             Operation::Move=>{
@@ -817,26 +829,32 @@ impl CategoryManager {
                         };
                     }
                     modal.add_space(theme::SPACE_16);
+                    components::soft_divider(modal);
+                    modal.add_space(theme::SPACE_8);
                     modal.horizontal(|actions|{
-                        cancel=theme::action(actions,"취소",
-                            theme::ButtonRole::Standard,!busy).clicked();
-                        submit=theme::action(actions,
-                            match operation{
-                                Operation::Add=>"분류 생성",
-                                Operation::Move=>"위치 변경",
-                                Operation::Delete=>"분류 삭제",
-                            },
-                            if operation==Operation::Delete{
-                                theme::ButtonRole::Danger
-                            }else{theme::ButtonRole::Primary},
-                            editable&&!busy && match operation{
-                                Operation::Add=>!self.new_name.trim().is_empty()
-                                    && (self.current(&cats).is_some_and(|cur|
-                                        direct_count(catalog,&cur.id)==0)||self.transfer),
-                                Operation::Move=>!self.target.is_empty(),
-                                Operation::Delete=>true,
+                        actions.with_layout(
+                            Layout::right_to_left(Align::Center),|right|{
+                                submit=theme::action(right,
+                                    match operation{
+                                        Operation::Add=>"분류 생성",
+                                        Operation::Move=>"위치 변경",
+                                        Operation::Delete=>"분류 삭제",
+                                    },
+                                    if operation==Operation::Delete{
+                                        theme::ButtonRole::Danger
+                                    }else{theme::ButtonRole::Primary},
+                                    editable&&!busy && match operation{
+                                        Operation::Add=>!self.new_name.trim().is_empty()
+                                            && (self.current(&cats).is_some_and(|cur|
+                                                direct_count(catalog,&cur.id)==0)||self.transfer),
+                                        Operation::Move=>!self.target.is_empty(),
+                                        Operation::Delete=>true,
+                                    }
+                                ).clicked();
+                                cancel=theme::action(right,"취소",
+                                    theme::ButtonRole::Standard,!busy).clicked();
                             }
-                        ).clicked();
+                        );
                     });
                 });
             if cancel{self.request_close_operation(&cats);}
