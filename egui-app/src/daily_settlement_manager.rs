@@ -40,6 +40,67 @@ fn move_date(date:&str,days:i64)->String{
         .map(|day|day.format("%Y-%m-%d").to_string())
         .unwrap_or_else(||base.to_owned())
 }
+/// Same date field / arrows / calendar control as Order History, located
+/// INSIDE the first settlement report card rather than in an outer panel.
+/// Return true only when a different valid date is selected.
+fn settlement_date_toolbar(
+    ui:&mut Ui,date:&mut String,date_input:&mut String,
+    calendar_month:&mut NaiveDate
+)->bool{
+    let mut changed=false;
+    ui.horizontal_wrapped(|controls|{
+        controls.spacing_mut().item_spacing.x=theme::SPACE_8;
+        controls.label(typography::field_label("결산 날짜"));
+        if theme::action(controls,"‹",theme::ButtonRole::Standard,true).clicked(){
+            *date=move_date(date,-1);
+            *date_input=date.clone();
+            if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
+                *calendar_month=components::calendar_month_start(day);
+            }
+            changed=true;
+        }
+        if components::flexible_text_field(
+            controls,date_input,theme::SETTLEMENT_DATE_FIELD_WIDTH,"YYYY-MM-DD"
+        ).changed() && valid_date(date_input) && date!=date_input{
+            *date=date_input.clone();
+            if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
+                *calendar_month=components::calendar_month_start(day);
+            }
+            changed=true;
+        }
+        let trigger=theme::action(
+            controls,"달력",theme::ButtonRole::Standard,true
+        ).on_hover_text("결산 날짜를 달력에서 선택");
+        if trigger.clicked(){
+            let open=NaiveDate::parse_from_str(date,"%Y-%m-%d")
+                .unwrap_or_else(|_|NaiveDate::parse_from_str(
+                    &seoul_today(),"%Y-%m-%d").expect("valid today"));
+            *calendar_month=components::calendar_month_start(open);
+        }
+        if let Some(day)=components::date_calendar(
+            &trigger,calendar_month,date,"daily-settlement-date-calendar"
+        ){
+            *date=day.format("%Y-%m-%d").to_string();
+            *date_input=date.clone();
+            changed=true;
+        }
+        if theme::action(controls,"›",theme::ButtonRole::Standard,true).clicked(){
+            *date=move_date(date,1);
+            *date_input=date.clone();
+            if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
+                *calendar_month=components::calendar_month_start(day);
+            }
+            changed=true;
+        }
+    });
+    if !valid_date(date_input){
+        ui.label(typography::status(
+            "결산 날짜는 YYYY-MM-DD 형식으로 입력하세요.",theme::DANGER
+        ));
+    }
+    changed
+}
+
 fn seoul_datetime(raw:&str)->String{
     if let Ok(date)=DateTime::parse_from_rfc3339(raw){
         return date.with_timezone(&FixedOffset::east_opt(9*3600).unwrap())
@@ -360,6 +421,7 @@ pub struct DailySettlementManager{
     error:Option<String>,
     date:String,
     date_input:String,
+    calendar_month:NaiveDate,
     order_sort:Option<Sort>,
     payment_sort:Option<Sort>,
 }
@@ -368,7 +430,11 @@ impl DailySettlementManager{
         let today=seoul_today();
         let mut manager=Self{
             gateway,receiver:None,report:None,error:None,
-            date:today.clone(),date_input:today,
+            date:today.clone(),date_input:today.clone(),
+            calendar_month:components::calendar_month_start(
+                NaiveDate::parse_from_str(&today,"%Y-%m-%d")
+                    .expect("today in YYYY-MM-DD")
+            ),
             order_sort:None,payment_sort:None,
         };
         manager.refresh(ctx);
