@@ -191,7 +191,9 @@ fn shipment_values(ship:&Value)->(String,String){
         if tracking.is_empty(){"미확인".to_owned()}else{tracking.join(" / ")}
     )
 }
-fn shipment_entry(ui:&mut Ui,recipient:&Value,ship:Option<&Value>,index:usize){
+fn shipment_entry(
+    ui:&mut Ui,order:&Value,recipient:&Value,ship:Option<&Value>,index:usize
+){
     let label=display_or(field(recipient,"name"),"수취인 미확인");
     theme::modal_nested_frame().show(ui,|card|{
         card.horizontal_wrapped(|header|{
@@ -214,12 +216,21 @@ fn shipment_entry(ui:&mut Ui,recipient:&Value,ship:Option<&Value>,index:usize){
         if !contact.is_empty(){text_kv(card,"연락처",contact);}
         let shipping=display_or(field(recipient,"freightCode"),"");
         if !shipping.is_empty(){text_kv(card,"운임 구분",freight_label(shipping));}
+        let sender=ship.and_then(|s|s.get("sender"))
+            .filter(|v|v.is_object()).unwrap_or(&order["senderSnapshot"]);
+        let sender_name=display_or(field(sender,"displayName"),field(sender,"name"));
+        if !sender_name.is_empty(){text_kv(card,"송하인",sender_name);}
+        let request=field(recipient,"note");
+        if !request.is_empty(){text_kv(card,"배송 요청사항",request);}
         card.add_space(theme::SPACE_4);
         for item in rows(&recipient["items"]){
             let name=display_or(field(item,"name"),"품목명 미확인");
             let qty=item["quantity"].as_i64().map(|v|v.to_string())
                 .unwrap_or_else(||"미확인".into());
-            card.label(typography::body(&format!("◆ {name} × {qty}")));
+            let price=item["unitPrice"].as_i64()
+                .map(|amount|format!(" · 단가 {}",components::display_won(amount)))
+                .unwrap_or_default();
+            card.label(typography::body(&format!("◆ {name} × {qty}{price}")));
         }
         if rows(&recipient["items"]).is_empty(){
             card.label(typography::caption("품목 정보 없음"));
@@ -245,7 +256,7 @@ fn shipment_panel(ui:&mut Ui,order:&Value,shipments:&[&Value]){
             field(ship,"recipientId")==field(recipient,"id")
         ).collect::<Vec<_>>();
         if related.is_empty(){
-            shipment_entry(ui,recipient,None,numbered);
+            shipment_entry(ui,order,recipient,None,numbered);
             numbered+=1;
             ui.add_space(theme::SPACE_8);
         }else{
@@ -253,7 +264,7 @@ fn shipment_panel(ui:&mut Ui,order:&Value,shipments:&[&Value]){
                 let frozen=ship.get("recipientSnapshot")
                     .filter(|v|v.is_object())
                     .unwrap_or(recipient);
-                shipment_entry(ui,frozen,Some(ship),numbered);
+                shipment_entry(ui,order,frozen,Some(ship),numbered);
                 numbered+=1;
                 ui.add_space(theme::SPACE_8);
             }
