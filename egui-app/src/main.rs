@@ -2520,13 +2520,15 @@ impl BandoEgui {
                                         let remote=ship.recipient.get("remoteDelivery")
                                             .and_then(|v|v.get("checked"))
                                             .and_then(serde_json::Value::as_bool);
-                                        components::reception_freight_row(
-                                            contents,"운임",ship.freight,
-                                            Some(ship.collect),remote,
-                                        );
-                                        contents.add_space(theme::SPACE_8);
                                         let origin=ship.recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
+                                        components::reception_freight_row(
+                                            contents,"운임",
+                                            if ship.collect {None} else {ship.freight},
+                                            Some(ship.collect),remote,
+                                            origin==Some("FACTORY"),
+                                        );
+                                        contents.add_space(theme::SPACE_8);
                                         components::reception_item_actions(contents,origin);
                                     });
                             }
@@ -2877,17 +2879,19 @@ impl BandoEgui {
                                             }
                                         }
                                         items_ui.add_space(theme::SPACE_8);
-                                        let fee=preview.and_then(|v|v.get("shippingFee"))
-                                            .and_then(serde_json::Value::as_i64);
+                                        // The saved quote's shippingFee is an ORDER
+                                        // total, not a per-recipient applied freight.
+                                        // Do not mislabel it as this recipient's fee.
                                         let remote=recipient.get("remoteDelivery")
                                             .and_then(|v|v.get("checked"))
                                             .and_then(serde_json::Value::as_bool);
-                                        components::reception_freight_row(
-                                            items_ui,"운임",fee,None,remote,
-                                        );
-                                        items_ui.add_space(theme::SPACE_8);
                                         let origin=recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
+                                        components::reception_freight_row(
+                                            items_ui,"운임",None,None,remote,
+                                            origin==Some("FACTORY"),
+                                        );
+                                        items_ui.add_space(theme::SPACE_8);
                                         components::reception_item_actions(items_ui,origin);
                                     } else {
                                         items_ui.add_space(theme::SPACE_8);
