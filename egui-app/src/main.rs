@@ -180,6 +180,7 @@ struct BandoEgui {
     freight_manager: Option<freight_manager::FreightManager>,
     freight_pending_page: Option<Page>,
     freight_pending_save: bool,
+    product_pending_page: Option<Page>,
     settings_pending_page: Option<Page>,
     settings_pending_save: bool,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
@@ -240,6 +241,7 @@ impl Default for BandoEgui {
             freight_manager: None,
             freight_pending_page: None,
             freight_pending_save: false,
+            product_pending_page: None,
             settings_pending_page: None,
             settings_pending_save: false,
             manual_workspace: None,
@@ -1408,8 +1410,13 @@ impl BandoEgui {
                                 // and a product modal must not be discarded by nav.
                                 let product_can_leave=
                                     if self.page==Page::Products && page!=Page::Products {
-                                        self.product_manager.as_mut()
-                                            .is_none_or(|manager|manager.allow_leave())
+                                        let allowed=self.product_manager.as_mut()
+                                            .is_none_or(|manager|manager.allow_leave());
+                                        if !allowed && self.product_manager.as_ref()
+                                            .is_some_and(|manager|manager.category_global_leave_in_progress()){
+                                            self.product_pending_page=Some(page);
+                                        }
+                                        allowed
                                     }else{true};
                                 // A client editor is modal: navigation cannot
                                 // dispose of an unsaved client draft.
@@ -3296,6 +3303,19 @@ impl eframe::App for BandoEgui {
         self.kakao_dock.disconnect();
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if let Some(page)=self.product_pending_page{
+            let approved=self.product_manager.as_mut()
+                .is_some_and(|manager|manager.take_category_global_leave());
+            let waiting=self.product_manager.as_ref()
+                .is_some_and(|manager|manager.category_global_leave_in_progress());
+            if approved {
+                self.page=page;
+                self.product_pending_page=None;
+            }else if !waiting{
+                // User cancelled a pending category leave confirmation.
+                self.product_pending_page=None;
+            }
+        }
         self.poll_source_analysis();
         if self.settings_view.as_mut().is_some_and(|view|view.take_restored()){
             // A restored operational DB invalidates every prior projected
