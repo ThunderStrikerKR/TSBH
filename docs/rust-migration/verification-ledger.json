@@ -2448,9 +2448,9 @@
         "patch": "SOURCE_UPDATED: settings form 4-column account editor 1b492e4; recommendation grid 7044651; shared setting tokens 693dc7f/5312ce4; save button in-card b7680cf/ef75ef6; saved Excel path b891c17; operator placeholder ed19fe9; conflict recovery e3fa7cf; readme 9b36372.",
         "differential": "STATIC SOURCE REVIEW: original React SettingsView/SettingsPanel/management-layout.css, visibleSettings semantics, four tabs and native settings Rust CAS. Account controls, external saved-dir action, save row, original conflict acknowledgement reviewed. Runtime DB/write not exercised.",
         "action": "NOT EXECUTED: no local SQLite settings save/restart/reload or actual folder/dialog flow; original Rust gateway and revision check retained.",
-        "ci": "NOT CONFIRMED FOR FINAL SOURCE: Settings-scoped Windows compilation runs https://github.com/ThunderStrikerKR/TSBH/actions/runs/44643784045 and /44644021746 cancelled by same-branch concurrency while standalone egui compilation was in progress. Initial run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44643392412 failed on 11 unrelated freight_manager.rs String/&str display signatures; fixed the UI argument borrows in commit 80a8f4b. Latest run attempts remain subject to concurrent main updates. Do not treat cancellation or earlier PASS as complete compile proof.",
+        "ci": "PASS for settings source code and shared String/&str UI borrow fix: Windows Tauri cargo check + standalone egui cargo check at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44644460192, source commit f30dc9abb7be5d1ee1b24ff573600c0f77fde5cb. Earlier runs were cancelled due to concurrency or failed on freight E0308; not reused as proof.",
         "windows": "SKIPPED BY USER REQUEST: no Windows actual GUI inspection. Not a required source-migration gate.",
-        "status": "PARTIAL_SOURCE_PARITY: settings 4 tabs, account/CAS + archive/backup/restore connected. Independent egui background OCR/factory-reply folder watchers remain unported; source/e2e not fully proven."
+        "status": "PARTIAL_SOURCE_PARITY: setting four tabs, account/CAS/save and data backup/restore wired. Independent egui background OCR/factory-reply folder watchers remain unported; real DB/UI behavioral verification not claimed."
       }
     }
   ],
