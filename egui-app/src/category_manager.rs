@@ -431,28 +431,13 @@ impl CategoryManager {
             ],tree_stroke);
         }
         if !branches.is_empty(){
-            let center=icon_rect.center();
-            let stroke=egui::Stroke::new(1.5,theme::SECONDARY);
-            let arm=theme::SPACE_4;
-            if open{
-                ui.painter().line_segment([
-                    egui::pos2(center.x-arm,center.y-arm/2.0),
-                    egui::pos2(center.x,center.y+arm/2.0)
-                ],stroke);
-                ui.painter().line_segment([
-                    egui::pos2(center.x,center.y+arm/2.0),
-                    egui::pos2(center.x+arm,center.y-arm/2.0)
-                ],stroke);
-            }else{
-                ui.painter().line_segment([
-                    egui::pos2(center.x-arm/2.0,center.y-arm),
-                    egui::pos2(center.x+arm/2.0,center.y)
-                ],stroke);
-                ui.painter().line_segment([
-                    egui::pos2(center.x+arm/2.0,center.y),
-                    egui::pos2(center.x-arm/2.0,center.y+arm)
-                ],stroke);
-            }
+            // Match the same vector-chevron geometry used by order history,
+            // workflow cards and management dropdowns. Tree guides remain.
+            components::paint_management_chevron(
+                ui.painter(),icon_rect.center(),
+                if open{components::ManagementChevronDirection::Down}
+                else{components::ManagementChevronDirection::Right}
+            );
         }
         // A small monochrome folder icon mirrors the Explorer navigation
         // pane without introducing bright decorative color or font glyphs.
