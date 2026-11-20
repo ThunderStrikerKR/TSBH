@@ -345,6 +345,71 @@ pub fn labeled_field(
     }).inner
 }
 
+/// React recipient grid: name/address/note span a full row, while mobile
+/// and landline occupy equal columns (stacked below 330pt). The landline
+/// control is ALWAYS rendered, including when no number was recognized.
+/// Return whole field-row responses so source evidence highlighting keeps
+/// its existing exact field-level targets.
+pub fn reception_recipient_fields(
+    ui: &mut Ui,
+    name: &mut String,
+    address: &mut String,
+    mobile: &mut String,
+    phone: &mut String,
+    note: &mut String,
+) -> [Response; 5] {
+    fn row(
+        ui: &mut Ui, label: &str, value: &mut String, label_width: f32
+    ) -> Response {
+        ui.horizontal(|line| {
+            line.spacing_mut().item_spacing.x = theme::RECIPIENT_LABEL_GAP;
+            let title = line.add_sized(
+                Vec2::new(label_width, theme::INPUT_HEIGHT),
+                egui::Label::new(typography::field_label(label)),
+            );
+            let width = line.available_width().max(1.0);
+            // This field keeps the shared 36pt control height, font and
+            // insets, but fills the column instead of using the generic
+            // 180pt text-field cap.
+            let edit = egui::TextEdit::singleline(value)
+                .font(egui::TextStyle::Body)
+                .vertical_align(Align::Center)
+                .margin(egui::Margin::symmetric(8, 2))
+                .desired_width(width);
+            let input = line.add_enabled_ui(false, |line| {
+                line.add_sized(Vec2::new(width, theme::INPUT_HEIGHT), edit)
+            }).inner;
+            title.union(input)
+        }).inner
+    }
+
+    ui.scope(|fields| {
+        fields.spacing_mut().item_spacing.y = theme::RECIPIENT_ROW_GAP;
+        fields.spacing_mut().item_spacing.x = theme::RECIPIENT_PHONE_COLUMN_GAP;
+        let name_response = row(fields, "이름", name, theme::RECIPIENT_LABEL_WIDTH);
+        let address_response = row(fields, "주소", address, theme::RECIPIENT_LABEL_WIDTH);
+        let (mobile_response, phone_response) =
+            if fields.available_width() > theme::RECIPIENT_PHONE_STACK_BELOW {
+                fields.columns(2, |columns| {
+                    (
+                        row(&mut columns[0], "휴대폰", mobile, theme::RECIPIENT_LABEL_WIDTH),
+                        row(&mut columns[1], "전화", phone, theme::RECIPIENT_PHONE_LABEL_WIDTH),
+                    )
+                })
+            } else {
+                (
+                    row(fields, "휴대폰", mobile, theme::RECIPIENT_LABEL_WIDTH),
+                    row(fields, "전화", phone, theme::RECIPIENT_LABEL_WIDTH),
+                )
+            };
+        let note_response = row(fields, "요청 메시지", note, theme::RECIPIENT_LABEL_WIDTH);
+        [
+            name_response, address_response, mobile_response,
+            phone_response, note_response,
+        ]
+    }).inner
+}
+
 /// A subtle separation between data belonging to the same record.
 /// Sections themselves are framed by the caller.
 pub fn soft_divider(ui: &mut Ui) {
