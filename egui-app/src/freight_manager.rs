@@ -45,17 +45,33 @@ fn freight_assignment_cells(
     })
 }
 
+/// The task table keeps the same font sizing as the shared typography rules:
+/// primary product identity is bold, category stays 13pt but softer,
+/// colors remain normal, and secondary assignment metadata is subdued.
+#[derive(Clone,Copy)]
+enum FreightCellRole { Primary, Normal, Category, Metadata }
+
 /// One non-wrapping line anchored 6pt from the shared column origin. Keep
 /// the full content on hover without changing the cell's layout footprint.
 fn freight_assignment_text(
     ui:&mut Ui,rect:egui::Rect,value:&str,full_text:&str,
-    emphasis:bool,secondary:bool,id:impl std::hash::Hash
+    role:FreightCellRole,id:impl std::hash::Hash
 ) {
     let clipped=rect.shrink2(egui::vec2(6.0,0.0));
-    let (galley,color)=if secondary {
-        (typography::client_table_metadata_galley(ui,value,theme::MUTED),theme::MUTED)
-    }else{
-        (typography::client_table_cell_galley(ui,value,emphasis),theme::TEXT)
+    let (galley,color)=match role {
+        FreightCellRole::Primary=>(
+            typography::client_table_cell_galley(ui,value,true),theme::TEXT
+        ),
+        FreightCellRole::Normal=>(
+            typography::client_table_cell_galley(ui,value,false),theme::TEXT
+        ),
+        FreightCellRole::Category=>(
+            typography::client_table_cell_galley(ui,value,false),theme::SECONDARY
+        ),
+        FreightCellRole::Metadata=>(
+            typography::client_table_metadata_galley(ui,value,theme::MUTED),
+            theme::MUTED
+        ),
     };
     ui.painter().with_clip_rect(clipped).galley(
         egui::pos2(clipped.left(),clipped.center().y-galley.size().y/2.0),galley,color
@@ -1156,13 +1172,13 @@ impl FreightManager {
                         }else{format!("{model} / {subtitle}")};
                         freight_assignment_text(
                             table,cells[1],&product_title,&product_title,
-                            true,false,(id,1)
+                            FreightCellRole::Primary,(id,1)
                         );
                         // The narrow third column is color/option. The wide
                         // fourth column is the full canonical category path.
                         let colors=variant_colors(product);
                         freight_assignment_text(
-                            table,cells[2],&colors,&colors,false,false,(id,2)
+                            table,cells[2],&colors,&colors,FreightCellRole::Normal,(id,2)
                         );
                         let category=category_paths.for_product(product);
                         let category=if category.trim().is_empty(){
@@ -1175,7 +1191,7 @@ impl FreightManager {
                         );
                         freight_assignment_text(
                             table,cells[3],&visible_category,category,
-                            false,false,(id,3)
+                            FreightCellRole::Category,(id,3)
                         );
 
                         // The group selector's own child UI shares the same
@@ -1260,7 +1276,7 @@ impl FreightManager {
                             else if committed.is_empty(){"미지정"}
                             else{"지정 완료"};
                         freight_assignment_text(
-                            table,cells[5],assigned,assigned,false,true,(id,5)
+                            table,cells[5],assigned,assigned,FreightCellRole::Metadata,(id,5)
                         );
 
                         // The action column's buttons and labels cannot expand
