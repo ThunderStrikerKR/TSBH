@@ -852,6 +852,17 @@ pub struct ManagementTableHeader {
     pub table_width:f32,
 }
 
+/// One minimum-width calculation for both sticky master tables and
+/// other fixed-header management lists. The gutter supplied here is the
+/// egui scrollbar allocation only (CONFLICT-003=A), without any spacer.
+fn management_table_data_width(
+    viewport_width:f32,scrollbar_gutter:f32,min_table_width:f32
+)->f32{
+    debug_assert!(scrollbar_gutter>=0.0 && scrollbar_gutter.is_finite());
+    debug_assert!(viewport_width.is_finite() && min_table_width.is_finite());
+    (viewport_width-scrollbar_gutter).max(min_table_width)
+}
+
 pub fn management_sticky_table_header(
     ui:&mut Ui,min_table_width:f32
 )->ManagementTableHeader{
@@ -859,8 +870,9 @@ pub fn management_sticky_table_header(
         "table toolbar and header must use zero implicit vertical spacing");
     let viewport_width=ui.available_width().max(1.0);
     let scrollbar_gutter=ui.spacing().scroll.allocated_width();
-    let table_width=(viewport_width-scrollbar_gutter)
-        .max(min_table_width);
+    let table_width=management_table_data_width(
+        viewport_width,scrollbar_gutter,min_table_width
+    );
 
     // One allocation for the full toolbar-to-header separator strip.
     // Keeping it in a single Ui layout operation also avoids a fractional
@@ -916,8 +928,9 @@ pub fn management_list_table_header(
 )->ManagementTableHeader{
     let viewport_width=ui.available_width().max(1.0);
     let scrollbar_gutter=ui.spacing().scroll.allocated_width();
-    let table_width=(viewport_width-scrollbar_gutter)
-        .max(min_table_width);
+    let table_width=management_table_data_width(
+        viewport_width,scrollbar_gutter,min_table_width
+    );
     let (header_rect,_)=ui.allocate_exact_size(
         Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
         Sense::hover()
@@ -1727,7 +1740,9 @@ mod management_toolbar_geometry_tests {
             (1440.0,1242.0),
         ] {
             let native_gutter=10.0;
-            let data_width=(viewport-native_gutter).max(minimum);
+            let data_width=management_table_data_width(
+                viewport,native_gutter,minimum
+            );
             if viewport-native_gutter>=minimum {
                 assert!((data_width+native_gutter-viewport).abs()<0.01);
             }else{
