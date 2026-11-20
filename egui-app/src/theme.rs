@@ -725,3 +725,20 @@ pub fn label_value(ui: &mut Ui, label: &str, value: &str) {
         ui.label(typography::body(value));
     });
 }
+
+#[cfg(test)]
+mod management_primary_card_geometry_tests {
+    use super::*;
+
+    #[test]
+    fn standard_workspace_matches_freight_primary_card_anchor() {
+        // Title + tabs + four single-row KPI cards + their shared spacing.
+        assert!((management_primary_card_top_offset(1200.0)-214.0).abs()<0.01);
+    }
+
+    #[test]
+    fn narrower_workspaces_reserve_space_for_wrapped_freight_kpis() {
+        assert!((management_primary_card_top_offset(650.0)-302.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(250.0)-478.0).abs()<0.01);
+    }
+}
