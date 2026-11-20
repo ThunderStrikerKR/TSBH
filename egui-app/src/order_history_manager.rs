@@ -478,7 +478,7 @@ fn range_date_picker_rtl(
     egui::Frame::new()
         .fill(theme::INPUT)
         .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
-        .corner_radius(theme::CONTROL_RADIUS)
+        .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
         .inner_margin(egui::Margin::same(1))
         .show(ui,|group|{
             group.spacing_mut().item_spacing=Vec2::ZERO;
