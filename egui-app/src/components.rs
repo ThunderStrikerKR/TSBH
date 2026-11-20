@@ -537,6 +537,192 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
     });
 }
 
+/// Geometry shared by recognized working orders and native workflow rows.
+/// The name receives all width not reserved for the two narrow numeric columns.
+fn reception_item_columns(rect: Rect) -> [Rect; 3] {
+    let qty = (rect.width() * 0.22).min(theme::RECEPTION_ITEMS_QTY_MAX_WIDTH).max(52.0);
+    let amount = (rect.width() * 0.30)
+        .min(theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH).max(74.0);
+    let name_right = (rect.right() - qty - amount).max(rect.left() + 12.0);
+    let qty_right = (name_right + qty).min(rect.right());
+    [
+        Rect::from_min_max(rect.min, egui::pos2(name_right, rect.bottom())),
+        Rect::from_min_max(egui::pos2(name_right, rect.top()),
+            egui::pos2(qty_right, rect.bottom())),
+        Rect::from_min_max(egui::pos2(qty_right, rect.top()), rect.max),
+    ]
+}
+
+pub struct ReceptionItemCells {
+    pub product: Response,
+    pub quantity: Response,
+    pub amount: Response,
+}
+
+pub fn reception_items_header(ui: &mut Ui) {
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(width, theme::RECEPTION_ITEMS_HEADER_HEIGHT), Sense::hover()
+    );
+    let columns = reception_item_columns(rect);
+    for (index, label) in ["품목", "수량", "금액"].iter().enumerate() {
+        let cell = columns[index].shrink2(egui::vec2(theme::SPACE_4, 0.0));
+        ui.put(cell, egui::Label::new(typography::table_header(label))
+            .halign(if index == 0 { Align::Min } else { Align::Max }));
+    }
+    ui.painter().line_segment(
+        [egui::pos2(rect.left(), rect.bottom()),
+         egui::pos2(rect.right(), rect.bottom())],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER)
+    );
+}
+
+pub fn reception_item_row(
+    ui: &mut Ui, name: &str, quantity: &str, amount: &str,
+) -> ReceptionItemCells {
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(width, theme::RECEPTION_ITEMS_ROW_HEIGHT), Sense::hover()
+    );
+    let columns = reception_item_columns(rect);
+    let padded = |index: usize| columns[index].shrink2(
+        egui::vec2(theme::SPACE_4, theme::SPACE_8)
+    );
+    let product = ui.put(padded(0),
+        egui::Label::new(typography::body(name)).truncate().halign(Align::Min));
+    let quantity = ui.put(padded(1),
+        egui::Label::new(typography::quantity(quantity))
+            .truncate().halign(Align::Max));
+    let amount = ui.put(padded(2),
+        egui::Label::new(typography::table_cell(amount).monospace())
+            .truncate().halign(Align::Max));
+    ui.painter().line_segment(
+        [egui::pos2(rect.left(), rect.bottom()),
+         egui::pos2(rect.right(), rect.bottom())],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER)
+    );
+    ReceptionItemCells { product, quantity, amount }
+}
+
+/// Presentation-only freight field: numbers and prepay/COD are supplied by
+/// native Rust. Disabled text input mirrors the React field without implying
+/// that a backend edit command exists in egui.
+pub fn reception_freight_row(
+    ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
+    remote: Option<bool>,
+) {
+    ui.horizontal_wrapped(|line| {
+        line.spacing_mut().item_spacing = Vec2::new(theme::SPACE_4, theme::SPACE_4);
+        line.label(typography::field_label(label));
+        let mut amount_text = amount
+            .map(|value| display_won(value).trim_end_matches('원').to_owned())
+            .unwrap_or_else(||"—".to_owned());
+        line.add_enabled(false,
+            egui::TextEdit::singleline(&mut amount_text)
+                .desired_width(84.0).font(typography::numeric_editor_font())
+        );
+        line.label(typography::caption("원"));
+        if let Some(collect) = collect {
+            line.label(typography::caption(
+                if collect { "(착불)" } else { "(선불)" }
+            ));
+        }
+        if let Some(checked) = remote {
+            let mut read_only = checked;
+            line.add_enabled(false, egui::Checkbox::new(&mut read_only, "도서/산간"));
+        }
+    });
+}
+
+/// Original React lower action row. Keep its already-approved actions
+/// visible but disabled until the actual native editing commands are wired.
+pub fn reception_item_actions(ui: &mut Ui, dispatch_origin: Option<&str>) {
+    ui.horizontal(|bar| {
+        bar.spacing_mut().item_spacing.x = theme::SPACE_4;
+        theme::action(bar, "＋ 상품 추가", theme::ButtonRole::Standard, false);
+        bar.with_layout(Layout::right_to_left(Align::Center), |right| {
+            let button = |right: &mut Ui, label: &str, selected: bool| {
+                right.add_enabled(false,
+                    egui::Button::new(typography::action_label(
+                        label, typography::FONT_STANDARD_ACTION, false,
+                        if selected { theme::TEXT } else { theme::MUTED }
+                    ))
+                    .min_size(Vec2::new(42.0, 28.0))
+                    .fill(if selected { theme::RAISED } else { theme::PANEL })
+                    .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,
+                        if selected { theme::BORDER } else { theme::DIVIDER }))
+                    .corner_radius(theme::CONTROL_RADIUS)
+                );
+            };
+            // right-to-left construction keeps the complete label at the
+            // left of the choice pair in the final visual order.
+            button(right, "매장", dispatch_origin == Some("STORE"));
+            button(right, "공장", dispatch_origin == Some("FACTORY"));
+            right.label(typography::caption("발송지:"));
+        });
+    });
+}
+
+pub fn reception_vat_row(ui: &mut Ui, vat_included: Option<bool>) {
+    let width = ui.available_width();
+    ui.allocate_ui_with_layout(
+        Vec2::new(width, theme::RECEPTION_VAT_ROW_HEIGHT),
+        Layout::left_to_right(Align::Center), |line| {
+            if let Some(included) = vat_included {
+                let mut readonly = included;
+                line.add_enabled(false,
+                    egui::Checkbox::new(&mut readonly, "부가세 포함")
+                );
+            } else {
+                line.label(typography::caption("부가세 확인 전"));
+            }
+        }
+    );
+}
+
+/// React's pinned 56px total: first line is title / fixed right amount,
+/// second line is shipment count / fixed right VAT. Neither line is allowed
+/// to resize the item scroller or move when the monetary text changes.
+pub fn reception_total_footer(
+    ui: &mut Ui, total: Option<i64>, count: Option<usize>, vat: &str,
+    note: &str,
+) {
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), theme::RECEPTION_TOTAL_HEIGHT),
+        Sense::hover(),
+    );
+    ui.painter().line_segment(
+        [rect.left_top(), rect.right_top()],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER),
+    );
+    let left = rect.left() + theme::SPACE_8;
+    let right = rect.right() - theme::SPACE_8;
+    let amount = total.map(display_won).unwrap_or_else(|| "—".to_owned());
+    ui.painter().text(
+        egui::pos2(left, rect.top() + 15.0), egui::Align2::LEFT_CENTER,
+        "총 주문", egui::FontId::proportional(typography::FONT_FIELD_LABEL),
+        theme::TEXT,
+    );
+    ui.painter().text(
+        egui::pos2(right, rect.top() + 15.0), egui::Align2::RIGHT_CENTER,
+        amount, egui::FontId::monospace(18.0), theme::TEXT,
+    );
+    let count_text = count.map(|n| n.to_string())
+        .unwrap_or_else(|| "—".to_owned());
+    ui.painter().text(
+        egui::pos2(left, rect.top() + 42.0), egui::Align2::LEFT_CENTER,
+        format!("| 택배 {:>3}건 |", count_text),
+        egui::FontId::monospace(11.0), theme::SECONDARY,
+    );
+    ui.painter().text(
+        egui::pos2(right, rect.top() + 42.0), egui::Align2::RIGHT_CENTER,
+        vat, egui::FontId::proportional(10.0), theme::SECONDARY,
+    );
+    if !note.trim().is_empty() {
+        response.on_hover_text(note);
+    }
+}
+
 pub fn record_card(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
     Frame::new()
         .fill(theme::PANEL)
