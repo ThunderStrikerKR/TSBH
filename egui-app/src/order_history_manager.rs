@@ -186,9 +186,11 @@ fn history_detail_block_rect(row_rect:Rect,widths:&[f32;7])->Rect{
     let left=row_rect.left()+widths[0]-theme::SPACE_4;
     let width=(row_rect.right()-left-theme::SPACE_12)
         .min(DETAIL_BLOCK_MAX_WIDTH).max(1.0);
+    let block_height=(row_rect.height()-3.0*theme::SPACE_4)
+        .max(DETAIL_BLOCK_HEIGHT);
     Rect::from_min_size(
-        egui::pos2(left,row_rect.center().y-DETAIL_BLOCK_HEIGHT/2.0),
-        Vec2::new(width,DETAIL_BLOCK_HEIGHT)
+        egui::pos2(left,row_rect.center().y-block_height/2.0),
+        Vec2::new(width,block_height)
     )
 }
 // The expanded shipment is a compact standalone summary, not seven table
@@ -376,6 +378,46 @@ fn history_items_one_line(items:&Value)->String{
 fn history_recipient_products(row:&Value,recipient_index:usize)->String{
     history_items_one_line(&row["recipients"][recipient_index]["items"])
 }
+fn history_detail_products(snapshot:&HistorySnapshot,order_index:usize,
+    recipient_index:usize,shipment_index:Option<usize>)->String{
+    let row=&snapshot.rows[order_index];
+    let shipment=shipment_index.and_then(|index|
+        rows(&snapshot.state["workflow"]["shipments"]).get(index)
+    );
+    shipment.and_then(|ship|ship.get("recipientSnapshot"))
+        .filter(|value|value.is_object())
+        .and_then(|value|value.get("items"))
+        .filter(|value|value.is_array())
+        .map(history_items_one_line)
+        .unwrap_or_else(||history_recipient_products(row,recipient_index))
+}
+fn history_line_height(ui:&Ui,line:HistoryLine,
+    snapshot:&HistorySnapshot,widths:&[f32;7])->f32{
+    let HistoryLine::Recipient(order_index,recipient_index,shipment_index)=line
+        else {return ROW_HEIGHT};
+    let product=history_detail_products(snapshot,order_index,recipient_index,
+        shipment_index);
+    let table_width=widths.iter().sum::<f32>()+COL_GAP*6.0;
+    let placeholder=Rect::from_min_size(
+        egui::pos2(0.0,0.0),Vec2::new(table_width,ROW_HEIGHT)
+    );
+    let card=history_detail_block_rect(placeholder,widths);
+    let product_cell=history_detail_cells(card)[1];
+    let galley=typography::freight_table_wrapped_galley(
+        ui,&product,(product_cell.width()-theme::SPACE_12).max(1.0)
+    );
+    // 12pt outside the card + 8pt total interior breathing room.
+    (galley.size().y+5.0*theme::SPACE_4).ceil().max(ROW_HEIGHT)
+}
+fn paint_detail_products(ui:&Ui,rect:Rect,text:&str){
+    let galley=typography::freight_table_wrapped_galley(
+        ui,text,(rect.width()-theme::SPACE_12).max(1.0)
+    );
+    let pos=egui::pos2(rect.left()+6.0,
+        rect.center().y-galley.size().y/2.0);
+    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()))
+        .galley(pos,galley,theme::TEXT);
+}
 fn history_recipient_product_notes(row:&Value,recipient_index:usize)->String{
     let recipient=&row["recipients"][recipient_index];
     let notes=rows(&recipient["items"]).iter().filter_map(|item|{
@@ -553,11 +595,8 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let recipient_name=field(display_recipient,"name");
             let name=if recipient_name.is_empty(){"수취인 미확인"}
                 else{recipient_name};
-            let products=shipment_recipient
-                .and_then(|snapshot|snapshot.get("items"))
-                .filter(|items|items.is_array())
-                .map(history_items_one_line)
-                .unwrap_or_else(||history_recipient_products(row,recipient_index));
+            let products=history_detail_products(snapshot,order_index,
+                recipient_index,shipment_index);
             let product_notes=history_recipient_product_notes(row,recipient_index);
             let (freight,tracking)=history_shipment_logistics(shipment);
             let freight_label=if freight=="운임 미확인"{freight.clone()}
@@ -565,7 +604,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let tracking_label=if tracking=="운송장 미확인"{tracking.clone()}
                 else{format!("송장 {tracking}")};
             paint_text(ui,columns[0],name,true,false);
-            paint_text(ui,columns[1],&products,true,false);
+            paint_detail_products(ui,columns[1],&products);
             paint_text(ui,columns[2],&freight_label,false,false);
             paint_text(ui,columns[3],&tracking_label,false,false);
             let address=field(display_recipient,"address");
