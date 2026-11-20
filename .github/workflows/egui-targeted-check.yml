@@ -1,4 +1,4 @@
-# Targeted Windows compile: source-equivalent Settings single-card layout and 1:1.4/sender address grid.
+# Targeted Windows compile: Settings account four-column editor, recommendations and in-card save actions.
 name: Tauri native CLI executable compile check
 on:
   push:
