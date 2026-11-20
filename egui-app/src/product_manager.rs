@@ -132,6 +132,10 @@ struct PriceDraft {
 }
 impl PriceDraft {
     fn dirty(&self)->bool{
+        // Historic price rows may store literal 0. Their initial "0" must
+        // stay pristine until an operator actually changes the field.
+        let initial=self.original.map(|n|n.to_string()).unwrap_or_default();
+        if self.input.trim().replace(',', "")==initial{return false;}
         match self.parse(){
             Ok(value)=>value!=self.original,
             Err(_)=>true,
@@ -1164,6 +1168,9 @@ mod tests {
         assert!(recorded.dirty());
         assert_eq!(recorded.parse().unwrap(),None);
         assert_eq!(parse_product_price("0","가격",false).unwrap(),Some(0));
+        let historical_zero=PriceDraft{original:Some(0),input:"0".into()};
+        assert!(!historical_zero.dirty());
+        assert_eq!(historical_zero.parse().unwrap(),None);
         assert_eq!(parse_product_price("4,500","금액",true).unwrap(),Some(4500));
         assert!(parse_product_price("-1","가격",false).is_err());
         assert!(parse_product_price("9007199254740992","가격",false).is_err());
