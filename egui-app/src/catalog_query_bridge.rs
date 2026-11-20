@@ -22,6 +22,20 @@ fn product_url_ok(value:&str)->bool {
 mod client_search;
 #[path = "../../src-tauri/src/business_core/catalog_clients/queries.rs"]
 mod native_queries;
+#[path = "../../src-tauri/src/business_core/catalog_clients/model_groups.rs"]
+mod native_model_groups;
+
+/// The exact Rust catalog_clients validator is also the pre-backup gate.
+pub fn validate_model_groups(catalog:&Value,groups:&Value)->Result<(),String>{
+    let payload=json!({
+        "state":{
+            "products":catalog.get("products").ok_or("상품 목록을 확인할 수 없습니다.")?,
+            "settings":{"colorGuidanceGroups":groups}
+        }
+    });
+    native_model_groups::execute("validate_model_groups",&payload)?;
+    Ok(())
+}
 
 pub fn search_products(payload:&Value)->Result<Value,String>{
     native_queries::execute("search_products_with_urls",payload)
