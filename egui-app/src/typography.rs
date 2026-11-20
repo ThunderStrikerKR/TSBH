@@ -282,6 +282,24 @@ pub fn client_table_metadata_galley(
 
 pub fn table_cell(text: &str) -> RichText { render(text, Role::TableCell) }
 pub fn summary_value(text: &str) -> RichText { render(text, Role::SummaryValue) }
+
+/// Produce the same summary font as summary_value(), but as measured glyphs
+/// for a fixed-position card row without nested automatic label alignment.
+pub fn summary_value_galley(
+    ui: &egui::Ui, text: &str
+) -> std::sync::Arc<egui::Galley> {
+    let role = spec(Role::SummaryValue);
+    let format = egui::TextFormat {
+        font_id: FontId::new(role.size, FontFamily::Monospace),
+        color: role.color,
+        extra_letter_spacing: role.tracking,
+        line_height: Some(role.line),
+        ..Default::default()
+    };
+    ui.fonts_mut(|fonts| fonts.layout_job(
+        egui::text::LayoutJob::single_section(text.to_owned(), format)
+    ))
+}
 pub fn quantity(text: &str) -> RichText { render(text, Role::Quantity) }
 
 /// Explicit numeric input typography: use Consolas (or system monospace
