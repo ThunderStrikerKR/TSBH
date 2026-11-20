@@ -33,14 +33,12 @@ pub fn write_v2_snapshot(conn: &mut Connection, mut state: Value, expected_revis
     // The constrained SQLite tables own products, clients and orders.
     // Keep only non-core data in the compatibility envelope, atomically.
     let mut envelope = state.clone();
-    if true {
-        // Settings-only changes never rewrite hundreds of product or order rows.
-        if products_changed || clients_changed || orders_changed {
-            crate::store_v2_relational(&tx, &state)?;
-        }
-        let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
-        for key in ["products","clients","orders"] {root.remove(key);}
+    // Settings-only changes never rewrite unchanged core rows.
+    if products_changed || clients_changed || orders_changed {
+        crate::store_v2_relational(&tx, &state)?;
     }
+    let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
+    for key in ["products","clients","orders"] {root.remove(key);}
     tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
         [serde_json::to_string(&envelope).map_err(err)?]).map_err(err)?;
     // Maintain legacy search indexes only when their actual domain changed.
