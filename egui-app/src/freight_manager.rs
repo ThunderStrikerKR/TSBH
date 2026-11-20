@@ -140,6 +140,16 @@ impl RateEditor {
         }).collect::<BTreeMap<_,_>>();
         old!=new
     }
+    fn write_action(&self)->Result<(String,Value),String>{
+        let rule=self.draft()?;
+        let operation=if self.product {"save_product_rule"}else{"save_group_rule"};
+        let data=if self.product {
+            json!({"productId":self.id,"rule":rule})
+        }else{
+            json!({"groupId":self.id,"rule":rule})
+        };
+        Ok((operation.to_owned(),data))
+    }
     fn draft(&self)->Result<Value,String>{
         let mut rule=self.original.clone();
         rule["maxBundle"]=self.max_bundle.map_or(Value::Null,|v|json!(v));
@@ -283,17 +293,22 @@ impl FreightManager {
             self.rate_editor.as_ref().is_some_and(|editor|editor.dirty())
     }
     pub fn busy(&self)->bool{self.write_receiver.is_some()}
-    pub fn can_save_pending(&self)->bool{
+    pub fn can_save_dirty(&self)->bool{
         self.gateway.shipping_write_enabled() && !self.busy() &&
-            self.rate_editor.is_none() && self.new_name.trim().is_empty() &&
-            !self.pending_changes().is_empty()
+            self.new_name.trim().is_empty() &&
+            (self.rate_editor.as_ref().is_some_and(|editor|editor.dirty()) ||
+                !self.pending_changes().is_empty())
     }
-    pub fn has_modal(&self)->bool{
-        self.rate_editor.is_some() || self.rename_target.is_some()
-            || self.delete_target.is_some() || self.basis_target.is_some()
-            || self.exception_target.is_some() || self.product_reset_target.is_some()
-            || self.copy_target.is_some() || self.requested_tab.is_some()
+    fn has_other_modal(&self)->bool{
+        self.rename_target.is_some() || self.delete_target.is_some() ||
+            self.basis_target.is_some() || self.exception_target.is_some() ||
+            self.product_reset_target.is_some() || self.copy_target.is_some()
     }
+    pub fn blocks_navigation(&self)->bool{
+        self.busy() || self.has_other_modal() || self.requested_tab.is_some()
+    }
+    pub fn has_rate_modal(&self)->bool{self.rate_editor.is_some()}
+
     pub fn discard_drafts(&mut self){
         self.pending.clear();
         self.selected.clear();
@@ -309,13 +324,33 @@ impl FreightManager {
         self.saving_for_tab=false;
     }
     pub fn save_pending(&mut self, ctx:egui::Context)->bool{
-        if self.busy() || self.rate_editor.is_some() || !self.new_name.trim().is_empty(){
+        if self.busy() ||
+            self.rate_editor.as_ref().is_some_and(|editor|editor.dirty()) ||
+            !self.new_name.trim().is_empty(){
             return false;
         }
         let changes=self.pending_changes();
         if changes.is_empty(){return true;}
         self.write("assign_products".into(),json!({"assignments":changes}),ctx);
         self.busy()
+    }
+    pub fn save_dirty(&mut self,ctx:egui::Context)->bool{
+        if !self.can_save_dirty(){return false;}
+        if let Some(editor)=self.rate_editor.as_mut().filter(|editor|editor.dirty()){
+            match editor.write_action(){
+                Ok((action,payload))=>{
+                    self.write(action,payload,ctx);
+                    self.busy()
+                }
+                Err(message)=>{
+                    editor.error=Some(message.clone());
+                    self.error=Some(message);
+                    false
+                }
+            }
+        }else{
+            self.save_pending(ctx)
+        }
     }
 
     fn poll(&mut self,ctx:egui::Context) {
@@ -444,11 +479,15 @@ impl FreightManager {
             ("그룹 운임표", self.tab == FreightTab::Rates, true),
             ("조합 / 기준 이력", self.tab == FreightTab::History, true),
         ]) {
-            if !self.has_modal() && !self.busy() {
+            if !self.has_other_modal() && !self.busy() &&
+                self.requested_tab.is_none() {
                 let next=FreightTab::ALL[index];
                 if self.tab!=next {
                     if self.dirty() { self.requested_tab=Some(next); }
-                    else { self.tab=next; }
+                    else {
+                        self.rate_editor=None;
+                        self.tab=next;
+                    }
                 }
             }
         }
@@ -1296,17 +1335,10 @@ impl FreightManager {
             }
             if theme::action(bar,"확인한 운임 저장",theme::ButtonRole::Primary,
                 enabled&&editor.dirty()).clicked(){
-                match editor.draft(){
-                    Ok(rule)=>{
+                match editor.write_action(){
+                    Ok(command)=>{
                         editor.error=None;
-                        *event=Some((
-                            if editor.product {"save_product_rule"} else {"save_group_rule"}.into(),
-                            if editor.product {
-                                json!({"productId":editor.id,"rule":rule})
-                            } else {
-                                json!({"groupId":editor.id,"rule":rule})
-                            }
-                        ));
+                        *event=Some(command);
                     }
                     Err(message)=>editor.error=Some(message)
                 }
