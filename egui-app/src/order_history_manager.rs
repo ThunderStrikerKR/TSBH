@@ -375,9 +375,10 @@ fn date_range_error(from:&str,to:&str)->Option<&'static str>{
     }
     None
 }
-/// Place date fields in reverse insertion order inside an RTL parent.
-/// egui then RIGHT-anchors the entire range while the visible order stays
-/// basis -> previous -> start/calendar -> end/calendar -> next -> all.
+/// Place controls in reverse insertion order inside an RTL parent.
+/// Actual left-to-right order is:
+/// date basis → [‹ start-date › calendar] → ~ → [‹ end-date › calendar]
+/// → all dates. Each arrow changes only its adjacent date.
 fn range_date_picker_rtl(
     ui:&mut Ui,label:&str,date:&mut String,month:&mut NaiveDate,
     id:&'static str
@@ -504,7 +505,7 @@ fn history_date_controls(
             );
         });
     }
-    // Previous/next moves BOTH ends of the window. Do not reset a calendar
+    // The arrows update their own dates only. Do not reset a calendar
     // merely because the user navigated its month without selecting a day.
     if changed{
         if let Ok(day)=NaiveDate::parse_from_str(from,"%Y-%m-%d"){
