@@ -146,6 +146,7 @@
   "palette": {
     "canvas": "#101010",
     "panel": "#181818",
+    "tableRowAlternate": "#1e1e1e",
     "input": "#292929",
     "raised": "#303030",
     "hover": "#353535",
@@ -252,6 +253,7 @@
       "fontSize": 13,
       "fontWeight": 400,
       "surface": "panel",
+      "alternateSurface": "tableRowAlternate",
       "text": "main"
     },
     "card": {
@@ -342,6 +344,10 @@
     "surface-section": {
       "color": "panel",
       "usage": "standalone major section/card"
+    },
+    "surface-table-row-alternate": {
+      "color": "tableRowAlternate",
+      "usage": "alternating unselected rows of neutral data tables only; do not use raised action or input colors"
     },
     "surface-nested": {
       "color": "raised",
