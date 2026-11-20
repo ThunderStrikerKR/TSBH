@@ -281,6 +281,7 @@ pub fn icon(heading:&mut Ui,title:&str){
             let response=egui::Area::new(id.with("popup"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(Pos2::new(left,top))
+                .movable(false)
                 .show(&ctx,|popup|{
                     Frame::new().fill(theme::INPUT)
                         .stroke(Stroke::new(
