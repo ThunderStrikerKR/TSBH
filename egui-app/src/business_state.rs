@@ -104,13 +104,9 @@ pub fn load() -> Result<Value,String> {
         "SELECT version FROM core_schema WHERE key='business-core'",[],|r|r.get(0)
     ).map_err(|_|"운영 DB 스키마 버전을 확인하지 못했습니다.".to_owned())?;
     if version!=2 {return Err("지원되지 않는 운영 DB 스키마입니다. 아무 것도 저장하지 않았습니다.".into());}
-    let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0))
-        .map_err(|_|"운영 업무 상태를 읽지 못했습니다.".to_owned())?;
-    let mut state:Value=serde_json::from_str(&raw)
-        .map_err(|_|"운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())?;
-    // A single relational read projection is shared with the Tauri host.
-    // This remains inside the original consistent read-only transaction.
-    bando_data_access::hydrate_v2(&conn,&mut state)?;
+    // Share app_state parsing and relation hydration with the Tauri host.
+    // Keep the existing consistent read-only transaction and v2 guard.
+    let state=bando_data_access::read_v2_snapshot(&conn)?;
     let revision=state.get("revision").and_then(Value::as_u64)
         .ok_or("운영 DB revision을 확인할 수 없습니다.")?;
     if revision==u64::MAX{return Err("운영 DB revision 범위를 확인할 수 없습니다.".into());}
