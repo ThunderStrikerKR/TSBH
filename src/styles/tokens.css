@@ -47,7 +47,8 @@
    The validator checks values against src/ui/design-system.json. */
 :root {
   --ds-color-canvas: #101010;
-  --ds-color-panel: #202020;
+  --ds-color-panel: #181818;
+  --ds-color-tableRowAlternate: #1e1e1e;
   --ds-color-input: #292929;
   --ds-color-raised: #303030;
   --ds-color-hover: #353535;
@@ -175,6 +176,7 @@
   --ds-role-text-selected: var(--ds-color-selection);
   --ds-role-surface-page: var(--ds-color-canvas);
   --ds-role-surface-section: var(--ds-color-panel);
+  --ds-role-surface-table-row-alternate: var(--ds-color-tableRowAlternate);
   --ds-role-surface-nested: var(--ds-color-raised);
   --ds-role-surface-input: var(--ds-color-input);
   --ds-role-surface-interactive-hover: var(--ds-color-hover);
