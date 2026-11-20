@@ -281,6 +281,16 @@ pub const FREIGHT_COMBINATION_HISTORY_COL_WIDTHS:[f32;6] =
     [350.0,285.0,130.0,130.0,124.0,170.0];
 pub const FREIGHT_GROUP_HISTORY_COL_WIDTHS:[f32;6] =
     [190.0,142.0,400.0,150.0,260.0,115.0];
+
+// Daily settlement is two accounting tables, not the six-column freight
+// editor: reserve numeric columns before handing the spare width to names
+// and receipt memo. Long account details remain available on cell hover.
+pub const SETTLEMENT_ORDER_COL_WIDTHS:[f32;8] =
+    [258.0,106.0,138.0,148.0,118.0,143.0,205.0,145.0];
+pub const SETTLEMENT_PAYMENT_COL_WIDTHS:[f32;7] =
+    [172.0,180.0,254.0,141.0,126.0,126.0,260.0];
+pub const SETTLEMENT_KPI_CARD_WIDTH:f32 = 278.0;
+pub const SETTLEMENT_DATE_FIELD_WIDTH:f32 = 132.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
 // The three-column dealer list has its own content minimum (30/38/32).
 // Do not force freight/product's 1320pt table width onto the client list.
