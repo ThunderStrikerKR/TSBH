@@ -136,6 +136,8 @@ pub struct FreightManager {
     product_reset_target: Option<String>,
     copy_target: Option<(String,Vec<String>)>,
     copy_template: String,
+    requested_tab: Option<FreightTab>,
+    saving_for_tab: bool,
     receiver: Option<Receiver<Result<(Value, Value), String>>>,
     state: Option<Value>,
     projection: Option<Value>,
@@ -187,6 +189,8 @@ impl FreightManager {
             product_reset_target: None,
             copy_target: None,
             copy_template: String::new(),
+            requested_tab: None,
+            saving_for_tab: false,
             receiver: Some(receiver),
             state: None,
             projection: None,
@@ -194,6 +198,54 @@ impl FreightManager {
             search: String::new(),
             group_filter: String::new(),
         }
+    }
+
+    fn pending_changes(&self)->serde_json::Map<String,Value>{
+        let mut updates=serde_json::Map::new();
+        let Some(state)=self.state.as_ref() else {return updates;};
+        let Some(products)=state["products"].as_array() else {return updates;};
+        for (id,group) in &self.pending {
+            if let Some(product)=products.iter().find(|p|text(p,"id")==id.as_str()){
+                if text(product,"shippingGroupId")!=group.as_str(){
+                    updates.insert(id.clone(),json!(group));
+                }
+            }
+        }
+        updates
+    }
+    pub fn dirty(&self)->bool{
+        !self.pending_changes().is_empty() || !self.new_name.trim().is_empty() ||
+            self.rate_editor.as_ref().is_some_and(|editor|editor.dirty())
+    }
+    pub fn busy(&self)->bool{self.write_receiver.is_some()}
+    pub fn has_modal(&self)->bool{
+        self.rate_editor.is_some() || self.rename_target.is_some()
+            || self.delete_target.is_some() || self.basis_target.is_some()
+            || self.exception_target.is_some() || self.product_reset_target.is_some()
+            || self.copy_target.is_some() || self.requested_tab.is_some()
+    }
+    pub fn discard_drafts(&mut self){
+        self.pending.clear();
+        self.selected.clear();
+        self.new_name.clear();
+        self.rate_editor=None;
+        self.rename_target=None;
+        self.delete_target=None;
+        self.basis_target=None;
+        self.exception_target=None;
+        self.product_reset_target=None;
+        self.copy_target=None;
+        self.requested_tab=None;
+        self.saving_for_tab=false;
+    }
+    pub fn save_pending(&mut self, ctx:egui::Context)->bool{
+        if self.busy() || self.rate_editor.is_some() || !self.new_name.trim().is_empty(){
+            return false;
+        }
+        let changes=self.pending_changes();
+        if changes.is_empty(){return true;}
+        self.write("assign_products".into(),json!({"assignments":changes}),ctx);
+        self.busy()
     }
 
     fn poll(&mut self) {
@@ -254,6 +306,14 @@ impl FreightManager {
                             "revise_combination"=>self.exception_target=None,
                             _=>{}
                         }
+                        if self.saving_for_tab{
+                            if !self.dirty(){
+                                if let Some(target)=self.requested_tab.take(){
+                                    self.tab=target;
+                                }
+                                self.saving_for_tab=false;
+                            }
+                        }
                     }else{
                         self.error=Some("운임 저장 후 최신 상태를 확인하지 못했습니다.".into());
                     }
@@ -263,11 +323,13 @@ impl FreightManager {
                     self.error=Some(error);
                     self.write_receiver=None;
                     self.write_action=None;
+                    self.saving_for_tab=false;
                 }
                 Err(TryRecvError::Disconnected)=>{
                     self.error=Some("운임 저장 작업이 중단되었습니다. 데이터 재조회를 확인하세요.".into());
                     self.write_receiver=None;
                     self.write_action=None;
+                    self.saving_for_tab=false;
                 }
                 Err(TryRecvError::Empty)=>{}
             }
