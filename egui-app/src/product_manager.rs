@@ -856,6 +856,8 @@ impl ProductManager {
                                 let cells=product_table_cells(
                                     row_rect.min,&widths,theme::PRODUCT_TABLE_ROW_HEIGHT
                                 );
+                                // Capture before descendant scope borrows row mutably.
+                                let row_clip=row.clip_rect();
                                 let name=field(product,"name");
                                 let subtitle=field(product,"subtitle");
                                 let display=if subtitle.is_empty(){name.to_owned()}
@@ -880,15 +882,14 @@ impl ProductManager {
                                         field(v,"id")==selected_id.as_str())
                                         .unwrap_or(&variants[0]);
                                     let current_label=option_text(product,chosen);
-                                    row.scope_builder(
-                                        UiBuilder::new()
-                                            .id_salt(("product-variant",product_id))
-                                            .max_rect(variant_cell)
-                                            .layout(Layout::left_to_right(Align::Center))
-                                            .disabled(selection_locked),
-                                        |controls|{
+                                    let mut builder=UiBuilder::new()
+                                        .id_salt(("product-variant",product_id))
+                                        .max_rect(variant_cell)
+                                        .layout(Layout::left_to_right(Align::Center));
+                                    if selection_locked{builder=builder.disabled();}
+                                    row.scope_builder(builder,|controls|{
                                             controls.set_clip_rect(
-                                                variant_cell.intersect(row.clip_rect())
+                                                variant_cell.intersect(row_clip)
                                             );
                                             egui::ComboBox::from_id_salt(
                                                 ("egui-product-variant",product_id)
@@ -941,15 +942,14 @@ impl ProductManager {
                                                     input:original.map(|v|v.to_string())
                                                         .unwrap_or_default()
                                                 });
-                                            row.scope_builder(
-                                                UiBuilder::new()
-                                                    .id_salt(("product-price-edit",key.as_str()))
-                                                    .max_rect(price_rect)
-                                                    .layout(Layout::left_to_right(Align::Center))
-                                                    .disabled(saving),
-                                                |inputs|{
+                                            let mut builder=UiBuilder::new()
+                                                .id_salt(("product-price-edit",key.as_str()))
+                                                .max_rect(price_rect)
+                                                .layout(Layout::left_to_right(Align::Center));
+                                            if saving{builder=builder.disabled();}
+                                            row.scope_builder(builder,|inputs|{
                                                     inputs.set_clip_rect(
-                                                        price_rect.intersect(row.clip_rect())
+                                                        price_rect.intersect(row_clip)
                                                     );
                                                     inputs.push_id(
                                                         ("product-price-cell",product_id,
@@ -1013,14 +1013,13 @@ impl ProductManager {
                                         theme::ACTION_STANDARD_HEIGHT
                                     )
                                 );
-                                row.scope_builder(
-                                    UiBuilder::new()
-                                        .id_salt(("product-table-action",product_id))
-                                        .max_rect(action_rect)
-                                        .layout(Layout::left_to_right(Align::Center))
-                                        .disabled(saving),
-                                    |actions|{
-                                        actions.set_clip_rect(action_rect.intersect(row.clip_rect()));
+                                let mut builder=UiBuilder::new()
+                                    .id_salt(("product-table-action",product_id))
+                                    .max_rect(action_rect)
+                                    .layout(Layout::left_to_right(Align::Center));
+                                if saving{builder=builder.disabled();}
+                                row.scope_builder(builder,|actions|{
+                                        actions.set_clip_rect(action_rect.intersect(row_clip));
                                         if theme::action(
                                             actions,"상세 관리",
                                             theme::ButtonRole::TableSecondary,!saving

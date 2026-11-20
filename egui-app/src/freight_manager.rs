@@ -2310,6 +2310,7 @@ impl FreightManager {
                         egui::Align2::CENTER_CENTER,false,theme::SECONDARY,(id,4)
                     );
                     let action_rect=cells[5].shrink2(egui::vec2(theme::SPACE_8,0.0));
+                    let history_row_clip=row.clip_rect();
                     row.scope_builder(
                         egui::UiBuilder::new()
                             .id_salt(("freight-history-change",id))
@@ -2318,7 +2319,7 @@ impl FreightManager {
                                 egui::Align::Center
                             ).with_main_align(egui::Align::Center)),
                         |buttons|{
-                            buttons.set_clip_rect(cells[5].intersect(row.clip_rect()));
+                            buttons.set_clip_rect(cells[5].intersect(history_row_clip));
                             buttons.set_width(action_rect.width());
                             if theme::action(
                                 buttons,"예외 운임 변경",
