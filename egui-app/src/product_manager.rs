@@ -329,8 +329,12 @@ impl ProductManager {
                 self.error=Some(error);
             }
             Some(Err(TryRecvError::Disconnected))=>{
+                let brand_write=self.writing.as_ref()
+                    .is_some_and(|job|job.kind=="upsert_brand");
                 self.writing=None;
-                self.error=Some("상품 저장 도우미 응답이 중단됐습니다. 재조회 후 확인하세요.".into());
+                let message="상품 저장 도우미 응답이 중단됐습니다. 재조회 후 확인하세요.".to_owned();
+                if brand_write{self.brands.on_failed(message.clone());}
+                self.error=Some(message);
             }
             _=>{}
         }
