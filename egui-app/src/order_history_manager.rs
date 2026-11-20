@@ -245,7 +245,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let toggled=expanded.contains(id);
             let lead=if toggled{"▾"}else{"▸"};
             let main=format!("{lead} {first} · 배송 {}건 · {}품목",
-                recipients.len(),item_count(row));
+                rows(&row["shipmentIds"]).len(),item_count(row));
             let product_preview=recipients.iter()
                 .flat_map(|r|rows(&r["items"]).iter())
                 .take(2)
