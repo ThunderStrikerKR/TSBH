@@ -462,13 +462,11 @@ pub fn soft_divider(ui: &mut Ui) {
     );
 }
 
-/// Keep a 6pt hit area for dragging, but visually join adjacent reception
-/// cards by filling their gutter with PANEL. The Kakao boundary instead
-/// continues its CANVAS workspace. Only hover/drag paints a resize marker.
-pub fn paint_dock_splitter(
-    ui: &Ui, rect: Rect, vertical: bool, active: bool, background: Color32
-) {
-    ui.painter().rect_filled(rect, 0.0, background);
+/// The 6pt split interaction region is always the workspace (CANVAS)
+/// between PANEL cards, including the Kakao reservation boundary.
+/// Only hover/drag shows an axis cue; drag targets and saved sizing persist.
+pub fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
+    ui.painter().rect_filled(rect, 0.0, theme::CANVAS);
     paint_dock_axis_line(ui, rect, vertical, active);
 }
 
