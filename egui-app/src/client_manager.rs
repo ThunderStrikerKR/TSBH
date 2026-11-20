@@ -275,6 +275,7 @@ impl ClientManager {
     }
 
     pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>) {
+        let page_origin_y=ui.cursor().top();
         self.poll(Arc::clone(&gateway),ui.ctx());
         // The client directory uses the same always-readable 10pt solid
         // scrollbar track as the approved Freight Assignment screen.
@@ -342,7 +343,10 @@ impl ClientManager {
 
         // A single outlined section owns its heading, a stable search/
         // action toolbar, a permanently visible header and its own rows.
+        components::align_management_primary_card(ui,page_origin_y);
+        let card_min_height=components::management_primary_card_min_inner_height(ui);
         theme::management_list_frame().show(ui,|section|{
+            components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().item_spacing.y=0.0;
             // The outer list card already owns the 16pt Freight reference
             // inset. Keep only vertical toolbar breathing room so its
