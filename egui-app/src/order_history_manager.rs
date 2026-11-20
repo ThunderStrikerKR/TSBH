@@ -193,7 +193,9 @@ fn paint_text(ui:&Ui,rect:Rect,value:&str,emphasized:bool,right:bool){
     if rect.width()<=0.0{return}
     let color=if emphasized{theme::TEXT}else{theme::SECONDARY};
     let galley=typography::freight_table_cell_galley(ui,value,emphasized,color);
-    let inset=theme::SPACE_8;
+    // Freight table's text columns use a 6pt leading guide; monetary
+    // figures keep their 8pt trailing guide for right alignment.
+    let inset=if right{theme::SPACE_8}else{6.0};
     let x=if right{
         (rect.right()-inset-galley.size().x).max(rect.left()+inset)
     }else{rect.left()+inset};
@@ -205,7 +207,7 @@ fn paint_text(ui:&Ui,rect:Rect,value:&str,emphasized:bool,right:bool){
 fn paint_center(ui:&Ui,rect:Rect,value:&str){
     let galley=typography::freight_table_cell_galley(ui,value,false,theme::SECONDARY);
     let x=(rect.center().x-galley.size().x/2.0)
-        .max(rect.left()+theme::SPACE_8);
+        .max(rect.left()+6.0);
     ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(
         egui::pos2(x,rect.center().y-galley.size().y/2.0),galley,theme::SECONDARY
     );
@@ -213,7 +215,7 @@ fn paint_center(ui:&Ui,rect:Rect,value:&str){
 fn paint_caption(ui:&Ui,rect:Rect,value:&str){
     let galley=typography::client_table_metadata_galley(ui,value,theme::MUTED);
     ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(
-        egui::pos2(rect.left()+theme::SPACE_8,
+        egui::pos2(rect.left()+6.0,
             rect.center().y-galley.size().y/2.0),galley,theme::MUTED
     );
 }
@@ -287,11 +289,16 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                     Sense::hover()).on_hover_text(cautions.join("\n"));
             }
             let message=field(&row["display"],"trackingMessage");
-            let control=columns[5].shrink2(Vec2::new(theme::SPACE_4,theme::SPACE_4));
+            // Match the action inset of the Freight Settings column.
+            // No expansion of the table or the fixed 42pt row height.
+            let control=columns[5].shrink2(
+                Vec2::new(theme::SPACE_12,theme::SPACE_4)
+            );
             ui.scope_builder(UiBuilder::new()
                 .id_salt(("order-history-copy",id))
                 .max_rect(control)
-                .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
+                .layout(egui::Layout::left_to_right(Align::Center)
+                    .with_main_justify(true)),|actions|{
                     actions.set_clip_rect(control.intersect(area));
                     if theme::action(actions,"운송장 복사",
                         theme::ButtonRole::TableSecondary,!message.is_empty()).clicked(){
@@ -769,13 +776,27 @@ impl OrderHistoryManager {
             let snapshot=self.snapshot.as_ref();
             let lines=snapshot.map(|data|display_lines(data,&self.expanded,self.sort))
                 .unwrap_or_default();
+            // Use the exact remaining primary-card height. The old 60vh
+            // cap left a dark blank strip beneath long order histories.
+            let card_inner_bottom=section.min_rect().top()+card_min_height;
+            let scroll_max_height=(card_inner_bottom-section.cursor().top())
+                .max(ROW_HEIGHT);
+            let scroll_bounds=section.available_rect_before_wrap();
+            let scroll_track_bottom=(scroll_bounds.top()+scroll_max_height)
+                .min(scroll_bounds.bottom());
+            let scroll_track_top=(scroll_bounds.top()+3.0)
+                .min(scroll_track_bottom-1.0);
+            let scroll_track=Rect::from_min_max(
+                egui::pos2(scroll_bounds.left(),scroll_track_top),
+                egui::pos2(scroll_bounds.right(),scroll_track_bottom)
+            );
             let output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
+                    .scroll_bar_rect(scroll_track)
                     .id_salt("order-history-table-rows")
                     .scroll_bar_visibility(
                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-                    .max_height(section.ctx().content_rect().height()
-                        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+                    .max_height(scroll_max_height)
                     .auto_shrink([false,false]),
                 section,table_width,ROW_HEIGHT,lines.len(),
                 |body,visible|{
@@ -815,6 +836,11 @@ impl OrderHistoryManager {
             let header_cells=cells(egui::pos2(left,head_rect.top()),&widths,HEADER_HEIGHT);
             let painter=section.painter().with_clip_rect(head_rect);
             painter.rect_filled(head_rect,0.0,theme::RAISED);
+            // Freight title text centers in the 34pt line box ABOVE the
+            // last 2pt filled rule; the table below begins without a gap.
+            let header_outline_height=2.0_f32;
+            let header_text_center_y=head_rect.top()
+                +(head_rect.height()-header_outline_height)/2.0;
             let mut next_sort=None;
             for (index,title) in headings.iter().enumerate(){
                 let sort_col=match index{
@@ -840,10 +866,10 @@ impl OrderHistoryManager {
                         .max(header_cells[index].left()+theme::SPACE_8)
                 }else if index==3 || index==5{
                     (header_cells[index].center().x-label.size().x/2.0)
-                        .max(header_cells[index].left()+theme::SPACE_8)
-                }else{header_cells[index].left()+theme::SPACE_8};
+                        .max(header_cells[index].left()+6.0)
+                }else{header_cells[index].left()+6.0};
                 painter.galley(egui::pos2(x,
-                    header_cells[index].center().y-label.size().y/2.0),
+                    header_text_center_y-label.size().y/2.0),
                     label,theme::SECONDARY);
                 if let Some(column)=sort_col {
                     let response=section.interact(cell,
@@ -855,6 +881,13 @@ impl OrderHistoryManager {
                 }
             }
             if let Some(sort)=next_sort {self.sort=sort;}
+            painter.rect_filled(
+                Rect::from_min_max(
+                    egui::pos2(head_rect.left(),
+                        head_rect.bottom()-header_outline_height),
+                    head_rect.right_bottom()
+                ),0.0,theme::BORDER
+            );
             section.spacing_mut().item_spacing.y=old_gap;
             if self.snapshot.as_ref().is_some_and(|s|s.rows.is_empty()) {
                 theme::management_list_strip_frame().show(section,|empty|{
