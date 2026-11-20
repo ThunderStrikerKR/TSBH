@@ -104,7 +104,19 @@ fn component(parts:&[Value],key:&str)->Value{
     }
     json!(sum)
 }
+/// Original single-day history contract used by settlement and legacy TS.
 pub(super) fn list(state:&Value,query:&str,date:&str)->Result<Value,String>{
+    list_filtered(state,query,|order|{
+        if date.is_empty(){return true}
+        let day=if has_value(field(order,"confirmedAt")){
+            str_field(order,"confirmedAt")
+        }else{str_field(order,"createdAt")};
+        date_seoul(day)==date
+    })
+}
+fn list_filtered(
+    state:&Value,query:&str,mut matches_date:impl FnMut(&Value)->bool
+)->Result<Value,String>{
     let query_lower=query.to_lowercase();
     let mut result=Vec::new();
     for order in rows(field(state,"orders")){
@@ -112,10 +124,7 @@ pub(super) fn list(state:&Value,query:&str,date:&str)->Result<Value,String>{
         if has_value(field(order,"deletedAt"))||only_deleted_groups(state,id)||
             (field(order,"receptionVersion").as_i64()==Some(1) &&
                 !has_value(field(order,"confirmedAt"))){continue}
-        let day=if has_value(field(order,"confirmedAt")){
-            str_field(order,"confirmedAt")
-        }else{str_field(order,"createdAt")};
-        if !date.is_empty() && date_seoul(day)!=date{continue}
+        if !matches_date(order){continue}
         let client=client_for(state,order);
         let client_name=client.as_ref().map(|v|str_field(v,"name")).unwrap_or("");
         let searchable=format!("{client_name} {}",str_field(order,"raw")).to_lowercase();
@@ -182,7 +191,68 @@ pub(super) fn list(state:&Value,query:&str,date:&str)->Result<Value,String>{
 pub(super) fn list_view(
     state:&Value, query:&str, date:&str, tracking_order:&Value,
 )->Result<Value,String> {
-    let mut result=list(state,query,date)?;
+    enrich_view(state,list(state,query,date)?,tracking_order)
+}
+
+/// Extended UI-only date filtering. The original list/order history contract
+/// and the daily settlement date calculations remain unchanged.
+///
+/// PAYMENT means a real bank payment with a positive amount ALLOCATED to an
+/// active shipment of the order, matched by paidAt in Korea/Seoul. A dealer's
+/// unallocated payment or an approval/paid flag is not enough evidence.
+pub(super) fn list_view_range(
+    state:&Value,query:&str,from:&str,to:&str,basis:&str,
+    tracking_order:&Value
+)->Result<Value,String>{
+    for day in [from,to]{
+        if !day.is_empty() && NaiveDate::parse_from_str(day,"%Y-%m-%d")
+            .is_err_or(|parsed|parsed.format("%Y-%m-%d").to_string()!=day)
+        {
+            return Err("주문 내역 검색 날짜는 YYYY-MM-DD 형식이어야 합니다.".into());
+        }
+    }
+    if !from.is_empty() && !to.is_empty() && from>to{
+        return Err("검색 시작일이 종료일보다 늦습니다.".into());
+    }
+    let in_range=|day:&str|{
+        !day.is_empty() && (from.is_empty()||day>=from)
+            && (to.is_empty()||day<=to)
+    };
+    let result=match basis {
+        "RECEPTION"=>{
+            list_filtered(state,query,|order|{
+                if from.is_empty() && to.is_empty(){return true}
+                let date=if has_value(field(order,"confirmedAt")){
+                    str_field(order,"confirmedAt")
+                }else{str_field(order,"createdAt")};
+                in_range(&date_seoul(date))
+            })?
+        }
+        "PAYMENT"=>{
+            // Join payment.allocations[].shipmentId to workflow.shipments[]
+            // and the shipment's orderId; never guess from dealer name.
+            let paid_shipment_ids=rows(field(field(state,"workflow"),"payments"))
+                .iter().filter(|payment|{
+                    in_range(&date_seoul(str_field(payment,"paidAt")))
+                }).flat_map(|payment|rows(field(payment,"allocations")))
+                .filter(|allocation|
+                    field(allocation,"amount").as_i64().is_some_and(|n|n>0))
+                .map(|allocation|str_field(allocation,"shipmentId"))
+                .filter(|id|!id.is_empty())
+                .collect::<HashSet<_>>();
+            list_filtered(state,query,|order|{
+                active_shipments(state,str_field(order,"id")).iter().any(|ship|
+                    paid_shipment_ids.contains(str_field(ship,"id")))
+            })?
+        }
+        _=>return Err("지원하지 않는 주문 내역 날짜 조회 기준입니다.".into())
+    };
+    enrich_view(state,result,tracking_order)
+}
+
+fn enrich_view(
+    state:&Value,mut result:Value,tracking_order:&Value
+)->Result<Value,String>{
     let Some(history_rows)=result.as_array_mut() else {
         return Err("주문 이력 조회 결과 형식을 확인하세요.".into())
     };
