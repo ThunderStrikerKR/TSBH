@@ -464,3 +464,20 @@ impl AliasManager {
         save
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn category_filter_virtual_roots_are_shared_and_read_only() {
+        let original=json!({"categories":[]});
+        let levels=category_levels(&original,"");
+        let roots=&levels[0].2;
+        for (id,name) in ROOTS {
+            assert!(roots.iter().any(|(key,title)|key==id && title==name));
+        }
+        assert_eq!(original["categories"],json!([]),
+            "UI catalog roots must never mutate stored categories");
+    }
+}
