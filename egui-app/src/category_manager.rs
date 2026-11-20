@@ -871,12 +871,14 @@ impl CategoryManager {
                 modal.label(typography::body(
                     "카테고리 변경사항을 저장할까요?"
                 ));
-                modal.horizontal(|actions|{
-                    discard=theme::action(actions,"저장 안 함",
-                        theme::ButtonRole::Standard,!busy).clicked();
-                    save=theme::action(actions,"저장하고 이동",
-                        theme::ButtonRole::Primary,editable&&!busy).clicked();
-                });
+                modal.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                        save=theme::action(actions,"저장하고 이동",
+                            theme::ButtonRole::Primary,editable&&!busy).clicked();
+                        discard=theme::action(actions,"저장 안 함",
+                            theme::ButtonRole::Standard,!busy).clicked();
+                    }
+                );
             });
             if cancel{self.confirm=None;}
             else if discard{
