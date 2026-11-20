@@ -428,3 +428,12 @@
 - **저장 보호:** `BANDO_EGUI_BUSINESS_DB` + `BANDO_EGUI_TAURI_HELPER` + `BANDO_EGUI_ENABLE_PRODUCT_WRITE=1` 명시 설정이 있어야 저장된다. 원래 Rust 업무 결과만 `write_snapshot`의 SQLite revision 검사로 기록한다. 카테고리 전용 UI에서 임의의 판정/영속 저장 엔진을 만들지 않는다.
 - **미저장 변경:** 인라인 분류 이름 변경과 분류 추가/이동 입력은 독립된 편집 상태다. 모달 닫기·상품관리 탭 이동·전역 페이지 이동에서는 원본의 저장/버리기/취소 흐름을 따르며, 한 편집을 버리는 이유로 다른 편집의 수동값을 소거하지 않는다.
 - **미이전:** 모델군·별칭·브랜드 관리, 상품 Excel 및 공식 페이지 동기화/이미지 기능. 카테고리 범위만 근거로 상품관리 전체를 완료 판정하지 않는다.
+
+
+### 52차 상품관리 후속: 모델군 관리 Rust/egui 이전
+
+- **React 기능 기준:** `src/ColorGuidanceManager.tsx`, `src/model-groups.ts`, `src/product-models.ts`와 실제 적용 `src/styles/product-admin-redesign.css`, `src/styles/management-layout.css`의 모델군 화면. 왼쪽 고정 460pt 직원 등록 모델군 목록, 오른쪽 상품 검색·등록 상품·대표모델 편집 영역. 수직 스크롤과 하단 작업 버튼은 각 영역에서 관리한다.
+- **명시적 분류:** 색상, 크기, 규격, 타공 여부가 달라도 독립 판매 상품 ID로 직원이 수동 그룹 편성한다. 모델군은 주문/가격/상품 저장 단위가 아니라 기존 `settings.colorGuidanceGroups` 설정 필드이며, 기존 상품과 주문을 자동 병합하거나 변경하지 않는다. 한 상품은 하나의 모델군만 소속할 수 있다. 그룹에 두 상품 이상, 해당 그룹 내 실제 상품 대표모델 하나를 직원이 명시적으로 지정해야 저장된다.
+- **UI 이전:** `egui-app/src/model_group_manager.rs`에서 그룹 이름 입력·생성·중복 이름 검토, 그룹 검색·선택, 상품명 검색과 '추가', 기존 소속 표시·중복 추가 비활성, 등록 상품 '대표 지정'/'제외', 그룹 이름 변경, 삭제 확인, 변경사항 저장, 미저장 이탈 확인을 기존 공통 egui 역할별 버튼/문구로 구현한다. `egui-app/src/product_manager.rs`의 기존 상품관리 3번째 탭에서 활성화하고, 카테고리 등 이미 이전된 탭의 변경을 유지한다.
+- **원본 Rust 업무·저장:** `src-tauri/src/business_core/catalog_clients/model_groups.rs::validate`와 `src-tauri/src/lib.rs::apply_settings_patch`를 그대로 쓴다. 새 판단 엔진과 임의 추가 저장 구조는 없다. `egui-app/src/settings_store.rs`는 운영 DB의 기존 모델군 설정 필드만 허용하고 격리 미리보기 DB에는 저장하지 않는다. `BANDO_EGUI_ENABLE_SETTINGS_WRITE=1`, 운영 DB 경로와 Tauri 도우미 연결이 명시된 경우 `backup_manager::manual_backup`을 선행하고 원본 per-field expected-value CAS로 저장한다. 성공 시 최신 상품·모델군 상태를 재조회하며 실패하면 편집값을 보존한다.
+- **검증/판정:** 구조·업무 기준 정적 대조 및 목표 Rust 컴파일·좁은 모델군 규칙 테스트만 대상. Windows GUI 실행·스크린샷은 사용자 정책에 따라 생략. 실제 운영 DB 설정 저장·재조회와 동시 수정 충돌은 별도 확인 전까지 동작 PASS로 기록하지 않는다.
