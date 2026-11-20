@@ -33,8 +33,8 @@ fn text<'a>(row: &'a Value, key: &str) -> &'a str {
 /// Shared geometry for header and item rows. Each label/control uses this
 /// exact column rectangle; no intrinsic egui Grid sizing can shift a column.
 fn freight_assignment_cells(
-    origin: egui::Pos2, widths: &[f32;8], height:f32
-) -> [egui::Rect;8] {
+    origin: egui::Pos2, widths: &[f32;7], height:f32
+) -> [egui::Rect;7] {
     let mut x=origin.x;
     std::array::from_fn(|index|{
         let cell=egui::Rect::from_min_size(
@@ -1065,17 +1065,16 @@ impl FreightManager {
             let table_width=viewport_width.max(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH);
             let mut widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
             let extra=(table_width-theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH).max(0.0);
-            // Preserve a compact fixed category width (about 2-3 levels).
-            // Every remaining point goes to the product/name column.
-            // Full category paths remain available on hover; the visible
-            // path truncates from the START so the leaf stays readable.
-            widths[1]+=extra;
+            // Split spare width between product (70%) and category (30%);
+            // preserve the product as the visually dominant column.
+            widths[1]+=extra*0.70;
+            widths[3]+=extra*0.30;
             let titles=[
                 "","상품명 / 상품설명","색상/옵션","카테고리",
-                "배송 그룹","운임 / 묶음 상태","그룹 지정","설정"
+                "배송 그룹","그룹 지정","설정"
             ];
             // The header is a fixed sibling above the independently scrolling
-            // data area. Both use freight_assignment_cells() for all 8 edges.
+            // data area. Both use freight_assignment_cells() for all 7 edges.
             let (header_rect,_)=section.allocate_exact_size(
                 egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
                 egui::Sense::hover()
@@ -1255,36 +1254,18 @@ impl FreightManager {
                         let rule=effective.map(|entry|&entry["rule"])
                             .unwrap_or(&Value::Null);
                         let ready=effective.is_some();
-                        let confirmed=rule["maxConfirmed"]==true;
-                        let count=rule["maxBundle"].as_i64();
-                        let bundle=if !ready{"확인 중".to_owned()}
-                            else if !confirmed{"확인 필요".to_owned()}
-                            else{count.map(|n|format!("{n}개"))
-                                .unwrap_or_else(||"확인 필요".to_owned())};
-                        let freight=if !ready{"확인 중"}
-                            else if registered_fee(rule){"등록"}else{"미등록"};
-                        let packing=if !ready{"확인 중"}
-                            else if !confirmed || count.is_none(){"확인 필요"}
-                            else if count==Some(1){"개별 포장"}
-                            else{"합포장 가능"};
-                        let info=format!("{freight} · {bundle} · {packing}");
-                        let full_info=format!(
-                            "최대 묶음: {bundle} / 운임: {freight} / 합포장: {packing} / 최근 수정: {}",
-                            modified_date(&rule["at"])
-                        );
-                        freight_assignment_text(
-                            table,cells[5],&info,&full_info,false,false,(id,5)
-                        );
+                        // Group freight/bundle details live in the
+                        // shipping-group management tab, not this selector.
                         let assigned=if changed{"변경 예정"}
                             else if committed.is_empty(){"미지정"}
                             else{"지정 완료"};
                         freight_assignment_text(
-                            table,cells[6],assigned,assigned,false,true,(id,6)
+                            table,cells[5],assigned,assigned,false,true,(id,5)
                         );
 
                         // The action column's buttons and labels cannot expand
-                        // their cell, wrap, or shift the other seven columns.
-                        let actions_rect=cells[7].shrink2(egui::vec2(6.0,0.0));
+                        // their cell, wrap, or shift the other six columns.
+                        let actions_rect=cells[6].shrink2(egui::vec2(6.0,0.0));
                         let actions_clip=actions_rect.intersect(table.clip_rect());
                         table.scope_builder(
                             egui::UiBuilder::new()
@@ -1347,7 +1328,7 @@ impl FreightManager {
                         // of the column gaps. No opacity multiplication:
                         // 0.30 × DIVIDER was darker than the row background,
                         // which made the separators effectively invisible.
-                        for index in 0..7 {
+                        for index in 0..6 {
                             let edge=cells[index].right()
                                 +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                             table.painter().line_segment(
@@ -1396,7 +1377,7 @@ impl FreightManager {
                         galley,theme::SECONDARY
                     );
                 }
-                if i<7 {
+                if i<6 {
                     let edge=header_cells[i].right()
                         +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                     header_painter.line_segment(
