@@ -1405,7 +1405,7 @@ impl BandoEgui {
                                 if !self.client_manager.as_ref()
                                     .is_some_and(|manager|manager.has_modal()) &&
                                     !self.freight_manager.as_ref()
-                                    .is_some_and(|manager|manager.has_modal()||manager.busy()) &&
+                                    .is_some_and(|manager|manager.blocks_navigation()) &&
                                     self.freight_pending_page.is_none() {
                                     // Same page-leave guard as React SettingsView:
                                     // a modified settings draft is never lost
@@ -2992,46 +2992,64 @@ impl BandoEgui {
         };
         if self.freight_pending_save{
             if manager.busy(){return;}
-            if !manager.dirty(){
+            if manager.last_error().is_some(){
+                // A failed or revision-conflicted write must NEVER be retried
+                // without user review of the new data and explicit action.
+                self.freight_pending_save=false;
+            }else if !manager.dirty(){
+                manager.discard_drafts();
                 self.page=next;
                 self.freight_pending_page=None;
                 self.freight_pending_save=false;
                 return;
+            }else if manager.save_dirty(ctx.clone()){
+                // A rate modal and batch assignments can each have drafts.
+                // Continue the user's single "save and leave" instruction
+                // through the same Rust snapshot/revision boundary.
+                return;
+            }else{
+                self.freight_pending_save=false;
             }
-            self.freight_pending_save=false;
         }
         if !manager.dirty(){
+            manager.discard_drafts();
             self.page=next;
             self.freight_pending_page=None;
             return;
         }
-        components::modal_backdrop(ctx,"freight-global-leave-backdrop",false);
+        components::modal_backdrop(ctx,"freight-global-leave-backdrop",
+            manager.has_rate_modal());
         components::decision_window(
             "저장하지 않은 변경사항","freight-global-leave",work_area
         ).show(ctx,|dialog|{
             dialog.label(typography::body(
                 "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
             ));
-            if !manager.can_save_pending() {
+            if !manager.can_save_dirty() && !manager.busy(){
                 dialog.label(typography::caption(
                     "새 배송 그룹명은 배송 그룹 추가를 눌러 등록해야 합니다."
                 ));
+            }
+            if let Some(error)=manager.last_error(){
+                dialog.label(typography::status(error,theme::DANGER));
             }
             dialog.add_space(theme::SPACE_12);
             dialog.horizontal(|bar|{
                 if theme::action(bar,"취소",ButtonRole::Standard,
                     !manager.busy()).clicked(){
                     self.freight_pending_page=None;
+                    self.freight_pending_save=false;
                 }
                 if theme::action(bar,"저장 안 함",ButtonRole::Standard,
                     !manager.busy()).clicked(){
                     manager.discard_drafts();
                     self.page=next;
                     self.freight_pending_page=None;
+                    self.freight_pending_save=false;
                 }
                 if theme::action(bar,"저장하고 이동",ButtonRole::Primary,
-                    !manager.busy()&&manager.can_save_pending()).clicked(){
-                    if manager.save_pending(ctx.clone()){
+                    manager.can_save_dirty()).clicked(){
+                    if manager.save_dirty(ctx.clone()){
                         self.freight_pending_save=true;
                     }
                 }
