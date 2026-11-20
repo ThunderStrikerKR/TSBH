@@ -514,7 +514,7 @@ impl FreightManager {
         ui.add_space(theme::SPACE_12);
         if let Some(index) = components::management_tabs(ui, &[
             ("배송 그룹 편성", self.tab == FreightTab::Groups, true),
-            ("그룹 운임표", self.tab == FreightTab::Rates, true),
+            ("배송 그룹 관리", self.tab == FreightTab::Rates, true),
             ("조합 / 기준 이력", self.tab == FreightTab::History, true),
         ]) {
             if !self.has_other_modal() && !self.busy() &&
@@ -566,29 +566,35 @@ impl FreightManager {
         ui.add_space(theme::SPACE_12);
         let enabled=self.gateway.shipping_write_enabled()&&self.write_receiver.is_none();
         let mut action:Option<(String,Value)>=None;
-        egui::ScrollArea::vertical()
-            .id_salt(("freight-management", self.tab as u8))
-            .auto_shrink([false, false])
-            .show(ui, |scroll| match self.tab {
-                FreightTab::Groups => Self::show_groups(
-                    scroll, &groups, &products, &mut self.search, &mut self.group_filter,
-                    &mut self.only_missing, &projection["editableRules"],
-                    &mut self.pending, &mut self.selected,
-                    &mut self.bulk_group, &mut self.new_name,
-                    &mut self.rename_target, &mut self.delete_target,
-                    &mut self.rate_editor, &mut self.product_reset_target,
-                    &mut self.copy_template, &mut self.copy_target,
-                    &mut self.error, &self.gateway, &projection["productViews"],
-                    enabled, &mut action
-                ),
-                FreightTab::Rates => Self::show_rates(
-                    scroll,&groups,projection,
-                    &mut self.rate_editor,&mut self.basis_target,enabled
-                ),
-                FreightTab::History => Self::show_history(
-                    scroll,shipping,projection,&mut self.exception_target,enabled
-                ),
-            });
+        // The assignment tab owns its own scrollable *rows*. Do not wrap
+        // the heading in a second page-wide vertical scroll, which previously
+        // pushed the column headings offscreen with the product list.
+        if self.tab == FreightTab::Groups {
+            Self::show_groups(
+                ui, &groups, &products, &mut self.search, &mut self.group_filter,
+                &mut self.only_missing, &mut self.pending, &mut self.selected,
+                &mut self.bulk_group, &mut self.rate_editor, &mut self.product_reset_target,
+                &mut self.copy_template, &mut self.copy_target,
+                &mut self.error, &self.gateway, &projection["productViews"],
+                enabled, &mut action
+            );
+        }else{
+            egui::ScrollArea::vertical()
+                .id_salt(("freight-management", self.tab as u8))
+                .auto_shrink([false,false])
+                .show(ui,|scroll|match self.tab {
+                    FreightTab::Rates => Self::show_rates(
+                        scroll,&groups,&products,projection,
+                        &mut self.new_name,&mut self.rename_target,
+                        &mut self.delete_target,&mut self.rate_editor,
+                        &mut self.basis_target,&mut self.error,enabled,&mut action
+                    ),
+                    FreightTab::History => Self::show_history(
+                        scroll,shipping,projection,&mut self.exception_target,enabled
+                    ),
+                    FreightTab::Groups => {}
+                });
+        }
         if self.tab==FreightTab::Groups {
             let area=ui.max_rect();
             let ctx=ui.ctx();
