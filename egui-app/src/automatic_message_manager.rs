@@ -584,7 +584,7 @@ impl AutomaticMessageManager {
             ));
         }
     }
-    pub fn show(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
+    pub fn show(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,page_origin_y:f32){
         self.poll();
         let tab=components::management_tabs(ui,&[
             ("상황별 공통 안내",self.section==Section::General,true),
@@ -602,6 +602,8 @@ impl AutomaticMessageManager {
         ));
         // Two functional regions, matching the original left-list/right-edit
         // workspace. Do not import Freight's large KPI cards into this editor.
+        // The extra message sub-tab stays above the shared primary card line.
+        components::align_management_primary_card(ui,page_origin_y);
         let width=ui.available_width().max(1.0);
         let gap=theme::SPACE_12;
         let left_width=(width*0.35).clamp(250.0,theme::FAMILY_LIST_WIDTH)
