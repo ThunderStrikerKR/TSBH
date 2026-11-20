@@ -1013,58 +1013,72 @@ impl FreightManager {
                 .clicked(){*basis=Some(None);}
         });
         ui.add_space(theme::SPACE_12);
-        for group in groups {
-            let name = text(group, "name");
-            let id = text(group, "id");
-            let rule = projection["editableRules"].get(id)
-                .unwrap_or(&group["current"]);
-            theme::section_frame().show(ui, |section| {
-                section.horizontal(|bar|{
-                    bar.label(typography::section_heading(name));
-                    if theme::action(bar,"운임 수정",
-                        theme::ButtonRole::Standard,enabled).clicked(){
-                        *editor=Some(RateEditor::new(id,name,rule));
-                    }
-                    if theme::action(bar,"기준 변경",
-                        theme::ButtonRole::Danger,enabled).clicked(){
-                        *basis=Some(Some(id.to_owned()));
-                    }
-                });
-                section.add_space(theme::SPACE_8);
-                let max = rule["maxBundle"].as_i64();
-                let max_label = if rule["maxConfirmed"] == true {
-                    max.map(|n| format!("{n}개")).unwrap_or_else(||"확인 필요".into())
-                } else {"확인 필요".into()};
-                theme::label_value(section, "최대 묶음 수량", &max_label);
-                theme::label_value(section, "최근 수정", text(rule, "at"));
-                if !text(rule, "notes").is_empty() {
-                    theme::label_value(section, "사용자 참고 메모", text(rule, "notes"));
-                }
-                section.add_space(theme::SPACE_8);
-                section.label(typography::subsection_heading("수량별 운임"));
-                let fee_rows: Vec<(i64, String)> = (1..=6).filter_map(|count| {
-                    rule["fees"].get(count.to_string()).and_then(Value::as_i64)
-                        .map(|v| (count, components::display_won(v)))
-                }).collect();
-                if fee_rows.is_empty() {
-                    section.label(typography::caption("등록된 수량별 운임이 없습니다."));
-                } else {
-                    egui::Grid::new(("freight-rates", id))
-                        .striped(true).spacing([theme::SPACE_24, theme::SPACE_8])
-                        .show(section, |grid| {
-                            for (count, amount) in &fee_rows {
-                                grid.label(typography::field_label(&format!("{count}개 묶음")));
-                                grid.label(typography::quantity(amount));
+        theme::section_frame().show(ui,|section|{
+            egui::ScrollArea::horizontal()
+                .id_salt("freight-group-rates-table")
+                .auto_shrink([false,false])
+                .show(section,|table|{
+                    table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+                    egui::Grid::new("freight-group-rates-grid")
+                        .striped(true)
+                        .spacing([theme::SPACE_24,theme::SPACE_8])
+                        .show(table,|grid|{
+                            for heading in [
+                                "배송 그룹","최대 묶음 수량","운임 등록 상태",
+                                "사용자 참고 메모","최근 수정","관리"
+                            ] {
+                                grid.label(typography::table_header(heading));
+                            }
+                            grid.end_row();
+                            for group in groups {
+                                let id=text(group,"id");
+                                let name=text(group,"name");
+                                // The raw current tariff owns status and confirmation.
+                                // editableRules is only for opening a writable dialog:
+                                // legacy perItem normalization can make an unconfirmed
+                                // raw group look "maxConfirmed = 1" if displayed.
+                                let current=&group["current"];
+                                let editable=projection["editableRules"].get(id)
+                                    .unwrap_or(current);
+                                let max=if current["maxConfirmed"]==true {
+                                    current["maxBundle"].as_i64()
+                                        .map(|n|format!("{n}개"))
+                                        .unwrap_or_else(||"확인 필요".into())
+                                }else{"확인 필요".into()};
+                                let registered=current["perItem"].as_i64().is_some() ||
+                                    current["fees"].as_object().is_some_and(|fees|
+                                        fees.values().any(Value::is_number));
+                                let note=text(current,"notes");
+                                let date=text(current,"at").split('T').next().unwrap_or("");
+                                grid.label(typography::table_cell(name));
+                                grid.label(typography::table_cell(&max));
+                                grid.label(typography::table_cell(
+                                    if registered{"등록"}else{"미등록"}
+                                ));
+                                grid.label(typography::caption(
+                                    if note.is_empty(){"-"}else{note}
+                                ));
+                                grid.label(typography::table_cell(
+                                    if date.is_empty(){"-"}else{date}
+                                ));
+                                grid.horizontal_wrapped(|actions|{
+                                    if theme::action(actions,"운임 수정",
+                                        theme::ButtonRole::Standard,enabled).clicked(){
+                                        *editor=Some(RateEditor::new(id,name,editable));
+                                    }
+                                    if theme::action(actions,"기준 변경",
+                                        theme::ButtonRole::Standard,enabled).clicked(){
+                                        *basis=Some(Some(id.to_owned()));
+                                    }
+                                });
                                 grid.end_row();
                             }
                         });
-                }
-            });
-            ui.add_space(theme::SPACE_12);
-        }
-        if groups.is_empty() {
-            ui.label(typography::caption("등록된 배송 그룹이 없습니다."));
-        }
+                    if groups.is_empty(){
+                        table.label(typography::caption("등록된 배송 그룹이 없습니다."));
+                    }
+                });
+        });
     }
 
     fn rate_dialog(
