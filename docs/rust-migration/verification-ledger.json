@@ -2855,6 +2855,35 @@
         "notApplicable": "Kakao docking layout; product/management/freight sections; modal placement unchanged.",
         "pending": "Targeted cargo check and DB action; native customer-specific alias evidence UI sync; persisted quote revision revalidation."
       }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-PANEL-LEVEL2-DARKEN",
+      "scope": "공통 egui 2단계 PANEL 배경과 작업 중 발주서 카드 표면 대비 개선",
+      "status": "SOURCE_PATCHED_STATIC_PASS_GUI_SKIPPED",
+      "description": "사용자 최신 승인: 2단계 PANEL 배경을 #202020에서 #181818로 어둡게. 워크플로 발주서 묶음의 WORKFLOW_CARD_BG=INPUT #292929는 유지해 배경 대비를 확장. 공통 토큰(theme::PANEL)을 사용하는 모든 egui 화면/공통 프레임에 적용하며, React 레거시 CSS의 별도 색상을 현재 egui 런타임의 자동 적용 범위라고 오보고하지 않음. RGB 이외 UI·업무·저장·스플리터·선택 상태 코드 미변경.",
+      "evidence": [
+        "egui-app/src/theme.rs",
+        "egui-app/src/workflow_board_ui.rs",
+        "egui-app/src/components.rs",
+        "egui-app/src/main.rs",
+        "src/ui/design-system.json",
+        "src/styles/workflow.css",
+        "docs/egui-ui-design-contract.md",
+        "docs/ui-design-system.md"
+      ],
+      "gates": {
+        "patch": "PASS: egui shared panel token 2d708fadea434f8b365b697354a2e1636f9be643; canonical palette 07fb5510149f967f3a54705226a06b84c12c9f19; egui contract 22075b319dd72d3dee7efcc6faa56021d5169552; UI design documentation 9c2813d47f728233986b590793466bffbbce59e9.",
+        "static": "PASS: workflow_board_ui::workflow_card fills ordinary cards via theme::WORKFLOW_CARD_BG=INPUT, outer docked_pane_frame via PANEL. Eguis other shared sections and noninteractive surfaces reuse PANEL. Other theme tokens and native business code untouched.",
+        "unit": "NOT APPLICABLE: pure color constant change, no domain calculation.",
+        "action": "NOT APPLICABLE: no user action or storage changes.",
+        "ci": "NOT EXECUTED: theme-only constant change does not require repetitive whole-project compile per policy.",
+        "windows": "SKIPPED on explicit user decision."
+      },
+      "clauses": {
+        "applicable": "0-1~0-7, 6-10, 16-23, 47-54, 57-61",
+        "notApplicable": "Gateway, customer/order/shipping calculations and SQLite business mutations unchanged.",
+        "pending": "Actual Windows display and subjective visual difference require user feedback only if requested."
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
