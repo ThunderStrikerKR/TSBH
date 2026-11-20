@@ -376,6 +376,95 @@ fn native_model_group_sqlite_roundtrip_and_stale_editor_conflict() {
 }
 
 
+/// Product Excel UI -> native workbook preview -> manual SQLite backup ->
+/// direct Rust CAS writer. Uses ONLY a fresh isolated on-disk v2 database.
+#[test]
+fn native_product_excel_backup_commit_reopen_and_stale_revision_guard() {
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let before=get_snapshot(&conn).expect("real initial v2 SQLite state");
+    let product=before["products"].as_array().unwrap().iter()
+        .find(|p|p["active"]!=false&&
+            p.get("deletedAt").is_none_or(Value::is_null)&&
+            p.get("supersededBy").is_none_or(Value::is_null)&&
+            p["catalog"]!="DEMO"&&
+            p["variants"].as_array().is_some_and(|v|v.len()==1))
+        .expect("real catalog must have an editable independent SKU");
+    let variant=&product["variants"][0];
+    let id=product["id"].as_str().unwrap();
+    let vid=variant["id"].as_str().unwrap();
+    let original_price=variant["wholesale"].as_i64().unwrap_or(0);
+    let revised_price=original_price+137;
+    let original_count=before["products"].as_array().unwrap().len();
+    let category=product["categories"].as_array().map(|items|items.iter()
+        .filter_map(Value::as_str).collect::<Vec<_>>().join(" / "))
+        .unwrap_or_default();
+    let value=|v:&Value,key:&str|v[key].as_str().unwrap_or("").to_owned();
+    let group=if product["catalog"]=="BANDOMALL"{"반도몰"}else{"반도스탠드"};
+    let origin=if product["origin"]=="STORE"{"매장"}else{"공장"};
+    let price=|key:&str|variant[key].as_i64().map(|n|n.to_string())
+        .unwrap_or_default();
+    let source=json!({
+        "revision":before["revision"],
+        "products":[{"row":2,"cells":[
+            id,"",value(product,"name"),value(product,"subtitle"),
+            "",group,origin,category,value(product,"brandId"),
+            value(product,"specification"),value(product,"sellingUnit"),
+            value(product,"defaultColor"),
+            if product["active"]==false{"중지"}else{"사용"},"정상"
+        ]}],
+        "options":[{"row":2,"cells":[
+            id,"",vid,value(variant,"color"),value(variant,"option"),
+            revised_price.to_string(),price("semi"),price("retail"),
+            value(variant,"source"),value(variant,"siteOptionId")
+        ]}]
+    });
+    let preview=bando_data_access::preview_unified_product_workbook(
+        &before,&source
+    ).expect("use authoritative native Rust preview for parsed Excel rows");
+    assert!(preview["rows"].as_array().unwrap().iter().all(|r|
+        r["status"]!="ERROR"&&r["status"]!="HOLD"),
+        "valid price edit must not be rejected: {}",preview["rows"]);
+    assert_eq!(preview["updatedProducts"],1);
+    assert_eq!(get_snapshot(&conn).unwrap(),before,
+        "preview cannot modify any SQLite rows");
+    // Exact backup contract from React: backup before the product writer.
+    let backup=backup_manager::manual_backup(&conn,&isolated.root)
+        .expect("full manual SQLite backup must succeed");
+    let backed=Connection::open_with_flags(
+        &backup,rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    assert_eq!(get_snapshot(&backed).unwrap(),before);
+    drop(backed);
+    let req=json!({
+        "expectedRevision":before["revision"],
+        "action":"apply_product_workbook",
+        "data":{"preview":preview}
+    });
+    let saved=bando_data_access::patch_product_v2(&mut conn,&req)
+        .expect("write approved Excel through same native Rust CAS");
+    assert_eq!(saved["revision"].as_u64(),
+        before["revision"].as_u64().map(|n|n+1));
+    let after=get_snapshot(&conn).unwrap();
+    assert_eq!(after["products"].as_array().unwrap().len(),original_count,
+        "Excel must preserve other products absent from the workbook");
+    for key in ["orders","clients","workflow","aliases","shipping"]{
+        assert_eq!(after[key],before[key],
+            "product Excel cannot modify unrelated {key}");
+    }
+    let edited=after["products"].as_array().unwrap().iter()
+        .find(|p|p["id"]==id).unwrap();
+    assert_eq!(edited["variants"][0]["id"],vid);
+    assert_eq!(edited["variants"][0]["wholesale"],revised_price);
+    let stale=bando_data_access::patch_product_v2(&mut conn,&req)
+        .expect_err("stale XLSX approval must not overwrite latest database");
+    assert!(stale.contains("리비전")||stale.contains("새로고침"),
+        "unexpected stale-write error: {stale}");
+    assert_eq!(get_snapshot(&conn).unwrap(),after);
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite"))
+        .expect("open the same isolated v2 SQLite after commit");
+    assert_eq!(get_snapshot(&reopened).unwrap(),after);
+}
+
 /// Alias UI -> shared Rust patch_product_v2 -> original catalog_clients::save_alias
 /// -> revision-checked SQLite writer. No fake backend or operating DB mutation.
 #[test]
