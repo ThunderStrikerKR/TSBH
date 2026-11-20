@@ -5,7 +5,7 @@
 //! - No business DB: isolated egui-preview.sqlite3 settings domain, with
 //!   per-field CAS and a local account-reference guard.
 //! No implicit operational database discovery and no shadow settings rules.
-use crate::{business_state, client_master, preview_store::PreviewStore};
+use crate::{business_state, preview_store::PreviewStore};
 use rusqlite::{params,Connection,TransactionBehavior};
 use serde_json::{json,Map,Value};
 use std::{io::Write,process::{Command,Stdio},time::{Duration,SystemTime,UNIX_EPOCH}};
@@ -107,11 +107,12 @@ pub fn load()->Result<Value,String>{
     }
     let conn=connection()?;
     let (revision,settings)=read_local(&conn)?;
-    let clients=client_master::load()?;
+    // The egui preview no longer owns a customer master. Only the live
+    // business DB can provide actual account usage references.
     Ok(json!({
         "revision":revision,"settings":settings,
         "readOnly":false,"mode":"isolated",
-        "usedAccounts":used_accounts(&clients["clients"])
+        "usedAccounts":[]
     }))
 }
 fn validate(changes:&Map<String,Value>,expected:&Map<String,Value>)->Result<(),String>{
@@ -144,13 +145,11 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     let changes=changes.as_object().ok_or("설정 변경 객체가 없습니다.")?;
     let expected=expected.as_object().ok_or("설정 기존값 객체가 없습니다.")?;
     validate(changes,expected)?;
-    // The client master uses another SQLite connection; read references
-    // BEFORE acquiring the IMMEDIATE settings write lock.
+    // Isolated settings are preview-only. The canonical client master lives
+    // exclusively in the operating SQLite DB; never blend its references
+    // with this independent preview preference store.
     let account_changed=["accounts","defaultAccountId","brandAccounts"]
         .iter().any(|key|changes.contains_key(*key));
-    let clients=if account_changed{
-        Some(client_master::load()?)
-    }else{None};
     let mut conn=connection()?;
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_|"설정 저장 트랜잭션 시작 실패")?;
@@ -173,9 +172,7 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     if account_changed{
         native_settings_accounts::validate(&json!({
             "settings":&settings,
-            "clients":clients.as_ref()
-                .and_then(|master|master.get("clients"))
-                .ok_or("거래처 계좌 참조를 확인할 수 없습니다.")?
+            "clients":[]
         }))?;
     }
     let next=revision.checked_add(1).ok_or("설정 revision 한도 초과")?;
