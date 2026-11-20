@@ -2744,10 +2744,10 @@
         "docs/egui-ui-design-contract.md"
       ],
       "gates": {
-        "patch": "PASS: model UI commit baaef0cd6707dab99fd1b22124ab7c7d15916135; screen mount 416888029416c1b37aaf1dfac7b17a12e3a1b884; storage CAS 43c18230f8ed4255c37efa14c08708cf6d28e21a; gateway backup 787250e5f500ae0abf79dff8852584db18cb1b4d; canonical pre-backup validation 6fbf8f4609272e21666a7c46fc9e3164192700a2.",
-        "static": "PASS source comparison: ColorGuidanceManager React event paths, model-groups.ts, CSS product-admin-redesign and management-layout; Rust model_groups validate source reused, Tauri settings_patch expected-value CAS and existing SQLite backup protocol reused; no new product/order modification code.",
+        "patch": "PASS: model UI commit baaef0cd6707dab99fd1b22124ab7c7d15916135; screen mount 416888029416c1b37aaf1dfac7b17a12e3a1b884; storage CAS 43c18230f8ed4255c37efa14c08708cf6d28e21a; gateway backup 787250e5f500ae0abf79dff8852584db18cb1b4d; canonical pre-backup validation 6fbf8f4609272e21666a7c46fc9e3164192700a2.; vertical border alignment 810e3630b58a1a8791a2c28274799db1090f7020.",
+        "static": "PASS source comparison: ColorGuidanceManager React event paths, model-groups.ts, CSS product-admin-redesign and management-layout; Rust model_groups validate source reused, Tauri settings_patch expected-value CAS and existing SQLite backup protocol reused; no new product/order modification code.; verified model-group outer container draws one vertical split border, not a horizontal control separator.",
         "unit": "Model-group tests added on de51e2e8a4423e0bc874c2177af915282ee896a2, include explicit representative validation and no cross-group duplication. Execution pending at observation time.",
-        "ci": "Tauri cargo check and egui cargo check PASS at commit 416888029416 (run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44655691358); subsequent targeted model_group validation source and footer change compilation pending (run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44656103937).",
+        "ci": "PASS on source 416888029416c1b37aaf1dfac7b17a12e3a1b884: Tauri cargo check + egui cargo check, https://github.com/ThunderStrikerKR/TSBH/actions/runs/44655691358. Final model-group scoped-tests and newer source changes as of 810e3630b58a1a8791a2c28274799db1090f7020: latest CI still in progress, NOT asserted PASS.",
         "action": "NOT VERIFIED: actual operational SQLite roundtrip for group create/update/delete, backup generation, concurrent expected-value CAS, UI interaction against live Windows.",
         "windows": "SKIPPED by user policy: no real Windows GUI/DPI/click/screenshot testing."
       },
