@@ -563,23 +563,18 @@ impl FreightManager {
             let id = text(p, "shippingGroupId");
             !id.is_empty() && groups.iter().any(|g| text(g, "id") == id)
         }).count();
-        if ui.available_width() < theme::MANAGEMENT_TABLE_MIN_WIDTH / 2.0 {
-            ui.columns(2,|cols|{
-                summary(&mut cols[0],"등록 상품",products.len());
-                summary(&mut cols[1],"그룹 지정 완료",assigned);
-            });
-            ui.columns(2,|cols|{
-                summary(&mut cols[0],"그룹 미지정",products.len()-assigned);
-                summary(&mut cols[1],"배송 그룹",groups.len());
-            });
-        }else{
-            ui.columns(4,|cols|{
-                summary(&mut cols[0],"등록 상품",products.len());
-                summary(&mut cols[1],"그룹 지정 완료",assigned);
-                summary(&mut cols[2],"그룹 미지정",products.len()-assigned);
-                summary(&mut cols[3],"배송 그룹",groups.len());
-            });
-        }
+        // Keep all summary cards at their intrinsic width, starting at the
+        // left edge. A narrow pane wraps whole cards rather than stretching
+        // every card to one quarter of a very wide workspace.
+        ui.horizontal_wrapped(|strip|{
+            strip.spacing_mut().item_spacing=egui::vec2(
+                theme::SPACE_8,theme::SPACE_8
+            );
+            summary(strip,"등록 상품",products.len());
+            summary(strip,"그룹 지정 완료",assigned);
+            summary(strip,"그룹 미지정",products.len()-assigned);
+            summary(strip,"배송 그룹",groups.len());
+        });
         ui.add_space(theme::SPACE_12);
         let enabled=self.gateway.shipping_write_enabled()&&self.write_receiver.is_none();
         let mut action:Option<(String,Value)>=None;
@@ -1818,13 +1813,38 @@ impl FreightManager {
 }
 
 fn summary(ui: &mut Ui, label: &str, count: usize) {
-    theme::section_frame().show(ui, |cell| {
-        cell.horizontal_wrapped(|line|{
-            line.label(typography::caption(label));
-            line.with_layout(egui::Layout::right_to_left(egui::Align::Center),|right|{
-                right.label(typography::caption("개"));
-                right.label(typography::summary_value(&count.to_string()));
+    let card_width=theme::FREIGHT_SUMMARY_CARD_WIDTH;
+    ui.allocate_ui_with_layout(
+        egui::vec2(card_width,theme::FREIGHT_SUMMARY_CARD_HEIGHT),
+        egui::Layout::top_down(egui::Align::Min),
+        |slot|{
+            slot.set_width(card_width);
+            theme::section_frame().show(slot,|cell|{
+                // A fixed inner width keeps numeric and unit positions
+                // identical in all four cards regardless of label length.
+                cell.set_width(card_width-2.0*theme::SECTION_PADDING
+                    -2.0*theme::FRAME_STROKE_WIDTH);
+                cell.horizontal(|line|{
+                    line.label(typography::caption(label));
+                    line.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |right|{
+                            right.spacing_mut().item_spacing.x=theme::SPACE_4;
+                            right.add_sized(
+                                [theme::FREIGHT_SUMMARY_UNIT_WIDTH,24.0],
+                                egui::Label::new(typography::caption("개"))
+                                    .halign(egui::Align::Min)
+                            );
+                            right.add_sized(
+                                [theme::FREIGHT_SUMMARY_NUMBER_WIDTH,24.0],
+                                egui::Label::new(
+                                    typography::summary_value(&count.to_string())
+                                ).halign(egui::Align::Max)
+                            );
+                        }
+                    );
+                });
             });
-        });
-    });
+        }
+    );
 }
