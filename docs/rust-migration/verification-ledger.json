@@ -867,7 +867,7 @@
       ],
       "eguiFreightMigration": {
         "scope": "2026-11-20 grouped freight assignment/rates and individual fallback; latest source and explicit user instructions",
-        "status": "PARTIAL_IMPLEMENTATION_BUILD_PASS_ACTION_UNVERIFIED",
+        "status": "P1_PATCHED_BUILD_AND_ACTION_PENDING",
         "existingReference": [
           "src/ShippingManager.tsx",
           "src/ProductFreightPanel.tsx",
@@ -903,7 +903,7 @@
           "baseline": "main 2e614815e8dc6f941cb936c327e713df64661f9b React ShippingManager.tsx, ProductFreightPanel.tsx, ShippingFeeRanges.tsx, shipping.css + applied management-layout.css; egui freight_manager.rs; Rust shipping.rs and bridge",
           "evidenceGrade": "STATIC_DIFF_ONLY; no Windows GUI; no runtime interaction",
           "approvedLayoutChange": "3 tabs (shipping groups / group rates / combination history), product individual rate subordinate to groups: do not treat 4->3 tab count as loss alone",
-          "parity": "NOT_COMPLETE",
+          "parity": "P1_PATCHED_STATIC_SOURCE_CONTRACT_REVIEW; P2_STILL_OPEN",
           "findings": [
             [
               "S01",
@@ -1006,7 +1006,28 @@
               "shipping writes still require explicit business DB/helper/write authorization; compile PASS is not operational write proof"
             ]
           ],
-          "result": "SOURCE_AUDIT_FAIL_MISSING_UI_AND_BEHAVIOR; no app code changed in this comparison"
+          "result": "P1_SOURCE_CHANGES_COMMITTED; COMPILE/DB_ACTION_PENDING; WINDOWS_GUI_NOT_REQUESTED",
+          "latestApprovedContract": "docs/egui-ui-design-contract.md 2026-11-20 group-first rates; no individual edit/reset button for group members; unassigned-product priority",
+          "p1Resolution": [
+            "S01 PATCH: group-assignment product list has max bundle, rate registration, packaging, modified columns; latest approved group-unassigned filter",
+            "S02 PATCH: variants color label and inline model name/subtitle",
+            "S03 PATCH: six-column group rate table with registered/unregistered and current source",
+            "S04 APPROVED RELOCATION: group tariff editor in group header, not product row",
+            "S05 PATCH: original group-to-product copy allowed for assigned members; React Rust copy does not change assignment",
+            "S06 APPROVED CHANGE: group-member individual reset button hidden, group-level basis action retained; original reset Rust action kept",
+            "S07 PATCH: linked-group deletion dialog lists affected model and first color before detach",
+            "S08 PATCH: reload on page re-entry and revision conflict; preserve local drafts and never auto-retry",
+            "S09 PATCH: display raw group current fields, not normalized editableRule status",
+            "S10 PATCH: modal Save/Discard/Cancel and global/subtab leave-guard saving rate then pending assignment"
+          ],
+          "compilation": "PENDING targeted check run 44646940152",
+          "action": "NOT_RUN (operational SQLite writes explicitly forbidden in this scope)",
+          "files": [
+            "egui-app/src/freight_manager.rs",
+            "egui-app/src/main.rs",
+            "src-tauri/src/egui_shipping_bridge.rs",
+            "docs/egui-ui-design-contract.md (latest approved policy, concurrent)"
+          ]
         }
       },
       "legacyLedgerStatus": "FROZEN_SHIPPING_ORACLE_PARTIAL",
