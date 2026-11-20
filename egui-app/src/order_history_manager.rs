@@ -27,9 +27,14 @@ const COLS: [f32;7] = [112.0,156.0,300.0,126.0,124.0,112.0,132.0];
 const MIN_WIDTH: f32 = 1110.0; // sum(COLS) + six 8pt gaps
 // Natural width of [date basis, previous, start date/calendar, end
 // date/calendar, next, all dates]. The search stays outside this right slot.
-const RANGE_CONTROLS_WIDTH:f32=940.0;
-const RANGE_COMPACT_START_WIDTH:f32=480.0;
-const RANGE_COMPACT_END_WIDTH:f32=460.0;
+// The group is measured from the real control sizes, not the previously
+// over-reserved 940pt strip; this keeps all controls right-aligned.
+const HISTORY_DATE_FIELD_WIDTH:f32=106.0;
+const HISTORY_DATE_GROUP_GAP:f32=2.0;
+const HISTORY_DATE_BASIS_WIDTH:f32=148.0;
+const RANGE_CONTROLS_WIDTH:f32=704.0;
+const RANGE_COMPACT_START_WIDTH:f32=390.0;
+const RANGE_COMPACT_END_WIDTH:f32=350.0;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum HistoryDateBasis { Reception, Payment }
 impl HistoryDateBasis {
@@ -130,7 +135,7 @@ struct HistorySnapshot {
 }
 
 #[derive(Clone,Copy,PartialEq,Eq)]
-enum SortColumn { Date, Client, Shipment, Status, Total }
+enum SortColumn { Date, Client, Shipment, Status, Total, PaymentConfirmation }
 #[derive(Clone,Copy,PartialEq,Eq)]
 enum SortDirection { Asc, Desc }
 #[derive(Clone,Copy,PartialEq,Eq)]
@@ -173,9 +178,22 @@ fn display_lines(snapshot:&HistorySnapshot,expanded:&BTreeSet<String>,
                 SortColumn::Total=>row["total"].as_i64()
                     .map(|n|format!("{:020}",n.max(0)))
                     .unwrap_or_else(||"~".into()),
+                // The approval date, not the bank paidAt timestamp.
+                // YYYY-MM-DD sorts chronologically as ordinary text.
+                SortColumn::PaymentConfirmation=>field(
+                    &row["display"]["employeePaymentConfirmation"],"date"
+                ).to_owned(),
             }
         });
         if sort.direction==SortDirection::Desc{indices.reverse();}
+        if sort.column==SortColumn::PaymentConfirmation{
+            // An unconfirmed order must be last in BOTH sort directions.
+            // Stable sort preserves the date order of confirmed entries.
+            indices.sort_by_key(|i|field(
+                &snapshot.rows[*i]["display"]["employeePaymentConfirmation"],
+                "date"
+            ).is_empty());
+        }
     }
     let mut lines=Vec::new();
     for index in indices {
@@ -947,7 +965,8 @@ impl OrderHistoryManager {
                 let sort_col=match index{
                     0=>Some(SortColumn::Date),1=>Some(SortColumn::Client),
                     2=>Some(SortColumn::Shipment),3=>Some(SortColumn::Status),
-                    4=>Some(SortColumn::Total),_=>None,
+                    4=>Some(SortColumn::Total),
+                    5=>Some(SortColumn::PaymentConfirmation),_=>None,
                 };
                 let cell=header_cells[index].intersect(head_rect);
                 let indicator=sort_col.map(|column|{
