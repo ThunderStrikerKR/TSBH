@@ -226,24 +226,11 @@ fn workflow_header(
             );
         }
 
-        bar.allocate_ui_with_layout(
-            Vec2::new(theme::WORKFLOW_MANAGE_WIDTH,theme::WORKFLOW_TITLE_HEIGHT),
-            Layout::top_down(Align::Min),|manage|{
-                theme::action_full_width(
-                    manage,"관리",theme::ButtonRole::Standard,false
-                );
-            }
+        components::workflow_auxiliary_button(
+            bar, components::WorkflowAuxiliaryAction::Manage,
         );
-        let (delete_rect,_)=bar.allocate_exact_size(
-            Vec2::new(theme::WORKFLOW_TRASH_WIDTH,theme::WORKFLOW_TITLE_HEIGHT),
-            egui::Sense::hover(),
-        );
-        bar.painter().rect_filled(
-            delete_rect,theme::CONTROL_RADIUS as f32,theme::RAISED
-        );
-        components::paint_workflow_icon(
-            bar.painter(),delete_rect.center(),
-            components::WorkflowIcon::Trash,theme::MUTED,
+        components::workflow_auxiliary_button(
+            bar, components::WorkflowAuxiliaryAction::Delete,
         );
     });
     title_response.expect("workflow heading must reserve a clickable title")
@@ -331,15 +318,8 @@ fn workflow_action_line(
                 ));
             }
         );
-        let back=bar.add_enabled(false,
-            egui::Button::new("").min_size(Vec2::new(
-                theme::WORKFLOW_TRASH_WIDTH,
-                theme::WORKFLOW_ACTION_ROW_HEIGHT
-            ))
-        );
-        components::paint_workflow_icon(
-            bar.painter(),back.rect.center(),
-            components::WorkflowIcon::PreviousStage,theme::MUTED
+        components::workflow_auxiliary_button(
+            bar, components::WorkflowAuxiliaryAction::PreviousStage,
         );
     });
     let response=stage_button.expect("workflow action occupies a fixed slot");
