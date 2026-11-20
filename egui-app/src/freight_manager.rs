@@ -915,6 +915,9 @@ impl FreightManager {
                     tools.set_width(left_rect.width());
                     tools.set_height(left_rect.height());
                     tools.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    // Match the common 36pt input geometry for both search
+                    // and filter dropdowns, rather than default egui height.
+                    tools.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
                 components::flexible_text_field(
                     tools,search,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                     "모델명 / 상품명 / 카테고리 검색"
@@ -993,6 +996,9 @@ impl FreightManager {
                     bulk.set_width(right_rect.width());
                     bulk.set_height(right_rect.height());
                     bulk.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    // Keep the bulk dropdown at the same 36pt control
+                    // height as the search field on the other side.
+                    bulk.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
                         settings_help::icon(bulk,"배송 그룹 일괄 지정");
                         if theme::action(bulk,"선택 상품에 적용",
                             theme::ButtonRole::Standard,
