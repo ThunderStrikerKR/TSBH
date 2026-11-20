@@ -1343,8 +1343,8 @@ impl FreightManager {
             if *bulk_group!=previous_group {
                 *bulk_feedback=None;
             }
-            // Shared transition: 8pt toolbar gap, 4/1/4 divider strip,
-            // then the full-width sticky header, on the exact same cursor.
+            // Shared transition: 16pt after the 36pt toolbar, 1pt divider,
+            // 4pt before the full-width sticky header, on the same cursor.
             let table_header=components::management_sticky_table_header(
                 section,theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH
             );
