@@ -40,6 +40,7 @@ pub struct SettingsView{
     restored:bool,
     requested_tab:Option<SettingsTab>,
     switch_after_save:bool,
+    reload_confirmation:bool,
     pub error:Option<String>,
     notice:Option<String>,
 }
@@ -164,6 +165,7 @@ impl SettingsView{
             backups:Vec::new(),backup_refresh_after_create:false,
             restore_target:None,restored:false,
             requested_tab:None,switch_after_save:false,
+            reload_confirmation:false,
             error:None,notice:None
         }
     }
@@ -469,7 +471,18 @@ impl SettingsView{
         }
         ui.add_space(theme::SPACE_12);
         if let Some(error)=self.error.as_deref(){
+            // React SettingsPanel conflict recovery: the employee can
+            // reopen the saved version after acknowledging draft loss.
+            let conflict=error.contains("다른 화면에서 바뀌었습니다")
+                || error.contains("다른 작업에서 변경된 설정")
+                || error.contains("설정 충돌");
             ui.label(typography::status(error,theme::DANGER));
+            if conflict && theme::action(
+                ui,"저장된 설정 불러오기",ButtonRole::Standard,
+                !self.busy()
+            ).clicked(){
+                self.reload_confirmation=true;
+            }
             ui.add_space(theme::SPACE_8);
         }else if let Some(notice)=self.notice.as_deref(){
             ui.label(typography::status(notice,theme::SUCCESS));
@@ -851,11 +864,36 @@ impl SettingsView{
         card(ui,"업무 데이터 저장",|_panel|{});
     }
     pub fn has_data_modal(&self)->bool{
-        self.archive_open||self.restore_target.is_some()
+        self.archive_open||self.restore_target.is_some()||self.reload_confirmation
     }
     pub fn show_data_modals(
         &mut self,ctx:&Context,area:egui::Rect,gateway:Arc<dyn BandoGateway>
     ){
+        if self.reload_confirmation{
+            components::modal_backdrop(ctx,"settings-reload-backdrop",false);
+            components::decision_window(
+                "저장된 설정 불러오기","settings-reload-confirm",area
+            ).show(ctx,|ui|{
+                ui.label(typography::body(
+                    "입력 중인 설정을 닫고 저장된 설정을 다시 불러올까요?"
+                ));
+                ui.add_space(theme::SPACE_12);
+                ui.horizontal(|actions|{
+                    if theme::action(
+                        actions,"취소",ButtonRole::Standard,true
+                    ).clicked(){
+                        self.reload_confirmation=false;
+                    }
+                    if theme::action(
+                        actions,"불러오기",ButtonRole::Primary,true
+                    ).clicked(){
+                        self.reload_confirmation=false;
+                        self.reload(Arc::clone(&gateway),ctx.clone());
+                    }
+                });
+            });
+            return;
+        }
         if self.archive_open{
             components::modal_backdrop(ctx,"settings-audit-backdrop",false);
             let mut open=true;
