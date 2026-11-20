@@ -387,6 +387,7 @@ impl ClientManager {
                     table.spacing_mut().item_spacing.y=0.0;
                     let first=visible_rows.start;
                     let origin=table.max_rect().min;
+                    let rows_clip=table.clip_rect();
                     for index in visible_rows{
                         let row_rect=egui::Rect::from_min_size(
                             egui::pos2(
@@ -404,7 +405,7 @@ impl ClientManager {
                                 .max_rect(row_rect)
                                 .layout(Layout::top_down(Align::Min)),
                             |row|{
-                                row.set_clip_rect(table.clip_rect());
+                                row.set_clip_rect(rows_clip);
                                 if let Some(client)=rows.get(index){
                                     let name=field(client,"name");
                                     let display=field(client,"displayName");
