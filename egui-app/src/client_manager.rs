@@ -230,7 +230,8 @@ impl ClientManager {
     }
 
     fn list_search(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,reserve:f32) {
-        ui.label(typography::field_label("검색"));
+        // The placeholder already states the search purpose; an extra
+        // external '검색' label wastes the first column's left alignment.
         let width=(ui.available_width()-reserve).max(60.0)
             .min(theme::MANAGEMENT_CLIENT_SEARCH_MAX_WIDTH);
         if components::flexible_text_field(
