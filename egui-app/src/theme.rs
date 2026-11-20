@@ -270,10 +270,12 @@ pub fn section_frame() -> Frame {
 /// four panes and window edges. One shared thin frame joins the existing
 /// splitter strokes; all internal pane proportions and hit regions stay put.
 pub fn workspace_shell_frame() -> Frame {
+    // The global navigation already defines the top edge. A second frame
+    // stroke drew an unwanted divider immediately underneath the navbar.
     Frame::new()
         .fill(CANVAS)
-        .stroke(Stroke::new(SOFT_DIVIDER_WIDTH, DIVIDER))
-        .inner_margin(SOFT_DIVIDER_WIDTH as i8)
+        .stroke(Stroke::NONE)
+        .inner_margin(0)
 }
 
 /// Return reception panes to the Settings-inspired PANEL card tier.
