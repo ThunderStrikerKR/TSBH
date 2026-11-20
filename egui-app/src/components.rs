@@ -759,10 +759,18 @@ pub fn reception_item_row(
     }
     // Preserve the five-source-field highlighting contract: these three
     // hover responses still map to the exact Rust product/quantity/price keys.
-    let product = ui.interact(cells[0], ui.next_auto_id(), Sense::hover())
-        .on_hover_text(name);
-    let quantity = ui.interact(cells[1], ui.next_auto_id(), Sense::hover());
-    let amount = ui.interact(cells[2], ui.next_auto_id(), Sense::hover());
+    // Use a distinct id for each column in each row. next_auto_id()
+    // alone would not necessarily advance for manually painted cells.
+    let row_id = (rect.top().to_bits(), rect.left().to_bits());
+    let product = ui.interact(
+        cells[0], ui.make_persistent_id(("item-cell", row_id, 0)), Sense::hover(),
+    ).on_hover_text(name);
+    let quantity = ui.interact(
+        cells[1], ui.make_persistent_id(("item-cell", row_id, 1)), Sense::hover(),
+    );
+    let amount = ui.interact(
+        cells[2], ui.make_persistent_id(("item-cell", row_id, 2)), Sense::hover(),
+    );
     ui.painter().line_segment(
         [egui::pos2(rect.left(), rect.bottom()),
          egui::pos2(rect.right(), rect.bottom())],
