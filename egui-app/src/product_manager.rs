@@ -547,15 +547,20 @@ impl ProductManager {
     pub fn show_page(&mut self,ui:&mut Ui){
         let page_origin_y=ui.cursor().top();
         self.poll(ui.ctx());
-        ui.label(typography::page_heading("상품 관리"));
-        ui.add_space(theme::SPACE_12);
-        let pressed=components::management_tabs(ui,&[
-            ("상품 목록",self.tab==0,true),
-            ("카테고리 관리",self.tab==1,true),
-            ("모델군 관리",self.tab==2,true),
-            ("별칭 관리",self.tab==3,true),
-            ("브랜드 관리",self.tab==4,true),
-        ]);
+        components::management_page_title_top_gap(ui);
+        components::management_top_content(ui,|top|{
+            top.label(typography::page_heading("상품 관리"));
+        });
+        ui.add_space(theme::SPACE_8);
+        let pressed=components::management_top_content(ui,|top|
+            components::management_tabs(top,&[
+                ("상품 목록",self.tab==0,true),
+                ("카테고리 관리",self.tab==1,true),
+                ("모델군 관리",self.tab==2,true),
+                ("별칭 관리",self.tab==3,true),
+                ("브랜드 관리",self.tab==4,true),
+            ])
+        );
         if let Some(next)=pressed {
             if next!=self.tab && self.writing.is_none() &&
                 self.selected.is_none() && !self.has_pending_prices(){
@@ -605,7 +610,7 @@ impl ProductManager {
             self.query.clear();
             self.reload(ui.ctx().clone());
         }
-        ui.add_space(theme::SPACE_12);
+        ui.add_space(theme::SPACE_16);
         let can_edit=self.gateway.product_write_enabled()
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
         let saving=self.writing.is_some()||self.excel.busy();
@@ -657,8 +662,9 @@ impl ProductManager {
         }
         // Same hierarchy as the approved freight-assignment screen:
         // title and three actions OUTSIDE the single bordered list card.
-        ui.horizontal(|heading|{
-            heading.label(typography::section_heading("상품 가격표"));
+        components::management_top_content(ui,|top|{
+            top.horizontal(|heading|{
+                heading.label(typography::section_heading("상품 가격표"));
             settings_help::icon(heading,"상품 가격 수정");
             heading.label(typography::caption(&format!("{}개 상품",self.products.len())));
             heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
@@ -691,12 +697,15 @@ impl ProductManager {
                 }
             });
         });
+        });
         ui.add_space(theme::SPACE_12);
         if self.adding {
-            ui.horizontal(|actions|{
-                if theme::action(
-                    actions,"직접 등록",theme::ButtonRole::Primary,can_edit&&!saving
-                ).clicked(){begin_new=true;}
+            components::management_top_content(ui,|top|{
+                top.horizontal(|actions|{
+                    if theme::action(
+                        actions,"직접 등록",theme::ButtonRole::Primary,can_edit&&!saving
+                    ).clicked(){begin_new=true;}
+                });
             });
             ui.add_space(theme::SPACE_12);
         }
