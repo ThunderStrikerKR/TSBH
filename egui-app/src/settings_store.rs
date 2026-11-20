@@ -1,14 +1,14 @@
 //! Settings for native egui, with strict storage ownership.
 //!
-//! - Explicit business DB: read snapshot through the existing read-only
-//!   projection; writes are opt-in one-shot Tauri settings_patch commands.
+//! - Explicit business DB: read the canonical snapshot and write through
+//!   the shared in-process Rust settings CAS/SQLite transaction.
 //! - No business DB: isolated egui-preview.sqlite3 settings domain, with
 //!   per-field CAS and a local account-reference guard.
 //! No implicit operational database discovery and no shadow settings rules.
-use crate::{business_state, client_master, preview_store::PreviewStore};
+use crate::{business_state, preview_store::PreviewStore};
 use rusqlite::{params,Connection,TransactionBehavior};
 use serde_json::{json,Map,Value};
-use std::{io::Write,process::{Command,Stdio},time::{Duration,SystemTime,UNIX_EPOCH}};
+use std::{time::{Duration,SystemTime,UNIX_EPOCH},path::PathBuf};
 
 #[path = "../../src-tauri/src/business_core/rules/settings_accounts.rs"]
 mod native_settings_accounts;
@@ -36,8 +36,18 @@ fn using_business()->bool {
 }
 pub fn writable_business()->bool{
     using_business() &&
-    std::env::var("BANDO_EGUI_ENABLE_SETTINGS_WRITE").ok().as_deref()==Some("1") &&
-    std::env::var_os("BANDO_EGUI_TAURI_HELPER").is_some_and(|v|!v.is_empty())
+    std::env::var("BANDO_EGUI_ENABLE_SETTINGS_WRITE")
+        .ok().as_deref()==Some("1") &&
+    business_state::authorized_business_write_path().is_ok()
+}
+/// Full SQLite backups and archive reads use the shared in-process Rust
+/// service. No separate Tauri executable is required for these operations.
+pub fn data_service_available()->bool{
+    if !using_business(){return false;}
+    let Some(path)=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+        .filter(|p|!p.is_empty()).map(PathBuf::from) else{return false};
+    path.is_file() &&
+        std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_none_or(|x|x.is_empty())
 }
 fn used_accounts(clients:&Value)->Vec<String>{
     let mut refs=Vec::new();
@@ -80,8 +90,8 @@ fn read_local(conn:&Connection)->Result<(u64,Value),String>{
     if !settings.is_object(){return Err("설정은 JSON 객체여야 합니다.".into());}
     Ok((revision,settings))
 }
-/// Client settings and account pickers share the same isolated account
-/// master. Avoid recursion: this helper never calls client_master::load().
+/// Isolated egui settings own preview account preferences only.
+/// Real customer account references are checked against the operational DB.
 pub fn load_local_accounts()->Result<Value,String>{
     if using_business(){
         return Err("운영 계좌는 격리 저장소에서 조회하지 않습니다.".into());
@@ -102,16 +112,18 @@ pub fn load()->Result<Value,String>{
         return Ok(json!({
             "revision":revision,"settings":settings,
             "readOnly":!writable_business(),"mode":"business",
+            "dataAvailable":data_service_available(),
             "usedAccounts":used_accounts(&state["clients"])
         }));
     }
     let conn=connection()?;
     let (revision,settings)=read_local(&conn)?;
-    let clients=client_master::load()?;
+    // The egui preview no longer owns a customer master. Only the live
+    // business DB can provide actual account usage references.
     Ok(json!({
         "revision":revision,"settings":settings,
-        "readOnly":false,"mode":"isolated",
-        "usedAccounts":used_accounts(&clients["clients"])
+        "readOnly":false,"mode":"isolated","dataAvailable":false,
+        "usedAccounts":[]
     }))
 }
 fn validate(changes:&Map<String,Value>,expected:&Map<String,Value>)->Result<(),String>{
@@ -144,13 +156,11 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     let changes=changes.as_object().ok_or("설정 변경 객체가 없습니다.")?;
     let expected=expected.as_object().ok_or("설정 기존값 객체가 없습니다.")?;
     validate(changes,expected)?;
-    // The client master uses another SQLite connection; read references
-    // BEFORE acquiring the IMMEDIATE settings write lock.
+    // Isolated settings are preview-only. The canonical client master lives
+    // exclusively in the operating SQLite DB; never blend its references
+    // with this independent preview preference store.
     let account_changed=["accounts","defaultAccountId","brandAccounts"]
         .iter().any(|key|changes.contains_key(*key));
-    let clients=if account_changed{
-        Some(client_master::load()?)
-    }else{None};
     let mut conn=connection()?;
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_|"설정 저장 트랜잭션 시작 실패")?;
@@ -173,9 +183,7 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     if account_changed{
         native_settings_accounts::validate(&json!({
             "settings":&settings,
-            "clients":clients.as_ref()
-                .and_then(|master|master.get("clients"))
-                .ok_or("거래처 계좌 참조를 확인할 수 없습니다.")?
+            "clients":[]
         }))?;
     }
     let next=revision.checked_add(1).ok_or("설정 revision 한도 초과")?;
@@ -192,41 +200,45 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     load()
 }
 fn patch_business(changes:Value,expected:Value)->Result<Value,String>{
-    if !writable_business() {
+    if !writable_business(){
         return Err("운영 설정은 읽기 전용입니다. 설정 변경 권한이 필요합니다.".into());
     }
     let changes_obj=changes.as_object().ok_or("설정 변경 객체 오류")?;
     let expected_obj=expected.as_object().ok_or("설정 기준값 객체 오류")?;
     validate(changes_obj,expected_obj)?;
-    let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-        .ok_or("Tauri 설정 저장 도우미 경로가 없습니다.")?;
-    if !std::path::Path::new(&helper).is_file() {
-        return Err("Tauri 설정 저장 도우미 실행파일을 찾지 못했습니다.".into());
+    let request=json!({"changes":&changes,"expected":&expected}).to_string();
+    if request.len()>SETTINGS_CAP{
+        return Err("설정 변경 내용이 너무 큽니다.".into());
     }
-    let payload=json!({"changes":changes,"expected":expected}).to_string();
-    if payload.len()>SETTINGS_CAP{return Err("설정 변경 내용이 너무 큽니다.".into());}
-    let mut child=Command::new(helper)
-        .arg("--bando-egui-settings-patch")
-        .stdin(Stdio::piped()).stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn().map_err(|_|"Tauri 설정 저장 도우미를 실행할 수 없습니다.".to_owned())?;
-    let mut stdin=child.stdin.take()
-        .ok_or("Tauri 설정 저장 입력 채널을 열지 못했습니다.")?;
-    stdin.write_all(payload.as_bytes())
-        .map_err(|_|"Tauri 설정 저장 데이터를 전달하지 못했습니다.".to_owned())?;
-    drop(stdin);
-    let output=child.wait_with_output()
-        .map_err(|_|"Tauri 설정 저장 결과를 받을 수 없습니다.".to_owned())?;
-    if output.stdout.len()>SETTINGS_CAP{
-        return Err("Tauri 설정 저장 결과 크기가 올바르지 않습니다.".into());
+    let path=business_state::authorized_business_write_path()?;
+    let mut conn=Connection::open_with_flags(
+        path,rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+    ).map_err(|_|"운영 설정 DB를 열지 못했습니다.".to_owned())?;
+    conn.busy_timeout(Duration::from_secs(5))
+        .map_err(|e|e.to_string())?;
+    conn.execute_batch("PRAGMA foreign_keys=ON;")
+        .map_err(|e|e.to_string())?;
+    // Debug and developer-test workspaces must not edit protected Excel paths.
+    // Tauri React and egui use the SAME original settings CAS validator.
+    let developer_test=cfg!(debug_assertions) ||
+        std::env::var("BANDO_EGUI_DEVELOPER_TEST").ok().as_deref()==Some("1");
+    let committed=bando_data_access::patch_settings_v2(
+        &mut conn,developer_test,&changes,&expected
+    )?;
+    let saved_revision=committed["revision"].as_u64()
+        .ok_or("운영 설정 저장 결과 revision 오류")?;
+    drop(conn);
+    let fresh=load()?;
+    if fresh["revision"].as_u64()!=Some(saved_revision) {
+        return Err("설정은 저장됐지만 이후 다른 작업에서 변경됐습니다. 최신 상태를 다시 불러오세요.".into());
     }
-    let reply:Value=serde_json::from_slice(&output.stdout)
-        .map_err(|_|"Tauri 설정 저장 응답 형식이 잘못되었습니다.".to_owned())?;
-    if !output.status.success() || reply["ok"]!=Value::Bool(true){
-        return Err(reply.get("error").and_then(Value::as_str)
-            .unwrap_or("운영 설정 저장에 실패했습니다.").to_owned());
+    for (key,updated) in changes_obj {
+        let now=fresh["settings"].get(key).unwrap_or(&Value::Null);
+        if now!=updated{
+            return Err(format!("{key} 설정은 저장됐지만 재조회 결과가 일치하지 않습니다."));
+        }
     }
-    load() // Reload the authoritative settings; never trust echoed UI state.
+    Ok(fresh)
 }
 pub fn patch(changes:Value,expected:Value)->Result<Value,String>{
     // Model groups belong to the operating catalog/settings, never to the
@@ -238,47 +250,62 @@ pub fn patch(changes:Value,expected:Value)->Result<Value,String>{
     if using_business(){patch_business(changes,expected)}
     else{patch_local(changes,expected)}
 }
-/// Read-only archive/list, or explicitly authorized Tauri backup/restore.
-/// The bridge uses exactly the original backup_manager and receipt_archive
-/// functions; local preview SQLite is never represented as operational data.
+/// Audits, snapshots, full SQLite backup and protected restore are now
+/// executed inside this process through the EXACT Tauri backup engine moved
+/// to bando-data-access. No helper EXE and no separate egui backup database.
 pub fn data(operation:&str,filename:Option<&str>)->Result<Value,String>{
-    if !using_business(){
+    use rusqlite::OpenFlags;
+    if !data_service_available(){
         return Err("운영 감사 기록과 백업을 조회하려면 업무 DB 연결이 필요합니다.".into());
     }
     if !matches!(operation,"archive"|"backups"|"backup"|"restore"){
         return Err("허용되지 않은 데이터 관리 작업입니다.".into());
     }
-    if matches!(operation,"backup"|"restore") && !writable_business(){
+    let write=matches!(operation,"backup"|"restore");
+    if write && !writable_business(){
         return Err("현재 운영 데이터는 읽기 전용입니다. 백업·복원 권한을 확인하세요.".into());
     }
-    let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-        .ok_or("Tauri 업무 데이터 도우미가 연결되지 않았습니다.")?;
-    if !std::path::Path::new(&helper).is_file(){
-        return Err("Tauri 업무 데이터 도우미 실행파일을 찾지 못했습니다.".into());
+    let path=if write{
+        business_state::authorized_business_write_path()?
+    }else{
+        std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .filter(|path|!path.is_empty())
+            .map(PathBuf::from)
+            .ok_or("운영 DB 파일 경로가 설정되지 않았습니다.")?
+    };
+    if !path.is_file(){return Err("운영 DB 파일이 없습니다.".into());}
+    let base=path.parent().ok_or("운영 DB 보관 폴더가 없습니다.")?;
+    let flags=if write{OpenFlags::SQLITE_OPEN_READ_WRITE}
+        else{OpenFlags::SQLITE_OPEN_READ_ONLY};
+    let mut conn=Connection::open_with_flags(&path,flags)
+        .map_err(|_|"데이터 관리 DB를 열지 못했습니다.".to_owned())?;
+    conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
+    if !write {
+        conn.execute_batch("PRAGMA query_only=ON;").map_err(|e|e.to_string())?;
+    }else{
+        conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;
     }
-    let payload=json!({"operation":operation,"filename":filename});
-    let mut child=Command::new(helper)
-        .arg("--bando-egui-settings-data")
-        .stdin(Stdio::piped()).stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn().map_err(|_|"Tauri 데이터 관리 도우미를 실행하지 못했습니다.".to_owned())?;
-    let mut input=child.stdin.take()
-        .ok_or("데이터 관리 요청 채널이 열리지 않았습니다.")?;
-    input.write_all(payload.to_string().as_bytes())
-        .map_err(|_|"데이터 관리 요청을 전달하지 못했습니다.".to_owned())?;
-    drop(input);
-    let result=child.wait_with_output()
-        .map_err(|_|"데이터 관리 응답을 받을 수 없습니다.".to_owned())?;
-    if result.stdout.len()>16_000_000{
+    let version:i64=conn.query_row(
+        "SELECT version FROM core_schema WHERE key='business-core'",
+        [],|row|row.get(0),
+    ).map_err(|_|"DB 스키마 버전을 확인할 수 없습니다.".to_owned())?;
+    if version!=2{return Err("지원하지 않는 업무 DB 버전입니다.".into());}
+    let result=match operation{
+        "archive"=>bando_data_access::audit_service::receipt_archive_from_conn(&conn)?,
+        "backups"=>json!(bando_data_access::backup_service::list_backups(base)?),
+        "backup"=>json!(bando_data_access::backup_service::manual_backup(&conn,base)?),
+        "restore"=>{
+            let file=filename.filter(|name|!name.is_empty())
+                .ok_or("복원할 백업 파일을 선택하세요.")?;
+            bando_data_access::backup_service::restore_backup(&mut conn,base,file)?;
+            json!({"restored":true})
+        },
+        _=>unreachable!(),
+    };
+    if result.to_string().len()>16_000_000{
         return Err("데이터 관리 응답 크기가 허용 범위를 초과했습니다.".into());
     }
-    let response:Value=serde_json::from_slice(&result.stdout)
-        .map_err(|_|"Tauri 데이터 관리 응답이 잘못되었습니다.".to_owned())?;
-    if !result.status.success() || response["ok"]!=Value::Bool(true){
-        return Err(response.get("error").and_then(Value::as_str)
-            .unwrap_or("데이터 관리 작업이 실패했습니다.").to_owned());
-    }
-    Ok(response.get("result").cloned().unwrap_or(Value::Null))
+    Ok(result)
 }
 
 pub fn new_account_id()->String{

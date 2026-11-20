@@ -20,8 +20,6 @@ mod rules;
 mod output;
 #[path = "../../src-tauri/src/business_core/catalog_clients/title_clients.rs"]
 mod native_title_clients;
-#[path = "../../src-tauri/src/business_core/catalog_clients/client_search.rs"]
-mod native_client_search;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ReadOperation {
@@ -100,8 +98,8 @@ pub trait BandoGateway: Send + Sync {
     /// confirmed orders, customer contacts or workflow state.
     /// This method does not persist or mutate anything.
     fn load_catalog(&self) -> Result<Value, String>;
-    /// Full client-management projection. An external operational reference
-    /// is explicitly read-only; local edits stay in the isolated egui DB.
+    /// Client management uses only the authoritative Tauri v2 business DB.
+    /// Upsert/archive requires explicit write authorization; no egui shadow DB.
     fn load_client_master(&self) -> Result<Value, String> {
         Err("거래처 관리 조회를 지원하지 않는 연결입니다.".into())
     }
@@ -125,16 +123,15 @@ pub trait BandoGateway: Send + Sync {
     fn settings_data(&self,_operation:&str,_filename:Option<&str>)->Result<Value,String>{
         Err("이 연결은 업무 감사 기록·백업을 지원하지 않습니다.".into())
     }
-    /// Opt-in, revision-checked operational freight write through Tauri's
-    /// existing Rust rule/SQLite transaction. Never writes the preview DB.
+    /// Opt-in native freight write through the shared Rust v2 transaction.
+    /// Does not spawn Tauri or write to the isolated egui preview DB.
     fn shipping_write_enabled(&self) -> bool { false }
     fn mutate_shipping(&self,_revision:u64,_action:&str,_data:Value)
         -> Result<Value,String> {
         Err("이 연결에서는 운영 운임 변경을 지원하지 않습니다.".into())
     }
-    /// Product changes require an explicitly enabled native Tauri helper.
-    /// A read-only external master or the egui preview catalog is never a
-    /// writable fallback.
+    /// All product-management writes call the shared native Rust service.
+    /// A read-only index or the egui preview catalog is never a fallback.
     fn product_write_enabled(&self)->bool {false}
     fn mutate_product(&self,_revision:u64,_action:&str,_data:Value)
         -> Result<Value,String>{
@@ -149,9 +146,9 @@ pub trait BandoGateway: Send + Sync {
     /// receipt when no business DB is configured; it is NOT native pricing,
     /// freight, order commit or an alternative to the Tauri writer.
     fn isolated_client_identity_link(&self) -> bool { false }
-    /// A production working reception requires a separate, explicitly
-    /// configured native Tauri executable and user action. Never send to an
-    /// unimplemented HTTPS endpoint or silently fall back to direct SQL.
+    /// An operating working reception requires an existing, authorized v2
+    /// business SQLite file and explicit write opt-in. The native Rust
+    /// transaction never confirms an order or writes to a preview fallback.
     fn working_commit_enabled(&self) -> bool { false }
     fn commit_working_reception(&self, _request: Value) -> Result<Value,String> {
         Err("운영 미확정 접수 저장 연결이 설정되지 않았습니다.".into())
@@ -181,7 +178,7 @@ impl BandoGateway for LocalGateway {
         if std::env::var_os("BANDO_EGUI_BUSINESS_DB")
             .is_some_and(|value| !value.is_empty())
         {
-            let full = crate::business_state::load()?;
+            let full = crate::business_state::load_catalog()?;
             let (clients, mut settings) = crate::client_directory::project_index(&full)?;
             // Model-group settings are safe catalog metadata, not client
             // contacts. Retain the REAL settings field for native CAS rather
@@ -199,18 +196,9 @@ impl BandoGateway for LocalGateway {
                 "settings":settings,
             }));
         }
-        let mut catalog=PreviewStore::initialize()?.load_catalog()?;
-        if crate::client_master::editable() {
-            // The local draft database is the single owner of egui-managed
-            // clients. Do not silently overlay an unrelated external index.
-            let state=crate::client_master::load()?;
-            let (clients,settings)=crate::client_directory::project_index(&state)?;
-            catalog["clients"]=clients;
-            catalog["settings"]=settings;
-            Ok(catalog)
-        } else {
-            crate::client_directory::attach(catalog)
-        }
+        let catalog=PreviewStore::initialize()?.load_catalog()?;
+        // No shadow customer master; an exported index is read-only.
+        crate::client_directory::attach(catalog)
     }
     fn load_client_master(&self) -> Result<Value,String> {
         crate::client_master::load()
@@ -226,7 +214,11 @@ impl BandoGateway for LocalGateway {
         crate::settings_store::patch(changes,expected)
     }
     fn model_group_write_enabled(&self)->bool{
-        crate::settings_store::writable_business()
+        // Retain the required manual backup permission until backup itself
+        // is migrated. The model-family SAVE no longer uses settings CLI.
+        self.product_write_enabled() &&
+        crate::settings_store::writable_business() &&
+        crate::settings_store::data_service_available()
     }
     fn patch_model_groups(&self,groups:Value,expected:Value)->Result<Value,String>{
         if !self.model_group_write_enabled(){
@@ -237,18 +229,31 @@ impl BandoGateway for LocalGateway {
         }
         let current=self.load_catalog()?;
         crate::catalog_query_bridge::validate_model_groups(&current,&groups)?;
-        // React ColorGuidanceManager: full operating SQLite manual backup
-        // BEFORE the per-field CAS settings_patch. Never bypass Tauri.
+        // React ColorGuidanceManager requires an operating DB backup BEFORE
+        // each model-family change. Keep this existing backup operation.
         self.settings_data("backup",None)?;
-        self.patch_settings(
-            serde_json::json!({"colorGuidanceGroups":groups}),
-            serde_json::json!({"colorGuidanceGroups":expected})
+        // The settings CLI is no longer involved in saving model families.
+        // The shared service implements the original per-key CAS + native
+        // Rust model-group validation inside one revision-checked writer.
+        use rusqlite::{Connection,OpenFlags};
+        let path=crate::business_state::authorized_business_write_path()?;
+        let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+            .map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|e|e.to_string())?;
+        let saved=bando_data_access::patch_model_groups_v2(
+            &mut conn,&groups,&expected
         )?;
+        let revision=saved["revision"].as_u64()
+            .ok_or("모델군 저장 결과 revision 오류")?;
+        drop(conn);
         let catalog=self.load_catalog()?;
-        // An unrelated process may commit another group edit between
-        // settings_patch and this read. A non-null key alone is NOT proof
-        // that the editor's exact draft survived the SQLite round trip.
-        if catalog["settings"]["colorGuidanceGroups"]!=groups{
+        // A non-null key alone is NOT proof that the editor's exact draft
+        // survived a concurrent commit or the SQLite round trip.
+        if catalog["revision"].as_u64()!=Some(revision) ||
+            catalog["settings"]["colorGuidanceGroups"]!=groups{
             return Err("모델군 저장 후 최신 데이터가 일치하지 않습니다. 다시 불러온 뒤 확인하세요.".into());
         }
         Ok(catalog)
@@ -265,51 +270,38 @@ impl BandoGateway for LocalGateway {
     }
     fn product_write_enabled(&self)->bool{
         std::env::var("BANDO_EGUI_ENABLE_PRODUCT_WRITE")
-            .ok().as_deref()==Some("1")
-        && std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .is_some_and(|path|!path.is_empty())
-        && std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-            .is_some_and(|path|!path.is_empty())
+            .ok().as_deref()==Some("1") &&
+        crate::business_state::authorized_business_write_path().is_ok()
     }
     fn mutate_product(&self,revision:u64,action:&str,data:Value)
         -> Result<Value,String>{
-        use std::io::Write;
-        use std::process::{Command,Stdio};
+        use rusqlite::{Connection,OpenFlags};
         if !self.product_write_enabled(){
             return Err("운영 상품을 수정할 수 있는 연결이 아닙니다.".into());
         }
-        let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-            .ok_or("Tauri 상품 저장 도우미가 없습니다.")?;
-        if !std::path::Path::new(&helper).is_file(){
-            return Err("Tauri 상품 저장 도우미 실행 파일이 없습니다.".into());
-        }
+        // The explicit path is validated against the Tauri test DB in
+        // debug/developer mode; never fall back to egui's preview SQLite.
+        let path=crate::business_state::authorized_business_write_path()?;
         let request=serde_json::json!({
             "expectedRevision":revision,"action":action,"data":data,
-        }).to_string();
-        if request.len()>2_000_000 {
+        });
+        if request.to_string().len()>2_000_000{
             return Err("상품 변경 요청이 허용 크기를 초과했습니다.".into());
         }
-        let mut child=Command::new(helper)
-            .arg("--bando-egui-product-patch")
-            .stdin(Stdio::piped()).stdout(Stdio::piped())
-            .stderr(Stdio::null()).spawn()
-            .map_err(|_|"Tauri 상품 저장 도우미 실행 실패".to_owned())?;
-        let mut stdin=child.stdin.take()
-            .ok_or("Tauri 상품 변경 입력을 열지 못했습니다.")?;
-        stdin.write_all(request.as_bytes()).map_err(|e|e.to_string())?;
-        drop(stdin);
-        let output=child.wait_with_output().map_err(|e|e.to_string())?;
-        if output.stdout.len()>65536 {
-            return Err("상품 변경 응답이 허용 크기를 초과했습니다.".into());
-        }
-        let response:Value=serde_json::from_slice(&output.stdout)
-            .map_err(|_|"Tauri 상품 변경 응답 형식 오류".to_owned())?;
-        if !output.status.success() || response["ok"]!=true {
-            return Err(response["error"].as_str()
-                .unwrap_or("상품 변경을 저장하지 못했습니다.").to_owned());
-        }
+        let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+            .map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|e|e.to_string())?;
+        // All seven original catalog operations and price CAS now run
+        // in-process. The shared writer owns the commit and revision check.
+        let saved=bando_data_access::patch_product_v2(&mut conn,&request)?;
+        let written_revision=saved["revision"].as_u64()
+            .ok_or("상품 변경 결과의 revision을 확인할 수 없습니다.")?;
+        drop(conn);
         let catalog=self.load_catalog()?;
-        if catalog["revision"]!=response["result"]["revision"] {
+        if catalog["revision"].as_u64()!=Some(written_revision){
             return Err("상품은 저장됐지만 최신 상태 조회가 일치하지 않습니다. 새로고침하세요.".into());
         }
         Ok(catalog)
@@ -318,118 +310,116 @@ impl BandoGateway for LocalGateway {
         std::env::var("BANDO_EGUI_ENABLE_SHIPPING_WRITE")
             .ok().as_deref()==Some("1") &&
         std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .is_some_and(|v|!v.is_empty()) &&
-        std::env::var_os("BANDO_EGUI_TAURI_HELPER")
             .is_some_and(|v|!v.is_empty())
     }
     fn mutate_shipping(&self,revision:u64,action:&str,data:Value)
         -> Result<Value,String> {
-        use std::io::Write;
-        use std::process::{Command,Stdio};
+        use rusqlite::{Connection,OpenFlags};
         if !self.shipping_write_enabled() {
             return Err("운영 운임을 변경할 수 있는 연결이 아닙니다.".into());
         }
-        let path=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-            .ok_or("Tauri 업무 저장 도우미가 없습니다.")?;
-        if !std::path::Path::new(&path).is_file(){
-            return Err("Tauri 업무 저장 도우미 파일이 없습니다.".into());
+        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .filter(|value|!value.is_empty()).map(std::path::PathBuf::from)
+            .ok_or("운영 DB 경로가 지정되지 않았습니다.")?;
+        if !path.is_file(){
+            return Err("운영 DB 파일이 없습니다.".into());
         }
+        // Preserve the existing helper's request-size contract.
         let request=serde_json::json!({
-            "expectedRevision":revision,"action":action,"data":data
+            "expectedRevision":revision,"action":action,"data":&data,
         }).to_string();
-        if request.len()>2_000_000 {
-            return Err("운임 변경 요청이 허용 크기를 초과했습니다.".into());
+        if request.is_empty() || request.len()>2_000_000 {
+            return Err("운임 변경 요청 크기가 허용 범위를 초과했습니다.".into());
         }
-        let mut child=Command::new(path)
-            .arg("--bando-egui-shipping-patch")
-            .stdin(Stdio::piped()).stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn().map_err(|_|"운임 저장 도우미 실행 실패".to_owned())?;
-        let mut stdin=child.stdin.take().ok_or("운임 변경 입력을 열지 못했습니다.")?;
-        stdin.write_all(request.as_bytes()).map_err(|e|e.to_string())?;
-        drop(stdin);
-        let output=child.wait_with_output().map_err(|e|e.to_string())?;
-        if output.stdout.len()>65536{
-            return Err("운임 저장 응답이 허용 범위를 초과했습니다.".into());
+        // Direct native Rust call. No Tauri EXE or process IPC is involved.
+        let mut conn=Connection::open_with_flags(
+            &path,OpenFlags::SQLITE_OPEN_READ_WRITE
+        ).map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|e|e.to_string())?;
+        let version:i64=conn.query_row(
+            "SELECT version FROM core_schema WHERE key='business-core'",
+            [],|row|row.get(0),
+        ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
+        if version!=2{return Err("지원하지 않는 운영 DB 버전입니다.".into());}
+        let before=bando_data_access::read_v2_snapshot(&conn)?;
+        let current=before["revision"].as_u64().ok_or("운영 DB 리비전 오류")?;
+        if current!=revision{
+            return Err("다른 작업에서 데이터가 수정되었습니다. 다시 불러오세요.".into());
         }
-        let reply:Value=serde_json::from_slice(&output.stdout)
-            .map_err(|_|"운임 저장 응답 형식 오류".to_owned())?;
-        if !output.status.success() || reply["ok"]!=true {
-            return Err(reply["error"].as_str()
-                .unwrap_or("운임 변경을 저장하지 못했습니다.").to_owned());
-        }
-        // Re-read the authoritative state after commit, never optimistic UI
-        // state or a second SQLite write performed by egui. Another writer
-        // may commit between helper success and this read: a mismatched
-        // revision must never be presented as our saved freight revision.
-        let committed_revision=reply["result"]["revision"].as_u64()
-            .ok_or("운임 저장 도우미가 확정 리비전을 반환하지 않았습니다.")?;
+        let payload=bando_data_access::shipping_action::action_payload(
+            action,&data,&before
+        )?;
+        // Execute the SAME original Rust shipping mutation rule as Tauri.
+        let result=rules::execute("apply_shipping_action",payload)?;
+        let mut next=if result.get("state").is_some(){
+            result["state"].clone()
+        }else if let Some(shipping)=result.get("shipping"){
+            let mut snapshot=before.clone();
+            snapshot["shipping"]=shipping.clone();
+            snapshot
+        }else{return Err("Rust 운임 처리 결과를 확인할 수 없습니다.".into());};
+        next["revision"]=serde_json::json!(revision);
+        let committed=bando_data_access::write_v2_snapshot(
+            &mut conn,next,revision,true
+        )?;
+        let committed_revision=committed["revision"].as_u64()
+            .ok_or("운임 저장 결과 리비전을 확인하지 못했습니다.")?;
+        drop(conn);
+        // Never present an optimistic draft as confirmed saved data.
         let state=self.load_business_state()?;
         if state["revision"].as_u64()!=Some(committed_revision) {
             return Err(
                 "운임은 저장됐지만 이후 다른 작업에서 데이터가 다시 수정되었습니다. 최신 상태를 불러와 확인하세요.".into()
             );
         }
-        let shipping=state.get("shipping").ok_or("최신 운임 조회 실패")?;
-        let mut projection=self.execute(
-            ReadOperation::ShippingManagerView,
-            serde_json::json!({"state":state,"shipping":shipping})
-        )?;
-        let product_view=self.execute(
-            ReadOperation::ProductFreightView,
-            serde_json::json!({"action":"product_freight_view","state":{
-                "products":state["products"],"shipping":shipping
-            }})
-        )?;
-        projection["productViews"]=product_view["views"].clone();
+        let projection=crate::management_queries::project_freight(self,&state)?;
         Ok(serde_json::json!({"state":state,"projection":projection}))
     }
     fn working_commit_enabled(&self) -> bool {
-        std::env::var("BANDO_EGUI_ENABLE_WORKING_COMMIT").ok().as_deref()==Some("1") &&
-        std::env::var_os("BANDO_EGUI_TAURI_HELPER").is_some_and(|p|!p.is_empty()) &&
-        std::env::var_os("BANDO_EGUI_BUSINESS_DB").is_some_and(|p|!p.is_empty())
+        std::env::var("BANDO_EGUI_ENABLE_WORKING_COMMIT")
+            .ok().as_deref()==Some("1") &&
+        crate::business_state::authorized_business_write_path().is_ok()
     }
     fn commit_working_reception(&self, request: Value) -> Result<Value,String> {
-        use std::io::Write;
-        use std::process::{Command,Stdio};
+        use rusqlite::{Connection,OpenFlags};
         if !self.working_commit_enabled() {
-            return Err("운영 접수 저장은 Tauri helper, DB 경로 및 명시적 허용 설정이 필요합니다.".into());
+            return Err("운영 접수 저장에는 기존 업무 DB와 명시적인 쓰기 허용 설정이 필요합니다.".into());
         }
-        let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-            .ok_or("Tauri 저장 도우미 경로가 없습니다.")?;
-        let path=std::path::Path::new(&helper);
-        if !path.is_file() {
-            return Err("Tauri 저장 도우미 실행 파일을 찾을 수 없습니다.".into());
-        }
-        let request=serde_json::to_vec(&request)
+        let path=crate::business_state::authorized_business_write_path()?;
+        let bytes=serde_json::to_vec(&request)
             .map_err(|_|"운영 접수 요청 형식이 잘못되었습니다.".to_owned())?;
-        if request.len()>2_000_000 {
+        if bytes.is_empty() || bytes.len()>2_000_000 {
             return Err("운영 접수 요청 한도를 초과했습니다.".into());
         }
-        // No shell and no arbitrary command-line order/contact data.
-        let mut child=Command::new(path)
-            .arg("--bando-egui-reception-commit")
-            .stdin(Stdio::piped()).stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn().map_err(|_|"Tauri 주문 저장 도우미를 실행하지 못했습니다.".to_owned())?;
-        let mut input=child.stdin.take()
-            .ok_or("Tauri 주문 저장 도우미 입력을 열지 못했습니다.")?;
-        input.write_all(&request)
-            .map_err(|_|"Tauri 주문 저장 도우미에 접수 원문을 전달하지 못했습니다.".to_owned())?;
-        drop(input);
-        let output=child.wait_with_output()
-            .map_err(|_|"Tauri 주문 저장 도우미의 결과를 받지 못했습니다.".to_owned())?;
-        if output.stdout.len()>100_000 {
-            return Err("Tauri 저장 결과 크기가 올바르지 않습니다.".into());
+        let mut conn=Connection::open_with_flags(
+            path,OpenFlags::SQLITE_OPEN_READ_WRITE
+        ).map_err(|_|"업무 DB를 쓰기 모드로 열 수 없습니다.".to_owned())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|e|e.to_string())?;
+        // Reuse the original native recognition, manual-edit, repricing and
+        // freight rules inside ONE IMMEDIATE SQLite working-reception commit.
+        // This path cannot create confirmed orders or mutate financial history.
+        let ack=bando_data_access::commit_reception_v2(&mut conn,&request)?;
+        let id=ack["orderId"].as_str().ok_or("접수 결과 ID가 없습니다.")?;
+        let persisted:String=conn.query_row(
+            "SELECT payload FROM reception_working_orders WHERE id=?1",
+            [id],|row|row.get(0),
+        ).map_err(|_|"접수는 저장됐지만 실제 작업본을 재조회하지 못했습니다.".to_owned())?;
+        let saved:Value=serde_json::from_str(&persisted)
+            .map_err(|_|"운영 작업본 JSON 형식이 손상됐습니다.".to_owned())?;
+        if saved["id"]!=ack["orderId"] ||
+           saved["_eguiBridgeVersion"]!=ack["workingVersion"] ||
+           saved["_eguiBridgeAuthorityRevision"]!=ack["authorityRevision"] ||
+           saved["clientId"]!=ack["clientId"] ||
+           saved["confirmedAt"].as_str().is_some_and(|value|!value.is_empty()) {
+            return Err("접수는 저장됐지만 최신 작업본의 버전이나 내용이 다릅니다. 다시 조회하세요.".into());
         }
-        let result:Value=serde_json::from_slice(&output.stdout)
-            .map_err(|_|"Tauri 주문 저장 도우미가 올바른 결과를 반환하지 않았습니다.".to_owned())?;
-        if result.get("ok")!=Some(&Value::Bool(true)) || !output.status.success() {
-            return Err(result.get("error").and_then(Value::as_str)
-                .unwrap_or("Tauri 운영 접수 저장에 실패했습니다.").to_owned());
-        }
-        result.get("result").filter(|v|v.is_object()).cloned()
-            .ok_or("Tauri 저장 결과에 미확정 접수 정보가 없습니다.".into())
+        Ok(ack)
     }
 
     fn load_working_source(&self) -> Result<WorkingSource, String> {
@@ -466,7 +456,7 @@ impl BandoGateway for LocalGateway {
                 native_title_clients::execute(operation.operation(), &payload)
             }
             ReadOperation::ClientCandidates => {
-                native_client_search::execute(&payload)
+                crate::catalog_query_bridge::client_candidates(&payload)
             }
             ReadOperation::SearchProductsWithUrls => {
                 crate::catalog_query_bridge::search_products(&payload)
@@ -500,26 +490,24 @@ pub fn from_environment() -> Result<Arc<dyn BandoGateway>, String> {
 
 
 #[cfg(test)]
-mod shipping_gateway_process_roundtrip_tests {
+mod shipping_gateway_direct_roundtrip_tests {
     use super::{BandoGateway,LocalGateway};
     use serde_json::{json,Value};
 
-    /// Real LocalGateway -> spawned Tauri CLI -> native shipping rule ->
-    /// revision-checked v2 SQLite -> read-only egui re-query. No GUI and no
-    /// mocks. CI supplies a newly created isolated test file and compiled CLI.
+    /// Real LocalGateway -> shared Rust shipping service -> v2 SQLite ->
+    /// read-only egui re-query. No helper EXE, GUI, or mocked persistence.
+    /// An explicitly created isolated test database is mandatory.
     #[test]
-    fn shipping_gateway_process_roundtrip() {
+    fn shipping_gateway_direct_roundtrip() {
         let db=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
             .expect("test fixture DB is explicitly required");
-        let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-            .expect("compiled native Tauri helper is explicitly required");
         assert_eq!(
             std::path::Path::new(&db).file_name().and_then(|x|x.to_str()),
             Some("bando-freight-gateway-e2e.sqlite"),
             "refuse to run against any operational DB"
         );
         assert!(std::path::Path::new(&db).is_file());
-        assert!(std::path::Path::new(&helper).is_file());
+
         let api=LocalGateway;
         assert!(api.shipping_write_enabled(),"native freight bridge must be enabled");
         let before=api.load_business_state().expect("egui reads initial native v2 state");
@@ -539,14 +527,14 @@ mod shipping_gateway_process_roundtrip_tests {
         rule["maxBundle"]=json!(2);
         rule["perItem"]=Value::Null;
         rule["fees"]=json!({"1":4321,"2":5678});
-        rule["notes"]=json!("실제 Tauri CLI 왕복 운임 검증");
+        rule["notes"]=json!("Rust 직접 호출 운임 검증");
         let update=json!({"groupId":group_id,"rule":rule});
         let response=api.mutate_shipping(revision,"save_group_rule",update.clone())
-            .expect("egui Gateway invokes native shipping CLI and reloads DB");
+            .expect("egui Gateway calls native storage directly and reloads DB");
         assert_eq!(response["state"]["revision"],json!(revision+1));
         assert!(response["projection"]["productViews"].is_object());
         let after=api.load_business_state()
-            .expect("read-only egui reload after subprocess commit");
+            .expect("read-only egui reload after direct Rust commit");
         assert_eq!(response["state"],after,
             "gateway response must match authoritative persisted snapshot");
         assert_eq!(after["products"],original_products,
@@ -561,18 +549,18 @@ mod shipping_gateway_process_roundtrip_tests {
         assert_eq!(saved["current"]["fees"]["2"],json!(5678));
         assert_eq!(saved["history"].as_array().unwrap().last(),Some(&previous));
         let stale=api.mutate_shipping(revision,"save_group_rule",update.clone())
-            .expect_err("stale revision must be rejected by real CLI");
+            .expect_err("stale revision must be rejected by real storage");
         assert!(stale.contains("다른 작업에서 데이터가 수정되었습니다."),"{stale}");
         assert_eq!(api.load_business_state().unwrap(),after,
             "rejected stale write must leave DB unchanged");
         let invalid=api.mutate_shipping(revision+1,"unknown_shipping_action",json!({}))
-            .expect_err("unknown command must be rejected by real CLI");
+            .expect_err("unknown command must be rejected by native Rust");
         assert!(invalid.contains("허용되지 않은 운임 변경 명령"),"{invalid}");
         assert_eq!(api.load_business_state().unwrap(),after);
         std::env::set_var("BANDO_EGUI_ENABLE_SHIPPING_WRITE","0");
         assert!(!api.shipping_write_enabled());
         let disabled=api.mutate_shipping(revision+1,"save_group_rule",update)
-            .expect_err("disabled gateway must not launch a writer");
+            .expect_err("disabled gateway must not write");
         assert!(disabled.contains("운영 운임을 변경할 수 있는 연결이 아닙니다."));
         assert_eq!(api.load_business_state().unwrap(),after);
         // The CI runner owns and disposes of this dedicated test DB. Do not

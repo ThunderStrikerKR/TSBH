@@ -7,7 +7,8 @@ use crate::{
     brand_manager::BrandManager,
     model_group_manager::ModelGroupManager,
     components,
-    gateway::{BandoGateway, ReadOperation},
+    gateway::BandoGateway,
+    management_queries::{self, ManagementProductRows},
     theme, typography,
 };
 use eframe::egui::{self, Align, Context, Layout, Ui};
@@ -18,12 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-struct CatalogRows {
-    catalog: Value,
-    products: Vec<Value>,
-}
-
-type SearchReply = (u64, Result<CatalogRows, String>);
+type SearchReply = (u64, Result<ManagementProductRows, String>);
 
 fn field<'a>(row: &'a Value, key: &str) -> &'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
@@ -79,37 +75,6 @@ fn category_choices(catalog: &Value) -> Vec<(String,String)> {
     }
     choices.sort_by(|a,b|a.1.cmp(&b.1));
     choices
-}
-
-/// Selects exactly the IDs returned by catalog_clients::management_products.
-/// No independent filtering by name, category, brand, active state or price.
-fn query_catalog(
-    gateway:&dyn BandoGateway,
-    cached: Option<Value>,
-    search:&str, category:&str, brand:&str, missing:bool
-) -> Result<CatalogRows,String> {
-    let catalog = match cached {
-        Some(value)=>value,
-        None=>gateway.load_catalog()?,
-    };
-    let response=gateway.execute(ReadOperation::ManagementProducts,json!({
-        "state":&catalog, "query":search, "category":category,
-        "brand":brand, "missing":missing,
-    }))?;
-    let ids=response.as_array()
-        .ok_or("Rust 상품관리 조회 결과가 ID 배열이 아닙니다.")?;
-    let indexed:HashMap<String,&Value>=rows(&catalog["products"]).iter()
-        .filter_map(|row|{
-            let id=field(row,"id");
-            (!id.is_empty()).then_some((id.to_owned(),row))
-        }).collect();
-    let mut products=Vec::with_capacity(ids.len());
-    for id in ids {
-        let key=id.as_str().ok_or("Rust 상품 ID 형식 오류")?;
-        let item=indexed.get(key).ok_or("Rust 상품 조회 결과에 존재하지 않는 상품 ID가 있습니다.")?;
-        products.push((*item).clone());
-    }
-    Ok(CatalogRows{catalog,products})
 }
 
 /// UI-only number conversion used by both table cells and detail editor.
@@ -232,7 +197,7 @@ impl ProductManager {
         self.result=Some(rx);
         self.error=None;
         std::thread::spawn(move||{
-            let value=query_catalog(
+            let value=management_queries::query_management_products(
                 gateway.as_ref(),cached,&query,&category,&brand,missing,
             );
             let _=tx.send((generation,value));

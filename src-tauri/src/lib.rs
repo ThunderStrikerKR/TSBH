@@ -11,10 +11,8 @@ mod backup_manager;
 mod notification_store;
 mod relational_store;
 mod working_receptions;
-mod egui_reception_bridge;
-mod egui_manual_commit;
+#[cfg(test)]
 mod egui_shipping_bridge;
-mod egui_product_bridge;
 mod sale_unit_migration;
 mod product_name_enrichment;
 mod business_core;
@@ -105,25 +103,25 @@ fn lock_db<'a>(db: &'a State<'_, Database>) -> Result<std::sync::MutexGuard<'a, 
     db.connection.lock().map_err(|_| "데이터베이스 잠금 오류".to_string())
 }
 fn get_snapshot(conn: &Connection) -> Result<Value, String> {
+    // Only schema v2 uses the shared projection. Legacy v0/v1 hydration
+    // remains unchanged for non-destructive migrations and recovery.
+    if relational_store::active(conn)? {
+        return bando_data_access::read_v2_snapshot(conn);
+    }
     let text: String = conn.query_row("SELECT payload FROM app_state WHERE id=1", [], |row| row.get(0)).map_err(err)?;
     let mut state: Value = serde_json::from_str(&text).map_err(err)?;
     relational_store::hydrate(conn, &mut state)?;
     Ok(state)
 }
 fn valid_state(s: &Value) -> Result<(), String> {
-    for field in ["products", "orders", "clients", "aliases", "queue", "exports"] {
-        if !s.get(field).is_some_and(Value::is_array) {
-            return Err(format!("저장 데이터 형식 오류: {field}"));
-        }
-    }
-    if !s.get("settings").is_some_and(Value::is_object) { return Err("설정 데이터 형식 오류".into()); }
-    if s["products"].as_array().is_some_and(|p| p.len() > 50000) { return Err("상품 한도 초과".into()); }
-    if s["orders"].as_array().is_some_and(|p| p.len() > 100000) { return Err("주문 한도 초과".into()); }
-    validate_message_templates(s)?;
-    validate_provisional_product_notices(s)?;
-    Ok(())
+    bando_data_access::valid_state(s)
 }
 fn write_snapshot(conn: &mut Connection, mut state: Value, expected_revision: u64, validate_orders: bool) -> Result<Value, String> {
+    // Schema v2 has one authoritative writer shared with the egui host.
+    // Keep the original code below only for legacy/pre-migration databases.
+    if relational_store::active(conn)? {
+        return bando_data_access::write_v2_snapshot(conn,state,expected_revision,validate_orders);
+    }
     valid_state(&state)?;
     let tx = conn.transaction().map_err(err)?;
     let current = get_snapshot(&tx)?;
@@ -131,8 +129,8 @@ fn write_snapshot(conn: &mut Connection, mut state: Value, expected_revision: u6
     if current_revision != expected_revision {
         return Err("다른 작업에서 데이터가 수정되었습니다. 새로고침 후 다시 저장하세요.".into());
     }
-    validate_clients(&current, &state)?;
-    validate_brands(&current, &state)?;
+    bando_data_access::validate_clients(&current, &state)?;
+    bando_data_access::validate_brands(&current, &state)?;
     if validate_orders { reception::validate_reception(&current, &state)?; }
     let archive_entries = reception::new_archive_entries(&current, &state)?;
     let products_changed = current["products"] != state["products"];
@@ -202,78 +200,8 @@ fn write_snapshot(conn: &mut Connection, mut state: Value, expected_revision: u6
     tx.commit().map_err(err)?;
     Ok(state)
 }
-// Only modified/new brands are validated so legacy unchanged rows cannot prevent
-// routine product, price and order saves. Brand IDs remain stable across renames.
-fn brand_terms(brand: &Value) -> Vec<String> {
-    let fields = ["name", "korean"];
-    let fixed = fields.iter().filter_map(|key| brand[*key].as_str());
-    let aliases = brand["aliases"].as_array().into_iter().flatten().filter_map(Value::as_str);
-    fixed.chain(aliases)
-        .map(|term| term.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase())
-        .filter(|term| !term.is_empty()).collect()
-}
-fn validate_brands(before: &Value, next: &Value) -> Result<(), String> {
-    let Some(brands) = next["brands"].as_array() else { return Ok(()); };
-    for (position, brand) in brands.iter().enumerate() {
-        let id = brand["id"].as_str().unwrap_or("");
-        if before["brands"].as_array().is_some_and(|previous| {
-            previous.iter().any(|old| old["id"].as_str() == Some(id) && old == brand)
-        }) { continue; }
-        if id.trim().is_empty() || brand["name"].as_str().unwrap_or("").trim().is_empty() {
-            return Err("브랜드 공식명과 식별자를 확인하세요.".into());
-        }
-        let evidence = brand["evidenceUrl"].as_str().unwrap_or("");
-        let valid_evidence = url::Url::parse(evidence).is_ok_and(|link|
-            link.scheme() == "https" && link.host_str().is_some() &&
-            link.username().is_empty() && link.password().is_none());
-        if !valid_evidence {
-            return Err("브랜드 확인 근거는 HTTPS URL이어야 합니다.".into());
-        }
-        let terms = brand_terms(brand);
-        for (other_position, other) in brands.iter().enumerate() {
-            if position == other_position { continue; }
-            if other["id"].as_str() == Some(id) {
-                return Err("브랜드 식별자가 중복되었습니다.".into());
-            }
-            let other_terms = brand_terms(other);
-            if terms.iter().any(|term| other_terms.contains(term)) {
-                return Err("다른 브랜드의 공식명, 한글명 또는 검색 별칭과 중복됩니다.".into());
-            }
-        }
-    }
-    Ok(())
-}
-
-// Validate only newly created or edited clients. Existing historical test rows are
-// not silently rewritten, but cannot be re-saved with missing sender information.
-fn validate_clients(before: &Value, next: &Value) -> Result<(), String> {
-    let clients = next["clients"].as_array().ok_or("거래처 데이터 형식 오류")?;
-    let old = before["clients"].as_array().ok_or("기존 거래처 데이터 형식 오류")?;
-    let accounts = next["settings"]["accounts"].as_array().ok_or("입금 계좌 형식 오류")?;
-    for client in clients {
-        let id = client["id"].as_str().ok_or("거래처 ID 누락")?;
-        if old.iter().any(|c| c["id"].as_str() == Some(id) && c == client) { continue; }
-        if !client["deletedAt"].is_null() { continue; }
-        if client["name"].as_str().unwrap_or("").trim().is_empty() {
-            return Err("거래처명을 입력하세요.".into());
-        }
-        if !["wholesale", "semi", "retail", "special"].contains(&client["tier"].as_str().unwrap_or("")) {
-            return Err("거래처 가격 등급을 선택하세요.".into());
-        }
-        if client["address"].as_str().unwrap_or("").trim().is_empty() {
-            return Err("거래처 주소를 입력하세요.".into());
-        }
-        if ["phone", "mobile"].iter().all(|k| client[*k].as_str().unwrap_or("").trim().is_empty()) {
-            return Err("거래처 전화번호 또는 휴대폰 번호를 입력하세요.".into());
-        }
-        if let Some(preferred) = client["preferredAccountId"].as_str().filter(|s| !s.is_empty()) {
-            if !accounts.iter().any(|a| a["id"].as_str() == Some(preferred)) {
-                return Err("거래처 주 사용 계좌가 등록된 입금 계좌 목록에 없습니다.".into());
-            }
-        }
-    }
-    Ok(())
-}
+// v2 and legacy snapshots share identical brand/client validation through
+// bando-data-access. No second host-owned copy of these rules.
 fn validate_accounts(state:&Value)->Result<(),String>{
     business_core::rules::settings_accounts::validate(state)
 }
@@ -498,128 +426,31 @@ fn validate_color_guidance(state: &Value) -> Result<(), String> {
 }
 
 
-fn validate_provisional_product_notices(state: &Value) -> Result<(), String> {
-    let Some(config) = state["settings"].get("provisionalProductNotices") else {
-        return Ok(());
-    };
-    let entries = config.as_object().ok_or("잠정 상품 안내문 설정 형식 오류")?;
-    if entries.len() > 5000 {
-        return Err("잠정 상품 안내문 등록 한도를 초과했습니다.".into());
-    }
-    let products = state["products"].as_array().ok_or("상품 목록이 누락됐습니다.")?;
-    for (product_id, notice) in entries {
-        if !products.iter().any(|p| p["id"].as_str() == Some(product_id.as_str())) {
-            return Err("등록된 상품에만 잠정 상품 안내문을 연결할 수 있습니다.".into());
-        }
-        let message = notice.as_str().ok_or("잠정 상품 안내문은 문자여야 합니다.")?;
-        if message.trim().is_empty() || message.chars().count() > 2000 {
-            return Err("잠정 상품 안내문은 1자 이상 2000자 이하로 입력하세요.".into());
-        }
-    }
-    Ok(())
-}
-
-fn validate_message_templates(state: &Value) -> Result<(), String> {
-    let Some(config) = state["settings"].get("automaticMessageTemplates") else { return Ok(()); };
-    let entries = config.as_object().ok_or("자동 메시지 설정은 객체여야 합니다.")?;
-    if entries.len() > 20 { return Err("자동 메시지 유형 개수가 올바르지 않습니다.".into()); }
-    for (key, value) in entries {
-        let (vars, required): (&[&str], &[&str]) = match key.as_str() {
-            "recipientName" | "requestClosing" | "paymentGreeting"
-              | "optionsIntro" | "optionsClosing" => (&[], &[]),
-            "addressMissing" | "addressDetail" | "contactMissing" => (&["수취인"], &["수취인"]),
-            "quantityMissing" | "modelMissing" | "modelConfirm" | "modelRepresentative" => (&["상품명"], &["상품명"]),
-            "requestRecipient" => (&["번호", "수취인", "확인항목"], &["수취인", "확인항목"]),
-            "colorDefault" => (&["색상", "상품명"], &["색상"]),
-            "quantityOne" => (&["수취인", "상품명"], &["수취인", "상품명"]),
-            "paymentItem" => (&["상품명", "수량", "금액"], &["상품명", "수량", "금액"]),
-            "paymentFreight" => (&["운임"], &["운임"]),
-            "paymentVat" => (&["부가세"], &["부가세"]),
-            "paymentTotal" => (&["합계"], &["합계"]),
-            "paymentAccount" => (&["은행명", "계좌번호", "예금주"], &["은행명", "계좌번호", "예금주"]),
-            _ => return Err("등록되지 않은 자동 메시지 유형입니다.".into()),
-        };
-        let text = value.as_str().ok_or("자동 메시지는 문자열이어야 합니다.")?;
-        if text.trim().is_empty() || text.chars().count() > 2000 {
-            return Err("자동 메시지 길이를 확인하세요 (1~2000자).".into());
-        }
-        for required_var in required {
-            if !text.contains(&format!("{{{required_var}}}")) {
-                return Err(format!("{key}: 필수 변수를 삭제할 수 없습니다."));
-            }
-        }
-        let mut remaining = text;
-        while let Some(start) = remaining.find('{') {
-            if remaining[..start].contains('}') {
-                return Err("자동 메시지의 변수 괄호를 확인하세요.".into());
-            }
-            let tail = &remaining[start+1..];
-            let Some(end) = tail.find('}') else {
-                return Err("자동 메시지의 변수 괄호를 확인하세요.".into());
-            };
-            let token = &tail[..end];
-            if !vars.contains(&token) || token.contains('{') {
-                return Err(format!("{key}: 허용되지 않은 메시지 변수입니다."));
-            }
-            remaining = &tail[end+1..];
-        }
-        if remaining.contains('}') { return Err("자동 메시지의 변수 괄호를 확인하세요.".into()); }
-    }
-    Ok(())
-}
-
+// Message and provisional-product validation belong to bando-data-access.
 // Save just the edited settings keys. Order/product updates do not invalidate
 // this edit, but a simultaneous edit of the very same settings key is rejected.
 fn apply_settings_patch(
     conn: &mut Connection, is_test: bool, changes: &Value, expected: &Value
 ) -> Result<Value, String> {
-    let changes = changes.as_object().ok_or("설정 변경 형식 오류")?;
-    let expected = expected.as_object().ok_or("설정 기준값 형식 오류")?;
-    if changes.is_empty() { return get_snapshot(conn); }
-    if is_test && (changes.contains_key("excelDirectory") || changes.contains_key("factoryReplyDirectory") || changes.contains_key("orderImageInboxDirectory")) {
-        return Err("격리 작업공간의 Excel 보관 경로는 변경할 수 없습니다.".into());
+    // Schema v2 writes use the SAME native Rust transaction as egui.
+    // Older databases keep Tauri's migration-compatible snapshot writer,
+    // but the field CAS and all business rules are still shared.
+    if relational_store::active(conn)? {
+        return bando_data_access::patch_settings_v2(conn,is_test,changes,expected);
     }
-    let allowed = ["senderPostcode", "excelDirectory", "factoryReplyDirectory", "orderImageInboxDirectory",
-        "colorGuidanceGroups", "automaticMessageTemplates", "provisionalProductNotices", "kakaoTitleMappings", "kakaoTitleEnabled",
-        "panelRatios", "receptionVerticalRatio", "operatorName", "uiScale", "accounts",
-        "defaultAccountId", "senderName", "senderAddress", "senderPhone", "senderMobile",
-        "rounding", "brandAccounts", "specialPolicy"];
-    let mut state = get_snapshot(conn)?;
-    let revision = state["revision"].as_u64().unwrap_or(0);
-    for (field, updated) in changes {
-        if !allowed.contains(&field.as_str()) || !expected.contains_key(field) {
-            return Err("허용되지 않은 설정 변경이거나 기준값이 누락되었습니다.".into());
-        }
-        let before = state["settings"].get(field.as_str()).unwrap_or(&Value::Null);
-        if before != &expected[field] && before != updated {
-            return Err(format!("{} 설정이 다른 화면에서 수정됐습니다. 다시 불러온 뒤 저장하세요.",field));
-        }
+    let state=get_snapshot(conn)?;
+    if changes.as_object().is_some_and(serde_json::Map::is_empty){
+        return Ok(state);
     }
-    {
-        let settings = state["settings"].as_object_mut().ok_or("설정 데이터 오류")?;
-        for (field, updated) in changes {
-            if updated.is_null() { settings.remove(field); }
-            else { settings.insert(field.clone(), updated.clone()); }
-        }
-    }
-    if changes.contains_key("colorGuidanceGroups") {
-        // Canonical model-group policy is the same native business engine
-        // used by the editor. Do not reject new SKU-based groups using the
-        // legacy color/price-group validation rules.
-        business_core::catalog_clients::execute(
-            "validate_model_groups", json!({"state":&state})
-        )?;
-    }
-    if changes.contains_key("automaticMessageTemplates") { validate_message_templates(&state)?; }
-    if changes.contains_key("provisionalProductNotices") { validate_provisional_product_notices(&state)?; }
-    if ["accounts", "defaultAccountId", "brandAccounts"].iter().any(|k| changes.contains_key(*k)) {
-        validate_accounts(&state)?;
-    }
-    write_snapshot(conn, state, revision, true)
+    let revision=state["revision"].as_u64().ok_or("운영 DB revision 오류")?;
+    let updated=bando_data_access::apply_settings_changes(
+        state,is_test,changes,expected
+    )?;
+    write_snapshot(conn,updated,revision,true)
 }
 
-/// The existing Tauri command and the opt-in native egui helper share
-/// EXACTLY the same validation, per-field CAS and revision-checked writer.
+/// React/Tauri and native egui share the same settings validation,
+/// per-field CAS and revision-checked v2 SQLite writer.
 #[tauri::command]
 fn settings_patch(
     db: State<'_, Database>, changes: Value, expected: Value
@@ -630,38 +461,13 @@ fn settings_patch(
 
 /// One authoritative CAS implementation for React price_set and the
 /// explicitly enabled egui CLI. All pricing/storage semantics stay here.
-fn apply_product_price(
-    state:&mut Value,product_id:&str,variant_id:&str,tier:&str,
-    price:Option<i64>,expected:Option<i64>,
-)->Result<(),String>{
-    if !["wholesale","semi","retail"].contains(&tier){
-        return Err("가격 등급 오류".into());
-    }
-    if price.is_some_and(|amount|amount<0){
-        return Err("가격은 음수가 될 수 없습니다.".into());
-    }
-    let product=state["products"].as_array_mut()
-        .ok_or("상품 목록 오류")?.iter_mut()
-        .find(|p|p["id"].as_str()==Some(product_id))
-        .ok_or("상품을 찾을 수 없습니다.")?;
-    let variant=product["variants"].as_array_mut()
-        .ok_or("상품 옵션 오류")?.iter_mut()
-        .find(|v|v["id"].as_str()==Some(variant_id))
-        .ok_or("상품 옵션을 찾을 수 없습니다.")?;
-    if variant[tier].as_i64()!=expected {
-        return Err("가격이 다른 곳에서 수정됐습니다. 새로고침 후 다시 시도하세요.".into());
-    }
-    variant[tier]=json!(price);
-    Ok(())
-}
-
 #[tauri::command]
 fn price_set(db: State<'_, Database>, product_id: String, variant_id: String, tier: String,
              price: Option<i64>, expected: Option<i64>) -> Result<Value, String> {
     let mut conn=lock_db(&db)?;
     let mut state=get_snapshot(&conn)?;
     let revision=state["revision"].as_u64().unwrap_or(0);
-    apply_product_price(&mut state,&product_id,&variant_id,&tier,price,expected)?;
+    bando_data_access::apply_product_price(&mut state,&product_id,&variant_id,&tier,price,expected)?;
     write_snapshot(&mut conn,state,revision,true)
 }
 
@@ -708,46 +514,7 @@ fn receipt_archive(db: State<'_, Database>) -> Result<Value, String> {
 /// Same archive projection for both React IPC and the egui read-only CLI.
 /// Includes legacy/unverified records without fabricating audit evidence.
 fn receipt_archive_from_conn(conn:&Connection)->Result<Value,String>{
-    let mut statement = conn.prepare("SELECT id,order_id,record FROM receipt_archive ORDER BY rowid DESC LIMIT 10000").map_err(err)?;
-    let mut rows = statement.query([]).map_err(err)?;
-    let mut archive = Vec::new();
-    while let Some(row) = rows.next().map_err(err)? {
-        let id: String = row.get(0).map_err(err)?;
-        let order_id: String = row.get(1).map_err(err)?;
-        let record: String = row.get(2).map_err(err)?;
-        archive.push(json!({"id":id,"orderId":order_id,"record":serde_json::from_str::<Value>(&record).map_err(err)?}));
-    }
-    // Historical orders may predate the independent audit table. Display their
-    // current snapshot as unverified reference data; never fabricate an audit row.
-    let known: std::collections::HashSet<String> = archive.iter()
-        .filter_map(|row| row["id"].as_str().map(str::to_owned)).collect();
-    let snapshot = get_snapshot(&conn)?;
-    for order in snapshot["orders"].as_array().into_iter().flatten() {
-        if order["confirmedAt"].as_str().is_none() { continue; }
-        let Some(order_id) = order["id"].as_str() else { continue; };
-        if !known.contains(&format!("receipt:{order_id}")) {
-            let original = order["receipt"]["original"].as_str()
-                .or_else(|| order["rawHistory"].get(0).and_then(|r| r["raw"].as_str()))
-                .or_else(|| order["raw"].as_str()).unwrap_or("");
-            archive.push(json!({"id":format!("legacy:{order_id}"),"orderId":order_id,
-                "record":{"original":original,
-                    "at":order["receipt"]["at"].as_str().or_else(||order["createdAt"].as_str()).unwrap_or(""),
-                    "actor":"과거 주문 / 최초 접수 검증 불가",
-                    "legacy":true,"verified":false}}));
-        }
-        for correction in order["rawCorrections"].as_array().into_iter().flatten() {
-            let Some(cid) = correction["id"].as_str() else { continue; };
-            if known.contains(&format!("correction:{cid}")) { continue; }
-            let mut reference = correction.clone();
-            if let Some(fields) = reference.as_object_mut() {
-                fields.insert("legacy".into(), json!(true));
-                fields.insert("verified".into(), json!(false));
-            }
-            archive.push(json!({"id":format!("legacy-correction:{cid}"),
-                "orderId":order_id,"record":reference}));
-        }
-    }
-    Ok(json!(archive))
+    bando_data_access::audit_service::receipt_archive_from_conn(conn)
 }
 
 #[tauri::command]
@@ -1226,157 +993,6 @@ fn start_automatic_backup(app: tauri::AppHandle) {
                     Err(reason) => eprintln!("반도허브 자동 백업 DB 잠금 실패: {reason}"),
                 };
             });
-}
-
-/// One-shot CLI entry for the egui reception bridge. A helper process uses
-/// the very same native Rust rules and the Tauri working-reception table; it
-/// does not start a WebView or invoke any unrelated startup/migration path.
-/// The environment variables intentionally require explicit local consent.
-/// One-shot data-management bridge. Uses the ORIGINAL Tauri audit and
-/// backup manager; never makes a separate, incomplete egui archive writer.
-/// Archive and backup listing are read-only. Backup/restore additionally
-/// require explicit operator permission AND React-equivalent UI confirmation.
-pub fn run_egui_shipping_patch() -> i32 {
-    egui_shipping_bridge::run()
-}
-
-/// Product edits use the original Tauri catalog rules plus write_snapshot.
-pub fn run_egui_product_patch() -> i32 {
-    egui_product_bridge::run()
-}
-
-pub fn run_egui_settings_data() -> i32 {
-    use std::io::{Read,Write};
-    let result=(|| -> Result<Value,String> {
-        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .filter(|p|!p.is_empty()).map(PathBuf::from)
-            .ok_or("운영 DB 파일 경로가 설정되지 않았습니다.")?;
-        if !path.is_file(){return Err("운영 DB 파일이 없습니다.".into());}
-        let base=path.parent().ok_or("운영 DB 보관 폴더가 없습니다.")?;
-        let mut input=Vec::new();
-        std::io::stdin().take(16_385).read_to_end(&mut input).map_err(err)?;
-        if input.is_empty() || input.len()>16_384 {
-            return Err("데이터 관리 요청이 허용 범위를 초과했습니다.".into());
-        }
-        let request:Value=serde_json::from_slice(&input)
-            .map_err(|_|"데이터 관리 요청 JSON이 올바르지 않습니다.".to_owned())?;
-        let operation=request.get("operation").and_then(Value::as_str)
-            .ok_or("데이터 관리 명령이 없습니다.")?;
-        let write=matches!(operation,"backup"|"restore");
-        if write && std::env::var("BANDO_EGUI_ENABLE_SETTINGS_WRITE")
-            .ok().as_deref()!=Some("1"){
-            return Err("운영 데이터 백업·복원에는 명시적 변경 권한이 필요합니다.".into());
-        }
-        let flags=if write{rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE}
-            else{rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY};
-        let mut conn=Connection::open_with_flags(&path,flags)
-            .map_err(|_|"데이터 관리 DB를 열지 못했습니다.".to_owned())?;
-        conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(err)?;
-        if !write{conn.execute_batch("PRAGMA query_only=ON;").map_err(err)?;}
-        let version:i64=conn.query_row(
-            "SELECT version FROM core_schema WHERE key='business-core'",
-            [],|row|row.get(0),
-        ).map_err(|_|"DB 스키마 버전을 확인할 수 없습니다.".to_owned())?;
-        if version!=2{return Err("지원하지 않는 업무 DB 버전입니다.".into());}
-        match operation{
-            "archive"=>receipt_archive_from_conn(&conn),
-            "backups"=>Ok(json!(backup_manager::list_backups(base)?)),
-            "backup"=>Ok(json!(backup_manager::manual_backup(&conn,base)?)),
-            "restore"=>{
-                let filename=request.get("filename").and_then(Value::as_str)
-                    .filter(|name|!name.is_empty())
-                    .ok_or("복원할 백업 파일을 선택하세요.")?;
-                backup_manager::restore_backup(&mut conn,base,filename)?;
-                Ok(json!({"restored":true}))
-            }
-            _=>Err("허용하지 않은 데이터 관리 명령입니다.".into())
-        }
-    })();
-    let response=match &result{
-        Ok(payload)=>json!({"ok":true,"result":payload}),
-        Err(message)=>json!({"ok":false,"error":message}),
-    };
-    // Preserve strict machine-readable stdout and reject huge archive output.
-    let bytes=response.to_string();
-    let output=if bytes.len()>16_000_000 {
-        json!({"ok":false,"error":"감사 기록 응답이 16MB를 초과했습니다."}).to_string()
-    }else{bytes};
-    let _=std::io::stdout().write_all(output.as_bytes());
-    if result.is_ok() && output==response.to_string(){0}else{2}
-}
-
-/// An explicitly authorized one-shot settings patch for native egui.
-/// Calls the EXISTING settings_patch transaction/validation code, never
-/// bypasses client/account checks or writes to an inferred database.
-pub fn run_egui_settings_patch() -> i32 {
-    use std::io::{Read,Write};
-    let result=(|| -> Result<Value,String> {
-        if std::env::var("BANDO_EGUI_ENABLE_SETTINGS_WRITE").ok().as_deref()!=Some("1"){
-            return Err("운영 설정 저장에는 별도의 명시적 허용이 필요합니다.".into());
-        }
-        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .filter(|p|!p.is_empty()).map(PathBuf::from)
-            .ok_or("운영 DB 파일 경로가 설정되지 않았습니다.")?;
-        if !path.is_file(){return Err("운영 DB 파일을 찾지 못했습니다.".into());}
-        let mut input=Vec::new();
-        std::io::stdin().take(524_289).read_to_end(&mut input).map_err(err)?;
-        if input.is_empty() || input.len()>524_288 {
-            return Err("설정 수정 요청 크기가 허용 범위를 초과했습니다.".into());
-        }
-        let request:Value=serde_json::from_slice(&input)
-            .map_err(|_|"설정 수정 요청 JSON이 잘못되었습니다.".to_owned())?;
-        let changes=request.get("changes").ok_or("변경 설정이 없습니다.")?;
-        let expected=request.get("expected").ok_or("설정 비교 기준이 없습니다.")?;
-        let mut conn=Connection::open_with_flags(
-            &path,rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
-        ).map_err(|_|"운영 설정 DB를 열지 못했습니다.".to_owned())?;
-        conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(err)?;
-        let version:i64=conn.query_row(
-            "SELECT version FROM core_schema WHERE key='business-core'",
-            [],|row|row.get(0),
-        ).map_err(|_|"운영 DB 스키마 버전 확인에 실패했습니다.".to_owned())?;
-        if version!=2{return Err("지원하지 않는 업무 DB 버전입니다.".into());}
-        let updated=apply_settings_patch(&mut conn,false,changes,expected)?;
-        Ok(json!({
-            "settings":updated.get("settings"),
-            "revision":updated.get("revision"),
-        }))
-    })();
-    let response=match &result{
-        Ok(payload)=>json!({"ok":true,"result":payload}),
-        Err(message)=>json!({"ok":false,"error":message}),
-    };
-    let _=std::io::stdout().write_all(response.to_string().as_bytes());
-    if result.is_ok(){0}else{2}
-}
-
-pub fn run_egui_reception_commit() -> i32 {
-    use std::io::{Read, Write};
-    let result=(|| -> Result<Value,String> {
-        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .filter(|p|!p.is_empty())
-            .map(PathBuf::from)
-            .ok_or("BANDO_EGUI_BUSINESS_DB 운영 DB 경로가 필요합니다.")?;
-        if std::env::var("BANDO_EGUI_ENABLE_WORKING_COMMIT")
-            .ok().as_deref()!=Some("1") {
-            return Err("운영 미확정 접수 저장은 명시적 동의 설정이 필요합니다.".into());
-        }
-        let mut bytes=Vec::new();
-        std::io::stdin().take(2_100_000).read_to_end(&mut bytes).map_err(err)?;
-        if bytes.is_empty() || bytes.len()>=2_100_000 {
-            return Err("egui 접수 요청 크기가 허용 범위를 초과했습니다.".into());
-        }
-        let request:Value=serde_json::from_slice(&bytes)
-            .map_err(|_|"egui 접수 요청 JSON을 읽을 수 없습니다.".to_owned())?;
-        egui_reception_bridge::commit_file(&path, request)
-    })();
-    let output=match &result {
-        Ok(payload)=>json!({"ok":true,"result":payload}),
-        Err(message)=>json!({"ok":false,"error":message}),
-    };
-    // Avoid stdout debug logs: this is a strict machine-readable IPC pipe.
-    let _=std::io::stdout().write_all(output.to_string().as_bytes());
-    if result.is_ok(){0}else{2}
 }
 
 pub fn run() {

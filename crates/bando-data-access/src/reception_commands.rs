@@ -1,18 +1,13 @@
-//! Controlled egui -> Tauri persistence bridge.
-//!
-//! It writes ONLY an unconfirmed reception to the EXISTING
-//! reception_working_orders table. It never inserts into core_orders or
-//! app_state, never confirms an order and never changes payment/shipment
-//! history. Business logic comes exclusively from the existing Rust core.
-//!
-//! The caller must explicitly choose the SQLite path and the Tauri executable.
-//! This is a one-shot CLI service, not a background listener or an HTTP port.
+//! Native unconfirmed reception CAS writer shared with egui.
+//! This performs NO confirmed order insert, payment mutation or audit unlock.
+//! Original Rust recognition, manual classification, order edit, repricing
+//! and freight rules execute INSIDE one IMMEDIATE SQLite transaction.
+//! The caller owns the explicitly authorized existing schema-v2 connection.
 
-use super::{business_core, err, get_snapshot};
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
-use serde_json::{json, Value};
+use rusqlite::{params,Connection,OptionalExtension,TransactionBehavior};
+use serde_json::{json,Value};
 use sha2::{Digest,Sha256};
-use std::path::Path;
+fn err<E:std::fmt::Display>(e:E)->String{e.to_string()}
 
 fn payload_hash(order:&Value)->Result<String,String>{
     let mut data=order.clone();
@@ -29,7 +24,7 @@ fn field<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {
 }
 
 fn rule(operation: &str, payload: Value) -> Result<Value, String> {
-    business_core::execute("rules", operation, payload)
+    crate::rules::execute(operation, payload)
 }
 
 fn order_from(result: Value) -> Result<Value, String> {
@@ -41,7 +36,7 @@ fn same_id(order: &Value, order_id: &str) -> bool {
     order.get("id").and_then(Value::as_str) == Some(order_id)
 }
 
-fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, String> {
+pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Value, String> {
     let order_id = field(request, "orderId")?;
     let raw = field(request, "sourceRaw")?;
     let kind = field(request, "orderType")?;
@@ -75,7 +70,7 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
     if version != 2 {
         return Err("운영 DB 관계형 버전 2만 지원합니다.".into());
     }
-    let state = get_snapshot(&tx)?;
+    let state = crate::read_v2_snapshot(&tx)?;
     if state.get("revision").and_then(Value::as_u64) != Some(expected_revision) {
         return Err("운영 거래처·가격·운임 기준이 변경됐습니다. 다시 조회한 후 저장하세요.".into());
     }
@@ -166,7 +161,7 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
     // Never trust price/total figures or a clientSnapshot supplied by egui.
     // Re-run recognition, dealer guard, item reprice and freight using the
     // fresh, authoritative state from inside the write transaction.
-    let evidence = business_core::execute("recognition", "analyze_order", json!({
+    let evidence = crate::recognition::execute("analyze_order", json!({
         "raw":raw, "state":&state, "client":selected_client
     }))?;
     if !evidence.get("recipients").is_some_and(Value::is_array) ||
@@ -192,7 +187,7 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
         // then restore the canonical native candidates index for persistence.
         let mut manual_baseline=merged.clone();
         manual_baseline["analysisEvidence"]=json!([]);
-        let mut applied=super::egui_manual_commit::verify_apply(
+        let mut applied=crate::reception_manual::verify_apply(
             &manual_baseline,&state,selected_client,manual_model
         )?;
         applied["analysisEvidence"]=merged.get("analysisEvidence")
@@ -293,13 +288,3 @@ fn commit_transaction(conn: &mut Connection, request: &Value) -> Result<Value, S
     Ok(acknowledgement)
 }
 
-pub(super) fn commit_file(path: &Path, request: Value) -> Result<Value, String> {
-    if !path.is_file() {
-        return Err("지정한 Tauri 운영 DB가 존재하지 않습니다.".into());
-    }
-    let mut conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
-        .map_err(|_| "Tauri 운영 DB를 쓰기 모드로 열 수 없습니다.".to_owned())?;
-    conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(err)?;
-    conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(err)?;
-    commit_transaction(&mut conn, &request)
-}

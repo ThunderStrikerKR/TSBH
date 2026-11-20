@@ -5,6 +5,7 @@
 use crate::{
     components,
     gateway::{BandoGateway, ReadOperation},
+    management_queries,
     settings_help, theme, typography,
 };
 use eframe::egui::{self, Ui};
@@ -262,24 +263,7 @@ impl FreightManager {
         -> Receiver<Result<(Value,Value),String>> {
         let (sender,receiver)=mpsc::channel();
         std::thread::spawn(move||{
-            let outcome=(|| {
-                let state=gateway.load_business_state()?;
-                let shipping=state.get("shipping")
-                    .filter(|value|value.is_object())
-                    .ok_or("운영 DB에서 운임 기준을 찾을 수 없습니다.")?;
-                let mut projection=gateway.execute(
-                    ReadOperation::ShippingManagerView,
-                    json!({"state":state,"shipping":shipping})
-                )?;
-                let product_view=gateway.execute(
-                    ReadOperation::ProductFreightView,
-                    json!({"action":"product_freight_view","state":{
-                        "products":state["products"],"shipping":shipping
-                    }})
-                )?;
-                projection["productViews"]=product_view["views"].clone();
-                Ok((state,projection))
-            })();
+            let outcome=management_queries::load_freight(gateway.as_ref());
             let _=sender.send(outcome);
             ctx.request_repaint();
         });

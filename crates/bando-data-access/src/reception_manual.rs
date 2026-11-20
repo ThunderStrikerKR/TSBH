@@ -6,7 +6,7 @@
 //! UI-submitted rows provide ONLY target IDs, editable strings and quantities;
 //! reconstructed blocks/assignments/products come from the current master.
 
-use super::business_core;
+use crate::rules;
 use serde_json::{json,Value};
 use std::collections::HashSet;
 
@@ -18,7 +18,7 @@ fn list<'a>(v:&'a Value,k:&str)->Result<&'a Vec<Value>,String>{
 }
 fn rule(action:&str,mut input:Value)->Result<Value,String>{
     input["action"]=json!(action);
-    business_core::execute("rules","apply_manual_classification",input)
+    rules::execute("apply_manual_classification",input)
 }
 fn model(result:Value)->Result<(Value,Vec<String>),String>{
     let obj=result.get("model").filter(|v|v.is_object())
@@ -325,7 +325,7 @@ fn edit_fields(
     }
     Ok(())
 }
-pub(super) fn verify_apply(
+pub(crate) fn verify_apply(
     order:&Value,state:&Value,client:&Value,source:&Value
 )->Result<Value,String>{
     let order_id=s(order,"id");

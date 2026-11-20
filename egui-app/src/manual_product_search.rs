@@ -2,9 +2,9 @@
 //! Calls the same Rust catalog query used by the React product chooser.
 
 use eframe::egui::{self,Context};
-use serde_json::{json,Value};
+use serde_json::Value;
 use std::{sync::{mpsc::{self,Receiver},Arc},thread};
-use crate::{gateway::{BandoGateway,ReadOperation},theme::{self,ButtonRole},typography,components};
+use crate::{gateway::BandoGateway,management_queries::{self,ManualProductRows},theme::{self,ButtonRole},typography,components};
 
 fn field<'a>(v:&'a Value,key:&str)->&'a str{
     v.get(key).and_then(Value::as_str).unwrap_or("")
@@ -36,7 +36,6 @@ fn category_levels(categories:&[Value],selected_id:&str)->Vec<(usize,String,Stri
     levels
 }
 
-struct Results{catalog:Value,products:Vec<Value>,detail_ids:Vec<String>}
 pub enum Event{Cancelled,Chosen(Value)}
 pub struct ProductSearch{
     pub recipient_id:String,
@@ -48,7 +47,7 @@ pub struct ProductSearch{
     catalog:Option<Value>,
     products:Vec<Value>,
     detail_ids:Vec<String>,
-    receiver:Option<Receiver<Result<Results,String>>>,
+    receiver:Option<Receiver<Result<ManualProductRows,String>>>,
     error:Option<String>,
 }
 impl ProductSearch{
@@ -71,31 +70,9 @@ impl ProductSearch{
         let (tx,rx)=mpsc::channel();
         self.receiver=Some(rx);
         thread::spawn(move||{
-            let result=(||->Result<Results,String>{
-                let state=match catalog{Some(value)=>value,None=>gateway.load_catalog()?};
-                let result=gateway.execute(ReadOperation::SearchProductsWithUrls,json!({
-                    "state":&state,"query":query,"clientId":client,
-                    "major":major,"brand":brand,"excludeDemo":true
-                }))?;
-                let ids=result.get("ids").and_then(Value::as_array)
-                    .ok_or("Rust 상품 검색 결과 형식 오류")?;
-                let all=state.get("products").and_then(Value::as_array)
-                    .ok_or("상품 목록이 없습니다.")?;
-                let mut products=Vec::new();
-                for id in ids.iter().take(100){
-                    let id=id.as_str().ok_or("Rust 상품 검색 ID 오류")?;
-                    let row=all.iter().find(|p|field(p,"id")==id)
-                        .ok_or("상품 ID와 목록이 일치하지 않습니다.")?;
-                    products.push(row.clone());
-                }
-                let detail_ids=result.get("detailLinkIds")
-                    .and_then(Value::as_array)
-                    .into_iter().flatten()
-                    .filter_map(Value::as_str)
-                    .map(str::to_owned)
-                    .collect();
-                Ok(Results{catalog:state,products,detail_ids})
-            })();
+            let result=management_queries::query_manual_products(
+                gateway.as_ref(),catalog,&query,&client,&major,&brand,
+            );
             let _=tx.send(result);
             ctx.request_repaint();
         });

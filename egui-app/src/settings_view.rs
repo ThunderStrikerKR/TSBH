@@ -182,6 +182,10 @@ impl SettingsView{
     pub fn read_only(&self)->bool {
         self.source.get("readOnly").and_then(Value::as_bool).unwrap_or(true)
     }
+    fn data_available(&self)->bool {
+        self.source.get("dataAvailable").and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
     pub fn discard(&mut self){
         self.draft=settings(&self.source).clone();
         self.error=None;
@@ -801,7 +805,7 @@ impl SettingsView{
                 if self.data_request.as_ref().is_some_and(|(op,_)|op=="archive"){
                     "기록 조회 중…"
                 }else{"감사 기록 열기"},ButtonRole::Standard,
-                business&&!reading
+                business&&self.data_available()&&!reading
             ).clicked(){
                 self.data_action("archive",None,Arc::clone(&gateway),panel.ctx().clone());
             }
@@ -810,13 +814,13 @@ impl SettingsView{
         card(ui,"데이터 백업 및 복구",|panel|{
             panel.horizontal_wrapped(|actions|{
                 if theme::action(actions,"지금 백업",ButtonRole::Standard,
-                    business&&!self.read_only()&&!reading).clicked(){
+                    business&&self.data_available()&&!self.read_only()&&!reading).clicked(){
                     self.data_action(
                         "backup",None,Arc::clone(&gateway),actions.ctx().clone()
                     );
                 }
                 if theme::action(actions,"백업 목록",ButtonRole::Standard,
-                    business&&!reading).clicked(){
+                    business&&self.data_available()&&!reading).clicked(){
                     self.data_action(
                         "backups",None,Arc::clone(&gateway),actions.ctx().clone()
                     );
@@ -974,7 +978,7 @@ impl SettingsView{
                         self.restore_target=None;
                     }
                     if theme::action(actions,"이 백업으로 복구",ButtonRole::Primary,
-                        !self.read_only()&&!self.busy()).clicked(){
+                        self.data_available()&&!self.read_only()&&!self.busy()).clicked(){
                         self.restore_target=None;
                         self.data_action(
                             "restore",Some(filename),

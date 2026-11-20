@@ -23,21 +23,25 @@ rem Never create/reset/attach the production DB from this developer launcher.
 set "BANDO_EGUI_BUSINESS_DB="
 set "BANDO_EGUI_CLIENT_INDEX="
 set "BANDO_EGUI_DEVELOPER_TEST=1"
-rem A native Tauri helper can save shipping changes to the isolated TEST DB.
-rem Enable it only when both the test DB and the compiled debug helper exist,
-rem and only when the caller did not explicitly override the business DB.
-if not defined BANDO_EGUI_BUSINESS_DB (
-  if not defined BANDO_EGUI_CLIENT_INDEX (
-    if exist "%APPDATA%\com.bandostand.bandohub.tauri\developer-test\bando-hub-test.sqlite" (
-      if exist "%~dp0src-tauri\target\debug\bando_hub_tauri.exe" (
-        if not defined BANDO_EGUI_TAURI_HELPER set "BANDO_EGUI_TAURI_HELPER=%~dp0src-tauri\target\debug\bando_hub_tauri.exe"
-        if not defined BANDO_EGUI_ENABLE_SHIPPING_WRITE set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=1"
-        echo [FREIGHT] Isolated Tauri developer-test SQLite bridge enabled.
-      )
-    ) else (
-      echo [FREIGHT] No developer-test SQLite found. The production DB will NOT be used.
-    )
-  )
+rem Freight writes use the shared in-process Rust service: no helper EXE.
+rem This developer launcher enables writes ONLY for an existing isolated TEST DB.
+rem Backups, restores and audit archive use the in-process Rust service.
+rem Unconfirmed reception writes also use the in-process Rust CAS service.
+rem Client and product edits use the native shared writer, NEVER egui preview DB.
+set "BANDO_EGUI_ENABLE_CLIENT_WRITE=0"
+set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=0"
+set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=0"
+set "BANDO_EGUI_ENABLE_SETTINGS_WRITE=0"
+set "BANDO_EGUI_ENABLE_WORKING_COMMIT=0"
+if exist "%APPDATA%\com.bandostand.bandohub.tauri\developer-test\bando-hub-test.sqlite" (
+  set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=1"
+  set "BANDO_EGUI_ENABLE_CLIENT_WRITE=1"
+  set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=1"
+  set "BANDO_EGUI_ENABLE_SETTINGS_WRITE=1"
+  set "BANDO_EGUI_ENABLE_WORKING_COMMIT=1"
+  echo [FREIGHT/CLIENT/PRODUCT/SETTINGS/RECEPTION] Native Rust direct save enabled for the existing isolated TEST DB.
+) else (
+  echo [FREIGHT] No developer-test SQLite found. The production DB will NOT be used.
 )
 
 rem Reuse an EXISTING, packaged BANDO OCR runtime without copying or

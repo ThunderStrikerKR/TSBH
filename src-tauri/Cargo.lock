@@ -115,10 +115,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "bando-data-access"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "regex",
+ "rusqlite",
+ "scraper",
+ "serde_json",
+ "sha2",
+ "unicode-normalization",
+ "url",
+]
+
+[[package]]
 name = "bando_hub_tauri"
 version = "0.0.4"
 dependencies = [
  "arboard",
+ "bando-data-access",
  "base64 0.22.1",
  "chrono",
  "open",
