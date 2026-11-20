@@ -613,6 +613,11 @@ impl CategoryManager {
             )
                 .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))
                 .show(ctx,|modal|{
+                    if components::modal_header(
+                        modal,"선택 분류 편집","취소",!busy&&!nested_dialog
+                    ){
+                        self.request_close_editor(&cats);
+                    }
                     modal.add_enabled_ui(!nested_dialog,|body|{
                         if let Some(current)=self.current(&cats){
                             let name_display=typography::fit_category_path(
@@ -621,20 +626,9 @@ impl CategoryManager {
                                     .max(0.0),
                                 typography::CategoryPathFont::Subsection
                             );
-                            body.horizontal(|heading|{
-                                heading.label(typography::subsection_heading(
-                                    &name_display
-                                )).on_hover_text(&current.name);
-                                heading.with_layout(
-                                    Layout::right_to_left(Align::Center),|right|{
-                                        if theme::action(right,"닫기 ×",
-                                            theme::ButtonRole::Standard,!busy
-                                        ).clicked(){
-                                            self.request_close_editor(&cats);
-                                        }
-                                    }
-                                );
-                            });
+                            body.label(typography::subsection_heading(
+                                &name_display
+                            )).on_hover_text(&current.name);
                             let breadcrumb=path_text(&cats,&current.id);
                             let visible=typography::fit_category_path(
                                 body,&breadcrumb,body.available_width(),
@@ -747,6 +741,7 @@ impl CategoryManager {
             };
             components::decision_window(title,"category-operation-modal",work_area)
                 .show(ctx,|modal|{
+                    cancel=components::modal_header(modal,title,"취소",!busy);
                     if let Some(current)=self.current(&cats){
                         match operation{
                             Operation::Add=>{
@@ -850,8 +845,6 @@ impl CategoryManager {
                                         Operation::Delete=>true,
                                     }
                                 ).clicked();
-                                cancel=theme::action(right,"취소",
-                                    theme::ButtonRole::Standard,!busy).clicked();
                             }
                         );
                     });
@@ -872,12 +865,13 @@ impl CategoryManager {
             components::decision_window(
                 "저장하지 않은 카테고리","category-unsaved-confirm",work_area
             ).show(ctx,|modal|{
+                cancel=components::modal_header(
+                    modal,"저장하지 않은 카테고리","취소",!busy
+                );
                 modal.label(typography::body(
                     "카테고리 변경사항을 저장할까요?"
                 ));
                 modal.horizontal(|actions|{
-                    cancel=theme::action(actions,"취소",
-                        theme::ButtonRole::Standard,!busy).clicked();
                     discard=theme::action(actions,"저장 안 함",
                         theme::ButtonRole::Standard,!busy).clicked();
                     save=theme::action(actions,"저장하고 이동",
