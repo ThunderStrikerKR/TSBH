@@ -431,9 +431,9 @@ impl ClientManager {
             // Match Freight Assignment's header + independently scrolling
             // 42pt rows. Header x coordinates follow the scroll offset;
             // scrolling vertically never hides or moves column names.
-            // Read the existing list-card gutter and 36pt pinned header
-            // from the shared SSOT helper; keep the approved 900pt minimum.
-            let layout=components::management_existing_list_table_header(
+            // Use the common 36pt pinned header and zero-extra scrollbar gap
+            // (CONFLICT-003=A); keep this client's 900pt table minimum.
+            let layout=components::management_list_table_header(
                 section,theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH
             );
             let table_width=layout.table_width;
