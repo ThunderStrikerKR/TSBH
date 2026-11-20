@@ -572,7 +572,9 @@ pub fn action_full_width(
     action_with_min_width(ui, label, role, enabled, width)
 }
 
-fn action_with_min_width(
+/// Shared fixed-minimum-width action, for select triggers that must match
+/// the 34pt management controls rather than egui's shorter default ComboBox.
+pub fn action_with_min_width(
     ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool, min_width: f32,
 ) -> Response {
     let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
