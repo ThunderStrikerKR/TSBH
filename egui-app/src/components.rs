@@ -758,10 +758,8 @@ pub fn management_row(
                 else if primary.is_empty(){secondary.to_string()}
                 else{format!("{primary} / {secondary}")};
             if !full.is_empty() {
-                ui.interact(
-                    cell,ui.make_persistent_id(("management-row-hover",row_id,i)),
-                    Sense::hover()
-                ).on_hover_text(full);
+                let hover_id=ui.make_persistent_id(("management-row-hover",row_id,i));
+                ui.interact(cell,hover_id,Sense::hover()).on_hover_text(full);
             }
         }
         x+=col_width;
