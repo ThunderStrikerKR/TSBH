@@ -41,6 +41,8 @@ pub enum ReadOperation {
     PreviewOrder,
     ReadShipments,
     ListOrderHistoryView,
+    ListOrderHistory,
+    PrepareSettlement,
     ShippingManagerView,
     ProductFreightView,
     DefaultProductRule,
@@ -59,9 +61,10 @@ impl ReadOperation {
             | Self::ChangeOrderClient | Self::RepriceOrder
             | Self::CalculatePrice | Self::ManualClassification
             | Self::PreviewWorkflow | Self::PreviewOrder
-            | Self::ReadShipments | Self::ListOrderHistoryView | Self::ShippingManagerView
+            | Self::ReadShipments | Self::ListOrderHistoryView | Self::ListOrderHistory
+            | Self::ShippingManagerView
             | Self::ProductFreightView | Self::DefaultProductRule => "rules",
-            Self::RenderAutomaticMessage => "output",
+            Self::RenderAutomaticMessage | Self::PrepareSettlement => "output",
         }
     }
 
@@ -85,6 +88,8 @@ impl ReadOperation {
             Self::PreviewOrder => "preview_order",
             Self::ReadShipments => "read_shipments",
             Self::ListOrderHistoryView => "list_order_history_view",
+            Self::ListOrderHistory => "list_order_history",
+            Self::PrepareSettlement => "prepare_settlement",
             Self::ShippingManagerView => "shipping_manager_view",
             Self::ProductFreightView => "apply_shipping_action",
             Self::DefaultProductRule => "apply_shipping_action",
@@ -449,6 +454,7 @@ impl BandoGateway for LocalGateway {
             | ReadOperation::PreviewOrder
             | ReadOperation::ReadShipments
             | ReadOperation::ListOrderHistoryView
+            | ReadOperation::ListOrderHistory
             | ReadOperation::ShippingManagerView
             | ReadOperation::ProductFreightView
             | ReadOperation::DefaultProductRule => {
@@ -467,7 +473,7 @@ impl BandoGateway for LocalGateway {
             ReadOperation::ManagementProducts => {
                 crate::catalog_query_bridge::management_products(&payload)
             }
-            ReadOperation::RenderAutomaticMessage => {
+            ReadOperation::RenderAutomaticMessage | ReadOperation::PrepareSettlement => {
                 output::execute(operation.operation(),payload)
             }
         }
