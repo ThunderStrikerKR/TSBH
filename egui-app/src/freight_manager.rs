@@ -1331,11 +1331,11 @@ impl FreightManager {
             // scroll offset is reflected only in its horizontal coordinates,
             // so wheel scrolling cannot push column titles off-screen.
             let viewport_width=section.available_width().max(1.0);
-            // Reserve the solid vertical track (+4pt breathing room) BEFORE
-            // allocating rows. Otherwise the track steals width after layout
-            // and creates an avoidable horizontal scrollbar.
+            // Keep the table content clear of the solid scrollbar track.
+            // Reserve its actual allocated width plus 12pt of visual clearance:
+            // the narrow "설정" column must never crowd the handle.
             let scrollbar_gutter=section.spacing().scroll.allocated_width()
-                +theme::SPACE_4;
+                +theme::SPACE_12;
             let table_width=(viewport_width-scrollbar_gutter)
                 .max(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH);
             let mut widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
@@ -1354,6 +1354,18 @@ impl FreightManager {
             let (header_rect,_)=section.allocate_exact_size(
                 egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
                 egui::Sense::hover()
+            );
+            // The header occupies the same scrollable content width as the
+            // rows; the right-hand scrollbar rail is NOT a seventh column.
+            // Keep the outer allocation full-width so the body ScrollArea
+            // still receives the normal viewport without moving its origin.
+            let header_content_rect=egui::Rect::from_min_max(
+                header_rect.min,
+                egui::pos2(
+                    (header_rect.right()-scrollbar_gutter)
+                        .max(header_rect.left()+1.0),
+                    header_rect.bottom(),
+                ),
             );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
@@ -1673,8 +1685,8 @@ impl FreightManager {
                 egui::pos2(header_left,header_rect.top()),
                 &widths,header_rect.height()
             );
-            let header_painter=section.painter().with_clip_rect(header_rect);
-            header_painter.rect_filled(header_rect,0.0,theme::RAISED);
+            let header_painter=section.painter().with_clip_rect(header_content_rect);
+            header_painter.rect_filled(header_content_rect,0.0,theme::RAISED);
             for (i,title) in titles.iter().enumerate(){
                 if !title.is_empty(){
                     let region=header_cells[i];
@@ -1688,7 +1700,7 @@ impl FreightManager {
                             Some(FreightSortDirection::Descending)=>("▼",theme::SELECTION),
                             None=>("↕",theme::MUTED),
                         };
-                        let visible=region.intersect(header_rect);
+                        let visible=region.intersect(header_content_rect);
                         if visible.width()>0.0 && visible.height()>0.0 {
                             let next=FreightSort::next(*sort,column);
                             let tooltip=match next.map(|value|value.direction){
@@ -1727,7 +1739,7 @@ impl FreightManager {
                     }else{
                         region.center().x-total_width/2.0
                     };
-                    let ink=header_painter.with_clip_rect(header_rect.intersect(region));
+                    let ink=header_painter.with_clip_rect(header_content_rect.intersect(region));
                     ink.galley(
                         egui::pos2(
                             left,region.center().y-label.size().y/2.0
@@ -1757,7 +1769,7 @@ impl FreightManager {
                 }
             }
             header_painter.line_segment(
-                [header_rect.left_bottom(),header_rect.right_bottom()],
+                [header_content_rect.left_bottom(),header_content_rect.right_bottom()],
                 egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
             );
 
@@ -1784,7 +1796,7 @@ impl FreightManager {
             }
             section.scope_builder(header_check_builder,|header_check|{
                 header_check.set_clip_rect(
-                    header_cells[0].intersect(header_rect)
+                    header_cells[0].intersect(header_content_rect)
                 );
                 if header_check.checkbox(&mut all_filtered,"")
                     .on_hover_text("현재 검색·필터 결과 전체 선택 / 해제")
