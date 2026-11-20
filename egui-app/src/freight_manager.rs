@@ -1091,10 +1091,12 @@ impl FreightManager {
                 .max(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH);
             let mut widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
             let extra=(table_width-theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH).max(0.0);
-            // Split spare width between product (70%) and category (30%);
-            // preserve the product as the visually dominant column.
-            widths[1]+=extra*0.70;
-            widths[3]+=extra*0.30;
+            // Both the fixed category width and its share of additional
+            // viewport space are 1.2x their previous values:
+            // 215 + extra*0.30 -> 258 + extra*0.36.
+            // Product takes the entire difference; colors/options are 83pt.
+            widths[1]+=extra*0.64;
+            widths[3]+=extra*0.36;
             let titles=[
                 "","상품명 / 상품설명","색상/옵션","카테고리",
                 "배송 그룹","설정"
