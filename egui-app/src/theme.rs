@@ -162,6 +162,12 @@ pub const FRAME_STROKE_WIDTH: f32 = 1.0;
 pub const CONTROL_RADIUS: u8 = 6;
 pub const PANEL_RADIUS: u8 = 9;
 pub const INPUT_HEIGHT: f32 = 36.0;
+// Shared order-history date toolbar geometry. Keep all controls centered in
+// the 36pt row; the date navigation arrows have identical 28pt hit targets.
+pub const MANAGEMENT_DATE_NAV_BUTTON_WIDTH: f32 = 28.0;
+pub const MANAGEMENT_DATE_CALENDAR_BUTTON_WIDTH: f32 = INPUT_HEIGHT;
+pub const MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH: f32 = SPACE_16;
+pub const MANAGEMENT_DATE_CONTROL_GAP: f32 = SPACE_8;
 pub const ACTION_PRIMARY_HEIGHT: f32 = 36.0;
 pub const ACTION_STANDARD_HEIGHT: f32 = 34.0;
 pub const ACTION_EMPHASIZED_HEIGHT: f32 = 34.0;
