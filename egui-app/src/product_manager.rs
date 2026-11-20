@@ -885,7 +885,6 @@ impl ProductManager {
         let mut request_close=false;
         let mut request_save=false;
         let mut request_archive=false;
-        let saved_error=self.error.clone();
         components::modal_backdrop(ctx,"egui-product-detail-backdrop",false);
         components::modal_window(
             if is_new {"상품 등록"} else {"상품 상세 관리"},
@@ -1048,9 +1047,6 @@ impl ProductManager {
                                     ));
                                 }
                             });
-                        }
-                        if let Some(message)=&saved_error{
-                            body.label(typography::status(message,theme::DANGER));
                         }
                     });
                 modal.add_space(theme::SPACE_12);
