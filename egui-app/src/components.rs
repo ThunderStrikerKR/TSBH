@@ -6,6 +6,50 @@ use crate::{theme, typography};
 
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 pub const TABLE_ROW_HEIGHT: f32 = 42.0;
+/// Render only the rows intersecting a scroll viewport, while reserving the
+/// full logical height and width of the list. This works with BOTH-axis
+/// scrolling, unlike a paginated list, and preserves the backing row indices.
+///
+/// Each caller must render each row at exactly `row_height` with no vertical
+/// spacing; widgets/edits must be keyed by stable entity IDs rather than by
+/// which row happened to be visible in the current frame.
+pub fn virtual_fixed_rows<R>(
+    scroll:egui::ScrollArea,
+    ui:&mut Ui,
+    content_width:f32,
+    row_height:f32,
+    total_rows:usize,
+    add_visible:impl FnOnce(&mut Ui,std::ops::Range<usize>)->R,
+) -> egui::containers::scroll_area::ScrollAreaOutput<R> {
+    debug_assert!(row_height>0.0 && row_height.is_finite());
+    scroll.show_viewport(ui,move |body,viewport|{
+        body.spacing_mut().item_spacing.y=0.0;
+        body.set_min_width(content_width);
+        body.set_min_height(row_height*total_rows as f32);
+        let first=((viewport.top()/row_height).floor().max(0.0) as usize)
+            .saturating_sub(1).min(total_rows);
+        let last=((viewport.bottom()/row_height).ceil().max(0.0) as usize)
+            .saturating_add(1).min(total_rows);
+        let top=body.max_rect().top()+first as f32*row_height;
+        let visible_rect=egui::Rect::from_min_size(
+            egui::pos2(body.max_rect().left(),top),
+            egui::vec2(content_width,(last-first) as f32*row_height),
+        );
+        let clip=body.clip_rect();
+        body.scope_builder(
+            egui::UiBuilder::new()
+                .id_salt("virtual-fixed-rows")
+                .max_rect(visible_rect),
+            |visible|{
+                visible.spacing_mut().item_spacing.y=0.0;
+                visible.set_clip_rect(clip);
+                visible.skip_ahead_auto_ids(first);
+                add_visible(visible,first..last)
+            }
+        ).inner
+    })
+}
+
 pub const TABLE_HEADER_HEIGHT: f32 = 36.0;
 
 #[derive(Clone, Copy)]
