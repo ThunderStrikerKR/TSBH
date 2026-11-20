@@ -1430,7 +1430,8 @@ impl ProductManager {
                             let refs=rows(&draft["priceHistory"]);
                             egui::CollapsingHeader::new(
                                 format!("가격 변경 이력 {}건",refs.len())
-                            ).show(body,|history|{
+                            ).icon(components::paint_collapsing_header_icon)
+                                .show(body,|history|{
                                 for item in refs.iter().rev(){
                                     history.label(typography::caption(
                                         &format!("{} / {} / {} → {}",
