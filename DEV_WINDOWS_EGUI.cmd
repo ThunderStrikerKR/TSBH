@@ -25,7 +25,8 @@ set "BANDO_EGUI_CLIENT_INDEX="
 set "BANDO_EGUI_DEVELOPER_TEST=1"
 rem Freight writes use the shared in-process Rust service: no helper EXE.
 rem This developer launcher enables writes ONLY for an existing isolated TEST DB.
-rem Full-data backup/restore and reception still use the Tauri helper.
+rem Backups, restores and audit archive use the in-process Rust service.
+rem Reception is the remaining Tauri helper path.
 rem Client and product edits use the native shared writer, NEVER egui preview DB.
 set "BANDO_EGUI_ENABLE_CLIENT_WRITE=0"
 set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=0"
