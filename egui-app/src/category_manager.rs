@@ -345,19 +345,47 @@ impl CategoryManager {
             .layout(Layout::left_to_right(Align::Center)),|line|{
                 line.add_space(theme::CATALOG_TREE_INDENT*depth as f32
                     +theme::SPACE_12);
-                line.label(typography::body(
-                    if branches.is_empty(){""}else if open{"⌄"}else{"›"}
-                ));
+                // A fixed-width vector chevron prevents missing-font boxes
+                // and gives leaf and branch names an identical left edge.
+                let (icon_rect,_)=line.allocate_exact_size(
+                    Vec2::splat(theme::SPACE_16),Sense::hover()
+                );
+                if !branches.is_empty(){
+                    let center=icon_rect.center();
+                    let stroke=egui::Stroke::new(1.5,theme::SECONDARY);
+                    let arm=theme::SPACE_4;
+                    if open{
+                        line.painter().line_segment([
+                            egui::pos2(center.x-arm,center.y-arm/2.0),
+                            egui::pos2(center.x,center.y+arm/2.0)
+                        ],stroke);
+                        line.painter().line_segment([
+                            egui::pos2(center.x,center.y+arm/2.0),
+                            egui::pos2(center.x+arm,center.y-arm/2.0)
+                        ],stroke);
+                    }else{
+                        line.painter().line_segment([
+                            egui::pos2(center.x-arm/2.0,center.y-arm),
+                            egui::pos2(center.x+arm/2.0,center.y)
+                        ],stroke);
+                        line.painter().line_segment([
+                            egui::pos2(center.x+arm/2.0,center.y),
+                            egui::pos2(center.x-arm/2.0,center.y+arm)
+                        ],stroke);
+                    }
+                }
                 line.label(if is_root(&item.id){
                     typography::subsection_heading(&item.name)
                 }else{typography::body(&item.name)});
                 line.with_layout(Layout::right_to_left(Align::Center),|right|{
-                    right.label(typography::caption(
-                        &total_count(catalog,cats,&item.id).to_string()
-                    ));
-                    if !branches.is_empty(){
-                        right.label(typography::caption(&format!("하위 {}",branches.len())));
-                    }
+                    right.add_space(theme::SPACE_12);
+                    let count=total_count(catalog,cats,&item.id);
+                    let summary=if branches.is_empty(){
+                        format!("상품 {count}개")
+                    }else{
+                        format!("하위 {} · 상품 {count}개",branches.len())
+                    };
+                    right.label(typography::caption(&summary));
                 });
             });
         if response.clicked(){
@@ -379,44 +407,32 @@ impl CategoryManager {
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
         let cats=categories(catalog);
         let root=theme::section_frame().show(ui,|panel|{
-            let header=panel.available_width();
-            panel.label(typography::section_heading("카테고리 맵"));
+            panel.horizontal(|header|{
+                header.label(typography::section_heading("카테고리 맵"));
+                header.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                    if theme::action(actions,"+ 하위 분류 추가",
+                        theme::ButtonRole::Primary,editable&&!busy &&
+                            self.current(&cats).is_some()).clicked(){
+                        self.begin_operation(&cats,catalog,Operation::Add);
+                    }
+                    if theme::action(actions,"선택 분류 편집",
+                        theme::ButtonRole::Standard,!busy &&
+                            self.current(&cats).is_some()).clicked(){
+                        if let Some(current)=self.current(&cats){
+                            self.name=current.name;
+                            self.editor=true;
+                        }
+                    }
+                });
+            });
             panel.label(typography::caption(
                 "분류 행을 클릭하면 하위 구성이 접히거나 펼쳐집니다."
             ));
-            egui::ScrollArea::horizontal()
-                .id_salt("category-map-header-actions")
-                .show(panel,|toolbar|{
-                    toolbar.horizontal(|buttons|{
-                        if theme::action(buttons,"전체 접기",
-                            theme::ButtonRole::Standard,!busy).clicked(){
-                            self.expanded.clear();
-                        }
-                        if theme::action(buttons,"전체 펼치기",
-                            theme::ButtonRole::Standard,!busy).clicked(){
-                            self.expanded=cats.iter().map(|c|c.id.clone()).collect();
-                        }
-                        if theme::action(buttons,"선택 분류 편집",
-                            theme::ButtonRole::Standard,!busy &&
-                                self.current(&cats).is_some()).clicked(){
-                            if let Some(current)=self.current(&cats){
-                                self.name=current.name;
-                                self.editor=true;
-                            }
-                        }
-                        if theme::action(buttons,"+ 하위 분류 추가",
-                            theme::ButtonRole::Primary,editable&&!busy &&
-                                self.current(&cats).is_some()).clicked(){
-                            self.begin_operation(&cats,catalog,Operation::Add);
-                        }
-                    });
-                });
             panel.add_space(theme::SPACE_8);
             panel.horizontal_wrapped(|search|{
-                search.label(typography::field_label("상품 검색"));
+                search.label(typography::field_label("카테고리 검색"));
                 components::flexible_text_field(search,&mut self.query,
-                    (header-theme::SPACE_24).max(theme::MANAGEMENT_SEARCH_MIN_WIDTH),
-                    "카테고리 이름 또는 전체 경로 검색");
+                    theme::CATALOG_SEARCH_WIDTH,"카테고리 이름 또는 전체 경로 검색");
             });
             if let Some(current)=self.current(&cats){
                 panel.label(typography::caption(&format!(
