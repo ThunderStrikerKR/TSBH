@@ -1734,7 +1734,7 @@ impl BandoEgui {
 
     fn reception(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default()
-            .frame(theme::workspace_shell_frame())
+            .frame(theme::reception_workspace_frame())
             .show(ctx, |ui| {
                 let viewport_width = ui.available_width();
                 let content_width = viewport_width.max(layout::LayoutState::minimum_width());
