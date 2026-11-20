@@ -1639,8 +1639,8 @@ impl BandoEgui {
                         toolbar.spacing_mut().item_spacing.x=theme::SPACE_4;
                         toolbar.add_space(theme::KAKAO_TOOLBAR_PAD_X);
                         // Left: Kakao identity icon + one two-option mode
-                        // group. Give the icon a distinct 8pt gap; the two
-                        // related mode buttons themselves stay 4pt apart.
+                        // group. Keep 8pt between the icon and first mode
+                        // button AND between the two mode buttons.
                         components::kakao_menu_icon(toolbar);
                         toolbar.spacing_mut().item_spacing.x=
                             theme::KAKAO_ICON_MODE_GAP;
@@ -1652,7 +1652,7 @@ impl BandoEgui {
                         ).clicked(){
                             next_mode=Some(kakao_dock::DockMode::Together);
                         }
-                        toolbar.spacing_mut().item_spacing.x=theme::SPACE_4;
+                        toolbar.spacing_mut().item_spacing.x=theme::SPACE_8;
                         if theme::action(toolbar,"나누어 보기",
                             mode_role(current_mode==kakao_dock::DockMode::Split),true
                         ).clicked(){
