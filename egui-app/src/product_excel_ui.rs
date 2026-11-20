@@ -1,6 +1,6 @@
 //! Excel 관리 UI for ProductManager. File I/O stays on native worker threads;
 //! authoritative price/catalog changes belong to the existing Rust reducer.
-use crate::{components,gateway::BandoGateway,product_excel,theme,typography};
+use crate::{components,gateway::BandoGateway,product_excel,settings_help,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Ui};
 use serde_json::Value;
 use std::{path::PathBuf,sync::{Arc,mpsc::{self,Receiver,TryRecvError}}};
@@ -28,7 +28,7 @@ enum JobResult{
 }
 pub struct ProductExcelUi {
     open:bool,
-    review:Option<Value>,
+    review:Option<Arc<Value>>,
     filename:String,
     filter:ReviewFilter,
     approved:bool,
@@ -132,7 +132,7 @@ impl ProductExcelUi {
                     JobResult::Cancelled=>{},
                     JobResult::Exported(path)=>self.notice=Some(saved_message(&path)),
                     JobResult::Previewed{name,preview}=>{
-                        self.review=Some(preview);
+                        self.review=Some(Arc::new(preview));
                         self.filename=name;
                         self.filter=ReviewFilter::All;
                         self.approved=false;
@@ -167,7 +167,10 @@ impl ProductExcelUi {
     ){
         if !self.open{return;}
         theme::section_frame().show(ui,|panel|{
-            panel.label(typography::section_heading("상품 Excel 관리"));
+            panel.horizontal(|heading|{
+                heading.label(typography::section_heading("상품 Excel 관리"));
+                settings_help::icon(heading,"상품 Excel 관리");
+            });
             panel.horizontal_wrapped(|actions|{
                 let enabled=!self.busy()&&allowed;
                 if theme::action(actions,
@@ -211,7 +214,9 @@ impl ProductExcelUi {
         &mut self,ctx:&Context,work_area:egui::Rect,
         gateway:Arc<dyn BandoGateway>,can_edit:bool
     ){
-        let Some(review)=self.review.clone() else{return;};
+        // A reviewed workbook can contain up to 20,000 rows. Clone only its
+        // Arc handle per frame, never the full validated JSON projection.
+        let Some(review)=self.review.as_ref().cloned() else{return;};
         components::modal_backdrop(ctx,"egui-product-excel-review-backdrop",false);
         let missing=review["missingProducts"].as_u64().unwrap_or(0);
         let adds=review_count(&review,"ADD");
@@ -351,7 +356,9 @@ impl ProductExcelUi {
                 self.confirming=false;
                 if let Some(preview)=self.review.clone(){
                     self.start(ctx,move||{
-                        let catalog=gateway.apply_product_workbook(preview)?;
+                        // The native transaction consumes JSON once, on explicit
+                        // approval, rather than copying every review frame.
+                        let catalog=gateway.apply_product_workbook((*preview).clone())?;
                         Ok(JobResult::Applied(catalog))
                     });
                 }
@@ -367,17 +374,17 @@ mod tests {
     fn approval_rejects_hold_and_error_rows(){
         let mut ui=ProductExcelUi::default();
         ui.approved=true;
-        ui.review=Some(serde_json::json!({"rows":[
+        ui.review=Some(Arc::new(serde_json::json!({"rows":[
             {"status":"ADD"},{"status":"HOLD"}
-        ]}));
+        ]})));
         assert!(!ui.can_apply());
-        ui.review=Some(serde_json::json!({"rows":[
+        ui.review=Some(Arc::new(serde_json::json!({"rows":[
             {"status":"UPDATE"},{"status":"ERROR"}
         ]}));
         assert!(!ui.can_apply());
-        ui.review=Some(serde_json::json!({"rows":[{"status":"UNCHANGED"}]}));
+        ui.review=Some(Arc::new(serde_json::json!({"rows":[{"status":"UNCHANGED"}]})));
         assert!(!ui.can_apply());
-        ui.review=Some(serde_json::json!({"rows":[{"status":"ADD"}]}));
+        ui.review=Some(Arc::new(serde_json::json!({"rows":[{"status":"ADD"}]})));
         assert!(ui.can_apply());
     }
 }
