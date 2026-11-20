@@ -79,7 +79,7 @@
 - `components::management_list_table_header`: 거래처·상품·Excel·일일 결산·운임 그룹/이력 등 일반 관리 목록의 **36pt 고정 헤더와 데이터 폭**을 계산한다. **CONFLICT-003 A안 확정:** 기존 추가 4pt를 제거하고, 실제 스크롤바 할당폭만 예약한다. 공동 마스터의 `management_sticky_table_header`와 내부의 `management_table_data_width` 계산식을 공유한다. 단, 도구줄→헤더 17pt 전환은 CONFLICT-005 결정을 기다리므로 아직 강제하지 않는다.
 - `theme::management_weighted_columns` 및 `management_single_stretch_columns`: 다른 목록이 승인된 개별 열 너비를 유지하면서 남는 공간을 일관된 함수로 배분한다. 두 마스터 자체는 전용 `ManagementMasterTableSpec`이 계속 원본이다.
 - `theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH`: 148pt 단일 라벨 필터. 상품관리의 카테고리 경로는 내용상 280pt 전용 역할 유지. 상품관리 카테고리/브랜드 필터는 공통 `management_dropdown`으로 변경되었다.
-- **해결:** CONFLICT-003=A (모든 관리 목록표의 스크롤바 추가 여백 0pt). **미결 2건:** 60% 본문 높이 제한(CONFLICT-004), 도구줄→헤더 수직 전환(CONFLICT-005). 기존 역할별 구조를 임의 제거하지 않으며 구체적인 내용은 [타 화면 적용 기록](egui-management-ssot-rollout-20261121.md)을 참고한다.
+- **승인·반영 상태:** CONFLICT-003=A는 코드 반영 완료. **CONFLICT-004=A는 사용자 승인 및 구현 전 구조 점검 완료**(단일 주 목록만 카드 남은 높이, 다중 표·편집 화면은 기존 상한 유지). CONFLICT-004의 실제 스크롤 높이 코드는 아직 변경하지 않았다. **CONFLICT-005는 미결**이며 도구줄→헤더 간격을 임의 수정하지 않는다. 화면별 대상 및 가변 푸터 보호 조건은 [타 화면 적용 기록](egui-management-ssot-rollout-20261121.md)에 따른다.
 
 ## 6. 후속 변경 원칙
 
