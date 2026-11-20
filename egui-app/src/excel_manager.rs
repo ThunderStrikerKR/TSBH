@@ -489,7 +489,7 @@ impl ExcelManager{
         let mut copy_path=None;
             let mut go_settings=false;
         components::align_management_primary_card(ui,page_origin_y);
-        let card_min_height=components::management_primary_card_min_inner_height(ui);
+        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::FRAME_STROKE_WIDTH);
         theme::management_list_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             theme::management_list_strip_frame().show(section,|toolbar|{
