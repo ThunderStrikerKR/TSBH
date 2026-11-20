@@ -1953,6 +1953,9 @@ impl BandoEgui {
                 begin_new_order = true;
             }
         }, |ui| {
+            // Only the source-body layout owns spacing; the section header
+            // and neighboring message pane keep their established tokens.
+            ui.spacing_mut().item_spacing.y = 0.0;
             if self.source_editing || !self.raw_source.is_empty() {
                 // The approved React source pane reserves an 82pt dealer
                 // band below the title. Its geometry must be allocated BEFORE
@@ -1968,12 +1971,11 @@ impl BandoEgui {
                         Vec2::new(ui.available_width(), client_band_height),
                         Sense::hover(),
                     );
-                    // The header-to-band gap and the band's following item gap
-                    // are asymmetric. Shift the card within its reserved
-                    // band so the visible gaps above and below match.
-                    let card_rect = band_rect
-                        .shrink2(egui::vec2(0.0, theme::PANEL_GAP))
-                        .translate(egui::vec2(0.0, -theme::SPACE_4));
+                    // Match the visible space above and below the dealer
+                    // card; avoid the former -4pt optical translation.
+                    let card_rect = band_rect.shrink2(
+                        egui::vec2(0.0, theme::SPACE_8)
+                    );
                     ui.painter().rect(
                         card_rect,
                         theme::CONTROL_RADIUS as f32,
@@ -2022,16 +2024,20 @@ impl BandoEgui {
                 // Reserve their height before allocating the editor so the
                 // fixed source/message splitter cannot be displaced.
                 let has_source = !self.raw_source.trim().is_empty();
+                // Equal 8pt gap on BOTH sides of the bottom action.
                 let source_actions_height = if has_source {
-                    theme::ACTION_STANDARD_HEIGHT + theme::SPACE_8 + theme::SPACING
+                    theme::ACTION_STANDARD_HEIGHT + 2.0 * theme::SPACE_8
                 } else { 0.0 };
                 let editor_height = (available_body - client_band_height
                     - source_actions_height)
                     .min(ui.available_height().max(0.0)).max(0.0);
                 if editor_height > 0.0 {
-                    let viewport = Rect::from_min_size(
-                        ui.available_rect_before_wrap().min,
+                    // Reserve the entire source canvas before rendering its
+                    // scrollable text. Short originals must not collapse this
+                    // middle zone and pull the manual-classification button up.
+                    let (viewport, _) = ui.allocate_exact_size(
                         Vec2::new(ui.available_width(), editor_height),
+                        Sense::hover(),
                     );
                     let clip = ui.clip_rect().intersect(viewport);
                     // The native recognition worker owns source/recipient
@@ -2055,8 +2061,15 @@ impl BandoEgui {
                     let mut hovered_link=None;
                     let mut clicked_link=None;
                     let mut did_scroll=false;
-                    let editor = ui.scope(|editor_ui| {
+                    let editor = ui.scope_builder(
+                        UiBuilder::new()
+                            .id_salt("source-editor-fixed-slot")
+                            .max_rect(viewport)
+                            .layout(Layout::top_down(Align::Min)),
+                        |editor_ui| {
                         editor_ui.set_clip_rect(clip);
+                        editor_ui.set_width(viewport.width());
+                        editor_ui.set_height(viewport.height());
                         theme::source_document_frame().show(editor_ui, |document_ui| {
                             egui::ScrollArea::vertical()
                             .id_salt("source-editor-vertical-scroll")
@@ -2154,6 +2167,7 @@ impl BandoEgui {
                             open_manual_workspace=true;
                         }
                     });
+                    ui.add_space(theme::SPACE_8);
                 }
             } else {
                 self.source_hover=None;
@@ -2161,16 +2175,38 @@ impl BandoEgui {
                 // intake instructions, never the source/message divider.
                 let intake_height = components::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
+                // Four identical free-space gaps: above the first group,
+                // between the three groups, and below the last group.
+                // Existing internal 8pt rhythms stay unchanged. When the
+                // pane is short, the minimum gap triggers LOCAL scrolling.
+                let clipboard_group_height = typography::SUBSECTION_LINE_HEIGHT
+                    + 2.0 * typography::METADATA_LINE_HEIGHT
+                    + theme::ACTION_EMPHASIZED_HEIGHT
+                    + 3.0 * theme::SPACE_8
+                    + if ocr_processing {
+                        theme::ACTION_STANDARD_HEIGHT + theme::SPACE_8
+                    } else { 0.0 };
+                let manual_group_height = typography::SUBSECTION_LINE_HEIGHT
+                    + theme::ACTION_EMPHASIZED_HEIGHT + theme::SPACE_8;
+                let folder_group_height = typography::SUBSECTION_LINE_HEIGHT
+                    + typography::METADATA_LINE_HEIGHT + theme::SPACE_8;
+                let dividers_height = 2.0 * theme::SOFT_DIVIDER_WIDTH;
+                let balanced_gap = ((intake_height - clipboard_group_height
+                    - manual_group_height - folder_group_height - dividers_height)
+                    / 4.0).max(theme::SPACE_8);
                 egui::ScrollArea::vertical()
                     .id_salt("source-intake-instructions")
                     .max_height(intake_height)
                     .auto_shrink([false, false])
                     .show(ui, |intake| {
-                        intake.add_space(theme::SPACE_24);
+                        intake.spacing_mut().item_spacing.y = 0.0;
+                        intake.add_space(balanced_gap);
                         intake.label(typography::subsection_heading("클립보드 접수"));
+                        intake.add_space(theme::SPACE_8);
                         intake.label(typography::caption(
                             "복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."
                         ));
+                        intake.add_space(theme::SPACE_8);
                         let (agency, dealer) = components::paired_actions(
                             intake,
                             ("대리발송", ButtonRole::Emphasized, can_receive_clipboard),
@@ -2182,6 +2218,7 @@ impl BandoEgui {
                             start_clipboard = Some(OrderType::Dealer);
                         }
                         if ocr_processing {
+                            intake.add_space(theme::SPACE_8);
                             intake.horizontal(|ui| {
                                 ui.label(typography::caption("OCR 처리 중…"));
                                 if theme::action(
@@ -2191,12 +2228,15 @@ impl BandoEgui {
                                 }
                             });
                         }
+                        intake.add_space(theme::SPACE_8);
                         intake.label(typography::caption(
                             "이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."
                         ));
+                        intake.add_space(balanced_gap / 2.0);
                         components::soft_divider(intake);
-                        intake.add_space(theme::SPACE_8);
+                        intake.add_space(balanced_gap / 2.0);
                         intake.label(typography::subsection_heading("다른 방법으로 접수"));
+                        intake.add_space(theme::SPACE_8);
                         let (direct, _) = components::paired_actions(
                             intake,
                             ("직접 입력", ButtonRole::Emphasized, true),
@@ -2205,12 +2245,15 @@ impl BandoEgui {
                         if direct.clicked() {
                             begin_input = true;
                         }
+                        intake.add_space(balanced_gap / 2.0);
                         components::soft_divider(intake);
-                        intake.add_space(theme::SPACE_8);
+                        intake.add_space(balanced_gap / 2.0);
                         intake.label(typography::subsection_heading("폴더 자동 인식"));
+                        intake.add_space(theme::SPACE_8);
                         intake.label(typography::caption(
                             "설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."
                         ));
+                        intake.add_space(balanced_gap);
                     });
             }
         });
