@@ -9,6 +9,11 @@ use std::time::{SystemTime,UNIX_EPOCH};
 #[path = "../../../src-tauri/src/business_core/catalog_clients.rs"]
 mod catalog_clients;
 
+pub(crate) fn validate_native_model_groups(state:&Value)->Result<(),String>{
+    catalog_clients::execute("validate_model_groups",json!({"state":state}))?;
+    Ok(())
+}
+
 pub fn apply_product_price(
     state:&mut Value,product_id:&str,variant_id:&str,tier:&str,
     price:Option<i64>,expected:Option<i64>,
