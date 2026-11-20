@@ -32,6 +32,7 @@ set "BANDO_EGUI_ENABLE_CLIENT_WRITE=0"
 set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=0"
 set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=0"
 set "BANDO_EGUI_ENABLE_SETTINGS_WRITE=0"
+set "BANDO_EGUI_ENABLE_EXCEL_WRITE=0"
 set "BANDO_EGUI_ENABLE_WORKING_COMMIT=0"
 rem Explicit one-time UI-density fixtures ONLY in the pre-existing Tauri developer TEST DB.
 rem Production, HTTP and standalone preview modes never receive synthetic data.
@@ -41,6 +42,7 @@ if exist "%APPDATA%\com.bandostand.bandohub.tauri\developer-test\bando-hub-test.
   set "BANDO_EGUI_ENABLE_CLIENT_WRITE=1"
   set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=1"
   set "BANDO_EGUI_ENABLE_SETTINGS_WRITE=1"
+  set "BANDO_EGUI_ENABLE_EXCEL_WRITE=1"
   set "BANDO_EGUI_ENABLE_WORKING_COMMIT=1"
   set "BANDO_EGUI_UI_SAMPLE_DATA=1"
   echo [FREIGHT/CLIENT/PRODUCT/SETTINGS/RECEPTION] Native Rust direct save enabled for the existing isolated TEST DB.
