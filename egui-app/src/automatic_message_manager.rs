@@ -398,7 +398,6 @@ impl AutomaticMessageManager {
             .max_height(Self::list_height(ui))
             .show(ui,|list|{
                 list.spacing_mut().item_spacing.y=theme::SPACE_4;
-                list.spacing_mut().interact_size.y=theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
                 for category in ["확인 안내","색상 및 수량","모델 및 옵션","입금 안내"]{
                     list.label(typography::subsection_heading(category));
                     for (index,def) in TEMPLATES.iter().enumerate()
@@ -406,9 +405,9 @@ impl AutomaticMessageManager {
                         let caption=if self.draft_templates.contains_key(def.id){
                             "수정됨"
                         }else{"기본 문구"};
-                        let label=format!("{}  ·  {}",def.label,caption);
-                        if list.selectable_label(index==self.selected,label)
-                            .clicked(){
+                        if components::management_chooser_row(
+                            list,def.id,def.label,caption,index==self.selected
+                        ).clicked(){
                             *target=Some(Destination::Template(index));
                         }
                     }
@@ -435,7 +434,6 @@ impl AutomaticMessageManager {
                 -theme::SPACE_24).max(1.0))
             .show(ui,|list|{
                 list.spacing_mut().item_spacing.y=theme::SPACE_4;
-                list.spacing_mut().interact_size.y=theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
                 if visible.is_empty(){
                     list.label(typography::caption(if self.product_search.trim().is_empty(){
                         "아직 등록된 안내문이 없습니다. 상품을 검색해 추가하세요."
@@ -443,10 +441,13 @@ impl AutomaticMessageManager {
                 }
                 for product in &visible{
                     let id=product_id(product);
-                    let label=format!("{}  ·  {}",product_name(product),
-                        if self.draft_notices.contains_key(id){"안내문 등록됨"}
-                        else{"안내문 미등록"});
-                    if list.selectable_label(self.selected_product==id,label).clicked(){
+                    let caption=if self.draft_notices.contains_key(id){
+                        "안내문 등록됨"
+                    }else{"안내문 미등록"};
+                    if components::management_chooser_row(
+                        list,id,product_name(product),caption,
+                        self.selected_product==id
+                    ).clicked(){
                         *target=Some(Destination::Product(id.to_owned()));
                     }
                 }
