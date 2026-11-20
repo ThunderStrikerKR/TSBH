@@ -61,7 +61,7 @@ impl Default for CategoryManager {
 fn field<'a>(value:&'a Value,key:&str)->&'a str{
     value.get(key).and_then(Value::as_str).unwrap_or("")
 }
-fn items(value:&Value,key:&str)->&[Value]{
+fn items<'a>(value:&'a Value,key:&str)->&'a [Value]{
     value.get(key).and_then(Value::as_array)
         .map(Vec::as_slice).unwrap_or(&[])
 }
@@ -444,7 +444,7 @@ impl CategoryManager {
         let mut write=None;
         if self.editor{
             if let Some(frame)=self.workspace{
-                let width=theme::CATALOG_EDITOR_WIDTH.min(frame.width()*.94);
+                let width=theme::CATALOG_EDITOR_WIDTH.min(frame.width()*0.94);
                 let edit_rect=Rect::from_min_max(
                     egui::pos2(frame.right()-width,frame.top()),frame.right_bottom()
                 );
@@ -506,11 +506,12 @@ impl CategoryManager {
                                         );
                                         body.label(typography::field_label("상위 카테고리"));
                                         body.horizontal_wrapped(|location|{
-                                            location.label(typography::body(
-                                                if current.parent.is_empty(){
-                                                    if is_root(&current.id){"최상위"}else{"소속 확인 필요"}
-                                                }else{&path_text(&cats,&current.parent)}
-                                            ));
+                                            let parent_label=if current.parent.is_empty(){
+                                                if is_root(&current.id){
+                                                    "최상위".to_owned()
+                                                }else{"소속 확인 필요".to_owned()}
+                                            }else{path_text(&cats,&current.parent)};
+                                            location.label(typography::body(&parent_label));
                                             if theme::action(location,"위치 변경",
                                                 theme::ButtonRole::Standard,
                                                 editable&&!busy&&!is_root(&current.id)
