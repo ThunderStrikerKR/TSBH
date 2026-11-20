@@ -15,10 +15,12 @@ mod storage;
 mod client_commands;
 mod product_commands;
 mod settings_commands;
+// Keep the original business_core module names: nested native manual
+// classification rules resolve super::super::recognition.
 #[path = "../../../src-tauri/src/business_core/rules/mod.rs"]
-mod reception_rules;
+mod rules;
 #[path = "../../../src-tauri/src/business_core/recognition/mod.rs"]
-mod reception_recognition;
+mod recognition;
 mod reception_manual;
 mod reception_commands;
 mod recovery;
