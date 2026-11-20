@@ -23,11 +23,19 @@ const ROW_HEIGHT: f32 = theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
 const DETAIL_ACTIONS_WIDTH: f32 = 208.0;
 const DETAIL_ACTIONS_GAP: f32 = theme::SPACE_8;
 const DETAIL_RIGHT_INSET: f32 = theme::SPACE_12;
-// Detail rows do not inherit the parent's 42pt line height. Keep just 2pt
-// above/below each card: adjacent shipment cards are separated by 4pt total.
+// All THREE visible distances are exactly 8pt: parent-to-first card,
+// between sibling cards, and last card-to-next parent. For adjacent rows,
+// each row owns half of the 8pt inter-card gap.
 const DETAIL_BLOCK_HEIGHT: f32 = theme::ACTION_STANDARD_HEIGHT;
-const DETAIL_ROW_VERTICAL_GAP: f32 = theme::SPACE_4;
-const DETAIL_ROW_MIN_HEIGHT: f32 = DETAIL_BLOCK_HEIGHT+DETAIL_ROW_VERTICAL_GAP;
+const DETAIL_GROUP_GAP: f32 = theme::SPACE_8;
+#[derive(Clone,Copy,Debug)]
+struct DetailSpacing { top:f32, bottom:f32 }
+impl DetailSpacing {
+    fn symmetric()->Self{Self{
+        top:DETAIL_GROUP_GAP/2.0,
+        bottom:DETAIL_GROUP_GAP/2.0
+    }}
+}
 const EXCEL_ITEM_MARKER: &str = "◆ ";
 const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
@@ -219,15 +227,34 @@ fn history_branch(lines:&[HistoryLine],index:usize)->Option<HistoryBranch>{
         },
     }
 }
+fn history_detail_spacing(lines:&[HistoryLine],index:usize)->DetailSpacing{
+    let Some(HistoryLine::Recipient(order,_,_))=lines.get(index) else{
+        return DetailSpacing::symmetric();
+    };
+    let previous_same=matches!(
+        index.checked_sub(1).and_then(|i|lines.get(i)),
+        Some(HistoryLine::Recipient(other,_,_)) if other==order
+    );
+    let next_same=matches!(
+        lines.get(index+1),
+        Some(HistoryLine::Recipient(other,_,_)) if other==order
+    );
+    DetailSpacing {
+        top:if previous_same{DETAIL_GROUP_GAP/2.0}else{DETAIL_GROUP_GAP},
+        bottom:if next_same{DETAIL_GROUP_GAP/2.0}else{DETAIL_GROUP_GAP},
+    }
+}
 // The branch tip and the shipment block share the SAME horizontal anchor.
-fn history_detail_block_rect(row_rect:Rect,widths:&[f32;7])->Rect{
+fn history_detail_block_rect(
+    row_rect:Rect,widths:&[f32;7],spacing:DetailSpacing
+)->Rect{
     let left=row_rect.left()+widths[0]-theme::SPACE_4;
     let width=(row_rect.right()-left-DETAIL_RIGHT_INSET
         -DETAIL_ACTIONS_WIDTH-DETAIL_ACTIONS_GAP).max(1.0);
-    let block_height=(row_rect.height()-DETAIL_ROW_VERTICAL_GAP)
+    let block_height=(row_rect.height()-spacing.top-spacing.bottom)
         .max(DETAIL_BLOCK_HEIGHT);
     Rect::from_min_size(
-        egui::pos2(left,row_rect.center().y-block_height/2.0),
+        egui::pos2(left,row_rect.top()+spacing.top),
         Vec2::new(width,block_height)
     )
 }
@@ -236,9 +263,9 @@ fn history_detail_block_rect(row_rect:Rect,widths:&[f32;7])->Rect{
 fn history_detail_actions_rect(row_rect:Rect,block:Rect)->Rect{
     Rect::from_min_max(
         egui::pos2(block.right()+DETAIL_ACTIONS_GAP,
-            row_rect.center().y-theme::ACTION_STANDARD_HEIGHT/2.0),
+            block.center().y-theme::ACTION_STANDARD_HEIGHT/2.0),
         egui::pos2(row_rect.right()-DETAIL_RIGHT_INSET,
-            row_rect.center().y+theme::ACTION_STANDARD_HEIGHT/2.0),
+            block.center().y+theme::ACTION_STANDARD_HEIGHT/2.0),
     )
 }
 fn history_detail_cells(block:Rect)->[Rect;4]{
@@ -259,13 +286,18 @@ fn history_detail_cells(block:Rect)->[Rect;4]{
     })
 }
 fn paint_history_branch(ui:&Ui,row_rect:Rect,widths:&[f32;7],
-    branch:HistoryBranch){
+    branch:HistoryBranch,spacing:DetailSpacing){
     let painter=ui.painter().with_clip_rect(row_rect.intersect(ui.clip_rect()));
     // The last 12pt of the reception-date cell is blank even when a
     // YYYY-MM-DD is present; do not displace the date or column divider.
     let x=row_rect.left()+widths[0]-theme::SPACE_12;
-    let tip=history_detail_block_rect(row_rect,widths).left();
-    let center=row_rect.center().y;
+    let detail=history_detail_block_rect(row_rect,widths,spacing);
+    let tip=detail.left();
+    let center=if branch==HistoryBranch::Root{
+        row_rect.center().y
+    }else{
+        detail.center().y
+    };
     let stroke=Stroke::new(1.25,theme::MUTED);
     match branch{
         HistoryBranch::Root=>{
@@ -440,7 +472,7 @@ fn history_detail_products(snapshot:&HistorySnapshot,order_index:usize,
         .unwrap_or_else(||history_recipient_products(row,recipient_index))
 }
 fn history_line_height(ui:&Ui,line:HistoryLine,
-    snapshot:&HistorySnapshot,widths:&[f32;7])->f32{
+    snapshot:&HistorySnapshot,widths:&[f32;7],spacing:DetailSpacing)->f32{
     let HistoryLine::Recipient(order_index,recipient_index,shipment_index)=line
         else {return ROW_HEIGHT};
     let product=history_detail_products(snapshot,order_index,recipient_index,
@@ -449,16 +481,17 @@ fn history_line_height(ui:&Ui,line:HistoryLine,
     let placeholder=Rect::from_min_size(
         egui::pos2(0.0,0.0),Vec2::new(table_width,ROW_HEIGHT)
     );
-    let card=history_detail_block_rect(placeholder,widths);
+    let card=history_detail_block_rect(placeholder,widths,spacing);
     let product_cell=history_detail_cells(card)[1];
     let galley=typography::freight_table_wrapped_galley(
         ui,&product,(product_cell.width()-theme::SPACE_12).max(1.0)
     );
-    // Product text gets 4pt inside each card edge (8pt total), plus
-    // only 2pt outside each card edge (4pt total). The 34pt actions
-    // determine the minimum for a single-line shipment.
-    (galley.size().y+3.0*theme::SPACE_4).ceil()
-        .max(DETAIL_ROW_MIN_HEIGHT)
+    // Only the inner text padding belongs to the card's content height.
+    // Group spacing is accounted for independently, so first/middle/last
+    // rows all have identical visible gaps even for multiline products.
+    let block_height=(galley.size().y+2.0*theme::SPACE_4).ceil()
+        .max(DETAIL_BLOCK_HEIGHT);
+    block_height+spacing.top+spacing.bottom
 }
 fn paint_detail_products(ui:&Ui,rect:Rect,text:&str){
     let galley=typography::freight_table_wrapped_galley(
@@ -507,8 +540,9 @@ fn history_shipment_logistics(shipment:Option<&Value>)->(String,String){
     )
 }
 fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
-    expanded:&BTreeSet<String>,widths:&[f32;7],pending_toggle:&mut Option<String>,
-    pending_memo:&mut Option<MemoEditor>,pending_detail:&mut Option<String>){
+    expanded:&BTreeSet<String>,widths:&[f32;7],spacing:DetailSpacing,
+    pending_toggle:&mut Option<String>,pending_memo:&mut Option<MemoEditor>,
+    pending_detail:&mut Option<String>){
     let area=rect.intersect(ui.clip_rect());
     let order_index=match line{
         HistoryLine::Order(i)|HistoryLine::Recipient(i,_,_)=>i,
@@ -643,7 +677,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
         },
         HistoryLine::Recipient(_,recipient_index,shipment_index)=>{
             let recipient=&row["recipients"][recipient_index];
-            let columns=history_detail_cells(history_detail_block_rect(rect,widths));
+            let columns=history_detail_cells(history_detail_block_rect(rect,widths,spacing));
             // The four fields belong to ONE shipment block and are independent
             // of the parent table's seven column locations.
             let shipment=shipment_index.and_then(|index|
@@ -694,7 +728,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 Sense::hover()).on_hover_text(format!("운송장 번호: {tracking}"));
             // Actions live OUTSIDE the compact shipment card. Both actions
             // target this one shipment; the order-level copy remains separate.
-            let block=history_detail_block_rect(rect,widths);
+            let block=history_detail_block_rect(rect,widths,spacing);
             let actions_rect=history_detail_actions_rect(rect,block);
             let memo_text=shipment.map(|s|field(s,"managementMemo")).unwrap_or("");
             ui.scope_builder(UiBuilder::new()
@@ -1544,9 +1578,13 @@ impl OrderHistoryManager {
             // Mixed fixed parent rows and auto-height shipment details need
             // prefix offsets. A fixed-height virtual grid would clip wrapped
             // products and could paint the next shipment on top.
+            let detail_spacings=(0..lines.len()).map(|i|
+                history_detail_spacing(&lines,i)
+            ).collect::<Vec<_>>();
             let line_heights=if let Some(data)=snapshot{
-                lines.iter().map(|line|history_line_height(section,*line,data,&widths))
-                    .collect::<Vec<_>>()
+                lines.iter().zip(detail_spacings.iter()).map(|(line,spacing)|
+                    history_line_height(section,*line,data,&widths,*spacing)
+                ).collect::<Vec<_>>()
             }else{Vec::new()};
             let mut offsets=Vec::with_capacity(line_heights.len()+1);
             offsets.push(0.0_f32);
@@ -1594,6 +1632,7 @@ impl OrderHistoryManager {
                             visible.skip_ahead_auto_ids(first);
                             for line_index in first..last {
                                 let line=lines[line_index];
+                                let spacing=detail_spacings[line_index];
                                 let row_rect=Rect::from_min_size(
                                     egui::pos2(origin.x,origin.y+offsets[line_index]),
                                     Vec2::new(table_width,line_heights[line_index])
@@ -1620,7 +1659,7 @@ impl OrderHistoryManager {
                                                 row_ui.painter().rect_filled(
                                                     row_rect,0.0,theme::CANVAS);
                                                 let block_rect=history_detail_block_rect(
-                                                    row_rect,&widths);
+                                                    row_rect,&widths,spacing);
                                                 row_ui.painter().rect(
                                                     block_rect,
                                                     theme::WORKFLOW_CHIP_RADIUS as f32,
@@ -1632,8 +1671,9 @@ impl OrderHistoryManager {
                                         }
                                         if let Some(snapshot)=snapshot {
                                             draw_line(row_ui,row_rect,line,snapshot,
-                                                &self.expanded,&widths,&mut pending_toggle,
-                                                &mut pending_memo,&mut pending_detail);
+                                                &self.expanded,&widths,spacing,
+                                                &mut pending_toggle,&mut pending_memo,
+                                                &mut pending_detail);
                                         }
                                         if matches!(line,HistoryLine::Order(_)) {
                                             paint_column_dividers(
@@ -1642,7 +1682,9 @@ impl OrderHistoryManager {
                                         }
                                         if snapshot.is_some() {
                                             if let Some(branch)=history_branch(&lines,line_index){
-                                                paint_history_branch(row_ui,row_rect,&widths,branch);
+                                                paint_history_branch(
+                                                    row_ui,row_rect,&widths,branch,spacing
+                                                );
                                             }
                                         }
                                     });
