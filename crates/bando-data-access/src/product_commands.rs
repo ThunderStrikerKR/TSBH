@@ -35,6 +35,38 @@ pub fn apply_product_price(
 }
 
 
+/// Preserve the Tauri settings_patch per-field CAS for model families.
+/// Product-group policy is the SAME native catalog validator; the shared
+/// snapshot writer owns optimistic revision and atomic SQLite persistence.
+/// The caller performs the original mandatory manual backup beforehand.
+pub fn patch_model_groups_v2(
+    conn:&mut Connection,groups:&Value,expected:&Value
+)->Result<Value,String>{
+    if !groups.is_object(){
+        return Err("모델군 목록은 객체여야 합니다.".into());
+    }
+    let version:i64=conn.query_row(
+        "SELECT version FROM core_schema WHERE key='business-core'",
+        [],|row|row.get(0),
+    ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
+    if version!=2{return Err("지원하지 않는 운영 DB 버전입니다.".into());}
+    let mut state=crate::read_v2_snapshot(conn)?;
+    let revision=state["revision"].as_u64()
+        .ok_or("운영 DB revision 오류")?;
+    let settings=state["settings"].as_object_mut()
+        .ok_or("설정 데이터 오류")?;
+    let prior=settings.get("colorGuidanceGroups").unwrap_or(&Value::Null);
+    if prior!=expected && prior!=groups {
+        return Err("colorGuidanceGroups 설정이 다른 화면에서 수정됐습니다. 다시 불러온 뒤 저장하세요.".into());
+    }
+    settings.insert("colorGuidanceGroups".into(),groups.clone());
+    catalog_clients::execute(
+        "validate_model_groups",json!({"state":&state})
+    )?;
+    let saved=crate::write_v2_snapshot(conn,state,revision,true)?;
+    Ok(json!({"revision":saved["revision"]}))
+}
+
 fn required<'a>(value:&'a Value,key:&str)->Result<&'a str,String>{
     value.get(key).and_then(Value::as_str)
         .filter(|text|!text.trim().is_empty())
