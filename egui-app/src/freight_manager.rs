@@ -1110,25 +1110,57 @@ impl FreightManager {
                     theme::apply_table_row_colors(table);
                     // Rows outside the viewport keep their selections and
                     // pending assignments, but create no widget this frame.
+                    // Absolute positioning is deliberate: nested egui
+                    // scope_builder controls advance their PARENT cursor.
+                    // When "기본 운임 설정" is absent, their measured
+                    // footprints differ, so sequential row allocation
+                    // compressed rows and left a large blank scroll area.
+                    // A fixed rectangle based on the stable data index
+                    // makes every row exactly 42pt, regardless of widgets.
+                    let first_visible_row=visible_rows.start;
+                    let row_origin=table.max_rect().min;
                     for row_index in visible_rows{
+                        let product_id=text(filtered[row_index],"id");
+                        let row_rect=egui::Rect::from_min_size(
+                            egui::pos2(
+                                row_origin.x,
+                                row_origin.y+
+                                    (row_index-first_visible_row) as f32
+                                        *theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
+                            ),
+                            egui::vec2(
+                                table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
+                            )
+                        );
+                        first_row_left.get_or_insert(row_rect.left());
+                        table.scope_builder(
+                            egui::UiBuilder::new()
+                                .id_salt(("freight-fixed-row",product_id))
+                                .max_rect(row_rect)
+                                .layout(egui::Layout::top_down(egui::Align::Min)),
+                            |row|{
+                                // Reserve one full logical row before painting.
+                                // Descendant controls are anchored to cells,
+                                // never used to determine the next row's y.
+                                let (_reserved,_)=row.allocate_exact_size(
+                                    egui::vec2(
+                                        table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
+                                    ),
+                                    egui::Sense::hover()
+                                );
                         let product=filtered[row_index];
                         let id=text(product,"id");
                         let committed=text(product,"shippingGroupId");
                         let mut checked=selected.contains(id);
-                        let (row_rect,_)=table.allocate_exact_size(
-                            egui::vec2(table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT),
-                            egui::Sense::hover()
-                        );
-                        first_row_left.get_or_insert(row_rect.left());
                         let cells=freight_assignment_cells(
                             row_rect.min,&widths,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
                         );
                         let background=if checked {theme::WORKFLOW_SELECTED_BG}
                             else if row_index%2==0 {theme::PANEL}
                             else {theme::TABLE_ROW_ALT_BG};
-                        table.painter().rect_filled(row_rect,0.0,background);
+                        row.painter().rect_filled(row_rect,0.0,background);
                         if checked {
-                            table.painter().rect_filled(
+                            row.painter().rect_filled(
                                 egui::Rect::from_min_size(
                                     row_rect.min,
                                     egui::vec2(theme::WORKFLOW_SELECTED_STRIPE,row_rect.height())
@@ -1141,13 +1173,13 @@ impl FreightManager {
                         // Center the checkbox within the FIRST COLUMN,
                         // not 4pt from its left edge. Keep one stable
                         // interactive box centered vertically in the 42pt row.
-                        let check_width=table.spacing().icon_width
-                            +table.spacing().icon_spacing;
+                        let check_width=row.spacing().icon_width
+                            +row.spacing().icon_spacing;
                         let checkbox_rect=egui::Rect::from_center_size(
                             cells[0].center(),
                             egui::vec2(check_width,theme::INPUT_HEIGHT)
                         );
-                        let checkbox_clip=cells[0].intersect(table.clip_rect());
+                        let checkbox_clip=cells[0].intersect(row.clip_rect());
                         let mut checkbox_builder=egui::UiBuilder::new()
                             .id_salt(("freight-checkbox",id))
                             .max_rect(checkbox_rect)
@@ -1155,7 +1187,7 @@ impl FreightManager {
                         if !enabled {
                             checkbox_builder=checkbox_builder.disabled();
                         }
-                        table.scope_builder(checkbox_builder,|controls|{
+                        row.scope_builder(checkbox_builder,|controls|{
                             controls.set_clip_rect(checkbox_clip);
                             if controls.checkbox(&mut checked,"").changed(){
                                 if checked {selected.insert(id.to_owned());}
@@ -1171,26 +1203,26 @@ impl FreightManager {
                             model.to_owned()
                         }else{format!("{model} / {subtitle}")};
                         freight_assignment_text(
-                            table,cells[1],&product_title,&product_title,
+                            row,cells[1],&product_title,&product_title,
                             FreightCellRole::Primary,(id,1)
                         );
                         // The narrow third column is color/option. The wide
                         // fourth column is the full canonical category path.
                         let colors=variant_colors(product);
                         freight_assignment_text(
-                            table,cells[2],&colors,&colors,FreightCellRole::Normal,(id,2)
+                            row,cells[2],&colors,&colors,FreightCellRole::Normal,(id,2)
                         );
                         let category=category_paths.for_product(product);
                         let category=if category.trim().is_empty(){
                             "분류 미지정"
                         }else{category};
                         let visible_category=typography::fit_category_path(
-                            table,category,
+                            row,category,
                             (cells[3].width()-theme::SPACE_12).max(0.0),
                             typography::CategoryPathFont::FreightTableCell
                         );
                         freight_assignment_text(
-                            table,cells[3],&visible_category,category,
+                            row,cells[3],&visible_category,category,
                             FreightCellRole::Category,(id,3)
                         );
 
@@ -1217,7 +1249,7 @@ impl FreightManager {
                                 theme::INPUT_HEIGHT
                             )
                         );
-                        let selector_clip=cells[4].intersect(table.clip_rect());
+                        let selector_clip=cells[4].intersect(row.clip_rect());
                         let mut selector_builder=egui::UiBuilder::new()
                             .id_salt(("freight-selector",id))
                             .max_rect(selector_rect)
@@ -1225,7 +1257,7 @@ impl FreightManager {
                         if !enabled {
                             selector_builder=selector_builder.disabled();
                         }
-                        table.scope_builder(selector_builder,|control|{
+                        row.scope_builder(selector_builder,|control|{
                                 control.set_clip_rect(selector_clip);
                                 control.set_width(selector_rect.width());
                                 egui::ComboBox::from_id_salt(("freight-row-group",id))
@@ -1273,8 +1305,8 @@ impl FreightManager {
                         // The action column's buttons and labels cannot expand
                         // their cell, wrap, or shift the other five columns.
                         let actions_rect=cells[5].shrink2(egui::vec2(6.0,0.0));
-                        let actions_clip=actions_rect.intersect(table.clip_rect());
-                        table.scope_builder(
+                        let actions_clip=actions_rect.intersect(row.clip_rect());
+                        row.scope_builder(
                             egui::UiBuilder::new()
                                 .id_salt(("freight-actions",id))
                                 .max_rect(actions_rect)
@@ -1335,7 +1367,7 @@ impl FreightManager {
                         for index in 0..5 {
                             let edge=cells[index].right()
                                 +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-                            table.painter().line_segment(
+                            row.painter().line_segment(
                                 [egui::pos2(edge,row_rect.top()),
                                  egui::pos2(edge,row_rect.bottom())],
                                 egui::Stroke::new(
@@ -1343,12 +1375,14 @@ impl FreightManager {
                                 )
                             );
                         }
-                        table.painter().line_segment(
+                        row.painter().line_segment(
                             [row_rect.left_bottom(),row_rect.right_bottom()],
                             egui::Stroke::new(
                                 theme::SOFT_DIVIDER_WIDTH,
                                 theme::DIVIDER.linear_multiply(0.70)
                             )
+                        );
+                            }
                         );
                     }
                     if filtered.is_empty(){
