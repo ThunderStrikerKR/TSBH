@@ -872,6 +872,40 @@ pub fn management_sticky_table_header(
     }
 }
 
+/// Common chevron shape for management selectors and date stepping.
+/// Only the facing direction changes; stroke and geometry stay identical.
+/// Downward chevrons are optically raised by 1pt to compensate for the tip.
+#[derive(Clone,Copy)]
+pub(crate) enum ManagementChevronDirection { Down, Left, Right }
+
+pub(crate) fn paint_management_chevron(
+    painter:&egui::Painter,center:egui::Pos2,direction:ManagementChevronDirection
+){
+    const HALF_SPAN:f32=5.0;
+    const DEPTH:f32=2.5;
+    const STROKE:f32=1.8;
+    let (a,tip,b)=match direction {
+        ManagementChevronDirection::Down => {
+            let y=center.y-1.0;
+            (egui::pos2(center.x-HALF_SPAN,y-DEPTH),
+             egui::pos2(center.x,y+DEPTH),
+             egui::pos2(center.x+HALF_SPAN,y-DEPTH))
+        },
+        ManagementChevronDirection::Left => (
+            egui::pos2(center.x+DEPTH,center.y-HALF_SPAN),
+            egui::pos2(center.x-DEPTH,center.y),
+            egui::pos2(center.x+DEPTH,center.y+HALF_SPAN)
+        ),
+        ManagementChevronDirection::Right => (
+            egui::pos2(center.x-DEPTH,center.y-HALF_SPAN),
+            egui::pos2(center.x+DEPTH,center.y),
+            egui::pos2(center.x-DEPTH,center.y+HALF_SPAN)
+        )
+    };
+    painter.line_segment([a,tip],Stroke::new(STROKE,theme::SECONDARY));
+    painter.line_segment([tip,b],Stroke::new(STROKE,theme::SECONDARY));
+}
+
 /// Reference "접수일 기준" dropdown: 34pt dark trigger, separated
 /// right-hand chevron, 1pt outline, 6pt corner radius. This replaces native
 /// ComboBox triggers where management screens need the same visual language.
@@ -917,23 +951,11 @@ pub fn management_dropdown(
          egui::pos2(arrow_left,rect.bottom()-5.0)],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
     );
-    // Match the neighboring 14pt Body caption visually, not the default
-    // tiny combo-arrow glyph. The chevron keeps its own 30pt split area.
-    // Raise the V's center because its tip gives it more lower visual weight.
-    const CHEVRON_HALF_WIDTH:f32=typography::FONT_BODY/2.0;
-    const CHEVRON_HALF_HEIGHT:f32=6.0;
-    const CHEVRON_STROKE:f32=2.0;
-    const CHEVRON_OPTICAL_OFFSET_Y:f32=-2.0;
-    let x=rect.right()-15.0;
-    let y=rect.center().y+CHEVRON_OPTICAL_OFFSET_Y;
-    let left=egui::pos2(x-CHEVRON_HALF_WIDTH,y-CHEVRON_HALF_HEIGHT);
-    let tip=egui::pos2(x,y+CHEVRON_HALF_HEIGHT);
-    let right=egui::pos2(x+CHEVRON_HALF_WIDTH,y-CHEVRON_HALF_HEIGHT);
-    painter.line_segment(
-        [left,tip],Stroke::new(CHEVRON_STROKE,theme::SECONDARY)
-    );
-    painter.line_segment(
-        [tip,right],Stroke::new(CHEVRON_STROKE,theme::SECONDARY)
+    // Restore the pre-enlargement dropdown chevron dimensions; the date
+    // prev/next controls rotate this same shared shape.
+    paint_management_chevron(
+        &painter,egui::pos2(rect.right()-15.0,rect.center().y),
+        ManagementChevronDirection::Down
     );
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
