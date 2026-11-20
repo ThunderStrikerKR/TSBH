@@ -371,13 +371,9 @@ impl AliasManager {
             components::modal_window("상품 검색","alias-product-search",work_area)
                 .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
                 .show(ctx,|modal|{
-                    modal.horizontal(|head|{
-                        head.label(typography::section_heading("상품 검색"));
-                        head.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                            if theme::action(actions,"닫기",theme::ButtonRole::Standard,!busy)
-                                .clicked(){close=true;}
-                        });
-                    });
+                    if components::modal_header(modal,"상품 검색","닫기",!busy){
+                        close=true;
+                    }
                     let width=modal.available_width();
                     components::flexible_text_field(modal,&mut self.query,
                         width,"브랜드 / 상품명 / 모델 / 별칭 검색");
@@ -506,10 +502,11 @@ impl AliasManager {
             components::decision_window(
                 "상품 별칭","alias-unsaved-confirm",work_area
             ).show(ctx,|dialog|{
+                cancel=components::modal_header(
+                    dialog,"상품 별칭","취소",!busy
+                );
                 dialog.label(typography::body("상품 별칭 변경사항을 저장할까요?"));
                 dialog.horizontal(|actions|{
-                    cancel=theme::action(actions,"취소",
-                        theme::ButtonRole::Standard,!busy).clicked();
                     discard=theme::action(actions,"저장 안 함",
                         theme::ButtonRole::Standard,!busy).clicked();
                     save_now=theme::action(actions,"저장",
