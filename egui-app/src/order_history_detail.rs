@@ -50,7 +50,7 @@ fn text_kv(ui:&mut Ui,name:&str,value:&str){
     });
 }
 fn section_panel(
-    ui:&mut Ui,rect:Rect,title:&str,id:&'static str,
+    ui:&mut Ui,rect:Rect,title:&str,id:&'static str,order_id:&str,
     body:impl FnOnce(&mut Ui)
 ){
     if rect.width()<2.0||rect.height()<2.0{return;}
@@ -69,21 +69,21 @@ fn section_panel(
         egui::pos2(inner.left(),inner.top()+PANE_TITLE_HEIGHT),inner.max
     );
     ui.scope_builder(UiBuilder::new()
-        .id_salt(("history-detail-heading",id))
+        .id_salt(("history-detail-heading",order_id,id))
         .max_rect(title_rect)
         .layout(Layout::top_down(Align::Min)),|heading|{
             heading.set_clip_rect(title_rect.intersect(parent_clip));
             heading.label(typography::section_heading(title));
         });
     ui.scope_builder(UiBuilder::new()
-        .id_salt(("history-detail-pane",id))
+        .id_salt(("history-detail-pane",order_id,id))
         .max_rect(scroll_rect)
         .layout(Layout::top_down(Align::Min)),|content|{
             content.set_clip_rect(scroll_rect.intersect(parent_clip));
             content.set_width(scroll_rect.width());
             content.spacing_mut().item_spacing.y=0.0;
             egui::ScrollArea::vertical()
-                .id_salt(("history-detail-scroll",id))
+                .id_salt(("history-detail-scroll",order_id,id))
                 .max_height(scroll_rect.height().max(1.0))
                 .auto_shrink([false,false])
                 .scroll_bar_visibility(
@@ -446,7 +446,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                 Sense::hover()
             );
             let panes=dashboard_grid(grid_rect);
-            section_panel(ui,panes.raw,raw_title,"raw",|panel|{
+            section_panel(ui,panes.raw,raw_title,"raw",order_id,|panel|{
                 if raw.is_empty(){
                     panel.label(typography::caption("보존된 발주 원문이 없습니다."));
                 }else{
@@ -460,17 +460,17 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                 }
             });
             section_panel(ui,panes.changes,
-                &format!("변경·처리 이력 · {}건",changes.len()),"changes",
+                &format!("변경·처리 이력 · {}건",changes.len()),"changes",order_id,
                 |panel|audit_panel(panel,&changes)
             );
-            section_panel(ui,panes.payment,"접수 및 입금 정보","payment",
+            section_panel(ui,panes.payment,"접수 및 입금 정보","payment",order_id,
                 |panel|payment_panel(panel,order,row,&payments,&confirmations)
             );
-            section_panel(ui,panes.billing,"청구금액 상세","billing",
+            section_panel(ui,panes.billing,"청구금액 상세","billing",order_id,
                 |panel|billing_panel(panel,order,&row["billing"])
             );
             section_panel(ui,panes.shipments,
-                &format!("발송 건별 상세 · {}건",shipments.len()),"shipments",
+                &format!("발송 건별 상세 · {}건",shipments.len()),"shipments",order_id,
                 |panel|shipment_panel(panel,order,&shipments)
             );
         });
