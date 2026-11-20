@@ -197,6 +197,8 @@ pub const FAMILY_ROW_HEIGHT:f32 = 52.0;
 pub const FAMILY_FOOTER_HEIGHT:f32 = 68.0;
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
+// Client directory explicitly uses one compact, non-wrapping record per row.
+pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 38.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
 // The three-column dealer list has its own content minimum (30/38/32).
 // Do not force freight/product's 1320pt table width onto the client list.
@@ -209,6 +211,8 @@ pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
 // Match the actual two button widths plus their shared spacing, rather
 // than leaving a large unused gap after the search field.
 pub const MANAGEMENT_TOOLBAR_ACTIONS_WIDTH: f32 = 236.0;
+// Avoid an excessively stretched client search field in wide windows.
+pub const MANAGEMENT_CLIENT_SEARCH_MAX_WIDTH: f32 = 680.0;
 // Reserve enough width for a single search field and two unchanged
 // right-aligned actions; in a narrow split-pane they stack on two lines.
 pub const MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH: f32 = 700.0;
@@ -367,7 +371,9 @@ pub fn docked_pane_frame() -> Frame {
 /// empty. Preserve its full slot geometry for the native HWND docking.
 pub fn kakao_slot_frame() -> Frame {
     Frame::new()
-        .fill(CANVAS)
+        // One palette level above the canvas (#101010 -> #181818).
+        // Only the Kakao reservation changes; native HWND geometry is intact.
+        .fill(PANEL)
         .stroke(Stroke::NONE)
         .corner_radius(CornerRadius::same(0))
         .inner_margin(0)
