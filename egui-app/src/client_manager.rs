@@ -304,7 +304,7 @@ impl ClientManager {
                     components::management_row(table,"client-management-header",[
                         ("거래처",""),("발송인 정보",""),("거래 조건","")
                     ],true,None);
-                    for client in &rows {
+                    for (index,client) in rows.iter().enumerate() {
                         let name=field(client,"name");
                         let display=field(client,"displayName");
                         let description=if display!=name {display} else {""};
@@ -325,10 +325,10 @@ impl ClientManager {
                                 {"거래 중지"}else{""}
                         ].into_iter().filter(|t|!t.is_empty())
                             .collect::<Vec<_>>().join(" / ");
-                        if components::management_row(table,field(client,"id"),[
+                        if components::management_row_striped(table,field(client,"id"),[
                             (name,description),(address,&contacts),
                             (readable_tier(field(client,"tier")),&conditions)
-                        ],false,Some(field(client,"tier"))).clicked() {
+                        ],Some(field(client,"tier")),index).clicked() {
                             self.begin(client.clone());
                         }
                     }
