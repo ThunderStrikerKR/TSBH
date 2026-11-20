@@ -1092,6 +1092,172 @@ impl OrderHistoryManager {
         }
     }
 
+    /// First read-only order detail view. It intentionally uses only
+    /// persisted business data; editing and cancellation require separate
+    /// state-transition/authorization work rather than unsafe inline writes.
+    pub fn show_order_detail_modal(&mut self,ctx:&egui::Context,work_area:Rect){
+        let Some(id)=self.detail_order_id.as_deref() else{return};
+        let Some(snapshot)=self.snapshot.as_ref() else{
+            self.detail_order_id=None;
+            return;
+        };
+        let Some(row)=snapshot.rows.iter().find(|row|
+            field(&row["order"],"id")==id) else{
+            self.detail_order_id=None;
+            return;
+        };
+        let order=&row["order"];
+        let order_id=field(order,"id");
+        let shipments=rows(&snapshot.state["workflow"]["shipments"])
+            .iter().filter(|ship|
+                field(ship,"orderId")==order_id && ship["legacyArchived"]!=true
+            ).collect::<Vec<_>>();
+        let shipment_ids=shipments.iter().map(|s|field(s,"id"))
+            .collect::<std::collections::HashSet<_>>();
+        let payments=rows(&snapshot.state["workflow"]["payments"])
+            .iter().filter(|payment|
+                rows(&payment["allocations"]).iter().any(|allocation|
+                    shipment_ids.contains(field(allocation,"shipmentId"))
+                )
+            ).collect::<Vec<_>>();
+        let events=rows(&snapshot.state["workflow"]["events"])
+            .iter().filter(|event|
+                rows(&event["shipmentIds"]).iter().any(|sid|
+                    sid.as_str().is_some_and(|id|shipment_ids.contains(id))
+                )
+            ).collect::<Vec<_>>();
+        let mut close=false;
+        components::modal_backdrop(ctx,"history-order-detail-backdrop",false);
+        components::modal_window("발주서 상세","history-order-detail",work_area)
+            .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
+            .show(ctx,|ui|{
+                close=components::modal_header(ui,"발주서 상세","닫기",true);
+                egui::ScrollArea::vertical()
+                    .id_salt("history-order-detail-scroll")
+                    .max_height((work_area.height()-150.0).max(180.0))
+                    .show(ui,|body|{
+                        body.label(typography::section_heading("접수 정보"));
+                        body.label(typography::body(format!(
+                            "거래처: {}",order_client(row)
+                        )));
+                        let reception=field(order,"createdAt");
+                        body.label(typography::body(format!(
+                            "접수일시: {}",memo_last_updated_label(reception)
+                        )));
+                        body.label(typography::body(format!(
+                            "주문 확인일시: {}",
+                            memo_last_updated_label(field(order,"confirmedAt"))
+                        )));
+                        body.add_space(theme::SPACE_8);
+                        body.label(typography::section_heading("발주 원문"));
+                        let raw=field(order,"raw");
+                        body.label(typography::body(if raw.is_empty(){
+                            "보존된 발주 원문이 없습니다.".to_owned()
+                        }else{raw.to_owned()}));
+                        body.separator();
+
+                        body.label(typography::section_heading("입금 처리"));
+                        if payments.is_empty(){
+                            body.label(typography::caption(
+                                "해당 발송 건에 연결된 입금 기록이 없습니다."
+                            ));
+                        }
+                        for payment in &payments {
+                            let account=&payment["account"];
+                            body.label(typography::body(format!(
+                                "입금처리일시: {} · 실제 입금일시: {}",
+                                memo_last_updated_label(field(payment,"recordedAt")),
+                                memo_last_updated_label(field(payment,"paidAt"))
+                            )));
+                            let account_text=format!("{} {} · 예금주 {}",
+                                field(account,"bank"),field(account,"number"),
+                                field(account,"holder"));
+                            body.label(typography::body(format!(
+                                "입금계좌번호: {}",if field(account,"number").is_empty(){
+                                    "기록 없음".to_owned()
+                                }else{account_text}
+                            )));
+                        }
+                        body.add_space(theme::SPACE_8);
+                        body.label(typography::section_heading("청구금액"));
+                        let bill=&row["billing"];
+                        let vat=match order["applyVat"].as_bool(){
+                            Some(true)=>"부가세 청구",
+                            Some(false)=>"부가세 미청구",
+                            None=>"부가세 여부 미확인",
+                        };
+                        body.label(typography::body(vat));
+                        for (name,key) in [
+                            ("품목 금액","subtotal"),("운임","shipping"),
+                            ("부가세","vat"),("청구 합계","total")
+                        ]{
+                            body.label(typography::body(format!(
+                                "{name}: {}",won(&bill[key])
+                            )));
+                        }
+                        body.separator();
+
+                        body.label(typography::section_heading("발송 건별 내역"));
+                        if shipments.is_empty(){
+                            body.label(typography::caption(
+                                "연결된 발송 건이 없습니다."
+                            ));
+                        }
+                        for ship in &shipments {
+                            let recipient=ship.get("recipientSnapshot")
+                                .filter(|r|r.is_object())
+                                .or_else(||rows(&order["recipients"]).iter()
+                                    .find(|r|field(r,"id")==field(ship,"recipientId")));
+                            let recipient_name=recipient.map(|r|field(r,"name"))
+                                .filter(|name|!name.is_empty())
+                                .unwrap_or("수취인 미확인");
+                            let products=recipient.map(|r|history_items_multiline(&r["items"]))
+                                .unwrap_or_else(||"상품 정보 없음".to_owned());
+                            let (freight,tracking)=history_shipment_logistics(Some(ship));
+                            body.label(typography::subsection_heading(recipient_name));
+                            body.label(typography::body(products));
+                            body.label(typography::body(format!(
+                                "운임: {freight} · 운송장번호: {tracking}"
+                            )));
+                            let memo=field(ship,"managementMemo");
+                            body.label(typography::body(format!(
+                                "관리 메모: {}",if memo.is_empty(){"없음"}else{memo}
+                            )));
+                            body.label(typography::caption(format!(
+                                "메모 마지막 갱신: {}",
+                                memo_last_updated_label(field(ship,"managementMemoUpdatedAt"))
+                            )));
+                            body.add_space(theme::SPACE_8);
+                        }
+                        body.separator();
+                        body.label(typography::section_heading("변경 기록"));
+                        let mut has_changes=false;
+                        for change in rows(&order["rawHistory"]){
+                            has_changes=true;
+                            body.label(typography::body(format!(
+                                "{} · {} · 발주 원문 변경",
+                                memo_last_updated_label(field(change,"at")),
+                                field(change,"actor")
+                            )));
+                        }
+                        for event in events {
+                            has_changes=true;
+                            body.label(typography::body(format!(
+                                "{} · {} · {}",
+                                memo_last_updated_label(field(event,"at")),
+                                field(event,"actor"),field(event,"action")
+                            )));
+                        }
+                        if !has_changes {
+                            body.label(typography::caption(
+                                "현재 저장된 관련 변경 기록이 없습니다."
+                            ));
+                        }
+                    });
+            });
+        if close{self.detail_order_id=None;}
+    }
+
     pub fn show_memo_modal(&mut self,ctx:&egui::Context,work_area:Rect){
         if self.memo_editor.is_none(){return;}
         components::modal_backdrop(ctx,"history-memo-modal-backdrop",false);
