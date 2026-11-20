@@ -215,14 +215,16 @@ pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
 // audit grid. Every header and row uses the SAME widths to keep controls
 // readable without wrapped names or vertical buttons.
 pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 8] =
-    [28.0, 260.0, 135.0, 115.0, 155.0, 190.0, 85.0, 215.0];
+    // Checkbox header must fit "선택"; group selector and product name
+    // receive usable widths before the spare viewport width is distributed.
+    [44.0, 280.0, 135.0, 115.0, 180.0, 195.0, 90.0, 160.0];
 pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
 // Width for the single-line bulk shipping-group selector.
 pub const FREIGHT_BULK_GROUP_WIDTH: f32 = 200.0;
 pub const FREIGHT_ASSIGNMENT_ROW_HEIGHT: f32 = 42.0;
 // 8 allocated columns with seven 8pt gaps. Spare screen width grows the
 // identity/category/option columns instead of leaving an empty right margin.
-pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 = 1239.0;
+pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 = 1255.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
 // The three-column dealer list has its own content minimum (30/38/32).
 // Do not force freight/product's 1320pt table width onto the client list.
