@@ -179,7 +179,7 @@ impl BandoGateway for LocalGateway {
         if std::env::var_os("BANDO_EGUI_BUSINESS_DB")
             .is_some_and(|value| !value.is_empty())
         {
-            let full = crate::business_state::load()?;
+            let full = crate::business_state::load_catalog()?;
             let (clients, mut settings) = crate::client_directory::project_index(&full)?;
             // Model-group settings are safe catalog metadata, not client
             // contacts. Retain the REAL settings field for native CAS rather
