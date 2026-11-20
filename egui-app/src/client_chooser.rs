@@ -154,11 +154,13 @@ impl ClientChooser {
         let mut chosen:Option<String>=None;
         let busy=self.selecting.is_some();
         components::modal_window("거래처 변경","egui-reception-client-chooser",work_area)
-            .open(&mut is_open)
             
             .default_width(460.0_f32.min(work_area.width()))
             .min_width(340.0_f32.min(work_area.width()))
             .show(ctx,|ui| {
+                if components::modal_header(ui,"거래처 변경","닫기",!busy){
+                    is_open=false;
+                }
                 let currently=self.clients.iter()
                     .find(|c|Some(text(c,"id"))==current_id)
                     .map(|c|text(c,"name")).unwrap_or("미선택");
