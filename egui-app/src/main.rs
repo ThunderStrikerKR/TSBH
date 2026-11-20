@@ -41,6 +41,8 @@ mod settings_help;
 mod freight_manager;
 mod order_history_manager;
 mod daily_settlement_manager;
+mod excel_manager;
+mod excel_service;
 mod management_queries;
 mod developer_ui_samples;
 
@@ -213,6 +215,7 @@ struct BandoEgui {
     freight_manager: Option<freight_manager::FreightManager>,
     order_history_manager: Option<order_history_manager::OrderHistoryManager>,
     daily_settlement_manager: Option<daily_settlement_manager::DailySettlementManager>,
+    excel_manager: Option<excel_manager::ExcelManager>,
     freight_pending_page: Option<Page>,
     freight_pending_save: bool,
     product_pending_page: Option<Page>,
@@ -282,6 +285,7 @@ impl Default for BandoEgui {
             freight_manager: None,
             order_history_manager: None,
             daily_settlement_manager: None,
+            excel_manager: None,
             freight_pending_page: None,
             freight_pending_save: false,
             product_pending_page: None,
@@ -1734,6 +1738,11 @@ impl BandoEgui {
                                         // Kakao HWND ownership survives tab changes.
                                         // A return to freight must re-read staff edits made
                                         // while the page was not selected.
+                                        if page==Page::Excel && self.page!=Page::Excel {
+                                            if let Some(excel)=self.excel_manager.as_mut(){
+                                                excel.refresh(ctx.clone());
+                                            }
+                                        }
                                         if page==Page::Settlement && self.page!=Page::Settlement {
                                             if let Some(settlement)=self.daily_settlement_manager.as_mut(){
                                                 settlement.refresh(ctx.clone());
@@ -3510,6 +3519,11 @@ impl BandoEgui {
     }
 
     fn other_page(&mut self, ctx: &egui::Context) {
+        if self.page==Page::Excel && self.excel_manager.is_none(){
+            self.excel_manager=Some(excel_manager::ExcelManager::new(
+                Arc::clone(&self.gateway),ctx.clone()
+            ));
+        }
         if self.page==Page::Settlement && self.daily_settlement_manager.is_none(){
             self.daily_settlement_manager=Some(daily_settlement_manager::DailySettlementManager::new(
                 Arc::clone(&self.gateway),ctx.clone()
@@ -3623,6 +3637,27 @@ impl BandoEgui {
                                 // frames retain their own content padding.
                                 Frame::new().inner_margin(0).show(main,|page|{
                                     match self.page{
+                                        Page::Excel=>{
+                                            if let Some(excel)=self.excel_manager.as_mut(){
+                                                excel.show_page(page);
+                                                if let Some(order_id)=excel.take_open_order(){
+                                                    self.page=Page::History;
+                                                    if self.order_history_manager.is_none(){
+                                                        self.order_history_manager=Some(
+                                                            order_history_manager::OrderHistoryManager::new(
+                                                                Arc::clone(&self.gateway),ctx.clone()
+                                                            )
+                                                        );
+                                                    }
+                                                    if let Some(history)=self.order_history_manager.as_mut(){
+                                                        history.open_order(&order_id,ctx.clone());
+                                                    }
+                                                }
+                                                if excel.take_open_settings(){
+                                                    self.page=Page::Settings;
+                                                }
+                                            }
+                                        }
                                         Page::Settlement=>{
                                             if let Some(settlement)=self.daily_settlement_manager.as_mut(){
                                                 settlement.show_page(page);
