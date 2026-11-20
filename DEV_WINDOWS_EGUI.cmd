@@ -17,7 +17,11 @@ echo Existing React/Tauri code and production SQLite data are NOT modified.
 echo.
 
 rem The egui developer launcher only reads the EXISTING Tauri developer-test
-rem DB. Never attach the production DB, and never create/reset Tauri data here.
+rem DB. Do not inherit an unrelated operating DB or JSON client index from
+rem another command prompt. Direct cargo invocations may still use overrides.
+rem Never create/reset/attach the production DB from this developer launcher.
+set "BANDO_EGUI_BUSINESS_DB="
+set "BANDO_EGUI_CLIENT_INDEX="
 set "BANDO_EGUI_DEVELOPER_TEST=1"
 rem A native Tauri helper can save shipping changes to the isolated TEST DB.
 rem Enable it only when both the test DB and the compiled debug helper exist,
