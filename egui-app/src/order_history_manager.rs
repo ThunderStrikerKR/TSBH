@@ -609,53 +609,98 @@ impl OrderHistoryManager {
         theme::management_list_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             theme::management_list_strip_frame().show(section,|toolbar|{
-                // On wide panes, the search stays left while all date controls
-                // occupy one natural-width row aligned to the right edge.
-                // In narrow split panes the date row drops below the search
-                // without overlapping or changing its internal order.
-                let narrow=toolbar.available_width()
-                    < theme::MANAGEMENT_SEARCH_MIN_WIDTH + 520.0;
-                if narrow {
+                let full_width=toolbar.available_width().max(1.0);
+                // Use two independent LTR slots instead of nested RTL:
+                // the latter reversed the date buttons in actual Windows UI.
+                let one_row=full_width>=
+                    theme::MANAGEMENT_SEARCH_MIN_WIDTH
+                    +theme::SPACE_16+RANGE_CONTROLS_WIDTH;
+                if one_row {
+                    let (row_rect,_)=toolbar.allocate_exact_size(
+                        Vec2::new(full_width,theme::INPUT_HEIGHT),Sense::hover()
+                    );
+                    let search_rect=Rect::from_min_size(
+                        row_rect.min,Vec2::new(
+                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,row_rect.height()
+                        )
+                    );
+                    let range_rect=Rect::from_min_size(
+                        egui::pos2(row_rect.right()-RANGE_CONTROLS_WIDTH,
+                            row_rect.top()),
+                        Vec2::new(RANGE_CONTROLS_WIDTH,row_rect.height())
+                    );
+                    toolbar.scope_builder(UiBuilder::new()
+                        .id_salt("history-range-search")
+                        .max_rect(search_rect)
+                        .layout(egui::Layout::left_to_right(Align::Center)),
+                        |search|{
+                            search.set_clip_rect(search_rect);
+                            if components::flexible_text_field(
+                                search,&mut self.query,
+                                theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+                                "거래처 / 주문 내용 검색"
+                            ).changed(){changed=true;}
+                        });
+                    toolbar.scope_builder(UiBuilder::new()
+                        .id_salt("history-range-controls")
+                        .max_rect(range_rect)
+                        .layout(egui::Layout::left_to_right(Align::Center)),
+                        |dates|{
+                            dates.set_clip_rect(range_rect);
+                            changed|=history_date_controls(
+                                dates,&mut self.date_basis,
+                                &mut self.from_input,&mut self.to_input,
+                                &mut self.from_month,&mut self.to_month,false
+                            );
+                        });
+                }else{
                     if components::flexible_text_field(
-                        toolbar,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+                        toolbar,&mut self.query,
+                        theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                         "거래처 / 주문 내용 검색"
                     ).changed(){changed=true;}
                     toolbar.add_space(theme::SPACE_8);
-                    toolbar.with_layout(
-                        egui::Layout::right_to_left(Align::Center),|right|{
-                            right.horizontal(|dates|{
-                                changed |= history_date_controls(
-                                    dates,&mut self.date,&mut self.date_input,
-                                    &mut self.calendar_month
-                                );
-                            });
-                        }
+                    // At narrower dock widths the date group alone drops to
+                    // its own right-aligned row. At very narrow widths it
+                    // becomes two right-aligned rows, without clipping text.
+                    let compact=full_width<RANGE_CONTROLS_WIDTH;
+                    let height=if compact {
+                        theme::INPUT_HEIGHT*2.0+theme::SPACE_8
+                    }else{theme::INPUT_HEIGHT};
+                    let (row_rect,_)=toolbar.allocate_exact_size(
+                        Vec2::new(full_width,height),Sense::hover()
                     );
-                }else{
-                    toolbar.horizontal(|tools|{
-                        tools.spacing_mut().item_spacing.x=theme::SPACE_8;
-                        if components::flexible_text_field(
-                            tools,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                            "거래처 / 주문 내용 검색"
-                        ).changed(){changed=true;}
-                        tools.with_layout(
-                            egui::Layout::right_to_left(Align::Center),|right|{
-                                right.horizontal(|dates|{
-                                    changed |= history_date_controls(
-                                        dates,&mut self.date,&mut self.date_input,
-                                        &mut self.calendar_month
-                                    );
-                                });
-                            }
-                        );
-                    });
+                    let width=RANGE_CONTROLS_WIDTH.min(full_width);
+                    let range_rect=Rect::from_min_size(
+                        egui::pos2(row_rect.right()-width,row_rect.top()),
+                        Vec2::new(width,row_rect.height())
+                    );
+                    toolbar.scope_builder(UiBuilder::new()
+                        .id_salt("history-range-controls-narrow")
+                        .max_rect(range_rect)
+                        .layout(egui::Layout::left_to_right(Align::Center)),
+                        |dates|{
+                            dates.set_clip_rect(range_rect);
+                            changed|=history_date_controls(
+                                dates,&mut self.date_basis,
+                                &mut self.from_input,&mut self.to_input,
+                                &mut self.from_month,&mut self.to_month,compact
+                            );
+                        });
                 }
             });
-            if changed {self.refresh(section.ctx().clone());}
-            if !self.date_input.is_empty() && self.date!=self.date_input {
+            if changed && date_range_error(
+                &self.from_input,&self.to_input
+            ).is_none(){
+                self.date_from=self.from_input.clone();
+                self.date_to=self.to_input.clone();
+                self.refresh(section.ctx().clone());
+            }
+            if let Some(message)=date_range_error(
+                &self.from_input,&self.to_input
+            ){
                 theme::management_list_strip_frame().show(section,|ui|{
-                    ui.label(typography::status("접수일은 YYYY-MM-DD 형식으로 입력하세요.",
-                        theme::DANGER));
+                    ui.label(typography::status(message,theme::DANGER));
                 });
             }
             if let Some(error)=self.error.as_deref(){
@@ -776,7 +821,8 @@ impl OrderHistoryManager {
             if self.snapshot.as_ref().is_some_and(|s|s.rows.is_empty()) {
                 theme::management_list_strip_frame().show(section,|empty|{
                     empty.label(typography::caption(if self.query.is_empty()
-                        && self.date.is_empty(){
+                        && self.date_from.is_empty()&&self.date_to.is_empty()
+                        && self.date_basis==HistoryDateBasis::Reception{
                         "저장된 주문이 없습니다."
                     }else{"조건에 맞는 주문이 없습니다."}));
                 });
