@@ -813,6 +813,30 @@ pub fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
     ui.set_min_height(min_inner_height);
 }
 
+/// C-approved dual-master toolbar alignment contract:
+/// right-aligned search/date/bulk controls end at the PRIMARY CARD'S inner
+/// right edge. The scrollbar gutter belongs only to table headers and rows.
+/// Slot height/vertical stacking may differ by screen, but not its right edge.
+/// Returns egui logical-point coordinates; convert to device pixels with
+/// Context::pixels_per_point() when reporting runtime measurements.
+pub fn management_toolbar_trailing_rect(
+    toolbar:Rect,desired_width:f32,top_offset:f32,height:f32
+)->Rect {
+    debug_assert!(desired_width.is_finite() && desired_width>=0.0);
+    debug_assert!(top_offset.is_finite() && top_offset>=0.0);
+    debug_assert!(height.is_finite() && height>=0.0);
+    debug_assert!(top_offset+height<=toolbar.height()+0.01,
+        "trailing controls must stay within the reserved toolbar");
+    let width=desired_width.min(toolbar.width()).max(0.0);
+    let rect=Rect::from_min_size(
+        egui::pos2(toolbar.right()-width,toolbar.top()+top_offset),
+        Vec2::new(width,height)
+    );
+    debug_assert!((rect.right()-toolbar.right()).abs()<0.01,
+        "management toolbar trailing edge must match the card's inner right edge");
+    rect
+}
+
 /// One measured vertical transition for every fixed-header management table.
 ///
 /// Call with `item_spacing.y == 0` *from the toolbar allocation onward*.
@@ -1647,4 +1671,25 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
         }
     });
     soft_divider(ui);
+}
+
+// Narrow geometry contract check only, not a business-data regression suite.
+#[cfg(test)]
+mod management_toolbar_geometry_tests {
+    use super::*;
+    #[test]
+    fn trailing_slot_ends_at_card_inner_edge_without_scrollbar_subtraction() {
+        for width in [400.0, 704.0, 1280.0] {
+            let toolbar=Rect::from_min_size(
+                egui::pos2(16.0,216.0),Vec2::new(width,124.0)
+            );
+            let bulk=management_toolbar_trailing_rect(toolbar,500.0,0.0,36.0);
+            let dates=management_toolbar_trailing_rect(toolbar,704.0,44.0,80.0);
+            for slot in [bulk,dates] {
+                assert!((slot.right()-toolbar.right()).abs()<0.01);
+                assert!(slot.left()>=toolbar.left()-0.01);
+                assert!(slot.right()<=toolbar.right()+0.01);
+            }
+        }
+    }
 }
