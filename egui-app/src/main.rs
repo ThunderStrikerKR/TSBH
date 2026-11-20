@@ -1773,10 +1773,6 @@ impl BandoEgui {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                             }
                             actions.add_space(theme::SPACE_8);
-                            // No auto-generated error/success messages.
-                            theme::action(
-                                actions, "알림", ButtonRole::Standard, false
-                            );
                             // Unoccupied header space has the same drag and
                             // double-click behavior as the original titlebar.
                             let empty = actions.available_width();
@@ -1964,9 +1960,6 @@ impl BandoEgui {
                             ButtonRole::Emphasized,true
                         ).clicked(){
                             connect=true;
-                        }
-                        if let Some(reason)=&self.kakao_dock_error {
-                            center.label(reason);
                         }
                     },
                 );
