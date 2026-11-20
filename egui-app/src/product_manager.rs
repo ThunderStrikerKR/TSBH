@@ -289,6 +289,9 @@ impl ProductManager {
             }
             Some(Ok(Err(error)))=>{
                 self.writing=None;
+                if self.tab==1 {
+                    self.category_manager.report_error(error.clone());
+                }
                 self.error=Some(error);
             }
             Some(Err(TryRecvError::Disconnected))=>{
