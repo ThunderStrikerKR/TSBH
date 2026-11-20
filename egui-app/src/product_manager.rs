@@ -798,6 +798,12 @@ impl ProductManager {
                                                                 .unwrap_or_default(),
                                                         });
                                                     cell.add_enabled_ui(!saving,|inputs|{
+                                                        // Widget identities must not depend on
+                                                        // which virtual rows happen to be visible.
+                                                        inputs.push_id(
+                                                            ("product-price-cell",product_id,
+                                                             field(variant,"id"),tier),
+                                                            |inputs|{
                                                         let response=components::money_field(
                                                             inputs,&mut entry.input,true
                                                         );
@@ -835,6 +841,8 @@ impl ProductManager {
                                                                     .unwrap_or_default();
                                                             }
                                                         }
+                                                            }
+                                                        );
                                                     });
                                                 }else{
                                                     cell.label(typography::quantity(
