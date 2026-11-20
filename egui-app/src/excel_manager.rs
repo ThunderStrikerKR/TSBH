@@ -370,11 +370,17 @@ impl ExcelManager{
                         if origin=="FACTORY"{"공장 발송"}else{"매장 발송"},count
                     ));
                     self.selected.clear();
+                    if let Some(warning)=result["folderWarning"].as_str(){
+                        self.notice=Some(format!(
+                            "Excel과 출력 이력은 저장됐지만 폴더를 열지 못했습니다: {warning}"
+                        ));
+                    }
                     self.result=None;
                     // A saved file must be reflected via a fresh DB read,
                     // not through an optimistic local snapshot.
                     self.result=Some(Snapshot{
-                        state:result["state"].clone(),shipments:Value::Null
+                        state:result["state"].clone(),
+                        shipments:result["shipmentReads"].clone()
                     });
                     // Never display a stale shipment projection after saving.
                     self.receiver=None;
@@ -554,10 +560,14 @@ impl ExcelManager{
                         let id=entry.id().to_owned();
                         let mut checked=self.selected.contains(&id);
                         let selectable=!entry.legacy;
-                        let checked_response=row.put(
-                            cells[0].shrink2(Vec2::new(theme::SPACE_8,theme::SPACE_4)),
-                            egui::Checkbox::without_text(&mut checked)
-                        );
+                        let checked_response=row.add_enabled_ui(selectable,|control|{
+                            control.put(
+                                cells[0].shrink2(Vec2::new(
+                                    theme::SPACE_8,theme::SPACE_4
+                                )),
+                                egui::Checkbox::without_text(&mut checked)
+                            )
+                        }).inner;
                         if checked_response.clicked() && selectable{
                             if checked{self.selected.insert(id.clone());}
                             else{self.selected.remove(&id);}
@@ -692,11 +702,16 @@ impl ExcelManager{
                         self.preview=None;
                         let folder_after=origin=="FACTORY";
                         self.task("export",ui.ctx().clone(),move|g|{
-                            let result=g.export_excel(&origin,&ids)?;
+                            let mut result=g.export_excel(&origin,&ids)?;
+                            let projection=g.execute(ReadOperation::ReadShipments,
+                                json!({"state":&result["state"]}))?;
+                            result["shipmentReads"]=projection;
                             if folder_after{
                                 if let Some(export_id)=result["exportId"].as_str(){
                                     // Explorer failure is NOT an export failure.
-                                    let _=g.open_excel_folder(Some(export_id),None);
+                                    if let Err(reason)=g.open_excel_folder(Some(export_id),None){
+                                        result["folderWarning"]=json!(reason);
+                                    }
                                 }
                             }
                             Ok(result)
