@@ -12,6 +12,8 @@ on:
       - DEV_WINDOWS_EGUI.cmd
       - egui-app/src/category_manager.rs
       - egui-app/src/product_manager.rs
+      - egui-app/src/alias_manager.rs
+      - src-tauri/src/business_core/catalog_clients/aliases.rs
       - egui-app/src/model_group_manager.rs
       - egui-app/src/settings_store.rs
       - src-tauri/src/business_core/catalog_clients/model_groups.rs
@@ -22,6 +24,7 @@ on:
       - src-tauri/src/egui_shipping_bridge.rs
       - src-tauri/src/main.rs
       - src-tauri/src/lib.rs
+      - src-tauri/src/workflow_sqlite_integration_tests.rs
       - src-tauri/src/workflow_sqlite_integration_tests.rs
   workflow_dispatch:
 permissions:
@@ -51,3 +54,7 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib model_groups::tests -- --nocapture
       - name: Verify model-group actual SQLite backup, reopen and stale-editor CAS
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib native_model_group_sqlite_roundtrip_and_stale_editor_conflict -- --nocapture
+      - name: Verify native alias collisions and ID-preserving overwrite
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib aliases::tests -- --nocapture
+      - name: Verify alias actual SQLite save, correction and stale-revision refusal
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib native_alias_sqlite_save_correction_and_stale_editor_rejection -- --nocapture
