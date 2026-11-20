@@ -1,0 +1,29 @@
+# Scoped Rust-only integration check: never connects to Bando's actual operational DB.
+name: Isolated freight SQLite verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/freight-sqlite-verify.yml
+      - src-tauri/src/egui_shipping_bridge.rs
+      - src-tauri/src/business_core/rules/shipping.rs
+      - src-tauri/src/relational_store.rs
+      - src-tauri/src/lib.rs
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: isolated-freight-sqlite-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  isolated-freight-sqlite:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Verify native v2 freight save and price/history/revision protection
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib isolated_shipping_sqlite_verification -- --nocapture
