@@ -126,6 +126,7 @@ pub struct FreightManager {
     delete_target: Option<String>,
     rate_editor: Option<RateEditor>,
     basis_target: Option<Option<String>>,
+    exception_target: Option<(String,String)>,
     receiver: Option<Receiver<Result<(Value, Value), String>>>,
     state: Option<Value>,
     projection: Option<Value>,
@@ -166,6 +167,7 @@ impl FreightManager {
             delete_target: None,
             rate_editor: None,
             basis_target: None,
+            exception_target: None,
             receiver: Some(receiver),
             state: None,
             projection: None,
@@ -209,6 +211,7 @@ impl FreightManager {
                             "assign_products"=>"배송 그룹 지정을 저장했습니다.",
                             "save_group_rule"=>"운임표를 저장했습니다. 변경 전 기준은 이력으로 보존됩니다.",
                             "change_basis"=>"운임 기준을 변경했습니다.",
+                            "revise_combination"=>"새 예외 운임을 저장하고 이전 값을 이력으로 보존했습니다.",
                             _=>"운임 변경사항을 저장했습니다."
                         }.into());
                         match action.as_str(){
@@ -221,6 +224,7 @@ impl FreightManager {
                             }
                             "save_group_rule"=>self.rate_editor=None,
                             "change_basis"=>self.basis_target=None,
+                            "revise_combination"=>self.exception_target=None,
                             _=>{}
                         }
                     }else{
@@ -277,7 +281,7 @@ impl FreightManager {
         ]) {
             if self.rate_editor.is_none() && self.rename_target.is_none()
                 && self.delete_target.is_none() && self.basis_target.is_none()
-                && self.write_receiver.is_none() {
+                && self.exception_target.is_none() && self.write_receiver.is_none() {
                 self.tab = FreightTab::ALL[index];
             }
         }
@@ -331,7 +335,9 @@ impl FreightManager {
                     scroll,&groups,projection,
                     &mut self.rate_editor,&mut self.basis_target,enabled
                 ),
-                FreightTab::History => Self::show_history(scroll, shipping, projection),
+                FreightTab::History => Self::show_history(
+                    scroll,shipping,projection,&mut self.exception_target,enabled
+                ),
             });
         if self.tab==FreightTab::Groups {
             let area=ui.max_rect();
@@ -451,6 +457,39 @@ impl FreightManager {
             }
             if close_editor{self.rate_editor=None;}
             if close_basis{self.basis_target=None;}
+        }
+        if self.tab==FreightTab::History {
+            let mut close=false;
+            if let Some((id,amount))=self.exception_target.as_mut(){
+                let ctx=ui.ctx();
+                components::modal_backdrop(ctx,"freight-exception-backdrop",false);
+                components::decision_window(
+                    "새로 확인된 청구 운임 (원)","freight-exception",ui.max_rect()
+                ).show(ctx,|dialog|{
+                    components::field(
+                        dialog,amount,components::FieldKind::Money,enabled
+                    );
+                    dialog.add_space(theme::SPACE_12);
+                    dialog.horizontal(|bar|{
+                        if theme::action(bar,"취소",
+                            theme::ButtonRole::Standard,enabled).clicked(){
+                            close=true;
+                        }
+                        if theme::action(bar,"예외 운임 변경",
+                            theme::ButtonRole::Primary,enabled).clicked(){
+                            match amount.trim().parse::<i64>(){
+                                Ok(value) if (0..=9_007_199_254_740_991).contains(&value)=>{
+                                    action=Some(("revise_combination".into(),json!({
+                                        "combinationId":id,"charge":value
+                                    })));
+                                }
+                                _=>self.error=Some("올바른 운임을 입력하세요.".into())
+                            }
+                        }
+                    });
+                });
+            }
+            if close{self.exception_target=None;}
         }
         if let Some((kind,data))=action {
             self.write(kind,data,ui.ctx().clone());
@@ -822,7 +861,10 @@ impl FreightManager {
         });
     }
 
-    fn show_history(ui: &mut Ui, shipping: &Value, projection: &Value) {
+    fn show_history(
+        ui: &mut Ui, shipping: &Value, projection: &Value,
+        exception: &mut Option<(String,String)>,enabled:bool,
+    ) {
         theme::section_frame().show(ui, |section| {
             section.label(typography::section_heading("확인된 배송 조합"));
             components::soft_divider(section);
@@ -835,14 +877,26 @@ impl FreightManager {
             for record in combinations.iter().rev() {
                 let current = projection["currentCombinations"]
                     .get(text(record, "id")).and_then(Value::as_bool).unwrap_or(false);
-                let label = format!(
-                    "{} / 청구 {} / 실제 {} / {}",
-                    text(record, "description"),
-                    as_fee(&record["charge"]),
-                    as_fee(&record["actual"]),
-                    if current { "현재 유효" } else { "과거 이력" },
-                );
-                section.label(typography::body(label));
+                section.horizontal_wrapped(|row|{
+                    row.label(typography::table_cell(text(record, "description")));
+                    row.label(typography::quantity(format!(
+                        "청구 {}",as_fee(&record["charge"])
+                    )));
+                    row.label(typography::quantity(format!(
+                        "실제 {}",as_fee(&record["actual"])
+                    )));
+                    row.label(typography::caption(
+                        if current { "현재 유효" } else { "과거 이력" }
+                    ));
+                    if theme::action(row,"예외 운임 변경",
+                        theme::ButtonRole::Standard,enabled).clicked(){
+                        *exception=Some((
+                            text(record,"id").into(),
+                            record["charge"].as_i64()
+                                .map(|n|n.to_string()).unwrap_or_default()
+                        ));
+                    }
+                });
                 components::soft_divider(section);
             }
         });
@@ -870,6 +924,7 @@ impl FreightManager {
             }
         });
     }
+
 }
 
 fn summary(ui: &mut Ui, label: &str, count: usize) {
