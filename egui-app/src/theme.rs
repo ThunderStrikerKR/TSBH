@@ -467,16 +467,15 @@ pub fn management_list_frame() -> Frame {
         .inner_margin(FRAME_STROKE_WIDTH as i8)
 }
 
-/// A compact, standalone page filter strip for reports that also place
-/// KPI cards above the primary data card. Unlike a large management list,
-/// this filter is not the main content box and should not consume 16pt
-/// vertical padding twice before the reference card anchor.
+/// A compact, standalone filter strip for settlement reports.
+/// Its own 4pt inset + the date navigator's 12pt inset make the approved
+/// 16pt title/filter guide. This does not move the primary accounting card.
 pub fn management_compact_filter_frame() -> Frame {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
         .corner_radius(CornerRadius::same(PANEL_RADIUS))
-        .inner_margin(egui::Margin::symmetric(SPACE_12 as i8, 0))
+        .inner_margin(egui::Margin::symmetric(SPACE_4 as i8, 0))
 }
 
 /// Identical inset for a management list's search toolbar and its inline
