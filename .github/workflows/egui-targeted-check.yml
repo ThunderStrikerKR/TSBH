@@ -10,6 +10,9 @@ on:
       - egui-app/src/main.rs
       - egui-app/src/category_manager.rs
       - egui-app/src/product_manager.rs
+      - egui-app/src/model_group_manager.rs
+      - egui-app/src/settings_store.rs
+      - src-tauri/src/business_core/catalog_clients/model_groups.rs
       - egui-app/src/catalog_query_bridge.rs
       - egui-app/src/theme.rs
       - src-tauri/src/egui_product_bridge.rs
@@ -39,3 +42,5 @@ jobs:
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify native category rename, transfer consent and cross-catalog move guard
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib category_ -- --nocapture
+      - name: Verify native staff model-group validation and representative rules
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib model_groups::tests -- --nocapture
