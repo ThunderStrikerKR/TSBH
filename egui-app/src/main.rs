@@ -177,6 +177,14 @@ struct BandoEgui {
     client_manager: Option<client_manager::ClientManager>,
     product_manager: Option<product_manager::ProductManager>,
     settings_view: Option<settings_view::SettingsView>,
+    // Read the SAVED image-inbox directory, not the unsaved Settings draft.
+    // Loading is background-only; the reception frame never opens SQLite.
+    inbox_folder_path: Option<String>,
+    inbox_folder_loaded: bool,
+    inbox_folder_error: Option<String>,
+    inbox_folder_open_error: Option<String>,
+    inbox_folder_receiver: Option<Receiver<Result<Option<String>, String>>>,
+    inbox_folder_last_refresh: Option<Instant>,
     freight_manager: Option<freight_manager::FreightManager>,
     freight_pending_page: Option<Page>,
     freight_pending_save: bool,
@@ -238,6 +246,12 @@ impl Default for BandoEgui {
             client_manager: None,
             product_manager: None,
             settings_view: None,
+            inbox_folder_path: None,
+            inbox_folder_loaded: false,
+            inbox_folder_error: None,
+            inbox_folder_open_error: None,
+            inbox_folder_receiver: None,
+            inbox_folder_last_refresh: None,
             freight_manager: None,
             freight_pending_page: None,
             freight_pending_save: false,
@@ -267,6 +281,74 @@ impl Default for BandoEgui {
 }
 
 impl BandoEgui {
+    /// Project only the saved order-image inbox path into the reception UI.
+    /// The Settings page owns editing/saving; this read-only projection runs
+    /// asynchronously and refreshes immediately on return from other pages.
+    fn poll_inbox_folder(&mut self, ctx: &egui::Context) {
+        if self.page != Page::Reception {
+            // Discard in-flight old reads so a just-saved setting is freshly
+            // fetched as soon as the employee returns to Reception.
+            self.inbox_folder_receiver = None;
+            self.inbox_folder_last_refresh = None;
+            self.inbox_folder_loaded = false;
+            self.inbox_folder_path = None;
+            self.inbox_folder_error = None;
+            self.inbox_folder_open_error = None;
+            return;
+        }
+        if let Some(result) = self.inbox_folder_receiver.as_ref().map(|rx| rx.try_recv()) {
+            match result {
+                Ok(Ok(path)) => {
+                    if self.inbox_folder_path != path {
+                        self.inbox_folder_open_error = None;
+                    }
+                    self.inbox_folder_path = path;
+                    self.inbox_folder_loaded = true;
+                    self.inbox_folder_error = None;
+                    self.inbox_folder_receiver = None;
+                }
+                Ok(Err(error)) => {
+                    self.inbox_folder_path = None;
+                    self.inbox_folder_loaded = true;
+                    self.inbox_folder_error = Some(error);
+                    self.inbox_folder_receiver = None;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.inbox_folder_path = None;
+                    self.inbox_folder_loaded = true;
+                    self.inbox_folder_error = Some("발주 이미지 수신 폴더 설정을 읽지 못했습니다.".into());
+                    self.inbox_folder_receiver = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if self.inbox_folder_receiver.is_some() ||
+            self.inbox_folder_last_refresh.is_some_and(|time|
+                time.elapsed() < Duration::from_secs(15)
+            ) {
+            return;
+        }
+        self.inbox_folder_last_refresh = Some(Instant::now());
+        let (sender, receiver) = mpsc::channel();
+        self.inbox_folder_receiver = Some(receiver);
+        let gateway = Arc::clone(&self.gateway);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let outcome = gateway.load_settings().and_then(|snapshot| {
+                let saved = snapshot.get("settings")
+                    .and_then(serde_json::Value::as_object)
+                    .ok_or("저장된 폴더 설정 형식을 확인할 수 없습니다.")?;
+                Ok(saved.get("orderImageInboxDirectory")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|path| !path.is_empty())
+                    .map(str::to_owned))
+            });
+            let _ = sender.send(outcome);
+            ctx.request_repaint();
+        });
+    }
+
     // Run parsing outside the egui frame loop. Any changed source invalidates
     // the previous result and its request sequence, so stale replies are ignored.
     fn queue_source_save(&mut self) {
@@ -3378,6 +3460,7 @@ impl eframe::App for BandoEgui {
             }
         }
         self.top_bar(ctx);
+        self.poll_inbox_folder(ctx);
         if self.page == Page::Reception {
             self.reception(ctx);
         } else {
