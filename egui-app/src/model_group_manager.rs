@@ -304,9 +304,6 @@ impl ModelGroupManager {
                                             "상품명으로 찾아서 추가");
                                     });
                                     let assigned=self.membership();
-                                    if let Err(message)=&eligible_result {
-                                        body.label(typography::status(message,theme::DANGER));
-                                    }
                                     if !self.search.trim().is_empty(){
                                         let query=self.search.trim().to_lowercase();
                                         let choices=items(&catalog["products"]).iter()
@@ -413,10 +410,7 @@ impl ModelGroupManager {
                                 });
                             components::soft_divider(right);
                             right.horizontal(|footer|{
-                                footer.label(typography::caption(if self.status.is_empty(){
-                                    if self.dirty(){"저장하지 않은 변경사항 있음"}
-                                    else{"변경사항 없음"}
-                                }else{&self.status}));
+                                footer.label(typography::caption(if self.dirty(){"저장하지 않은 변경사항 있음"} else {"변경사항 없음"}));
                                 footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
                                     if self.dirty()&&theme::action(buttons,
                                         if busy{"저장 중"}else{"변경사항 저장"},
@@ -435,9 +429,7 @@ impl ModelGroupManager {
                             if self.dirty(){
                                 components::soft_divider(right);
                                 right.horizontal(|footer|{
-                                    footer.label(typography::caption(if self.status.is_empty(){
-                                        "저장하지 않은 변경사항 있음"
-                                    }else{&self.status}));
+                                    footer.label(typography::caption("저장하지 않은 변경사항 있음"));
                                     if theme::action(footer,"닫기",
                                         theme::ButtonRole::Standard,!busy).clicked(){
                                         self.request_exit(Exit::Close);
@@ -485,9 +477,6 @@ impl ModelGroupManager {
             components::decision_window("모델군 관리","family-unsaved-confirm",rect)
                 .show(ctx,|dialog|{
                     dialog.label(typography::body("모델군 관리의 변경사항을 저장할까요?"));
-                    if !self.status.is_empty(){
-                        dialog.label(typography::status(&self.status,theme::DANGER));
-                    }
                     dialog.horizontal(|actions|{
                         cancel=theme::action(actions,"취소",
                             theme::ButtonRole::Standard,!self.busy()).clicked();
