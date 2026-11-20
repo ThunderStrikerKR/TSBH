@@ -1133,6 +1133,10 @@ impl FreightManager {
             table_scroll.bar_inner_margin=0.0;
             table_scroll.bar_outer_margin=0.0;
             section.spacing_mut().scroll=table_scroll;
+            // Both Freight and Order History now reserve the toolbar, divider
+            // and header with one common zero-implicit-gap layout path.
+            let previous_table_spacing_y=section.spacing().item_spacing.y;
+            section.spacing_mut().item_spacing.y=0.0;
             // The parent page title and active "배송 그룹 편성" tab already
             // establish context. Start directly with the search/bulk toolbar:
             // do not leave an empty title row or its implicit vertical gap.
@@ -1339,38 +1343,16 @@ impl FreightManager {
             if *bulk_group!=previous_group {
                 *bulk_feedback=None;
             }
-            // Own the toolbar-to-header rhythm in ONE explicit 9pt strip:
-            // 4pt above a 1pt divider and 4pt below it. The old divider
-            // inherited 8pt item spacing on BOTH sides, visually separating
-            // the filters from the table they control.
-            // Keep zero implicit vertical spacing through the fixed header
-            // and virtual rows, then restore it after the table block.
-            let previous_table_spacing_y=section.spacing().item_spacing.y;
-            section.spacing_mut().item_spacing.y=0.0;
-            let (separator_rect,_)=section.allocate_exact_size(
-                egui::vec2(section.available_width(),
-                    theme::SPACE_8+theme::SOFT_DIVIDER_WIDTH),
-                egui::Sense::hover(),
+            // Shared transition: 8pt toolbar gap, 4/1/4 divider strip,
+            // then the full-width sticky header, on the exact same cursor.
+            let table_header=components::management_sticky_table_header(
+                section,theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH
             );
-            section.painter().rect_filled(
-                egui::Rect::from_min_size(
-                    egui::pos2(separator_rect.left(),
-                        separator_rect.top()+theme::SPACE_4),
-                    egui::vec2(separator_rect.width(),theme::SOFT_DIVIDER_WIDTH),
-                ),
-                0.0,
-                theme::DIVIDER,
-            );
-            // Reserve the header OUTSIDE the scroll area. The table's
-            // scroll offset is reflected only in its horizontal coordinates,
-            // so wheel scrolling cannot push column titles off-screen.
-            let viewport_width=section.available_width().max(1.0);
-            // Exactly the scrollbar's allocated 10pt rail, with no extra
-            // gap between the final action column and the scroll handle.
-            // Header and rows use the SAME measured content width.
-            let scrollbar_gutter=section.spacing().scroll.allocated_width();
-            let table_width=(viewport_width-scrollbar_gutter)
-                .max(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH);
+            let viewport_width=table_header.viewport_width;
+            let scrollbar_gutter=table_header.scrollbar_gutter;
+            let table_width=table_header.table_width;
+            let header_rect=table_header.header_rect;
+            let header_content_rect=table_header.header_content_rect;
             let mut widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
             let extra=(table_width-theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH).max(0.0);
             // Both the fixed category width and its share of additional
@@ -1383,23 +1365,8 @@ impl FreightManager {
                 "","상품명 / 상품설명","색상/옵션","카테고리",
                 "배송 그룹","설정"
             ];
-            // Header and virtualized rows share all six column boundaries.
-            let (header_rect,_)=section.allocate_exact_size(
-                egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
-                egui::Sense::hover()
-            );
-            // The header occupies the same scrollable content width as the
-            // rows; the right-hand scrollbar rail is NOT a seventh column.
-            // Keep the outer allocation full-width so the body ScrollArea
-            // still receives the normal viewport without moving its origin.
-            let header_content_rect=egui::Rect::from_min_max(
-                header_rect.min,
-                egui::pos2(
-                    (header_rect.right()-scrollbar_gutter)
-                        .max(header_rect.left()+1.0),
-                    header_rect.bottom(),
-                ),
-            );
+            // The shared header matches the virtualized rows' column
+            // boundaries; scrollbar_gutter is reserved once by the helper.
             // Shorten only the native SCROLLBAR TRACK at its upper edge.
             // egui 0.33.3 supports a separate scroll_bar_rect: scrolling rows
             // still begin immediately below the 36pt sticky header.
