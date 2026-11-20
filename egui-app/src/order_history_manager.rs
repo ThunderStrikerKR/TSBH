@@ -621,8 +621,9 @@ impl OrderHistoryManager {
             components::fill_management_primary_card(section,card_min_height);
             theme::management_list_strip_frame().show(section,|toolbar|{
                 let full_width=toolbar.available_width().max(1.0);
-                // Use two independent LTR slots instead of nested RTL:
-                // the latter reversed the date buttons in actual Windows UI.
+                // Reserve independent search/date slots. The date slot
+                // right-anchors reverse-inserted RTL widgets so their visible
+                // order stays natural and the last button meets the right edge.
                 let one_row=full_width>=
                     theme::MANAGEMENT_SEARCH_MIN_WIDTH
                     +theme::SPACE_16+RANGE_CONTROLS_WIDTH;
