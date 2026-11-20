@@ -707,8 +707,18 @@ pub fn reception_items_header(ui: &mut Ui) {
     let columns = reception_item_columns(rect);
     for (index, label) in ["품목", "수량", "금액"].iter().enumerate() {
         let cell = columns[index].shrink2(egui::vec2(theme::SPACE_4, 0.0));
-        ui.put(cell, egui::Label::new(typography::table_header(label))
-            .halign(if index == 0 { Align::Min } else { Align::Max }));
+        let galley = typography::table_header_galley(ui, label);
+        // The product header starts at the same LEFT edge as product text;
+        // quantity and amount end at the same RIGHT edges as their values.
+        let x = if index == 0 {
+            cell.left()
+        } else {
+            cell.right() - galley.size().x
+        };
+        ui.painter().with_clip_rect(cell).galley(
+            egui::pos2(x, cell.center().y - galley.size().y / 2.0),
+            galley, theme::SECONDARY,
+        );
     }
     ui.painter().line_segment(
         [egui::pos2(rect.left(), rect.bottom()),
@@ -728,14 +738,31 @@ pub fn reception_item_row(
     let padded = |index: usize| columns[index].shrink2(
         egui::vec2(theme::SPACE_4, theme::SPACE_8)
     );
-    let product = ui.put(padded(0),
-        egui::Label::new(typography::body(name)).truncate().halign(Align::Min));
-    let quantity = ui.put(padded(1),
-        egui::Label::new(typography::quantity(quantity))
-            .truncate().halign(Align::Max));
-    let amount = ui.put(padded(2),
-        egui::Label::new(typography::table_cell(amount).monospace())
-            .truncate().halign(Align::Max));
+    let cells = [padded(0), padded(1), padded(2)];
+    // Use explicit column anchors for all three text cells. Ui::put(Label)
+    // was moving text toward the center inside the row, while the table
+    // header used another alignment calculation.
+    for (index, (text, font, color)) in [
+        (name, egui::FontId::proportional(typography::FONT_BODY), theme::TEXT),
+        (quantity, egui::FontId::monospace(typography::FONT_FIELD_LABEL), theme::SECONDARY),
+        (amount, egui::FontId::monospace(typography::FONT_FIELD_LABEL), theme::TEXT),
+    ].into_iter().enumerate() {
+        let cell = cells[index];
+        let right = index != 0;
+        ui.painter().with_clip_rect(cell).text(
+            egui::pos2(if right { cell.right() } else { cell.left() }, cell.center().y),
+            if right { egui::Align2::RIGHT_CENTER } else { egui::Align2::LEFT_CENTER },
+            text,
+            font,
+            color,
+        );
+    }
+    // Preserve the five-source-field highlighting contract: these three
+    // hover responses still map to the exact Rust product/quantity/price keys.
+    let product = ui.interact(cells[0], ui.next_auto_id(), Sense::hover())
+        .on_hover_text(name);
+    let quantity = ui.interact(cells[1], ui.next_auto_id(), Sense::hover());
+    let amount = ui.interact(cells[2], ui.next_auto_id(), Sense::hover());
     ui.painter().line_segment(
         [egui::pos2(rect.left(), rect.bottom()),
          egui::pos2(rect.right(), rect.bottom())],
