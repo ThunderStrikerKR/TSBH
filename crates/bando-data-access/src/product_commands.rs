@@ -127,14 +127,14 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
     let data=request.get("data").ok_or("상품 변경 입력이 없습니다.")?;
     let mut next=match action {
         "apply_product_workbook"=>{
-            let preview=data.get("preview").filter(Value::is_object)
+            let preview=data.get("preview").filter(|value|value.is_object())
                 .ok_or("상품 Excel 변경 검토 결과가 없습니다.")?;
             // Reuse the original native reducer's revision and ERROR/HOLD
             // checks. The shared snapshot writer still validates and commits
             // the complete candidate in one optimistic SQLite transaction.
             let result=catalog_clients::execute("apply_product_workbook",
                 json!({"state":&before,"preview":preview}))?;
-            result.get("next").filter(Value::is_object).cloned()
+            result.get("next").filter(|value|value.is_object()).cloned()
                 .ok_or("상품 Excel Rust 저장 결과 형식 오류")?
         }
         "set_price"=>{
