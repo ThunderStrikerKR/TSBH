@@ -15,6 +15,9 @@ mod storage;
 mod client_commands;
 mod product_commands;
 mod settings_commands;
+mod recovery;
+pub mod backup_service;
+pub mod audit_service;
 pub mod shipping_action;
 pub use validation::{
     valid_state, validate_brands, validate_clients,
