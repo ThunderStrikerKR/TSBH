@@ -235,12 +235,11 @@ pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
 // audit grid. Every header and row uses the SAME widths to keep controls
 // readable without wrapped names or vertical buttons.
 // Ordered columns: selection, product, color/option, category, group,
-// assignment status, action. The repeated freight/bundle status is omitted
-// from the assignment task (tariffs remain in group management and the
-// product's base-freight editor). Keep total width at 1255pt including
-// six 8pt gaps; reclaim the entire removed column for product names.
+// assignment status, action. Redundant freight/bundle status is omitted.
+// The reclaimed width is shared by product name (+135pt) and category
+// (+68pt), keeping product wider. Total: 1255pt including six 8pt gaps.
 pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 7] =
-    [44.0, 523.0, 69.0, 222.0, 155.0, 66.0, 128.0];
+    [44.0, 455.0, 69.0, 290.0, 155.0, 66.0, 128.0];
 pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
 // Width for the single-line bulk shipping-group selector.
 pub const FREIGHT_BULK_GROUP_WIDTH: f32 = 200.0;
