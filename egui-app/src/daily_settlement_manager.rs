@@ -24,10 +24,6 @@ fn won(value:&Value)->String{
     value.as_i64().map(components::display_won)
         .unwrap_or_else(||"확인 필요".to_owned())
 }
-fn summary_won(value:&Value)->String{
-    value.as_i64().map(components::display_won)
-        .unwrap_or_else(||"확인 필요".to_owned())
-}
 fn seoul_today()->String{
     Utc::now().with_timezone(&FixedOffset::east_opt(9*3600).unwrap())
         .format("%Y-%m-%d").to_string()
@@ -314,7 +310,7 @@ fn report_table<const N:usize>(
     let mut sort_change=None;
     for (column,title) in headings.iter().enumerate(){
         let cell=header_cells[column];
-        let glyph=match sort.filter(|v|v.column==column).map(|v|v.direction){
+        let glyph=match (*sort).filter(|v|v.column==column).map(|v|v.direction){
             Some(Direction::Ascending)=>"▲",
             Some(Direction::Descending)=>"▼",
             None=>"↕"
@@ -477,8 +473,8 @@ impl DailySettlementManager{
             strip.spacing_mut().item_spacing=
                 Vec2::new(theme::SPACE_8,theme::SPACE_8);
             kpi(strip,"접수 주문",&format!("{}건",orders.len()));
-            kpi(strip,"청구 합계 확인분",&summary_won(&report["billedKnown"]));
-            kpi(strip,"실제 계좌 입금",&summary_won(&report["paidCash"]));
+            kpi(strip,"청구 합계 확인분",&won(&report["billedKnown"]));
+            kpi(strip,"실제 계좌 입금",&won(&report["paidCash"]));
             kpi(strip,"미확정 청구 주문",&format!(
                 "{}건",report["billedUnknown"].as_u64().unwrap_or(0)
             ));
@@ -512,7 +508,7 @@ impl DailySettlementManager{
                             ("현재 미수 확인분","outstandingKnown"),
                             ("현재 공장 운임 확인분","actualFreightKnown"),
                         ]{
-                            metric(line,title,summary_won(&report[key]));
+                            metric(line,title,won(&report[key]));
                         }
                     });
                     section.add_space(theme::SPACE_8);
@@ -576,7 +572,7 @@ impl DailySettlementManager{
                             ("배송 건 배분액","allocatedCash"),
                             ("미배분 입금액","unallocatedCash"),
                         ]{
-                            metric(line,title,summary_won(&report[key]));
+                            metric(line,title,won(&report[key]));
                         }
                     });
                     section.add_space(theme::SPACE_12);
