@@ -6,44 +6,8 @@
 //! existing production database. The real mutation rules remain in Rust.
 
 use rusqlite::{Connection, OpenFlags};
-use serde_json::{json, Value};
-use std::{collections::HashMap, path::PathBuf};
-
-fn read_rows(conn:&Connection, sql:&str)->Result<Vec<Value>,String> {
-    let mut stmt=conn.prepare(sql).map_err(|_|"운영 업무자료 조회를 준비하지 못했습니다.".to_owned())?;
-    let rows=stmt.query_map([],|r|r.get::<_,String>(0))
-        .map_err(|_|"운영 업무자료 조회에 실패했습니다.".to_owned())?;
-    rows.map(|r|{
-        let s=r.map_err(|_|"운영 업무자료 행을 읽지 못했습니다.".to_owned())?;
-        serde_json::from_str(&s).map_err(|_|"운영 업무자료 JSON 형식이 잘못되었습니다.".to_owned())
-    }).collect()
-}
-fn read_children(conn:&Connection,sql:&str)->Result<HashMap<String,Vec<Value>>,String> {
-    let mut stmt=conn.prepare(sql).map_err(|_|"운영 하위자료 조회를 준비하지 못했습니다.".to_owned())?;
-    let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))
-        .map_err(|_|"운영 하위자료 조회에 실패했습니다.".to_owned())?;
-    let mut grouped:HashMap<String,Vec<Value>>=HashMap::new();
-    for row in rows {
-        let (key,raw)=row.map_err(|_|"운영 하위자료 행을 읽지 못했습니다.".to_owned())?;
-        let value=serde_json::from_str(&raw)
-            .map_err(|_|"운영 하위자료 JSON 형식이 잘못되었습니다.".to_owned())?;
-        grouped.entry(key).or_default().push(value);
-    }
-    Ok(grouped)
-}
-fn attach(parents:&mut [Value],key:&str,mut children:HashMap<String,Vec<Value>>) -> Result<(),String> {
-    for parent in parents {
-        let id=parent.get("id").and_then(Value::as_str)
-            .filter(|s|!s.is_empty()).ok_or("운영 자료의 ID가 누락되었습니다.")?.to_owned();
-        let nested=children.remove(&id).unwrap_or_default();
-        parent.as_object_mut().ok_or("운영 자료 객체 형식이 잘못되었습니다.")?
-            .insert(key.to_owned(),json!(nested));
-    }
-    if !children.is_empty() {
-        return Err("운영 업무자료에 소속되지 않은 하위 기록이 있습니다.".into());
-    }
-    Ok(())
-}
+use serde_json::Value;
+use std::path::PathBuf;
 
 /// The Tauri app-data path is RoamingAppData/{identifier}. Read the identifier
 /// from the exact bundled Tauri configuration rather than making up a second
@@ -144,40 +108,10 @@ pub fn load() -> Result<Value,String> {
         .map_err(|_|"운영 업무 상태를 읽지 못했습니다.".to_owned())?;
     let mut state:Value=serde_json::from_str(&raw)
         .map_err(|_|"운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())?;
-    let mut products=read_rows(&conn,"SELECT payload FROM core_products ORDER BY position,id")?;
-    let prices=read_children(&conn,"SELECT product_id,payload FROM core_product_prices ORDER BY product_id")?;
-    attach(&mut products,"variants",prices)?;
-    let clients=read_rows(&conn,"SELECT payload FROM core_clients ORDER BY position,id")?;
-    let mut orders=read_rows(&conn,"SELECT payload FROM core_orders ORDER BY position,id")?;
-    let mut recipients=read_rows(&conn,"SELECT payload FROM core_recipients ORDER BY position,id")?;
-    let items=read_children(&conn,"SELECT recipient_id,payload FROM core_items ORDER BY recipient_id,position,id")?;
-    attach(&mut recipients,"items",items)?;
-    let owners={
-        let mut stmt=conn.prepare("SELECT order_id,id FROM core_recipients ORDER BY order_id,position,id")
-            .map_err(|_|"수취인 소속 조회 준비 실패".to_owned())?;
-        let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))
-            .map_err(|_|"수취인 소속 조회 실패".to_owned())?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|_|"수취인 소속 결과 오류".to_owned())?
-    };
-    let mut by_id:HashMap<String,Value>=HashMap::new();
-    for row in recipients {
-        let id=row.get("id").and_then(Value::as_str)
-            .ok_or("수취인 ID 누락")?.to_owned();
-        if by_id.insert(id,row).is_some(){return Err("중복 수취인 ID가 있습니다.".into());}
-    }
-    let mut grouped:HashMap<String,Vec<Value>>=HashMap::new();
-    for (order_id,recipient_id) in owners {
-        let recipient=by_id.remove(&recipient_id).ok_or("수취인 소속 기록 불일치")?;
-        grouped.entry(order_id).or_default().push(recipient);
-    }
-    if !by_id.is_empty(){return Err("연결되지 않은 수취인 기록이 있습니다.".into());}
-    attach(&mut orders,"recipients",grouped)?;
-    let root=state.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
-    root.insert("products".into(),json!(products));
-    root.insert("clients".into(),json!(clients));
-    root.insert("orders".into(),json!(orders));
-    let revision=root.get("revision").and_then(Value::as_u64)
+    // A single relational read projection is shared with the Tauri host.
+    // This remains inside the original consistent read-only transaction.
+    bando_data_access::hydrate_v2(&conn,&mut state)?;
+    let revision=state.get("revision").and_then(Value::as_u64)
         .ok_or("운영 DB revision을 확인할 수 없습니다.")?;
     if revision==u64::MAX{return Err("운영 DB revision 범위를 확인할 수 없습니다.".into());}
     conn.execute_batch("COMMIT")
