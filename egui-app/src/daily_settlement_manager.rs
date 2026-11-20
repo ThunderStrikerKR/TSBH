@@ -410,15 +410,19 @@ impl DailySettlementManager{
         }
     }
     pub fn show_page(&mut self,ui:&mut Ui){
+        let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=theme::management_scroll_style();
         self.poll();
         ui.label(typography::page_heading("일일 결산"));
-        ui.add_space(theme::SPACE_12);
         // The only date control is the original prev/date/next navigator.
         // In particular, OrderHistory's separately-approved calendar is not
         // copied into this page.
         let mut date_changed=false;
-        theme::management_list_frame().show(ui,|toolbar|{
+        // A compact date navigator above the KPIs preserves the existing
+        // filter behavior without pushing the two accounting sections below
+        // the approved Freight primary-card top border.
+        theme::management_compact_filter_frame().show(ui,|toolbar|{
+            toolbar.set_min_width(toolbar.available_width());
             theme::management_list_strip_frame().show(toolbar,|line|{
                 line.horizontal(|controls|{
                     controls.spacing_mut().item_spacing.x=theme::SPACE_8;
@@ -468,7 +472,6 @@ impl DailySettlementManager{
         let payments=rows(&report["paymentRows"]);
         // The four native Rust summary values are NOT interchangeable:
         // billed totals are reception-day values; cash is bank-deposit day.
-        ui.add_space(theme::SPACE_16);
         ui.horizontal_wrapped(|strip|{
             strip.spacing_mut().item_spacing=
                 Vec2::new(theme::SPACE_8,theme::SPACE_8);
@@ -480,6 +483,7 @@ impl DailySettlementManager{
             ));
         });
         ui.add_space(theme::SPACE_16);
+        components::align_management_primary_card(ui,page_origin_y);
         egui::ScrollArea::vertical()
             .id_salt("daily-settlement-sections")
             .auto_shrink([false,false])
