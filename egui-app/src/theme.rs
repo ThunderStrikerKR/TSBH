@@ -327,21 +327,37 @@ impl<const N: usize> ManagementMasterTableSpec<N> {
     }
 }
 
-/// A content-specific list may have different columns from the two masters,
-/// but still uses the same "give all spare width to one text-heavy column"
-/// policy. The header and rows must both consume the returned widths.
+/// Generic management list width allocator. A fixed-header list and its
+/// virtual rows must receive the SAME result; data_width excludes scrollbar
+/// reservation while the toolbar independently reaches the card's right edge.
+pub fn management_weighted_columns<const N:usize>(
+    base:[f32;N],shares:[f32;N],data_width:f32,column_gap:f32
+)->[f32;N]{
+    debug_assert!(column_gap>=0.0 && data_width.is_finite(),
+        "invalid management column width parameters");
+    debug_assert!(shares.iter().all(|v|*v>=0.0 && v.is_finite()),
+        "management spare-space shares cannot be negative");
+    debug_assert!((shares.iter().sum::<f32>()-1.0).abs()<0.01,
+        "management spare-space shares must sum to 1");
+    let min_width=base.iter().sum::<f32>()
+        +N.saturating_sub(1) as f32*column_gap;
+    let extra=(data_width-min_width).max(0.0);
+    let mut widths=base;
+    for (width,share) in widths.iter_mut().zip(shares){
+        *width+=extra*share;
+    }
+    widths
+}
+
+/// Most content lists assign all remaining width to one text-heavy column.
+/// Preserve their individual base widths instead of copying the masters.
 pub fn management_single_stretch_columns<const N:usize>(
     base:[f32;N], data_width:f32, column_gap:f32, stretch:usize
 )->[f32;N]{
-    debug_assert!(stretch<N && column_gap>=0.0 && data_width.is_finite(),
-        "invalid management column stretch parameters");
-    let min_width=base.iter().sum::<f32>()
-        +N.saturating_sub(1) as f32*column_gap;
-    let mut widths=base;
-    if let Some(width)=widths.get_mut(stretch){
-        *width+=(data_width-min_width).max(0.0);
-    }
-    widths
+    debug_assert!(stretch<N,"invalid management single-stretch column");
+    let mut shares=[0.0;N];
+    if let Some(share)=shares.get_mut(stretch){*share=1.0;}
+    management_weighted_columns(base,shares,data_width,column_gap)
 }
 
 // Freight > Shipping Group Assignment: selection, product, color/option,
