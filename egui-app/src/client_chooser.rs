@@ -141,7 +141,7 @@ impl ClientChooser {
         let mut chosen:Option<String>=None;
         components::modal_window("거래처 변경","egui-reception-client-chooser",work_area)
             .open(&mut is_open)
-            .resizable(true)
+            
             .default_width(460.0_f32.min(work_area.width()))
             .min_width(340.0_f32.min(work_area.width()))
             .show(ctx,|ui| {
