@@ -595,7 +595,9 @@ impl FreightManager {
                     FreightTab::Groups => {}
                 });
         }
-        if self.tab==FreightTab::Groups {
+        if self.tab==FreightTab::Groups || self.tab==FreightTab::Rates {
+            // Group rename/delete confirmations belong to the management
+            // tab, while product reset/copy confirmations stay on assignment.
             let area=ui.max_rect();
             let ctx=ui.ctx();
             let mut close_rename=false;
@@ -1011,41 +1013,50 @@ impl FreightManager {
                 }
             });
             components::soft_divider(section);
-            egui::ScrollArea::both()
+            // Reserve the header OUTSIDE the scroll area. The table's
+            // scroll offset is reflected only in its horizontal coordinates,
+            // so wheel scrolling cannot push column titles off-screen.
+            let viewport_width=section.available_width().max(1.0);
+            let table_width=viewport_width.max(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH);
+            let mut widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
+            let extra=(table_width-theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH).max(0.0);
+            widths[1]+=extra*0.70; // product name / description
+            widths[2]+=extra*0.10; // category
+            widths[3]+=extra*0.20; // colors / options remain visible
+            let titles=[
+                "선택","상품명 / 상품설명","카테고리","색상 / 옵션",
+                "배송 그룹","운임 / 묶음 상태","지정 상태","설정"
+            ];
+            let (header_rect,_)=section.allocate_exact_size(
+                egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
+                egui::Sense::hover()
+            );
+            let scroll_output=egui::ScrollArea::both()
                 .id_salt("freight-assignment-rows")
                 .max_height(section.ctx().content_rect().height()
                     * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
                 .auto_shrink([false,false])
                 .show(section,|table|{
-                    table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
-                    // A task-oriented 8-column table replaces the previous
-                    // auto-sized 11-column grid. Each header and body cell
-                    // receives a measured width; long content truncates
-                    // horizontally instead of making 150pt-high rows.
-                    let widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
-                    let cell=|grid:&mut Ui,index:usize,value:&str,heading:bool|{
-                        grid.add_sized(
-                            [widths[index], if heading {
-                                theme::MANAGEMENT_TABLE_HEADER_HEIGHT
-                            }else{theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT}],
-                            egui::Label::new(if heading{
-                                typography::table_header(value)
-                            }else{
-                                typography::table_cell(value)
-                            }).truncate().halign(egui::Align::Min)
-                        ).on_hover_text(value);
+                    table.set_min_width(table_width);
+                    // Every data cell reserves its assigned horizontal width;
+                    // paint text at the exact left edge instead of relying on
+                    // egui Label's alignment inside an auto-sized Grid.
+                    let cell=|grid:&mut Ui,index:usize,value:&str,_heading:bool|{
+                        let (rect,response)=grid.allocate_exact_size(
+                            egui::vec2(widths[index],theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT),
+                            egui::Sense::hover()
+                        );
+                        let galley=typography::client_table_cell_galley(grid,value,false);
+                        grid.painter().with_clip_rect(rect).galley(
+                            egui::pos2(rect.left(),rect.center().y-galley.size().y/2.0),
+                            galley,theme::TEXT
+                        );
+                        response.on_hover_text(value);
                     };
                     egui::Grid::new("freight-group-assignments-grid")
                         .striped(true)
                         .spacing([theme::FREIGHT_ASSIGNMENT_COL_GAP,theme::SPACE_4])
                         .show(table,|grid|{
-                            for (index,heading) in [
-                                "선택","상품명 / 상품설명","카테고리","색상 / 옵션",
-                                "배송 그룹","운임 / 묶음 상태","지정 상태","설정"
-                            ].into_iter().enumerate() {
-                                cell(grid,index,heading,true);
-                            }
-                            grid.end_row();
                             for product in &filtered {
                                 let id=text(product,"id");
                                 let committed=text(product,"shippingGroupId");
@@ -1187,6 +1198,29 @@ impl FreightManager {
                         ));
                     }
                 });
+            // Paint after the row viewport, clipped to the fixed header,
+            // using the SAME eight width values and gap as the body Grid.
+            let painter=section.painter().with_clip_rect(header_rect);
+            painter.rect_filled(header_rect,0.0,theme::RAISED);
+            let mut x=header_rect.left()-scroll_output.state.offset.x;
+            for (index,title) in titles.iter().enumerate(){
+                let cell_rect=egui::Rect::from_min_size(
+                    egui::pos2(x,header_rect.top()),
+                    egui::vec2(widths[index],header_rect.height())
+                );
+                let galley=typography::table_header_galley(section,title);
+                painter.with_clip_rect(header_rect.intersect(cell_rect)).galley(
+                    egui::pos2(
+                        cell_rect.left(),
+                        cell_rect.center().y-galley.size().y/2.0
+                    ),galley,theme::SECONDARY
+                );
+                x+=widths[index]+theme::FREIGHT_ASSIGNMENT_COL_GAP;
+            }
+            painter.line_segment(
+                [header_rect.left_bottom(),header_rect.right_bottom()],
+                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+            );
             let mut assignments=serde_json::Map::new();
             for (id,group) in pending.iter(){
                 if let Some(product)=products.iter().find(|p|text(p,"id")==id.as_str()){
