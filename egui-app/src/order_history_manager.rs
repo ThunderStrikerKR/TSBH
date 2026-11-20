@@ -54,7 +54,7 @@ const MIN_WIDTH: f32 = theme::ORDER_HISTORY_TABLE_MIN_WIDTH;
 // The group is measured from the real control sizes, not the previously
 // over-reserved 940pt strip; this keeps all controls right-aligned.
 const HISTORY_DATE_FIELD_WIDTH:f32=106.0;
-const HISTORY_DATE_BASIS_WIDTH:f32=148.0;
+const HISTORY_DATE_BASIS_WIDTH:f32=theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH;
 const RANGE_CONTROLS_WIDTH:f32=704.0;
 const RANGE_COMPACT_START_WIDTH:f32=390.0;
 const RANGE_COMPACT_END_WIDTH:f32=350.0;
