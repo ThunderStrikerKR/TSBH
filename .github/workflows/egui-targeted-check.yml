@@ -35,11 +35,11 @@ jobs:
           workspaces: src-tauri -> target
       - name: Compile Tauri executable including egui manual commit CLI dispatch
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
+      - name: Verify isolated v2 SQLite freight save, prices, history and revision guard
+        if: github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'egui_shipping_bridge.rs') || contains(toJSON(github.event.commits), 'freight_manager.rs') || contains(toJSON(github.event.commits), 'egui-targeted-check.yml')
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib isolated_shipping_sqlite_verification -- --nocapture
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
-      - name: Verify isolated v2 SQLite freight save, prices, history and revision guard
-        if: github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'egui_shipping_bridge.rs') || contains(toJSON(github.event.commits), 'freight_manager.rs')
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib isolated_shipping_sqlite_verification -- --nocapture
       - name: Verify native category rename, transfer consent and cross-catalog move guard
         if: github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'category_manager.rs') || contains(toJSON(github.event.commits), 'egui_product_bridge.rs') || contains(toJSON(github.event.commits), 'catalog_clients/categories.rs') || contains(toJSON(github.event.commits), 'egui-targeted-check.yml')
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib category_ -- --nocapture
