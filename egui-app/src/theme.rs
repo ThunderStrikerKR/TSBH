@@ -604,6 +604,16 @@ pub fn action_with_min_width(
         ButtonRole::KakaoControl => (KAKAO_CONTROL_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveKakaoControl => (KAKAO_CONTROL_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH,BORDER)),
     };
+    // Standard management actions have an explicit disabled appearance.
+    // egui's generic disabled tint alone was too close to the enabled state.
+    // Respect disabled parent Ui scopes as well as the local enabled flag.
+    let effective_enabled=enabled && ui.is_enabled();
+    let (fill,color,stroke)=if !effective_enabled
+        && matches!(role,ButtonRole::Standard | ButtonRole::TableSecondary)
+    {
+        (DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
+         Stroke::new(1.0,DISABLED_ACTION_BORDER))
+    }else{(fill,color,stroke)};
     let font_size = match role {
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => typography::FONT_MAIN_NAV,
         ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab =>
