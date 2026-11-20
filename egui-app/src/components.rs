@@ -715,6 +715,7 @@ pub fn management_client_header(
     current_sort:Option<(usize,bool)>
 )->Option<usize>{
     let titles=["거래처","발송인 정보","거래 조건"];
+    let sort_keys=["거래처명","주소","가격 등급"];
     let painter=ui.painter().with_clip_rect(header);
     painter.rect_filled(header,0.0,theme::RAISED);
     let mut x=table_left;
@@ -730,11 +731,13 @@ pub fn management_client_header(
             let response=ui.interact(
                 visible,ui.make_persistent_id(("client-management-sort",i)),
                 Sense::click()
-            ).on_hover_text(match current_sort{
-                Some((col,false)) if col==i=>"내림차순 정렬",
-                Some((col,true)) if col==i=>"기본 순서로 복귀",
-                _=>"오름차순 정렬"
-            });
+            ).on_hover_text(format!(
+                "{} · {}",sort_keys[i],match current_sort{
+                    Some((col,false)) if col==i=>"내림차순 정렬",
+                    Some((col,true)) if col==i=>"기본 순서로 복귀",
+                    _=>"오름차순 정렬"
+                }
+            ));
             if response.clicked(){selected=Some(i);}
             if response.hovered(){
                 painter.rect_stroke(
