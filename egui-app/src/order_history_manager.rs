@@ -860,12 +860,10 @@ fn range_date_picker_rtl(
                     .frame(false)
                     .horizontal_align(Align::Center)
                     .vertical_align(Align::Center)
-                    // Center the widget itself; shift only the TextEdit ink
-                    // up by 2pt (top 0pt / bottom 4pt instead of 2pt / 2pt).
-                    // Asymmetric inner padding preserves its 34pt hit area,
-                    // the date-group border, adjacent arrows and calendar.
+                    // Center the date glyphs within the existing 34pt
+                    // field with symmetric vertical padding.
                     .margin(egui::Margin {
-                        left:2,right:2,top:0,bottom:4
+                        left:2,right:2,top:2,bottom:2
                     })
                     .hint_text("YYYY-MM-DD")
                     .desired_width(HISTORY_DATE_FIELD_WIDTH)
