@@ -1070,7 +1070,7 @@ impl FreightManager {
             widths[3]+=extra;
             let titles=[
                 "","상품명 / 상품설명","색상/옵션","카테고리",
-                "배송 그룹","운임 / 묶음 상태","지정 상태","설정"
+                "배송 그룹","운임 / 묶음 상태","그룹 지정","설정"
             ];
             // The header is a fixed sibling above the independently scrolling
             // data area. Both use freight_assignment_cells() for all 8 edges.
