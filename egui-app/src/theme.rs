@@ -200,6 +200,9 @@ pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 // Product table: a full-width, single-line record per product. Wide names
 // claim the remaining width while price-editing may scroll horizontally.
 pub const PRODUCT_TABLE_ROW_HEIGHT:f32 = 42.0;
+// The product list uses a subtle stripe (PANEL=24; stripe=30) instead of
+// the shared faint background (RAISED=48), which reads like a checkerboard.
+pub const PRODUCT_TABLE_STRIPE_BG: Color32 = Color32::from_rgb(30, 30, 30);
 pub const PRODUCT_TABLE_MIN_WIDTH:f32 = 1100.0;
 pub const PRODUCT_TABLE_NAME_MIN_WIDTH:f32 = 340.0;
 pub const PRODUCT_TABLE_OPTION_WIDTH:f32 = 182.0;
