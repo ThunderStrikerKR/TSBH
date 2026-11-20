@@ -137,7 +137,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 collect:text(native_ship,"freightCode")=="020",
                 vat_included: field(native_ship, "vatIncluded").as_bool(),
                 shipment_count: rows(all_shipments).iter().filter(|other|
-                    text(other, "orderId") == order_id &&
+                    text(other, "orderId") == order_id.as_str() &&
                     field(other, "legacyArchived") != &Value::Bool(true)
                 ).count(),
                 order_total,
