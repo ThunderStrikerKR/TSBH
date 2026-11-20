@@ -326,7 +326,7 @@ impl ManualWorkspace {
         let mut lookup:Option<(String,String)>=None;
         components::modal_window("수동 분류","bando-native-manual-classification",work_area)
             .open(&mut open)
-            .resizable(true)
+            
             .default_width((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
                 .min(theme::MANUAL_DIALOG_MAX_WIDTH).max(0.0))
             .default_height((work_area.height()-theme::MANUAL_DIALOG_VERTICAL_GAP)
