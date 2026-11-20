@@ -40,6 +40,6 @@ jobs:
       - name: Verify isolated v2 SQLite freight save, prices, history and revision guard
         if: github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'egui_shipping_bridge.rs') || contains(toJSON(github.event.commits), 'freight_manager.rs')
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib isolated_shipping_sqlite_verification -- --nocapture
-      - name: Verify existing native category rename preserves products and orders
+      - name: Verify native category rename, transfer consent and cross-catalog move guard
         if: github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'category_manager.rs') || contains(toJSON(github.event.commits), 'egui_product_bridge.rs') || contains(toJSON(github.event.commits), 'catalog_clients/categories.rs') || contains(toJSON(github.event.commits), 'egui-targeted-check.yml')
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib changing_category_preserves_order_and_product_identity -- --nocapture
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib category_ -- --nocapture
