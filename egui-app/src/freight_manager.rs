@@ -1196,13 +1196,14 @@ impl FreightManager {
                             )
                         );
                         let selector_clip=cells[4].intersect(table.clip_rect());
-                        table.scope_builder(
-                            egui::UiBuilder::new()
-                                .id_salt(("freight-selector",id))
-                                .max_rect(selector_rect)
-                                .layout(egui::Layout::left_to_right(egui::Align::Min))
-                                .disabled(!enabled),
-                            |control|{
+                        let mut selector_builder=egui::UiBuilder::new()
+                            .id_salt(("freight-selector",id))
+                            .max_rect(selector_rect)
+                            .layout(egui::Layout::left_to_right(egui::Align::Min));
+                        if !enabled {
+                            selector_builder=selector_builder.disabled();
+                        }
+                        table.scope_builder(selector_builder,|control|{
                                 control.set_clip_rect(selector_clip);
                                 control.set_width(selector_rect.width());
                                 egui::ComboBox::from_id_salt(("freight-row-group",id))
