@@ -482,7 +482,9 @@ fn range_date_picker_rtl(
         .inner_margin(egui::Margin::same(1))
         .show(ui,|group|{
             group.spacing_mut().item_spacing=Vec2::ZERO;
-            group.horizontal(|row|{
+            // Parent date-toolbar layout is LTR and so is the inside of
+            // each framed segment. Do not inherit the old RTL cursor.
+            group.with_layout(egui::Layout::left_to_right(Align::Center),|row|{
                 row.spacing_mut().item_spacing=Vec2::ZERO;
                 let prev=history_date_segment(row,"‹",PREV)
                     .on_hover_text(&format!("{label} 하루 전"));
@@ -592,35 +594,35 @@ fn history_basis_dropdown(ui:&mut Ui,basis:&mut HistoryDateBasis)->bool{
         });
     *basis!=previous
 }
-fn history_date_range_leading_rtl(
+/// Only the OUTER toolbar is anchored to the right. Its child controls
+/// always render left-to-right; do not nest an RTL layout into date groups.
+fn history_date_range_start(
     ui:&mut Ui,basis:&mut HistoryDateBasis,
     from:&mut String,from_month:&mut NaiveDate
 )->bool{
-    ui.spacing_mut().item_spacing.x=theme::SPACE_8;
-    let changed=range_date_picker_rtl(
+    let mut changed=history_basis_dropdown(ui,basis);
+    changed|=range_date_picker_rtl(
         ui,"시작일",from,from_month,"order-history-date-from-calendar"
     );
-    changed|history_basis_dropdown(ui,basis)
+    changed
 }
-fn history_date_range_trailing_rtl(
+fn history_date_range_end(
     ui:&mut Ui,from:&mut String,to:&mut String,
     to_month:&mut NaiveDate
 )->bool{
-    ui.spacing_mut().item_spacing.x=theme::SPACE_8;
-    let mut changed=false;
+    ui.label(typography::caption("~"));
+    let mut changed=range_date_picker_rtl(
+        ui,"종료일",to,to_month,"order-history-date-to-calendar"
+    );
     if theme::action(ui,"전체 날짜",theme::ButtonRole::Standard,
         !from.is_empty()||!to.is_empty()).clicked(){
         from.clear();to.clear();changed=true;
     }
-    changed|=range_date_picker_rtl(
-        ui,"종료일",to,to_month,"order-history-date-to-calendar"
-    );
-    ui.label(typography::caption("~"));
     changed
 }
-/// The RIGHT edge is fixed; drawing each part in reverse in an RTL layout
-/// restores its intended left-to-right visual sequence without guessing its
-/// pixel width. Narrow panes get two separately right-anchored rows.
+/// The date toolbar is drawn in a fixed LTR slot, positioned at the
+/// right-hand data-column edge by the page. Compact mode reserves
+/// two physical lines; it does not reverse the children in either line.
 fn history_date_controls(
     ui:&mut Ui,basis:&mut HistoryDateBasis,
     from:&mut String,to:&mut String,
@@ -628,51 +630,52 @@ fn history_date_controls(
     compact:bool
 )->bool{
     let mut changed=false;
+    ui.spacing_mut().item_spacing.x=theme::SPACE_8;
     if compact{
-        let w=ui.available_width().max(1.0);
-        let (rect,_)=ui.allocate_exact_size(
-            Vec2::new(w,theme::INPUT_HEIGHT*2.0+theme::SPACE_8),
+        let width=ui.available_width().max(1.0);
+        let (area,_)=ui.allocate_exact_size(
+            Vec2::new(width,theme::INPUT_HEIGHT*2.0+theme::SPACE_8),
             Sense::hover()
         );
-        let start_width=RANGE_COMPACT_START_WIDTH.min(w);
-        let end_width=RANGE_COMPACT_END_WIDTH.min(w);
+        let start_width=RANGE_COMPACT_START_WIDTH.min(width);
+        let end_width=RANGE_COMPACT_END_WIDTH.min(width);
         let first=Rect::from_min_size(
-            egui::pos2(rect.right()-start_width,rect.top()),
+            egui::pos2(area.right()-start_width,area.top()),
             Vec2::new(start_width,theme::INPUT_HEIGHT)
         );
         let second=Rect::from_min_size(
-            egui::pos2(rect.right()-end_width,
-                rect.top()+theme::INPUT_HEIGHT+theme::SPACE_8),
+            egui::pos2(area.right()-end_width,
+                area.top()+theme::INPUT_HEIGHT+theme::SPACE_8),
             Vec2::new(end_width,theme::INPUT_HEIGHT)
         );
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-start-line")
-            .max_rect(first).layout(egui::Layout::right_to_left(Align::Center)),
+            .max_rect(first)
+            .layout(egui::Layout::left_to_right(Align::Center)),
             |line|{
-                changed|=history_date_range_leading_rtl(
+                line.set_width(first.width());
+                line.set_height(first.height());
+                line.spacing_mut().item_spacing.x=theme::SPACE_8;
+                changed|=history_date_range_start(
                     line,basis,from,from_month
                 );
             });
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-end-line")
-            .max_rect(second).layout(egui::Layout::right_to_left(Align::Center)),
+            .max_rect(second)
+            .layout(egui::Layout::left_to_right(Align::Center)),
             |line|{
-                changed|=history_date_range_trailing_rtl(
+                line.set_width(second.width());
+                line.set_height(second.height());
+                line.spacing_mut().item_spacing.x=theme::SPACE_8;
+                changed|=history_date_range_end(
                     line,from,to,to_month
                 );
             });
     }else{
-        ui.with_layout(egui::Layout::right_to_left(Align::Center),|line|{
-            changed|=history_date_range_trailing_rtl(
-                line,from,to,to_month
-            );
-            changed|=history_date_range_leading_rtl(
-                line,basis,from,from_month
-            );
-        });
+        changed|=history_date_range_start(ui,basis,from,from_month);
+        changed|=history_date_range_end(ui,from,to,to_month);
     }
-    // The arrows update their own dates only. Do not reset a calendar
-    // merely because the user navigated its month without selecting a day.
     if changed{
         if let Ok(day)=NaiveDate::parse_from_str(from,"%Y-%m-%d"){
             *from_month=month_start(day);
@@ -798,93 +801,65 @@ impl OrderHistoryManager {
             section.spacing_mut().scroll=table_scroll;
             // No additional list-strip margin: the card already owns 16pt.
             // A 36pt toolbar and a single 9pt separator match Freight.
-            section.scope(|toolbar|{
-                let full_width=toolbar.available_width().max(1.0);
-                // Reserve the scrollbar rail outside the rightmost data
-                // controls, exactly as on the Freight assignment page.
-                let toolbar_data_width=(full_width
-                    -toolbar.spacing().scroll.allocated_width()).max(1.0);
-                // Reserve independent search/date slots. The date slot
-                // right-anchors reverse-inserted RTL widgets so their visible
-                // order stays natural and the last button meets the right edge.
-                let one_row=toolbar_data_width>=
-                    theme::MANAGEMENT_SEARCH_MIN_WIDTH
-                    +theme::SPACE_16+RANGE_CONTROLS_WIDTH;
-                if one_row {
-                    let (row_rect,_)=toolbar.allocate_exact_size(
-                        Vec2::new(full_width,theme::INPUT_HEIGHT),Sense::hover()
-                    );
-                    let search_rect=Rect::from_min_size(
-                        row_rect.min,Vec2::new(
-                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,row_rect.height()
-                        )
-                    );
-                    let range_rect=Rect::from_min_size(
-                        egui::pos2(row_rect.left()+toolbar_data_width
-                            -RANGE_CONTROLS_WIDTH,row_rect.top()),
-                        Vec2::new(RANGE_CONTROLS_WIDTH,row_rect.height())
-                    );
-                    toolbar.scope_builder(UiBuilder::new()
-                        .id_salt("history-range-search")
-                        .max_rect(search_rect)
-                        .layout(egui::Layout::left_to_right(Align::Center)),
-                        |search|{
-                            search.set_clip_rect(search_rect);
-                            if components::flexible_text_field(
-                                search,&mut self.query,
-                                theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                                "거래처 / 주문 내용 검색"
-                            ).changed(){changed=true;}
-                        });
-                    toolbar.scope_builder(UiBuilder::new()
-                        .id_salt("history-range-controls")
-                        .max_rect(range_rect)
-                        .layout(egui::Layout::left_to_right(Align::Center)),
-                        |dates|{
-                            // Popup menus must not inherit a 36pt row clip.
-                            changed|=history_date_controls(
-                                dates,&mut self.date_basis,
-                                &mut self.from_input,&mut self.to_input,
-                                &mut self.from_month,&mut self.to_month,false
-                            );
-                        });
-                }else{
+            // Freight baseline: ONE reserved toolbar rectangle, then 9pt
+            // separator and fixed header. Nested section.scope() previously
+            // added implicit vertical spacing and shifted the date controls.
+            let old_gap=section.spacing().item_spacing.y;
+            section.spacing_mut().item_spacing.y=0.0;
+            let full_width=section.available_width().max(1.0);
+            let toolbar_data_width=(full_width
+                -section.spacing().scroll.allocated_width()).max(1.0);
+            let one_row=toolbar_data_width>=
+                theme::MANAGEMENT_SEARCH_MIN_WIDTH
+                +theme::SPACE_16+RANGE_CONTROLS_WIDTH;
+            let compact=toolbar_data_width<RANGE_CONTROLS_WIDTH;
+            let date_height=if compact{
+                theme::INPUT_HEIGHT*2.0+theme::SPACE_8
+            }else{theme::INPUT_HEIGHT};
+            let toolbar_height=if one_row{theme::INPUT_HEIGHT}
+                else{theme::INPUT_HEIGHT+theme::SPACE_8+date_height};
+            let (toolbar_rect,_)=section.allocate_exact_size(
+                Vec2::new(full_width,toolbar_height),Sense::hover()
+            );
+            let search_rect=Rect::from_min_size(
+                toolbar_rect.min,
+                Vec2::new(theme::MANAGEMENT_SEARCH_MIN_WIDTH
+                    .min(toolbar_data_width),theme::INPUT_HEIGHT)
+            );
+            section.scope_builder(UiBuilder::new()
+                .id_salt("history-range-search")
+                .max_rect(search_rect)
+                .layout(egui::Layout::left_to_right(Align::Center)),
+                |search|{
+                    search.set_width(search_rect.width());
+                    search.set_height(search_rect.height());
                     if components::flexible_text_field(
-                        toolbar,&mut self.query,
-                        theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+                        search,&mut self.query,search_rect.width(),
                         "거래처 / 주문 내용 검색"
                     ).changed(){changed=true;}
-                    toolbar.add_space(theme::SPACE_8);
-                    // At narrower dock widths the date group alone drops to
-                    // its own right-aligned row. At very narrow widths it
-                    // becomes two right-aligned rows, without clipping text.
-                    let compact=toolbar_data_width<RANGE_CONTROLS_WIDTH;
-                    let height=if compact {
-                        theme::INPUT_HEIGHT*2.0+theme::SPACE_8
-                    }else{theme::INPUT_HEIGHT};
-                    let (row_rect,_)=toolbar.allocate_exact_size(
-                        Vec2::new(full_width,height),Sense::hover()
+                });
+            let date_width=RANGE_CONTROLS_WIDTH.min(toolbar_data_width);
+            let date_rect=Rect::from_min_size(
+                egui::pos2(toolbar_rect.left()+toolbar_data_width-date_width,
+                    toolbar_rect.top()+if one_row{0.0}
+                    else{theme::INPUT_HEIGHT+theme::SPACE_8}),
+                Vec2::new(date_width,if one_row{
+                    theme::INPUT_HEIGHT
+                }else{date_height})
+            );
+            section.scope_builder(UiBuilder::new()
+                .id_salt("history-range-controls")
+                .max_rect(date_rect)
+                .layout(egui::Layout::left_to_right(Align::Center)),
+                |dates|{
+                    dates.set_width(date_rect.width());
+                    dates.set_height(date_rect.height());
+                    changed|=history_date_controls(
+                        dates,&mut self.date_basis,
+                        &mut self.from_input,&mut self.to_input,
+                        &mut self.from_month,&mut self.to_month,compact
                     );
-                    let width=RANGE_CONTROLS_WIDTH.min(toolbar_data_width);
-                    let range_rect=Rect::from_min_size(
-                        egui::pos2(row_rect.left()+toolbar_data_width-width,
-                            row_rect.top()),
-                        Vec2::new(width,row_rect.height())
-                    );
-                    toolbar.scope_builder(UiBuilder::new()
-                        .id_salt("history-range-controls-narrow")
-                        .max_rect(range_rect)
-                        .layout(egui::Layout::left_to_right(Align::Center)),
-                        |dates|{
-                            // Popup menus must not inherit a 36pt row clip.
-                            changed|=history_date_controls(
-                                dates,&mut self.date_basis,
-                                &mut self.from_input,&mut self.to_input,
-                                &mut self.from_month,&mut self.to_month,compact
-                            );
-                        });
-                }
-            });
+                });
             if changed && date_range_error(
                 &self.from_input,&self.to_input
             ).is_none(){
@@ -911,8 +886,8 @@ impl OrderHistoryManager {
             }
             // Freight baseline: 4pt above + 1pt dividing rule + 4pt
             // below, followed immediately by the fixed 36pt table header.
-            let old_gap=section.spacing().item_spacing.y;
-            section.spacing_mut().item_spacing.y=0.0;
+            // Implicit spacing was already disabled BEFORE the toolbar.
+            // Reserve exactly 9pt (4pt/1pt/4pt), matching Freight.
             let (separator,_)=section.allocate_exact_size(
                 Vec2::new(section.available_width(),
                     theme::SPACE_8+theme::SOFT_DIVIDER_WIDTH),Sense::hover()
