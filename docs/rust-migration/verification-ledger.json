@@ -2659,6 +2659,42 @@
         "ci": "NOT EXECUTED: targeted Rust cargo check not available in current environment.",
         "windows": "SKIPPED BY USER REQUEST: Windows GUI inspection excluded from base migration."
       }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-CATEGORY-MANAGEMENT",
+      "scope": "52차 상품관리 후속: 카테고리 맵·분류 생성/이름 변경/상위 이동/삭제 native egui 이전",
+      "status": "SOURCE_PATCHED_TARGETED_BUILD_PENDING",
+      "description": "React CategoryManager.tsx/native-category.ts 및 실제 product-admin-redesign.css+tauri-stage2-products.css 기준 전체 트리(반도스탠드/반도몰 가상 루트 포함), 전체 접기/펼치기, 경로 검색, 상품 수/하위 분류 수, 기존 최상위 분류 소속 확인, 우측 430pt 편집 오버레이, 추가·이동·삭제 공통 모달, 인라인 이름 변경 및 각 작업 취소/저장·미저장 페이지 이탈을 egui에 구현. 업무 규칙은 catalog_clients/categories.rs::change/delete를 재사용하고, egui_product_bridge를 통해 명시적 운영 쓰기 환경+SQLite revision write_snapshot 경로만 사용한다. 직접 연결 상품 이전은 명시 동의 필요, 다른 몰 카탈로그 상품 링크 충돌 시 이동 거부, 사용 중인 분류 삭제 금지, Root 변경 금지. 카테고리 기존 ID·상품 ID·주문 보존. 완료 기능과 미이전 모델군·별칭·브랜드·Excel 등 구분.",
+      "evidence": [
+        "src/CategoryManager.tsx",
+        "src/native-category.ts",
+        "src/category-tree.ts",
+        "src/category-roots.ts",
+        "src/styles/product-admin-redesign.css",
+        "src/styles/tauri-stage2-products.css",
+        "src-tauri/src/business_core/catalog_clients/categories.rs",
+        "src-tauri/src/egui_product_bridge.rs",
+        "src-tauri/src/lib.rs",
+        "egui-app/src/category_manager.rs",
+        "egui-app/src/product_manager.rs",
+        "egui-app/src/main.rs",
+        "egui-app/src/theme.rs",
+        ".github/workflows/egui-targeted-check.yml",
+        "docs/egui-ui-design-contract.md"
+      ],
+      "gates": {
+        "patch": "PASS: latest source category operation draft preservation 105f3911cb144c49e4def1b6b4f79aa10c129a6e, category native bridge f1a1b8f828dd805e7cff69e5d86ff0683cec57f4, main navigation 2b39653279f64a89022ded1b6accb315b9047887, category tests 3559ad86583f5b8aac9db0fcd17f5a0e0dbb2b1d",
+        "static": "PASS source comparison: React CategoryManager and applied tauri-stage2-products CSS tree/overlay/controls; categories.rs change/delete + business_core catalog_clients native calls, SQLite revision and role-based egui styles. Latest patch paths inspected. Category operation modal intentionally preserves unrelated unsaved rename.",
+        "unit": "TARGETED TESTS ADDED: category_leaf_transfer_requires_explicit_consent_and_preserves_orders; category_cross_catalog_move_rejects_existing_product_mismatch; original changing_category_preserves_order_and_product_identity. Newly added tests not yet executed.",
+        "action": "NOT VERIFIED: real SQLite category create/rename/move/delete round trip, stale revision conflict and egui UI input sequences not executed.",
+        "ci": "PASS at source commit d8e7b7a0b55796e03060b18afec53667f3dae7d2: Tauri cargo check + egui cargo check https://github.com/ThunderStrikerKR/TSBH/actions/runs/44652727101 ; latest source after d8e and category targeted unit run pending (no claim of later pass).",
+        "windows": "SKIPPED by explicit user policy: no GUI launch/screenshot/DPI test."
+      },
+      "clauses": {
+        "apply": "0-1,0-2,0-3,0-4,0-5,0-6,6-10,12-15,16-22,27-32,39-43,47-54,57-61",
+        "notApplicable": "Kakao HWND placement and original-order OCR: files and runtime path not changed",
+        "pending": "Actual SQLite category operations / latest CI / GUI dynamic position (GUI excluded from mandatory policy)"
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
