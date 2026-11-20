@@ -174,9 +174,6 @@ impl ClientChooser {
                 if busy {
                     ui.label(typography::caption("거래처 적용 중…"));
                 }
-                if let Some(e)=&self.error {
-                    ui.label(typography::status(e,theme::DANGER));
-                }
                 if !self.loaded||self.searching {
                     ui.label(typography::caption("검색 중"));
                 } else {
