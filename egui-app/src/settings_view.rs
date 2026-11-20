@@ -119,6 +119,32 @@ fn card(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
 fn account_display(account:&Value)->String{
     format!("{} {} {}",field(account,"bank"),field(account,"number"),field(account,"holder"))
 }
+/// React account-recommendations: both brand selectors share the same
+/// account master and prefer a two-column management layout.
+fn recommendation_picker(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
+    ui.label(typography::field_label(label));
+    let mut selected=draft.pointer(&format!("/brandAccounts/{key}"))
+        .and_then(Value::as_str).unwrap_or("").to_owned();
+    let options=draft.get("accounts").and_then(Value::as_array)
+        .cloned().unwrap_or_default();
+    let preview=options.iter().find(|account|field(account,"id")==selected)
+        .map(account_display).unwrap_or_else(||"계좌 선택".to_owned());
+    egui::ComboBox::from_id_salt(("settings-recommendation",key))
+        .selected_text(preview).show_ui(ui,|choices|{
+            choices.selectable_value(&mut selected,String::new(),"계좌 선택");
+            for account in &options{
+                if account_complete(account){
+                    choices.selectable_value(
+                        &mut selected,field(account,"id"),account_display(account)
+                    );
+                }
+            }
+        });
+    if !draft.get("brandAccounts").is_some_and(Value::is_object){
+        draft["brandAccounts"]=json!({"BANDOSTAND":"","BANDOMALL":""});
+    }
+    draft["brandAccounts"][key]=json!(selected);
+}
 impl SettingsView{
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self{
         let (sender,receiver)=mpsc::channel();
@@ -683,32 +709,21 @@ impl SettingsView{
         }
         self.draft["accounts"]=json!(accounts);
         ui.add_space(theme::SPACE_12);
-        for (key,label) in [
+        let recommendations=[
             ("BANDOSTAND","반도스탠드 추천 계좌"),
             ("BANDOMALL","반도몰 추천 계좌"),
-        ]{
-            ui.label(typography::field_label(label));
-            let mut selected=self.draft.pointer(&format!("/brandAccounts/{key}"))
-                .and_then(Value::as_str).unwrap_or("").to_owned();
-            let options=self.draft.get("accounts").and_then(Value::as_array)
-                .cloned().unwrap_or_default();
-            let preview=options.iter().find(|a|field(a,"id")==selected)
-                .map(account_display).unwrap_or_else(||"계좌 선택".to_owned());
-            egui::ComboBox::from_id_salt(("settings-recommendation",key))
-                .selected_text(preview).show_ui(ui,|choices|{
-                    choices.selectable_value(&mut selected,String::new(),"계좌 선택");
-                    for account in &options{
-                        if account_complete(account){
-                            choices.selectable_value(
-                                &mut selected,field(account,"id"),account_display(account)
-                            );
-                        }
-                    }
-                });
-            if !self.draft.get("brandAccounts").is_some_and(Value::is_object){
-                self.draft["brandAccounts"]=json!({"BANDOSTAND":"","BANDOMALL":""});
+        ];
+        if ui.available_width()>=theme::SETTINGS_ACCOUNT_RECOMMENDATION_MIN_WIDTH{
+            ui.columns(2,|cols|{
+                for (index,(key,label)) in recommendations.into_iter().enumerate(){
+                    recommendation_picker(&mut cols[index],&mut self.draft,key,label);
+                }
+            });
+        }else{
+            for (key,label) in recommendations{
+                recommendation_picker(ui,&mut self.draft,key,label);
+                ui.add_space(theme::SPACE_8);
             }
-            self.draft["brandAccounts"][key]=json!(selected);
         }
     }
     fn show_files(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>){
