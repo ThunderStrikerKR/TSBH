@@ -7,7 +7,7 @@ use eframe::egui::{self,Align,Align2,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
 use serde_json::{json,Value};
 use std::{collections::{BTreeSet,HashMap},sync::{mpsc::{self,Receiver,TryRecvError},Arc}};
 
-const HEIGHT:f32=theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
+const HEIGHT:f32=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
 const HEADER:f32=theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const GAP:f32=theme::FREIGHT_ASSIGNMENT_COL_GAP;
 const QUEUE:[f32;5]=[48.0,212.0,354.0,178.0,182.0];
