@@ -23,8 +23,8 @@ const COL_GAP: f32 = theme::SPACE_8;
 // ALL remaining width (including when the main pane is resized).
 // Date text is YYYY-MM-DD; client name shows at most ten characters;
 // status is one of four known values; invoice is at most 10M KRW.
-const COLS: [f32;7] = [112.0,144.0,300.0,126.0,124.0,112.0,132.0];
-const MIN_WIDTH: f32 = 1098.0; // sum(COLS) + six 8pt gaps
+const COLS: [f32;7] = [112.0,156.0,300.0,126.0,124.0,112.0,132.0];
+const MIN_WIDTH: f32 = 1110.0; // sum(COLS) + six 8pt gaps
 // Natural width of [date basis, previous, start date/calendar, end
 // date/calendar, next, all dates]. The search stays outside this right slot.
 const RANGE_CONTROLS_WIDTH:f32=940.0;
@@ -1000,7 +1000,7 @@ mod tests{
             "▸ 709 × 2 / Desk TS × 1 / GT × 3");
         assert_eq!(order_items_single_line(&sample,true),
             "▾ 709 × 2 / Desk TS × 1 / GT × 3");
-                assert_eq!(model_label("BD 709 / 블랙"),"709 / 블랙");
+        assert_eq!(model_label("BD 709 / 블랙"),"709 / 블랙");
         assert_eq!(won(&Value::Null),"확인 필요");
         let leap=NaiveDate::from_ymd_opt(2024,2,1).unwrap();
         let days=calendar_dates(leap);
