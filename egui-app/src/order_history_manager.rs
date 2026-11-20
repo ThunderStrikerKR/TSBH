@@ -17,19 +17,23 @@ use std::{
 };
 
 const ROW_HEIGHT: f32 = theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
-// Expanded shipment details are discrete one-row information blocks.
-// The parent history table keeps its original paint, spacing, and height.
-const DETAIL_BLOCK_MAX_WIDTH: f32 = 780.0;
+// Detail product names take extra horizontal room on wider workspaces.
+// Reserve an independent right-hand action area for memo/tracking buttons;
+// longer names still wrap instead of being clipped.
+const DETAIL_BLOCK_MAX_WIDTH: f32 = 1140.0;
+const DETAIL_ACTIONS_MIN_WIDTH: f32 = 240.0;
 const DETAIL_BLOCK_HEIGHT: f32 = ROW_HEIGHT - 3.0 * theme::SPACE_4;
 const EXCEL_ITEM_MARKER: &str = "◆ ";
 const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
 // Compact fixed-width metadata columns; the shipping / product column takes
 // ALL remaining width (including when the main pane is resized).
+// The action column holds TWO order-level controls side by side without
+// reducing the product column's 300pt minimum.
 // Date text is YYYY-MM-DD; client name shows at most ten characters;
 // status is one of four known values; invoice is at most 10M KRW.
-const COLS: [f32;7] = [112.0,156.0,300.0,126.0,124.0,112.0,132.0];
-const MIN_WIDTH: f32 = 1110.0; // sum(COLS) + six 8pt gaps
+const COLS: [f32;7] = [112.0,156.0,300.0,126.0,124.0,112.0,264.0];
+const MIN_WIDTH: f32 = 1242.0; // sum(COLS) + six 8pt gaps
 // Natural width of [date basis, previous, start date/calendar, end
 // date/calendar, next, all dates]. The search stays outside this right slot.
 // The group is measured from the real control sizes, not the previously
@@ -202,7 +206,8 @@ fn history_branch(lines:&[HistoryLine],index:usize)->Option<HistoryBranch>{
 // The branch tip and the shipment block share the SAME horizontal anchor.
 fn history_detail_block_rect(row_rect:Rect,widths:&[f32;7])->Rect{
     let left=row_rect.left()+widths[0]-theme::SPACE_4;
-    let width=(row_rect.right()-left-theme::SPACE_12)
+    let width=(row_rect.right()-left-theme::SPACE_12
+        -DETAIL_ACTIONS_MIN_WIDTH)
         .min(DETAIL_BLOCK_MAX_WIDTH).max(1.0);
     let block_height=(row_rect.height()-3.0*theme::SPACE_4)
         .max(DETAIL_BLOCK_HEIGHT);
