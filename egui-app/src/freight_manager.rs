@@ -209,8 +209,6 @@ pub struct FreightManager {
     basis_target: Option<Option<String>>,
     exception_target: Option<(String,String)>,
     product_reset_target: Option<String>,
-    copy_target: Option<(String,Vec<String>)>,
-    copy_template: String,
     requested_tab: Option<FreightTab>,
     saving_for_tab: bool,
     receiver: Option<Receiver<Result<(Value, Value), String>>>,
@@ -281,8 +279,6 @@ impl FreightManager {
             basis_target: None,
             exception_target: None,
             product_reset_target: None,
-            copy_target: None,
-            copy_template: String::new(),
             requested_tab: None,
             saving_for_tab: false,
             receiver: Some(receiver),
@@ -322,7 +318,7 @@ impl FreightManager {
     fn has_other_modal(&self)->bool{
         self.rename_target.is_some() || self.delete_target.is_some() ||
             self.basis_target.is_some() || self.exception_target.is_some() ||
-            self.product_reset_target.is_some() || self.copy_target.is_some()
+            self.product_reset_target.is_some()
     }
     pub fn blocks_navigation(&self)->bool{
         self.busy() || self.has_other_modal() || self.requested_tab.is_some()
@@ -340,7 +336,6 @@ impl FreightManager {
         self.basis_target=None;
         self.exception_target=None;
         self.product_reset_target=None;
-        self.copy_target=None;
         self.requested_tab=None;
         self.saving_for_tab=false;
     }
@@ -409,7 +404,6 @@ impl FreightManager {
                             "save_group_rule"=>"운임표를 저장했습니다. 변경 전 기준은 이력으로 보존됩니다.",
                             "save_product_rule"=>"기본 운임을 저장했습니다. 이전 기준은 이력으로 보존합니다.",
                             "reset_product_freight_rule"=>"새 운임 기준을 시작했습니다. 확인된 운임을 다시 입력하세요.",
-                            "copy_group_rule"=>"선택 상품에 확인된 공통 운임 기준을 복사했습니다.",
                             "change_basis"=>"운임 기준을 변경했습니다.",
                             "revise_combination"=>"새 예외 운임을 저장하고 이전 값을 이력으로 보존했습니다.",
                             _=>"운임 변경사항을 저장했습니다."
@@ -424,10 +418,6 @@ impl FreightManager {
                             }
                             "save_group_rule"|"save_product_rule"=>self.rate_editor=None,
                             "reset_product_freight_rule"=>self.product_reset_target=None,
-                            "copy_group_rule"=>{
-                                self.copy_target=None;
-                                self.selected.clear();
-                            },
                             "change_basis"=>self.basis_target=None,
                             "revise_combination"=>self.exception_target=None,
                             _=>{}
@@ -574,7 +564,6 @@ impl FreightManager {
                 ui, &groups, &products, &mut self.search, &mut self.group_filter,
                 &mut self.only_missing, &mut self.pending, &mut self.selected,
                 &mut self.bulk_group, &mut self.rate_editor, &mut self.product_reset_target,
-                &mut self.copy_template, &mut self.copy_target,
                 &mut self.error, &self.gateway, &projection["productViews"],
                 enabled, &mut action
             );
@@ -597,13 +586,12 @@ impl FreightManager {
         }
         if self.tab==FreightTab::Groups || self.tab==FreightTab::Rates {
             // Group rename/delete confirmations belong to the management
-            // tab, while product reset/copy confirmations stay on assignment.
+            // tab, while individual product reset stays on assignment.
             let area=ui.max_rect();
             let ctx=ui.ctx();
             let mut close_rename=false;
             let mut close_delete=false;
             let mut close_product_reset=false;
-            let mut close_copy=false;
             if let Some((id,name))=self.rename_target.as_mut(){
                 components::modal_backdrop(ctx,"freight-rename-backdrop",false);
                 components::decision_window("배송 그룹명","freight-rename",area)
@@ -689,33 +677,10 @@ impl FreightManager {
                         }
                     });
                 });
-            }else if let Some((group_id,ids))=self.copy_target.as_ref(){
-                let group=group_name(&groups,group_id);
-                components::modal_backdrop(ctx,"freight-copy-backdrop",false);
-                components::decision_window(
-                    "상품별 운임 기준 복사","freight-copy-confirm",area
-                ).show(ctx,|dialog|{
-                    dialog.label(typography::body(&format!(
-                        "선택 상품의 개별 운임표에 {group} 기준을 복사할까요? 동급 그룹 묶음은 별도로 지정합니다."
-                    )));
-                    dialog.horizontal(|bar|{
-                        if theme::action(bar,"취소",
-                            theme::ButtonRole::Standard,enabled).clicked(){
-                            close_copy=true;
-                        }
-                        if theme::action(bar,"상품별 기준으로 복사",
-                            theme::ButtonRole::Primary,enabled).clicked(){
-                            action=Some(("copy_group_rule".into(),json!({
-                                "groupId":group_id,"productIds":ids
-                            })));
-                        }
-                    });
-                });
             }
             if close_rename{self.rename_target=None;}
             if close_delete{self.delete_target=None;}
             if close_product_reset{self.product_reset_target=None;}
-            if close_copy{self.copy_target=None;}
         }
         if self.rate_editor.is_some() || self.tab==FreightTab::Rates {
             let area=ui.max_rect();
@@ -881,8 +846,6 @@ impl FreightManager {
         bulk_group: &mut String,
         rate_editor: &mut Option<RateEditor>,
         reset_target: &mut Option<String>,
-        copy_template: &mut String,
-        copy_target: &mut Option<(String,Vec<String>)>,
         error: &mut Option<String>,
         gateway: &Arc<dyn BandoGateway>,
         product_views: &Value, enabled:bool,
@@ -948,7 +911,12 @@ impl FreightManager {
                     text(g,"id")==text(p,"shippingGroupId")
                 )));
             }
-            section.horizontal_wrapped(|tools|{
+            // One compact, non-wrapping bulk-action row: select visible
+            // products, choose ONE group, and stage the assignment. The old
+            // second row for copying tariff templates is intentionally
+            // removed; it duplicated the per-product freight workflow.
+            section.horizontal(|tools|{
+                tools.spacing_mut().item_spacing.x=theme::SPACE_8;
                 let mut all=!filtered.is_empty()
                     && filtered.iter().all(|p|selected.contains(text(p,"id")));
                 tools.add_enabled_ui(enabled,|control|{
@@ -965,12 +933,13 @@ impl FreightManager {
                 )));
                 tools.add_enabled_ui(enabled,|control|{
                     egui::ComboBox::from_id_salt("freight-bulk-assign")
+                        .width(theme::FREIGHT_BULK_GROUP_WIDTH)
                         .selected_text(if bulk_group.is_empty(){
                             "미지정으로 변경"
                         }else{group_name(groups,bulk_group)})
                         .show_ui(control,|combo|{
                             combo.selectable_value(bulk_group,String::new(),"미지정으로 변경");
-                            for group in groups{
+                            for group in groups {
                                 combo.selectable_value(
                                     bulk_group,text(group,"id").into(),text(group,"name")
                                 );
@@ -985,32 +954,6 @@ impl FreightManager {
                     }
                 }
                 settings_help::icon(tools,"배송 그룹 일괄 지정");
-            });
-            section.horizontal_wrapped(|tools|{
-                let mut available=groups.iter().any(|g|text(g,"id")==copy_template.as_str());
-                if !available {copy_template.clear();available=false;}
-                tools.add_enabled_ui(enabled,|control|{
-                    egui::ComboBox::from_id_salt("freight-copy-group-tariff")
-                        .selected_text(if available{group_name(groups,copy_template)}
-                            else{"확인된 공통 기준 선택"})
-                        .show_ui(control,|choice|{
-                            for group in groups {
-                                choice.selectable_value(
-                                    copy_template,text(group,"id").to_owned(),
-                                    text(group,"name")
-                                );
-                            }
-                        });
-                });
-                let can_copy=enabled&&!copy_template.is_empty()&&!selected.is_empty()
-                    && selected.iter().all(|id|
-                        products.iter().any(|p|text(p,"id")==id.as_str()));
-                if theme::action(tools,"상품별 기준으로 복사",
-                    theme::ButtonRole::Standard,can_copy).clicked(){
-                    *copy_target=Some((
-                        copy_template.clone(),selected.iter().cloned().collect()
-                    ));
-                }
             });
             components::soft_divider(section);
             // Reserve the header OUTSIDE the scroll area. The table's
