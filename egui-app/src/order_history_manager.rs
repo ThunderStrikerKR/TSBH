@@ -183,6 +183,14 @@ fn paint_text(ui:&Ui,rect:Rect,value:&str,emphasized:bool,right:bool){
         egui::pos2(x,y),galley,color
     );
 }
+fn paint_center(ui:&Ui,rect:Rect,value:&str){
+    let galley=typography::freight_table_cell_galley(ui,value,false,theme::SECONDARY);
+    let x=(rect.center().x-galley.size().x/2.0)
+        .max(rect.left()+theme::SPACE_8);
+    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(
+        egui::pos2(x,rect.center().y-galley.size().y/2.0),galley,theme::SECONDARY
+    );
+}
 fn paint_caption(ui:&Ui,rect:Rect,value:&str){
     let galley=typography::client_table_metadata_galley(ui,value,theme::MUTED);
     ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(
@@ -205,6 +213,9 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let columns=cells(rect.min,widths,rect.height());
             paint_text(ui,columns[0],&order_date(row),false,false);
             paint_text(ui,columns[1],order_client(row),true,false);
+            ui.interact(columns[1].intersect(area),
+                ui.make_persistent_id(("history-client-name",id)),Sense::hover())
+                .on_hover_text(order_client(row));
             let recipients=rows(&row["recipients"]);
             let first=recipients.first().map(|r|field(r,"name"))
                 .unwrap_or("수취인 미확인");
@@ -234,7 +245,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .on_hover_text(recipients.iter().map(|r|field(r,"name"))
                     .collect::<Vec<_>>().join(", "));
             if response.clicked(){*pending_toggle=Some(id.to_owned());}
-            paint_text(ui,columns[3],field(row,"status"),false,false);
+            paint_center(ui,columns[3],field(row,"status"));
             let total=won(&row["total"]);
             let mut cautions=Vec::new();
             if field(&row["order"],"orderType")=="RETAIL"{
@@ -530,9 +541,11 @@ impl OrderHistoryManager {
                     format!("{title} {mark}")
                 }else{(*title).into()};
                 let label=typography::freight_table_header_galley(section,&heading);
-                let right=index==4;
-                let x=if right{
+                let x=if index==4{
                     (header_cells[index].right()-theme::SPACE_8-label.size().x)
+                        .max(header_cells[index].left()+theme::SPACE_8)
+                }else if index==3 || index==5{
+                    (header_cells[index].center().x-label.size().x/2.0)
                         .max(header_cells[index].left()+theme::SPACE_8)
                 }else{header_cells[index].left()+theme::SPACE_8};
                 painter.galley(egui::pos2(x,

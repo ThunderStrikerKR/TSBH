@@ -1782,8 +1782,8 @@
         "evidence": {
           "patch": "PASS: main 소스 5파일 반영",
           "static": "PASS: 원본 React 읽기동작 / 기존 Rust 뷰 / 공통 egui 토큰·가상행 정적 대조",
-          "unit": "PENDING: egui targeted order_history_manager::tests",
-          "ci": "PENDING: 해당 커밋 Windows cargo check",
+          "unit": "PASS: Windows CI #44692322206 egui order_history_manager::tests (날짜·확장·표기)",
+          "ci": "PASS: Windows CI #44692322206 Tauri/egui cargo check, history unit step; unrelated remaining steps tracked separately",
           "windowsGui": "NOT_REQUESTED: 사용자 결정에 따라 생략"
         },
         "businessWrites": "NONE"
