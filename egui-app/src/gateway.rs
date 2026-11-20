@@ -370,18 +370,8 @@ impl BandoGateway for LocalGateway {
                 "운임은 저장됐지만 이후 다른 작업에서 데이터가 다시 수정되었습니다. 최신 상태를 불러와 확인하세요.".into()
             );
         }
-        let shipping=state.get("shipping").ok_or("최신 운임 조회 실패")?;
-        let mut projection=self.execute(
-            ReadOperation::ShippingManagerView,
-            serde_json::json!({"state":state,"shipping":shipping})
-        )?;
-        let product_view=self.execute(
-            ReadOperation::ProductFreightView,
-            serde_json::json!({"action":"product_freight_view","state":{
-                "products":state["products"],"shipping":shipping
-            }})
-        )?;
-        projection["productViews"]=product_view["views"].clone();
+        // Use the same authoritative projection as initial freight loads.
+        let projection=crate::management_queries::project_freight(self,&state)?;
         Ok(serde_json::json!({"state":state,"projection":projection}))
     }
     fn working_commit_enabled(&self) -> bool {
