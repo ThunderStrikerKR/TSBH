@@ -1123,6 +1123,28 @@
           "action": "NOT_RUN: production DB not opened, Windows GUI excluded",
           "windows": "SKIPPED_PER_USER_POLICY",
           "ciRun": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44656606193"
+        },
+        "gatewayProcessVerification": {
+          "scope": "Q1: egui LocalGateway::mutate_shipping -> real Tauri --bando-egui-shipping-patch subprocess -> existing Rust apply_shipping_action -> revision-checked SQLite write_snapshot -> egui read-only business_state::load/reprojection",
+          "files": [
+            "egui-app/src/gateway.rs",
+            "src-tauri/src/egui_shipping_bridge.rs",
+            ".github/workflows/freight-sqlite-verify.yml"
+          ],
+          "evidenceCommits": [
+            "8bf3327d63c7fff5b6d69f3ea0f388718a4242f8",
+            "388501fa3ddc6dc0465b23b3fb1f3db230869e79",
+            "5df57282559fcc7aca48a2f24d25fb7259983448",
+            "a660bc9525ef406f68cc4af3b74b4d7578f81e52",
+            "4b4e93da2b72361815b03b715ee615c4a9b53da5",
+            "5a656c4f78dab0b8bc45d66d839bddd86b0e1dc9"
+          ],
+          "firstRun": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661513730",
+          "latestRun": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661763073",
+          "verified": "Native v2 SQLite internal save PASS, fixture with staff-edited retail price and product deletion marker PASS, actual Tauri CLI binary BUILD PASS, gateway subprocess save/reload/invalid and stale revision/disabled-write PASS (first run; 1 passed 0 failed).",
+          "latestRevisionGuard": "PATCHED: require helper committed revision equals authoritative egui reload revision; recheck CI is pending.",
+          "datastore": "Isolated Windows runner temporary DB only; rejects existing test-file overwrite and refuses an operational filename; no customer files loaded or modified.",
+          "remaining": "Latest revision-comparison patch pending independent CI; production environment helper packaging, Windows GUI and manual editor conflict flow are outside this scoped Q1 verification."
         }
       },
       "legacyLedgerStatus": "FROZEN_SHIPPING_ORACLE_PARTIAL",
