@@ -1637,17 +1637,17 @@ impl FreightManager {
                         // their cell, wrap, or shift the other five columns.
                         let actions_rect=cells[5].shrink2(egui::vec2(6.0,0.0));
                         let actions_clip=actions_rect.intersect(row.clip_rect());
-                        // The common case has a single "기본 운임 설정"
-                        // action: give it a centered, full-cell hit target
-                        // aligned exactly with the centered "설정" heading.
-                        // Preserve the original right-to-left multi-action
-                        // behavior if the legacy "기준 변경" action is present.
+                        // Center the single "기본 운임 설정" action on the
+                        // "설정" column's x-axis without stretching its 34pt
+                        // height to the full 42pt row. Main-axis justification
+                        // fills the existing inset cell width ONLY.
+                        // Preserve the original two-button layout if the
+                        // legacy "기준 변경" action is also present.
                         let action_layout=if rule.is_object(){
                             egui::Layout::right_to_left(egui::Align::Center)
                         }else{
-                            egui::Layout::centered_and_justified(
-                                egui::Direction::LeftToRight
-                            )
+                            egui::Layout::left_to_right(egui::Align::Center)
+                                .with_main_justify(true)
                         };
                         row.scope_builder(
                             egui::UiBuilder::new()
