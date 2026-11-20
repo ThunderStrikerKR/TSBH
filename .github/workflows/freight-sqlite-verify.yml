@@ -7,6 +7,8 @@ on:
       - .github/workflows/freight-sqlite-verify.yml
       - src-tauri/src/egui_shipping_bridge.rs
       - egui-app/src/gateway.rs
+      - egui-app/src/business_state.rs
+      - src-tauri/src/main.rs
       - src-tauri/src/business_core/rules/shipping.rs
       - src-tauri/src/relational_store.rs
       - src-tauri/src/lib.rs
