@@ -327,6 +327,23 @@ impl<const N: usize> ManagementMasterTableSpec<N> {
     }
 }
 
+/// A content-specific list may have different columns from the two masters,
+/// but still uses the same "give all spare width to one text-heavy column"
+/// policy. The header and rows must both consume the returned widths.
+pub fn management_single_stretch_columns<const N:usize>(
+    base:[f32;N], data_width:f32, column_gap:f32, stretch:usize
+)->[f32;N]{
+    debug_assert!(stretch<N && column_gap>=0.0 && data_width.is_finite(),
+        "invalid management column stretch parameters");
+    let min_width=base.iter().sum::<f32>()
+        +N.saturating_sub(1) as f32*column_gap;
+    let mut widths=base;
+    if let Some(width)=widths.get_mut(stretch){
+        *width+=(data_width-min_width).max(0.0);
+    }
+    widths
+}
+
 // Freight > Shipping Group Assignment: selection, product, color/option,
 // category, shipping group, settings. Fixed 42pt rows; 6 columns + 5 gaps.
 // CONFLICT-002: keep the currently approved 202pt product / 144pt settings.
