@@ -873,13 +873,17 @@
             "1ba87bfac116a483124d6335bf7ef679d5d89151",
             "d980dbfe20950bcd7cc109cb936bf28321efbc54",
             "d994d198e93ce023955ceb85f4418755a8be3f22",
-            "7be66c36eeb8c07bd8dae55511304b79011be8c7"
+            "7be66c36eeb8c07bd8dae55511304b79011be8c7",
+            "425396b83d9a997cf1e49aeb33289ed6a064b94a"
           ],
-          "files": ["egui-app/src/freight_manager.rs", "egui-app/src/theme.rs"],
+          "files": [
+            "egui-app/src/freight_manager.rs",
+            "egui-app/src/theme.rs"
+          ],
           "patch": "CODE_COMMITTED: duplicate group edit list and grid unified; shared fixed 36pt header/42pt virtual rows, solid non-floating scroll, six columns, aligned values, per-row group actions, 3-state sort. No shipping command/SQLite changes.",
           "static": "PASS SCOPED: React ShippingManager.tsx and shipping.css, latest egui assignment reference, management UI contract and current Rust group read/write path reviewed; create, edit, rename, delete and basis-change event routes retained.",
           "action": "NOT_EXECUTED: live native UI and DB writes excluded; command names/routes statically retained.",
-          "ci": "PENDING: targeted GitHub egui compilation for latest patch commit not yet confirmed; do not treat this as build pass.",
+          "ci": "PARTIAL: run 44692322206 on 7be66c36 passed egui compile step, full workflow still in progress; final 425396b8 run 44692606295 has no compile completion evidence yet.",
           "windows": "SKIPPED: user-approved no-Windows-GUI policy.",
           "assessment": "PATCHED_STATIC_REVIEWED; compilation and real appearance not verified, do not label completed."
         },
