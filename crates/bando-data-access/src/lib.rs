@@ -61,6 +61,43 @@ fn attach(
     Ok(())
 }
 
+const CORE_CLIENTS_SQL: &str = "SELECT payload FROM core_clients ORDER BY position,id";
+
+/// Read only the client master, with strict bounds for the separate
+/// contact-light name index. Unlike the full business snapshot, this query
+/// does not open order, product or pricing tables.
+pub fn read_clients_bounded(
+    conn: &Connection,
+    max_clients: usize,
+    max_bytes: usize,
+) -> Result<Vec<Value>, String> {
+    let mut stmt = conn.prepare(CORE_CLIENTS_SQL)
+        .map_err(|_| "거래처 목록을 읽을 수 없습니다.".to_owned())?;
+    let mut query = stmt.query([])
+        .map_err(|_| "거래처 목록 조회에 실패했습니다.".to_owned())?;
+    let mut clients = Vec::new();
+    let mut bytes = 0usize;
+    while let Some(row) = query.next()
+        .map_err(|_| "거래처 목록 읽기에 실패했습니다.".to_owned())? {
+        if clients.len() >= max_clients {
+            return Err(format!("거래처 목록이 최대 {max_clients}건을 초과했습니다."));
+        }
+        let raw: String = row.get(0)
+            .map_err(|_| "거래처 자료가 손상됐습니다.".to_owned())?;
+        bytes = bytes.checked_add(raw.len())
+            .ok_or("거래처 목록 크기를 확인할 수 없습니다.")?;
+        if bytes > max_bytes {
+            return Err(format!(
+                "거래처 목록이 최대 {}MB를 초과했습니다.",
+                max_bytes / (1024 * 1024)
+            ));
+        }
+        clients.push(serde_json::from_str::<Value>(&raw)
+            .map_err(|_| "거래처 JSON 자료가 손상됐습니다.".to_owned())?);
+    }
+    Ok(clients)
+}
+
 /// Read the complete v2 business snapshot through the same relational
 /// projector in every desktop host. The caller owns the SQLite connection,
 /// snapshot consistency and schema-v2 verification; this function never writes.
@@ -94,7 +131,7 @@ pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
 
     let clients = read_entities(
         conn,
-        "SELECT payload FROM core_clients ORDER BY position,id",
+        CORE_CLIENTS_SQL,
     )?;
     let mut orders = read_entities(
         conn,
