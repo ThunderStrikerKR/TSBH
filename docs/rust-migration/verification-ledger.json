@@ -1093,6 +1093,35 @@
             "testResult": "1 passed; 0 failed; 263 filtered out; 1.12s (Windows GitHub Actions job log)",
             "runConclusion": "SUCCESS"
           }
+        },
+        "databaseConnectionFix": {
+          "date": "2026-11-20",
+          "screenshotRootCause": "FreightManager->LocalGateway->business_state::load required a manual BANDO_EGUI_BUSINESS_DB path even when the existing Tauri v2 DB was present",
+          "tauriSources": [
+            "src-tauri/src/startup_recovery.rs app.path().app_data_dir()",
+            "src-tauri/src/developer_workspace.rs",
+            "src-tauri/tauri.conf.json identifier=com.bandostand.bandohub.tauri"
+          ],
+          "changed": [
+            "egui-app/src/business_state.rs",
+            "egui-app/src/main.rs",
+            "DEV_WINDOWS_EGUI.cmd"
+          ],
+          "behavior": "Existing Windows Tauri v2 database located read-only by bundle identifier; debug/dev binds existing developer-test/bando-hub-test.sqlite, release binds existing bando-hub-v001.sqlite; no missing DB created; explicit local DB/index/HTTP backend precedence retained; developer launcher discards inherited live DB/index references",
+          "writing": "Developer launcher enables shipping mutation through existing Tauri debug helper only if isolated test DB and helper both exist; production remains explicit helper + write authorization; never edits or copies production DB as part of discovery",
+          "evidence": [
+            "b62813547b5f9cbe208ed161651be0a1e1661221",
+            "306d28eb98ab04009e240adc7da90840f6955fd1",
+            "b310af45fbdd527d0bb224e882a2fe60933ab764",
+            "5a5ac34dd5357218589ef70e17378c975a19b026",
+            "fb753ca60a95d835f143af71da929a79f946b4a0",
+            "0804b7f786a61aebd559b877ca0cfd26c2f2ee1a"
+          ],
+          "static": "PASS: Tauri identifier and exact live/test filenames match, auto-bind precedes gateway, read-only preflight, no operational create or migration, developer launcher isolation",
+          "unit": "PENDING: auto_database_location_tests via targeted Windows workflow",
+          "build": "PENDING: latest relevant egui cargo check",
+          "action": "NOT_RUN: no Windows GUI or actual Tauri operational DB opened",
+          "windows": "SKIPPED_PER_USER_POLICY"
         }
       },
       "legacyLedgerStatus": "FROZEN_SHIPPING_ORACLE_PARTIAL",
