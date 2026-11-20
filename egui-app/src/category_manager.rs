@@ -611,18 +611,29 @@ impl CategoryManager {
             components::modal_window(
                 "선택 분류 편집","native-category-editor",work_area
             )
-                .default_width(theme::CATALOG_EDITOR_WIDTH.min(work_area.width()))
+                .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))
                 .show(ctx,|modal|{
                     modal.add_enabled_ui(!nested_dialog,|body|{
                         if let Some(current)=self.current(&cats){
+                            let name_display=typography::fit_category_path(
+                                body,&current.name,
+                                (body.available_width()-theme::CATEGORY_PARENT_ACTION_RESERVE_WIDTH)
+                                    .max(0.0),
+                                typography::CategoryPathFont::Subsection
+                            );
                             body.horizontal(|heading|{
-                                heading.label(typography::section_heading(
-                                    &current.name
-                                ));
-                                if theme::action(heading,"닫기 ×",
-                                    theme::ButtonRole::Standard,!busy).clicked(){
-                                    self.request_close_editor(&cats);
-                                }
+                                heading.label(typography::subsection_heading(
+                                    &name_display
+                                )).on_hover_text(&current.name);
+                                heading.with_layout(
+                                    Layout::right_to_left(Align::Center),|right|{
+                                        if theme::action(right,"닫기 ×",
+                                            theme::ButtonRole::Standard,!busy
+                                        ).clicked(){
+                                            self.request_close_editor(&cats);
+                                        }
+                                    }
+                                );
                             });
                             let breadcrumb=path_text(&cats,&current.id);
                             let visible=typography::fit_category_path(
@@ -631,18 +642,32 @@ impl CategoryManager {
                             );
                             body.label(typography::caption(&visible))
                                 .on_hover_text(&breadcrumb);
+                            body.add_space(theme::SPACE_8);
                             components::soft_divider(body);
-                            body.horizontal_wrapped(|summary|{
-                                summary.label(typography::caption(
-                                    &format!("직접 연결 상품 {}",direct_count(catalog,&current.id))
-                                ));
-                                summary.label(typography::caption(
-                                    &format!("하위 포함 상품 {}",total_count(catalog,&cats,&current.id))
-                                ));
-                                summary.label(typography::caption(
-                                    &format!("직속 하위 분류 {}",children(&cats,&current.id).len())
-                                ));
+                            body.add_space(theme::SPACE_8);
+                            let stats_width=body.available_width();
+                            let card_gap=theme::SPACE_8;
+                            let card_width=((stats_width-2.0*card_gap)/3.0)
+                                .max(theme::CATEGORY_MODAL_STATS_MIN_WIDTH);
+                            body.horizontal_wrapped(|cards|{
+                                cards.spacing_mut().item_spacing=
+                                    Vec2::new(card_gap,card_gap);
+                                components::management_summary_card(
+                                    cards,"직접 연결 상품",
+                                    direct_count(catalog,&current.id),card_width
+                                );
+                                components::management_summary_card(
+                                    cards,"하위 포함 상품",
+                                    total_count(catalog,&cats,&current.id),card_width
+                                );
+                                components::management_summary_card(
+                                    cards,"직속 하위 분류",
+                                    children(&cats,&current.id).len(),card_width
+                                );
                             });
+                            body.add_space(theme::SPACE_16);
+                            components::soft_divider(body);
+                            body.add_space(theme::SPACE_8);
                             body.label(typography::field_label("분류 이름"));
                             body.add_enabled_ui(
                                 editable && !busy && !is_root(&current.id),
@@ -654,6 +679,7 @@ impl CategoryManager {
                                     );
                                 }
                             );
+                            body.add_space(theme::SPACE_12);
                             body.label(typography::field_label("상위 카테고리"));
                             body.horizontal_wrapped(|location|{
                                 let parent_label=if current.parent.is_empty(){
@@ -693,15 +719,19 @@ impl CategoryManager {
                                 ).clicked(){
                                     self.begin_operation(&cats,catalog,Operation::Delete);
                                 }
-                                if theme::action(footer,"변경사항 저장",
-                                    theme::ButtonRole::Primary,
-                                    editable&&!busy&&self.rename_dirty(&cats)
-                                ).clicked(){
-                                    match self.write_request(&cats,catalog){
-                                        Ok(req)=>write=Some(req),
-                                        Err(e)=>self.error=Some(e),
+                                footer.with_layout(
+                                    Layout::right_to_left(Align::Center),|right|{
+                                        if theme::action(right,"변경사항 저장",
+                                            theme::ButtonRole::Primary,
+                                            editable&&!busy&&self.rename_dirty(&cats)
+                                        ).clicked(){
+                                            match self.write_request(&cats,catalog){
+                                                Ok(req)=>write=Some(req),
+                                                Err(e)=>self.error=Some(e),
+                                            }
+                                        }
                                     }
-                                }
+                                );
                             });
 
                         }
