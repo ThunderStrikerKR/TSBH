@@ -42,6 +42,7 @@ pub struct CategoryManager {
     switch_to_list:bool,
     global_leave_approved:bool,
     workspace:Option<Rect>,
+    delete_parent:Option<String>,
     error:Option<String>,
 }
 impl Default for CategoryManager {
@@ -53,7 +54,7 @@ impl Default for CategoryManager {
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
             switch_to_list:false,global_leave_approved:false,
-            workspace:None,error:None,
+            workspace:None,delete_parent:None,error:None,
         }
     }
 }
@@ -184,6 +185,10 @@ impl CategoryManager {
             return;
         }
         self.operation=Some(op);
+        if op==Operation::Delete {
+            self.delete_parent=Some(if current.parent.is_empty(){ROOTS[0].0.to_owned()}
+                else{current.parent.clone()});
+        }
         self.new_name.clear();
         self.transfer=false;
         self.target=if current.parent.is_empty(){
@@ -258,13 +263,8 @@ impl CategoryManager {
     pub fn on_saved(&mut self,kind:&str,catalog:&Value){
         let cats=categories(catalog);
         if kind=="delete_category"{
-            if let Some(current)=self.current(&cats){
-                self.selected=if current.parent.is_empty(){
-                    ROOTS[0].0.to_owned()
-                }else{current.parent};
-            } else {
-                self.selected=ROOTS[0].0.into();
-            }
+            self.selected=self.delete_parent.take()
+                .unwrap_or_else(||ROOTS[0].0.to_owned());
             self.editor=false;
         } else if self.operation.is_none() {
             self.editor=false;
@@ -583,10 +583,12 @@ impl CategoryManager {
                                         }
                                     });
                             }
-                            Operation::Delete=>modal.label(typography::body(
-                                &format!("{} 분류를 삭제할까요? 상품과 하위 분류가 없어야 삭제할 수 있습니다.",
-                                    current.name)
-                            )),
+                            Operation::Delete=>{
+                                modal.label(typography::body(
+                                    &format!("{} 분류를 삭제할까요? 상품과 하위 분류가 없어야 삭제할 수 있습니다.",
+                                        current.name)
+                                ));
+                            },
                         };
                     }
                     modal.add_space(theme::SPACE_16);
