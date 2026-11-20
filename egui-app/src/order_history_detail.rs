@@ -326,6 +326,44 @@ fn audit_panel(ui:&mut Ui,changes:&[AuditEntry]){
     }
 }
 
+#[derive(Clone,Copy)]
+struct DashboardGrid {
+    raw:Rect,changes:Rect,payment:Rect,billing:Rect,shipments:Rect
+}
+fn dashboard_grid(rect:Rect)->DashboardGrid{
+    let left_width=(rect.width()*0.41).max(1.0)
+        .min((rect.width()-PANE_GAP-1.0).max(1.0));
+    let left=Rect::from_min_size(
+        rect.min,Vec2::new(left_width,rect.height())
+    );
+    let right=Rect::from_min_max(
+        egui::pos2(left.right()+PANE_GAP,rect.top()),rect.max
+    );
+    let raw_height=(left.height()*0.61).max(1.0)
+        .min((left.height()-PANE_GAP-1.0).max(1.0));
+    let raw=Rect::from_min_size(left.min,Vec2::new(left.width(),raw_height));
+    let changes=Rect::from_min_max(
+        egui::pos2(left.left(),raw.bottom()+PANE_GAP),left.max
+    );
+    let info_height=(right.height()*0.40).max(1.0)
+        .min((right.height()-PANE_GAP-1.0).max(1.0));
+    let info=Rect::from_min_size(
+        right.min,Vec2::new(right.width(),info_height)
+    );
+    let shipments=Rect::from_min_max(
+        egui::pos2(right.left(),info.bottom()+PANE_GAP),right.max
+    );
+    let payment_width=(info.width()*0.55).max(1.0)
+        .min((info.width()-PANE_GAP-1.0).max(1.0));
+    let payment=Rect::from_min_size(
+        info.min,Vec2::new(payment_width,info.height())
+    );
+    let billing=Rect::from_min_max(
+        egui::pos2(payment.right()+PANE_GAP,info.top()),info.max
+    );
+    DashboardGrid{raw,changes,payment,billing,shipments}
+}
+
 /// Returns true only when the top-right close action was selected.
 /// All panes share the approved non-Kakao work area, but use local scrolling
 /// so long receipts or dozens of shipments never push the other cards away.
@@ -371,41 +409,8 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                 Vec2::new(remaining.width(),remaining.height().max(1.0)),
                 Sense::hover()
             );
-            let left_width=(grid_rect.width()*0.41).max(1.0)
-                .min((grid_rect.width()-PANE_GAP-1.0).max(1.0));
-            let left=Rect::from_min_size(
-                grid_rect.min,Vec2::new(left_width,grid_rect.height())
-            );
-            let right=Rect::from_min_max(
-                egui::pos2(left.right()+PANE_GAP,grid_rect.top()),
-                grid_rect.max
-            );
-            let raw_height=(left.height()*0.61).max(1.0)
-                .min((left.height()-PANE_GAP-1.0).max(1.0));
-            let raw_rect=Rect::from_min_size(
-                left.min,Vec2::new(left.width(),raw_height)
-            );
-            let audit_rect=Rect::from_min_max(
-                egui::pos2(left.left(),raw_rect.bottom()+PANE_GAP),left.max
-            );
-            let info_height=(right.height()*0.40).max(1.0)
-                .min((right.height()-PANE_GAP-1.0).max(1.0));
-            let info_row=Rect::from_min_size(
-                right.min,Vec2::new(right.width(),info_height)
-            );
-            let shipment_rect=Rect::from_min_max(
-                egui::pos2(right.left(),info_row.bottom()+PANE_GAP),right.max
-            );
-            let payment_width=(info_row.width()*0.55).max(1.0)
-                .min((info_row.width()-PANE_GAP-1.0).max(1.0));
-            let payment_rect=Rect::from_min_size(
-                info_row.min,Vec2::new(payment_width,info_row.height())
-            );
-            let billing_rect=Rect::from_min_max(
-                egui::pos2(payment_rect.right()+PANE_GAP,info_row.top()),
-                info_row.max
-            );
-            section_panel(ui,raw_rect,raw_title,"raw",|panel|{
+            let panes=dashboard_grid(grid_rect);
+            section_panel(ui,panes.raw,raw_title,"raw",|panel|{
                 if raw.is_empty(){
                     panel.label(typography::caption("보존된 발주 원문이 없습니다."));
                 }else{
@@ -418,20 +423,77 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                     ));
                 }
             });
-            section_panel(ui,audit_rect,
+            section_panel(ui,panes.changes,
                 &format!("변경·처리 이력 · {}건",changes.len()),"changes",
                 |panel|audit_panel(panel,&changes)
             );
-            section_panel(ui,payment_rect,"접수 및 입금 정보","payment",
+            section_panel(ui,panes.payment,"접수 및 입금 정보","payment",
                 |panel|payment_panel(panel,order,row,&payments)
             );
-            section_panel(ui,billing_rect,"청구금액 상세","billing",
+            section_panel(ui,panes.billing,"청구금액 상세","billing",
                 |panel|billing_panel(panel,order,&row["billing"])
             );
-            section_panel(ui,shipment_rect,
+            section_panel(ui,panes.shipments,
                 &format!("발송 건별 상세 · {}건",shipments.len()),"shipments",
                 |panel|shipment_panel(panel,order,&shipments)
             );
         });
     close
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn layout_has_fixed_independent_panes_and_no_horizontal_overflow(){
+        for (width,height) in [(820.0,440.0),(1180.0,650.0),(1490.0,810.0)] {
+            let bounds=Rect::from_min_size(
+                egui::pos2(12.0,20.0),Vec2::new(width,height)
+            );
+            let parts=dashboard_grid(bounds);
+            for pane in [
+                parts.raw,parts.changes,parts.payment,parts.billing,parts.shipments
+            ] {
+                assert!(pane.width()>0.0&&pane.height()>0.0);
+                assert!(bounds.contains(pane.left_top()));
+                assert!(bounds.contains(pane.right_bottom()));
+            }
+            assert!((parts.changes.top()-parts.raw.bottom()-PANE_GAP).abs()<0.01);
+            assert!((parts.billing.left()-parts.payment.right()-PANE_GAP).abs()<0.01);
+            assert!((parts.shipments.top()-parts.payment.bottom()-PANE_GAP).abs()<0.01);
+            assert!((parts.shipments.left()-parts.raw.right()-PANE_GAP).abs()<0.01);
+            assert!((parts.shipments.bottom()-bounds.bottom()).abs()<0.01);
+        }
+    }
+
+    #[test]
+    fn original_order_text_is_preferred_and_not_overwritten_by_edits(){
+        let order=json!({
+            "raw":"현재 수정된 원문",
+            "receipt":{"original":"최초 접수 원문"},
+            "confirmationSnapshot":{"raw":"주문 확인 원문"}
+        });
+        assert_eq!(raw_text(&order),("최초 발주 원문","최초 접수 원문"));
+        let confirmed=json!({"raw":"현재 원문",
+            "confirmationSnapshot":{"raw":"주문 확인 원문"}});
+        assert_eq!(raw_text(&confirmed),("주문 확인 당시 원문","주문 확인 원문"));
+        assert_eq!(raw_text(&json!({"raw":"저장 원문"})),
+            ("저장된 발주 원문","저장 원문"));
+    }
+
+    #[test]
+    fn history_shows_only_linked_shipment_events_newest_first(){
+        let state=json!({"workflow":{"events":[
+            {"at":"2026-11-19T11:00:00Z","action":"재검증","shipmentIds":["s1"]},
+            {"at":"2026-11-20T09:00:00Z","action":"외부 주문","shipmentIds":["s2"]},
+            {"at":"2026-11-21T11:00:00Z","action":"확인","shipmentIds":["s1"]}
+        ]}});
+        let ids=HashSet::from(["s1"]);
+        let entries=change_entries(&json!({}),&state,&ids);
+        assert_eq!(entries.len(),2);
+        assert_eq!(entries[0].title,"확인");
+        assert_eq!(entries[1].title,"재검증");
+    }
 }
