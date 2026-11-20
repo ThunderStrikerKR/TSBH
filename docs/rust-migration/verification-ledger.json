@@ -1845,6 +1845,30 @@
     },
     {
       "id": "F19",
+      "eguiDailySettlementMigration": {
+        "date": "2026-11-20",
+        "scope": "일일 결산 화면 React -> egui 이전: 조회·날짜·4 KPI·주문 청구표·실제 입금표·미확정/검토 경고",
+        "files": [
+          "egui-app/src/daily_settlement_manager.rs",
+          "egui-app/src/gateway.rs",
+          "egui-app/src/main.rs",
+          "egui-app/src/theme.rs",
+          "egui-app/src/settings_help.rs"
+        ],
+        "patchCommits": [
+          "fe90dae91412c801922cb08e9d21624a19c96a05",
+          "2f3f78b07662924b94113225eae9d3fcc6f8ef08",
+          "ffd0c0cd7be8925d204003e166591b830dbac454",
+          "97bcbdb9e8f970cc6f6bcb628705e3915dcdf008",
+          "0aa219e1c412d1b94cf32c8bb13531c26545f276",
+          "c2e476f4df08cd8198b90b300d4338767a097a62"
+        ],
+        "static": "PASS scoped: React DailySettlement.tsx + DateNavigator.tsx + report-types.ts and actual management-layout.css against egui page; original Rust rules::history::list -> output::settlement::prepare reused; state loaded ONCE, forwarded without amount recalculation or DB mutation; async refresh invalidates prior receivers; date input validation, independent bank-day and reception-day reporting, warnings and missing-value display retained.",
+        "ui": "PASS source contract: numeric-first independent KPI, 36pt fixed headers, 42pt fixed virtual rows, three-step sort, numeric right alignment, visible reserved scrollbar, two table sections and original help descriptions. GUI pixels not asserted.",
+        "targetBuild": "PENDING after initial commit; CI run for 97bcbdb9e8f970cc6f6bcb628705e3915dcdf008 was queued at record creation. Final current commit not independently compiled.",
+        "windowsGui": "SKIPPED by user decision; no Windows GUI test requested.",
+        "overall": "CODE_COMMITTED_STATIC_PASS_BUILD_UNVERIFIED"
+      },
       "name": "일일 결산·미수·실제 입금",
       "baseline": {
         "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
