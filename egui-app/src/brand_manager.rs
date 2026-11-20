@@ -216,12 +216,14 @@ impl BrandManager {
             .show(ctx,|dialog|{
                 cancel=components::modal_header(dialog,"브랜드","취소",!busy);
                 dialog.label(typography::body("브랜드 변경사항을 저장할까요?"));
-                dialog.horizontal(|buttons|{
-                    discard=theme::action(buttons,"저장 안 함",
-                        theme::ButtonRole::Standard,!busy).clicked();
-                    save=theme::action(buttons,"저장",
-                        theme::ButtonRole::Primary,editable&&!busy).clicked();
-                });
+                dialog.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),|buttons|{
+                        save=theme::action(buttons,"저장",
+                            theme::ButtonRole::Primary,editable&&!busy).clicked();
+                        discard=theme::action(buttons,"저장 안 함",
+                            theme::ButtonRole::Standard,!busy).clicked();
+                    }
+                );
             });
         if cancel{
             self.pending=None;
