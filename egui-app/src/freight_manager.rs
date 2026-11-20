@@ -865,12 +865,11 @@ impl FreightManager {
                 title.label(typography::section_heading("상품별 배송 그룹 지정"));
                 settings_help::icon(title,"상품별 운임");
             });
-            section.label(typography::caption(
-                "그룹 미지정 상품을 우선 확인합니다. 그룹 소속 상품의 운임은 위 배송 그룹에서 수정하세요."
-            ));
-            section.add_space(theme::SPACE_8);
-            section.horizontal_wrapped(|tools| {
-                tools.label(typography::field_label("검색"));
+            // Keep search/filter on the left and the bulk-assignment
+            // controls right-aligned on THE SAME toolbar row. On ordinary
+            // management widths no labels or actions wrap to a second row.
+            let filtered=section.horizontal(|tools|{
+                tools.spacing_mut().item_spacing.x=theme::SPACE_8;
                 components::flexible_text_field(
                     tools,search,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                     "모델명 / 상품명 / 카테고리 검색"
@@ -879,10 +878,10 @@ impl FreightManager {
                 egui::ComboBox::from_id_salt("freight-group-filter")
                     .selected_text(if group_filter.is_empty() {
                         "전체 상품"
-                    } else if group_filter.as_str() == "none" {
+                    } else if group_filter.as_str()=="none" {
                         "그룹 미지정"
                     } else { group_name(groups,group_filter) })
-                    .show_ui(tools, |combo| {
+                    .show_ui(tools,|combo|{
                         combo.selectable_value(group_filter,String::new(),"전체 상품");
                         combo.selectable_value(group_filter,"none".into(),"그룹 미지정만");
                         for group in groups {
@@ -897,111 +896,114 @@ impl FreightManager {
                     *only_missing=false;
                 }
                 tools.checkbox(only_missing,"그룹 미지정 상품만");
-            });
-            components::soft_divider(section);
-            let needle=search.to_lowercase().split_whitespace().collect::<String>();
-            let mut filtered:Vec<&Value>=products.iter().copied().filter(|p|{
-                let grouped=groups.iter().any(|g|
-                    text(g,"id")==text(p,"shippingGroupId")
-                );
-                (needle.is_empty()||[text(p,"code"),text(p,"name"),
-                    text(p,"subtitle"),text(p,"category")]
-                    .iter().any(|s|s.to_lowercase().split_whitespace()
-                        .collect::<String>().contains(&needle)))
-                && (group_filter.is_empty()
-                    || (group_filter.as_str()=="none" && !grouped)
-                    || text(p,"shippingGroupId")==group_filter.as_str())
-                && (!*only_missing || !grouped)
-            }).collect();
-            // Sort by committed membership only, never by an unsaved ComboBox
-            // value. This keeps rows stationary while group assignments edit.
-            if needle.is_empty() && group_filter.is_empty() && !*only_missing {
-                filtered.sort_by_key(|p| usize::from(groups.iter().any(|g|
-                    text(g,"id")==text(p,"shippingGroupId")
-                )));
-            }
-            // Explicit choice is mandatory. None means not selected;
-            // Some("") means the user deliberately requested group removal.
-            // Both individual assignment and bulk assignment only stage
-            // changes, leaving the original group until "그룹 지정 저장".
-            if bulk_group.as_deref().is_some_and(|id|
-                !id.is_empty() && !groups.iter().any(|g|text(g,"id")==id)
-            ) {
-                *bulk_group=None;
-                *bulk_feedback=None;
-            }
-            section.horizontal(|tools|{
-                tools.spacing_mut().item_spacing.x=theme::SPACE_8;
-                let mut all=!filtered.is_empty()
-                    && filtered.iter().all(|p|selected.contains(text(p,"id")));
-                tools.add_enabled_ui(enabled,|control|{
-                    if control.checkbox(&mut all,"").changed(){
-                        selected.clear();
-                        *bulk_feedback=None;
-                        if all {
-                            selected.extend(filtered.iter()
-                                .map(|p|text(p,"id").to_owned()));
-                        }
-                    }
-                });
-                tools.label(typography::field_label(&format!(
-                    "{}개 선택",selected.len()
-                )));
+
+                // Apply the current filters before drawing bulk selection.
+                // This ensures "전체 선택" always targets the visible rows.
+                let needle=search.to_lowercase().split_whitespace().collect::<String>();
+                let mut filtered:Vec<&Value>=products.iter().copied().filter(|p|{
+                    let grouped=groups.iter().any(|g|
+                        text(g,"id")==text(p,"shippingGroupId")
+                    );
+                    (needle.is_empty()||[text(p,"code"),text(p,"name"),
+                        text(p,"subtitle"),text(p,"category")]
+                        .iter().any(|s|s.to_lowercase().split_whitespace()
+                            .collect::<String>().contains(&needle)))
+                    && (group_filter.is_empty()
+                        || (group_filter.as_str()=="none" && !grouped)
+                        || text(p,"shippingGroupId")==group_filter.as_str())
+                    && (!*only_missing || !grouped)
+                }).collect();
+                // Sort by committed group membership, never by an unsaved
+                // selector value, to keep product rows stable during edits.
+                if needle.is_empty() && group_filter.is_empty() && !*only_missing {
+                    filtered.sort_by_key(|p|usize::from(groups.iter().any(|g|
+                        text(g,"id")==text(p,"shippingGroupId")
+                    )));
+                }
+
+                // None = no target chosen; Some("") = explicit removal.
+                if bulk_group.as_deref().is_some_and(|id|
+                    !id.is_empty() && !groups.iter().any(|g|text(g,"id")==id)
+                ) {
+                    *bulk_group=None;
+                    *bulk_feedback=None;
+                }
                 let previous_group=bulk_group.clone();
-                tools.add_enabled_ui(enabled,|control|{
-                    egui::ComboBox::from_id_salt("freight-bulk-assign")
-                        .width(theme::FREIGHT_BULK_GROUP_WIDTH)
-                        .selected_text(match bulk_group.as_deref(){
-                            None=>"배송 그룹 선택",
-                            Some("")=>"미지정으로 변경",
-                            Some(id)=>group_name(groups,id),
-                        })
-                        .show_ui(control,|combo|{
-                            combo.selectable_value(
-                                bulk_group,Some(String::new()),"미지정으로 변경"
-                            );
-                            for group in groups {
-                                combo.selectable_value(
-                                    bulk_group,Some(text(group,"id").to_owned()),
-                                    text(group,"name")
-                                );
+                // RTL layout pins this cluster to the far right. Controls
+                // are emitted in reverse order so their visible sequence is
+                // [checkbox, count, selector, apply, help].
+                tools.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),|bulk|{
+                        settings_help::icon(bulk,"배송 그룹 일괄 지정");
+                        if theme::action(bulk,"선택 상품에 적용",
+                            theme::ButtonRole::Standard,
+                            enabled&&!selected.is_empty()&&bulk_group.is_some()
+                        ).clicked(){
+                            if let Some(target)=bulk_group.as_deref(){
+                                let (mut newly,mut moved,mut removed,mut unchanged)=(0,0,0,0);
+                                for product in products.iter().copied()
+                                    .filter(|product|selected.contains(text(product,"id"))) {
+                                    let id=text(product,"id");
+                                    let original=text(product,"shippingGroupId");
+                                    if original==target {
+                                        pending.remove(id);
+                                        unchanged+=1;
+                                    }else{
+                                        pending.insert(id.to_owned(),target.to_owned());
+                                        if target.is_empty(){removed+=1;}
+                                        else if original.is_empty(){newly+=1;}
+                                        else{moved+=1;}
+                                    }
+                                }
+                                *bulk_feedback=Some(if target.is_empty(){
+                                    format!("그룹 해제 {removed}건 · 변경 없음 {unchanged}건")
+                                }else{
+                                    format!("신규 지정 {newly}건 · 그룹 변경 {moved}건 · 변경 없음 {unchanged}건")
+                                });
+                            }
+                        }
+                        bulk.add_enabled_ui(enabled,|control|{
+                            egui::ComboBox::from_id_salt("freight-bulk-assign")
+                                .width(theme::FREIGHT_BULK_GROUP_WIDTH)
+                                .selected_text(match bulk_group.as_deref(){
+                                    None=>"배송 그룹 선택",
+                                    Some("")=>"미지정으로 변경",
+                                    Some(id)=>group_name(groups,id),
+                                })
+                                .show_ui(control,|combo|{
+                                    combo.selectable_value(
+                                        bulk_group,Some(String::new()),"미지정으로 변경"
+                                    );
+                                    for group in groups {
+                                        combo.selectable_value(
+                                            bulk_group,Some(text(group,"id").to_owned()),
+                                            text(group,"name")
+                                        );
+                                    }
+                                });
+                        });
+                        bulk.label(typography::field_label(&format!(
+                            "{}개 선택",selected.len()
+                        )));
+                        let mut all=!filtered.is_empty()
+                            && filtered.iter().all(|p|selected.contains(text(p,"id")));
+                        bulk.add_enabled_ui(enabled,|control|{
+                            if control.checkbox(&mut all,"").changed(){
+                                selected.clear();
+                                *bulk_feedback=None;
+                                if all {
+                                    selected.extend(filtered.iter()
+                                        .map(|p|text(p,"id").to_owned()));
+                                }
                             }
                         });
-                });
+                    }
+                );
                 if *bulk_group!=previous_group {
                     *bulk_feedback=None;
                 }
-                if theme::action(tools,"선택 상품에 적용",
-                    theme::ButtonRole::Standard,
-                    enabled&&!selected.is_empty()&&bulk_group.is_some()
-                ).clicked(){
-                    if let Some(target)=bulk_group.as_deref(){
-                        let (mut newly,mut moved,mut removed,mut unchanged)=(0,0,0,0);
-                        for product in products.iter().copied()
-                            .filter(|product|selected.contains(text(product,"id"))) {
-                            let id=text(product,"id");
-                            let original=text(product,"shippingGroupId");
-                            if original==target {
-                                // Applying the persisted group also clears an
-                                // earlier unsaved change for the same product.
-                                pending.remove(id);
-                                unchanged+=1;
-                            }else{
-                                pending.insert(id.to_owned(),target.to_owned());
-                                if target.is_empty(){removed+=1;}
-                                else if original.is_empty(){newly+=1;}
-                                else{moved+=1;}
-                            }
-                        }
-                        *bulk_feedback=Some(if target.is_empty(){
-                            format!("그룹 해제 {removed}건 · 변경 없음 {unchanged}건")
-                        }else{
-                            format!("신규 지정 {newly}건 · 그룹 변경 {moved}건 · 변경 없음 {unchanged}건")
-                        });
-                    }
-                }
-                settings_help::icon(tools,"배송 그룹 일괄 지정");
-            });
+                filtered
+            }).inner;
             components::soft_divider(section);
             // Reserve the header OUTSIDE the scroll area. The table's
             // scroll offset is reflected only in its horizontal coordinates,
