@@ -545,6 +545,7 @@ impl ProductManager {
     }
 
     pub fn show_page(&mut self,ui:&mut Ui){
+        let page_origin_y=ui.cursor().top();
         self.poll(ui.ctx());
         ui.label(typography::page_heading("상품 관리"));
         ui.add_space(theme::SPACE_12);
@@ -612,6 +613,11 @@ impl ProductManager {
         let mut price_write:Option<(String,Value)>=None;
         let mut open_detail:Option<Value>=None;
         let mut begin_new=false;
+        // Category/model/alias/brand views own one primary section each.
+        // Only the product-list tab has extra actions above its table card.
+        if self.tab!=0 {
+            components::align_management_primary_card(ui,page_origin_y);
+        }
         if self.tab==4 {
             if let Some(catalog)=self.catalog.as_ref(){
                 if let Some(data)=self.brands.show_page(ui,catalog,can_edit,saving){
@@ -700,7 +706,10 @@ impl ProductManager {
             self.catalog.is_some()&&!self.writing.is_some()&&!self.has_pending_prices()
         );
         if self.excel.open(){ui.add_space(theme::SPACE_12);}
+        components::align_management_primary_card(ui,page_origin_y);
+        let card_min_height=components::management_primary_card_min_inner_height(ui);
         theme::management_list_frame().show(ui,|panel|{
+            components::fill_management_primary_card(panel,card_min_height);
             theme::management_list_strip_frame().show(panel,|strip|{
                 strip.horizontal_wrapped(|filter|{
                     filter.spacing_mut().item_spacing.x=theme::SPACE_8;
