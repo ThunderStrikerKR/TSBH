@@ -19,8 +19,10 @@ use std::{
 const ROW_HEIGHT: f32 = theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
 const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
-const COLS: [f32;6] = [124.0,180.0,422.0,138.0,156.0,132.0];
-const MIN_WIDTH: f32 = 1192.0; // sum(COLS) + five 8pt gaps
+// Seven columns, with an explicit employee approval DATE to the right of
+// the billed total. Preserve the approved 8pt inter-column spacing.
+const COLS: [f32;7] = [124.0,170.0,350.0,128.0,144.0,152.0,140.0];
+const MIN_WIDTH: f32 = 1256.0; // sum(COLS) + six 8pt gaps
 // Natural width of [date basis, previous, start date/calendar, end
 // date/calendar, next, all dates]. The search stays outside this right slot.
 const RANGE_CONTROLS_WIDTH:f32=940.0;
@@ -180,7 +182,7 @@ fn display_lines(snapshot:&HistorySnapshot,expanded:&BTreeSet<String>,
     lines
 }
 
-fn cells(origin:Pos2,widths:&[f32;6],height:f32)->[Rect;6]{
+fn cells(origin:Pos2,widths:&[f32;7],height:f32)->[Rect;7]{
     let mut left=origin.x;
     std::array::from_fn(|index|{
         let cell=Rect::from_min_size(egui::pos2(left,origin.y),
@@ -220,7 +222,7 @@ fn paint_caption(ui:&Ui,rect:Rect,value:&str){
     );
 }
 fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
-    expanded:&BTreeSet<String>,widths:&[f32;6],pending_toggle:&mut Option<String>){
+    expanded:&BTreeSet<String>,widths:&[f32;7],pending_toggle:&mut Option<String>){
     let area=rect.intersect(ui.clip_rect());
     let order_index=match line{
         HistoryLine::Order(i)|HistoryLine::Billing(i)
@@ -255,16 +257,15 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let remaining=item_count(row).saturating_sub(2);
             let preview=if remaining>0{format!("{product_preview} 외 {remaining}품목")}
                 else{product_preview};
-            let upper=Rect::from_min_max(columns[2].min,
-                egui::pos2(columns[2].right(),columns[2].center().y));
-            let lower=Rect::from_min_max(egui::pos2(columns[2].left(),
-                columns[2].center().y),columns[2].max);
-            paint_text(ui,upper,&main,true,false);
-            paint_caption(ui,lower,&preview);
+            // Exactly one baseline in this column, even with multiple
+            // products. Clip overflow horizontally; the complete value
+            // remains available on hover and by expanding the order.
+            let summary=if preview.is_empty(){main}
+                else{format!("{main} / {preview}")};
+            paint_text(ui,columns[2],&summary,true,false);
             let response=ui.interact(columns[2].intersect(area),
                 ui.make_persistent_id(("order-history-toggle",id)),Sense::click())
-                .on_hover_text(recipients.iter().map(|r|field(r,"name"))
-                    .collect::<Vec<_>>().join(", "));
+                .on_hover_text(&summary);
             if response.clicked(){*pending_toggle=Some(id.to_owned());}
             paint_center(ui,columns[3],field(row,"status"));
             let total=won(&row["total"]);
@@ -291,7 +292,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let message=field(&row["display"],"trackingMessage");
             // Match the action inset of the Freight Settings column.
             // No expansion of the table or the fixed 42pt row height.
-            let control=columns[5].shrink2(
+            let control=columns[6].shrink2(
                 Vec2::new(theme::SPACE_12,theme::SPACE_4)
             );
             ui.scope_builder(UiBuilder::new()
@@ -764,7 +765,8 @@ impl OrderHistoryManager {
             let extra=(table_width-MIN_WIDTH).max(0.0);
             widths[1]+=extra*0.25;
             widths[2]+=extra*0.75;
-            let headings=["접수일","거래처","배송 건 / 상품","관리 상태","청구 합계","처리"];
+            let headings=["접수일","거래처","배송 건 / 상품","관리 상태",
+                "청구 합계","입금 확인","처리"];
             let (head_rect,_)=section.allocate_exact_size(
                 Vec2::new(viewport,HEADER_HEIGHT),Sense::hover());
             let mut header_origin=None;
@@ -874,7 +876,7 @@ impl OrderHistoryManager {
                 let x=if index==4{
                     (header_cells[index].right()-theme::SPACE_8-label.size().x)
                         .max(header_cells[index].left()+theme::SPACE_8)
-                }else if index==3 || index==5{
+                }else if matches!(index,3|5|6){
                     (header_cells[index].center().x-label.size().x/2.0)
                         .max(header_cells[index].left()+6.0)
                 }else{header_cells[index].left()+6.0};
