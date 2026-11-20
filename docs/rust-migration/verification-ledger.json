@@ -2020,8 +2020,8 @@
         ],
         "patch": "PASS: main에 변경 파일·실행 경로 반영",
         "static": "PASS: 승인된 배송그룹편성 고정행 좌표·공통 타이포·버튼/검색 구조 정적 대조, 기존 가격 Rust 저장 경로 유지",
-        "unit": "PENDING: egui product_manager::tests (정렬 순환·고정행 좌표·가격 입력)",
-        "ci": "PENDING: Windows targeted cargo check run 44696930187",
+        "unit": "PASS: CI #44696930187 egui product_manager::tests (가격 입력·정렬 순환·고정행 좌표)",
+        "ci": "PASS: CI #44696930187 Tauri/egui cargo check + ProductManager targeted test; unrelated later verification steps independently tracked",
         "windowsGui": "NOT_REQUESTED: 사용자 결정에 따라 제외",
         "notMigrated": [
           "Excel 관리: 전체 상품 Excel 내보내기/가져오기 및 검토",
