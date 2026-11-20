@@ -111,6 +111,8 @@ impl AliasManager {
         self.pending=None;
         self.after_save=None;
         self.query.clear();self.category.clear();self.brand.clear();
+        self.form=Form::default();
+        self.original=self.form.clone();
         self.error=None;
     }
     pub fn request_tab_leave(&mut self,tab:usize)->bool{
