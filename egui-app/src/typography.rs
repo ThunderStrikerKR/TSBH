@@ -321,11 +321,26 @@ pub fn category_tree_name_galley(
 pub enum CategoryPathFont { Body, Metadata, TableCell, FreightTableCell, Subsection }
 
 fn category_path_text_width(ui:&egui::Ui,text:&str,font:CategoryPathFont)->f32{
+    // Freight paints the ancestors muted and the leaf in an emphasis font.
+    // Measure those ACTUAL two font faces before truncating the start of
+    // the path, otherwise the emphasized leaf could get clipped.
+    if matches!(font,CategoryPathFont::FreightTableCell){
+        let (prefix,leaf)=match text.rfind('>'){
+            Some(index) if !text[index+1..].trim().is_empty() =>
+                text.split_at(index+1),
+            _=>("",text),
+        };
+        return client_table_galley(
+            ui,prefix,Role::Body,false,MUTED
+        ).size().x + client_table_galley(
+            ui,leaf,Role::Body,true,SECONDARY
+        ).size().x;
+    }
     let (role,emphasized,color)=match font{
         CategoryPathFont::Body=>(Role::Body,false,TEXT),
         CategoryPathFont::Metadata=>(Role::Metadata,false,MUTED),
         CategoryPathFont::TableCell=>(Role::TableCell,false,TEXT),
-        CategoryPathFont::FreightTableCell=>(Role::Body,false,TEXT),
+        CategoryPathFont::FreightTableCell=>unreachable!(),
         CategoryPathFont::Subsection=>(Role::Subsection,true,TEXT),
     };
     client_table_galley(ui,text,role,emphasized,color).size().x
