@@ -1060,6 +1060,39 @@ impl OrderHistoryManager {
 mod tests{
     use super::*;
     #[test]
+    fn employee_approval_column_sorts_by_confirmation_date_and_keeps_unknown_last(){
+        let snapshot=HistorySnapshot{
+            state:json!({"workflow":{"shipments":[]}}),
+            rows:vec![
+                json!({"order":{"id":"a"},
+                    "display":{"employeePaymentConfirmation":{"date":"2026-11-21"}}}),
+                json!({"order":{"id":"b"},
+                    "display":{"employeePaymentConfirmation":null}}),
+                json!({"order":{"id":"c"},
+                    "display":{"employeePaymentConfirmation":{"date":"2026-11-19"}}}),
+                json!({"order":{"id":"d"},
+                    "display":{"employeePaymentConfirmation":{"date":"2026-11-20"}}})
+            ]
+        };
+        let expanded=BTreeSet::new();
+        let order=|direction|display_lines(
+            &snapshot,&expanded,Some(Sort{
+                column:SortColumn::PaymentConfirmation,direction
+            })
+        ).into_iter().filter_map(|line|{
+            if let HistoryLine::Order(index)=line{Some(index)}else{None}
+        }).collect::<Vec<_>>();
+        assert_eq!(order(SortDirection::Asc),vec![2,3,0,1]);
+        assert_eq!(order(SortDirection::Desc),vec![0,3,2,1]);
+
+        let first=Sort::next(None,SortColumn::PaymentConfirmation).unwrap();
+        assert_eq!(first.direction,SortDirection::Asc);
+        let second=Sort::next(Some(first),SortColumn::PaymentConfirmation).unwrap();
+        assert_eq!(second.direction,SortDirection::Desc);
+        assert!(Sort::next(Some(second),SortColumn::PaymentConfirmation).is_none());
+    }
+
+    #[test]
     fn seoul_date_move_and_read_only_projection_labels(){
         assert_eq!(seoul_date("2026-11-19T16:00:00Z"),"2026-11-20");
         assert_eq!(move_date("2026-11-01",-1),"2026-10-31");
