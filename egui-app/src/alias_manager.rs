@@ -344,6 +344,15 @@ impl AliasManager {
                                 }else{value};
                             }
                         }
+                        let classified=catalog_query_bridge::classified_products(
+                            &json!({"state":catalog,"category":self.category})
+                        );
+                        let available=classified.as_ref().ok()
+                            .map(|ids|rows(ids).iter().filter_map(Value::as_str)
+                                .filter_map(|id|product(catalog,id))
+                                .map(|p|field(p,"brandId"))
+                                .collect::<HashSet<_>>())
+                            .unwrap_or_default();
                         let brand=rows(&catalog["brands"]).iter()
                             .find(|b|field(b,"id")==self.brand)
                             .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
@@ -351,7 +360,11 @@ impl AliasManager {
                             .selected_text(brand).show_ui(filters,|choice|{
                                 choice.selectable_value(&mut self.brand,
                                     String::new(),"전체 브랜드");
-                                for b in rows(&catalog["brands"]){
+                                for b in rows(&catalog["brands"])
+                                    .iter().filter(|b|{
+                                        available.contains(field(b,"id")) ||
+                                            field(b,"id")==self.brand
+                                    }){
                                     choice.selectable_value(&mut self.brand,
                                         field(b,"id").to_owned(),field(b,"name"));
                                 }
