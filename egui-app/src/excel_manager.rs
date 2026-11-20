@@ -5,7 +5,7 @@ use crate::{components,gateway::{BandoGateway,ReadOperation},settings_help,theme
 use chrono::{DateTime,FixedOffset};
 use eframe::egui::{self,Align,Align2,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
 use serde_json::{json,Value};
-use std::{collections::BTreeSet,sync::{mpsc::{self,Receiver,TryRecvError},Arc}};
+use std::{collections::{BTreeSet,HashMap},sync::{mpsc::{self,Receiver,TryRecvError},Arc}};
 
 const HEIGHT:f32=theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
 const HEADER:f32=theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
@@ -316,6 +316,7 @@ pub struct ExcelManager{
     sort_history:Option<Sort>,
     history_detail:Option<String>,
     managed_queue:Option<String>,
+    freight_drafts:HashMap<String,String>,
     open_order:Option<String>,
     open_settings:bool,
     pending_confirmation:Option<PendingConfirmation>,
@@ -327,7 +328,7 @@ impl ExcelManager{
             preview:None,error:None,notice:None,tab:Tab::Factory,
             query:String::new(),selected:BTreeSet::new(),
             sort_queue:None,sort_history:None,history_detail:None,
-            managed_queue:None,
+            managed_queue:None,freight_drafts:HashMap::new(),
             open_order:None,open_settings:false,
             pending_confirmation:None,
         };
@@ -387,6 +388,9 @@ impl ExcelManager{
                     self.preview=Some(result);
                 }else if operation=="workflow"{
                     let action=text(&result,"action");
+                    if action=="record_actual_freight"{
+                        self.freight_drafts.remove(text(&result,"queueId"));
+                    }
                     self.notice=Some(match action{
                         "restore_shipment"=>"배송 건을 처리 중 주문으로 복구했습니다.",
                         "mark_store_sent"=>"매장 발송을 확인했습니다.",
@@ -478,7 +482,7 @@ impl ExcelManager{
         let mut open_file=None;
         let mut open_daily=false;
         let mut open_history=None;
-        let mut workflow_action:Option<(String,String,String,String)>=None;
+        let mut workflow_action:Option<(String,String,String,String,Value)>=None;
         let mut manage_clicked=None;
         let mut open_order=None;
         let mut copy_path=None;
@@ -700,6 +704,50 @@ impl ExcelManager{
                         theme::management_list_strip_frame().show(section,|details|{
                             details.horizontal(|line|{
                                 line.label(typography::subsection_heading("관리"));
+                                // Actual-freight edits remain local until the
+                                // original Rust record_actual_freight action
+                                // commits through the exact revision guard.
+                                let origin=self.tab.origin();
+                                let saved=native.and_then(|read|rows(&read["shipments"])
+                                    .iter().find(|ship|
+                                        text(ship,"shipmentId")==text(&entry.shipment,"id")
+                                    )).and_then(|ship|ship["actualFreight"][origin].as_i64());
+                                let source=saved.map(|v|v.to_string())
+                                    .unwrap_or_default();
+                                let draft=self.freight_drafts.entry(id.to_owned())
+                                    .or_insert_with(||source.clone());
+                                line.label(typography::field_label(
+                                    if self.tab==Tab::Factory{
+                                        "공장 실제 출고 운임"
+                                    }else{"매장 실제 출고 운임"}
+                                ));
+                                components::money_field(
+                                    line,draft,!busy&&self.gateway.excel_write_enabled()
+                                );
+                                let dirty=*draft!=source;
+                                if theme::action(
+                                    line,"실제 운임 저장",
+                                    theme::ButtonRole::Primary,
+                                    dirty&&!busy&&self.gateway.excel_write_enabled()
+                                ).clicked(){
+                                    let value=if draft.trim().is_empty(){
+                                        Some(Value::Null)
+                                    }else{
+                                        components::parse_money_input(draft)
+                                            .map(|amount|json!(amount))
+                                    };
+                                    if let Some(value)=value{
+                                        workflow_action=Some((
+                                            "record_actual_freight".into(),
+                                            text(&entry.shipment,"id").into(),
+                                            id.into(),origin.into(),value
+                                        ));
+                                    }else{
+                                        self.error=Some(
+                                            "올바른 실제 운임을 입력하세요.".into()
+                                        );
+                                    }
+                                }
                                 if text(&entry.order,"orderType")!="RETAIL"{
                                     if theme::action(line,"이관 복구",
                                         theme::ButtonRole::Standard,
@@ -708,7 +756,7 @@ impl ExcelManager{
                                         workflow_action=Some((
                                             "restore_shipment".into(),
                                             text(&entry.shipment,"id").into(),
-                                            id.into(),self.tab.origin().into()
+                                            id.into(),self.tab.origin().into(),Value::Null
                                         ));
                                     }
                                 }
@@ -719,7 +767,7 @@ impl ExcelManager{
                                     workflow_action=Some((
                                         "mark_store_sent".into(),
                                         text(&entry.shipment,"id").into(),
-                                        id.into(),self.tab.origin().into()
+                                        id.into(),self.tab.origin().into(),Value::Null
                                     ));
                                 }
                             });
@@ -790,7 +838,7 @@ impl ExcelManager{
                 Ok(json!({"preview":preview,"sender":sender}))
             });
         }
-        if let Some((action,shipment_id,queue_id,origin))=workflow_action{
+        if let Some((action,shipment_id,queue_id,origin,value))=workflow_action{
             let Some(revision)=self.result.as_ref()
                 .and_then(|s|s.state["revision"].as_u64()) else{
                 self.error=Some("업무 DB 리비전을 확인할 수 없습니다.".into());
@@ -798,7 +846,7 @@ impl ExcelManager{
             };
             self.task("workflow",ui.ctx().clone(),move|gateway|{
                 gateway.mutate_excel_workflow(
-                    revision,&action,&shipment_id,&queue_id,&origin,Value::Null
+                    revision,&action,&shipment_id,&queue_id,&origin,value
                 )
             });
         }
