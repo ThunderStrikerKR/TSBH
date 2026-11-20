@@ -438,6 +438,11 @@ impl ClientManager {
             );
             let table_width=layout.table_width;
             let header_rect=layout.header_rect;
+            // This is the only large list in its card; no footer follows.
+            // Measure after the title, toolbar and pinned 36pt header.
+            let scroll_max_height=components::management_single_list_scroll_height(
+                section,card_min_height,0.0
+            );
             let mut chosen=None;
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
@@ -446,8 +451,7 @@ impl ClientManager {
                     .scroll_bar_visibility(
                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                     )
-                    .max_height(section.ctx().content_rect().height()
-                        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+                    .max_height(scroll_max_height)
                     .auto_shrink([false,false]),
                 section,table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT,
                 rows.len().max(1),
