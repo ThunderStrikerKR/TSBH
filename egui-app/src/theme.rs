@@ -1,5 +1,8 @@
 //! Single source of visual tokens for the egui migration.
-//! Based on src/ui/design-system.json and docs/egui-ui-design-contract.md.
+//! Approved dual-master SSOT and named exceptions:
+//! docs/egui-management-ui-ssot.md (2026-11-21).
+//! Historical references: src/ui/design-system.json and
+//! docs/egui-ui-design-contract.md.
 //! Keep screen-specific hard-coded colors and geometry out of view code.
 
 use eframe::egui::{
