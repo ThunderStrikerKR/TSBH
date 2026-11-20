@@ -1767,13 +1767,21 @@ impl FreightManager {
                     );
                 }
             }
-            // A single, 1pt outline under the column heading separates
-            // the fixed header from scrolling product rows. Reuse the shared
-            // border tone: the previous DIVIDER stroke was barely visible.
-            // No added widget height or duplicate divider.
-            header_painter.line_segment(
-                [header_content_rect.left_bottom(),header_content_rect.right_bottom()],
-                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER)
+            // Paint one solid 2pt rule entirely INSIDE the header rectangle.
+            // A 1pt stroke centered exactly on bottom() was half-clipped by
+            // the header clip, then visually lost against the next dark row.
+            // A filled band stays visible at 100%/125% DPI without moving
+            // the fixed header, introducing a layout gap or extra row height.
+            header_painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(
+                        header_content_rect.left(),
+                        header_content_rect.bottom()-2.0
+                    ),
+                    header_content_rect.right_bottom(),
+                ),
+                0.0,
+                theme::TABLE_HEADER_OUTLINE,
             );
 
             // This is the single "select all" control for the currently
