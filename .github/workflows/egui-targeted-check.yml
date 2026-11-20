@@ -13,6 +13,8 @@ on:
       - egui-app/src/category_manager.rs
       - egui-app/src/product_manager.rs
       - egui-app/src/alias_manager.rs
+      - egui-app/src/brand_manager.rs
+      - src-tauri/src/business_core/catalog_clients/brands.rs
       - src-tauri/src/business_core/catalog_clients/aliases.rs
       - egui-app/src/model_group_manager.rs
       - egui-app/src/settings_store.rs
@@ -24,7 +26,6 @@ on:
       - src-tauri/src/egui_shipping_bridge.rs
       - src-tauri/src/main.rs
       - src-tauri/src/lib.rs
-      - src-tauri/src/workflow_sqlite_integration_tests.rs
       - src-tauri/src/workflow_sqlite_integration_tests.rs
   workflow_dispatch:
 permissions:
@@ -58,3 +59,7 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib aliases::tests -- --nocapture
       - name: Verify alias actual SQLite save, correction and stale-revision refusal
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib native_alias_sqlite_save_correction_and_stale_editor_rejection -- --nocapture
+      - name: Verify native brand normalization, aliases and reference preservation
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib brands::tests -- --nocapture
+      - name: Verify brand SQLite creation, correction, collisions, CAS and reopened state
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib native_brand_sqlite_save_correction_collision_and_reopen -- --nocapture
