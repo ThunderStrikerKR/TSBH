@@ -275,7 +275,11 @@ impl FreightManager {
             ("그룹 운임표", self.tab == FreightTab::Rates, true),
             ("조합 / 기준 이력", self.tab == FreightTab::History, true),
         ]) {
-            self.tab = FreightTab::ALL[index];
+            if self.rate_editor.is_none() && self.rename_target.is_none()
+                && self.delete_target.is_none() && self.basis_target.is_none()
+                && self.write_receiver.is_none() {
+                self.tab = FreightTab::ALL[index];
+            }
         }
         ui.add_space(theme::SPACE_12);
         if let Some(error) = &self.error {
@@ -380,6 +384,73 @@ impl FreightManager {
             }
             if close_rename{self.rename_target=None;}
             if close_delete{self.delete_target=None;}
+        }
+        if self.tab==FreightTab::Rates {
+            let area=ui.max_rect();
+            let ctx=ui.ctx();
+            let mut close_editor=false;
+            let mut close_basis=false;
+            if let Some(editor)=self.rate_editor.as_mut(){
+                components::modal_backdrop(ctx,"freight-rate-backdrop",false);
+                components::modal_window("배송 그룹 운임 수정","freight-rate-modal",area)
+                    .resizable(false).show(ctx,|modal|{
+                        egui::ScrollArea::vertical()
+                            .id_salt("freight-rate-editor-scroll")
+                            .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
+                            .show(modal,|body|{
+                                Self::rate_dialog(
+                                    body,editor,enabled,&mut action,&mut close_editor
+                                );
+                            });
+                    });
+                if editor.ask_discard {
+                    components::modal_backdrop(ctx,"freight-discard-backdrop",true);
+                    components::decision_window(
+                        "저장하지 않은 운임","freight-discard-confirm",area
+                    ).show(ctx,|dialog|{
+                        dialog.label(typography::body(
+                            "운임 수정사항을 저장하지 않고 닫을까요?"
+                        ));
+                        dialog.horizontal(|bar|{
+                            if theme::action(bar,"계속 수정",
+                                theme::ButtonRole::Standard,enabled).clicked(){
+                                editor.ask_discard=false;
+                            }
+                            if theme::action(bar,"저장 안 함",
+                                theme::ButtonRole::Danger,enabled).clicked(){
+                                close_editor=true;
+                            }
+                        });
+                    });
+                }
+            }else if let Some(target)=self.basis_target.as_ref(){
+                let name=target.as_deref().map(|id|group_name(&groups,id));
+                components::modal_backdrop(ctx,"freight-basis-backdrop",false);
+                components::decision_window(
+                    "운임 기준 변경","freight-basis-confirm",area
+                ).show(ctx,|dialog|{
+                    let warning=match name {
+                        None=>"전체 운임 기준을 변경하면 이전 운임의 자동 추천을 중단합니다. 새 운임을 다시 확인해 등록해야 합니다.",
+                        Some(_)=>"선택한 그룹의 이전 운임 추천을 중단하고 새 운임 기준으로 변경합니다."
+                    };
+                    dialog.label(typography::body(warning));
+                    dialog.horizontal(|bar|{
+                        if theme::action(bar,"취소",
+                            theme::ButtonRole::Standard,enabled).clicked(){
+                            close_basis=true;
+                        }
+                        if theme::action(bar,"기준 변경",
+                            theme::ButtonRole::Danger,enabled).clicked(){
+                            action=Some(("change_basis".into(),match target{
+                                Some(id)=>json!({"groupId":id}),
+                                None=>json!({})
+                            }));
+                        }
+                    });
+                });
+            }
+            if close_editor{self.rate_editor=None;}
+            if close_basis{self.basis_target=None;}
         }
         if let Some((kind,data))=action {
             self.write(kind,data,ui.ctx().clone());
