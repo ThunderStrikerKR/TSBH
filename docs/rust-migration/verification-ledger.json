@@ -866,6 +866,25 @@
         }
       ],
       "eguiFreightMigration": {
+        "historyUi58": {
+          "date": "2026-11-20",
+          "scope": "운임 관리 > 조합 / 기준 이력 탭의 표시 전용 UI 정리",
+          "patchCommits": [
+            "710a654c3a7132d30fc112ce8882ddaab75fb054",
+            "bbe6061aff690d815083b8e0fcf0b4ab67aa9392",
+            "2c76713fb01825a9e03a6e011447a0d572d55fc0"
+          ],
+          "files": [
+            "egui-app/src/freight_manager.rs",
+            "egui-app/src/theme.rs"
+          ],
+          "patch": "CODE_COMMITTED: verified combinations and group rate version history use common pinned 36pt header and virtual 42pt fixed row geometry, viewport-aligned columns, solid scrollbar, consistent left/right/center alignments, separate metadata/date cells and full hover content; original group collapse, exception editing and status source preserved.",
+          "static": "PASS (targeted source comparison): src/ShippingManager.tsx+shipping.css+management-layout.css; current egui freight and approved management reference; Rust currentCombinations projection, read/mutation entrypoints and historical-null handling. History writes, DB schemas, shipment computations, order statuses unchanged.",
+          "unit": "NOT EXECUTED: historical display-only transformation with existing Rust read/action paths; no GUI simulation or business regression tests.",
+          "compile": "NOT VERIFIED for 2c76713f at record creation; targeted check requested by existing main branch workflow, queued at run 44696230672 then cancelled as newer main commit arrived.",
+          "windows": "SKIPPED by user-approved no-Windows-GUI testing policy.",
+          "assessment": "CODE_PATCHED_STATIC_REVIEWED; final target build unverified, no claim of live UI parity."
+        },
         "groupManagementUi58": {
           "date": "2026-11-20",
           "scope": "운임 관리 > 배송 그룹 관리: 승인된 배송 그룹 편성 화면의 관리 표/정보 밀도 계약 적용",
