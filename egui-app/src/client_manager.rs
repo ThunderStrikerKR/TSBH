@@ -344,9 +344,12 @@ impl ClientManager {
         // action toolbar, a permanently visible header and its own rows.
         theme::management_list_frame().show(ui,|section|{
             section.spacing_mut().item_spacing.y=0.0;
+            // The outer list card already owns the 16pt Freight reference
+            // inset. Keep only vertical toolbar breathing room so its
+            // heading/search and the table header share one left edge.
             egui::Frame::new()
                 .inner_margin(egui::Margin::symmetric(
-                    theme::SPACE_12 as i8,theme::SPACE_8 as i8
+                    0,theme::SPACE_8 as i8
                 ))
                 .show(section,|tools|{
                     tools.horizontal(|heading|{
