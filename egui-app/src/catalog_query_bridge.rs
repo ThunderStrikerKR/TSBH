@@ -24,6 +24,15 @@ mod client_search;
 mod native_queries;
 #[path = "../../src-tauri/src/business_core/catalog_clients/model_groups.rs"]
 mod native_model_groups;
+#[path = "../../src-tauri/src/business_core/catalog_clients/aliases.rs"]
+mod native_aliases;
+
+/// Render the exact Rust alias diagnostics from the original React query.
+/// No second duplicate, color-suffix or model-conflict heuristic in egui.
+pub fn alias_problems(catalog:&Value)->Result<Value,String>{
+    native_aliases::execute("alias_problems",&json!({"state":catalog}))
+}
+
 
 /// The exact Rust catalog_clients validator is also the pre-backup gate.
 pub fn validate_model_groups(catalog:&Value,groups:&Value)->Result<(),String>{
