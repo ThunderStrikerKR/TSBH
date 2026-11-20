@@ -493,13 +493,17 @@ impl CategoryManager {
                                             ));
                                         });
                                         body.label(typography::field_label("분류 이름"));
-                                        components::flexible_text_field(body,&mut self.name,
-                                            (width-theme::SPACE_24).max(
-                                                theme::MANAGEMENT_SEARCH_MIN_WIDTH),
-                                            "분류 이름");
-                                        if is_root(&current.id){
-                                            self.name=current.name.clone();
-                                        }
+                                        body.add_enabled_ui(
+                                            editable && !busy && !is_root(&current.id),
+                                            |field_ui|{
+                                                components::flexible_text_field(
+                                                    field_ui,&mut self.name,
+                                                    (width-theme::SPACE_24).max(
+                                                        theme::MANAGEMENT_SEARCH_MIN_WIDTH),
+                                                    "분류 이름"
+                                                );
+                                            }
+                                        );
                                         body.label(typography::field_label("상위 카테고리"));
                                         body.horizontal_wrapped(|location|{
                                             location.label(typography::body(
