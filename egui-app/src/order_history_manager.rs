@@ -375,16 +375,6 @@ fn date_range_error(from:&str,to:&str)->Option<&'static str>{
     }
     None
 }
-fn move_range(from:&mut String,to:&mut String,step:i64){
-    if from.is_empty()&&to.is_empty(){
-        let today=move_date(&seoul_today(),step);
-        *from=today.clone();*to=today;
-    }else{
-        for date in [from,to]{
-            if !date.is_empty(){*date=move_date(date,step);}
-        }
-    }
-}
 /// Place date fields in reverse insertion order inside an RTL parent.
 /// egui then RIGHT-anchors the entire range while the visible order stays
 /// basis -> previous -> start/calendar -> end/calendar -> next -> all.
@@ -392,6 +382,8 @@ fn range_date_picker_rtl(
     ui:&mut Ui,label:&str,date:&mut String,month:&mut NaiveDate,
     id:&'static str
 )->bool{
+    // The RTL parent reverses insertion order. Screen order for EACH date:
+    // [‹] [YYYY-MM-DD] [›] [달력], without visible "시작일/종료일" labels.
     let trigger=theme::action(
         ui,"달력",theme::ButtonRole::Standard,true
     ).on_hover_text(&format!("{label}을 달력에서 선택"));
@@ -407,28 +399,35 @@ fn range_date_picker_rtl(
         *date=day.format("%Y-%m-%d").to_string();
         true
     });
+    if theme::action(ui,"›",theme::ButtonRole::Standard,true)
+        .on_hover_text(&format!("{label} 하루 뒤")).clicked(){
+        *date=move_date(date,1);
+        changed=true;
+    }
     changed|=components::flexible_text_field(
         ui,date,theme::SETTLEMENT_DATE_FIELD_WIDTH,"YYYY-MM-DD"
-    ).changed();
-    ui.label(typography::field_label(label));
+    ).on_hover_text(&format!("{label} 직접 입력"))
+        .changed();
+    if theme::action(ui,"‹",theme::ButtonRole::Standard,true)
+        .on_hover_text(&format!("{label} 하루 전")).clicked(){
+        *date=move_date(date,-1);
+        changed=true;
+    }
     changed
 }
 fn history_date_range_leading_rtl(
     ui:&mut Ui,basis:&mut HistoryDateBasis,
-    from:&mut String,from_month:&mut NaiveDate,
-    to:&mut String
+    from:&mut String,from_month:&mut NaiveDate
 )->bool{
     ui.spacing_mut().item_spacing.x=theme::SPACE_8;
-    let mut changed=range_date_picker_rtl(
+    let changed=range_date_picker_rtl(
         ui,"시작일",from,from_month,"order-history-date-from-calendar"
     );
-    if theme::action(ui,"‹",theme::ButtonRole::Standard,true).clicked(){
-        move_range(from,to,-1);
-        changed=true;
-    }
     let previous=*basis;
+    // 115pt caused the Korean label/dropdown affordance to clip.
+    // Use a full-width content slot; never shorten selected_text.
     egui::ComboBox::from_id_salt("history-range-date-basis")
-        .width(115.0)
+        .width(150.0)
         .selected_text(basis.label())
         .show_ui(ui,|options|{
             options.selectable_value(basis,HistoryDateBasis::Reception,"접수일 기준");
@@ -445,10 +444,6 @@ fn history_date_range_trailing_rtl(
     if theme::action(ui,"전체 날짜",theme::ButtonRole::Standard,
         !from.is_empty()||!to.is_empty()).clicked(){
         from.clear();to.clear();changed=true;
-    }
-    if theme::action(ui,"›",theme::ButtonRole::Standard,true).clicked(){
-        move_range(from,to,1);
-        changed=true;
     }
     changed|=range_date_picker_rtl(
         ui,"종료일",to,to_month,"order-history-date-to-calendar"
@@ -488,7 +483,7 @@ fn history_date_controls(
             .max_rect(first).layout(egui::Layout::right_to_left(Align::Center)),
             |line|{
                 changed|=history_date_range_leading_rtl(
-                    line,basis,from,from_month,to
+                    line,basis,from,from_month
                 );
             });
         ui.scope_builder(UiBuilder::new()
@@ -505,7 +500,7 @@ fn history_date_controls(
                 line,from,to,to_month
             );
             changed|=history_date_range_leading_rtl(
-                line,basis,from,from_month,to
+                line,basis,from,from_month
             );
         });
     }
@@ -925,10 +920,10 @@ mod tests{
         assert!(date_range_error("2026-02-30","").is_some());
         assert!(date_range_error("","2026-11-30").is_none());
         let mut from="2026-11-20".to_owned();
-        let mut to="2026-11-22".to_owned();
-        move_range(&mut from,&mut to,-1);
-        assert_eq!((&*from,&*to),("2026-11-19","2026-11-21"));
-        move_range(&mut from,&mut to,1);
+        let to="2026-11-22".to_owned();
+        from=move_date(&from,-1);
+        assert_eq!((&*from,&*to),("2026-11-19","2026-11-22"));
+        from=move_date(&from,1);
         assert_eq!((&*from,&*to),("2026-11-20","2026-11-22"));
         assert_eq!(model_label("BD 709 / 블랙"),"709 / 블랙");
         assert_eq!(won(&Value::Null),"확인 필요");
