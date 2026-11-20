@@ -2948,6 +2948,38 @@
         "notApplicable": "React-to-Rust business logic migration, SQLite contract, Kakao external HWND movement; unchanged.",
         "pending": "Windows UI visual alignment is explicitly outside required scope; build run result not yet final."
       }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-BRAND-MANAGEMENT",
+      "scope": "상품관리 브랜드 관리 React RegistrySettings -> Rust/egui, existing Rust upsert_brand validation and CAS SQLite persistence",
+      "status": "SOURCE_PATCHED_TARGET_BUILD_AND_SQLITE_TEST_PENDING",
+      "description": "2026-11-20 상품관리 5번째 '브랜드 관리' 탭 활성화. React src/Classification.tsx::RegistrySettings (categories=false)와 src/styles/tauri-stage2-products.css registry edit/list 화면 및 shared page-leave 계약을 대조. 공식 브랜드명/한글 표기/검색 별칭(쉼표)/HTTPS 확인 근거 URL 4개 입력, 브랜드 저장, 기존 목록/정정, 입력 초기화, 다른 브랜드·탭·전역 메뉴 이동 시 미저장 보호. Rust catalog_clients/brands.rs::upsert_brand와 validate만 업무 판단: 이름/근거 검증, 검색 별칭 중복 정리 및 브랜드 간 충돌 검사. EgUI 업무 판단/자동 병합 불가. Tauri egui_product_bridge::patch action upsert_brand 생성/정정 (기존 ID 보존) 후 원본 revision-checked write_snapshot. 제품/주문/별칭/모델군/배송 데이터 변경하지 않음. Read-only preview DB는 쓰기 금지.",
+      "evidence": [
+        "src/Classification.tsx",
+        "src/ProductManager.tsx",
+        "src/styles/tauri-stage2-products.css",
+        "src-tauri/src/business_core/catalog_clients/brands.rs",
+        "src-tauri/src/egui_product_bridge.rs",
+        "src-tauri/src/workflow_sqlite_integration_tests.rs",
+        "egui-app/src/brand_manager.rs",
+        "egui-app/src/product_manager.rs",
+        "egui-app/src/main.rs",
+        ".github/workflows/egui-targeted-check.yml",
+        "docs/egui-ui-design-contract.md"
+      ],
+      "gates": {
+        "patch": "PASS source modifications: brand Rust patch 20b0315182d4685d9a4f0c912aec470f552e3228; screen 94acac6cad11de041fdaf009ffa597645c451ab8; registration 44487e4686b42c1ba52d2493f43b846c146cc032; product manager 5643997537d353853c5a5ae74a6beb4fb123b910; SQL test c48c51709e988d9d890a2bfce58527d12b4434ae; scoped CI 39dd2ed4f2a9be037c2fba5b685c9e29bd09b298; exact compiler repair 8978bfa06026d346b3e24dcfc20b8971c5362b5b; UI egui import repair f6f5016d20eddb86f204985da467e86ec2205439.",
+        "static": "PASS: source compared actual React RegistrySettings, ProductManager categories=false, CSS auto-fit registry/edit-list spacing, Rust brands.rs validate/upsert_brand. No invented brand merge/delete or source-data mutation. Shared egui common section/text input/button/font/decision popup used.",
+        "unit": "NOT YET VERIFIED after brand UI change; existing Rust brands::tests::brand_aliases_are_deduplicated_and_other_product_references_survive targeted in workflow.",
+        "action": "NOT YET VERIFIED after brand UI change; isolated SQLite test native_brand_sqlite_save_correction_collision_and_reopen added, covers create, alias normalization, edit preserving ID and product/alias/order/client/settings arrays, invalid HTTP URL and cross-brand alias rejection without state change, stale global revision CAS, fresh reopen.",
+        "ci": "Earlier Tauri cargo check FAIL for new brand save source at 20b0315/0928298: Option::filter(Value::is_object) signature error E0631; repaired in 8978bfa (closure) and new egui module import fixed in f6f5016. Current latest scoped CI run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661380535 in progress; cannot claim latest compile PASS before result.",
+        "windows": "SKIPPED by explicit user policy: no real Windows GUI/DPI/click/screenshot test."
+      },
+      "clauses": {
+        "applicable": "0-1~0-7, 3~10, 12~22, 27~32, 39~43, 47~54, 57~61",
+        "notApplicable": "KakaoTalk window layout, freight, order matching, OCR: no relevant source change",
+        "pending": "Latest changed source targeted Tauri+egui check and brand scoped unit+real SQLite test execution pending; operational database and Windows GUI intentionally untouched."
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
