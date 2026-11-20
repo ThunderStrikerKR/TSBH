@@ -337,6 +337,70 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
     }
 }
 
+/// One right-aligned date-control group. Its visual order is fixed:
+/// reception day -> previous -> input -> next -> calendar -> all dates.
+/// All date/search semantics remain on the existing Rust history query path.
+fn history_date_controls(
+    ui:&mut Ui,date:&mut String,date_input:&mut String,
+    calendar_month:&mut NaiveDate
+)->bool {
+    let mut changed=false;
+    ui.spacing_mut().item_spacing.x=theme::SPACE_8;
+    ui.label(typography::field_label("접수일"));
+    if theme::action(ui,"‹",theme::ButtonRole::Standard,true).clicked(){
+        *date=move_date(date,-1);
+        *date_input=date.clone();
+        if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
+            *calendar_month=month_start(day);
+        }
+        changed=true;
+    }
+    if components::flexible_text_field(
+        ui,date_input,130.0,"YYYY-MM-DD"
+    ).changed(){
+        if date_input.is_empty() ||
+            NaiveDate::parse_from_str(date_input,"%Y-%m-%d").is_ok()
+        {
+            *date=date_input.clone();
+            if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
+                *calendar_month=month_start(day);
+            }
+            changed=true;
+        }
+    }
+    if theme::action(ui,"›",theme::ButtonRole::Standard,true).clicked(){
+        *date=move_date(date,1);
+        *date_input=date.clone();
+        if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
+            *calendar_month=month_start(day);
+        }
+        changed=true;
+    }
+    let trigger=theme::action(
+        ui,"달력",theme::ButtonRole::Standard,true
+    ).on_hover_text("접수일을 달력에서 선택");
+    if trigger.clicked(){
+        let open=NaiveDate::parse_from_str(date,"%Y-%m-%d")
+            .unwrap_or_else(|_|NaiveDate::parse_from_str(
+                &seoul_today(),"%Y-%m-%d").expect("valid today"));
+        *calendar_month=month_start(open);
+    }
+    if let Some(day)=date_calendar(
+        &trigger,calendar_month,date,"order-history-reception-date-calendar"
+    ){
+        *date=day.format("%Y-%m-%d").to_string();
+        *date_input=date.clone();
+        changed=true;
+    }
+    if theme::action(ui,"전체 날짜",
+        theme::ButtonRole::Standard,!date.is_empty()).clicked(){
+        date.clear();
+        date_input.clear();
+        changed=true;
+    }
+    changed
+}
+
 pub struct OrderHistoryManager {
     gateway:Arc<dyn BandoGateway>,
     receiver:Option<Receiver<Result<HistorySnapshot,String>>>,
@@ -431,80 +495,52 @@ impl OrderHistoryManager {
         theme::management_list_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             theme::management_list_strip_frame().show(section,|toolbar|{
-                toolbar.horizontal(|tools|{
-                    tools.spacing_mut().item_spacing.x=theme::SPACE_8;
+                // On wide panes, the search stays left while all date controls
+                // occupy one natural-width row aligned to the right edge.
+                // In narrow split panes the date row drops below the search
+                // without overlapping or changing its internal order.
+                let narrow=toolbar.available_width()
+                    < theme::MANAGEMENT_SEARCH_MIN_WIDTH + 520.0;
+                if narrow {
                     if components::flexible_text_field(
-                        tools,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+                        toolbar,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                         "거래처 / 주문 내용 검색"
                     ).changed(){changed=true;}
-                    tools.label(typography::field_label("접수 날짜"));
-                    if theme::action(tools,"‹",theme::ButtonRole::Standard,true).clicked(){
-                        self.date=move_date(&self.date,-1);
-                        self.date_input=self.date.clone();
-                        if let Ok(date)=NaiveDate::parse_from_str(&self.date,"%Y-%m-%d"){
-                            self.calendar_month=month_start(date);
+                    toolbar.add_space(theme::SPACE_8);
+                    toolbar.with_layout(
+                        egui::Layout::right_to_left(Align::Center),|right|{
+                            right.horizontal(|dates|{
+                                changed |= history_date_controls(
+                                    dates,&mut self.date,&mut self.date_input,
+                                    &mut self.calendar_month
+                                );
+                            });
                         }
-                        changed=true;
-                    }
-                    let date_changed=components::flexible_text_field(
-                        tools,&mut self.date_input,130.0,"YYYY-MM-DD"
-                    ).changed();
-                    if date_changed {
-                        if self.date_input.is_empty() ||
-                            NaiveDate::parse_from_str(&self.date_input,"%Y-%m-%d").is_ok()
-                        {
-                            self.date=self.date_input.clone();
-                            if let Ok(date)=NaiveDate::parse_from_str(&self.date,"%Y-%m-%d"){
-                                self.calendar_month=month_start(date);
+                    );
+                }else{
+                    toolbar.horizontal(|tools|{
+                        tools.spacing_mut().item_spacing.x=theme::SPACE_8;
+                        if components::flexible_text_field(
+                            tools,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+                            "거래처 / 주문 내용 검색"
+                        ).changed(){changed=true;}
+                        tools.with_layout(
+                            egui::Layout::right_to_left(Align::Center),|right|{
+                                right.horizontal(|dates|{
+                                    changed |= history_date_controls(
+                                        dates,&mut self.date,&mut self.date_input,
+                                        &mut self.calendar_month
+                                    );
+                                });
                             }
-                            changed=true;
-                        }
-                    }
-                    // Keep Order History's calendar beside its reception-date
-                    // input. The same approved picker is now reusable by
-                    // the separately requested Daily Settlement date field.
-                    let trigger=theme::action(
-                        tools,"달력",theme::ButtonRole::Standard,true
-                    ).on_hover_text("접수 날짜를 달력에서 선택");
-                    if trigger.clicked(){
-                        let open=NaiveDate::parse_from_str(&self.date,"%Y-%m-%d")
-                            .unwrap_or_else(|_|NaiveDate::parse_from_str(
-                                &seoul_today(),"%Y-%m-%d").expect("valid today"));
-                        self.calendar_month=month_start(open);
-                    }
-                    if let Some(day)=date_calendar(
-                        &trigger,&mut self.calendar_month,&self.date,
-                        "order-history-reception-date-calendar"
-                    ){
-                        self.date=day.format("%Y-%m-%d").to_string();
-                        self.date_input=self.date.clone();
-                        changed=true;
-                    }
-                    if theme::action(tools,"›",theme::ButtonRole::Standard,true).clicked(){
-                        self.date=move_date(&self.date,1);
-                        self.date_input=self.date.clone();
-                        if let Ok(date)=NaiveDate::parse_from_str(&self.date,"%Y-%m-%d"){
-                            self.calendar_month=month_start(date);
-                        }
-                        changed=true;
-                    }
-                    if theme::action(tools,"전체 날짜",
-                        theme::ButtonRole::Standard,!self.date.is_empty()).clicked(){
-                        self.date.clear();
-                        self.date_input.clear();
-                        changed=true;
-                    }
-                    tools.with_layout(egui::Layout::right_to_left(Align::Center),|right|{
-                        right.label(typography::field_label(&format!(
-                            "{}건",self.snapshot.as_ref().map_or(0,|v|v.rows.len())
-                        )));
+                        );
                     });
-                });
+                }
             });
             if changed {self.refresh(section.ctx().clone());}
             if !self.date_input.is_empty() && self.date!=self.date_input {
                 theme::management_list_strip_frame().show(section,|ui|{
-                    ui.label(typography::status("접수 날짜는 YYYY-MM-DD 형식으로 입력하세요.",
+                    ui.label(typography::status("접수일은 YYYY-MM-DD 형식으로 입력하세요.",
                         theme::DANGER));
                 });
             }
