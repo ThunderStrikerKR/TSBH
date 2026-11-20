@@ -192,7 +192,11 @@ pub const MANAGEMENT_TAB_HEIGHT: f32 = 38.0;
 pub const MANAGEMENT_REFERENCE_HEADING_LINE_HEIGHT: f32 =
     typography::FONT_PAGE_HEADING + 8.0;
 pub fn management_primary_card_top_offset(available_width: f32) -> f32 {
-    let cards_per_row = (((available_width + SPACE_8) /
+    // KPI cards live on the approved 16pt content guide, so their true
+    // horizontal room excludes both insets. Use the SAME width here to
+    // reserve the correct number of wrapped KPI rows in narrow split panes.
+    let card_content_width=(available_width-2.0*SECTION_PADDING).max(0.0);
+    let cards_per_row = (((card_content_width + SPACE_8) /
         (FREIGHT_SUMMARY_CARD_WIDTH + SPACE_8)).floor() as usize).clamp(1, 4);
     let rows = 4_usize.div_ceil(cards_per_row);
     let summary_height = rows as f32 * FREIGHT_SUMMARY_CARD_HEIGHT
@@ -739,5 +743,9 @@ mod management_primary_card_geometry_tests {
     fn narrower_workspaces_reserve_space_for_wrapped_freight_kpis() {
         assert!((management_primary_card_top_offset(650.0)-302.0).abs()<0.01);
         assert!((management_primary_card_top_offset(250.0)-478.0).abs()<0.01);
+        // A 950pt pane fits four cards before the 16pt + 16pt page inset,
+        // but only three inside it; reserve the wrapped second row.
+        assert!((management_primary_card_top_offset(950.0)-302.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(968.0)-214.0).abs()<0.01);
     }
 }
