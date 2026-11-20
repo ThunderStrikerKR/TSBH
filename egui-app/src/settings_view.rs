@@ -768,8 +768,8 @@ impl SettingsView{
                 });
             });
         }
+        self.save_bar(form,gateway);
         });
-        self.save_bar(ui,gateway);
     }
     fn save_bar(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
         ui.add_space(theme::SPACE_12);
