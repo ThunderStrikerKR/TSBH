@@ -832,8 +832,10 @@ impl OrderHistoryManager {
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
             let full_width=section.available_width().max(1.0);
-            let toolbar_data_width=(full_width
-                -section.spacing().scroll.allocated_width()).max(1.0);
+            // The search toolbar itself has NO scrollbar. Align its last
+            // "전체 날짜" control to the card's 16pt inner right edge.
+            // Only the table header/rows below reserve the 10pt rail.
+            let toolbar_data_width=full_width;
             let one_row=toolbar_data_width>=
                 theme::MANAGEMENT_SEARCH_MIN_WIDTH
                 +theme::SPACE_16+RANGE_CONTROLS_WIDTH;
@@ -875,9 +877,9 @@ impl OrderHistoryManager {
             section.scope_builder(UiBuilder::new()
                 .id_salt("history-range-controls")
                 .max_rect(date_rect)
-                // Unlike a fixed 704pt LTR slot aligned at its left edge,
-                // this also anchors the actual trailing "전체 날짜" button
-                // to the last data column (before the 10pt scrollbar).
+                // Anchor the actual trailing "전체 날짜" button to the
+                // card's right content boundary (16pt inset). The table's
+                // independent scrollbar gutter is NOT subtracted here.
                 .layout(egui::Layout::left_to_right(Align::Center)
                     .with_main_align(Align::Max)),
                 |dates|{
