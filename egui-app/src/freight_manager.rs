@@ -1177,38 +1177,51 @@ impl FreightManager {
                         let mut current=pending.get(id).cloned()
                             .unwrap_or_else(||committed.into());
                         let before_manual_edit=current.clone();
-                        let selector_rect=cells[4].shrink2(egui::vec2(4.0,0.0));
-                        let selector_clip=selector_rect.intersect(table.clip_rect());
+                        // The dropdown was vertically clipped because an
+                        // Align::Center child was centered again by
+                        // add_enabled_ui(), leaving its bottom outside the
+                        // 42pt row. Reserve one 36pt control slot at y+3,
+                        // render from its TOP, and clip only to the full row.
+                        // This change does not alter any column width.
+                        let selector_rect=egui::Rect::from_min_size(
+                            egui::pos2(
+                                cells[4].left()+theme::SPACE_4,
+                                cells[4].top()
+                                    +(theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
+                                        -theme::INPUT_HEIGHT)/2.0
+                            ),
+                            egui::vec2(
+                                cells[4].width()-theme::SPACE_8,
+                                theme::INPUT_HEIGHT
+                            )
+                        );
+                        let selector_clip=cells[4].intersect(table.clip_rect());
                         table.scope_builder(
                             egui::UiBuilder::new()
                                 .id_salt(("freight-selector",id))
                                 .max_rect(selector_rect)
-                                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                            |child|{
-                                child.set_clip_rect(
-                                    selector_clip
-                                );
-                                child.set_width(selector_rect.width());
-                                child.add_enabled_ui(enabled,|control|{
-                                    control.set_width(selector_rect.width());
-                                    egui::ComboBox::from_id_salt(("freight-row-group",id))
-                                        .width(selector_rect.width())
-                                        .wrap_mode(egui::TextWrapMode::Truncate)
-                                        .selected_text(if current.is_empty(){
-                                            "그룹 선택"
-                                        }else{group_name(groups,&current)})
-                                        .show_ui(control,|choice|{
+                                .layout(egui::Layout::left_to_right(egui::Align::Min))
+                                .disabled(!enabled),
+                            |control|{
+                                control.set_clip_rect(selector_clip);
+                                control.set_width(selector_rect.width());
+                                egui::ComboBox::from_id_salt(("freight-row-group",id))
+                                    .width(selector_rect.width())
+                                    .wrap_mode(egui::TextWrapMode::Truncate)
+                                    .selected_text(if current.is_empty(){
+                                        "그룹 선택"
+                                    }else{group_name(groups,&current)})
+                                    .show_ui(control,|choice|{
+                                        choice.selectable_value(
+                                            &mut current,String::new(),"그룹 선택"
+                                        );
+                                        for group in groups {
                                             choice.selectable_value(
-                                                &mut current,String::new(),"그룹 선택"
+                                                &mut current,text(group,"id").into(),
+                                                text(group,"name")
                                             );
-                                            for group in groups {
-                                                choice.selectable_value(
-                                                    &mut current,text(group,"id").into(),
-                                                    text(group,"name")
-                                                );
-                                            }
-                                        });
-                                });
+                                        }
+                                    });
                             }
                         );
                         if current!=before_manual_edit {
