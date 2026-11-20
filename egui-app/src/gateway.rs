@@ -42,6 +42,8 @@ pub enum ReadOperation {
     PreviewOrder,
     ReadShipments,
     ShippingManagerView,
+    ProductFreightView,
+    DefaultProductRule,
     RenderAutomaticMessage,
 }
 
@@ -56,7 +58,8 @@ impl ReadOperation {
             | Self::ChangeOrderClient | Self::RepriceOrder
             | Self::CalculatePrice | Self::ManualClassification
             | Self::PreviewWorkflow | Self::PreviewOrder
-            | Self::ReadShipments | Self::ShippingManagerView => "rules",
+            | Self::ReadShipments | Self::ShippingManagerView
+            | Self::ProductFreightView | Self::DefaultProductRule => "rules",
             Self::RenderAutomaticMessage => "output",
         }
     }
@@ -80,6 +83,8 @@ impl ReadOperation {
             Self::PreviewOrder => "preview_order",
             Self::ReadShipments => "read_shipments",
             Self::ShippingManagerView => "shipping_manager_view",
+            Self::ProductFreightView => "apply_shipping_action",
+            Self::DefaultProductRule => "apply_shipping_action",
             Self::RenderAutomaticMessage => "render_automatic_message",
         }
     }
@@ -326,7 +331,9 @@ impl BandoGateway for LocalGateway {
             | ReadOperation::PreviewWorkflow
             | ReadOperation::PreviewOrder
             | ReadOperation::ReadShipments
-            | ReadOperation::ShippingManagerView => {
+            | ReadOperation::ShippingManagerView
+            | ReadOperation::ProductFreightView
+            | ReadOperation::DefaultProductRule => {
                 rules::execute(operation.operation(), payload)
             }
             ReadOperation::AutoMatchReceptionClient
