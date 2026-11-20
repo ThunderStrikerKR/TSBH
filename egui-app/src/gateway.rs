@@ -488,3 +488,85 @@ pub fn from_environment() -> Result<Arc<dyn BandoGateway>, String> {
         _ => Err("BANDO_HUB_GATEWAY는 local 또는 http여야 합니다.".into()),
     }
 }
+
+
+#[cfg(test)]
+mod shipping_gateway_process_roundtrip_tests {
+    use super::{BandoGateway,LocalGateway};
+    use serde_json::{json,Value};
+
+    /// Real LocalGateway -> spawned Tauri CLI -> native shipping rule ->
+    /// revision-checked v2 SQLite -> read-only egui re-query. No GUI and no
+    /// mocks. CI supplies a newly created isolated test file and compiled CLI.
+    #[test]
+    fn shipping_gateway_process_roundtrip() {
+        let db=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .expect("test fixture DB is explicitly required");
+        let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
+            .expect("compiled native Tauri helper is explicitly required");
+        assert_eq!(
+            std::path::Path::new(&db).file_name().and_then(|x|x.to_str()),
+            Some("bando-freight-gateway-e2e.sqlite"),
+            "refuse to run against any operational DB"
+        );
+        assert!(std::path::Path::new(&db).is_file());
+        assert!(std::path::Path::new(&helper).is_file());
+        let api=LocalGateway;
+        assert!(api.shipping_write_enabled(),"native freight bridge must be enabled");
+        let before=api.load_business_state().expect("egui reads initial native v2 state");
+        let revision=before["revision"].as_u64().unwrap();
+        let groups=before["shipping"]["groups"].as_array().unwrap();
+        let group=groups.iter().find(|g|g["name"]=="격리 전체 경로 검증")
+            .expect("real Rust shipping fixture group");
+        let group_id=group["id"].as_str().unwrap().to_owned();
+        let previous=group["current"].clone();
+        let original_products=before["products"].clone();
+        let original_orders=before["orders"].clone();
+        let original_clients=before["clients"].clone();
+        let staff_price=original_products[0]["variants"][0]["retail"].clone();
+        assert!(!original_products[1]["deletedAt"].is_null(),
+            "staff deletion marker must already exist in the fixture");
+        let mut rule=previous.clone();
+        rule["maxBundle"]=json!(2);
+        rule["perItem"]=Value::Null;
+        rule["fees"]=json!({"1":4321,"2":5678});
+        rule["notes"]=json!("실제 Tauri CLI 왕복 운임 검증");
+        let update=json!({"groupId":group_id,"rule":rule});
+        let response=api.mutate_shipping(revision,"save_group_rule",update.clone())
+            .expect("egui Gateway invokes native shipping CLI and reloads DB");
+        assert_eq!(response["state"]["revision"],json!(revision+1));
+        assert!(response["projection"]["productViews"].is_object());
+        let after=api.load_business_state()
+            .expect("read-only egui reload after subprocess commit");
+        assert_eq!(response["state"],after,
+            "gateway response must match authoritative persisted snapshot");
+        assert_eq!(after["products"],original_products,
+            "product edits/deletions must not change during shipping write");
+        assert_eq!(after["orders"],original_orders);
+        assert_eq!(after["clients"],original_clients);
+        assert_eq!(after["products"][0]["variants"][0]["retail"],staff_price);
+        assert!(!after["products"][1]["deletedAt"].is_null());
+        let saved=after["shipping"]["groups"].as_array().unwrap()
+            .iter().find(|g|g["id"]==group_id).unwrap();
+        assert_eq!(saved["current"]["fees"]["1"],json!(4321));
+        assert_eq!(saved["current"]["fees"]["2"],json!(5678));
+        assert_eq!(saved["history"].as_array().unwrap().last(),Some(&previous));
+        let stale=api.mutate_shipping(revision,"save_group_rule",update.clone())
+            .expect_err("stale revision must be rejected by real CLI");
+        assert!(stale.contains("다른 작업에서 데이터가 수정되었습니다."),"{stale}");
+        assert_eq!(api.load_business_state().unwrap(),after,
+            "rejected stale write must leave DB unchanged");
+        let invalid=api.mutate_shipping(revision+1,"unknown_shipping_action",json!({}))
+            .expect_err("unknown command must be rejected by real CLI");
+        assert!(invalid.contains("허용되지 않은 운임 변경 명령"),"{invalid}");
+        assert_eq!(api.load_business_state().unwrap(),after);
+        std::env::set_var("BANDO_EGUI_ENABLE_SHIPPING_WRITE","0");
+        assert!(!api.shipping_write_enabled());
+        let disabled=api.mutate_shipping(revision+1,"save_group_rule",update)
+            .expect_err("disabled gateway must not launch a writer");
+        assert!(disabled.contains("운영 운임을 변경할 수 있는 연결이 아닙니다."));
+        assert_eq!(api.load_business_state().unwrap(),after);
+        // The CI runner owns and disposes of this dedicated test DB. Do not
+        // delete any operational file or write to a non-isolated path.
+    }
+}
