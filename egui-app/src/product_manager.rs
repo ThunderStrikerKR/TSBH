@@ -600,15 +600,27 @@ impl ProductManager {
                 let before_category=self.category.clone();
                 let selected=categories.iter().find(|(id,_)|id==&self.category)
                     .map(|(_,name)|name.as_str()).unwrap_or("전체 카테고리");
+                let picker_width=theme::CATEGORY_PATH_PICKER_WIDTH;
+                let text_width=picker_width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
+                let visible=typography::fit_category_path(
+                    filters,selected,text_width,typography::CategoryPathFont::Body
+                );
                 egui::ComboBox::from_id_salt("product-admin-category")
-                    .selected_text(selected)
+                    .width(picker_width)
+                    .selected_text(visible)
                     .show_ui(filters,|combo|{
                         combo.selectable_value(&mut self.category,
                             String::new(),"전체 카테고리");
                         for (id,name) in &categories {
-                            combo.selectable_value(&mut self.category,id.clone(),name);
+                            let visible=typography::fit_category_path(
+                                combo,name,text_width,
+                                typography::CategoryPathFont::Body
+                            );
+                            combo.selectable_value(
+                                &mut self.category,id.clone(),visible
+                            ).on_hover_text(name);
                         }
-                    });
+                    }).response.on_hover_text(selected);
                 if self.category!=before_category {
                     if self.has_pending_prices(){
                         self.category=before_category;
@@ -1022,18 +1034,28 @@ impl ProductManager {
                                 .find(|(id,_)|id==&category_id)
                                 .map(|(_,name)|name.as_str())
                                 .unwrap_or("카테고리 미지정");
+                            let picker_width=theme::CATEGORY_PATH_PICKER_WIDTH;
+                            let text_width=picker_width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
+                            let visible=typography::fit_category_path(
+                                line,display,text_width,typography::CategoryPathFont::Body
+                            );
                             line.add_enabled_ui(editable&&!busy,|input|{
                                 egui::ComboBox::from_id_salt("product-detail-category")
-                                    .selected_text(display)
+                                    .width(picker_width)
+                                    .selected_text(visible)
                                     .show_ui(input,|choices|{
                                         choices.selectable_value(&mut category_id,
                                             String::new(),"카테고리 미지정");
                                         for (id,label) in &categories{
-                                            choices.selectable_value(
-                                                &mut category_id,id.clone(),label
+                                            let visible=typography::fit_category_path(
+                                                choices,label,text_width,
+                                                typography::CategoryPathFont::Body
                                             );
+                                            choices.selectable_value(
+                                                &mut category_id,id.clone(),visible
+                                            ).on_hover_text(label);
                                         }
-                                    });
+                                    }).response.on_hover_text(display);
                             });
                             if category_id!=before{
                                 draft["categories"]=if category_id.is_empty(){
