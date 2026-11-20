@@ -250,6 +250,64 @@ pub(super) fn list_view_range(
     enrich_view(state,result,tracking_order)
 }
 
+/// Employee confirmation timestamps are NOT bank payment dates.
+///
+/// Only a confirmation attached to one of this order's current shipments is
+/// evidence. Exclude shipments whose confirmation was explicitly invalidated
+/// by an "입금 승인 재확인 필요" workflow event; never infer a confirmation
+/// from the legacy order.paid flag or payments[].paidAt.
+fn employee_payment_confirmation(state:&Value,shipment_ids:&HashSet<&str>)->Value{
+    if shipment_ids.is_empty(){return Value::Null}
+    let workflow=field(state,"workflow");
+    let events=rows(field(workflow,"events"));
+    let mut dates=Vec::new();
+    let mut covered=HashSet::new();
+    let mut actors=Vec::new();
+    for confirm in rows(field(workflow,"confirmations")){
+        let confirmed_at=str_field(confirm,"confirmedAt");
+        let date=date_seoul(confirmed_at);
+        if date.is_empty(){continue}
+        let confirm_id=field(confirm,"id");
+        let mut matched=false;
+        for id in rows(field(confirm,"shipmentIds")).iter()
+            .filter_map(Value::as_str)
+            .filter(|id|shipment_ids.contains(*id))
+        {
+            let invalidated=events.iter().any(|event|
+                str_field(event,"action")=="입금 승인 재확인 필요" &&
+                field(event,"before")==confirm_id &&
+                rows(field(event,"shipmentIds")).iter().any(|event_id|
+                    event_id.as_str()==Some(id)));
+            if invalidated{continue}
+            matched=true;
+            covered.insert(id);
+        }
+        if matched {
+            dates.push((confirmed_at,date));
+            let actor=str_field(confirm,"actor");
+            if !actor.is_empty(){actors.push(actor.to_owned());}
+        }
+    }
+    if dates.is_empty(){return Value::Null}
+    // RFC3339 strings generally compare chronologically when uniform, but
+    // offset differences can reorder them. Sort by actual parsed instant
+    // where possible, otherwise the converted local calendar date.
+    dates.sort_by(|a,b|{
+        let instant=|value:&str|DateTime::parse_from_rfc3339(value).ok()
+            .map(|date|date.timestamp_millis());
+        instant(a.0).cmp(&instant(b.0)).then_with(||a.1.cmp(&b.1))
+    });
+    let latest=dates.last().map(|pair|pair.1.clone()).unwrap_or_default();
+    actors.sort();actors.dedup();
+    json!({
+        "date":latest,
+        "partial":covered.len()<shipment_ids.len(),
+        "approvedShipments":covered.len(),
+        "totalShipments":shipment_ids.len(),
+        "actors":actors
+    })
+}
+
 fn enrich_view(
     state:&Value,mut result:Value,tracking_order:&Value
 )->Result<Value,String>{
@@ -276,9 +334,11 @@ fn enrich_view(
             }
         }
         let text=tracking_message(state,&order_id,tracking_order);
+        let approval=employee_payment_confirmation(state,&shipment_ids);
         row["display"]=json!({
             "trackingMessage":text,
             "paymentEvidenceMissing":evidence_missing,
+            "employeePaymentConfirmation":approval,
             "references":links,
         });
     }
