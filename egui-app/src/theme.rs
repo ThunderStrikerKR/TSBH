@@ -13,6 +13,9 @@ pub const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
 // repeated order cards remain distinguishable inside the workflow pane.
 // This shared token intentionally updates every egui panel using PANEL.
 pub const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
+// Shared surface level 2.5: subtle alternate rows inside PANEL lists.
+// Never use INPUT/RAISED (fields/buttons) as a table zebra fill.
+pub const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
 pub const INPUT: Color32 = Color32::from_rgb(41, 41, 41);
 pub const RAISED: Color32 = Color32::from_rgb(48, 48, 48);
 pub const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
@@ -200,9 +203,6 @@ pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 // Product table: a full-width, single-line record per product. Wide names
 // claim the remaining width while price-editing may scroll horizontally.
 pub const PRODUCT_TABLE_ROW_HEIGHT:f32 = 42.0;
-// The product list uses a subtle stripe (PANEL=24; stripe=30) instead of
-// the shared faint background (RAISED=48), which reads like a checkerboard.
-pub const PRODUCT_TABLE_STRIPE_BG: Color32 = Color32::from_rgb(30, 30, 30);
 pub const PRODUCT_TABLE_MIN_WIDTH:f32 = 1100.0;
 pub const PRODUCT_TABLE_NAME_MIN_WIDTH:f32 = 340.0;
 pub const PRODUCT_TABLE_OPTION_WIDTH:f32 = 182.0;
@@ -278,6 +278,13 @@ pub enum ButtonRole {
     ActiveManagementTab,
     KakaoControl,
     ActiveKakaoControl,
+}
+
+/// Apply the shared level-2.5 alternate-row surface to a table's local UI.
+/// Call inside its ScrollArea before egui::Grid::striped(true); do not
+/// globally change faint_bg_color because other egui widgets also use it.
+pub fn apply_table_row_colors(ui:&mut Ui) {
+    ui.style_mut().visuals.faint_bg_color = TABLE_ROW_ALT_BG;
 }
 
 pub fn install(ctx: &egui::Context) {
