@@ -981,6 +981,7 @@ impl FreightManager {
                 .auto_shrink([false,false])
                 .show(section,|table|{
                     table.set_min_width(table_width);
+                    theme::apply_table_row_colors(table);
                     // Every data cell reserves its assigned horizontal width;
                     // paint text at the exact left edge instead of relying on
                     // egui Label's alignment inside an auto-sized Grid.
@@ -1305,6 +1306,7 @@ impl FreightManager {
                 .auto_shrink([false,false])
                 .show(section,|table|{
                     table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+                    theme::apply_table_row_colors(table);
                     egui::Grid::new("freight-group-rates-grid")
                         .striped(true)
                         .spacing([theme::SPACE_24,theme::SPACE_8])
@@ -1497,6 +1499,7 @@ impl FreightManager {
                 .auto_shrink([false,false])
                 .show(section,|table|{
                     table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+                    theme::apply_table_row_colors(table);
                     egui::Grid::new("freight-combination-history-grid")
                         .striped(true)
                         .spacing([theme::SPACE_24,theme::SPACE_8])
