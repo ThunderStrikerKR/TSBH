@@ -1845,6 +1845,31 @@ impl FreightManager {
                     *bulk_feedback=None;
                 }
             });
+            // The solid vertical thumb begins precisely at the body scroll
+            // origin. At integer/DPI-rounded pixels its rounded top can touch
+            // the 2pt header outline, making it look as if it intrudes upward
+            // into "설정". Mask just the first 3pt of the SCROLLBAR RAIL,
+            // using the ordinary row surface. No spacer is inserted: header,
+            // zebra row origins, 42pt heights and all hit targets stay fixed.
+            // The thumb remains fully interactive over the actual track.
+            if (filtered.len() as f32 * theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT)
+                > section.ctx().content_rect().height()
+                    * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION
+            {
+                let rail_top_clearance=header_outline_height+1.0;
+                section.painter().rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(header_content_rect.right(),header_rect.bottom()),
+                        egui::pos2(
+                            header_rect.right(),
+                            header_rect.bottom()+rail_top_clearance,
+                        ),
+                    ),
+                    0.0,
+                    theme::PANEL,
+                );
+            }
+
             // Assignment is persisted immediately from the product selector
             // or the single bulk Apply button above. Do not render a second
             // save footer, a redundant 'reset drafts' action, or guidance text.
