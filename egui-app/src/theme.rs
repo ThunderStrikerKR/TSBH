@@ -21,9 +21,9 @@ pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
 // Workflow cards: original React workflow.css card, not generic navigation tiles.
 // The selected stroke color follows the shared selection role.
-// A workflow order is a nested information card inside the #202020
-// reception section, so use the same #292929 tier as settings form fields.
-pub const WORKFLOW_CARD_BG: Color32 = INPUT;
+// Order cards are the first-level card on the #101010 reception
+// workspace, matching the #202020 cards used by Settings.
+pub const WORKFLOW_CARD_BG: Color32 = PANEL;
 pub const WORKFLOW_SELECTED_BG: Color32 = Color32::from_rgb(36, 36, 36);
 pub const WORKFLOW_CARD_BORDER: Color32 = Color32::from_rgb(83, 83, 83);
 pub const WORKFLOW_SELECTED_BORDER: Color32 = Color32::from_rgb(245, 158, 11);
@@ -113,9 +113,6 @@ pub const RECIPIENT_PHONE_ROW_MIN_WIDTH: f32 =
     + RECIPIENT_PHONE_LABEL_WIDTH + RECIPIENT_LABEL_GAP
     + RECIPIENT_PHONE_INPUT_WIDTH;
 pub const PANEL_GAP: f32 = 6.0;
-// Match the settings page's canvas -> framed section separation.
-// Reuse the 6pt existing pane gutter without changing splitter hit areas.
-pub const RECEPTION_SECTION_OUTER_GAP: f32 = PANEL_GAP;
 // Kakao dock toolbar: one compact row (2pt vertical gap around 22pt controls).
 // Only its body rect is passed to the Win32 dock.
 pub const KAKAO_TOOLBAR_HEIGHT: f32 = 26.0;
@@ -269,32 +266,23 @@ pub fn workspace_shell_frame() -> Frame {
         .inner_margin(SOFT_DIVIDER_WIDTH as i8)
 }
 
-/// Same surface tiers as Settings: #101010 workspace canvas around a
-/// #202020 framed section with #505050 outline and the common 9pt radius.
-/// The 6pt outside gap + 1pt stroke + 9pt inside padding equal the former
-/// 16pt inside padding. Thus section header, content origin, fixed splitter
-/// coordinates and the 4-column saved layout are NOT moved by the color fix.
-/// This applies to receipt/source/review/freight/workflow panes, not the
-/// externally hosted KakaoTalk HWND slot.
+/// Reception's large fixed regions are WORKSPACE (CANVAS), not cards.
+/// The pane dividers already define their boundaries. Do not introduce
+/// card strokes, rounding or outer gaps here. Keep the established 16pt
+/// content inset and splitter coordinates intact.
 pub fn docked_pane_frame() -> Frame {
-    let inner_padding = SECTION_PADDING
-        - RECEPTION_SECTION_OUTER_GAP - FRAME_STROKE_WIDTH;
     Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
-        .corner_radius(CornerRadius::same(PANEL_RADIUS))
-        .outer_margin(egui::Margin::same(RECEPTION_SECTION_OUTER_GAP as i8))
-        .inner_margin(egui::Margin::same(inner_padding as i8))
+        .fill(CANVAS)
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(0))
+        .inner_margin(SECTION_PADDING)
 }
 
-/// Kakao's native HWND uses the whole slot below its toolbar, without the
-/// 16pt work-pane content inset. React's native region has no such padding.
+/// The reserved KakaoTalk area is also workspace, whether connected or
+/// empty. Preserve its full slot geometry for the native HWND docking.
 pub fn kakao_slot_frame() -> Frame {
-    // The outer workspace and 6pt splitters own the Kakao boundary.
-    // Drawing a second perimeter (and reserving a 1pt inset) created a
-    // darker boxed panel unlike the three adjacent docked sections.
     Frame::new()
-        .fill(PANEL)
+        .fill(CANVAS)
         .stroke(Stroke::NONE)
         .corner_radius(CornerRadius::same(0))
         .inner_margin(0)
