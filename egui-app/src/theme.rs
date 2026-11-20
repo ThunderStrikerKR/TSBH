@@ -100,9 +100,16 @@ pub const RECIPIENT_PHONE_LABEL_WIDTH: f32 = 32.0;
 pub const RECIPIENT_LABEL_GAP: f32 = 6.0;
 pub const RECIPIENT_ROW_GAP: f32 = 6.0;
 pub const RECIPIENT_PHONE_COLUMN_GAP: f32 = 8.0;
-// Minimum combined width that fits both contact labels and telephone inputs.
-// Narrow panes scroll the contact row; the labels never wrap into two rows.
-pub const RECIPIENT_PHONE_ROW_MIN_WIDTH: f32 = 420.0;
+// Compact contact inputs instead of two equal-width columns. The 150pt
+// mobile field fits an 11-digit Korean number with separators and insets;
+// a standard landline needs a shorter 120pt field.
+pub const RECIPIENT_MOBILE_INPUT_WIDTH: f32 = 150.0;
+pub const RECIPIENT_PHONE_INPUT_WIDTH: f32 = 120.0;
+pub const RECIPIENT_PHONE_ROW_MIN_WIDTH: f32 =
+    RECIPIENT_LABEL_WIDTH + RECIPIENT_LABEL_GAP
+    + RECIPIENT_MOBILE_INPUT_WIDTH + RECIPIENT_PHONE_COLUMN_GAP
+    + RECIPIENT_PHONE_LABEL_WIDTH + RECIPIENT_LABEL_GAP
+    + RECIPIENT_PHONE_INPUT_WIDTH;
 pub const PANEL_GAP: f32 = 6.0;
 // Kakao dock toolbar: one compact row (2pt vertical gap around 22pt controls).
 // Only its body rect is passed to the Win32 dock.
