@@ -123,6 +123,7 @@ dependencies = [
  "rusqlite",
  "scraper",
  "serde_json",
+ "sha2",
  "unicode-normalization",
  "url",
 ]
