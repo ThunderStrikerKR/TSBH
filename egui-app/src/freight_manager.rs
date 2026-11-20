@@ -1445,32 +1445,61 @@ impl FreightManager {
                 section.label(typography::caption(
                     "실제 배송 완료 후 검증한 운임 조합이 여기에 표시됩니다."
                 ));
+                return;
             }
-            for record in combinations.iter().rev() {
-                let current = projection["currentCombinations"]
-                    .get(text(record, "id")).and_then(Value::as_bool).unwrap_or(false);
-                section.horizontal_wrapped(|row|{
-                    row.label(typography::table_cell(text(record, "description")));
-                    row.label(typography::quantity(&format!(
-                        "청구 {}",as_fee(&record["charge"])
-                    )));
-                    row.label(typography::quantity(&format!(
-                        "실제 {}",as_fee(&record["actual"])
-                    )));
-                    row.label(typography::caption(
-                        if current { "현재 유효" } else { "과거 이력" }
-                    ));
-                    if theme::action(row,"예외 운임 변경",
-                        theme::ButtonRole::Standard,enabled).clicked(){
-                        *exception=Some((
-                            text(record,"id").into(),
-                            record["charge"].as_i64()
-                                .map(|n|n.to_string()).unwrap_or_default()
-                        ));
-                    }
+            egui::ScrollArea::horizontal()
+                .id_salt("freight-verified-combination-table")
+                .auto_shrink([false,false])
+                .show(section,|table|{
+                    table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+                    egui::Grid::new("freight-combination-history-grid")
+                        .striped(true)
+                        .spacing([theme::SPACE_24,theme::SPACE_8])
+                        .show(table,|grid|{
+                            for heading in ["조합","청구 운임","실제 운임","기준","수정"] {
+                                grid.label(typography::table_header(heading));
+                            }
+                            grid.end_row();
+                            for record in combinations.iter().rev() {
+                                let valid=projection["currentCombinations"]
+                                    .get(text(record,"id"))
+                                    .and_then(Value::as_bool);
+                                grid.vertical(|cell|{
+                                    cell.label(typography::table_cell(
+                                        text(record,"description")
+                                    ));
+                                    let at=text(record,"at");
+                                    let verification=if !text(record,"verifiedAt").is_empty(){
+                                        format!("실배송 검증 {}회",
+                                            record["sampleCount"].as_u64().unwrap_or(1))
+                                    }else{
+                                        "사용자 등록 기준".to_owned()
+                                    };
+                                    cell.label(typography::caption(&format!(
+                                        "{} / {}",
+                                        if at.is_empty(){"날짜 미확인"}else{at},
+                                        verification
+                                    )));
+                                });
+                                grid.label(typography::quantity(&as_fee(&record["charge"])));
+                                grid.label(typography::quantity(&as_fee(&record["actual"])));
+                                grid.label(typography::table_cell(match valid {
+                                    Some(true)=>"현재 유효",
+                                    Some(false)=>"과거 이력",
+                                    None=>"운임 기준 조회 중"
+                                }));
+                                if theme::action(grid,"예외 운임 변경",
+                                    theme::ButtonRole::Standard,enabled).clicked(){
+                                    *exception=Some((
+                                        text(record,"id").into(),
+                                        record["charge"].as_i64()
+                                            .map(|n|n.to_string()).unwrap_or_default()
+                                    ));
+                                }
+                                grid.end_row();
+                            }
+                        });
                 });
-                components::soft_divider(section);
-            }
         });
         ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui, |section| {
@@ -1482,14 +1511,18 @@ impl FreightManager {
                 )).id_salt(("freight-history", text(group, "id")))
                     .show(section, |body| {
                         for old in history {
+                            let fees=(1..=6).filter_map(|n|{
+                                old["fees"].get(n.to_string()).map(|amount|
+                                    format!("{n}개 {}",
+                                        if amount.is_null(){"미확정".to_owned()}
+                                        else{as_fee(amount)})
+                                )
+                            }).collect::<Vec<_>>();
                             body.label(typography::body(&format!(
                                 "{} / 개당 {} / {}",
-                                text(old, "at"), as_fee(&old["perItem"]),
-                                (1..=6).filter_map(|n| {
-                                    old["fees"].get(n.to_string())
-                                        .and_then(Value::as_i64)
-                                        .map(|v| format!("{n}개 {}", components::display_won(v)))
-                                }).collect::<Vec<_>>().join(" / "),
+                                text(old, "at"),as_fee(&old["perItem"]),
+                                if fees.is_empty(){"운임 미등록".to_owned()}
+                                else{fees.join(" / ")}
                             )));
                         }
                     });
