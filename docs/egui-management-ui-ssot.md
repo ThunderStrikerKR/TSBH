@@ -33,7 +33,7 @@
 | 단일행 목록 | 높이 **42pt**. 같은 역할의 상품 목록·거래처 목록·배송그룹 편성·주문 대표행은 공통 토큰 참조 | `theme::MANAGEMENT_COMPACT_ROW_HEIGHT`, 관련 기존 상수는 **별칭** |
 | 두 줄·상세형 목록 | 길이와 정보 구조에 따른 **별도 역할**, 단일행 42pt로 억지 통일 금지 | 예: `theme::MANAGEMENT_TABLE_ROW_HEIGHT`(58pt); 아래 예외 표 |
 | 도구줄→고정 헤더 | **17pt = 도구줄 후 8pt + 4pt + 1pt 구분선 + 4pt**. egui 자동 세로 item spacing을 추가로 중첩하지 않음 | `components::management_sticky_table_header` |
-| 표 스크롤 레일 | solid, 너비 10pt, 핸들 최소 길이 44pt. 두 공동 마스터 표는 레일 양옆 추가 패딩 0pt; 트랙 시작은 데이터 행 시작 +3pt | `theme::management_scroll_style` + 두 마스터의 `scroll_bar_rect` |
+| 표 스크롤 레일 | solid, 너비 10pt, 핸들 최소 길이 44pt. **CONFLICT-003=A:** 관리 목록표 전체의 데이터 폭 계산에서 레일의 **추가 여백 0pt**. 두 마스터의 트랙 시작(+3pt)은 기존 정책 유지 | `theme::management_scroll_style`, `components::management_table_data_width`(내부 공통 계산), 고정 헤더 호출부 |
 | **표의 데이터 오른쪽 끝** | **헤더 외곽 오른쪽 끝 − 표 스크롤바 할당폭**, 도구줄의 우측 끝과 동일하게 강제하지 않음 | `components::management_sticky_table_header` |
 | 폰트 역할 | 페이지 20pt, 섹션 16pt, 표 헤더/본문 14pt, 표준 작업 버튼 13pt | `typography.rs`의 역할별 토큰·spec |
 
@@ -76,10 +76,10 @@
 
 ## 5.1. 타 화면으로 SSOT 확장한 공통 소유권 (2026-11-21)
 
-- `components::management_existing_list_table_header`: 거래처·상품·Excel·일일 결산·운임 그룹/이력 등 기존 목록의 36pt 고정 헤더와 데이터 폭을 계산한다. 이 목록들에 남아 있던 **추가 4pt 레일 여백은 사용자 결정 전까지 그대로 보존**한다. 마스터의 0pt 레일과 혼동하지 않는다.
+- `components::management_list_table_header`: 거래처·상품·Excel·일일 결산·운임 그룹/이력 등 일반 관리 목록의 **36pt 고정 헤더와 데이터 폭**을 계산한다. **CONFLICT-003 A안 확정:** 기존 추가 4pt를 제거하고, 실제 스크롤바 할당폭만 예약한다. 공동 마스터의 `management_sticky_table_header`와 내부의 `management_table_data_width` 계산식을 공유한다. 단, 도구줄→헤더 17pt 전환은 CONFLICT-005 결정을 기다리므로 아직 강제하지 않는다.
 - `theme::management_weighted_columns` 및 `management_single_stretch_columns`: 다른 목록이 승인된 개별 열 너비를 유지하면서 남는 공간을 일관된 함수로 배분한다. 두 마스터 자체는 전용 `ManagementMasterTableSpec`이 계속 원본이다.
 - `theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH`: 148pt 단일 라벨 필터. 상품관리의 카테고리 경로는 내용상 280pt 전용 역할 유지. 상품관리 카테고리/브랜드 필터는 공통 `management_dropdown`으로 변경되었다.
-- **미결 3건:** 스크롤바 추가 4pt 여백(CONFLICT-003), 60% 본문 높이 제한(CONFLICT-004), 도구줄→헤더 수직 전환(CONFLICT-005). 기존 역할별 구조를 임의 제거하지 않으며 구체적인 내용은 [타 화면 적용 기록](egui-management-ssot-rollout-20261121.md)을 참고한다.
+- **해결:** CONFLICT-003=A (모든 관리 목록표의 스크롤바 추가 여백 0pt). **미결 2건:** 60% 본문 높이 제한(CONFLICT-004), 도구줄→헤더 수직 전환(CONFLICT-005). 기존 역할별 구조를 임의 제거하지 않으며 구체적인 내용은 [타 화면 적용 기록](egui-management-ssot-rollout-20261121.md)을 참고한다.
 
 ## 6. 후속 변경 원칙
 
