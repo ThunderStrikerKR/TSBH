@@ -899,7 +899,7 @@ impl SettingsView{
             let mut open=true;
             components::modal_window(
                 "접수 원문 감사 보관함","settings-audit-records",area
-            ).open(&mut open).resizable(true)
+            ).open(&mut open)
               .default_width(720.0).show(ctx,|ui|{
                 components::flexible_text_field(
                     ui,&mut self.archive_query,ui.available_width(),
