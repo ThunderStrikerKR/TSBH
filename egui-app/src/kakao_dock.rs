@@ -110,6 +110,11 @@ mod native {
     }
     #[repr(C)]
     #[derive(Clone,Copy,Default)]
+    struct MonitorInfo{
+        size:u32,monitor:Rect,work:Rect,flags:u32,
+    }
+    #[repr(C)]
+    #[derive(Clone,Copy,Default)]
     struct Placement{
         length:u32, flags:u32, show_cmd:u32,
         min_pos:Point,max_pos:Point,normal:Rect
@@ -134,6 +139,7 @@ mod native {
     const DWMWA_EXTENDED_FRAME_BOUNDS:u32=9;
     const WM_GETMINMAXINFO:u32=0x24;
     const SMTO_ABORTIFHUNG:u32=0x2;
+    const MONITOR_DEFAULTTONEAREST:u32=2;
     #[link(name="user32")]
     unsafe extern "system" {
         fn EnumWindows(cb:Option<unsafe extern "system" fn(Hwnd,isize)->i32>,data:isize)->i32;
@@ -142,6 +148,8 @@ mod native {
         fn SendMessageTimeoutW(hwnd:Hwnd,msg:u32,wparam:usize,lparam:isize,
             flags:u32,timeout:u32,result:*mut usize)->isize;
         fn GetDpiForWindow(hwnd:Hwnd)->u32;
+        fn MonitorFromWindow(hwnd:Hwnd,flags:u32)->Handle;
+        fn GetMonitorInfoW(monitor:Handle,info:*mut MonitorInfo)->i32;
         fn GetWindowTextW(hwnd:Hwnd,buffer:*mut u16,len:i32)->i32;
         fn GetWindowThreadProcessId(hwnd:Hwnd,pid:*mut u32)->u32;
         fn GetForegroundWindow()->Hwnd;
@@ -402,6 +410,32 @@ mod native {
     }
     fn overlap_main_target(area:Rect,footer:i32)->Rect{
         Rect{bottom:area.bottom.saturating_add(footer.max(0)),..area}
+    }
+    fn monitor_screen_bottom(hub:Hwnd)->Option<i32>{
+        // Resolve the physical monitor of BANDO HUB, NOT the Kakao MAIN
+        // window, which can already extend far offscreen after docking.
+        let monitor=unsafe{MonitorFromWindow(hub,MONITOR_DEFAULTTONEAREST)};
+        if monitor==0{return None;}
+        let mut info=MonitorInfo{
+            size:std::mem::size_of::<MonitorInfo>() as u32,
+            ..Default::default()
+        };
+        if unsafe{GetMonitorInfoW(monitor,&mut info)}==0 ||
+            info.monitor.height()<=0 {
+            return None;
+        }
+        Some(info.monitor.bottom)
+    }
+    fn split_main_offscreen_target(area:Rect,screen_bottom:i32,footer:i32)->Rect{
+        // A Split MAIN occupies only the upper part of the Kakao dock.
+        // Adding the footer just to that upper slot leaves the ad visible.
+        // Extend the MAIN *behind* the CHAT until its banner is physically
+        // beyond the monitor. CHAT keeps its original lower target intact.
+        Rect{
+            bottom:area.bottom.max(screen_bottom)
+                .saturating_add(footer.max(0)),
+            ..area
+        }
     }
     fn stack_targets(area:Rect,main:Hwnd,chats:&[Hwnd])
         ->Result<(Rect,Rect),String>{
@@ -680,6 +714,11 @@ mod native {
             // Check every frame for geometry changes, but scan/move no faster
             // than once per 350ms when the viewport hasn't changed.
             let region=physical_region(self.hub,rect,scale)?;
+            // Read the HUB monitor, never the already offscreen Kakao MAIN.
+            // If the monitor API is temporarily unavailable, keep existing
+            // best-effort geometry rather than disconnecting Kakao.
+            let screen_bottom=monitor_screen_bottom(self.hub)
+                .unwrap_or(region.bottom);
             // The dock must not float over other windows while the hub is
             // minimized. Restore normal positioning when the hub reappears.
             if unsafe{IsIconic(self.hub)}!=0{return Ok(());}
@@ -741,15 +780,17 @@ mod native {
                     if unsafe{IsIconic(window.hwnd)}!=0 {continue;}
                     let target=if window.main {
                         if self.mode==super::DockMode::Split {
-                            // Keep the established MAIN/CHAT dividing line:
-                            // only MAIN extends beneath the chat, concealing
-                            // its bottom advertisement just as in Together.
-                            // Do not extend the active CHAT input composer.
+                            // The split line (chat_top) was measured BEFORE
+                            // this extension. Extending only by footer height
+                            // below that split left the ad visible onscreen.
+                            // Push the MAIN ad below the physical monitor
+                            // while CHAT stays unchanged and on top.
                             if chats.is_empty(){
                                 main_target
                             }else{
-                                overlap_main_target(
-                                    main_target,self.overlap_footer.unwrap_or(160)
+                                split_main_offscreen_target(
+                                    main_target,screen_bottom,
+                                    self.overlap_footer.unwrap_or(160)
                                 )
                             }
                         }else{
