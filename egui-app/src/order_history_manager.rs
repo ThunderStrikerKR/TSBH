@@ -670,7 +670,10 @@ fn history_date_controls(
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-start-line")
             .max_rect(first)
-            .layout(egui::Layout::left_to_right(Align::Center)),
+            // Anchor the visible controls to the right, while preserving
+            // their left-to-right order inside this compact row.
+            .layout(egui::Layout::left_to_right(Align::Center)
+                .with_main_align(Align::Max)),
             |line|{
                 line.set_width(first.width());
                 line.set_height(first.height());
@@ -682,7 +685,8 @@ fn history_date_controls(
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-end-line")
             .max_rect(second)
-            .layout(egui::Layout::left_to_right(Align::Center)),
+            .layout(egui::Layout::left_to_right(Align::Center)
+                .with_main_align(Align::Max)),
             |line|{
                 line.set_width(second.width());
                 line.set_height(second.height());
@@ -871,7 +875,11 @@ impl OrderHistoryManager {
             section.scope_builder(UiBuilder::new()
                 .id_salt("history-range-controls")
                 .max_rect(date_rect)
-                .layout(egui::Layout::left_to_right(Align::Center)),
+                // Unlike a fixed 704pt LTR slot aligned at its left edge,
+                // this also anchors the actual trailing "전체 날짜" button
+                // to the last data column (before the 10pt scrollbar).
+                .layout(egui::Layout::left_to_right(Align::Center)
+                    .with_main_align(Align::Max)),
                 |dates|{
                     dates.set_width(date_rect.width());
                     dates.set_height(date_rect.height());
