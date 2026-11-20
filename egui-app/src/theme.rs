@@ -412,6 +412,9 @@ pub const MANAGEMENT_CLIENT_TABLE_MIN_WIDTH: f32 = 900.0;
 // region; native management tables keep both axes inside that region.
 pub const MANAGEMENT_TABLE_VIEWPORT_FRACTION: f32 = 0.60;
 pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
+/// Approved standard width for single-label management filter selectors.
+/// Keep large category-path and bulk-action selectors in their separate roles.
+pub const MANAGEMENT_FILTER_DROPDOWN_WIDTH: f32 = 148.0;
 // Width reserved for the two original client-list actions on one toolbar row.
 // Match the actual two button widths plus their shared spacing, rather
 // than leaving a large unused gap after the search field.
