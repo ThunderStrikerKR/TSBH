@@ -236,9 +236,10 @@ pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
 // readable without wrapped names or vertical buttons.
 // Ordered columns: selection, product, color/option, category, group,
 // freight/bundle, assignment status, action. Keep the total at 1255pt
-// including the seven 8pt column gaps; all reclaimed width goes to category.
+// including seven 8pt column gaps. Category stays compact (about 2-3
+// hierarchy levels); extra viewport width belongs to the product column.
 pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 8] =
-    [44.0, 280.0, 69.0, 262.0, 155.0, 195.0, 66.0, 128.0];
+    [44.0, 320.0, 69.0, 222.0, 155.0, 195.0, 66.0, 128.0];
 pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
 // Width for the single-line bulk shipping-group selector.
 pub const FREIGHT_BULK_GROUP_WIDTH: f32 = 200.0;
