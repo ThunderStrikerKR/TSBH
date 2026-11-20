@@ -572,24 +572,16 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             // Main list: ONLY product name × quantity, all items in one line.
             // Click anywhere except the action button to expand all details.
             let summary=order_items_single_line(row);
-            // Draw the disclosure indicator as geometry, not as a font glyph.
-            // Windows fonts may render ▸/▾ as an empty square.
+            // The order disclosure uses the same stroked chevron as
+            // workflow cards, category trees, date arrows and dropdowns.
+            // Keep its original center and summary-text inset unchanged.
             let center=egui::pos2(columns[2].left()+11.0,columns[2].center().y);
-            let corners=if expanded.contains(id) {
-                vec![
-                    egui::pos2(center.x-4.0,center.y-2.0),
-                    egui::pos2(center.x+4.0,center.y-2.0),
-                    egui::pos2(center.x,center.y+3.0),
-                ]
-            }else{
-                vec![
-                    egui::pos2(center.x-2.0,center.y-4.0),
-                    egui::pos2(center.x-2.0,center.y+4.0),
-                    egui::pos2(center.x+3.0,center.y),
-                ]
-            };
-            ui.painter().with_clip_rect(columns[2].intersect(area)).add(
-                egui::Shape::convex_polygon(corners,theme::SECONDARY,Stroke::NONE)
+            components::paint_management_chevron(
+                &ui.painter().with_clip_rect(columns[2].intersect(area)),
+                center,
+                if expanded.contains(id){
+                    components::ManagementChevronDirection::Down
+                }else{components::ManagementChevronDirection::Right}
             );
             // Preserve the existing column boundaries and row height; only
             // reserve room for the icon inside the product cell.
