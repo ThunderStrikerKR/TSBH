@@ -1086,50 +1086,64 @@ impl FreightManager {
                 .auto_shrink([false,false])
                 .show(section,|table|{
                     table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+                    // A task-oriented 8-column table replaces the previous
+                    // auto-sized 11-column grid. Each header and body cell
+                    // receives a measured width; long content truncates
+                    // horizontally instead of making 150pt-high rows.
+                    let widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
+                    let cell=|grid:&mut Ui,index:usize,value:&str,heading:bool|{
+                        grid.add_sized(
+                            [widths[index], if heading {
+                                theme::MANAGEMENT_TABLE_HEADER_HEIGHT
+                            }else{theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT}],
+                            egui::Label::new(if heading{
+                                typography::table_header(value)
+                            }else{
+                                typography::table_cell(value)
+                            }).truncate().halign(egui::Align::Min)
+                        ).on_hover_text(value);
+                    };
                     egui::Grid::new("freight-group-assignments-grid")
-                        .striped(true).spacing([theme::SPACE_24,theme::SPACE_8])
+                        .striped(true)
+                        .spacing([theme::FREIGHT_ASSIGNMENT_COL_GAP,theme::SPACE_4])
                         .show(table,|grid|{
-                            grid.label(typography::table_header("선택"));
-                            grid.label(typography::table_header("상품명 / 상품설명"));
-                            grid.label(typography::table_header("카테고리"));
-                            grid.label(typography::table_header("색상 / 옵션"));
-                            grid.label(typography::table_header("배송 그룹"));
-                            grid.label(typography::table_header("최대 묶음 수량"));
-                            grid.label(typography::table_header("운임 등록 상태"));
-                            grid.label(typography::table_header("합포장"));
-                            grid.label(typography::table_header("최근 수정"));
-                            grid.label(typography::table_header("지정 상태"));
-                            grid.label(typography::table_header("설정"));
+                            for (index,heading) in [
+                                "선택","상품명 / 상품설명","카테고리","색상 / 옵션",
+                                "배송 그룹","운임 / 묶음 상태","지정 상태","설정"
+                            ].into_iter().enumerate() {
+                                cell(grid,index,heading,true);
+                            }
                             grid.end_row();
-                            for product in &filtered{
+                            for product in &filtered {
                                 let id=text(product,"id");
                                 let committed=text(product,"shippingGroupId");
                                 let mut checked=selected.contains(id);
-                                grid.add_enabled_ui(enabled,|control|{
-                                    if control.checkbox(&mut checked,"").changed(){
-                                        if checked{selected.insert(id.into());}
-                                        else{selected.remove(id);}
-                                    }
-                                });
-                                grid.vertical(|cell|{
-                                    cell.label(typography::table_cell(
-                                        model_label(text(product,"name"))
-                                    ));
-                                    let description=text(product,"subtitle");
-                                    if !description.is_empty(){
-                                        cell.label(typography::caption(description));
-                                    }
-                                });
-                                grid.label(typography::table_cell(
-                                    if text(product,"category").is_empty(){
-                                        "분류 미지정"
-                                    }else{text(product,"category")}
-                                ));
-                                grid.label(typography::table_cell(&variant_colors(product)));
+                                if grid.add_sized(
+                                    [widths[0],theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT],
+                                    egui::Checkbox::new(&mut checked,"")
+                                ).changed() && enabled {
+                                    if checked {selected.insert(id.into());}
+                                    else {selected.remove(id);}
+                                }
+                                // Name and subtitle share ONE truncated line,
+                                // with the full original available on hover.
+                                let model=model_label(text(product,"name"));
+                                let subtitle=text(product,"subtitle").trim();
+                                let product_title=if subtitle.is_empty()
+                                    || subtitle==text(product,"name") {
+                                    model.to_owned()
+                                }else{format!("{model} / {subtitle}")};
+                                cell(grid,1,&product_title,false);
+                                cell(grid,2,if text(product,"category").is_empty(){
+                                    "분류 미지정"
+                                }else{text(product,"category")},false);
+                                let colors=variant_colors(product);
+                                cell(grid,3,&colors,false);
                                 let mut current=pending.get(id).cloned()
                                     .unwrap_or_else(||committed.into());
                                 grid.add_enabled_ui(enabled,|control|{
                                     egui::ComboBox::from_id_salt(("freight-row-group",id))
+                                        .width(widths[4])
                                         .selected_text(if current.is_empty(){
                                             "그룹 선택"
                                         }else{group_name(groups,&current)})
@@ -1137,7 +1151,7 @@ impl FreightManager {
                                             choice.selectable_value(
                                                 &mut current,String::new(),"그룹 선택"
                                             );
-                                            for group in groups{
+                                            for group in groups {
                                                 choice.selectable_value(
                                                     &mut current,text(group,"id").into(),
                                                     text(group,"name")
@@ -1156,82 +1170,81 @@ impl FreightManager {
                                 let ready=effective.is_some();
                                 let confirmed=rule["maxConfirmed"]==true;
                                 let count=rule["maxBundle"].as_i64();
-                                grid.label(typography::table_cell(
-                                    if !ready{"확인 중"}
-                                    else if confirmed {
-                                        match count{
-                                            Some(1)=>"1개",
-                                            Some(2)=>"2개",
-                                            Some(3)=>"3개",
-                                            Some(4)=>"4개",
-                                            Some(5)=>"5개",
-                                            Some(6)=>"6개",
-                                            _=>"확인 필요"
-                                        }
-                                    }else{"확인 필요"}
-                                ));
-                                grid.label(typography::table_cell(
-                                    if !ready{"확인 중"}
-                                    else if registered_fee(rule){"등록"}else{"미등록"}
-                                ));
-                                grid.label(typography::table_cell(
-                                    if !ready{"확인 중"}
+                                let bundle=if !ready{"확인 중".to_owned()}
+                                    else if !confirmed{"확인 필요".to_owned()}
+                                    else{count.map(|n|format!("{n}개"))
+                                        .unwrap_or_else(||"확인 필요".to_owned())};
+                                let freight=if !ready{"확인 중"}
+                                    else if registered_fee(rule){"등록"}else{"미등록"};
+                                let packing=if !ready{"확인 중"}
                                     else if !confirmed || count.is_none(){"확인 필요"}
                                     else if count==Some(1){"개별 포장"}
-                                    else{"합포장 가능"}
-                                ));
-                                grid.label(typography::table_cell(
+                                    else{"합포장 가능"};
+                                let info=format!("{freight} · {bundle} · {packing}");
+                                // Previously separate fee, bundle, packing and
+                                // modified-date columns remain inspectable via
+                                // this concise status and its hover details.
+                                let full_info=format!(
+                                    "최대 묶음: {bundle} / 운임: {freight} / 합포장: {packing} / 최근 수정: {}",
                                     modified_date(&rule["at"])
-                                ));
-                                grid.label(typography::table_cell(
-                                    if changed{"변경 예정"}
+                                );
+                                grid.add_sized(
+                                    [widths[5],theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT],
+                                    egui::Label::new(typography::table_cell(&info))
+                                        .truncate().halign(egui::Align::Min)
+                                ).on_hover_text(full_info);
+                                cell(grid,6,if changed{"변경 예정"}
                                     else if committed.is_empty(){"미지정"}
-                                    else{"지정 완료"}
-                                ));
-                                grid.horizontal_wrapped(|cell|{
-                                    let editable=enabled&&!changed&&ready;
-                                    if groups.iter().any(|g|text(g,"id")==committed){
-                                        // An assigned item NEVER owns an editable
-                                        // individual price. Refer employees to its group.
-                                        cell.label(typography::caption(
-                                            if changed {"그룹 변경 예정"}
-                                            else {"그룹 운임 적용 · 위 그룹에서 수정"}
-                                        ));
-                                    }else{
-                                        if theme::action(cell,"기본 운임 설정",
-                                            theme::ButtonRole::Standard,editable).clicked(){
-                                            let initial=effective
-                                                .and_then(|entry|entry.get("editableRule"))
-                                                .filter(|v|v.is_object()).cloned()
-                                                .or_else(||{
-                                                    match gateway.execute(
-                                                        ReadOperation::DefaultProductRule,
-                                                        json!({
-                                                            "action":"default_product_rule",
-                                                            "versionId":"unsaved",
-                                                            "now":chrono::Utc::now().to_rfc3339()
-                                                        })
-                                                    ){
-                                                        Ok(value)=>value.get("rule").cloned(),
-                                                        Err(message)=>{
-                                                            *error=Some(message);
-                                                            None
+                                    else{"지정 완료"},false);
+                                grid.allocate_ui_with_layout(
+                                    egui::vec2(widths[7],theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |actions|{
+                                        actions.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                        let editable=enabled&&!changed&&ready;
+                                        if groups.iter().any(|g|text(g,"id")==committed){
+                                            actions.add(
+                                                egui::Label::new(typography::caption(
+                                                    if changed {"그룹 변경 예정"}
+                                                    else {"그룹 운임 적용 · 위 그룹에서 수정"}
+                                                )).truncate()
+                                            ).on_hover_text("그룹 운임은 상단 배송 그룹 관리에서 수정합니다.");
+                                        }else{
+                                            if theme::action(actions,"기본 운임 설정",
+                                                theme::ButtonRole::Standard,editable).clicked(){
+                                                let initial=effective
+                                                    .and_then(|entry|entry.get("editableRule"))
+                                                    .filter(|v|v.is_object()).cloned()
+                                                    .or_else(||{
+                                                        match gateway.execute(
+                                                            ReadOperation::DefaultProductRule,
+                                                            json!({
+                                                                "action":"default_product_rule",
+                                                                "versionId":"unsaved",
+                                                                "now":chrono::Utc::now().to_rfc3339()
+                                                            })
+                                                        ){
+                                                            Ok(value)=>value.get("rule").cloned(),
+                                                            Err(message)=>{
+                                                                *error=Some(message);
+                                                                None
+                                                            }
                                                         }
-                                                    }
-                                                });
-                                            if let Some(initial)=initial{
-                                                *rate_editor=Some(RateEditor::new_product(
-                                                    id,text(product,"name"),&initial
-                                                ));
+                                                    });
+                                                if let Some(initial)=initial {
+                                                    *rate_editor=Some(RateEditor::new_product(
+                                                        id,text(product,"name"),&initial
+                                                    ));
+                                                }
+                                            }
+                                            if rule.is_object() &&
+                                                theme::action(actions,"기준 변경",
+                                                    theme::ButtonRole::Quiet,editable).clicked(){
+                                                *reset_target=Some(id.to_owned());
                                             }
                                         }
-                                        if rule.is_object()
-                                            && theme::action(cell,"기준 변경",
-                                                theme::ButtonRole::Quiet,editable).clicked(){
-                                            *reset_target=Some(id.to_owned());
-                                        }
                                     }
-                                });
+                                );
                                 grid.end_row();
                             }
                         });
