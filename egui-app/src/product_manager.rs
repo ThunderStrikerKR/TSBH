@@ -2,6 +2,7 @@
 //! read-only price/detail projection. Product and price writes must not target
 //! the isolated egui preview DB or bypass Tauri's operational save boundary.
 use crate::{
+    category_manager::CategoryManager,
     components,
     gateway::{BandoGateway, ReadOperation},
     theme, typography,
@@ -146,6 +147,8 @@ pub struct ProductManager {
     catalog:Option<Value>,
     products:Vec<Value>,
     query:String,
+    tab:usize,
+    category_manager:CategoryManager,
     category:String,
     brand:String,
     missing:bool,
@@ -169,7 +172,8 @@ impl ProductManager {
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
         let mut page=Self {
             gateway,catalog:None,products:Vec::new(),
-            query:String::new(),category:String::new(),
+            query:String::new(),tab:0,
+            category_manager:CategoryManager::default(),category:String::new(),
             brand:String::new(),missing:false,selected:None,
             adding:false,original_selected:None,detail_prices:HashMap::new(),
             confirm_discard:false,confirm_archive:false,
@@ -265,10 +269,18 @@ impl ProductManager {
                         self.confirm_archive=false;
                         self.confirm_discard=false;
                     }
+                    if matches!(job.kind.as_str(),"change_category"|"delete_category"){
+                        self.category_manager.on_saved(&job.kind,&catalog);
+                        if self.category_manager.take_switch_to_list(){
+                            self.tab=0;
+                        }
+                    }
                     self.notice=Some(match job.kind.as_str(){
                         "set_price"=>"가격 변경을 저장했습니다.",
                         "upsert_product"=>"상품 상세 정보를 저장했습니다.",
                         "archive_product"=>"상품을 삭제하고 과거 기록을 보존했습니다.",
+                        "change_category"=>"카테고리 변경사항을 저장했습니다.",
+                        "delete_category"=>"빈 분류를 삭제했습니다.",
                         _=>"상품 변경을 저장했습니다.",
                     }.into());
                     self.catalog=Some(catalog);
@@ -318,7 +330,10 @@ impl ProductManager {
             None=>{}
         }
     }
-    pub fn has_modal(&self)->bool {self.selected.is_some()}
+    pub fn has_modal(&self)->bool {
+        self.selected.is_some() ||
+            (self.tab==1 && self.category_manager.has_overlay())
+    }
     pub fn close_detail(&mut self){
         self.selected=None;
         self.original_selected=None;
@@ -336,7 +351,17 @@ impl ProductManager {
             self.error=Some("가격 셀의 변경사항을 저장하거나 취소한 뒤 이동하세요.".into());
             return false;
         }
+        if self.tab==1 {
+            if let Some(catalog)=self.catalog.as_ref(){
+                if !self.category_manager.request_global_leave(catalog){
+                    return false;
+                }
+            }
+        }
         true
+    }
+    pub fn take_category_global_leave(&mut self)->bool{
+        self.category_manager.take_global_leave_approved()
     }
     fn begin_edit(&mut self,product:Value){
         if self.has_pending_prices(){
@@ -376,13 +401,39 @@ impl ProductManager {
         self.poll(ui.ctx());
         ui.label(typography::page_heading("상품 관리"));
         ui.add_space(theme::SPACE_12);
-        components::management_tabs(ui,&[
-            ("상품 목록",true,true),
-            ("카테고리 관리",false,false),
+        let pressed=components::management_tabs(ui,&[
+            ("상품 목록",self.tab==0,true),
+            ("카테고리 관리",self.tab==1,true),
             ("모델군 관리",false,false),
             ("별칭 관리",false,false),
             ("브랜드 관리",false,false),
         ]);
+        if let Some(next)=pressed {
+            if next!=self.tab && self.writing.is_none() &&
+                !self.selected.is_some()&&!self.has_pending_prices(){
+                if self.tab==1 && next==0 {
+                    let allowed=self.catalog.as_ref()
+                        .is_none_or(|catalog|
+                            self.category_manager.request_tab_leave(catalog));
+                    if allowed {
+                        self.tab=0;
+                        self.query.clear();
+                        self.category_manager.clear_for_leave();
+                        self.reload(ui.ctx().clone());
+                    }
+                }else if next==1 {
+                    self.tab=1;
+                    self.query.clear();
+                }
+            }else if self.has_pending_prices(){
+                self.error=Some("가격 수정값을 저장하거나 취소한 뒤 탭을 이동하세요.".into());
+            }
+        }
+        if self.category_manager.take_switch_to_list(){
+            self.tab=0;
+            self.query.clear();
+            self.reload(ui.ctx().clone());
+        }
         ui.add_space(theme::SPACE_12);
         let can_edit=self.gateway.product_write_enabled()
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
@@ -390,6 +441,19 @@ impl ProductManager {
         let mut price_write:Option<(String,Value)>=None;
         let mut open_detail:Option<Value>=None;
         let mut begin_new=false;
+        if self.tab==1 {
+            if let Some(catalog)=self.catalog.as_ref(){
+                if let Some(error)=&self.error{
+                    ui.label(typography::status(error,theme::DANGER));
+                }else if let Some(notice)=&self.notice{
+                    ui.label(typography::status(notice,theme::SUCCESS));
+                }
+                self.category_manager.show_page(ui,catalog,can_edit,saving);
+            } else {
+                ui.label(typography::caption("카테고리 목록을 불러오는 중입니다."));
+            }
+            return;
+        }
         theme::section_frame().show(ui,|panel|{
             panel.horizontal(|header|{
                 header.label(typography::section_heading("상품 가격표"));
@@ -663,6 +727,18 @@ impl ProductManager {
         Ok(next)
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
+        if self.tab==1 {
+            if let Some(catalog)=self.catalog.clone(){
+                let can_edit=self.gateway.product_write_enabled()
+                    && catalog["revision"].as_u64().is_some();
+                if let Some(request)=self.category_manager.show_overlays(
+                    ctx,work_area,&catalog,can_edit,self.writing.is_some()
+                ){
+                    self.start_write(request.action,request.data,None,ctx.clone());
+                }
+            }
+            return;
+        }
         let Some(mut draft)=self.selected.clone()else{return};
         let original=self.original_selected.clone().unwrap_or_else(||draft.clone());
         let editable=self.gateway.product_write_enabled()
