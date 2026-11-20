@@ -17,6 +17,7 @@ mod clipboard_intake;
 mod client_directory;
 mod client_master;
 mod client_manager;
+mod product_manager;
 mod client_chooser;
 mod business_state;
 mod native_order_change;
@@ -173,6 +174,7 @@ struct BandoEgui {
     source_save_error: Option<String>,
     client_chooser: Option<ClientChooser>,
     client_manager: Option<client_manager::ClientManager>,
+    product_manager: Option<product_manager::ProductManager>,
     settings_view: Option<settings_view::SettingsView>,
     freight_manager: Option<freight_manager::FreightManager>,
     freight_pending_page: Option<Page>,
@@ -232,6 +234,7 @@ impl Default for BandoEgui {
             source_save_error: None,
             client_chooser: None,
             client_manager: None,
+            product_manager: None,
             settings_view: None,
             freight_manager: None,
             freight_pending_page: None,
@@ -1422,6 +1425,16 @@ impl BandoEgui {
                                         // Kakao HWND ownership survives tab changes.
                                         // A return to freight must re-read staff edits made
                                         // while the page was not selected.
+                                        if page==Page::Products && self.page!=Page::Products {
+                                            if let Some(products)=self.product_manager.as_mut(){
+                                                products.refresh(ctx.clone());
+                                            }
+                                        }
+                                        if self.page==Page::Products && page!=Page::Products {
+                                            if let Some(products)=self.product_manager.as_mut(){
+                                                products.close_detail();
+                                            }
+                                        }
                                         if page==Page::Freight && self.page!=Page::Freight {
                                             if let Some(manager)=self.freight_manager.as_mut(){
                                                 manager.refresh(ctx.clone());
@@ -3124,6 +3137,11 @@ impl BandoEgui {
     }
 
     fn other_page(&mut self, ctx: &egui::Context) {
+        if self.page==Page::Products && self.product_manager.is_none() {
+            self.product_manager=Some(product_manager::ProductManager::new(
+                Arc::clone(&self.gateway),ctx.clone()
+            ));
+        }
         if self.page==Page::Clients && self.client_manager.is_none() {
             self.client_manager=Some(client_manager::ClientManager::new(
                 Arc::clone(&self.gateway),ctx.clone()
@@ -3217,6 +3235,11 @@ impl BandoEgui {
                                 main.set_height(right.height());
                                 Frame::new().inner_margin(theme::SPACE_16).show(main,|page|{
                                     match self.page{
+                                        Page::Products=>{
+                                            if let Some(manager)=self.product_manager.as_mut(){
+                                                manager.show_page(page);
+                                            }
+                                        }
                                         Page::Clients=>{
                                             if let Some(manager)=self.client_manager.as_mut(){
                                                 manager.show_page(page,Arc::clone(&self.gateway));
@@ -3341,6 +3364,12 @@ impl eframe::App for BandoEgui {
             }
         } else if self.page==Page::Freight {
             self.show_freight_leave_guard(ctx,work_area);
+        } else if self.page==Page::Products {
+            if let Some(manager)=self.product_manager.as_mut() {
+                if manager.has_modal() {
+                    manager.show_detail(ctx,work_area);
+                }
+            }
         } else if self.page==Page::Clients {
             if let Some(manager)=self.client_manager.as_mut() {
                 if manager.has_modal() {
