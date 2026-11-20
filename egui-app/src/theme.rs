@@ -249,6 +249,9 @@ pub const PRODUCT_TABLE_EDIT_PRICE_WIDTH:f32 = 264.0;
 pub const PRODUCT_TABLE_ACTION_WIDTH:f32 = 100.0;
 // Client directory explicitly uses one compact, non-wrapping record per row.
 pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
+// Text-heavy chooser lists show a primary title and a small status line.
+// React automatic-message/product-notice rows use a 48pt compact role.
+pub const MANAGEMENT_CHOOSER_ROW_HEIGHT: f32 = 48.0;
 // Freight assignment is a task-oriented table, not an auto-sized 11-column
 // audit grid. Every header and row uses the SAME widths to keep controls
 // readable without wrapped names or vertical buttons.
