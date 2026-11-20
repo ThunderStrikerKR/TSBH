@@ -437,23 +437,23 @@ pub fn management_scroll_style() -> egui::style::ScrollStyle {
     style
 }
 
-/// Search toolbar and table belong to a single management list card.
-/// The card provides only its outline; its toolbar owns inner padding,
-/// and rows can span the full width without a second 16pt inset.
+/// Match the approved Freight Assignment section's content origin:
+/// the outer card stroke is followed by the same 16pt inner inset.
+/// All tools, fixed headers and virtual rows share this x coordinate.
 pub fn management_list_frame() -> Frame {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
         .corner_radius(CornerRadius::same(PANEL_RADIUS))
-        .inner_margin(FRAME_STROKE_WIDTH as i8)
+        .inner_margin(SECTION_PADDING as i8)
 }
 
-/// Identical inset for a management list's search toolbar and its inline
-/// loading/read-only/error status. Keeps both aligned without adding an
-/// extra bordered card or changing the data table's full-width columns.
+/// Vertical spacing for list toolbars and inline statuses; no additional
+/// horizontal inset because management_list_frame now owns the same 16pt
+/// content origin as Freight Assignment. Header and rows stay aligned.
 pub fn management_list_strip_frame() -> Frame {
     Frame::new().inner_margin(egui::Margin::symmetric(
-        SPACE_12 as i8, SPACE_8 as i8
+        0, SPACE_8 as i8
     ))
 }
 
