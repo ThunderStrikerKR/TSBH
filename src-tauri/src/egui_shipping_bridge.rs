@@ -273,6 +273,21 @@ mod isolated_shipping_sqlite_verification {
         let first_revision=initial["revision"].as_u64().unwrap();
         let _=write_snapshot(&mut conn,staff,first_revision,true)
             .expect("staff retail price change committed");
+        // The distributed seed intentionally starts with no shipping groups.
+        // Create one through the real Rust action instead of inventing an
+        // in-memory business record that bypasses the shipping command.
+        let after_staff=get_snapshot(&conn).unwrap();
+        let new_group=action_payload("create_group",&json!({
+            "name":"격리 운임 검증 그룹"
+        }),&after_staff).unwrap();
+        let created=business_core::execute(
+            "rules","apply_shipping_action",new_group
+        ).expect("create group through existing Rust rule");
+        let mut with_group=after_staff.clone();
+        with_group["shipping"]=created["shipping"].clone();
+        let _=write_snapshot(
+            &mut conn,with_group,after_staff["revision"].as_u64().unwrap(),true
+        ).expect("isolated group created");
         let before=get_snapshot(&conn).unwrap();
         assert!(before["products"].as_array().unwrap().iter().any(|p|
             p["variants"].as_array().is_some_and(|variants|
