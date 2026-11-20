@@ -33,7 +33,7 @@
 | 테이블 헤더 | 높이 36pt, 하단 윤곽선 2pt를 **내부**에 포함, 헤더·본문 가로 경계 동일 | `theme::MANAGEMENT_TABLE_HEADER_HEIGHT`, `components::management_sticky_table_header` |
 | 단일행 목록 | 높이 **42pt**. 같은 역할의 상품 목록·거래처 목록·배송그룹 편성·주문 대표행은 공통 토큰 참조 | `theme::MANAGEMENT_COMPACT_ROW_HEIGHT`, 관련 기존 상수는 **별칭** |
 | 두 줄·상세형 목록 | 길이와 정보 구조에 따른 **별도 역할**, 단일행 42pt로 억지 통일 금지 | 예: `theme::MANAGEMENT_TABLE_ROW_HEIGHT`(58pt); 아래 예외 표 |
-| 도구줄→고정 헤더 | **17pt = 도구줄 후 8pt + 4pt + 1pt 구분선 + 4pt**. egui 자동 세로 item spacing을 추가로 중첩하지 않음 | `components::management_sticky_table_header` |
+| 도구줄→고정 헤더 | **21pt = 도구줄 후 16pt + 1pt 구분선 + 4pt**. 카드 안쪽 상단 16pt와 도구줄 아래~구분선 16pt의 시각적 여백을 맞춤. egui 자동 세로 item spacing을 중첩하지 않음 | `theme::MANAGEMENT_TOOLBAR_DIVIDER_*_GAP`, `components::management_sticky_table_header` |
 | 표 스크롤 레일 | solid, 너비 10pt, 핸들 최소 길이 44pt. **CONFLICT-003=A:** 관리 목록표 전체의 데이터 폭 계산에서 레일의 **추가 여백 0pt**. 두 마스터의 트랙 시작(+3pt)은 기존 정책 유지 | `theme::management_scroll_style`, `components::management_table_data_width`(내부 공통 계산), 고정 헤더 호출부 |
 | **표의 데이터 오른쪽 끝** | **헤더 외곽 오른쪽 끝 − 표 스크롤바 할당폭**, 도구줄의 우측 끝과 동일하게 강제하지 않음 | `components::management_sticky_table_header` |
 | 폰트 역할 | 페이지 20pt, 섹션 16pt, 표 헤더/본문 14pt, 표준 작업 버튼 13pt | `typography.rs`의 역할별 토큰·spec |
@@ -77,10 +77,10 @@
 
 ## 5.1. 타 화면으로 SSOT 확장한 공통 소유권 (2026-11-21)
 
-- `components::management_list_table_header`: 거래처·상품·Excel·일일 결산·운임 그룹/이력 등 일반 관리 목록의 **36pt 고정 헤더와 데이터 폭**을 계산한다. **CONFLICT-003 A안 확정:** 기존 추가 4pt를 제거하고, 실제 스크롤바 할당폭만 예약한다. 공동 마스터의 `management_sticky_table_header`와 내부의 `management_table_data_width` 계산식을 공유한다. 단, 도구줄→헤더 17pt 전환은 CONFLICT-005 결정을 기다리므로 아직 강제하지 않는다.
+- `components::management_list_table_header`: 거래처·상품·Excel·일일 결산·운임 그룹/이력 등 일반 관리 목록의 **36pt 고정 헤더와 데이터 폭**을 계산한다. **CONFLICT-003 A안 확정:** 기존 추가 4pt를 제거하고, 실제 스크롤바 할당폭만 예약한다. 공동 마스터의 `management_sticky_table_header`와 내부의 `management_table_data_width` 계산식을 공유한다. 단, 두 마스터에 적용된 도구줄→헤더 21pt 전환을 다른 관리 목록에 강제할지는 CONFLICT-005 결정을 기다린다.
 - `theme::management_weighted_columns` 및 `management_single_stretch_columns`: 다른 목록이 승인된 개별 열 너비를 유지하면서 남는 공간을 일관된 함수로 배분한다. 두 마스터 자체는 전용 `ManagementMasterTableSpec`이 계속 원본이다.
 - `theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH`: 148pt 단일 라벨 필터. 상품관리의 카테고리 경로는 내용상 280pt 전용 역할 유지. 상품관리 카테고리/브랜드 필터는 공통 `management_dropdown`으로 변경되었다.
-- **승인·반영 상태:** CONFLICT-003=A는 코드 반영 완료. **CONFLICT-004=A는 사용자 승인 및 구현 전 구조 점검 완료**(단일 주 목록만 카드 남은 높이, 다중 표·편집 화면은 기존 상한 유지). CONFLICT-004의 실제 스크롤 높이 코드는 아직 변경하지 않았다. **CONFLICT-005는 미결**이며 도구줄→헤더 간격을 임의 수정하지 않는다. 화면별 대상 및 가변 푸터 보호 조건은 [타 화면 적용 기록](egui-management-ssot-rollout-20261121.md)에 따른다.
+- **승인·반영 상태:** CONFLICT-003=A는 코드 반영 완료. **CONFLICT-004=A는 사용자 승인 및 구현 전 구조 점검 완료**(단일 주 목록만 카드 남은 높이, 다중 표·편집 화면은 기존 상한 유지). CONFLICT-004의 실제 스크롤 높이 코드는 아직 변경하지 않았다. **CONFLICT-005는 다른 관리 목록으로의 적용 여부가 미결**이며 두 마스터의 신규 21pt를 일괄 복사하지 않는다. 화면별 대상 및 가변 푸터 보호 조건은 [타 화면 적용 기록](egui-management-ssot-rollout-20261121.md)에 따른다.
 
 ## 6. 후속 변경 원칙
 
