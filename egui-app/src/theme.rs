@@ -246,7 +246,9 @@ pub const PRODUCT_TABLE_MIN_WIDTH:f32 = 1100.0;
 pub const PRODUCT_TABLE_NAME_MIN_WIDTH:f32 = 340.0;
 pub const PRODUCT_TABLE_OPTION_WIDTH:f32 = 182.0;
 pub const PRODUCT_TABLE_PRICE_WIDTH:f32 = 116.0;
-pub const PRODUCT_TABLE_EDIT_PRICE_WIDTH:f32 = 236.0;
+// 112pt money field, Save/Cancel buttons and standard cell spacing
+// must fit in one fixed-height edited price cell.
+pub const PRODUCT_TABLE_EDIT_PRICE_WIDTH:f32 = 264.0;
 pub const PRODUCT_TABLE_ACTION_WIDTH:f32 = 100.0;
 // Client directory explicitly uses one compact, non-wrapping record per row.
 pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
