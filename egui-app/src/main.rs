@@ -39,6 +39,7 @@ mod settings_view;
 mod settings_help;
 mod freight_manager;
 mod management_queries;
+mod developer_ui_samples;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
@@ -3775,6 +3776,13 @@ fn main() -> eframe::Result<()> {
             eprintln!("[BANDO HUB] 기존 Tauri 업무 DB 자동 연결 실패: {error}");
             std::process::exit(2);
         }
+    }
+    // Only the explicitly opted-in Windows developer launcher appends
+    // synthetic UI-density fixtures to the existing isolated TEST DB.
+    // It never touches an operating DB or launches a save-helper process.
+    if let Err(error) = developer_ui_samples::seed_if_requested() {
+        eprintln!("[BANDO HUB TEST] 가상 UI 데이터 준비 실패: {error}");
+        std::process::exit(2);
     }
     let backend = match gateway::from_environment() {
         Ok(backend) => backend,

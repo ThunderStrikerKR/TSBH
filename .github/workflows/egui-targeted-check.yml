@@ -8,6 +8,7 @@ on:
       - egui-app/src/freight_manager.rs
       - egui-app/src/management_queries.rs
       - egui-app/src/gateway.rs
+      - egui-app/src/developer_ui_samples.rs
       - egui-app/src/main.rs
       - egui-app/src/business_state.rs
       - DEV_WINDOWS_EGUI.cmd
@@ -48,6 +49,8 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify synthetic UI samples cover seven management views without changing original catalog
+        run: cargo test --manifest-path egui-app/Cargo.toml developer_ui_samples::tests -- --nocapture
       - name: Verify existing Tauri app-data DB selection remains mode-isolated
         run: cargo test --manifest-path egui-app/Cargo.toml auto_database_location_tests -- --nocapture
       - name: Verify egui product-price input conversion and non-mutating category choices

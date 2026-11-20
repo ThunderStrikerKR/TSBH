@@ -33,15 +33,21 @@ set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=0"
 set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=0"
 set "BANDO_EGUI_ENABLE_SETTINGS_WRITE=0"
 set "BANDO_EGUI_ENABLE_WORKING_COMMIT=0"
+rem Explicit one-time UI-density fixtures ONLY in the pre-existing Tauri developer TEST DB.
+rem Production, HTTP and standalone preview modes never receive synthetic data.
+set "BANDO_EGUI_UI_SAMPLE_DATA=0"
 if exist "%APPDATA%\com.bandostand.bandohub.tauri\developer-test\bando-hub-test.sqlite" (
   set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=1"
   set "BANDO_EGUI_ENABLE_CLIENT_WRITE=1"
   set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=1"
   set "BANDO_EGUI_ENABLE_SETTINGS_WRITE=1"
   set "BANDO_EGUI_ENABLE_WORKING_COMMIT=1"
+  set "BANDO_EGUI_UI_SAMPLE_DATA=1"
   echo [FREIGHT/CLIENT/PRODUCT/SETTINGS/RECEPTION] Native Rust direct save enabled for the existing isolated TEST DB.
+  echo [UI SAMPLE] Synthetic groups, aliases, brands, clients, combinations and rate history: one-time insert.
 ) else (
   echo [FREIGHT] No developer-test SQLite found. The production DB will NOT be used.
+  echo [UI SAMPLE] Create/open the isolated test workspace in DEV_WINDOWS_TAURI.cmd first.
 )
 
 rem Reuse an EXISTING, packaged BANDO OCR runtime without copying or
