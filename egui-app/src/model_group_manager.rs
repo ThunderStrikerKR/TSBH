@@ -1,11 +1,11 @@
 //! Staff-driven model families. React oracle: ColorGuidanceManager.tsx.
 //! Saved data stays in settings.colorGuidanceGroups, never product/order rows.
 //! Rust catalog_clients::model_groups validates; Tauri settings_patch CAS saves.
-use crate::{components, gateway::BandoGateway, theme, typography};
+use crate::{catalog_query_bridge,components, gateway::BandoGateway, theme, typography};
 use eframe::egui::{self, Align, Context, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
+    collections::{HashMap,HashSet},
     sync::{Arc,atomic::{AtomicU64,Ordering},mpsc::{self,Receiver,TryRecvError}},
     time::Duration,
 };
@@ -14,11 +14,6 @@ fn text<'a>(v:&'a Value,k:&str)->&'a str{v.get(k).and_then(Value::as_str).unwrap
 fn items(v:&Value)->&[Value]{v.as_array().map(Vec::as_slice).unwrap_or(&[])}
 fn product<'a>(catalog:&'a Value,id:&str)->Option<&'a Value>{
     items(&catalog["products"]).iter().find(|p|text(p,"id")==id)
-}
-fn registered(p:&Value)->bool{
-    p["active"]!=false &&
-    p.get("deletedAt").is_none_or(Value::is_null) &&
-    p.get("supersededBy").is_none_or(Value::is_null)
 }
 fn original_groups(catalog:&Value)->Value{
     catalog["settings"].get("colorGuidanceGroups")
@@ -212,6 +207,10 @@ impl ModelGroupManager {
         self.sync(catalog);
         let writable=gateway.model_group_write_enabled();
         let busy=self.busy();
+        let eligible_result=catalog_query_bridge::eligible_model_group_products(catalog);
+        let eligible:HashSet<String>=eligible_result.as_ref().ok()
+            .and_then(Value::as_array).into_iter().flatten()
+            .filter_map(Value::as_str).map(str::to_owned).collect();
         let groups=self.draft.as_object().map(|m|
             m.iter().map(|(id,g)|(id.clone(),g.clone())).collect::<Vec<_>>())
             .unwrap_or_default();
@@ -305,10 +304,13 @@ impl ModelGroupManager {
                                             "상품명으로 찾아서 추가");
                                     });
                                     let assigned=self.membership();
+                                    if let Err(message)=&eligible_result {
+                                        body.label(typography::status(message,theme::DANGER));
+                                    }
                                     if !self.search.trim().is_empty(){
                                         let query=self.search.trim().to_lowercase();
                                         let choices=items(&catalog["products"]).iter()
-                                            .filter(|p|registered(p))
+                                            .filter(|p|eligible.contains(text(p,"id")))
                                             .filter(|p|!items(&g["productIds"]).iter()
                                                 .any(|id|id.as_str()==Some(text(p,"id"))))
                                             .filter(|p|format!("{} {}",text(p,"name"),
