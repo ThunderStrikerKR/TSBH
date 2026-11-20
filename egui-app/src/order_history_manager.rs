@@ -139,7 +139,6 @@ struct HistorySnapshot {
 
 struct MemoEditor {
     shipment_id:String,
-    order_id:String,
     expected_revision:Option<u64>,
     original:String,
     draft:String,
@@ -666,7 +665,6 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                         if let Some(ship)=shipment{
                             *pending_memo=Some(MemoEditor{
                                 shipment_id:field(ship,"id").to_owned(),
-                                order_id:id.to_owned(),
                                 expected_revision:snapshot.state["revision"].as_u64(),
                                 original:memo_text.to_owned(),
                                 draft:memo_text.to_owned(),
