@@ -397,6 +397,17 @@ fn cells(origin:Pos2,widths:&[f32;7],height:f32)->[Rect;7]{
         cell
     })
 }
+/// The header background and its bottom outline stay pinned to the
+/// viewport, but its columns and vertical separators scroll together with
+/// the body. Never derive the separators from the unscrolled header rect.
+fn history_scrolled_header_row(
+    header_viewport:Rect,scrolled_left:f32,table_width:f32
+)->Rect{
+    Rect::from_min_size(
+        egui::pos2(scrolled_left,header_viewport.top()),
+        Vec2::new(table_width,header_viewport.height())
+    )
+}
 fn paint_column_dividers(
     ui:&Ui,rect:Rect,widths:&[f32;7],detail:bool,content_clip:Rect
 ){
@@ -1507,13 +1518,17 @@ impl OrderHistoryManager {
                     .galley(origin,galley,color);
             }
             let left=header_origin.unwrap_or(head_rect.left()-output.state.offset.x);
-            let header_cells=cells(egui::pos2(left,head_rect.top()),&widths,HEADER_HEIGHT);
+            let scrolled_header=history_scrolled_header_row(
+                head_rect,left,table_width
+            );
+            let header_cells=cells(scrolled_header.min,&widths,HEADER_HEIGHT);
             let painter=section.painter().with_clip_rect(head_rect);
             painter.rect_filled(head_rect,0.0,theme::RAISED);
-            // The rail is never painted as a data column. Keep column
-            // separators within the same measured data viewport as rows.
+            // Header labels AND column separators must use the same
+            // horizontally scrolled origin as the data rows. The viewport
+            // background, bottom outline and scrollbar rail remain fixed.
             paint_column_dividers(
-                section,head_rect,&widths,false,header_content_rect
+                section,scrolled_header,&widths,false,header_content_rect
             );
             // Freight centers headings in the 34pt area above its
             // INSIDE-the-header 2pt outline, excluding the right rail.
