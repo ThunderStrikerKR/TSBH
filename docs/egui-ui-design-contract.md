@@ -472,6 +472,14 @@
 - **검증:** GitHub PATCH 및 React/CSS/Rust 정적 비교 수준. Rust 대상 컴파일과 SQLite 상품 수정·삭제·재조회·충돌 실행은 미수행이며, Windows GUI 실화면은 최신 사용자 결정에 따라 생략한다.
 
 
+### 56차 후속 — 상품 카테고리의 전체 경로 표시 규칙 (2026-11-20)
+
+- **반도스탠드와 반도몰은 실질적인 최상위 카테고리**이며, 트리 화면뿐 아니라 운임 관리 등 상품 카테고리를 표시하는 모든 관리 화면에서 경로의 첫 단계에 포함한다.
+- 상품의 현재 카테고리 경로는 **`product.categories`의 마지막 유효 ID → 최신 `state.categories[*].parentId`**로 구성하며, `catalog-root:BANDOSTAND` / `catalog-root:BANDOMALL` 가상 루트도 같은 트리에 포함한다. 예: `반도스탠드 > 보면대 > 보면대 악세사리`.
+- 단순 문자열인 `product.category`는 과거 저장 시점의 경로일 수 있다. 유효한 카테고리 ID가 있으면 이를 직접 렌더하지 않는다. 운임 관리 검색과 표시는 **같은 전체 경로**를 사용한다.
+- 실제 분류 ID 또는 상위 연결이 없는 레거시 상품은 임의로 반도스탠드/반도몰에 소속시키지 않는다. 기존 표기를 임시 유지하고 분류 연결 상태를 별도 확인한다. **색상·상품 소속·운임·가격·저장 데이터는 표시 보정 과정에서 수정하지 않는다.**
+- egui의 읽기 전용 경로 구성은 카테고리 맵과 같은 트리 탐색 함수인 `category_manager::ProductCategoryPaths`로 공유한다. 다른 관리 화면에 같은 목적의 자체 문자열 조합 로직을 추가하지 않는다.
+
 ### 52차 후속: 상품관리 카테고리 관리
 
 - **최신 기준:** `src/CategoryManager.tsx`, `src/native-category.ts`, `src/category-tree.ts`, `src/category-roots.ts`, `src/styles/product-admin-redesign.css`와 실제 덮어쓰기 스타일인 `src/styles/tauri-stage2-products.css`의 카테고리 맵 및 오른쪽 편집 레이어를 따른다.
