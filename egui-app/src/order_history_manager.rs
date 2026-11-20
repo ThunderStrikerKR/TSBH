@@ -1349,7 +1349,7 @@ impl OrderHistoryManager {
                 self.refresh(section.ctx().clone());
             }
             // Same measured transition as Freight > Shipping Group
-            // Assignment: toolbar gap, divider and sticky header come from
+            // Assignment: symmetric toolbar breathing room, divider and header come from
             // ONE shared allocator instead of a separate add_space call.
             // Invalid dates and other notices are painted inside the rows,
             // never inserted into this vertical rhythm.
