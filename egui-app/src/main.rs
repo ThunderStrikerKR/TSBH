@@ -2316,23 +2316,45 @@ impl BandoEgui {
                 let mut include_link=false;
                 header.add_enabled(false,egui::Checkbox::new(&mut include_link,"링크 포함"));
             },|body|{
+                let button_row_height=if body.available_width()<280.0{
+                    theme::ACTION_STANDARD_HEIGHT*2.0+theme::SPACING
+                }else{theme::ACTION_STANDARD_HEIGHT};
                 let available=components::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
-                let message_height=(available-theme::ACTION_STANDARD_HEIGHT
-                    -theme::SPACE_8).max(0.0);
-                egui::ScrollArea::vertical()
-                    .id_salt(("native-workflow-message",group.id.as_str()))
-                    .max_height(message_height)
-                    .auto_shrink([false,false])
-                    .show(body,|content|{
-                        if let Some(message)=group.automatic_text.as_deref(){
-                            content.add(egui::Label::new(typography::body(message))
-                                .selectable(true));
-                        }
-                        if let Some(error)=group.automatic_error.as_deref(){
-                            content.label(typography::status(error,theme::DANGER));
-                        }
-                    });
+                let message_height=(available-button_row_height-theme::SPACE_8).max(0.0);
+                // The canvas owns its fixed rectangle even when the message
+                // is empty or its content is shorter than the viewport.
+                let (message_rect,_)=body.allocate_exact_size(
+                    Vec2::new(body.available_width(),message_height),Sense::hover()
+                );
+                components::paint_source_document_surface(body,message_rect);
+                if message_height>0.0 {
+                    let inner=message_rect.shrink(theme::SPACE_4);
+                    body.scope_builder(
+                        UiBuilder::new()
+                            .id_salt("native-workflow-message-canvas")
+                            .max_rect(inner)
+                            .layout(Layout::top_down(Align::Min)),
+                        |canvas|{
+                            canvas.set_clip_rect(inner);
+                            canvas.set_width(inner.width());
+                            canvas.set_height(inner.height());
+                            egui::ScrollArea::vertical()
+                                .id_salt(("native-workflow-message",group.id.as_str()))
+                                .max_height(inner.height())
+                                .auto_shrink([false,false])
+                                .show(canvas,|content|{
+                                    if let Some(message)=group.automatic_text.as_deref(){
+                                        content.add(egui::Label::new(typography::body(message))
+                                            .selectable(true));
+                                    }
+                                    if let Some(error)=group.automatic_error.as_deref(){
+                                        content.label(typography::status(error,theme::DANGER));
+                                    }
+                                });
+                        },
+                    );
+                }
                 body.add_space(theme::SPACE_8);
                 components::paired_actions(body,
                     ("그대로 복사",ButtonRole::Standard,false),
@@ -2361,11 +2383,7 @@ impl BandoEgui {
                 Vec2::new(ui.available_width(), field_height),
                 Sense::hover(),
             );
-            ui.painter().rect_filled(
-                field_rect,
-                theme::CONTROL_RADIUS as f32,
-                theme::INPUT,
-            );
+            components::paint_source_document_surface(ui, field_rect);
             ui.add_space(theme::SPACE_8);
             components::paired_actions(
                 ui,
