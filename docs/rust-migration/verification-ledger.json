@@ -2139,7 +2139,7 @@
         "static": "PASS: Excel V2/V1 헤더·DB revision·20MB·20000행·읽기전용 식별자·일괄변경 검토·누락 상품 보존·승인 및 백업 후 CAS 연결 대조",
         "unit": "PASS: Windows CI #44748059905 상품 Excel V2 export/import 왕복과 오류·보류 승인 차단 테스트",
         "compile": "PASS: Windows CI #44748059905 Tauri 및 egui cargo check",
-        "sqliteAction": "PENDING: CI isolated SQLite product Excel backup, commit, reload, stale revision test #44749226513 (production DB untouched)",
+        "sqliteAction": "PASS: Windows CI #44749226513 native_product_excel_backup_commit_reopen_and_stale_revision_guard on fresh isolated on-disk SQLite: preview non-mutating, manual backup, price update, existing order and absent products unchanged, reopen and stale revision rejected; production DB untouched",
         "windowsGui": "NOT_REQUESTED: 사용자 결정에 따라 제외",
         "notMigrated": "상품 추가의 공식 상품 가져오기 및 별도 Excel 대량 등록은 이번 Excel 관리 범위 밖"
       },
