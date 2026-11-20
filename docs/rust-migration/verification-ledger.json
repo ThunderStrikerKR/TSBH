@@ -2884,6 +2884,42 @@
         "notApplicable": "Gateway, customer/order/shipping calculations and SQLite business mutations unchanged.",
         "pending": "Actual Windows display and subjective visual difference require user feedback only if requested."
       }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-ALIAS-MANAGEMENT",
+      "scope": "상품관리 별칭 관리 React AliasManager/ProductSearchDialog -> egui + 기존 Rust alias/save",
+      "status": "NATIVE_ALIAS_CODE_AND_SQLITE_TEST_PASS_LATEST_CI_PENDING",
+      "description": "React AliasManager.tsx/실제 tauri-stage2-products.css registry form/rows 및 ProductSearchDialog.tsx+ClassificationFilters 계층형 분류·브랜드 조회 기준으로 egui-app/src/alias_manager.rs를 상품관리 네 번째 탭에 연결. 입력 별칭·회사공통/거래처별 범위·등록 상품 선택·연결 정정·원본 Rust 충돌 진단·상품 검색과 유효 공식 링크·미저장 선택/탭/전역 이탈 보호. 업무 판단은 catalog_clients/aliases.rs::{save_alias,alias_problems}를 경로 그대로 재사용. Tauri egui_product_bridge save_alias는 원본 DB의 실제 첫 variant와 operatorName, 시각/ID를 record에 채운 후 Rust save_alias의 결과만 existing revision-checked write_snapshot으로 저장. egui 프리뷰 DB나 별도 임시 업무 엔진 금지. 별칭 삭제 기능 추가 없음.",
+      "evidence": [
+        "src/AliasManager.tsx",
+        "src/ProductSearchDialog.tsx",
+        "src/Classification.tsx",
+        "src/category-filter-levels.ts",
+        "src/matching.ts",
+        "src/styles/tauri-stage2-products.css",
+        "src-tauri/src/business_core/catalog_clients/aliases.rs",
+        "src-tauri/src/egui_product_bridge.rs",
+        "src-tauri/src/workflow_sqlite_integration_tests.rs",
+        "egui-app/src/alias_manager.rs",
+        "egui-app/src/catalog_query_bridge.rs",
+        "egui-app/src/product_manager.rs",
+        "egui-app/src/main.rs",
+        ".github/workflows/egui-targeted-check.yml",
+        "docs/egui-ui-design-contract.md"
+      ],
+      "gates": {
+        "patch": "PASS: Rust product alias save route c5672926b5705529342c947452b3b69dc90f7a57; Rust diagnostic module c878d81651628ff8843211f83f05fbe0570ddecf; egui AliasManager 44ca2b3193f6bd2ea88f75a3c0c5d1fcdb0dcd8e; tab integration 667ba26f05da940b1833a5769e98349188ca9be7; hierarchical UI and filtering latest d64ceb02d6dab7220e810b0309b7fbe994a0f5d0; SQLite test 89bc5fdf6a11a60e33c342a2a0e807761403a976; CI config eeb76f3c244cf5e420bca83d98fc3e679b313ab7.",
+        "static": "PASS source reviewed: original React AliasManager save/select/leave state and ProductSearchDialog native query path, actual CSS registry grid/lists, original catalog_clients aliases::save_alias alias_problems & original SQLite transaction, projection-safe read-only client names. No unrelated order business files changed.",
+        "unit": "PASS original alias rule 1/1: aliases::tests::overwrite_same_scope_preserves_id_and_old_orders, 0 failed, https://github.com/ThunderStrikerKR/TSBH/actions/runs/44658911369.",
+        "action": "PASS isolated SQLite roundtrip 1/1, 0 failed: workflow_sqlite_integration_tests::native_alias_sqlite_save_correction_and_stale_editor_rejection, real Tauri production initializer, native save_alias, ID-preserving correction, old revision rejection, fresh reopen unchanged products/orders. Tests do not mutate operational DB and seeded orders are empty (historical populated order preservation separately untested). https://github.com/ThunderStrikerKR/TSBH/actions/runs/44658911369.",
+        "ci": "Tauri/egui cargo check PASS at eeb76f3c244cf5e420bca83d98fc3e679b313ab7, https://github.com/ThunderStrikerKR/TSBH/actions/runs/44658911369. Latest alias filter and reset changes d64ceb02d6dab7220e810b0309b7fbe994a0f5d0: https://github.com/ThunderStrikerKR/TSBH/actions/runs/44659164777 compilation passed but remaining narrow test run underway at last observation; newest result pending.",
+        "windows": "SKIPPED by explicit user policy: no manual GUI/dpi/click or screenshot."
+      },
+      "clauses": {
+        "apply": "0-1~0-7,3~10,12~22,27~32,39~43,47~54,57~61",
+        "notApplicable": "카카오톡 창 배치·운임 계산·엑셀 실행: 관련 코드 미변경",
+        "pending": "Latest CI full targeted result, real interactive click sequence (Windows GUI excluded by user)."
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
