@@ -93,7 +93,7 @@ fn path(cats:&[Category],id:&str)->Vec<Category>{
     result
 }
 fn path_text(cats:&[Category],id:&str)->String{
-    path(cats,id).iter().map(|c|c.name.as_str()).collect::<Vec<_>>().join(" / ")
+    path(cats,id).iter().map(|c|c.name.as_str()).collect::<Vec<_>>().join(" > ")
 }
 
 /// Read-only, ID-based full category paths for management tables.
@@ -537,9 +537,13 @@ impl CategoryManager {
                                                 self.request_close_editor(&cats);
                                             }
                                         });
-                                        body.label(typography::caption(
-                                            &path_text(&cats,&current.id)
-                                        ));
+                                        let breadcrumb=path_text(&cats,&current.id);
+                                        let visible=typography::fit_category_path(
+                                            body,&breadcrumb,body.available_width(),
+                                            typography::CategoryPathFont::Metadata
+                                        );
+                                        body.label(typography::caption(&visible))
+                                            .on_hover_text(&breadcrumb);
                                         components::soft_divider(body);
                                         body.horizontal_wrapped(|summary|{
                                             summary.label(typography::caption(
@@ -571,7 +575,15 @@ impl CategoryManager {
                                                     "최상위".to_owned()
                                                 }else{"소속 확인 필요".to_owned()}
                                             }else{path_text(&cats,&current.parent)};
-                                            location.label(typography::body(&parent_label));
+                                            let visible=typography::fit_category_path(
+                                                location,&parent_label,
+                                                (location.available_width()-
+                                                    theme::CATEGORY_PARENT_ACTION_RESERVE_WIDTH)
+                                                    .max(0.0),
+                                                typography::CategoryPathFont::Body
+                                            );
+                                            location.label(typography::body(&visible))
+                                                .on_hover_text(&parent_label);
                                             if theme::action(location,"위치 변경",
                                                 theme::ButtonRole::Standard,
                                                 editable&&!busy&&!is_root(&current.id)
@@ -625,9 +637,16 @@ impl CategoryManager {
                     if let Some(current)=self.current(&cats){
                         match operation{
                             Operation::Add=>{
-                                modal.label(typography::body(&format!(
-                                    "생성 위치: {}",path_text(&cats,&current.id)
-                                )));
+                                let location_path=path_text(&cats,&current.id);
+                                modal.horizontal(|line|{
+                                    line.label(typography::field_label("생성 위치:"));
+                                    let visible=typography::fit_category_path(
+                                        line,&location_path,line.available_width(),
+                                        typography::CategoryPathFont::Body
+                                    );
+                                    line.label(typography::body(&visible))
+                                        .on_hover_text(&location_path);
+                                });
                                 modal.label(typography::field_label("새 분류 이름"));
                                 components::flexible_text_field(modal,&mut self.new_name,
                                     theme::MANAGEMENT_SEARCH_MIN_WIDTH,"새 분류 이름");
@@ -651,15 +670,28 @@ impl CategoryManager {
                                     && !under(&cats,&row.id,&current.id)
                                     && path(&cats,&row.id).iter().all(|c|c.active)
                                 }).collect::<Vec<_>>();
+                                let current_path=path_text(&cats,&self.target);
+                                let path_width=theme::CATEGORY_PATH_PICKER_WIDTH-
+                                    theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
+                                let selected_text=typography::fit_category_path(
+                                    modal,&current_path,path_width,
+                                    typography::CategoryPathFont::Body
+                                );
                                 egui::ComboBox::from_id_salt("category-parent-options")
-                                    .selected_text(path_text(&cats,&self.target))
+                                    .width(theme::CATEGORY_PATH_PICKER_WIDTH)
+                                    .selected_text(selected_text)
                                     .show_ui(modal,|ui|{
                                         for option in choices{
+                                            let full=path_text(&cats,&option.id);
+                                            let visible=typography::fit_category_path(
+                                                ui,&full,path_width,
+                                                typography::CategoryPathFont::Body
+                                            );
                                             ui.selectable_value(&mut self.target,
-                                                option.id.clone(),
-                                                path_text(&cats,&option.id));
+                                                option.id.clone(),visible)
+                                                .on_hover_text(full);
                                         }
-                                    });
+                                    }).response.on_hover_text(current_path);
                             }
                             Operation::Delete=>{
                                 modal.label(typography::body(
