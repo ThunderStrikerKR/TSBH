@@ -155,7 +155,10 @@ pub fn paired_actions(
 /// Section widgets must not impose independent minimums that can spill
 /// across the source/message splitter.
 pub fn docked_section_body_height(section_height: f32) -> f32 {
-    let chrome = theme::SECTION_PADDING * 2.0
+    // Must match main.rs::section_with_header and docked_pane_frame.
+    // The compact title releases space to the body without changing the
+    // independently sized pane rectangles or introducing new scrollbars.
+    let chrome = theme::RECEPTION_PANE_PADDING_Y * 2.0
         + theme::SECTION_HEADER_HEIGHT
         + theme::SECTION_CONTENT_GAP
         + theme::SOFT_DIVIDER_WIDTH
