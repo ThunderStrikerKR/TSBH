@@ -508,9 +508,11 @@ impl CategoryManager {
             name_galley,theme::TEXT
         );
         let summary_x=name_end+theme::SPACE_8;
+        // Never let count glyphs paint beyond the row's right inset,
+        // including in unusually narrow/deeply indented tree views.
         let summary_clip=egui::Rect::from_min_max(
             egui::pos2(summary_x.min(right_edge),rect.top()),
-            egui::pos2(right_edge.max(summary_x),rect.bottom())
+            egui::pos2(right_edge,rect.bottom())
         );
         ui.painter().with_clip_rect(summary_clip).galley(
             egui::pos2(summary_x,rect.center().y-summary_galley.size().y/2.0),
