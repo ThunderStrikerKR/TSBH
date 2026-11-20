@@ -214,10 +214,9 @@ impl BrandManager {
         components::modal_backdrop(ctx,"brand-unsaved-dim",true);
         components::decision_window("브랜드","brand-unsaved-confirm",work_area)
             .show(ctx,|dialog|{
+                cancel=components::modal_header(dialog,"브랜드","취소",!busy);
                 dialog.label(typography::body("브랜드 변경사항을 저장할까요?"));
                 dialog.horizontal(|buttons|{
-                    cancel=theme::action(buttons,"취소",
-                        theme::ButtonRole::Standard,!busy).clicked();
                     discard=theme::action(buttons,"저장 안 함",
                         theme::ButtonRole::Standard,!busy).clicked();
                     save=theme::action(buttons,"저장",
