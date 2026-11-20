@@ -241,3 +241,85 @@ pub(super) fn run() -> i32 {
     let _=std::io::stdout().write_all(response.to_string().as_bytes());
     if result.is_ok(){0}else{2}
 }
+
+
+#[cfg(test)]
+mod isolated_shipping_sqlite_verification {
+    use super::*;
+    use crate::{initialize_database, relational_store};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Narrow integration verification of the actual v2 relational SQLite
+    /// transaction. Uses a unique temporary file seeded by the normal native
+    /// initializer; never points at an employee's installed app-data DB.
+    #[test]
+    fn freight_commit_preserves_staff_price_history_and_rejects_stale_revision() {
+        let nanos=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let path=std::env::temp_dir().join(format!(
+            "bando-freight-isolated-{}-{nanos}.sqlite",std::process::id()
+        ));
+        let mut conn=initialize_database(&path).expect("isolated v2 database initialization");
+        assert!(relational_store::active(&conn).unwrap());
+        let initial=get_snapshot(&conn).unwrap();
+        let mut staff=initial.clone();
+        let price=staff["products"].as_array_mut().unwrap().iter_mut()
+            .find_map(|product|{
+                let variant=product["variants"].as_array_mut()?.first_mut()?;
+                let old=variant["retail"].as_i64()?;
+                let edited=old+1234;
+                variant["retail"]=json!(edited);
+                Some(edited)
+            }).expect("a normal product retail-price record exists");
+        let first_revision=initial["revision"].as_u64().unwrap();
+        let _=write_snapshot(&mut conn,staff,first_revision,true)
+            .expect("staff retail price change committed");
+        let before=get_snapshot(&conn).unwrap();
+        assert!(before["products"].as_array().unwrap().iter().any(|p|
+            p["variants"].as_array().is_some_and(|variants|
+                variants.iter().any(|v|v["retail"]==json!(price)))));
+        let unchanged_products=before["products"].clone();
+        let unchanged_orders=before["orders"].clone();
+        let unchanged_clients=before["clients"].clone();
+
+        let group=before["shipping"]["groups"].as_array().unwrap()
+            .iter().find(|g|g["deletedAt"].is_null())
+            .expect("existing shipping group");
+        let group_id=group["id"].as_str().unwrap().to_owned();
+        let previous=group["current"].clone();
+        let mut rate=previous.clone();
+        rate["maxBundle"]=json!(2);
+        rate["perItem"]=Value::Null;
+        rate["fees"]=json!({"1":4321,"2":5678});
+        rate["notes"]=json!("임시 DB 운임 검증");
+        let payload=action_payload("save_group_rule",&json!({
+            "groupId":group_id,"rule":rate
+        }),&before).expect("bridge accepts valid freight-only update");
+        let engine=business_core::execute("rules","apply_shipping_action",payload)
+            .expect("reuse existing Rust shipping rules");
+        let mut next=before.clone();
+        next["shipping"]=engine["shipping"].clone();
+        let expected=before["revision"].as_u64().unwrap();
+        let committed=write_snapshot(&mut conn,next.clone(),expected,true)
+            .expect("native relational SQLite snapshot commit");
+        assert_eq!(committed["revision"],json!(expected+1));
+        let actual=get_snapshot(&conn).unwrap();
+        assert_eq!(actual["products"],unchanged_products);
+        assert_eq!(actual["orders"],unchanged_orders);
+        assert_eq!(actual["clients"],unchanged_clients);
+        let saved=actual["shipping"]["groups"].as_array().unwrap()
+            .iter().find(|g|g["id"]==group_id).unwrap();
+        assert_eq!(saved["current"]["fees"]["1"],json!(4321));
+        assert_eq!(saved["current"]["fees"]["2"],json!(5678));
+        assert_eq!(saved["history"].as_array().unwrap().last(),Some(&previous));
+        relational_store::verify(&conn).expect("all relational price rows intact");
+
+        assert!(write_snapshot(&mut conn,next,expected,true)
+            .unwrap_err().contains("다른 작업에서 데이터가 수정되었습니다."));
+        assert_eq!(get_snapshot(&conn).unwrap(),actual);
+        drop(conn);
+        let reopened=Connection::open(&path).unwrap();
+        assert_eq!(get_snapshot(&reopened).unwrap(),actual);
+        drop(reopened);
+        std::fs::remove_file(path).unwrap();
+    }
+}
