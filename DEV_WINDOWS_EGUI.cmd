@@ -25,16 +25,18 @@ set "BANDO_EGUI_CLIENT_INDEX="
 set "BANDO_EGUI_DEVELOPER_TEST=1"
 rem Freight writes use the shared in-process Rust service: no helper EXE.
 rem This developer launcher enables writes ONLY for an existing isolated TEST DB.
-rem Settings and reception still use the Tauri helper until migrated.
+rem Full-data backup/restore and reception still use the Tauri helper.
 rem Client and product edits use the native shared writer, NEVER egui preview DB.
 set "BANDO_EGUI_ENABLE_CLIENT_WRITE=0"
 set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=0"
 set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=0"
+set "BANDO_EGUI_ENABLE_SETTINGS_WRITE=0"
 if exist "%APPDATA%\com.bandostand.bandohub.tauri\developer-test\bando-hub-test.sqlite" (
   set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=1"
   set "BANDO_EGUI_ENABLE_CLIENT_WRITE=1"
   set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=1"
-  echo [FREIGHT/CLIENT/PRODUCT] Native Rust direct save enabled for the existing isolated TEST DB.
+  set "BANDO_EGUI_ENABLE_SETTINGS_WRITE=1"
+  echo [FREIGHT/CLIENT/PRODUCT/SETTINGS] Native Rust direct save enabled for the existing isolated TEST DB.
   if exist "%~dp0src-tauri\target\debug\bando_hub_tauri.exe" (
     if not defined BANDO_EGUI_TAURI_HELPER set "BANDO_EGUI_TAURI_HELPER=%~dp0src-tauri\target\debug\bando_hub_tauri.exe"
   )
