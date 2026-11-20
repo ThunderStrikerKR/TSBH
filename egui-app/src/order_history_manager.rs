@@ -1166,76 +1166,101 @@ impl OrderHistoryManager {
                 egui::pos2(scroll_bounds.left(),scroll_track_top),
                 egui::pos2(scroll_bounds.right(),scroll_track_bottom)
             );
-            let output=components::virtual_fixed_rows(
-                egui::ScrollArea::both()
-                    .scroll_bar_rect(scroll_track)
-                    .id_salt("order-history-table-rows")
-                    .scroll_bar_visibility(
-                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-                    .max_height(scroll_max_height)
-                    .auto_shrink([false,false]),
-                section,table_width,ROW_HEIGHT,lines.len(),
-                |body,visible|{
-                    body.set_min_width(table_width);
+            // Mixed fixed parent rows and auto-height shipment details need
+            // prefix offsets. A fixed-height virtual grid would clip wrapped
+            // products and could paint the next shipment on top.
+            let line_heights=if let Some(data)=snapshot{
+                lines.iter().map(|line|history_line_height(section,*line,data,&widths))
+                    .collect::<Vec<_>>()
+            }else{Vec::new()};
+            let mut offsets=Vec::with_capacity(line_heights.len()+1);
+            offsets.push(0.0_f32);
+            for height in &line_heights{
+                offsets.push(offsets.last().copied().unwrap_or(0.0)+height);
+            }
+            let total_height=*offsets.last().unwrap_or(&0.0);
+            let output=egui::ScrollArea::both()
+                .scroll_bar_rect(scroll_track)
+                .id_salt("order-history-table-rows")
+                .scroll_bar_visibility(
+                    egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+                .max_height(scroll_max_height)
+                .auto_shrink([false,false])
+                .show_viewport(section,|body,viewport|{
                     body.spacing_mut().item_spacing.y=0.0;
-                    let first=visible.start;
+                    body.set_min_width(table_width);
+                    body.set_min_height(total_height);
+                    let first=offsets.partition_point(|value|*value<=viewport.top())
+                        .saturating_sub(1).min(lines.len());
+                    let last=offsets.partition_point(|value|*value<=viewport.bottom())
+                        .saturating_add(1).min(lines.len());
                     let origin=body.max_rect().min;
-                    for line_index in visible {
-                        let line=lines[line_index];
-                        let row_rect=Rect::from_min_size(
-                            egui::pos2(origin.x,
-                                origin.y+(line_index-first) as f32*ROW_HEIGHT),
-                            Vec2::new(table_width,ROW_HEIGHT));
-                        header_origin.get_or_insert(row_rect.left());
-                        body.scope_builder(UiBuilder::new()
-                            .id_salt(("history-fixed-row",line_index))
-                            .max_rect(row_rect)
-                            .layout(egui::Layout::top_down(Align::Min)),|row_ui|{
-                                row_ui.allocate_exact_size(
-                                    Vec2::new(table_width,ROW_HEIGHT),Sense::hover());
-                                match line {
-                                    HistoryLine::Order(_)=>{
-                                        // Original order-history TABLE appearance;
-                                        // the earlier global row-card change is reverted.
-                                        let background=if line_index%2==0{theme::PANEL}
-                                            else{theme::TABLE_ROW_ALT_BG};
-                                        row_ui.painter().rect_filled(row_rect,0.0,background);
-                                        row_ui.painter().line_segment(
-                                            [row_rect.left_bottom(),row_rect.right_bottom()],
-                                            Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER));
-                                    },
-                                    HistoryLine::Recipient(_,_,_)=>{
-                                        // Only the EXPANDED shipment detail is a
-                                        // cohesive block. No interior grid lines.
-                                        row_ui.painter().rect_filled(
-                                            row_rect,0.0,theme::CANVAS);
-                                        let block_rect=history_detail_block_rect(
-                                            row_rect,&widths);
-                                        row_ui.painter().rect(
-                                            block_rect,theme::WORKFLOW_CHIP_RADIUS as f32,
-                                            theme::PANEL,Stroke::new(1.0,theme::DIVIDER),
-                                            egui::StrokeKind::Inside
+                    let visible_rect=Rect::from_min_size(
+                        egui::pos2(origin.x,origin.y+offsets[first]),
+                        Vec2::new(table_width,(offsets[last]-offsets[first]).max(0.0))
+                    );
+                    let clip=body.clip_rect();
+                    body.scope_builder(UiBuilder::new()
+                        .id_salt("history-variable-rows")
+                        .max_rect(visible_rect),|visible|{
+                            visible.spacing_mut().item_spacing.y=0.0;
+                            visible.set_clip_rect(clip);
+                            visible.skip_ahead_auto_ids(first);
+                            for line_index in first..last {
+                                let line=lines[line_index];
+                                let row_rect=Rect::from_min_size(
+                                    egui::pos2(origin.x,origin.y+offsets[line_index]),
+                                    Vec2::new(table_width,line_heights[line_index])
+                                );
+                                header_origin.get_or_insert(row_rect.left());
+                                visible.scope_builder(UiBuilder::new()
+                                    .id_salt(("history-variable-row",line_index))
+                                    .max_rect(row_rect)
+                                    .layout(egui::Layout::top_down(Align::Min)),|row_ui|{
+                                        row_ui.allocate_exact_size(
+                                            Vec2::new(table_width,row_rect.height()),Sense::hover()
                                         );
-                                    }
-                                }
-                                if let Some(snapshot)=snapshot {
-                                    draw_line(row_ui,row_rect,line,snapshot,
-                                        &self.expanded,&widths,&mut pending_toggle);
-                                }
-                                if matches!(line,HistoryLine::Order(_)) {
-                                    paint_column_dividers(
-                                        row_ui,row_rect,&widths,false,row_rect
-                                    );
-                                }
-                                if snapshot.is_some() {
-                                    if let Some(branch)=history_branch(&lines,line_index){
-                                        paint_history_branch(row_ui,row_rect,&widths,branch);
-                                    }
-                                }
-                            });
-                    }
-                    // No virtual rows are inserted for an empty result;
-                    // the empty-state label is painted centered below.
+                                        match line {
+                                            HistoryLine::Order(_)=>{
+                                                let background=if line_index%2==0{theme::PANEL}
+                                                    else{theme::TABLE_ROW_ALT_BG};
+                                                row_ui.painter().rect_filled(
+                                                    row_rect,0.0,background);
+                                                row_ui.painter().line_segment(
+                                                    [row_rect.left_bottom(),row_rect.right_bottom()],
+                                                    Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER));
+                                            },
+                                            HistoryLine::Recipient(_,_,_)=>{
+                                                row_ui.painter().rect_filled(
+                                                    row_rect,0.0,theme::CANVAS);
+                                                let block_rect=history_detail_block_rect(
+                                                    row_rect,&widths);
+                                                row_ui.painter().rect(
+                                                    block_rect,
+                                                    theme::WORKFLOW_CHIP_RADIUS as f32,
+                                                    theme::PANEL,
+                                                    Stroke::new(1.0,theme::DIVIDER),
+                                                    egui::StrokeKind::Inside
+                                                );
+                                            }
+                                        }
+                                        if let Some(snapshot)=snapshot {
+                                            draw_line(row_ui,row_rect,line,snapshot,
+                                                &self.expanded,&widths,&mut pending_toggle);
+                                        }
+                                        if matches!(line,HistoryLine::Order(_)) {
+                                            paint_column_dividers(
+                                                row_ui,row_rect,&widths,false,row_rect
+                                            );
+                                        }
+                                        if snapshot.is_some() {
+                                            if let Some(branch)=history_branch(&lines,line_index){
+                                                paint_history_branch(row_ui,row_rect,&widths,branch);
+                                            }
+                                        }
+                                    });
+                            }
+                        });
                 });
             if let Some((message,color))=notice{
                 let notice_rect=Rect::from_min_size(
