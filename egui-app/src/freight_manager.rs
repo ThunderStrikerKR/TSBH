@@ -90,6 +90,30 @@ fn group_name<'a>(groups: &'a [Value], id: &str) -> &'a str {
         .map(|g| text(g, "name")).unwrap_or("그룹 미지정")
 }
 
+/// The read-only tariff summary is derived from the group's effective Rust
+/// record, never independently recomputed at the product level.
+fn group_bundle_summary(rule: &Value) -> String {
+    if rule["maxConfirmed"] == true {
+        rule["maxBundle"].as_i64()
+            .map(|n| format!("{n}개"))
+            .unwrap_or_else(|| "확인 필요".to_owned())
+    } else {
+        "확인 필요".to_owned()
+    }
+}
+fn group_fee_summary(rule: &Value) -> String {
+    let known=(1..=6).filter_map(|n|
+        rule["fees"].get(n.to_string()).and_then(Value::as_i64)
+            .map(|amount|format!("{n}개 {}",components::display_won(amount)))
+    ).collect::<Vec<_>>();
+    if !known.is_empty() {
+        known.join(" · ")
+    } else if let Some(legacy)=rule["perItem"].as_i64() {
+        format!("기존 개당 기준 {}",components::display_won(legacy))
+    } else {
+        "수량별 배송비 미등록".to_owned()
+    }
+}
 
 struct RateEditor {
     id: String,
@@ -102,7 +126,6 @@ struct RateEditor {
     error: Option<String>,
     ask_discard: bool,
     product: bool,
-    group_from_product: bool,
 }
 impl RateEditor {
     fn new(id:&str,name:&str,rule:&Value)->Self {
@@ -115,17 +138,12 @@ impl RateEditor {
             max_bundle:rule["maxBundle"].as_i64(),
             fees,notes:text(rule,"notes").to_owned(),
             add_count:None,error:None,ask_discard:false,
-            product:false,group_from_product:false
+            product:false
         }
     }
     fn new_product(id:&str,name:&str,rule:&Value)->Self {
         let mut editor=Self::new(id,name,rule);
         editor.product=true;
-        editor
-    }
-    fn group_from_product(id:&str,name:&str,rule:&Value)->Self {
-        let mut editor=Self::new(id,name,rule);
-        editor.group_from_product=true;
         editor
     }
     fn dirty(&self)->bool{
@@ -850,8 +868,15 @@ impl FreightManager {
         product_views: &Value, enabled:bool,
         action:&mut Option<(String,Value)>,
     ) {
+        // Group tariffs are the primary source for all assigned products.
+        // Put their editable quantity/rate summary next to the group itself.
         theme::section_frame().show(ui, |section| {
-            section.horizontal(|tools|{
+            section.label(typography::section_heading("배송 그룹 관리"));
+            section.label(typography::caption(
+                "그룹 소속 상품은 공통 묶음포장 수량과 수량별 배송비를 적용합니다."
+            ));
+            section.add_space(theme::SPACE_12);
+            section.horizontal_wrapped(|tools|{
                 tools.label(typography::field_label("새 배송 그룹명"));
                 tools.add_enabled_ui(enabled,|field|{
                     components::flexible_text_field(
@@ -865,29 +890,63 @@ impl FreightManager {
                     })));
                 }
             });
+            section.add_space(theme::SPACE_12);
             components::soft_divider(section);
+            if groups.is_empty(){
+                section.label(typography::caption(
+                    "그룹을 등록한 다음 최대 묶음 수량과 수량별 배송비를 설정하세요."
+                ));
+            }
             for group in groups {
-                section.horizontal(|line|{
+                let id=text(group,"id");
+                let count=products.iter()
+                    .filter(|p|text(p,"shippingGroupId")==id).count();
+                section.add_space(theme::SPACE_8);
+                section.horizontal_wrapped(|line|{
                     line.label(typography::body(text(group,"name")));
-                    let count=products.iter()
-                        .filter(|p|text(p,"shippingGroupId")==text(group,"id"))
-                        .count();
                     line.label(typography::caption(&format!("{count}개 상품")));
-                    if theme::action(line,"이름 수정",theme::ButtonRole::Standard,enabled)
-                        .clicked() {
-                        *rename_target=Some((
-                            text(group,"id").into(),text(group,"name").into()
-                        ));
+                    if theme::action(
+                        line,"묶음 수량·배송비 설정",theme::ButtonRole::Standard,enabled
+                    ).clicked(){
+                        match group_rules.get(id).filter(|value|value.is_object()){
+                            Some(rule)=>*rate_editor=Some(RateEditor::new(
+                                id,text(group,"name"),rule
+                            )),
+                            None=>*error=Some(
+                                "그룹 운임 기준을 읽지 못했습니다. 새로고침 후 확인하세요.".into()
+                            ),
+                        }
+                    }
+                    if theme::action(line,"이름 수정",theme::ButtonRole::Quiet,enabled)
+                        .clicked(){
+                        *rename_target=Some((id.into(),text(group,"name").into()));
                     }
                     if theme::action(line,"삭제",theme::ButtonRole::Danger,enabled)
                         .clicked(){
-                        *delete_target=Some(text(group,"id").into());
+                        *delete_target=Some(id.into());
                     }
                 });
+                section.horizontal_wrapped(|info|{
+                    info.label(typography::field_label("최대 묶음"));
+                    info.label(typography::quantity(
+                        &group_bundle_summary(&group["current"])
+                    ));
+                    info.add_space(theme::SPACE_8);
+                    info.label(typography::field_label("수량별 배송비"));
+                    info.label(typography::caption(
+                        &group_fee_summary(&group["current"])
+                    ));
+                });
+                components::soft_divider(section);
             }
         });
         ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui, |section| {
+            section.label(typography::section_heading("상품별 배송 그룹 지정"));
+            section.label(typography::caption(
+                "그룹 미지정 상품을 우선 확인합니다. 그룹 소속 상품의 운임은 위 배송 그룹에서 수정하세요."
+            ));
+            section.add_space(theme::SPACE_8);
             section.horizontal_wrapped(|tools| {
                 tools.label(typography::field_label("검색"));
                 components::flexible_text_field(
@@ -910,23 +969,34 @@ impl FreightManager {
                             );
                         }
                     });
-                if before_filter!=*group_filter {selected.clear();}
-                tools.checkbox(only_missing,"개별 기준 / 그룹 미지정만");
+                if before_filter!=*group_filter {
+                    selected.clear();
+                    *only_missing=false;
+                }
+                tools.checkbox(only_missing,"그룹 미지정 상품만");
             });
             components::soft_divider(section);
             let needle=search.to_lowercase().split_whitespace().collect::<String>();
-            let filtered:Vec<&Value>=products.iter().copied().filter(|p|{
+            let mut filtered:Vec<&Value>=products.iter().copied().filter(|p|{
+                let grouped=groups.iter().any(|g|
+                    text(g,"id")==text(p,"shippingGroupId")
+                );
                 (needle.is_empty()||[text(p,"code"),text(p,"name"),
                     text(p,"subtitle"),text(p,"category")]
                     .iter().any(|s|s.to_lowercase().split_whitespace()
                         .collect::<String>().contains(&needle)))
                 && (group_filter.is_empty()
-                    || (group_filter.as_str()=="none" && !groups.iter().any(|g|
-                        text(g,"id")==text(p,"shippingGroupId")))
+                    || (group_filter.as_str()=="none" && !grouped)
                     || text(p,"shippingGroupId")==group_filter.as_str())
-                && (!*only_missing || product_views.get(text(p,"id"))
-                    .is_some_and(|view|view["rule"].is_null()))
+                && (!*only_missing || !grouped)
             }).collect();
+            // Sort by committed membership only, never by an unsaved ComboBox
+            // value. This keeps rows stationary while group assignments edit.
+            if needle.is_empty() && group_filter.is_empty() && !*only_missing {
+                filtered.sort_by_key(|p| usize::from(groups.iter().any(|g|
+                    text(g,"id")==text(p,"shippingGroupId")
+                )));
+            }
             section.horizontal_wrapped(|tools|{
                 let mut all=!filtered.is_empty()
                     && filtered.iter().all(|p|selected.contains(text(p,"id")));
@@ -1100,46 +1170,46 @@ impl FreightManager {
                                 ));
                                 grid.horizontal_wrapped(|cell|{
                                     let editable=enabled&&!changed&&ready;
-                                    if let Some(group)=groups.iter().find(|g|
-                                        text(g,"id")==committed){
-                                        if theme::action(cell,"그룹 기준 편집",
+                                    if groups.iter().any(|g|text(g,"id")==committed){
+                                        // An assigned item NEVER owns an editable
+                                        // individual price. Refer employees to its group.
+                                        cell.label(typography::caption(
+                                            if changed {"그룹 변경 예정"}
+                                            else {"그룹 운임 적용 · 위 그룹에서 수정"}
+                                        ));
+                                    }else{
+                                        if theme::action(cell,"기본 운임 설정",
                                             theme::ButtonRole::Standard,editable).clicked(){
-                                            let group_rule=group_rules.get(committed)
-                                                .unwrap_or(&group["current"]);
-                                            *rate_editor=Some(RateEditor::group_from_product(
-                                                committed,text(group,"name"),group_rule
-                                            ));
-                                        }
-                                    }else if theme::action(cell,"기본 운임 설정",
-                                        theme::ButtonRole::Standard,editable).clicked(){
-                                        let initial=effective
-                                            .and_then(|entry|entry.get("editableRule"))
-                                            .filter(|v|v.is_object()).cloned()
-                                            .or_else(||{
-                                                match gateway.execute(
-                                                    ReadOperation::DefaultProductRule,
-                                                    json!({
-                                                        "action":"default_product_rule",
-                                                        "versionId":"unsaved",
-                                                        "now":chrono::Utc::now().to_rfc3339()
-                                                    })
-                                                ){
-                                                    Ok(value)=>value.get("rule").cloned(),
-                                                    Err(message)=>{
-                                                        *error=Some(message);
-                                                        None
+                                            let initial=effective
+                                                .and_then(|entry|entry.get("editableRule"))
+                                                .filter(|v|v.is_object()).cloned()
+                                                .or_else(||{
+                                                    match gateway.execute(
+                                                        ReadOperation::DefaultProductRule,
+                                                        json!({
+                                                            "action":"default_product_rule",
+                                                            "versionId":"unsaved",
+                                                            "now":chrono::Utc::now().to_rfc3339()
+                                                        })
+                                                    ){
+                                                        Ok(value)=>value.get("rule").cloned(),
+                                                        Err(message)=>{
+                                                            *error=Some(message);
+                                                            None
+                                                        }
                                                     }
-                                                }
-                                            });
-                                        if let Some(initial)=initial {
-                                            *rate_editor=Some(RateEditor::new_product(
-                                                id,text(product,"name"),&initial
-                                            ));
+                                                });
+                                            if let Some(initial)=initial{
+                                                *rate_editor=Some(RateEditor::new_product(
+                                                    id,text(product,"name"),&initial
+                                                ));
+                                            }
                                         }
-                                    }
-                                    if rule.is_object() && theme::action(cell,"기준 변경",
-                                        theme::ButtonRole::Standard,editable).clicked(){
-                                        *reset_target=Some(id.to_owned());
+                                        if rule.is_object()
+                                            && theme::action(cell,"기준 변경",
+                                                theme::ButtonRole::Quiet,editable).clicked(){
+                                            *reset_target=Some(id.to_owned());
+                                        }
                                     }
                                 });
                                 grid.end_row();
@@ -1260,7 +1330,7 @@ impl FreightManager {
         event:&mut Option<(String,Value)>,close:&mut bool,
     ){
         ui.label(typography::subsection_heading(&format!("{} 운임",editor.name)));
-        if editor.group_from_product {
+        if !editor.product {
             ui.label(typography::status(
                 "이 기준을 변경하면 같은 동급 그룹에 지정한 모든 모델에 적용됩니다.",
                 theme::SELECTED_ORDER
@@ -1268,7 +1338,7 @@ impl FreightManager {
         }
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|line|{
-            line.label(typography::field_label("최대 합포장 수량"));
+            line.label(typography::field_label("최대 묶음포장 수량"));
             line.add_enabled_ui(enabled,|input|{
                 egui::ComboBox::from_id_salt("freight-rate-max")
                     .selected_text(editor.max_bundle
