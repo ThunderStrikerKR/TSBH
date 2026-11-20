@@ -514,13 +514,6 @@ impl FreightManager {
             }
         }
         ui.add_space(theme::SPACE_12);
-        if let Some(error) = &self.error {
-            ui.label(typography::status(error, theme::DANGER));
-            ui.add_space(theme::SPACE_8);
-        }else if let Some(notice)=&self.notice{
-            ui.label(typography::status(notice,theme::SUCCESS));
-            ui.add_space(theme::SPACE_8);
-        }
         let (Some(state), Some(projection)) = (self.state.as_ref(), self.projection.as_ref())
         else {
             if self.receiver.is_some() {
@@ -1446,9 +1439,6 @@ impl FreightManager {
                 "포장할 때 참고할 사항 (선택)"
             );
         });
-        if let Some(error)=&editor.error {
-            ui.label(typography::status(error,theme::DANGER));
-        }
         ui.add_space(theme::SPACE_12);
         ui.horizontal(|bar|{
             if theme::action(bar,"닫기",theme::ButtonRole::Standard,enabled).clicked(){

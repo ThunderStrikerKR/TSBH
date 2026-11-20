@@ -529,11 +529,6 @@ impl ProductManager {
         }
         if self.tab==1 {
             if let Some(catalog)=self.catalog.as_ref(){
-                if let Some(error)=&self.error{
-                    ui.label(typography::status(error,theme::DANGER));
-                }else if let Some(notice)=&self.notice{
-                    ui.label(typography::status(notice,theme::SUCCESS));
-                }
                 self.category_manager.show_page(ui,catalog,can_edit,saving);
             } else {
                 ui.label(typography::caption("카테고리 목록을 불러오는 중입니다."));
@@ -645,11 +640,6 @@ impl ProductManager {
                 }
             });
             components::soft_divider(panel);
-            if let Some(error)=&self.error {
-                panel.label(typography::status(error,theme::DANGER));
-            }else if let Some(notice)=&self.notice{
-                panel.label(typography::status(notice,theme::SUCCESS));
-            }
             if saving {
                 panel.label(typography::caption("상품 변경 저장 중…"));
             }
@@ -860,7 +850,6 @@ impl ProductManager {
         let mut request_close=false;
         let mut request_save=false;
         let mut request_archive=false;
-        let saved_error=self.error.clone();
         components::modal_backdrop(ctx,"egui-product-detail-backdrop",false);
         components::modal_window(
             if is_new {"상품 등록"} else {"상품 상세 관리"},
@@ -1023,9 +1012,6 @@ impl ProductManager {
                                     ));
                                 }
                             });
-                        }
-                        if let Some(message)=&saved_error{
-                            body.label(typography::status(message,theme::DANGER));
                         }
                     });
                 modal.add_space(theme::SPACE_12);

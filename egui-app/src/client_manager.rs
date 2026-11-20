@@ -54,14 +54,12 @@ pub struct ClientManager {
     ready:bool,
     loading:Option<AsyncState>,
     saving:Option<AsyncState>,
-    saving_action:Option<String>,
     search_rx:Option<SearchState>,
     generation:u64,
     matches:Vec<String>,
     search:String,
     searching:bool,
     error:Option<String>,
-    notice:Option<String>,
     changed:bool,
     draft:Option<Value>,
     original:Option<Value>,
@@ -81,8 +79,8 @@ impl ClientManager {
         });
         Self {
             state:Value::Null,ready:false,loading:Some(rx),saving:None,
-            saving_action:None,search_rx:None,generation:0,matches:Vec::new(),search:String::new(),
-            searching:false,error:None,notice:None,changed:false,
+            search_rx:None,generation:0,matches:Vec::new(),search:String::new(),
+            searching:false,error:None,changed:false,
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
         }
@@ -165,21 +163,14 @@ impl ClientManager {
                 self.draft=None;self.original=None;self.confirm_delete=false;
                 self.confirm_discard=false;self.error=None;
                 self.changed=true;
-                self.notice=Some(if self.saving_action.take().as_deref()
-                    ==Some("archive_client") {
-                    "거래처를 삭제하고 기존 주문 기록을 보존했습니다.".into()
-                } else {
-                    "거래처를 저장했습니다.".into()
-                });
                 self.query(Arc::clone(&gateway),ctx.clone());
             },
             Some(Ok(Err(error)))=>{
                 self.error=Some(error);self.saving=None;
-                self.saving_action=None;
             },
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
                 self.error=Some("거래처 저장 연결이 중단되었습니다.".into());
-                self.saving=None;self.saving_action=None;
+                self.saving=None;
             },
             _=>{},
         }
@@ -207,7 +198,6 @@ impl ClientManager {
         let (tx,rx)=mpsc::channel();
         self.saving=Some(rx);
         self.error=None;
-        self.saving_action=Some(action.to_owned());
         let action=action.to_owned();
         let ctx=ctx.clone();
         thread::spawn(move||{
@@ -240,8 +230,10 @@ impl ClientManager {
     }
 
     fn list_search(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,reserve:f32) {
-        ui.label(typography::field_label("검색"));
-        let width=(ui.available_width()-reserve).max(60.0);
+        // The placeholder already states the search purpose; an extra
+        // external '검색' label wastes the first column's left alignment.
+        let width=(ui.available_width()-reserve).max(60.0)
+            .min(theme::MANAGEMENT_CLIENT_SEARCH_MAX_WIDTH);
         if components::flexible_text_field(
             ui,&mut self.search,width,"상호 / 주소 / 전화번호 / 별칭 검색"
         ).changed(){
@@ -286,19 +278,14 @@ impl ClientManager {
                     }
                 });
             components::soft_divider(section);
-            if let Some(error)=&self.error {
-                section.label(typography::status(error,theme::DANGER));
-            } else if let Some(notice)=&self.notice {
-                section.label(typography::status(notice,theme::SUCCESS));
-            }
+            // Do not inject unsolicited success/error text after actions.
+            // Retain failure state so an unsuccessful save cannot close the
+            // editor or be treated as a committed change.
             if !self.ready {
-                section.label(typography::caption("거래처 명단을 불러오는 중입니다."));
+                theme::management_list_strip_frame().show(section,|strip|{
+                    strip.label(typography::caption("거래처 명단을 불러오는 중입니다."));
+                });
                 return;
-            }
-            if !self.editable() {
-                section.label(typography::caption(
-                    "현재 연결된 거래처 명단은 읽기 전용입니다."
-                ));
             }
             let rows=self.clients().iter()
                 .filter(|row|field(row,"deletedAt").is_empty())
@@ -556,9 +543,6 @@ impl ClientManager {
             .open(&mut opened)
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
             .show(ctx,|ui|{
-                if let Some(error)=&self.error {
-                    ui.label(typography::status(error,theme::DANGER));
-                }
                 let body_height=theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT
                     .min((work_area.height()-theme::SPACE_24*4.0).max(100.0));
                 egui::ScrollArea::vertical()

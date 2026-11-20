@@ -339,9 +339,6 @@ impl ManualWorkspace {
                     self.product_search.is_none() &&
                     self.remove_recipient_pending.is_none() &&
                     !self.reset_pending && !self.confirm_discard);
-                if let Some(error)=self.error.as_ref() {
-                    ui.label(typography::status(error,theme::DANGER));
-                }
                 if self.busy() {
                     ui.label(typography::caption("처리 중입니다."));
                 }
