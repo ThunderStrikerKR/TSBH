@@ -1287,16 +1287,13 @@ impl FreightManager {
                                 actions.set_width(actions_rect.width());
                                 actions.spacing_mut().item_spacing.x=theme::SPACE_8;
                                 let editable=enabled&&!changed&&ready;
-                                if groups.iter().any(|g|text(g,"id")==committed){
-                                    actions.add(
-                                        egui::Label::new(typography::caption(
-                                            if changed {"그룹 변경 예정"}
-                                            else {"그룹 운임 적용 · 배송 그룹 관리에서 수정"}
-                                        )).truncate()
-                                    ).on_hover_text(
-                                        "그룹 운임은 배송 그룹 관리 탭에서 수정합니다."
-                                    );
-                                }else{
+                                // Only an unassigned product can edit its
+                                // own base freight. Once a group is selected,
+                                // freight belongs to that shipping group and
+                                // the setting cell intentionally stays empty.
+                                // Use current (including pending autosave) so
+                                // the button hides immediately on selection.
+                                if current.is_empty(){
                                     if theme::action(actions,"기본 운임 설정",
                                         theme::ButtonRole::Standard,editable).clicked(){
                                         let initial=effective
