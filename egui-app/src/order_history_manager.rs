@@ -45,8 +45,10 @@ const COL_GAP: f32 = theme::SPACE_8;
 // reducing the product column's 300pt minimum.
 // Date text is YYYY-MM-DD; client name shows at most ten characters;
 // status is one of four known values; invoice is at most 10M KRW.
-const COLS: [f32;7] = [112.0,156.0,300.0,126.0,124.0,112.0,264.0];
-const MIN_WIDTH: f32 = 1242.0; // sum(COLS) + six 8pt gaps
+// All seven approved widths and the 1242pt minimum are owned by theme.rs.
+// Local names stay as aliases for the existing cell-layout helpers and tests.
+const COLS: [f32;7] = theme::ORDER_HISTORY_COL_WIDTHS;
+const MIN_WIDTH: f32 = theme::ORDER_HISTORY_TABLE_MIN_WIDTH;
 // Natural width of [date basis, previous, start date/calendar, end
 // date/calendar, next, all dates]. The search stays outside this right slot.
 // The group is measured from the real control sizes, not the previously
@@ -1344,10 +1346,10 @@ impl OrderHistoryManager {
             let table_width=table_header.table_width;
             let head_rect=table_header.header_rect;
             let header_content_rect=table_header.header_content_rect;
-            let mut widths=COLS;
-            // Fixed columns retain their widths; the product column fills
-            // the same measured data viewport as the sticky header.
-            widths[2]+=(table_width-MIN_WIDTH).max(0.0);
+            // Fixed columns retain their approved widths; the central
+            // master spec directs all spare space to the shipment/product
+            // column and leaves expandable detail rows variable-height.
+            let widths=theme::ORDER_HISTORY_MASTER_TABLE.widths_for(table_width);
             let headings=["접수일","거래처","배송 건 / 상품","관리 상태",
                 "청구 합계","입금 확인","처리"];
             let mut header_origin=None;
