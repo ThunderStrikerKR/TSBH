@@ -1086,9 +1086,9 @@ mod tests{
         assert_eq!(order(SortDirection::Desc),vec![0,3,2,1]);
 
         let first=Sort::next(None,SortColumn::PaymentConfirmation).unwrap();
-        assert_eq!(first.direction,SortDirection::Asc);
+        assert!(first.direction==SortDirection::Asc);
         let second=Sort::next(Some(first),SortColumn::PaymentConfirmation).unwrap();
-        assert_eq!(second.direction,SortDirection::Desc);
+        assert!(second.direction==SortDirection::Desc);
         assert!(Sort::next(Some(second),SortColumn::PaymentConfirmation).is_none());
     }
 
