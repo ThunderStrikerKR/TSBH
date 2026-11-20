@@ -666,6 +666,27 @@ pub fn paint_dock_network(
     }
 }
 
+/// Approved 59th-round Freight page heading: 16pt from the top of the
+/// workspace. The workspace shell already supplies a 6pt outer gutter, so
+/// only the difference is added. Reception must not call this helper.
+pub fn management_page_title_top_gap(ui:&mut Ui) {
+    ui.add_space((theme::SPACE_16-theme::PANEL_GAP).max(0.0));
+}
+
+/// One horizontal guide for a management heading, its optional tabs,
+/// top-right metadata and optional KPI strip. This affects ONLY the top
+/// content; primary card outer borders keep the established full width.
+pub fn management_top_content<R>(
+    ui:&mut Ui, add:impl FnOnce(&mut Ui)->R
+)->R{
+    Frame::new()
+        .inner_margin(egui::Margin::symmetric(theme::SECTION_PADDING as i8,0))
+        .show(ui,|inset|{
+            inset.set_min_width(inset.available_width());
+            add(inset)
+        }).inner
+}
+
 /// Align the OUTER top border of a management page's principal card with
 /// Freight > Shipping Group Assignment. Pages without four KPI cards leave
 /// an intentional blank area. This is not table-cell padding or row geometry.
