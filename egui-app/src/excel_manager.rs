@@ -458,17 +458,23 @@ impl ExcelManager{
         let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=theme::management_scroll_style();
         self.poll();
-        ui.horizontal(|title|{
-            title.label(typography::page_heading("엑셀 관리"));
-            settings_help::icon(title,"발송 Excel 관리");
+        components::management_page_title_top_gap(ui);
+        components::management_top_content(ui,|top|{
+            top.horizontal(|title|{
+                title.label(typography::page_heading("엑셀 관리"));
+                settings_help::icon(title,"발송 Excel 관리");
+            });
         });
-        ui.add_space(theme::SPACE_12);
+        ui.add_space(theme::SPACE_8);
         let busy=self.operation.is_some()||self.receiver.is_some();
-        if let Some(next)=components::management_tabs(ui,&[
-            ("공장 엑셀 대기",self.tab==Tab::Factory,!busy),
-            ("매장 발송 대기",self.tab==Tab::Store,!busy),
-            ("엑셀 작성 이력",self.tab==Tab::History,!busy),
-        ]){
+        let next_tab=components::management_top_content(ui,|top|
+            components::management_tabs(top,&[
+                ("공장 엑셀 대기",self.tab==Tab::Factory,!busy),
+                ("매장 발송 대기",self.tab==Tab::Store,!busy),
+                ("엑셀 작성 이력",self.tab==Tab::History,!busy),
+            ])
+        );
+        if let Some(next)=next_tab{
             let selected=Tab::ALL[next];
             if selected!=self.tab{
                 self.tab=selected;
