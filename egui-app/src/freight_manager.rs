@@ -1131,6 +1131,7 @@ impl FreightManager {
                         // A checkbox owns exactly one column rectangle; it
                         // must not be allowed to change subsequent column widths.
                         let checkbox_rect=cells[0].shrink2(egui::vec2(4.0,0.0));
+                        let checkbox_clip=checkbox_rect.intersect(table.clip_rect());
                         table.scope_builder(
                             egui::UiBuilder::new()
                                 .id_salt(("freight-checkbox",id))
@@ -1138,7 +1139,7 @@ impl FreightManager {
                                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
                             |child|{
                                 child.set_clip_rect(
-                                    checkbox_rect.intersect(table.clip_rect())
+                                    checkbox_clip
                                 );
                                 child.add_enabled_ui(enabled,|controls|{
                                     if controls.checkbox(&mut checked,"").changed(){
@@ -1177,6 +1178,7 @@ impl FreightManager {
                             .unwrap_or_else(||committed.into());
                         let before_manual_edit=current.clone();
                         let selector_rect=cells[4].shrink2(egui::vec2(6.0,0.0));
+                        let selector_clip=selector_rect.intersect(table.clip_rect());
                         table.scope_builder(
                             egui::UiBuilder::new()
                                 .id_salt(("freight-selector",id))
@@ -1184,7 +1186,7 @@ impl FreightManager {
                                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
                             |child|{
                                 child.set_clip_rect(
-                                    selector_rect.intersect(table.clip_rect())
+                                    selector_clip
                                 );
                                 child.set_width(selector_rect.width());
                                 child.add_enabled_ui(enabled,|control|{
@@ -1250,6 +1252,7 @@ impl FreightManager {
                         // The action column's buttons and labels cannot expand
                         // their cell, wrap, or shift the other seven columns.
                         let actions_rect=cells[7].shrink2(egui::vec2(6.0,0.0));
+                        let actions_clip=actions_rect.intersect(table.clip_rect());
                         table.scope_builder(
                             egui::UiBuilder::new()
                                 .id_salt(("freight-actions",id))
@@ -1257,7 +1260,7 @@ impl FreightManager {
                                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
                             |actions|{
                                 actions.set_clip_rect(
-                                    actions_rect.intersect(table.clip_rect())
+                                    actions_clip
                                 );
                                 actions.set_width(actions_rect.width());
                                 actions.spacing_mut().item_spacing.x=theme::SPACE_8;
