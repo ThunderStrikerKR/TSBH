@@ -280,18 +280,23 @@ impl ClientManager {
         // The client directory uses the same always-readable 10pt solid
         // scrollbar track as the approved Freight Assignment screen.
         ui.spacing_mut().scroll=theme::management_scroll_style();
-        ui.label(typography::page_heading("거래처 관리"));
-        ui.add_space(theme::SPACE_12);
+        components::management_page_title_top_gap(ui);
+        components::management_top_content(ui,|top|{
+            top.label(typography::page_heading("거래처 관리"));
+        });
+        ui.add_space(theme::SPACE_8);
         // Keep the existing second tab disabled until its native workflow
         // is actually migrated; a visual refresh must not fake availability.
         if let Some(manager)=self.messages.as_mut(){
             manager.poll();
             if manager.take_clients_approved(){self.show_messages=false;}
         }
-        let chosen_tab=components::management_tabs(ui,&[
-            ("거래처 목록",!self.show_messages,true),
-            ("자동 메시지 편집",self.show_messages,true),
-        ]);
+        let chosen_tab=components::management_top_content(ui,|top|
+            components::management_tabs(top,&[
+                ("거래처 목록",!self.show_messages,true),
+                ("자동 메시지 편집",self.show_messages,true),
+            ])
+        );
         if let Some(tab)=chosen_tab{
             if tab==1 && !self.show_messages {
                 if self.messages.is_none(){
