@@ -2439,7 +2439,7 @@
     }
   ],
   "activeQueueIsAuthoritative": true,
-  "activeQueueUpdatedAt": "2026-11-19",
+  "activeQueueUpdatedAt": "2026-11-20",
   "currentRuntimeSource": {
     "inspectedHead": "ecf0f95d4b253cd52637cc7d03a2d8b1d8b4489b",
     "entrypoint": "src/main.tsx",
@@ -2622,6 +2622,39 @@
         "ci": "PASS for settings source code and shared String/&str UI borrow fix: Windows Tauri cargo check + standalone egui cargo check at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44644460192, source commit f30dc9abb7be5d1ee1b24ff573600c0f77fde5cb. Earlier runs were cancelled due to concurrency or failed on freight E0308; not reused as proof.",
         "windows": "SKIPPED BY USER REQUEST: no Windows actual GUI inspection. Not a required source-migration gate.",
         "status": "PARTIAL_SOURCE_PARITY: setting four tabs, account/CAS/save and data backup/restore wired. Independent egui background OCR/factory-reply folder watchers remain unported; real DB/UI behavioral verification not claimed."
+      }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-PRODUCT-MANAGEMENT",
+      "scope": "52차 React ProductManager 상품 가격표 및 egui 상품관리 1차 기능 이전",
+      "status": "PARTIAL_SOURCE_PATCHED",
+      "description": "egui 전용 상품관리 모듈과 원본 Rust management_products 상품 필터·가격표·상품 상세 열람을 연결. 가격 셀별 입력/저장/취소와 상품 신규·상세 수정·보존 삭제를 기존 Tauri 가격 CAS, catalog_clients upsert_product_from_editor/archive_product, write_snapshot SQLite revision transaction에 연결. 운영 상품 변경은 별도 helper 및 세 환경변수로 명시 승인한 경우에만 가능. Excel, 공식몰 상품 수집/이미지, 카테고리·모델군·별칭·브랜드 서브탭은 미이전. 대상 컴파일/실제 운영 DB 저장/이탈 충돌 실행 증빙 없어 전체 이전 완료 판정 보류.",
+      "evidence": [
+        "src/ProductManager.tsx",
+        "src/Classification.tsx",
+        "src/PriceCell.tsx",
+        "src/ProductDetailComponents.tsx",
+        "src/styles/product-admin-redesign.css",
+        "src/styles/tauri-stage2-products.css",
+        "src-tauri/src/business_core/catalog_clients/queries.rs",
+        "src-tauri/src/business_core/catalog_clients/editor.rs",
+        "src-tauri/src/business_core/catalog_clients.rs",
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/egui_product_bridge.rs",
+        "src-tauri/src/main.rs",
+        "egui-app/src/catalog_query_bridge.rs",
+        "egui-app/src/gateway.rs",
+        "egui-app/src/product_manager.rs",
+        "egui-app/src/main.rs",
+        "docs/egui-ui-design-contract.md"
+      ],
+      "gates": {
+        "patch": "SOURCE_UPDATED main; product manager latest daf98cf4d05edb7f9082ef8c5f734806d1e541ed; design contract ab45254799e6f6ec29f800fec1a86c46d1a6460b; GitHub fetch confirm pending",
+        "differential": "STATIC SOURCE REVIEW: original React ProductManager price-table/filter/save/soft-delete wiring and cited original CSS, Rust catalog_clients query/upsert/archive and Tauri price_set/SQLite write_snapshot. Some React UI and workflows deliberately not migrated.",
+        "action": "NOT EXECUTED: real product DB write, item reload and stale-revision CAS remain unverified.",
+        "unit": "NOT EXECUTED; no broad regression tests performed.",
+        "ci": "NOT EXECUTED: targeted Rust cargo check not available in current environment.",
+        "windows": "SKIPPED BY USER REQUEST: Windows GUI inspection excluded from base migration."
       }
     }
   ],
