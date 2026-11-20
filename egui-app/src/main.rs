@@ -2472,27 +2472,77 @@ impl BandoEgui {
                     pane.set_width(bottom_rect.width());
                     pane.set_height(bottom_rect.height());
                     Self::section(pane,"품목 및 운임",bottom_rect.height(),|ui|{
-                        let content_height=(components::docked_section_body_height(
-                            bottom_rect.height())-theme::SUMMARY_STRIP_HEIGHT).max(0.0);
-                        egui::ScrollArea::vertical()
-                            .id_salt(("native-workflow-products",ship.id.as_str()))
-                            .max_height(content_height)
-                            .show(ui,|contents|{
-                                for product in &ship.products{
-                                    contents.label(typography::body(product));
-                                    components::soft_divider(contents);
-                                }
-                                contents.horizontal(|contents|{
-                                    contents.label(typography::field_label("운임"));
-                                    let display=if ship.collect{"착불".to_owned()}
-                                        else{ship.freight.map(components::display_won)
-                                            .unwrap_or_else(||"—".into())};
-                                    contents.label(typography::quantity(&display));
-                                });
-                            });
-                        let amount=ship.order_total.map(components::display_won)
-                            .unwrap_or_else(||"—".into());
-                        components::summary_strip(ui,"총 주문",&amount,"");
+                        // React structure: 3-column product grid + freight + actions,
+                        // independently scrolling above a fixed VAT and total footer.
+                        let available = components::docked_section_body_height(
+                            bottom_rect.height()
+                        ).min(ui.available_height().max(0.0));
+                        let list_height = (available
+                            - theme::RECEPTION_VAT_ROW_HEIGHT
+                            - theme::RECEPTION_TOTAL_HEIGHT
+                            - 2.0 * theme::SPACE_4).max(0.0);
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(ui.available_width(), list_height),
+                            Layout::top_down(Align::Min),
+                            |area| {
+                                area.set_min_height(list_height);
+                                egui::ScrollArea::vertical()
+                                    .id_salt(("native-workflow-products",ship.id.as_str()))
+                                    .max_height(list_height)
+                                    .auto_shrink([false,false])
+                                    .show(area,|contents|{
+                                        contents.spacing_mut().item_spacing.y=0.0;
+                                        components::reception_items_header(contents);
+                                        if let Some(items)=ship.recipient.get("items")
+                                            .and_then(serde_json::Value::as_array)
+                                        {
+                                            for item in items {
+                                                let quantity=item.get("quantity")
+                                                    .and_then(serde_json::Value::as_i64)
+                                                    .filter(|n|*n>0)
+                                                    .map(|n|format!("{n}개"))
+                                                    .unwrap_or_else(||"—".into());
+                                                // Never multiply a price in the UI: only a
+                                                // Rust-projected line amount may appear here.
+                                                let amount=item.get("lineAmount")
+                                                    .or_else(||item.get("amount"))
+                                                    .and_then(serde_json::Value::as_i64)
+                                                    .map(components::display_won)
+                                                    .unwrap_or_else(||"—".into());
+                                                components::reception_item_row(
+                                                    contents,
+                                                    &reception_service::item_title(item),
+                                                    &quantity, &amount,
+                                                );
+                                            }
+                                        }
+                                        contents.add_space(theme::SPACE_8);
+                                        let remote=ship.recipient.get("remoteDelivery")
+                                            .and_then(|v|v.get("checked"))
+                                            .and_then(serde_json::Value::as_bool);
+                                        components::reception_freight_row(
+                                            contents,"운임",ship.freight,
+                                            Some(ship.collect),remote,
+                                        );
+                                        contents.add_space(theme::SPACE_8);
+                                        let origin=ship.recipient.get("dispatchOrigin")
+                                            .and_then(serde_json::Value::as_str);
+                                        components::reception_item_actions(contents,origin);
+                                    });
+                            }
+                        );
+                        ui.add_space(theme::SPACE_4);
+                        components::reception_vat_row(ui,ship.vat_included);
+                        ui.add_space(theme::SPACE_4);
+                        let vat_label=match ship.vat_included {
+                            Some(true)=>"부가세 포함",
+                            Some(false)=>"부가세 별도",
+                            None=>"—",
+                        };
+                        components::reception_total_footer(
+                            ui,ship.order_total,Some(ship.shipment_count),
+                            vat_label,"",
+                        );
                     });
                 }
             );
@@ -2742,100 +2792,130 @@ impl BandoEgui {
                 pane.set_width(bottom_rect.width());
                 pane.set_height(bottom_rect.height());
                 Self::section(pane, "품목 및 운임", remaining, |ui| {
-                    // Reserve the bottom summary from the pane geometry, not from
-                    // the current text height. This keeps the summary at the bottom
-                    // even when there are no products.
-                    let section_chrome = theme::SECTION_PADDING * 2.0
-                        + theme::SECTION_HEADER_HEIGHT
-                        + theme::SECTION_CONTENT_GAP
-                        + theme::SOFT_DIVIDER_WIDTH
-                        + theme::SPACE_4;
-                    let item_area_height =
-                        (remaining - section_chrome - theme::SUMMARY_STRIP_HEIGHT)
-                            .max(0.0);
+                    let preview = self.active_id.as_deref()
+                        .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
+                        .and_then(|draft|draft.pricing_preview.as_ref())
+                        .filter(|quote|quote.get("sourceRaw")
+                            .and_then(serde_json::Value::as_str)
+                            ==Some(self.raw_source.as_str()));
+                    let available=components::docked_section_body_height(remaining)
+                        .min(ui.available_height().max(0.0));
+                    let list_height=(available
+                        -theme::RECEPTION_TOTAL_HEIGHT
+                        -theme::RECEPTION_VAT_ROW_HEIGHT
+                        -2.0*theme::SPACE_4).max(0.0);
                     ui.allocate_ui_with_layout(
-                        Vec2::new(ui.available_width(), item_area_height),
+                        Vec2::new(ui.available_width(),list_height),
                         Layout::top_down(Align::Min),
-                        |items_ui| {
-                            items_ui.set_min_height(item_area_height);
-                            if let Some(recipient) = selected {
-                                if let Some(items) =
-                                    recipient.get("items").and_then(serde_json::Value::as_array)
-                                {
-                                    egui::ScrollArea::vertical()
-                                        .id_salt("recognized-items")
-                                        .max_height(item_area_height)
-                                        .auto_shrink([false, false])
-                                        .show(items_ui, |ui| {
+                        |list_area|{
+                            list_area.set_min_height(list_height);
+                            egui::ScrollArea::vertical()
+                                .id_salt("recognized-items")
+                                .max_height(list_height)
+                                .auto_shrink([false,false])
+                                .show(list_area,|items_ui|{
+                                    items_ui.spacing_mut().item_spacing.y=0.0;
+                                    components::reception_items_header(items_ui);
+                                    if let Some(recipient)=selected {
+                                        let recipient_id=reception_service::text(recipient,"id");
+                                        if let Some(items)=recipient.get("items")
+                                            .and_then(serde_json::Value::as_array)
+                                        {
                                             for item in items {
-                                                let recipient_id=reception_service::text(recipient,"id");
                                                 let item_id=reception_service::text(item,"id");
-                                                ui.horizontal(|ui| {
-                                                    let response=ui.label(typography::body(
-                                                        &reception_service::item_title(item)
-                                                    ));
+                                                let quantity=item.get("quantity")
+                                                    .and_then(serde_json::Value::as_i64)
+                                                    .filter(|n|*n>0)
+                                                    .map(|n|format!("{n}개"))
+                                                    .unwrap_or_else(||"—".into());
+                                                // The egui working-reception acknowledgement
+                                                // currently supplies unitPrice, not a computed
+                                                // line amount. Do not invent an invoice amount.
+                                                let amount=preview.and_then(|quote|
+                                                    quote.get("linePrices"))
+                                                    .and_then(serde_json::Value::as_array)
+                                                    .and_then(|rows|rows.iter().find(|row|
+                                                        row.get("itemId")
+                                                            .and_then(serde_json::Value::as_str)
+                                                            ==Some(item_id)))
+                                                    .and_then(|row|row.get("amount"))
+                                                    .and_then(serde_json::Value::as_i64)
+                                                    .map(components::display_won)
+                                                    .unwrap_or_else(||"—".to_owned());
+                                                let cells=components::reception_item_row(
+                                                    items_ui,
+                                                    &reception_service::item_title(item),
+                                                    &quantity,&amount,
+                                                );
+                                                for (response,field) in [
+                                                    (&cells.product,"product"),
+                                                    (&cells.quantity,"quantity"),
+                                                    (&cells.amount,"price"),
+                                                ] {
                                                     let key=source_highlight::key(
-                                                        recipient_id,item_id,"product"
+                                                        recipient_id,item_id,field
                                                     );
-                                                    if response.hovered() {hovered_detail=Some(key.clone());}
+                                                    if response.hovered(){
+                                                        hovered_detail=Some(key.clone());
+                                                    }
                                                     source_highlight::paint_active(
-                                                        ui,&response,&key,self.link_hover.active.as_ref()
+                                                        items_ui,response,&key,
+                                                        self.link_hover.active.as_ref(),
                                                     );
-                                                    ui.with_layout(
-                                                        Layout::right_to_left(Align::Center),
-                                                        |ui| {
-                                                            let response=ui.label(typography::quantity(
-                                                                &reception_service::item_quantity(item)
-                                                            ));
-                                                            let key=source_highlight::key(
-                                                                recipient_id,item_id,"quantity"
-                                                            );
-                                                            if response.hovered() {
-                                                                hovered_detail=Some(key.clone());
-                                                            }
-                                                            source_highlight::paint_active(
-                                                                ui,&response,&key,self.link_hover.active.as_ref()
-                                                            );
-                                                        },
-                                                    );
-                                                });
-                                                if let Some(issues) = item.get("issues")
+                                                }
+                                                if let Some(issues)=item.get("issues")
                                                     .and_then(serde_json::Value::as_array)
                                                 {
-                                                    for issue in issues.iter().take(3) {
-                                                        if let Some(message) = issue.as_str() {
-                                                            ui.label(typography::status(message, theme::SELECTED_ORDER));
+                                                    for issue in issues.iter().take(3){
+                                                        if let Some(message)=issue.as_str(){
+                                                            items_ui.label(typography::status(
+                                                                message,theme::SELECTED_ORDER
+                                                            ));
                                                         }
                                                     }
                                                 }
-                                                components::soft_divider(ui);
                                             }
-                                        });
-                                }
-                            }
-                        },
+                                        }
+                                        items_ui.add_space(theme::SPACE_8);
+                                        let fee=preview.and_then(|v|v.get("shippingFee"))
+                                            .and_then(serde_json::Value::as_i64);
+                                        let remote=recipient.get("remoteDelivery")
+                                            .and_then(|v|v.get("checked"))
+                                            .and_then(serde_json::Value::as_bool);
+                                        components::reception_freight_row(
+                                            items_ui,"운임",fee,None,remote,
+                                        );
+                                        items_ui.add_space(theme::SPACE_8);
+                                        let origin=recipient.get("dispatchOrigin")
+                                            .and_then(serde_json::Value::as_str);
+                                        components::reception_item_actions(items_ui,origin);
+                                    } else {
+                                        items_ui.add_space(theme::SPACE_8);
+                                        items_ui.label(typography::caption(
+                                            "거래처 선택 후 운임과 청구금액을 확인합니다."
+                                        ));
+                                    }
+                                });
+                        }
                     );
-                    let preview = self.active_id.as_deref()
-                        .and_then(|id|self.drafts.iter().find(|draft| draft.id==id))
-                        .and_then(|draft|draft.pricing_preview.as_ref())
-                        .filter(|quote|
-                            quote.get("sourceRaw").and_then(serde_json::Value::as_str)
-                                ==Some(self.raw_source.as_str())
-                        );
-                    let total = preview
-                        .and_then(|quote|quote.get("total"))
-                        .and_then(serde_json::Value::as_i64)
-                        .map(components::display_won)
-                        .unwrap_or_else(||"—".to_owned());
+                    ui.add_space(theme::SPACE_4);
+                    // A working reception is not a confirmed bill. Its quote
+                    // has no authoritative VAT-included flag at this point.
+                    components::reception_vat_row(ui,None);
+                    ui.add_space(theme::SPACE_4);
                     let synced=self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|row|row.id==id))
                         .is_some_and(|row|row.working_synced);
-                    let note = if synced {
+                    let note=if synced {
                         "Rust 참고 금액 · 운영 미확정 작업본 저장됨"
                     } else if preview.is_some() {
                         "Rust 재계산 참고 · 운영 작업본 저장 전"
                     } else { "" };
-                    components::summary_strip(ui, "총 주문", &total, note);
+                    let total=preview.and_then(|v|v.get("total"))
+                        .and_then(serde_json::Value::as_i64);
+                    // The native working preview does not yet project
+                    // shipmentCount or vatLabel. Keep them unknown.
+                    components::reception_total_footer(ui,total,None,"—",note);
                 });
             },
         );
