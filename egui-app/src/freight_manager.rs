@@ -2459,6 +2459,7 @@ impl FreightManager {
                 egui::CollapsingHeader::new(format!(
                     "{} / {}개 기준",text(group,"name"),history.len()
                 )).id_salt(("freight-history",group_id))
+                    .icon(components::paint_collapsing_header_icon)
                     .show(section,|body|{
                         if history.is_empty(){
                             body.label(typography::caption("이전 기준이 없습니다."));
