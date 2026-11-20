@@ -1353,14 +1353,9 @@ impl FreightManager {
             let table_width=table_header.table_width;
             let header_rect=table_header.header_rect;
             let header_content_rect=table_header.header_content_rect;
-            let mut widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
-            let extra=(table_width-theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH).max(0.0);
-            // Both the fixed category width and its share of additional
-            // viewport space are 1.2x their previous values:
-            // 215 + extra*0.30 -> 258 + extra*0.36.
-            // Product takes the entire difference; colors/options are 83pt.
-            widths[1]+=extra*0.64;
-            widths[3]+=extra*0.36;
+            // Read the approved 6-column widths and 64/36 extra-width
+            // allocation from the single master specification in theme.rs.
+            let widths=theme::FREIGHT_ASSIGNMENT_MASTER_TABLE.widths_for(table_width);
             let titles=[
                 "","상품명 / 상품설명","색상/옵션","카테고리",
                 "배송 그룹","설정"
