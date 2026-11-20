@@ -98,8 +98,8 @@ pub trait BandoGateway: Send + Sync {
     /// confirmed orders, customer contacts or workflow state.
     /// This method does not persist or mutate anything.
     fn load_catalog(&self) -> Result<Value, String>;
-    /// Full client-management projection. An external operational reference
-    /// is explicitly read-only; local edits stay in the isolated egui DB.
+    /// Client management uses only the authoritative Tauri v2 business DB.
+    /// Upsert/archive requires explicit write authorization; no egui shadow DB.
     fn load_client_master(&self) -> Result<Value, String> {
         Err("거래처 관리 조회를 지원하지 않는 연결입니다.".into())
     }
@@ -197,18 +197,9 @@ impl BandoGateway for LocalGateway {
                 "settings":settings,
             }));
         }
-        let mut catalog=PreviewStore::initialize()?.load_catalog()?;
-        if crate::client_master::editable() {
-            // The local draft database is the single owner of egui-managed
-            // clients. Do not silently overlay an unrelated external index.
-            let state=crate::client_master::load()?;
-            let (clients,settings)=crate::client_directory::project_index(&state)?;
-            catalog["clients"]=clients;
-            catalog["settings"]=settings;
-            Ok(catalog)
-        } else {
-            crate::client_directory::attach(catalog)
-        }
+        let catalog=PreviewStore::initialize()?.load_catalog()?;
+        // No shadow customer master; an exported index is read-only.
+        crate::client_directory::attach(catalog)
     }
     fn load_client_master(&self) -> Result<Value,String> {
         crate::client_master::load()
