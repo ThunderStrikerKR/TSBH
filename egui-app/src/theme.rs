@@ -197,6 +197,15 @@ pub const FAMILY_ROW_HEIGHT:f32 = 52.0;
 pub const FAMILY_FOOTER_HEIGHT:f32 = 68.0;
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
+// Product table: a full-width, single-line record per product. Wide names
+// claim the remaining width while price-editing may scroll horizontally.
+pub const PRODUCT_TABLE_ROW_HEIGHT:f32 = 42.0;
+pub const PRODUCT_TABLE_MIN_WIDTH:f32 = 1100.0;
+pub const PRODUCT_TABLE_NAME_MIN_WIDTH:f32 = 340.0;
+pub const PRODUCT_TABLE_OPTION_WIDTH:f32 = 182.0;
+pub const PRODUCT_TABLE_PRICE_WIDTH:f32 = 116.0;
+pub const PRODUCT_TABLE_EDIT_PRICE_WIDTH:f32 = 236.0;
+pub const PRODUCT_TABLE_ACTION_WIDTH:f32 = 100.0;
 // Client directory explicitly uses one compact, non-wrapping record per row.
 pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
 // Freight assignment is a task-oriented table, not an auto-sized 11-column
