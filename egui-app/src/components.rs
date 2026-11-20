@@ -752,13 +752,13 @@ pub fn management_client_header(
             ).intersect(header);
             if text_rect.width()>0.0 {
                 // Same 14pt header hierarchy as Freight Assignment.
-                let title_galley=typography::freight_table_header_galley(ui,title);
+                let title_galley=typography::management_table_header_galley(ui,title);
                 let (arrow,color)=match current_sort{
                     Some((col,false)) if col==i=>("▲",theme::SELECTION),
                     Some((col,true)) if col==i=>("▼",theme::SELECTION),
                     _=>("↕",theme::MUTED)
                 };
-                let arrow_galley=typography::freight_table_header_galley(ui,arrow);
+                let arrow_galley=typography::management_table_header_galley(ui,arrow);
                 let title_x=column.left()+theme::SPACE_12;
                 let text_clip=painter.with_clip_rect(text_rect);
                 text_clip.galley(
