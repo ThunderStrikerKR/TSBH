@@ -10,7 +10,7 @@ use eframe::egui::{self,Align,Align2,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
 use serde_json::{json,Value};
 use std::sync::{mpsc::{self,Receiver,TryRecvError},Arc};
 
-const ROW_HEIGHT:f32=theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
+const ROW_HEIGHT:f32=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
 const HEADER_HEIGHT:f32=theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP:f32=theme::SPACE_8;
 
