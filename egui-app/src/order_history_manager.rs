@@ -1777,6 +1777,38 @@ mod tests{
         assert_eq!(single_row.bottom()-single_card.bottom(),DETAIL_GROUP_GAP);
     }
     #[test]
+    fn horizontal_scroll_translates_header_text_and_separators_together(){
+        // Background/header bottom outline remain at this viewport, but
+        // table cells, their captions, sort hit areas, and vertical dividers
+        // must all follow the body scroll offset.
+        let viewport=Rect::from_min_size(
+            egui::pos2(40.0,100.0),Vec2::new(820.0,HEADER_HEIGHT)
+        );
+        let mut previous:Option<(f32,f32)>=None;
+        for offset in [0.0,12.0,106.0,240.0] {
+            let row=history_scrolled_header_row(
+                viewport,viewport.left()-offset,MIN_WIDTH
+            );
+            let text_cells=cells(row.min,&COLS,HEADER_HEIGHT);
+            let divider_cells=cells(row.min,&COLS,HEADER_HEIGHT);
+            assert_eq!(row.top(),viewport.top());
+            assert_eq!(row.height(),viewport.height());
+            assert_eq!(row.width(),MIN_WIDTH);
+            assert!((text_cells[0].left()-(viewport.left()-offset)).abs()<0.01);
+            for index in 0..6{
+                // paint_column_dividers() gets the SAME scrolled row rect.
+                let divider=divider_cells[index].right()+COL_GAP/2.0;
+                let heading_boundary=text_cells[index].right()+COL_GAP/2.0;
+                assert!((divider-heading_boundary).abs()<0.01);
+            }
+            if let Some((last_offset,last_edge))=previous {
+                let edge=divider_cells[0].right()+COL_GAP/2.0;
+                assert!((edge-last_edge+(offset-last_offset)).abs()<0.01);
+            }
+            previous=Some((offset,divider_cells[0].right()+COL_GAP/2.0));
+        }
+    }
+    #[test]
     fn expanding_another_order_closes_the_previous_one(){
         let mut expanded=BTreeSet::new();
         toggle_history_expansion(&mut expanded,"o1");
