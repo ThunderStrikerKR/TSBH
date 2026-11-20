@@ -247,7 +247,9 @@ pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
 // Compact minimum widths preserve one product per row and let the table fit
 // in ordinary management panes without an unnecessary horizontal scrollbar.
 pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 6] =
-    [44.0, 296.0, 69.0, 215.0, 150.0, 128.0];
+    // +20% colors: 69 -> 83, +20% category: 215 -> 258.
+    // Both gains (-57pt) come entirely from product: 296 -> 239.
+    [44.0, 239.0, 83.0, 258.0, 150.0, 128.0];
 pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
 // Width for the single-line bulk shipping-group selector.
 pub const FREIGHT_BULK_GROUP_WIDTH: f32 = 200.0;
