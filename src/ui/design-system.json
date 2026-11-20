@@ -147,6 +147,8 @@
     "canvas": "#101010",
     "panel": "#181818",
     "tableRowAlternate": "#1e1e1e",
+    "treeGuide": "#4a4a4a",
+    "treeRowRule": "#282828",
     "input": "#292929",
     "raised": "#303030",
     "hover": "#353535",
@@ -348,6 +350,14 @@
     "surface-table-row-alternate": {
       "color": "tableRowAlternate",
       "usage": "alternating unselected rows of neutral data tables only; do not use raised action or input colors"
+    },
+    "border-tree-guide": {
+      "color": "treeGuide",
+      "usage": "subdued vertical and elbow connectors between parent and child nodes in the category tree"
+    },
+    "border-tree-row-rule": {
+      "color": "treeRowRule",
+      "usage": "very faint one-pixel row separators in the category tree; not zebra backgrounds"
     },
     "surface-nested": {
       "color": "raised",
