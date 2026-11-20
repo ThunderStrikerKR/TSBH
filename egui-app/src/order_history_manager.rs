@@ -867,23 +867,9 @@ impl OrderHistoryManager {
                 self.date_to=self.to_input.clone();
                 self.refresh(section.ctx().clone());
             }
-            if let Some(message)=date_range_error(
-                &self.from_input,&self.to_input
-            ){
-                theme::management_list_strip_frame().show(section,|ui|{
-                    ui.label(typography::status(message,theme::DANGER));
-                });
-            }
-            if let Some(error)=self.error.as_deref(){
-                theme::management_list_strip_frame().show(section,|ui|{
-                    ui.label(typography::status(error,theme::DANGER));
-                });
-            }
-            if self.receiver.is_some(){
-                theme::management_list_strip_frame().show(section,|ui|{
-                    ui.label(typography::caption("주문 이력을 확인 중입니다."));
-                });
-            }
+            // Loading, error, validation and empty-result messages must
+            // never insert a row BETWEEN the toolbar and fixed table header.
+            // All four states are painted later at the data area's center.
             // Freight baseline: 4pt above + 1pt dividing rule + 4pt
             // below, followed immediately by the fixed 36pt table header.
             // Implicit spacing was already disabled BEFORE the toolbar.
@@ -913,13 +899,21 @@ impl OrderHistoryManager {
             let snapshot=self.snapshot.as_ref();
             let lines=snapshot.map(|data|display_lines(data,&self.expanded,self.sort))
                 .unwrap_or_default();
-            let empty_message=if self.snapshot.as_ref()
-                .is_some_and(|data|data.rows.is_empty()){
-                Some(if self.query.is_empty()
+            let validation=date_range_error(
+                &self.from_input,&self.to_input
+            );
+            let notice=if let Some(message)=validation{
+                Some((message,theme::DANGER))
+            }else if let Some(message)=self.error.as_deref(){
+                Some((message,theme::DANGER))
+            }else if self.receiver.is_some(){
+                Some(("주문 이력을 확인 중입니다.",theme::MUTED))
+            }else if snapshot.is_some_and(|data|data.rows.is_empty()){
+                Some((if self.query.is_empty()
                     && self.date_from.is_empty()&&self.date_to.is_empty()
                     && self.date_basis==HistoryDateBasis::Reception{
                     "저장된 주문이 없습니다."
-                }else{"조건에 맞는 주문이 없습니다."})
+                }else{"조건에 맞는 주문이 없습니다."},theme::MUTED))
             }else{None};
             // Use the exact remaining primary-card height. The old 60vh
             // cap left a dark blank strip beneath long order histories.
@@ -983,8 +977,8 @@ impl OrderHistoryManager {
                     // No virtual rows are inserted for an empty result;
                     // the empty-state label is painted centered below.
                 });
-            if let Some(message)=empty_message{
-                let empty_rect=Rect::from_min_size(
+            if let Some((message,color))=notice{
+                let notice_rect=Rect::from_min_size(
                     scroll_bounds.min,
                     Vec2::new(
                         (viewport-gutter).max(1.0).min(scroll_bounds.width()),
@@ -993,12 +987,12 @@ impl OrderHistoryManager {
                     )
                 );
                 let galley=typography::freight_table_cell_galley(
-                    section,message,false,theme::MUTED
+                    section,message,false,color
                 );
-                let origin=empty_rect.center()-galley.size()/2.0;
+                let origin=notice_rect.center()-galley.size()/2.0;
                 section.painter()
-                    .with_clip_rect(empty_rect.intersect(section.clip_rect()))
-                    .galley(origin,galley,theme::MUTED);
+                    .with_clip_rect(notice_rect.intersect(section.clip_rect()))
+                    .galley(origin,galley,color);
             }
             let left=header_origin.unwrap_or(head_rect.left()-output.state.offset.x);
             let header_cells=cells(egui::pos2(left,head_rect.top()),&widths,HEADER_HEIGHT);
