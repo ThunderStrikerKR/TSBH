@@ -474,11 +474,10 @@ impl ModelGroupManager {
             components::modal_backdrop(ctx,"family-delete-dim",false);
             components::decision_window("그룹 삭제","family-delete-confirm",rect)
                 .show(ctx,|dialog|{
+                    cancel=components::modal_header(dialog,"그룹 삭제","취소",true);
                     dialog.label(typography::body(
                         "이 그룹을 삭제할까요? 기존 주문과 상품은 유지됩니다."));
                     dialog.horizontal(|actions|{
-                        cancel=theme::action(actions,"취소",
-                            theme::ButtonRole::Standard,true).clicked();
                         delete=theme::action(actions,"삭제",
                             theme::ButtonRole::Danger,true).clicked();
                     });
