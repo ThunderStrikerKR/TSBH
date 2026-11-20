@@ -867,7 +867,7 @@
       ],
       "eguiFreightMigration": {
         "scope": "2026-11-20 grouped freight assignment/rates and individual fallback; latest source and explicit user instructions",
-        "status": "PARTIAL_IMPLEMENTATION_BUILD_UNVERIFIED",
+        "status": "PARTIAL_IMPLEMENTATION_BUILD_PASS_ACTION_UNVERIFIED",
         "existingReference": [
           "src/ShippingManager.tsx",
           "src/ProductFreightPanel.tsx",
@@ -886,13 +886,15 @@
           "patch": "COMMITTED_SCOPED",
           "static": "SOURCE_PATHS_CHECKED_PARTIAL_UI",
           "action": "NOT_RUN",
-          "compile": "IN_PROGRESS_OR_CANCELLED_DUE_TO_CONCURRENT_MAIN_UPDATES",
+          "compile": "PASS_SCOPED_TAURI_AND_EGUI_F30DC9ABB",
           "windows": "NOT_REQUESTED_SKIPPED"
         },
         "lastPatch": "https://github.com/ThunderStrikerKR/TSBH/commit/37f5f7d57dbe16c6d61b062ecfe5edcb81e88ae1",
         "compileRun": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/44644460192",
+        "compileCommit": "f30dc9abb7be5d1ee1b24ff573600c0f77fde5cb",
+        "compileJobs": "Tauri bin cargo check PASS; egui cargo check PASS (no Windows GUI)",
         "open": [
-          "Targeted cargo-check needs completed result; previous run canceled due to newer main commits",
+          "Targeted cargo-check passed on f30dc9abb; actual production DB write/round-trip needs narrow action proof",
           "Full original React UI/help/field labels and compact table density require scoped static parity check",
           "Explicit production DB and Tauri helper file configuration still required; real operational write not exercised",
           "Write conflict recovery/reload and subsequent manual draft revalidation not yet proven"
