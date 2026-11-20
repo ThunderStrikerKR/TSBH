@@ -1560,6 +1560,49 @@
     },
     {
       "id": "F15",
+      "eguiExcelMigration": {
+        "date": "2026-11-20",
+        "scope": "React WorkflowQueue 엑셀 관리 3탭의 Rust+egui 단계별 이전",
+        "baseline": {
+          "react": ["src/WorkflowQueue.tsx","src/FactoryReplyImport.tsx","src/FactoryReplyHistory.tsx","src/ActualFreightField.tsx","src/styles/management-layout.css"],
+          "rust": ["src-tauri/src/business_core/output/export.rs","src-tauri/src/business_core/output/export_history.rs","src-tauri/src/export_file.rs"],
+          "reference": ["docs/egui-management-ui-reference.md","docs/management-layout-rules.md"]
+        },
+        "patch": {
+          "status": "CODE_COMMITTED",
+          "commits": [
+            "711fe3a7740752202be3fabc72207152063762c3",
+            "96efa5eeb2d7fb3374540305337c90f91b9ff6a4",
+            "b333533f494f0fcb4c10e04f4d54aab5a85144f8",
+            "ae43db358bd13b01c41e6e112470f47bfca6fb57",
+            "24b4e9086694d0786d0f83086524c7eaf0fc5241",
+            "a456e470593c0862b7e9e4d809bbef494a86c62f",
+            "818201b14437d0dd04ed6d1e951cae24c08addaf",
+            "ceb59802ed16002f41dce091287636f067a942d0",
+            "34952198d27b1835006d92683c3c2e2898c574db",
+            "1634d07e0bc944b9ff6e3e353bef6eff9086f3b4"
+          ],
+          "files": [
+            "egui-app/src/excel_manager.rs","egui-app/src/excel_service.rs",
+            "egui-app/src/main.rs","egui-app/src/gateway.rs",
+            "egui-app/src/order_history_manager.rs","egui-app/src/settings_help.rs",
+            "egui-app/Cargo.toml","DEV_WINDOWS_EGUI.cmd",
+            ".github/workflows/egui-targeted-check.yml"
+          ]
+        },
+        "static": "PASS for three-tab layout, two Rust prepare operations, 16-string XLSX serialization, save-before-finalize CAS, current-state read, history file ID validation and refusal of legacy selection. Targeted 36pt fixed header, 42pt virtual rows, solid scrollbar and 3-state sort. No Windows pixel inspection.",
+        "narrow": "Configured existing targeted GitHub workflow to include egui Excel source and excel_service::tests. Run result pending.",
+        "build": "PENDING: early 44746370556 missed module registration before main.rs update; 44746823683 failed E0631 recipient filter, fixed at 34952198. Later CI includes unrelated concurrent bando-data-access product_commands.rs changes and must be evaluated separately.",
+        "notYetMigrated": [
+          "Queue per-row ActualFreightField editor and save/restore/store-sent actions",
+          "Export history fileOnly dispatch confirmation, factory delivery confirmation and reopen/reprint actions",
+          "FactoryReplyImport XLSX parsing/review/backup/archive/apply",
+          "FactoryReplyHistory status/linked rows/conflict approval"
+        ],
+        "windowsGui": "SKIPPED user-requested policy; not an automatic failure",
+        "overall": "PARTIAL_MIGRATION; DO NOT CLAIM COMPLETE"
+      },
+
       "name": "공장/매장 Excel 출력",
       "baseline": {
         "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
