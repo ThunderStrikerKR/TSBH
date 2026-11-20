@@ -1090,15 +1090,8 @@ fn start_automatic_backup(app: tauri::AppHandle) {
             });
 }
 
-/// One-shot CLI entry for the egui reception bridge. A helper process uses
-/// the very same native Rust rules and the Tauri working-reception table; it
-/// does not start a WebView or invoke any unrelated startup/migration path.
-/// The environment variables intentionally require explicit local consent.
-/// One-shot data-management bridge. Uses the ORIGINAL Tauri audit and
-/// backup manager; never makes a separate, incomplete egui archive writer.
-/// Archive and backup listing are read-only. Backup/restore additionally
-
-
+/// Legacy one-shot egui adapters remain for product, settings and reception
+/// until their separate native service migrations are complete.
 /// Product edits use the original Tauri catalog rules plus write_snapshot.
 pub fn run_egui_product_patch() -> i32 {
     egui_product_bridge::run()
