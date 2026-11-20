@@ -105,6 +105,11 @@ fn lock_db<'a>(db: &'a State<'_, Database>) -> Result<std::sync::MutexGuard<'a, 
     db.connection.lock().map_err(|_| "데이터베이스 잠금 오류".to_string())
 }
 fn get_snapshot(conn: &Connection) -> Result<Value, String> {
+    // Only schema v2 uses the shared projection. Legacy v0/v1 hydration
+    // remains unchanged for non-destructive migrations and recovery.
+    if relational_store::active(conn)? {
+        return bando_data_access::read_v2_snapshot(conn);
+    }
     let text: String = conn.query_row("SELECT payload FROM app_state WHERE id=1", [], |row| row.get(0)).map_err(err)?;
     let mut state: Value = serde_json::from_str(&text).map_err(err)?;
     relational_store::hydrate(conn, &mut state)?;
