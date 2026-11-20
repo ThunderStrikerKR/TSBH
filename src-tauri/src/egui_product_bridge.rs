@@ -22,7 +22,7 @@ fn unique_id(kind:&str)->Result<String,String>{
     Ok(format!("egui-{kind}-{}-{}",std::process::id(),now.as_nanos()))
 }
 
-fn patch(conn:&mut Connection, request:&Value)->Result<Value,String>{
+pub(super) fn patch(conn:&mut Connection, request:&Value)->Result<Value,String>{
     let expected=request.get("expectedRevision").and_then(Value::as_u64)
         .ok_or("상품 변경 비교 리비전이 없습니다.")?;
     let action=required(request,"action")?;
