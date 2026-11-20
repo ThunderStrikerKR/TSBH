@@ -38,6 +38,7 @@ mod settings_store;
 mod settings_view;
 mod settings_help;
 mod freight_manager;
+mod order_history_manager;
 mod management_queries;
 mod developer_ui_samples;
 
@@ -208,6 +209,7 @@ struct BandoEgui {
     inbox_folder_receiver: Option<Receiver<Result<Option<String>, String>>>,
     inbox_folder_last_refresh: Option<Instant>,
     freight_manager: Option<freight_manager::FreightManager>,
+    order_history_manager: Option<order_history_manager::OrderHistoryManager>,
     freight_pending_page: Option<Page>,
     freight_pending_save: bool,
     product_pending_page: Option<Page>,
@@ -275,6 +277,7 @@ impl Default for BandoEgui {
             inbox_folder_receiver: None,
             inbox_folder_last_refresh: None,
             freight_manager: None,
+            order_history_manager: None,
             freight_pending_page: None,
             freight_pending_save: false,
             product_pending_page: None,
@@ -1730,6 +1733,11 @@ impl BandoEgui {
                                         // Kakao HWND ownership survives tab changes.
                                         // A return to freight must re-read staff edits made
                                         // while the page was not selected.
+                                        if page==Page::History && self.page!=Page::History {
+                                            if let Some(history)=self.order_history_manager.as_mut(){
+                                                history.refresh(ctx.clone());
+                                            }
+                                        }
                                         if page==Page::Products && self.page!=Page::Products {
                                             if let Some(products)=self.product_manager.as_mut(){
                                                 products.refresh(ctx.clone());
@@ -3496,6 +3504,11 @@ impl BandoEgui {
     }
 
     fn other_page(&mut self, ctx: &egui::Context) {
+        if self.page==Page::History && self.order_history_manager.is_none(){
+            self.order_history_manager=Some(order_history_manager::OrderHistoryManager::new(
+                Arc::clone(&self.gateway),ctx.clone()
+            ));
+        }
         if self.page==Page::Products && self.product_manager.is_none() {
             self.product_manager=Some(product_manager::ProductManager::new(
                 Arc::clone(&self.gateway),ctx.clone()
@@ -3599,6 +3612,11 @@ impl BandoEgui {
                                 // frames retain their own content padding.
                                 Frame::new().inner_margin(0).show(main,|page|{
                                     match self.page{
+                                        Page::History=>{
+                                            if let Some(history)=self.order_history_manager.as_mut(){
+                                                history.show_page(page);
+                                            }
+                                        }
                                         Page::Products=>{
                                             if let Some(manager)=self.product_manager.as_mut(){
                                                 manager.show_page(page);
@@ -3668,6 +3686,7 @@ impl eframe::App for BandoEgui {
             self.workflow_ui.stop_preview();
             self.client_manager=None;
             self.freight_manager=None;
+            self.order_history_manager=None;
             self.client_chooser=None;
             self.working_sync=None;
             self.client_change=None;

@@ -40,6 +40,7 @@ pub enum ReadOperation {
     PreviewWorkflow,
     PreviewOrder,
     ReadShipments,
+    ListOrderHistoryView,
     ShippingManagerView,
     ProductFreightView,
     DefaultProductRule,
@@ -58,7 +59,7 @@ impl ReadOperation {
             | Self::ChangeOrderClient | Self::RepriceOrder
             | Self::CalculatePrice | Self::ManualClassification
             | Self::PreviewWorkflow | Self::PreviewOrder
-            | Self::ReadShipments | Self::ShippingManagerView
+            | Self::ReadShipments | Self::ListOrderHistoryView | Self::ShippingManagerView
             | Self::ProductFreightView | Self::DefaultProductRule => "rules",
             Self::RenderAutomaticMessage => "output",
         }
@@ -83,6 +84,7 @@ impl ReadOperation {
             Self::PreviewWorkflow => "preview_workflow",
             Self::PreviewOrder => "preview_order",
             Self::ReadShipments => "read_shipments",
+            Self::ListOrderHistoryView => "list_order_history_view",
             Self::ShippingManagerView => "shipping_manager_view",
             Self::ProductFreightView => "apply_shipping_action",
             Self::DefaultProductRule => "apply_shipping_action",
@@ -446,6 +448,7 @@ impl BandoGateway for LocalGateway {
             | ReadOperation::PreviewWorkflow
             | ReadOperation::PreviewOrder
             | ReadOperation::ReadShipments
+            | ReadOperation::ListOrderHistoryView
             | ReadOperation::ShippingManagerView
             | ReadOperation::ProductFreightView
             | ReadOperation::DefaultProductRule => {
