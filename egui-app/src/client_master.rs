@@ -19,7 +19,8 @@ fn external_business()->bool{
 pub fn editable()->bool{
     external_business() && !external_index() &&
     std::env::var("BANDO_EGUI_ENABLE_CLIENT_WRITE")
-        .ok().as_deref()==Some("1")
+        .ok().as_deref()==Some("1") &&
+    crate::business_state::authorized_client_write_path().is_ok()
 }
 
 pub fn load()->Result<Value,String>{
