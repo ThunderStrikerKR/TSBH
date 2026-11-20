@@ -12,6 +12,7 @@ use std::collections::HashMap;
 mod validation;
 mod relational_write;
 mod storage;
+mod client_commands;
 pub mod shipping_action;
 pub use validation::{
     valid_state, validate_brands, validate_clients,
@@ -19,6 +20,7 @@ pub use validation::{
 };
 pub use relational_write::store_v2_relational;
 pub use storage::write_v2_snapshot;
+pub use client_commands::mutate_client_v2;
 
 
 fn read_entities(conn: &Connection, sql: &str) -> Result<Vec<Value>, String> {
