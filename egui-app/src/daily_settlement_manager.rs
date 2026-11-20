@@ -513,8 +513,10 @@ impl DailySettlementManager{
             .show(ui,|body|{
                 theme::section_frame().show(body,|section|{
                     section.horizontal(|heading|{
+                        // The selected day is already shown in the date
+                        // field directly below; don't repeat it in the title.
                         heading.label(typography::section_heading(
-                            &format!("{} / 일일 결산 조회",self.date)
+                            "일일 결산 조회"
                         ));
                         settings_help::icon(heading,"일일 결산");
                     });
