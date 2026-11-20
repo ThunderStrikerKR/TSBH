@@ -887,7 +887,9 @@ pub fn management_dropdown(
         enabled,
         egui::Button::new("")
             .min_size(Vec2::new(width,theme::ACTION_STANDARD_HEIGHT))
-            .fill(theme::RAISED)
+            // A dropdown is a filter/input control, not an action button.
+            // Match adjacent date fields (#292929) in management toolbars.
+            .fill(theme::INPUT)
             .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
             .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
     );
