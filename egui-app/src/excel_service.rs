@@ -21,6 +21,7 @@ fn kind(origin:&str)->Result<(&'static str,&'static str,&'static str),String>{
     match origin {
         "FACTORY"=>Ok(("prepare_factory_export","공장 발송","공장")),
         "STORE"=>Ok(("prepare_store_export","매장 발송","매장")),
+        "PRODUCT"=>Ok(("","상품 관리","상품전체")),
         _=>Err("공장 또는 매장 발송만 선택할 수 있습니다.".into())
     }
 }
@@ -33,8 +34,7 @@ fn archive_root(state:&Value)->Result<PathBuf,String>{
         // Same app-data test root as Tauri; never use a production path
         // imported from Settings while running in developer mode.
         let db=business_state::authorized_business_write_path()?;
-        db.parent().and_then(Path::parent)
-            .ok_or("개발 Excel 보관함 위치를 찾지 못했습니다.")?
+        db.parent().ok_or("개발 Excel 보관함 위치를 찾지 못했습니다.")?
             .join("Excel")
     }else{
         let configured=state["settings"]["excelDirectory"].as_str()
@@ -122,6 +122,17 @@ fn conn()->Result<Connection,String>{
     if version!=2{return Err("지원하지 않는 업무 DB 버전입니다.".into())}
     Ok(db)
 }
+/// Same date-classified Product workbook archive as Tauri's
+/// save_product_sync_workbook (상품 관리/YYYY년/MM월/DD일).
+/// This is a file-only export; it never changes the business SQLite state.
+pub fn archive_product_workbook(state:&Value,bytes:&[u8])->Result<PathBuf,String>{
+    if bytes.len()>crate::product_excel::MAX_BYTES as usize{
+        return Err("상품 Excel 파일이 20MB를 초과했습니다.".into());
+    }
+    let root=archive_root(state)?;
+    save(&root,"PRODUCT",bytes)
+}
+
 pub fn writable()->bool{
     std::env::var("BANDO_EGUI_ENABLE_EXCEL_WRITE").ok().as_deref()==Some("1") &&
     settings_store::writable_business() &&
