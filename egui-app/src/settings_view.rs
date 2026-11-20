@@ -476,16 +476,14 @@ impl SettingsView{
             let conflict=error.contains("다른 화면에서 바뀌었습니다")
                 || error.contains("다른 작업에서 변경된 설정")
                 || error.contains("설정 충돌");
-            ui.label(typography::status(error,theme::DANGER));
+            // Suppress unsolicited error prose; retain the targeted
+            // conflict recovery action and its existing validation state.
             if conflict && theme::action(
                 ui,"저장된 설정 불러오기",ButtonRole::Standard,
                 !self.busy()
             ).clicked(){
                 self.reload_confirmation=true;
             }
-            ui.add_space(theme::SPACE_8);
-        }else if let Some(notice)=self.notice.as_deref(){
-            ui.label(typography::status(notice,theme::SUCCESS));
             ui.add_space(theme::SPACE_8);
         }
         if !self.loaded{
