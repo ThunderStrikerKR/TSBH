@@ -510,11 +510,16 @@ impl OrderHistoryManager {
         let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=theme::management_scroll_style();
         self.poll();
-        ui.horizontal(|heading|{
-            heading.label(typography::page_heading("주문 내역"));
-            settings_help::icon(heading,"주문 내역");
+        components::management_page_title_top_gap(ui);
+        components::management_top_content(ui,|top|{
+            top.horizontal(|heading|{
+                heading.label(typography::page_heading("주문 내역"));
+                settings_help::icon(heading,"주문 내역");
+            });
         });
-        ui.add_space(theme::SPACE_12);
+        // No subtabs or KPIs: the approved common-card anchor owns the blank
+        // area below this genuine title, without creating placeholder cards.
+        ui.add_space(theme::SPACE_16);
         let mut changed=false;
         components::align_management_primary_card(ui,page_origin_y);
         let card_min_height=components::management_primary_card_min_inner_height(ui,theme::FRAME_STROKE_WIDTH);
