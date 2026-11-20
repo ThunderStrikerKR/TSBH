@@ -322,14 +322,27 @@ impl AliasManager {
                                 .unwrap_or(if depth==0{
                                     "전체 카테고리"
                                 }else{"현재 분류 전체"});
+                            let picker_width=theme::CATEGORY_PATH_PICKER_WIDTH;
+                            let text_width=picker_width-
+                                theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
+                            let visible=typography::fit_category_path(
+                                filters,label,text_width,
+                                typography::CategoryPathFont::Body
+                            );
                             egui::ComboBox::from_id_salt(("alias-product-category",depth))
-                                .selected_text(label).show_ui(filters,|choice|{
+                                .width(picker_width)
+                                .selected_text(visible).show_ui(filters,|choice|{
                                     choice.selectable_value(&mut value,String::new(),
                                         if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
                                     for (id,name) in children{
-                                        choice.selectable_value(&mut value,id,name);
+                                        let visible=typography::fit_category_path(
+                                            choice,&name,text_width,
+                                            typography::CategoryPathFont::Body
+                                        );
+                                        choice.selectable_value(&mut value,id,visible)
+                                            .on_hover_text(name);
                                     }
-                                });
+                                }).response.on_hover_text(label);
                             if value!=selected{
                                 self.category=if value.is_empty(){
                                     parent.unwrap_or_default()
