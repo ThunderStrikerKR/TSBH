@@ -989,7 +989,18 @@ mod tests{
         assert_eq!((&*from,&*to),("2026-11-19","2026-11-22"));
         from=move_date(&from,1);
         assert_eq!((&*from,&*to),("2026-11-20","2026-11-22"));
-        assert_eq!(model_label("BD 709 / 블랙"),"709 / 블랙");
+        assert_eq!(display_client_name("가나다라마바사아자차카타"),"가나다라마바사아자차");
+        assert_eq!(display_client_name("짧은상호"),"짧은상호");
+        assert_eq!(COLS.iter().sum::<f32>()+COL_GAP*6.0,MIN_WIDTH);
+        let sample=json!({"recipients":[
+            {"items":[{"name":"BD 709","quantity":2},{"name":"Desk TS","quantity":1}]},
+            {"items":[{"name":"GT","quantity":3}]}
+        ]});
+        assert_eq!(order_items_single_line(&sample,false),
+            "▸ 709 × 2 / Desk TS × 1 / GT × 3");
+        assert_eq!(order_items_single_line(&sample,true),
+            "▾ 709 × 2 / Desk TS × 1 / GT × 3");
+                assert_eq!(model_label("BD 709 / 블랙"),"709 / 블랙");
         assert_eq!(won(&Value::Null),"확인 필요");
         let leap=NaiveDate::from_ymd_opt(2024,2,1).unwrap();
         let days=calendar_dates(leap);
