@@ -1,7 +1,7 @@
 //! Settings for native egui, with strict storage ownership.
 //!
-//! - Explicit business DB: read snapshot through the existing read-only
-//!   projection; writes are opt-in one-shot Tauri settings_patch commands.
+//! - Explicit business DB: read the canonical snapshot and write through
+//!   the shared in-process Rust settings CAS/SQLite transaction.
 //! - No business DB: isolated egui-preview.sqlite3 settings domain, with
 //!   per-field CAS and a local account-reference guard.
 //! No implicit operational database discovery and no shadow settings rules.
@@ -36,8 +36,16 @@ fn using_business()->bool {
 }
 pub fn writable_business()->bool{
     using_business() &&
-    std::env::var("BANDO_EGUI_ENABLE_SETTINGS_WRITE").ok().as_deref()==Some("1") &&
-    std::env::var_os("BANDO_EGUI_TAURI_HELPER").is_some_and(|v|!v.is_empty())
+    std::env::var("BANDO_EGUI_ENABLE_SETTINGS_WRITE")
+        .ok().as_deref()==Some("1") &&
+    business_state::authorized_business_write_path().is_ok()
+}
+/// Backup and restore are a separate, safety-critical Tauri data operation.
+/// They remain available only if the existing Tauri backup bridge is present.
+pub fn backup_helper_available()->bool{
+    let Some(helper)=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
+        .filter(|path|!path.is_empty()) else{return false};
+    std::path::Path::new(&helper).is_file()
 }
 fn used_accounts(clients:&Value)->Vec<String>{
     let mut refs=Vec::new();
@@ -189,41 +197,45 @@ fn patch_local(changes:Value,expected:Value)->Result<Value,String>{
     load()
 }
 fn patch_business(changes:Value,expected:Value)->Result<Value,String>{
-    if !writable_business() {
+    if !writable_business(){
         return Err("운영 설정은 읽기 전용입니다. 설정 변경 권한이 필요합니다.".into());
     }
     let changes_obj=changes.as_object().ok_or("설정 변경 객체 오류")?;
     let expected_obj=expected.as_object().ok_or("설정 기준값 객체 오류")?;
     validate(changes_obj,expected_obj)?;
-    let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-        .ok_or("Tauri 설정 저장 도우미 경로가 없습니다.")?;
-    if !std::path::Path::new(&helper).is_file() {
-        return Err("Tauri 설정 저장 도우미 실행파일을 찾지 못했습니다.".into());
+    let request=json!({"changes":&changes,"expected":&expected}).to_string();
+    if request.len()>SETTINGS_CAP{
+        return Err("설정 변경 내용이 너무 큽니다.".into());
     }
-    let payload=json!({"changes":changes,"expected":expected}).to_string();
-    if payload.len()>SETTINGS_CAP{return Err("설정 변경 내용이 너무 큽니다.".into());}
-    let mut child=Command::new(helper)
-        .arg("--bando-egui-settings-patch")
-        .stdin(Stdio::piped()).stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn().map_err(|_|"Tauri 설정 저장 도우미를 실행할 수 없습니다.".to_owned())?;
-    let mut stdin=child.stdin.take()
-        .ok_or("Tauri 설정 저장 입력 채널을 열지 못했습니다.")?;
-    stdin.write_all(payload.as_bytes())
-        .map_err(|_|"Tauri 설정 저장 데이터를 전달하지 못했습니다.".to_owned())?;
-    drop(stdin);
-    let output=child.wait_with_output()
-        .map_err(|_|"Tauri 설정 저장 결과를 받을 수 없습니다.".to_owned())?;
-    if output.stdout.len()>SETTINGS_CAP{
-        return Err("Tauri 설정 저장 결과 크기가 올바르지 않습니다.".into());
+    let path=business_state::authorized_business_write_path()?;
+    let mut conn=Connection::open_with_flags(
+        path,rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+    ).map_err(|_|"운영 설정 DB를 열지 못했습니다.".to_owned())?;
+    conn.busy_timeout(Duration::from_secs(5))
+        .map_err(|e|e.to_string())?;
+    conn.execute_batch("PRAGMA foreign_keys=ON;")
+        .map_err(|e|e.to_string())?;
+    // Debug and developer-test workspaces must not edit protected Excel paths.
+    // Tauri React and egui use the SAME original settings CAS validator.
+    let developer_test=cfg!(debug_assertions) ||
+        std::env::var("BANDO_EGUI_DEVELOPER_TEST").ok().as_deref()==Some("1");
+    let committed=bando_data_access::patch_settings_v2(
+        &mut conn,developer_test,&changes,&expected
+    )?;
+    let saved_revision=committed["revision"].as_u64()
+        .ok_or("운영 설정 저장 결과 revision 오류")?;
+    drop(conn);
+    let fresh=load()?;
+    if fresh["revision"].as_u64()!=Some(saved_revision) {
+        return Err("설정은 저장됐지만 이후 다른 작업에서 변경됐습니다. 최신 상태를 다시 불러오세요.".into());
     }
-    let reply:Value=serde_json::from_slice(&output.stdout)
-        .map_err(|_|"Tauri 설정 저장 응답 형식이 잘못되었습니다.".to_owned())?;
-    if !output.status.success() || reply["ok"]!=Value::Bool(true){
-        return Err(reply.get("error").and_then(Value::as_str)
-            .unwrap_or("운영 설정 저장에 실패했습니다.").to_owned());
+    for (key,updated) in changes_obj {
+        let now=fresh["settings"].get(key).unwrap_or(&Value::Null);
+        if now!=updated{
+            return Err(format!("{key} 설정은 저장됐지만 재조회 결과가 일치하지 않습니다."));
+        }
     }
-    load() // Reload the authoritative settings; never trust echoed UI state.
+    Ok(fresh)
 }
 pub fn patch(changes:Value,expected:Value)->Result<Value,String>{
     // Model groups belong to the operating catalog/settings, never to the
