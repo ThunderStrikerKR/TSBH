@@ -198,7 +198,7 @@ pub const FAMILY_FOOTER_HEIGHT:f32 = 68.0;
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 // Client directory explicitly uses one compact, non-wrapping record per row.
-pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 38.0;
+pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
 // The three-column dealer list has its own content minimum (30/38/32).
 // Do not force freight/product's 1320pt table width onto the client list.
