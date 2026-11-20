@@ -1006,17 +1006,26 @@ impl ProductManager {
                                 }else{json!(group)};
                             }
                         });
-                        Self::edit_text(body,&mut draft,"defaultColor","기본 색상",
-                            editable&&!busy);
                         body.add_space(theme::SPACE_12);
                         components::soft_divider(body);
                         body.label(typography::section_heading("단일 판매 구성"));
+                        // React ProductManager has ONE "상품 색상" field:
+                        // editing it updates the variant and defaultColor together.
+                        // Do not render a second independent "기본 색상" editor.
+                        let mut selected_color=None;
                         if let Some(variant)=draft["variants"].as_array_mut()
                             .and_then(|rows|rows.first_mut()){
-                            Self::edit_text(body,variant,"color","판매 색상",editable&&!busy);
+                            let old_color=field(variant,"color").to_owned();
+                            Self::edit_text(body,variant,"color","상품 색상",editable&&!busy);
+                            if field(variant,"color")!=old_color{
+                                selected_color=Some(field(variant,"color").to_owned());
+                            }
                             Self::edit_text(body,variant,"option","판매 옵션",editable&&!busy);
                             Self::edit_text(body,variant,"url","홈페이지 상품 연결",
                                 editable&&!busy);
+                        }
+                        if let Some(color)=selected_color {
+                            draft["defaultColor"]=json!(color);
                         }
                         body.add_space(theme::SPACE_12);
                         body.label(typography::section_heading("상품 가격"));
