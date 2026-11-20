@@ -15,6 +15,12 @@ mod storage;
 mod client_commands;
 mod product_commands;
 mod settings_commands;
+#[path = "../../../src-tauri/src/business_core/rules/mod.rs"]
+mod reception_rules;
+#[path = "../../../src-tauri/src/business_core/recognition/mod.rs"]
+mod reception_recognition;
+mod reception_manual;
+mod reception_commands;
 mod recovery;
 pub mod backup_service;
 pub mod audit_service;
@@ -29,6 +35,7 @@ pub use client_commands::mutate_client_v2;
 pub use product_commands::{patch_product_v2,patch_model_groups_v2,apply_product_price};
 pub(crate) use product_commands::validate_native_model_groups;
 pub use settings_commands::{apply_settings_changes,patch_settings_v2};
+pub use reception_commands::commit_reception_v2;
 
 
 fn read_entities(conn: &Connection, sql: &str) -> Result<Vec<Value>, String> {
