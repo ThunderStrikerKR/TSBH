@@ -353,8 +353,9 @@ impl AliasManager {
                                 .map(|p|field(p,"brandId"))
                                 .collect::<HashSet<_>>())
                             .unwrap_or_default();
+                        let selected_brand=self.brand.clone();
                         let brand=rows(&catalog["brands"]).iter()
-                            .find(|b|field(b,"id")==self.brand)
+                            .find(|b|field(b,"id")==selected_brand)
                             .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
                         egui::ComboBox::from_id_salt("alias-product-brand")
                             .selected_text(brand).show_ui(filters,|choice|{
@@ -363,7 +364,7 @@ impl AliasManager {
                                 for b in rows(&catalog["brands"])
                                     .iter().filter(|b|{
                                         available.contains(field(b,"id")) ||
-                                            field(b,"id")==self.brand
+                                            field(b,"id")==selected_brand
                                     }){
                                     choice.selectable_value(&mut self.brand,
                                         field(b,"id").to_owned(),field(b,"name"));
