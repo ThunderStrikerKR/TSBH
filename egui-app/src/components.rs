@@ -238,6 +238,7 @@ pub fn modal_window(
     title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
     egui::Window::new(typography::modal_title(title))
+        .title_bar(false)
         .id(egui::Id::new(id))
         .order(egui::Order::Foreground)
         .pivot(egui::Align2::CENTER_CENTER)
@@ -258,6 +259,23 @@ pub fn modal_window(
         .resizable(false)
         .collapsible(false)
         .frame(theme::modal_frame())
+}
+
+/// The single shared title row for all native egui dialogs.
+/// Close/Cancel belongs in the TOP-RIGHT, never repeated beside the
+/// bottom-right confirmation action. Views use "닫기"; editable dialogs
+/// and decisions use "취소". The caller retains its original close guard.
+pub fn modal_header(ui:&mut Ui,title:&str,close_label:&str,enabled:bool)->bool{
+    let mut close=false;
+    ui.horizontal(|bar|{
+        bar.label(typography::modal_title(title));
+        bar.with_layout(Layout::right_to_left(Align::Center),|right|{
+            close=theme::action(right,close_label,theme::ButtonRole::Standard,
+                enabled).clicked();
+        });
+    });
+    ui.add_space(theme::SPACE_8);
+    close
 }
 
 pub fn decision_window(
