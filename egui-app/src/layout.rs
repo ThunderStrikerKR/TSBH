@@ -18,6 +18,8 @@ const LEGACY_DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.0, 29.0, 29.0, 22.0];
 // Original review section: ~262 / 994 screen-content pixels.
 // The lower horizontal divider is shared with the source/message column.
 pub const DETAIL_REVIEW_RATIO: f32 = 0.264;
+pub const DETAIL_SECOND_RATIO: f32 = 0.5;
+pub const DETAIL_MIN_HEIGHTS: [f32; 3] = [130.0, 145.0, 170.0];
 pub const SOURCE_MIN: f32 = 275.0;
 pub const MESSAGE_MIN: f32 = 160.0;
 pub const VERTICAL_DEFAULT: f32 = 0.5;
@@ -26,11 +28,18 @@ pub const VERTICAL_DEFAULT: f32 = 0.5;
 pub struct LayoutState {
     pub ratios: [f32; PANEL_COUNT],
     pub source_ratio: f32,
+    pub detail_review_ratio: f32,
+    pub detail_second_ratio: f32,
 }
 
 impl Default for LayoutState {
     fn default() -> Self {
-        Self { ratios: DEFAULT_RATIOS, source_ratio: VERTICAL_DEFAULT }
+        Self {
+            ratios: DEFAULT_RATIOS,
+            source_ratio: VERTICAL_DEFAULT,
+            detail_review_ratio: DETAIL_REVIEW_RATIO,
+            detail_second_ratio: DETAIL_SECOND_RATIO,
+        }
     }
 }
 
@@ -74,7 +83,7 @@ impl LayoutState {
     pub fn from_string(raw: Option<String>) -> Self {
         let Some(raw) = raw else { return Self::default(); };
         let parts: Vec<f32> = raw.split(',').filter_map(|n| n.parse::<f32>().ok()).collect();
-        if parts.len() != PANEL_COUNT + 1 ||
+        if (parts.len() != PANEL_COUNT + 1 && parts.len() != PANEL_COUNT + 3) ||
             parts.iter().any(|n| !n.is_finite() || *n <= 0.0) {
             return Self::default();
         }
@@ -95,14 +104,20 @@ impl LayoutState {
         Self {
             ratios: if unmodified_legacy_preset { DEFAULT_RATIOS } else { ratios },
             source_ratio: parts[PANEL_COUNT].clamp(0.05, 0.95),
+            // Five-value layouts predate independent middle-column splitters.
+            detail_review_ratio: parts.get(PANEL_COUNT + 1).copied()
+                .unwrap_or(DETAIL_REVIEW_RATIO).clamp(0.05, 0.95),
+            detail_second_ratio: parts.get(PANEL_COUNT + 2).copied()
+                .unwrap_or(DETAIL_SECOND_RATIO).clamp(0.05, 0.95),
         }
     }
 
     pub fn as_string(&self) -> String {
         format!(
-            "{:.5},{:.5},{:.5},{:.5},{:.5}",
+            "{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5}",
             self.ratios[0], self.ratios[1],
-            self.ratios[2], self.ratios[3], self.source_ratio
+            self.ratios[2], self.ratios[3], self.source_ratio,
+            self.detail_review_ratio, self.detail_second_ratio
         )
     }
 
@@ -162,6 +177,15 @@ impl LayoutState {
         self.ratios = widths;
     }
 
+    /// Restore only the selected vertical column divider, without resetting others.
+    pub fn reset_pair(&mut self, widths: [f32; PANEL_COUNT], index: usize) {
+        if index >= PANEL_COUNT - 1 { return; }
+        let pair = widths[index] + widths[index + 1];
+        let default_pair = DEFAULT_RATIOS[index] + DEFAULT_RATIOS[index + 1];
+        let target = pair * DEFAULT_RATIOS[index] / default_pair;
+        self.resize_pair(widths, index, target - widths[index]);
+    }
+
     pub fn vertical_heights(&self, available: f32) -> (f32, f32) {
         let space = (available - SPLITTER).max(SOURCE_MIN + MESSAGE_MIN);
         let first = (space * self.source_ratio)
@@ -169,18 +193,52 @@ impl LayoutState {
         (first, space - first)
     }
 
-    /// Partition the upper half of the details column. Its lower edge is
-    /// derived from the same vertical_heights() result as the adjacent
-    /// source/message pane, so their shared horizontal rule cannot drift.
-    pub fn detail_upper_heights(&self, available: f32) -> (f32, f32) {
-        let (shared_upper, _) = self.vertical_heights(available);
-        let budget = (shared_upper - SPLITTER).max(0.0);
-        let review = if budget >= 330.0 {
-            (available * DETAIL_REVIEW_RATIO).clamp(150.0, budget - 180.0)
+    /// Three independently resizable middle-column sections. The two dividers
+    /// are no longer implicitly tied to the source/message divider next door.
+    pub fn detail_heights(&self, available: f32) -> [f32; 3] {
+        let space = (available - 2.0 * SPLITTER)
+            .max(DETAIL_MIN_HEIGHTS.iter().sum());
+        let first = (space * self.detail_review_ratio).clamp(
+            DETAIL_MIN_HEIGHTS[0],
+            space - DETAIL_MIN_HEIGHTS[1] - DETAIL_MIN_HEIGHTS[2],
+        );
+        let second_end = (space * self.detail_second_ratio).clamp(
+            first + DETAIL_MIN_HEIGHTS[1],
+            space - DETAIL_MIN_HEIGHTS[2],
+        );
+        [first, second_end - first, space - second_end]
+    }
+
+    /// Resize only the pair sharing this boundary, preserving the third pane.
+    /// 'original' is captured when the pointer first starts dragging.
+    pub fn resize_detail_pair(&mut self, original: [f32; 3], index: usize, delta: f32) {
+        if index >= 2 || !delta.is_finite() { return; }
+        let pair = original[index] + original[index + 1];
+        if pair < DETAIL_MIN_HEIGHTS[index] + DETAIL_MIN_HEIGHTS[index + 1] {
+            return;
+        }
+        let target = (original[index] + delta).clamp(
+            DETAIL_MIN_HEIGHTS[index],
+            pair - DETAIL_MIN_HEIGHTS[index + 1],
+        );
+        let mut heights = original;
+        heights[index] = target;
+        heights[index + 1] = pair - target;
+        let total: f32 = heights.iter().sum();
+        self.detail_review_ratio = heights[0] / total;
+        self.detail_second_ratio = (heights[0] + heights[1]) / total;
+    }
+
+    pub fn reset_detail_pair(&mut self, index: usize, available: f32) {
+        if index >= 2 { return; }
+        let original = self.detail_heights(available);
+        let default_heights = Self::default().detail_heights(available);
+        let delta = if index == 0 {
+            default_heights[0] - original[0]
         } else {
-            budget * (150.0 / 330.0)
+            default_heights[0] + default_heights[1] - original[0] - original[1]
         };
-        (review, (budget - review).max(0.0))
+        self.resize_detail_pair(original, index, delta);
     }
 
     pub fn resize_vertical(&mut self, current_first: f32, delta: f32, available: f32) {
@@ -239,12 +297,18 @@ mod geometry_contract {
     }
 
     #[test]
-    fn adjacent_middle_column_dividers_share_one_y_coordinate() {
-        let layout = LayoutState::default();
+    fn middle_column_boundaries_resize_independently() {
+        let mut layout = LayoutState::default();
         for height in [500.0, 800.0, 1000.0] {
-            let (source, _) = layout.vertical_heights(height);
-            let (review, recipient) = layout.detail_upper_heights(height);
-            assert!((review + SPLITTER + recipient - source).abs() < 0.01);
+            let original = layout.detail_heights(height);
+            layout.resize_detail_pair(original, 0, 30.0);
+            let first = layout.detail_heights(height);
+            assert!((first[2] - original[2]).abs() < 0.01);
+            layout.resize_detail_pair(first, 1, -20.0);
+            let second = layout.detail_heights(height);
+            assert!((second[0] - first[0]).abs() < 0.01);
+            assert!((second.iter().sum::<f32>() + 2.0 * SPLITTER - height).abs() < 0.01);
+            layout.reset();
         }
     }
 }
