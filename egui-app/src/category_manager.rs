@@ -683,7 +683,9 @@ impl CategoryManager {
             });
             if cancel{self.confirm=None;}
             else if discard{
-                self.discard(&cats);
+                if matches!(intent,Confirm::SwitchTab|Confirm::GlobalLeave){
+                    self.discard(&cats);
+                }
                 self.apply_confirm(intent,&cats);
             }else if save{
                 match self.write_request(&cats,catalog){
