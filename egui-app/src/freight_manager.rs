@@ -5,7 +5,7 @@
 use crate::{
     components,
     gateway::{BandoGateway, ReadOperation},
-    theme, typography,
+    settings_help, theme, typography,
 };
 use eframe::egui::{self, Ui};
 use std::collections::{BTreeMap, BTreeSet};
@@ -500,6 +500,7 @@ impl FreightManager {
         }
         ui.horizontal(|heading|{
             heading.label(typography::page_heading("운임 관리"));
+            settings_help::icon(heading,"운임 관리");
             if let Some(state)=self.state.as_ref(){
                 heading.with_layout(
                     egui::Layout::right_to_left(egui::Align::Center),|right|{
@@ -962,7 +963,10 @@ impl FreightManager {
         });
         ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui, |section| {
-            section.label(typography::section_heading("상품별 배송 그룹 지정"));
+            section.horizontal(|title|{
+                title.label(typography::section_heading("상품별 배송 그룹 지정"));
+                settings_help::icon(title,"상품별 운임");
+            });
             section.label(typography::caption(
                 "그룹 미지정 상품을 우선 확인합니다. 그룹 소속 상품의 운임은 위 배송 그룹에서 수정하세요."
             ));
@@ -1053,6 +1057,7 @@ impl FreightManager {
                         pending.insert(id.clone(),bulk_group.clone());
                     }
                 }
+                settings_help::icon(tools,"배송 그룹 일괄 지정");
             });
             section.horizontal_wrapped(|tools|{
                 let mut available=groups.iter().any(|g|text(g,"id")==copy_template.as_str());
@@ -1273,8 +1278,10 @@ impl FreightManager {
     ) {
         ui.horizontal(|bar|{
             bar.label(typography::section_heading("그룹 운임표"));
+            settings_help::icon(bar,"그룹 운임표");
             if theme::action(bar,"전체 운임 기준 변경",theme::ButtonRole::Danger,enabled)
                 .clicked(){*basis=Some(None);}
+            settings_help::icon(bar,"전체 운임 기준 변경");
         });
         ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui,|section|{
@@ -1349,7 +1356,14 @@ impl FreightManager {
         ui:&mut Ui,editor:&mut RateEditor,enabled:bool,
         event:&mut Option<(String,Value)>,close:&mut bool,
     ){
-        ui.label(typography::subsection_heading(&format!("{} 운임",editor.name)));
+        ui.horizontal(|title|{
+            title.label(typography::subsection_heading(&format!("{} 운임",editor.name)));
+            settings_help::icon(title,if editor.product {
+                "상품별 운임"
+            }else{
+                "배송 그룹 운임 수정"
+            });
+        });
         if !editor.product {
             ui.label(typography::status(
                 "이 기준을 변경하면 같은 동급 그룹에 지정한 모든 모델에 적용됩니다.",
