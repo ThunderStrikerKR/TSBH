@@ -154,7 +154,7 @@ impl RateEditor {
                 .map(|value|(count,Some(value)))
         }).collect::<BTreeMap<_,_>>();
         let new=self.fees.iter().map(|(key,value)|{
-            (*key,value.trim().parse::<i64>().ok())
+            (*key,components::parse_money_input(value))
         }).collect::<BTreeMap<_,_>>();
         old!=new
     }
@@ -179,8 +179,8 @@ impl RateEditor {
             let value=if raw.is_empty() {
                 Value::Null
             }else{
-                let amount=raw.parse::<i64>()
-                    .map_err(|_|"올바른 운임을 입력하세요.".to_owned())?;
+                let amount=components::parse_money_input(raw)
+                    .ok_or("올바른 운임을 입력하세요.")?;
                 if !(0..=9_007_199_254_740_991).contains(&amount){
                     return Err("올바른 운임을 입력하세요.".into());
                 }
@@ -784,9 +784,7 @@ impl FreightManager {
                 components::decision_window(
                     "새로 확인된 청구 운임 (원)","freight-exception",ui.max_rect()
                 ).show(ctx,|dialog|{
-                    components::field(
-                        dialog,amount,components::FieldKind::Money,enabled
-                    );
+                    components::money_field(dialog,amount,enabled);
                     dialog.add_space(theme::SPACE_12);
                     dialog.horizontal(|bar|{
                         if theme::action(bar,"취소",
@@ -795,8 +793,8 @@ impl FreightManager {
                         }
                         if theme::action(bar,"예외 운임 변경",
                             theme::ButtonRole::Primary,enabled).clicked(){
-                            match amount.trim().parse::<i64>(){
-                                Ok(value) if (0..=9_007_199_254_740_991).contains(&value)=>{
+                            match components::parse_money_input(amount){
+                                Some(value)=>{
                                     action=Some(("revise_combination".into(),json!({
                                         "combinationId":id,"charge":value
                                     })));
@@ -1364,7 +1362,7 @@ impl FreightManager {
         for (count,amount) in editor.fees.iter_mut(){
             ui.horizontal(|line|{
                 line.label(typography::field_label(&format!("{count}개 묶음")));
-                components::field(line,amount,components::FieldKind::Money,enabled);
+                components::money_field(line,amount,enabled);
                 if theme::action(line,"삭제",theme::ButtonRole::Standard,enabled).clicked(){
                     removed=Some(*count);
                 }
