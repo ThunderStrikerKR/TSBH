@@ -466,6 +466,7 @@ impl CategoryManager {
                 egui::Area::new(egui::Id::new("native-category-editor"))
                     .order(egui::Order::Foreground)
                     .fixed_pos(frame.min)
+                    .movable(false)
                     .show(ctx,|area|{
                         area.set_min_size(frame.size());
                         area.painter().rect_filled(
