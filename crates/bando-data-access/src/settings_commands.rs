@@ -4,7 +4,7 @@
 //! transaction. Per-field CAS preserves unrelated settings edits.
 
 use rusqlite::Connection;
-use serde_json::{json,Value};
+use serde_json::Value;
 
 #[path = "../../../src-tauri/src/business_core/rules/settings_accounts.rs"]
 mod settings_accounts;
