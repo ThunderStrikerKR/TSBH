@@ -3,6 +3,7 @@
 //! automatic backup in each local calendar month is promoted to permanent.
 //! Manual backups and pre-restore safety backups are never pruned.
 use rusqlite::Connection;
+use serde_json::json;
 use std::{fs,path::{Path,PathBuf}};
 use chrono::{Datelike,Local};
 use crate::valid_state;
