@@ -3116,6 +3116,39 @@
         "notApplicable": "Kakao native HWND movement, price/freight/order calculations and SQLite writing unchanged; test-only Windows GUI excluded.",
         "pending": "React 자동 메시지 편집과 Excel 거래처 관리 are not yet migrated; no UI-only change purports to activate them."
       }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-CLIENT-LAYOUT-QUIET-UI",
+      "scope": "거래처관리 화면 배치 및 egui 전역 미요청 자동 성공·오류 안내 제거",
+      "status": "SOURCE_PATCHED_STATIC_PASS_EXECUTION_PENDING",
+      "description": "사용자 스크린샷 지적을 읽기전용 기능 활성화 요구로 오해하지 않고 배치만 수정. 거래처관리 표 위의 현재 연결된 거래처 명단 읽기 전용 안내 제거, 검색-작업 버튼 폭 예약 줄이기, 관련 strip 패딩 공통화. 새/수정/삭제 후 성공 문구 생성·출력 제거. 사용자가 요청하지 않은 자동 오류·성공 UI 출력 경로를 egui 현재 화면들의 등록/저장/조회/선택·팝업에서 제거: 전역 알림 버튼/팝업, 상품, 운임, 설정, 브랜드, 카테고리, 별칭, 모델군, 수동 분류, 거래처 선택, 접수 및 카카오 도킹. Rust 성공/실패/리비전/CAS 값과 사용자 선택 확인·편집 보존 유지; 거래처 운영 DB readOnly 미해제. 미분류·상품 확인 건수, 상품 참조, 별칭 충돌 등 실무 판단에 필요한 데이터 주석은 별개로 유지. 기존 React 레거시는 수정하지 않음.",
+      "evidence": [
+        "egui-app/src/client_manager.rs",
+        "egui-app/src/theme.rs",
+        "egui-app/src/main.rs",
+        "egui-app/src/product_manager.rs",
+        "egui-app/src/freight_manager.rs",
+        "egui-app/src/settings_view.rs",
+        "egui-app/src/brand_manager.rs",
+        "egui-app/src/category_manager.rs",
+        "egui-app/src/alias_manager.rs",
+        "egui-app/src/model_group_manager.rs",
+        "egui-app/src/manual_workspace.rs",
+        "egui-app/src/client_chooser.rs",
+        "docs/egui-ui-design-contract.md"
+      ],
+      "gates": {
+        "patch": "PASS: client read-only help removed 085417f39e450cc6430bab20f180e30f4120cf71; client notices removed 4fbc0c718a402c6c26839d56a22004b4160abcdb/bf9ab9ebccbf8a18e54aef5fa9257cee6a4256f5; shared global notification popup removed 951cebfd406ae5de3d40d5709819ece42ec496aa; product error display disabled 7aaf83ae7befa7fa2bcab9dbcb43f7cd0e9b692a/a659bcbec11362371547a82750fac2f1931c33ab; other management notifications guarded in latest UI sources; egui contract 50a2424287e795661c8b24eb74e04b5f02fc228d.",
+        "static": "PASS (scoped): egui client management no read-only notice/notice state, UI current autosave and Rust gateway still check result/revision, global alert popup and button absent, success/error text rendering removed from management panes, domain validation counts retained. Remaining Rust Result strings do not produce global UI messages.",
+        "unit": "NOT EXECUTED: UX copy/layout changes, business regression tests explicitly outside current request.",
+        "ci": "NOT VERIFIED: latest egui build not executed in this session; source static checks only.",
+        "windows": "SKIPPED per user policy: Windows GUI direct validation not performed."
+      },
+      "clauses": {
+        "applicable": "0-1~0-7, 6-11, 16-27, 44-54, 57-61",
+        "notApplicable": "No React legacy changes, DB mutation/price/freight logic unchanged.",
+        "pending": "Current commit compilation and actual Windows layout remain unverified; UI-only changes should not be presented as tested end to end."
+      }
     }
   ],
   "reviewOnlyNotProvenDefects": [
