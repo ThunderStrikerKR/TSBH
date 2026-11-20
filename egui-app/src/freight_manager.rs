@@ -1331,11 +1331,11 @@ impl FreightManager {
             // scroll offset is reflected only in its horizontal coordinates,
             // so wheel scrolling cannot push column titles off-screen.
             let viewport_width=section.available_width().max(1.0);
-            // Keep the table content clear of the solid scrollbar track.
-            // Reserve its actual allocated width plus 12pt of visual clearance:
-            // the narrow "설정" column must never crowd the handle.
-            let scrollbar_gutter=section.spacing().scroll.allocated_width()
-                +theme::SPACE_12;
+            // Solid scrollbar margins already reserve a non-overlapping
+            // rail. Adding another 12pt here made the final "설정" column
+            // look detached from the scrollbar. Use the actual reserved
+            // width only; the button's 6pt inset keeps a safe visual gap.
+            let scrollbar_gutter=section.spacing().scroll.allocated_width();
             let table_width=(viewport_width-scrollbar_gutter)
                 .max(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH);
             let mut widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
