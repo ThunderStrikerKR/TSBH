@@ -139,6 +139,7 @@ pub struct ProductManager {
     confirm_archive:bool,
     price_mode:bool,
     price_drafts:HashMap<String,PriceDraft>,
+    selected_variants:HashMap<String,String>,
     writing:Option<ProductWrite>,
     notice:Option<String>,
     result:Option<Receiver<SearchReply>>,
@@ -161,6 +162,7 @@ impl ProductManager {
             adding:false,original_selected:None,detail_prices:HashMap::new(),
             confirm_discard:false,confirm_archive:false,
             price_mode:false,price_drafts:HashMap::new(),
+            selected_variants:HashMap::new(),
             writing:None,notice:None,
             result:None,generation:0,next_query:None,error:None,
         };
@@ -174,6 +176,7 @@ impl ProductManager {
         self.selected=None;
         self.original_selected=None;
         self.detail_prices.clear();
+        self.selected_variants.clear();
         self.confirm_archive=false;
         self.confirm_discard=false;
         self.next_query=None;
@@ -646,102 +649,188 @@ impl ProductManager {
             if self.result.is_some() {
                 panel.label(typography::caption("상품 가격표 조회 중…"));
             }
+            // Use the complete pane width. Render exactly one row per
+            // product, even when the product has several color/option variants.
+            let viewport_width=panel.available_width();
+            let table_width=viewport_width.max(theme::PRODUCT_TABLE_MIN_WIDTH);
+            let gap=theme::SPACE_8;
+            let option_width=theme::PRODUCT_TABLE_OPTION_WIDTH;
+            let price_width=if self.price_mode{
+                theme::PRODUCT_TABLE_EDIT_PRICE_WIDTH
+            }else{theme::PRODUCT_TABLE_PRICE_WIDTH};
+            let action_width=theme::PRODUCT_TABLE_ACTION_WIDTH;
+            let name_width=(table_width-option_width
+                -3.0*price_width-action_width-5.0*gap)
+                .max(theme::PRODUCT_TABLE_NAME_MIN_WIDTH);
+            let row_height=theme::PRODUCT_TABLE_ROW_HEIGHT;
+            let selection_locked=self.has_pending_prices();
             egui::ScrollArea::both()
                 .id_salt("egui-product-price-grid")
                 .auto_shrink([false,false])
                 .show(panel,|table|{
-                    table.set_min_width(theme::MANAGEMENT_TABLE_MIN_WIDTH);
+                    table.set_min_width(table_width);
                     egui::Grid::new("egui-products-price-table")
                         .striped(true)
-                        .spacing([theme::SPACE_24,theme::SPACE_8])
+                        .spacing([gap,theme::SPACE_8])
                         .show(table,|grid|{
-                            for heading in [
-                                "상품명 / 상품설명","도매가","반도매가",
-                                "소매가","상세"
-                            ] {grid.label(typography::table_header(heading));}
+                            let widths=[name_width,option_width,price_width,
+                                price_width,price_width,action_width];
+                            for (heading,width) in [
+                                "상품명 / 상품설명","옵션","도매가",
+                                "반도매가","소매가","상세"
+                            ].into_iter().zip(widths){
+                                grid.add_sized(
+                                    egui::Vec2::new(width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
+                                    egui::Label::new(typography::table_header(heading)).truncate()
+                                );
+                            }
                             grid.end_row();
-                            let products=&self.products;
-                            for product in products {
+                            for product in &self.products{
+                                let product_id=field(product,"id");
                                 let name=field(product,"name");
                                 let subtitle=field(product,"subtitle");
-                                for variant in rows(&product["variants"]) {
-                                    grid.vertical(|cell|{
-                                        cell.label(typography::table_cell(name));
-                                        if !subtitle.is_empty() {
-                                            cell.label(typography::caption(subtitle));
+                                let display=if subtitle.is_empty(){name.to_owned()}
+                                    else{format!("{name} / {subtitle}")};
+                                grid.add_sized(
+                                    egui::Vec2::new(name_width,row_height),
+                                    egui::Label::new(typography::table_cell(&display)).truncate()
+                                ).on_hover_text(display.as_str());
+                                let variants=rows(&product["variants"]);
+                                let mut selected_id=self.selected_variants
+                                    .get(product_id).cloned().unwrap_or_default();
+                                if !variants.iter().any(|v|
+                                    field(v,"id")==selected_id.as_str()
+                                ){
+                                    selected_id=variants.first()
+                                        .map(|v|field(v,"id").to_owned())
+                                        .unwrap_or_default();
+                                }
+                                grid.allocate_ui_with_layout(
+                                    egui::Vec2::new(option_width,row_height),
+                                    Layout::left_to_right(Align::Center),
+                                    |cell|{
+                                        if variants.len()>1{
+                                            let chosen=variants.iter().find(|v|
+                                                field(v,"id")==selected_id.as_str()
+                                            ).unwrap_or(&variants[0]);
+                                            let preview=option_text(product,chosen);
+                                            cell.add_enabled_ui(!selection_locked,|choice|{
+                                                egui::ComboBox::from_id_salt(
+                                                    ("egui-product-variant",product_id)
+                                                )
+                                                    .width(option_width-gap)
+                                                    .selected_text(
+                                                        if preview.is_empty(){"기본"}else{&preview}
+                                                    )
+                                                    .show_ui(choice,|choices|{
+                                                        for variant in variants{
+                                                            let option=option_text(product,variant);
+                                                            choices.selectable_value(
+                                                                &mut selected_id,
+                                                                field(variant,"id").to_owned(),
+                                                                if option.is_empty(){"기본"}else{&option}
+                                                            );
+                                                        }
+                                                    });
+                                            });
+                                        }else if let Some(variant)=variants.first(){
+                                            let option=option_text(product,variant);
+                                            cell.add(egui::Label::new(
+                                                typography::table_cell(
+                                                    if option.is_empty(){"—"}else{&option}
+                                                )
+                                            ).truncate()).on_hover_text(option);
+                                        }else{
+                                            cell.label(typography::caption("—"));
                                         }
-                                        let detail=option_text(product,variant);
-                                        if !detail.is_empty() {
-                                            cell.label(typography::caption(&detail));
-                                        }
-                                    });
-                                    for tier in ["wholesale","semi","retail"] {
-                                        if self.price_mode {
-                                            let key=format!(
-                                                "{}:{}:{}",field(product,"id"),
-                                                field(variant,"id"),tier
-                                            );
-                                            let original=variant[tier].as_i64();
-                                            let entry=self.price_drafts.entry(key.clone())
-                                                .or_insert_with(||PriceDraft{
-                                                    original,
-                                                    input:original.map(|v|v.to_string())
-                                                        .unwrap_or_default(),
-                                                });
-                                            grid.horizontal(|cell|{
-                                                cell.add_enabled_ui(!saving,|inputs|{
-                                                    let response=components::money_field(
-                                                        inputs,&mut entry.input,true,
+                                    }
+                                );
+                                self.selected_variants.insert(
+                                    product_id.to_owned(),selected_id.clone()
+                                );
+                                let selected_variant=variants.iter().find(|v|
+                                    field(v,"id")==selected_id.as_str()
+                                );
+                                for tier in ["wholesale","semi","retail"]{
+                                    grid.allocate_ui_with_layout(
+                                        egui::Vec2::new(price_width,row_height),
+                                        Layout::left_to_right(Align::Center),
+                                        |cell|{
+                                            if let Some(variant)=selected_variant{
+                                                if self.price_mode{
+                                                    let key=format!(
+                                                        "{}:{}:{}",product_id,
+                                                        field(variant,"id"),tier
                                                     );
-                                                    let enter=response.lost_focus() &&
-                                                        inputs.input(|i|i.key_pressed(egui::Key::Enter));
-                                                    if response.has_focus() &&
-                                                        inputs.input(|i|i.key_pressed(egui::Key::Escape)){
-                                                        entry.input=entry.original.map(|n|n.to_string())
-                                                            .unwrap_or_default();
-                                                    }
-                                                    if entry.dirty() {
-                                                        if theme::action(inputs,"저장",
-                                                            theme::ButtonRole::Standard,true
-                                                        ).clicked() || enter {
-                                                            match entry.parse(){
-                                                                Ok(value)=>{
-                                                                    price_write=Some((key.clone(),
-                                                                        json!({
-                                                                            "productId":field(product,"id"),
-                                                                            "variantId":field(variant,"id"),
-                                                                            "tier":tier,
-                                                                            "price":value,
-                                                                            "expected":entry.original,
-                                                                        })
-                                                                    ));
+                                                    let original=variant[tier].as_i64();
+                                                    let entry=self.price_drafts.entry(key.clone())
+                                                        .or_insert_with(||PriceDraft{
+                                                            original,
+                                                            input:original.map(|v|v.to_string())
+                                                                .unwrap_or_default(),
+                                                        });
+                                                    cell.add_enabled_ui(!saving,|inputs|{
+                                                        let response=components::money_field(
+                                                            inputs,&mut entry.input,true
+                                                        );
+                                                        let enter=response.lost_focus() &&
+                                                            inputs.input(|i|i.key_pressed(egui::Key::Enter));
+                                                        if response.has_focus() &&
+                                                            inputs.input(|i|i.key_pressed(egui::Key::Escape)){
+                                                            entry.input=entry.original
+                                                                .map(|n|n.to_string()).unwrap_or_default();
+                                                        }
+                                                        if entry.dirty(){
+                                                            if theme::action(inputs,"저장",
+                                                                theme::ButtonRole::Standard,true
+                                                            ).clicked() || enter{
+                                                                match entry.parse(){
+                                                                    Ok(value)=>{
+                                                                        price_write=Some((key.clone(),
+                                                                            json!({
+                                                                                "productId":product_id,
+                                                                                "variantId":field(variant,"id"),
+                                                                                "tier":tier,
+                                                                                "price":value,
+                                                                                "expected":entry.original,
+                                                                            })
+                                                                        ));
+                                                                    }
+                                                                    Err(message)=>self.error=Some(message),
                                                                 }
-                                                                Err(message)=>self.error=Some(message),
+                                                            }
+                                                            if theme::action(inputs,"취소",
+                                                                theme::ButtonRole::Quiet,true
+                                                            ).clicked(){
+                                                                entry.input=entry.original
+                                                                    .map(|n|n.to_string())
+                                                                    .unwrap_or_default();
                                                             }
                                                         }
-                                                        if theme::action(inputs,"취소",
-                                                            theme::ButtonRole::Quiet,true
-                                                        ).clicked(){
-                                                            entry.input=entry.original
-                                                                .map(|n|n.to_string())
-                                                                .unwrap_or_default();
-                                                        }
-                                                    }
-                                                });
-                                            });
-                                        }else {
-                                            grid.label(typography::quantity(
-                                                &price(&variant[tier])
-                                            ));
+                                                    });
+                                                }else{
+                                                    cell.label(typography::quantity(
+                                                        &price(&variant[tier])
+                                                    ));
+                                                }
+                                            }else{
+                                                cell.label(typography::caption("—"));
+                                            }
+                                        }
+                                    );
+                                }
+                                grid.allocate_ui_with_layout(
+                                    egui::Vec2::new(action_width,row_height),
+                                    Layout::left_to_right(Align::Center),
+                                    |cell|{
+                                        if theme::action(
+                                            cell,"상세 관리",theme::ButtonRole::Standard,!saving
+                                        ).clicked(){
+                                            open_detail=Some(product.clone());
                                         }
                                     }
-                                    if theme::action(
-                                        grid,"상세 관리",theme::ButtonRole::Standard,!saving
-                                    ).clicked(){
-                                        open_detail=Some(product.clone());
-                                    }
-                                    grid.end_row();
-                                }
+                                );
+                                grid.end_row();
                             }
                         });
                     if self.products.is_empty() && self.result.is_none()

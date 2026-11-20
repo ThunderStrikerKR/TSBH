@@ -123,8 +123,8 @@ fn card(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
 fn account_display(account:&Value)->String{
     format!("{} {} {}",field(account,"bank"),field(account,"number"),field(account,"holder"))
 }
-/// React account-recommendations: both brand selectors share the same
-/// account master and prefer a two-column management layout.
+/// Both brand recommendation selectors share the same account master
+/// and are stacked vertically for consistent settings-form flow.
 fn recommendation_picker(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
     ui.label(typography::field_label(label));
     let mut selected=draft.pointer(&format!("/brandAccounts/{key}"))
@@ -727,17 +727,11 @@ impl SettingsView{
             ("BANDOSTAND","반도스탠드 추천 계좌"),
             ("BANDOMALL","반도몰 추천 계좌"),
         ];
-        if ui.available_width()>=theme::SETTINGS_ACCOUNT_RECOMMENDATION_MIN_WIDTH{
-            ui.columns(2,|cols|{
-                for (index,(key,label)) in recommendations.into_iter().enumerate(){
-                    recommendation_picker(&mut cols[index],&mut self.draft,key,label);
-                }
-            });
-        }else{
-            for (key,label) in recommendations{
-                recommendation_picker(ui,&mut self.draft,key,label);
-                ui.add_space(theme::SPACE_8);
+        for (index,(key,label)) in recommendations.into_iter().enumerate(){
+            if index>0{
+                ui.add_space(theme::SPACE_12);
             }
+            recommendation_picker(ui,&mut self.draft,key,label);
         }
     }
     fn show_files(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>){
