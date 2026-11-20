@@ -288,12 +288,20 @@ pub fn client_table_metadata_galley(
     client_table_galley(ui,text,Role::Metadata,false,color)
 }
 
-/// Freight assignment uses the 14pt body step in both header and data rows.
-/// Keep this scoped to Freight, rather than enlarging all 13pt directory tables.
-pub fn freight_table_header_galley(
+/// Freight Assignment and other approved management tables share
+/// a 14pt emphasized header. Header width and baseline are measured from
+/// the same typography role, not screen-local font overrides.
+pub fn management_table_header_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
     client_table_galley(ui,text,Role::Body,true,SECONDARY)
+}
+
+/// Keep the original freight call sites as a compatibility entry point.
+pub fn freight_table_header_galley(
+    ui: &egui::Ui, text: &str
+) -> std::sync::Arc<egui::Galley> {
+    management_table_header_galley(ui,text)
 }
 
 pub fn freight_table_cell_galley(
