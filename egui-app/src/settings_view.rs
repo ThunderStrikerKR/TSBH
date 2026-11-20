@@ -473,8 +473,7 @@ impl SettingsView{
         ]) {
             self.request_tab(SettingsTab::ALL[tab]);
         }
-        // Every management tab uses the Freight 16pt content separation.
-        ui.add_space(theme::SPACE_16);
+        ui.add_space(theme::SPACE_12);
         if let Some(error)=self.error.as_deref(){
             // React SettingsPanel conflict recovery: the employee can
             // reopen the saved version after acknowledging draft loss.
