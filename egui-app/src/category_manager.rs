@@ -541,7 +541,7 @@ impl CategoryManager {
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
         let cats=categories(catalog);
-        let card_min_height=components::management_primary_card_min_inner_height(ui);
+        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
         theme::section_frame().show(ui,|panel|{
             components::fill_management_primary_card(panel,card_min_height);
             panel.horizontal(|header|{
