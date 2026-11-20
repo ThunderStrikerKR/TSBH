@@ -15,7 +15,6 @@ mod egui_reception_bridge;
 mod egui_manual_commit;
 #[cfg(test)]
 mod egui_shipping_bridge;
-mod egui_product_bridge;
 mod sale_unit_migration;
 mod product_name_enrichment;
 mod business_core;
@@ -492,38 +491,13 @@ fn settings_patch(
 
 /// One authoritative CAS implementation for React price_set and the
 /// explicitly enabled egui CLI. All pricing/storage semantics stay here.
-fn apply_product_price(
-    state:&mut Value,product_id:&str,variant_id:&str,tier:&str,
-    price:Option<i64>,expected:Option<i64>,
-)->Result<(),String>{
-    if !["wholesale","semi","retail"].contains(&tier){
-        return Err("가격 등급 오류".into());
-    }
-    if price.is_some_and(|amount|amount<0){
-        return Err("가격은 음수가 될 수 없습니다.".into());
-    }
-    let product=state["products"].as_array_mut()
-        .ok_or("상품 목록 오류")?.iter_mut()
-        .find(|p|p["id"].as_str()==Some(product_id))
-        .ok_or("상품을 찾을 수 없습니다.")?;
-    let variant=product["variants"].as_array_mut()
-        .ok_or("상품 옵션 오류")?.iter_mut()
-        .find(|v|v["id"].as_str()==Some(variant_id))
-        .ok_or("상품 옵션을 찾을 수 없습니다.")?;
-    if variant[tier].as_i64()!=expected {
-        return Err("가격이 다른 곳에서 수정됐습니다. 새로고침 후 다시 시도하세요.".into());
-    }
-    variant[tier]=json!(price);
-    Ok(())
-}
-
 #[tauri::command]
 fn price_set(db: State<'_, Database>, product_id: String, variant_id: String, tier: String,
              price: Option<i64>, expected: Option<i64>) -> Result<Value, String> {
     let mut conn=lock_db(&db)?;
     let mut state=get_snapshot(&conn)?;
     let revision=state["revision"].as_u64().unwrap_or(0);
-    apply_product_price(&mut state,&product_id,&variant_id,&tier,price,expected)?;
+    bando_data_access::apply_product_price(&mut state,&product_id,&variant_id,&tier,price,expected)?;
     write_snapshot(&mut conn,state,revision,true)
 }
 
@@ -1090,13 +1064,7 @@ fn start_automatic_backup(app: tauri::AppHandle) {
             });
 }
 
-/// Legacy one-shot egui adapters remain for product, settings and reception
-/// until their separate native service migrations are complete.
-/// Product edits use the original Tauri catalog rules plus write_snapshot.
-pub fn run_egui_product_patch() -> i32 {
-    egui_product_bridge::run()
-}
-
+/// Legacy one-shot egui adapters remain for settings and reception only.
 pub fn run_egui_settings_data() -> i32 {
     use std::io::{Read,Write};
     let result=(|| -> Result<Value,String> {
