@@ -1193,21 +1193,28 @@ impl FreightManager {
                     "모델명 / 상품명 / 카테고리 검색"
                 );
                 let before_filter=group_filter.clone();
-                egui::ComboBox::from_id_salt("freight-group-filter")
-                    .selected_text(if group_filter.is_empty() {
+                components::management_dropdown(
+                    tools,
+                    if group_filter.is_empty() {
                         "전체 상품"
-                    } else if group_filter.as_str()=="none" {
+                    }else if group_filter.as_str()=="none" {
                         "그룹 미지정"
-                    } else { group_name(groups,group_filter) })
-                    .show_ui(tools,|combo|{
-                        combo.selectable_value(group_filter,String::new(),"전체 상품");
-                        combo.selectable_value(group_filter,"none".into(),"그룹 미지정만");
+                    }else{group_name(groups,group_filter)},
+                    148.0,true,"상품 표시 범위 선택",|menu|{
+                        components::management_dropdown_option(
+                            menu,group_filter,String::new(),"전체 상품"
+                        );
+                        components::management_dropdown_option(
+                            menu,group_filter,"none".into(),"그룹 미지정만"
+                        );
                         for group in groups {
-                            combo.selectable_value(
-                                group_filter,text(group,"id").into(),text(group,"name")
+                            components::management_dropdown_option(
+                                menu,group_filter,text(group,"id").into(),
+                                text(group,"name")
                             );
                         }
-                    });
+                    }
+                );
                 if before_filter!=*group_filter {
                     selected.clear();
                     *bulk_feedback=None;
@@ -1317,24 +1324,26 @@ impl FreightManager {
                                 }
                             }
                         }
-                        egui::ComboBox::from_id_salt("freight-bulk-assign")
-                            .width(theme::FREIGHT_BULK_GROUP_WIDTH)
-                            .selected_text(match bulk_group.as_deref(){
+                        components::management_dropdown(
+                            bulk,
+                            match bulk_group.as_deref(){
                                 None=>"배송 그룹 선택",
                                 Some("")=>"미지정으로 변경",
                                 Some(id)=>group_name(groups,id),
-                            })
-                            .show_ui(bulk,|combo|{
-                                combo.selectable_value(
-                                    bulk_group,Some(String::new()),"미지정으로 변경"
+                            },
+                            theme::FREIGHT_BULK_GROUP_WIDTH,
+                            enabled,"일괄 적용할 배송 그룹 선택",|menu|{
+                                components::management_dropdown_option(
+                                    menu,bulk_group,Some(String::new()),"미지정으로 변경"
                                 );
                                 for group in groups {
-                                    combo.selectable_value(
-                                        bulk_group,Some(text(group,"id").to_owned()),
+                                    components::management_dropdown_option(
+                                        menu,bulk_group,Some(text(group,"id").to_owned()),
                                         text(group,"name")
                                     );
                                 }
-                            });
+                            }
+                        );
                         bulk.label(typography::field_label(&format!(
                             "{}개 선택",selected.len()
                         )));
@@ -1532,7 +1541,7 @@ impl FreightManager {
                         // The dropdown was vertically clipped because an
                         // Align::Center child was centered again by
                         // add_enabled_ui(), leaving its bottom outside the
-                        // 42pt row. Reserve one 36pt control slot at y+3,
+                        // 42pt row. Reserve one 34pt control slot at y+4,
                         // render from its TOP, and clip only to the full row.
                         // This change does not alter any column width.
                         let selector_rect=egui::Rect::from_min_size(
@@ -1540,11 +1549,11 @@ impl FreightManager {
                                 cells[4].left()+theme::SPACE_4,
                                 cells[4].top()
                                     +(theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                                        -theme::INPUT_HEIGHT)/2.0
+                                        -theme::ACTION_STANDARD_HEIGHT)/2.0
                             ),
                             egui::vec2(
                                 cells[4].width()-theme::SPACE_8,
-                                theme::INPUT_HEIGHT
+                                theme::ACTION_STANDARD_HEIGHT
                             )
                         );
                         let selector_clip=cells[4].intersect(row.clip_rect());
@@ -1558,23 +1567,24 @@ impl FreightManager {
                         row.scope_builder(selector_builder,|control|{
                                 control.set_clip_rect(selector_clip);
                                 control.set_width(selector_rect.width());
-                                egui::ComboBox::from_id_salt(("freight-row-group",id))
-                                    .width(selector_rect.width())
-                                    .wrap_mode(egui::TextWrapMode::Truncate)
-                                    .selected_text(if current.is_empty(){
+                                components::management_dropdown(
+                                    control,
+                                    if current.is_empty() {
                                         "그룹 선택"
-                                    }else{group_name(groups,&current)})
-                                    .show_ui(control,|choice|{
-                                        choice.selectable_value(
-                                            &mut current,String::new(),"그룹 선택"
+                                    }else{group_name(groups,&current)},
+                                    selector_rect.width(),enabled,
+                                    "상품의 배송 그룹 선택",|menu|{
+                                        components::management_dropdown_option(
+                                            menu,&mut current,String::new(),"그룹 선택"
                                         );
                                         for group in groups {
-                                            choice.selectable_value(
-                                                &mut current,text(group,"id").into(),
+                                            components::management_dropdown_option(
+                                                menu,&mut current,text(group,"id").into(),
                                                 text(group,"name")
                                             );
                                         }
-                                    });
+                                    }
+                                );
                             }
                         );
                         if current!=before_manual_edit {
