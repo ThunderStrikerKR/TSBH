@@ -753,11 +753,14 @@ impl SettingsView{
                     ).clicked(){
                         self.choose_folder(key,buttons.ctx().clone());
                     }
-                    if index==0 && !value.is_empty(){
+                    // React's "보관함 열기" uses the SAVED Excel path
+                    // (state.settings), not a newly chosen unsaved draft.
+                    let saved_excel=field(settings(&self.source),"excelDirectory");
+                    if index==0 && !saved_excel.is_empty(){
                         if theme::action(
                             buttons,"보관함 열기",ButtonRole::Standard,true
                         ).clicked(){
-                            self.open_folder(&value);
+                            self.open_folder(&saved_excel);
                         }
                     }else if index>0 && !value.is_empty(){
                         if theme::action(buttons,"자동 수신 중지",
