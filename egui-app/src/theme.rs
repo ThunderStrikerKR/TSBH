@@ -199,6 +199,14 @@ pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 // Client directory explicitly uses one compact, non-wrapping record per row.
 pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
+// Freight assignment is a task-oriented table, not an auto-sized 11-column
+// audit grid. Every header and row uses the SAME widths to keep controls
+// readable without wrapped names or vertical buttons.
+pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 8] =
+    [28.0, 270.0, 140.0, 105.0, 155.0, 215.0, 85.0, 218.0];
+pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
+pub const FREIGHT_ASSIGNMENT_ROW_HEIGHT: f32 = 42.0;
+pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 = 1272.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
 // The three-column dealer list has its own content minimum (30/38/32).
 // Do not force freight/product's 1320pt table width onto the client list.
