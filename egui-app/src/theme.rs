@@ -52,6 +52,9 @@ pub const WORKFLOW_CHIP_PAD_Y: i8 = 2;
 pub const WORKFLOW_CONTROL_WIDTH: f32 = 140.0;
 pub const WORKFLOW_MANAGE_WIDTH: f32 = 52.0;
 pub const WORKFLOW_TRASH_WIDTH: f32 = 34.0;
+// The three neutral card helpers (관리 / 삭제 / 이전 단계) share the
+// Standard 34pt height instead of mixing native 36pt and borderless tiles.
+pub const WORKFLOW_AUX_CONTROL_HEIGHT: f32 = ACTION_STANDARD_HEIGHT;
 pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = ACTION_PRIMARY_HEIGHT;
 pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
 pub const WORKFLOW_SUMMARY_LINE_HEIGHT: f32 = 18.0;
