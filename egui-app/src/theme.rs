@@ -202,6 +202,14 @@ pub const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 pub const CATALOG_TREE_ROW_HEIGHT:f32 = 43.0;
 pub const CATALOG_ROOT_ROW_HEIGHT:f32 = 50.0;
 pub const CATALOG_TREE_INDENT:f32 = 24.0;
+// Explorer-style category hierarchy: understated connectors and row rules.
+// Keep these separate from the generic table zebra/section colors.
+pub const CATALOG_TREE_GUIDE_COLOR:Color32 = Color32::from_rgb(74,74,74);
+pub const CATALOG_TREE_ROW_RULE_COLOR:Color32 = Color32::from_rgb(40,40,40);
+pub const CATALOG_TREE_GUIDE_WIDTH:f32 = 1.0;
+pub const CATALOG_TREE_ROW_RULE_WIDTH:f32 = 1.0;
+pub const CATALOG_TREE_FOLDER_WIDTH:f32 = 14.0;
+pub const CATALOG_TREE_FOLDER_HEIGHT:f32 = 12.0;
 // Keep category search useful without stretching a single field across
 // the full management panel width.
 pub const CATALOG_SEARCH_WIDTH:f32 = 560.0;
