@@ -500,6 +500,9 @@ impl FreightManager {
     }
 
     pub fn show_page(&mut self, ui: &mut Ui) {
+        // Non-floating, always legible scrollbar geometry for every freight
+        // management tab. This is scoped to the freight page, not global nav.
+        ui.spacing_mut().scroll=theme::management_scroll_style();
         self.poll(ui.ctx().clone());
         if self.saving_for_tab && !self.busy() && self.dirty() &&
             !self.save_dirty(ui.ctx().clone()) {
@@ -536,7 +539,7 @@ impl FreightManager {
                 }
             }
         }
-        ui.add_space(theme::SPACE_12);
+        ui.add_space(theme::SPACE_16);
         let (Some(state), Some(projection)) = (self.state.as_ref(), self.projection.as_ref())
         else {
             if self.receiver.is_some() {
@@ -566,7 +569,9 @@ impl FreightManager {
             summary(strip,"그룹 미지정",products.len()-assigned);
             summary(strip,"배송 그룹",groups.len());
         });
-        ui.add_space(theme::SPACE_12);
+        // One 16pt boundary between the stats strip and the next section.
+        // show_groups() must not add a second top margin on top of this.
+        ui.add_space(theme::SPACE_16);
         let enabled=self.gateway.shipping_write_enabled()&&self.write_receiver.is_none();
         let mut action:Option<(String,Value)>=None;
         // The assignment tab owns its own scrollable *rows*. Do not wrap
@@ -867,7 +872,6 @@ impl FreightManager {
         product_views: &Value, enabled:bool,
         action:&mut Option<(String,Value)>,
     ) {
-        ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui, |section| {
             section.horizontal(|title|{
                 title.label(typography::section_heading("상품별 배송 그룹 지정"));
@@ -1074,6 +1078,11 @@ impl FreightManager {
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
                     .id_salt("freight-assignment-rows")
+                    // The solid track stays visible without hovering and
+                    // takes its own space rather than covering row controls.
+                    .scroll_bar_visibility(
+                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                    )
                     .max_height(section.ctx().content_rect().height()
                         * theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
                     .auto_shrink([false,false]),
