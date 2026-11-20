@@ -286,32 +286,12 @@ pub fn section_frame() -> Frame {
         .inner_margin(SECTION_PADDING)
 }
 
-/// Outer workspace surface: no dark 6pt moat between navigation, the
-/// four panes and window edges. One shared thin frame joins the existing
-/// splitter strokes; all internal pane proportions and hit regions stay put.
+/// The same outer gutter for Reception and every management page:
+/// 6pt CANVAS above, right and below; the KakaoTalk reservation stays
+/// flush with the left edge. The content/splitter layout is measured
+/// INSIDE this inset, so existing saved column ratios and native HWND
+/// placement remain based on the actual available workspace.
 pub fn workspace_shell_frame() -> Frame {
-    // Match the 6pt CANVAS gutter between reception sections beneath the
-    // global navigation too. No extra separator stroke: all four pane tops
-    // (including the native KakaoTalk slot) share this same y offset.
-    // The layout receives the remaining height after this top inset, so
-    // saved splitter ratios and native HWND region measurement remain valid.
-    Frame::new()
-        .fill(CANVAS)
-        .stroke(Stroke::NONE)
-        .inner_margin(egui::Margin {
-            left: 0,
-            right: 0,
-            top: PANEL_GAP as i8,
-            bottom: 0,
-        })
-}
-
-/// Reception alone has a uniform 6pt outer gutter on its top, right and
-/// bottom. The left KakaoTalk reserve continues flush with the workspace
-/// edge; management pages keep their previous shell geometry. All four
-/// reception panes share this one inset, preserving internal splitter hit
-/// widths, independent saved ratios and KakaoTalk's measured HWND slot.
-pub fn reception_workspace_frame() -> Frame {
     Frame::new()
         .fill(CANVAS)
         .stroke(Stroke::NONE)
@@ -321,6 +301,12 @@ pub fn reception_workspace_frame() -> Frame {
             top: PANEL_GAP as i8,
             bottom: PANEL_GAP as i8,
         })
+}
+
+/// Existing reception call sites retain their named entry point, but both
+/// reception and management use one shared gutter definition.
+pub fn reception_workspace_frame() -> Frame {
+    workspace_shell_frame()
 }
 
 /// Return reception panes to the Settings-inspired PANEL card tier.
