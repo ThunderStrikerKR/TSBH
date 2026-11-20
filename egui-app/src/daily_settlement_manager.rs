@@ -483,69 +483,10 @@ impl DailySettlementManager{
         components::management_top_content(ui,|top|{
             top.label(typography::page_heading("일일 결산"));
         });
-        // The only date control is the original prev/date/next navigator.
-        // In particular, OrderHistory's separately-approved calendar is not
-        // copied into this page.
-        let mut date_changed=false;
-        // A compact date navigator above the KPIs preserves the existing
-        // filter behavior without pushing the two accounting sections below
-        // the approved Freight primary-card top border.
-        // The compact filter is a real control above the summary cards.
-        // Use 4pt vertical padding instead of the list's 8pt: this offsets
-        // the newly approved title top gap without crowding the first card.
-        theme::management_compact_filter_frame().show(ui,|toolbar|{
-            toolbar.set_min_width(toolbar.available_width());
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(
-                    theme::SPACE_12 as i8,theme::SPACE_4 as i8
-                ))
-                .show(toolbar,|line|{
-                line.horizontal(|controls|{
-                    controls.spacing_mut().item_spacing.x=theme::SPACE_8;
-                    controls.label(typography::field_label("결산 날짜"));
-                    if theme::action(
-                        controls,"‹",theme::ButtonRole::Standard,true
-                    ).clicked(){
-                        self.date=move_date(&self.date,-1);
-                        self.date_input=self.date.clone();
-                        date_changed=true;
-                    }
-                    if components::flexible_text_field(
-                        controls,&mut self.date_input,
-                        theme::SETTLEMENT_DATE_FIELD_WIDTH,"YYYY-MM-DD"
-                    ).changed(){
-                        if valid_date(&self.date_input) &&
-                            self.date!=self.date_input {
-                            self.date=self.date_input.clone();
-                            date_changed=true;
-                        }
-                    }
-                    if theme::action(
-                        controls,"›",theme::ButtonRole::Standard,true
-                    ).clicked(){
-                        self.date=move_date(&self.date,1);
-                        self.date_input=self.date.clone();
-                        date_changed=true;
-                    }
-                });
-                if !valid_date(&self.date_input){
-                    line.label(typography::status(
-                        "결산 날짜는 YYYY-MM-DD 형식으로 입력하세요.",
-                        theme::DANGER
-                    ));
-                }
-            });
-        });
-        if date_changed{self.refresh(ui.ctx().clone());}
-        if let Some(error)=self.error.as_deref(){
-            ui.label(typography::status(error,theme::DANGER));
-        }
-        if self.receiver.is_some(){
-            ui.label(typography::caption("결산 자료 확인 중"));
-        }
-        let Some(report)=self.report.as_ref() else{return;};
+        // Keep genuine report KPIs above the big card. When data is still
+        // loading or failed, the date picker inside the card stays available.
+        if let Some(report)=self.report.as_ref(){
         let orders=rows(&report["orderRows"]);
-        let payments=rows(&report["paymentRows"]);
         // The four native Rust summary values are NOT interchangeable:
         // billed totals are reception-day values; cash is bank-deposit day.
         // Match the same 16pt horizontal guide as the title and Freight KPIs.
@@ -561,8 +502,11 @@ impl DailySettlementManager{
                 ));
             });
         });
+        }
         ui.add_space(theme::SPACE_16);
         components::align_management_primary_card(ui,page_origin_y);
+        let report=self.report.as_ref();
+        let mut date_changed=false;
         egui::ScrollArea::vertical()
             .id_salt("daily-settlement-sections")
             .auto_shrink([false,false])
@@ -574,7 +518,33 @@ impl DailySettlementManager{
                         ));
                         settings_help::icon(heading,"일일 결산");
                     });
+                    section.add_space(theme::SPACE_8);
+                    // Like Order History, the date picker is inside the
+                    // same large outlined section as the report table.
+                    date_changed=settlement_date_toolbar(
+                        section,&mut self.date,&mut self.date_input,
+                        &mut self.calendar_month
+                    );
                     components::soft_divider(section);
+                    if date_changed{
+                        section.label(typography::caption(
+                            "변경한 결산 날짜를 조회하고 있습니다."
+                        ));
+                        return;
+                    }
+                    let Some(report)=report else{
+                        if let Some(error)=self.error.as_deref(){
+                            section.label(typography::status(error,theme::DANGER));
+                        }else if self.receiver.is_some(){
+                            section.label(typography::caption("결산 자료 확인 중"));
+                        }else{
+                            section.label(typography::caption(
+                                "해당 날짜의 결산 자료를 불러올 수 없습니다."
+                            ));
+                        }
+                        return;
+                    };
+                    let orders=rows(&report["orderRows"]);
                     section.label(typography::subsection_heading(
                         "해당 날짜 접수 주문 / 청구 내역"
                     ));
@@ -640,6 +610,9 @@ impl DailySettlementManager{
                         ));
                     }
                 });
+                if date_changed{return;}
+                let Some(report)=report else{return;};
+                let payments=rows(&report["paymentRows"]);
                 body.add_space(theme::SPACE_12);
                 theme::section_frame().show(body,|section|{
                     section.label(typography::section_heading(
@@ -703,6 +676,7 @@ impl DailySettlementManager{
                     });
                 }
             });
+        if date_changed{self.refresh(ui.ctx().clone());}
     }
 }
 
