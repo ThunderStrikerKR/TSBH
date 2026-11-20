@@ -76,6 +76,31 @@ fn patch(conn:&mut Connection, request:&Value)->Result<Value,String>{
             result.get("state").filter(|s|s.is_object()).cloned()
                 .ok_or("Rust 상품 저장 결과 형식 오류")?
         }
+        "save_alias"=>{
+            // The original React AliasManager submits one product id and
+            // its first sale-unit variant; the Rust catalog engine owns
+            // overlap/model/color/option conflict decisions.
+            let mut record=data.get("record").filter(|v|v.is_object())
+                .cloned().ok_or("별칭 저장 정보가 없습니다.")?;
+            let id=record["id"].as_str().unwrap_or("");
+            if id.is_empty(){record["id"]=json!(unique_id("alias")?);}
+            let target=required(&record,"productId")?;
+            let variant=before["products"].as_array()
+                .and_then(|items|items.iter().find(|p|p["id"].as_str()==Some(target)))
+                .and_then(|p|p["variants"].as_array())
+                .and_then(|vs|vs.first())
+                .and_then(|v|v["id"].as_str());
+            record["variantId"]=variant.map_or(Value::Null,|id|json!(id));
+            record["actor"]=json!(before["settings"]["operatorName"]
+                .as_str().filter(|v|!v.trim().is_empty()).unwrap_or("직원"));
+            record["createdAt"]=json!(chrono::Utc::now().to_rfc3339());
+            let result=business_core::execute(
+                "catalog_clients","save_alias",
+                json!({"state":&before,"record":record}),
+            )?;
+            result.get("state").filter(|v|v.is_object()).cloned()
+                .ok_or("Rust 별칭 저장 결과 형식 오류")?
+        }
         "change_category" | "delete_category"=>{
             // React CategoryManager supplies virtual catalog roots in its
             // state. The same roots must be present before native validation,
