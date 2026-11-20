@@ -1865,9 +1865,10 @@
         ],
         "static": "PASS scoped: React DailySettlement.tsx + DateNavigator.tsx + report-types.ts and actual management-layout.css against egui page; original Rust rules::history::list -> output::settlement::prepare reused; state loaded ONCE, forwarded without amount recalculation or DB mutation; async refresh invalidates prior receivers; date input validation, independent bank-day and reception-day reporting, warnings and missing-value display retained.",
         "ui": "PASS source contract: numeric-first independent KPI, 36pt fixed headers, 42pt fixed virtual rows, three-step sort, numeric right alignment, visible reserved scrollbar, two table sections and original help descriptions. GUI pixels not asserted.",
-        "targetBuild": "PENDING after initial commit; CI run for 97bcbdb9e8f970cc6f6bcb628705e3915dcdf008 was queued at record creation. Final current commit not independently compiled.",
+        "targetBuild": "PASS: 0bb0dc074c90c12b4b511d016b708516efe651fb in Actions run 44698101690, completed success steps for cargo check Tauri executable and cargo check standalone egui; targeted date/sort test was still running at this record update.",
+        "narrowTest": "PENDING: current Actions run 44698101690 includes daily_settlement_manager::tests; not yet reported PASS.",
         "windowsGui": "SKIPPED by user decision; no Windows GUI test requested.",
-        "overall": "CODE_COMMITTED_STATIC_PASS_BUILD_UNVERIFIED"
+        "overall": "CODE_COMMITTED_STATIC_PASS_TARGET_COMPILE_PASS_NARROW_TEST_PENDING"
       },
       "name": "일일 결산·미수·실제 입금",
       "baseline": {
