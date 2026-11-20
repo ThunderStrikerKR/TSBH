@@ -479,6 +479,16 @@
 - **스크롤·상태**: 배송 그룹 편성과 동일한 10pt solid/nonfloating 스크롤바 및 독립 목록 영역(뷰포트 높이 비례 최대치, `auto_shrink(false)`)을 사용한다. 공통 `virtual_fixed_rows`로 화면에 보이는 42pt 행만 렌더하며, 첫 행·빈 결과·로딩·검색 상태에서도 헤더 위치를 유지한다. 단일 PANEL/BORDER 외곽 카드 이외의 중복 프레임·여백·구분선은 추가하지 않는다.
 - **상세 모달**: 기존 거래처 등록/상세의 2열 필드, 특수/예외 단가, 내역, 저장·삭제·미저장 확인·운영 DB 리비전은 유지한다. 상단 우측 `취소`, 하단 좌측 독립 삭제·우측 기본 저장은 56차 전체 모달 계약을 따른다. `자동 메시지 편집` 탭과 Excel 기능의 미이전 상태를 UI 개선만으로 활성화하지 않는다.
 - **확인 상태**: 코드 패치와 GitHub 원격 소스 정적 점검을 개별 기록한다. 실제 Windows 렌더링, Rust 컴파일, 업무 시나리오 검증을 하지 않았다면 완료 판정으로 보고하지 않는다.
+### 57차 — 거래처 관리 / 자동 메시지 편집 React → Rust·egui 이전 (2026-11-20)
+
+- **범위 및 실제 기준**: `src/ClientManager.tsx`, `src/AutomaticMessageTemplateManager.tsx`, `src/ProvisionalProductNoticeManager.tsx`, `src/automatic-message-templates.ts`, `src/provisional-product-notices.ts`; 적용 CSS `src/styles/product-admin-redesign.css`, `src/styles/client-editor.css`, `src/styles/management-layout.css`. 업무 검증은 `src-tauri/src/business_core/rules/message_template_validation.rs`, 메시지 렌더링은 `output/messages.rs` 및 `output/automatic_full.rs`, 설정 저장은 `crates/bando-data-access/src/settings_commands.rs`를 기준으로 한다.
+- **메뉴·하위탭**: 거래처 관리의 두 번째 메뉴 `자동 메시지 편집`을 실제 활성화한다. 하위 탭은 `상황별 공통 안내` 및 `잠정 상품 선택 안내` **두 개**다. 기존 `거래처 목록`의 화면·검색·수정은 유지한다. 새 KPI 요약 카드를 추가하지 않는다.
+- **디자인**: 배송 그룹 편성 확정 기준 `docs/egui-management-ui-reference.md`를 강한 레퍼런스로 삼되, 메시지 편집은 React의 왼쪽 선택 목록 + 오른쪽 편집/미리보기/저장 구조를 유지한다. 서로 다른 업무 영역 2개에만 공통 PANEL 프레임을 적용한다. 목록은 원본 CSS의 **48pt 2줄 행(제목 14pt·보조 상태 12pt)**을 공통 `management_chooser_row`로 구현한다. 오른쪽은 제목 16pt, 텍스트 입력, 허용 변수 및 필수 변수 안내, 예시 미리보기, 하단 우측 Primary 저장 버튼이다. 도움말 `?`는 공통 500ms 호버·클릭 고정형을 재사용한다.
+- **상황별 공통 안내**: React에 존재하는 **20개 정의를 정확히 동일한 ID·라벨·기본 문구·범주·샘플·허용 변수·필수 변수**로 보여준다. 선택, 기본 문구 복원, 수정/기본 상태 표시, 미리보기, 명시적 저장을 제공한다. 기본값과 동일한 문장을 입력해도 실제 변경이 없다면 저장을 요구하지 않는다. 저장 유효성은 기존 Rust `validate_automatic_templates` 단일 판단으로만 결정한다.
+- **잠정 상품 선택 안내**: `registeredProducts`와 동일하게 활성·비삭제·비대체 상품만 선택한다. 검색어가 비어 있으면 안내문 등록 상품만 표시하고, 검색 중에는 상품명/부제 검색 결과에서 **등록 항목 우선·최대 80개**를 보여준다. 선택한 상품별 문구 등록·삭제·입력 및 **상품/운임/합계·입금계좌 → 안내 문구 → 상품 링크** 배치 미리보기를 제공한다. `validate_provisional_product_notices`의 제품 ID·2000자 규칙과 기존 Rust `selectionEvidence` 소비 조건은 바꾸지 않는다.
+- **저장과 데이터 보호**: `BandoGateway::load_settings / patch_settings` 및 운영 v2 `patch_settings_v2`의 기존 필드별 CAS를 이용한다. Tauri에서 원래 하던 것처럼 운영 DB 변경 전 기존 백업 서비스가 먼저 성공해야 하며, egui 격리 미리보기 DB는 운영 백업·고객 자료와 섞지 않는다. 권한 부족/백업 불가 시 저장을 가장하거나 우회하지 않는다. 원본/수정본/비동기 저장 결과를 분리하고 실패 시 입력값을 유지한다.
+- **미저장 이동**: 메시지 유형 선택, 상품 선택, 두 하위탭 전환, 거래처 목록 전환, 전역 내비게이션 이탈에 동일한 기존 **저장 안 함 / 저장하고 이동 / 취소** 확인 흐름을 적용한다. 공통 팝업 계약대로 `취소`는 **우상단 텍스트 버튼 하나**, 하단은 별도의 선택지/실행 버튼만 둔다. 저장 중에는 중복 저장·이동을 방지한다.
+- **검증 구분**: Rust/React 템플릿 20개 ID·라벨·본문 대조, Gateway 호출 경로, 상태·CAS·백업 흐름 등 수행한 정적 점검만 정적 PASS로 기록한다. 컴파일·실행하지 않았다면 미검증으로 남기고 Windows 실화면은 사용자 정책대로 수행하지 않는다.
 ### 49차 거래처 관리 이전 기준
 
 - 기존 React `src/ClientManager.tsx`는 **업무 정보·데이터 필드·상호작용 기준**이며 화면이 완성된 디자인이라고 간주하지 않는다. 기존 스타일의 불일치·임의 배치까지 복제하지 않는다.
