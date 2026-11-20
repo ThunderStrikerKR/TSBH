@@ -51,13 +51,16 @@ pub enum ReadOperation {
     ProductFreightView,
     DefaultProductRule,
     RenderAutomaticMessage,
+    ValidateAutomaticTemplates,
+    ValidateProvisionalProductNotices,
 }
 
 impl ReadOperation {
     pub fn domain(self) -> &'static str {
         match self {
             Self::AnalyzeOrder => "recognition",
-            Self::ResolveRetailUnitPrice | Self::DetectRemoteDeliveryArea => "rules",
+            Self::ResolveRetailUnitPrice | Self::DetectRemoteDeliveryArea
+            | Self::ValidateAutomaticTemplates | Self::ValidateProvisionalProductNotices => "rules",
             Self::AutoMatchReceptionClient | Self::ReceptionClientCandidates
             | Self::ClientCandidates | Self::SearchProductsWithUrls
             | Self::ManagementProducts => "catalog_clients",
@@ -104,6 +107,8 @@ impl ReadOperation {
             Self::ProductFreightView => "apply_shipping_action",
             Self::DefaultProductRule => "apply_shipping_action",
             Self::RenderAutomaticMessage => "render_automatic_message",
+            Self::ValidateAutomaticTemplates => "validate_automatic_templates",
+            Self::ValidateProvisionalProductNotices => "validate_provisional_product_notices",
         }
     }
 }
@@ -558,7 +563,9 @@ impl BandoGateway for LocalGateway {
             | ReadOperation::FactoryReplyReviewStatuses
             | ReadOperation::ShippingManagerView
             | ReadOperation::ProductFreightView
-            | ReadOperation::DefaultProductRule => {
+            | ReadOperation::DefaultProductRule
+            | ReadOperation::ValidateAutomaticTemplates
+            | ReadOperation::ValidateProvisionalProductNotices => {
                 rules::execute(operation.operation(), payload)
             }
             ReadOperation::AutoMatchReceptionClient
