@@ -33,8 +33,8 @@ fn text<'a>(row: &'a Value, key: &str) -> &'a str {
 /// Shared geometry for header and item rows. Each label/control uses this
 /// exact column rectangle; no intrinsic egui Grid sizing can shift a column.
 fn freight_assignment_cells(
-    origin: egui::Pos2, widths: &[f32;7], height:f32
-) -> [egui::Rect;7] {
+    origin: egui::Pos2, widths: &[f32;6], height:f32
+) -> [egui::Rect;6] {
     let mut x=origin.x;
     std::array::from_fn(|index|{
         let cell=egui::Rect::from_min_size(
@@ -47,9 +47,9 @@ fn freight_assignment_cells(
 
 /// The task table keeps the same font sizing as the shared typography rules:
 /// primary product identity is bold, category stays 13pt but softer,
-/// colors remain normal, and secondary assignment metadata is subdued.
+/// and colors/options remain normal.
 #[derive(Clone,Copy)]
-enum FreightCellRole { Primary, Normal, Category, Metadata }
+enum FreightCellRole { Primary, Normal, Category }
 
 /// One non-wrapping line anchored 6pt from the shared column origin. Keep
 /// the full content on hover without changing the cell's layout footprint.
@@ -67,10 +67,6 @@ fn freight_assignment_text(
         ),
         FreightCellRole::Category=>(
             typography::client_table_cell_galley(ui,value,false),theme::SECONDARY
-        ),
-        FreightCellRole::Metadata=>(
-            typography::client_table_metadata_galley(ui,value,theme::MUTED),
-            theme::MUTED
         ),
     };
     ui.painter().with_clip_rect(clipped).galley(
@@ -1073,7 +1069,13 @@ impl FreightManager {
             // scroll offset is reflected only in its horizontal coordinates,
             // so wheel scrolling cannot push column titles off-screen.
             let viewport_width=section.available_width().max(1.0);
-            let table_width=viewport_width.max(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH);
+            // Reserve the solid vertical track (+4pt breathing room) BEFORE
+            // allocating rows. Otherwise the track steals width after layout
+            // and creates an avoidable horizontal scrollbar.
+            let scrollbar_gutter=section.spacing().scroll.allocated_width()
+                +theme::SPACE_4;
+            let table_width=(viewport_width-scrollbar_gutter)
+                .max(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH);
             let mut widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
             let extra=(table_width-theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH).max(0.0);
             // Split spare width between product (70%) and category (30%);
@@ -1082,10 +1084,9 @@ impl FreightManager {
             widths[3]+=extra*0.30;
             let titles=[
                 "","상품명 / 상품설명","색상/옵션","카테고리",
-                "배송 그룹","그룹 지정","설정"
+                "배송 그룹","설정"
             ];
-            // The header is a fixed sibling above the independently scrolling
-            // data area. Both use freight_assignment_cells() for all 7 edges.
+            // Header and virtualized rows share all six column boundaries.
             let (header_rect,_)=section.allocate_exact_size(
                 egui::vec2(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
                 egui::Sense::hover()
@@ -1270,18 +1271,9 @@ impl FreightManager {
                         let rule=effective.map(|entry|&entry["rule"])
                             .unwrap_or(&Value::Null);
                         let ready=effective.is_some();
-                        // Group freight/bundle details live in the
-                        // shipping-group management tab, not this selector.
-                        let assigned=if changed{"변경 예정"}
-                            else if committed.is_empty(){"미지정"}
-                            else{"지정 완료"};
-                        freight_assignment_text(
-                            table,cells[5],assigned,assigned,FreightCellRole::Metadata,(id,5)
-                        );
-
                         // The action column's buttons and labels cannot expand
-                        // their cell, wrap, or shift the other six columns.
-                        let actions_rect=cells[6].shrink2(egui::vec2(6.0,0.0));
+                        // their cell, wrap, or shift the other five columns.
+                        let actions_rect=cells[5].shrink2(egui::vec2(6.0,0.0));
                         let actions_clip=actions_rect.intersect(table.clip_rect());
                         table.scope_builder(
                             egui::UiBuilder::new()
@@ -1344,7 +1336,7 @@ impl FreightManager {
                         // of the column gaps. No opacity multiplication:
                         // 0.30 × DIVIDER was darker than the row background,
                         // which made the separators effectively invisible.
-                        for index in 0..6 {
+                        for index in 0..5 {
                             let edge=cells[index].right()
                                 +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                             table.painter().line_segment(
@@ -1393,7 +1385,7 @@ impl FreightManager {
                         galley,theme::SECONDARY
                     );
                 }
-                if i<6 {
+                if i<5 {
                     let edge=header_cells[i].right()
                         +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                     header_painter.line_segment(
