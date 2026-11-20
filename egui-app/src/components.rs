@@ -661,6 +661,23 @@ fn paint_client_line(
 pub fn management_row(
     ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],heading:bool,tier:Option<&str>
 ) -> Response {
+    management_row_impl(ui,row_id,columns,heading,tier,None)
+}
+
+/// Draw a client record with the shared low-contrast alternate-row surface.
+/// The index is the visible row position after filtering, not a persistent
+/// customer ID, so the stripes remain consistent during search.
+pub fn management_row_striped(
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],tier:Option<&str>,
+    visible_index:usize
+) -> Response {
+    management_row_impl(ui,row_id,columns,false,tier,Some(visible_index))
+}
+
+fn management_row_impl(
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],heading:bool,
+    tier:Option<&str>,visible_index:Option<usize>
+) -> Response {
     let width=ui.available_width().max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
     let height=if heading {theme::MANAGEMENT_TABLE_HEADER_HEIGHT}
         else {theme::MANAGEMENT_CLIENT_ROW_HEIGHT};
@@ -668,7 +685,10 @@ pub fn management_row(
         Vec2::new(width,height),if heading {Sense::hover()} else {Sense::click()}
     );
     let bg=if heading {theme::RAISED}
-        else if response.hovered() {theme::INPUT} else {theme::PANEL};
+        else if response.hovered() {theme::INPUT}
+        else if visible_index.is_some_and(|index|index%2==1) {
+            theme::TABLE_ROW_ALT_BG
+        }else{theme::PANEL};
     ui.painter().rect_filled(rect,0.0,bg);
     ui.painter().line_segment(
         [rect.left_bottom(),rect.right_bottom()],
