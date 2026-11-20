@@ -166,7 +166,10 @@ fn product_id(product:&Value)->&str{
 }
 fn has_registered_product(product:&Value)->bool{
     !product_id(product).is_empty()
+        && product["active"]!=Value::Bool(false)
         && product.get("deletedAt").is_none_or(Value::is_null)
+        && product.get("supersededBy").is_none_or(|value|
+            value.is_null() || value.as_str().is_some_and(str::is_empty))
 }
 fn preview_message(def:TemplateDef,body:&str)->String{
     static TOKENS:OnceLock<Regex>=OnceLock::new();
@@ -269,7 +272,7 @@ impl AutomaticMessageManager {
                 ||self.settings["dataAvailable"]==Value::Bool(true))
     }
     fn request(&mut self,destination:Destination){
-        if self.busy(){return;}
+        if self.busy()||self.pending.is_some(){return;}
         if self.dirty(){self.pending=Some(destination);}
         else{self.apply_destination(destination);}
     }
@@ -390,6 +393,7 @@ impl AutomaticMessageManager {
             .max_height(Self::list_height(ui))
             .show(ui,|list|{
                 list.spacing_mut().item_spacing.y=theme::SPACE_4;
+                list.spacing_mut().interact_size.y=theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
                 for category in ["확인 안내","색상 및 수량","모델 및 옵션","입금 안내"]{
                     list.label(typography::subsection_heading(category));
                     for (index,def) in TEMPLATES.iter().enumerate()
@@ -422,6 +426,7 @@ impl AutomaticMessageManager {
             .max_height(Self::list_height(ui)-theme::INPUT_HEIGHT-theme::SPACE_24)
             .show(ui,|list|{
                 list.spacing_mut().item_spacing.y=theme::SPACE_4;
+                list.spacing_mut().interact_size.y=theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
                 if visible.is_empty(){
                     list.label(typography::caption(if self.product_search.trim().is_empty(){
                         "아직 등록된 안내문이 없습니다. 상품을 검색해 추가하세요."
