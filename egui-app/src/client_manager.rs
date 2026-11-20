@@ -231,7 +231,8 @@ impl ClientManager {
 
     fn list_search(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,reserve:f32) {
         ui.label(typography::field_label("검색"));
-        let width=(ui.available_width()-reserve).max(60.0);
+        let width=(ui.available_width()-reserve).max(60.0)
+            .min(theme::MANAGEMENT_CLIENT_SEARCH_MAX_WIDTH);
         if components::flexible_text_field(
             ui,&mut self.search,width,"상호 / 주소 / 전화번호 / 별칭 검색"
         ).changed(){
