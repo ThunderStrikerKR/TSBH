@@ -50,6 +50,68 @@ fn group_name<'a>(groups: &'a [Value], id: &str) -> &'a str {
         .map(|g| text(g, "name")).unwrap_or("그룹 미지정")
 }
 
+
+struct RateEditor {
+    id: String,
+    name: String,
+    original: Value,
+    max_bundle: Option<i64>,
+    fees: BTreeMap<i64, String>,
+    notes: String,
+    add_count: Option<i64>,
+    error: Option<String>,
+    ask_discard: bool,
+}
+impl RateEditor {
+    fn new(id:&str,name:&str,rule:&Value)->Self {
+        let fees=(1..=6).filter_map(|count|{
+            rule["fees"].get(count.to_string()).and_then(Value::as_i64)
+                .map(|value|(count,value.to_string()))
+        }).collect();
+        Self{
+            id:id.to_owned(),name:name.to_owned(),original:rule.clone(),
+            max_bundle:rule["maxBundle"].as_i64(),
+            fees,notes:text(rule,"notes").to_owned(),
+            add_count:None,error:None,ask_discard:false
+        }
+    }
+    fn dirty(&self)->bool{
+        if self.original["maxBundle"].as_i64()!=self.max_bundle
+            || text(&self.original,"notes")!=self.notes {return true;}
+        let old=(1..=6).filter_map(|count|{
+            self.original["fees"].get(count.to_string()).and_then(Value::as_i64)
+                .map(|value|(count,Some(value)))
+        }).collect::<BTreeMap<_,_>>();
+        let new=self.fees.iter().map(|(key,value)|{
+            (*key,value.trim().parse::<i64>().ok())
+        }).collect::<BTreeMap<_,_>>();
+        old!=new
+    }
+    fn draft(&self)->Result<Value,String>{
+        let mut rule=self.original.clone();
+        rule["maxBundle"]=self.max_bundle.map_or(Value::Null,|v|json!(v));
+        rule["notes"]=json!(self.notes);
+        let mut fees=rule["fees"].as_object().cloned().unwrap_or_default();
+        for count in 1..=6 {fees.remove(&count.to_string());}
+        for (count,amount) in &self.fees {
+            let raw=amount.trim();
+            let value=if raw.is_empty() {
+                Value::Null
+            }else{
+                let amount=raw.parse::<i64>()
+                    .map_err(|_|"올바른 운임을 입력하세요.".to_owned())?;
+                if !(0..=9_007_199_254_740_991).contains(&amount){
+                    return Err("올바른 운임을 입력하세요.".into());
+                }
+                json!(amount)
+            };
+            fees.insert(count.to_string(),value);
+        }
+        rule["fees"]=Value::Object(fees);
+        Ok(rule)
+    }
+}
+
 pub struct FreightManager {
     tab: FreightTab,
     gateway: Arc<dyn BandoGateway>,
@@ -62,6 +124,8 @@ pub struct FreightManager {
     new_name: String,
     rename_target: Option<(String,String)>,
     delete_target: Option<String>,
+    rate_editor: Option<RateEditor>,
+    basis_target: Option<Option<String>>,
     receiver: Option<Receiver<Result<(Value, Value), String>>>,
     state: Option<Value>,
     projection: Option<Value>,
@@ -100,6 +164,8 @@ impl FreightManager {
             new_name: String::new(),
             rename_target: None,
             delete_target: None,
+            rate_editor: None,
+            basis_target: None,
             receiver: Some(receiver),
             state: None,
             projection: None,
@@ -141,6 +207,8 @@ impl FreightManager {
                             "rename_group"=>"배송 그룹명을 변경했습니다.",
                             "delete_group"=>"그룹을 삭제하고 과거 운임 기록을 보존했습니다.",
                             "assign_products"=>"배송 그룹 지정을 저장했습니다.",
+                            "save_group_rule"=>"운임표를 저장했습니다. 변경 전 기준은 이력으로 보존됩니다.",
+                            "change_basis"=>"운임 기준을 변경했습니다.",
                             _=>"운임 변경사항을 저장했습니다."
                         }.into());
                         match action.as_str(){
@@ -151,6 +219,8 @@ impl FreightManager {
                                 self.pending.clear();
                                 self.selected.clear();
                             }
+                            "save_group_rule"=>self.rate_editor=None,
+                            "change_basis"=>self.basis_target=None,
                             _=>{}
                         }
                     }else{
@@ -253,7 +323,10 @@ impl FreightManager {
                     &mut self.bulk_group, &mut self.new_name,
                     &mut self.rename_target, &mut self.delete_target, enabled, &mut action
                 ),
-                FreightTab::Rates => Self::show_rates(scroll, &groups, projection),
+                FreightTab::Rates => Self::show_rates(
+                    scroll,&groups,projection,
+                    &mut self.rate_editor,&mut self.basis_target,enabled
+                ),
                 FreightTab::History => Self::show_history(scroll, shipping, projection),
             });
         if self.tab==FreightTab::Groups {
@@ -518,14 +591,34 @@ impl FreightManager {
         });
     }
 
-    fn show_rates(ui: &mut Ui, groups: &[Value], projection: &Value) {
+    fn show_rates(
+        ui: &mut Ui, groups: &[Value], projection: &Value,
+        editor: &mut Option<RateEditor>,
+        basis: &mut Option<Option<String>>,enabled:bool,
+    ) {
+        ui.horizontal(|bar|{
+            bar.label(typography::section_heading("그룹 운임표"));
+            if theme::action(bar,"전체 운임 기준 변경",theme::ButtonRole::Danger,enabled)
+                .clicked(){*basis=Some(None);}
+        });
+        ui.add_space(theme::SPACE_12);
         for group in groups {
             let name = text(group, "name");
             let id = text(group, "id");
             let rule = projection["editableRules"].get(id)
                 .unwrap_or(&group["current"]);
             theme::section_frame().show(ui, |section| {
-                section.label(typography::section_heading(name));
+                section.horizontal(|bar|{
+                    bar.label(typography::section_heading(name));
+                    if theme::action(bar,"운임 수정",
+                        theme::ButtonRole::Standard,enabled).clicked(){
+                        *editor=Some(RateEditor::new(id,name,rule));
+                    }
+                    if theme::action(bar,"기준 변경",
+                        theme::ButtonRole::Danger,enabled).clicked(){
+                        *basis=Some(Some(id.to_owned()));
+                    }
+                });
                 section.add_space(theme::SPACE_8);
                 let max = rule["maxBundle"].as_i64();
                 let max_label = if rule["maxConfirmed"] == true {
@@ -561,6 +654,101 @@ impl FreightManager {
         if groups.is_empty() {
             ui.label(typography::caption("등록된 배송 그룹이 없습니다."));
         }
+    }
+
+    fn rate_dialog(
+        ui:&mut Ui,editor:&mut RateEditor,enabled:bool,
+        event:&mut Option<(String,Value)>,close:&mut bool,
+    ){
+        ui.label(typography::subsection_heading(format!("{} 운임",editor.name)));
+        ui.add_space(theme::SPACE_8);
+        ui.horizontal(|line|{
+            line.label(typography::field_label("최대 합포장 수량"));
+            egui::ComboBox::from_id_salt("freight-rate-max")
+                .selected_text(editor.max_bundle
+                    .map(|v|format!("{v}개")).unwrap_or_else(||"미확정".into()))
+                .show_ui(line,|choice|{
+                    choice.selectable_value(&mut editor.max_bundle,None,"미확정");
+                    for n in 1..=6 {
+                        choice.selectable_value(&mut editor.max_bundle,Some(n),format!("{n}개"));
+                    }
+                });
+        });
+        if editor.max_bundle.is_none(){
+            ui.label(typography::caption("최대 묶음 수량을 먼저 선택하세요."));
+        }
+        ui.add_space(theme::SPACE_12);
+        ui.label(typography::subsection_heading("수량별 운임"));
+        ui.label(typography::caption("확인한 묶음 수량의 운임만 추가하세요."));
+        let mut removed=None;
+        for (count,amount) in editor.fees.iter_mut(){
+            ui.horizontal(|line|{
+                line.label(typography::field_label(format!("{count}개 묶음")));
+                components::field(line,amount,components::FieldKind::Money,enabled);
+                if theme::action(line,"삭제",theme::ButtonRole::Standard,enabled).clicked(){
+                    removed=Some(*count);
+                }
+                if editor.max_bundle.is_some_and(|max|*count>max){
+                    line.label(typography::status(
+                        "최대 묶음 수량 초과",theme::DANGER
+                    ));
+                }
+            });
+        }
+        if let Some(count)=removed{editor.fees.remove(&count);}
+        let available=(1..=6).filter(|n|
+            editor.max_bundle.is_some_and(|max|*n<=max)
+            && !editor.fees.contains_key(n)
+        ).collect::<Vec<_>>();
+        if !available.is_empty(){
+            ui.horizontal(|line|{
+                egui::ComboBox::from_id_salt("freight-rate-add-count")
+                    .selected_text(editor.add_count
+                        .map(|n|format!("{n}개")).unwrap_or_else(||"묶음 수량 선택".into()))
+                    .show_ui(line,|choice|{
+                        for count in &available{
+                            choice.selectable_value(
+                                &mut editor.add_count,Some(*count),format!("{count}개")
+                            );
+                        }
+                    });
+                if theme::action(line,"운임 구간 추가",
+                    theme::ButtonRole::Standard,enabled&&editor.add_count.is_some()
+                ).clicked(){
+                    if let Some(n)=editor.add_count.take(){
+                        if available.contains(&n){editor.fees.insert(n,String::new());}
+                    }
+                }
+            });
+        }
+        ui.add_space(theme::SPACE_12);
+        ui.label(typography::field_label("사용자 참고 메모"));
+        components::flexible_text_field(
+            ui,&mut editor.notes,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+            "포장할 때 참고할 사항 (선택)"
+        );
+        if let Some(error)=&editor.error {
+            ui.label(typography::status(error,theme::DANGER));
+        }
+        ui.add_space(theme::SPACE_12);
+        ui.horizontal(|bar|{
+            if theme::action(bar,"닫기",theme::ButtonRole::Standard,enabled).clicked(){
+                if editor.dirty(){editor.ask_discard=true;}
+                else{*close=true;}
+            }
+            if theme::action(bar,"확인한 운임 저장",theme::ButtonRole::Primary,
+                enabled&&editor.dirty()).clicked(){
+                match editor.draft(){
+                    Ok(rule)=>{
+                        editor.error=None;
+                        *event=Some(("save_group_rule".into(),json!({
+                            "groupId":editor.id,"rule":rule
+                        })));
+                    }
+                    Err(message)=>editor.error=Some(message)
+                }
+            }
+        });
     }
 
     fn show_history(ui: &mut Ui, shipping: &Value, projection: &Value) {
