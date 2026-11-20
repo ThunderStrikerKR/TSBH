@@ -159,7 +159,15 @@ pub const SUMMARY_STRIP_HEIGHT: f32 = 58.0;
 // 64pt numeric slot fits five decimal digits (up to 99,999) at the shared
 // 16pt monospaced summary font; the 16pt unit slot is fixed independently.
 pub const FREIGHT_SUMMARY_CARD_WIDTH: f32 = 228.0;
-pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 = 56.0;
+// Card spacing scales with its 16pt text, not an unrelated fixed margin:
+// horizontal inset 1.0em = 16pt, vertical inset 0.75em = 12pt.
+// One 1.375em line (22pt), two borders and insets => 48pt overall.
+pub const FREIGHT_SUMMARY_TEXT_SIZE: f32 = typography::FONT_SECTION_HEADING;
+pub const FREIGHT_SUMMARY_PADDING_X: f32 = FREIGHT_SUMMARY_TEXT_SIZE;
+pub const FREIGHT_SUMMARY_PADDING_Y: f32 = FREIGHT_SUMMARY_TEXT_SIZE * 0.75;
+pub const FREIGHT_SUMMARY_LINE_HEIGHT: f32 = FREIGHT_SUMMARY_TEXT_SIZE * 1.375;
+pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 =
+    FREIGHT_SUMMARY_LINE_HEIGHT + 2.0 * (FREIGHT_SUMMARY_PADDING_Y + FRAME_STROKE_WIDTH);
 pub const FREIGHT_SUMMARY_NUMBER_WIDTH: f32 = 64.0;
 pub const FREIGHT_SUMMARY_UNIT_WIDTH: f32 = 16.0;
 // Reception items/freight mirrors the React 3-column table. The summary
@@ -171,9 +179,10 @@ pub const RECEPTION_ITEMS_AMOUNT_MAX_WIDTH: f32 = 108.0;
 pub const RECEPTION_VAT_ROW_HEIGHT: f32 = 32.0;
 pub const RECEPTION_TOTAL_HEIGHT: f32 = 56.0;
 pub const HEADER_HEIGHT: f32 = 62.0;
-pub const NAV_HEIGHT: f32 = 38.0;
-// Second-level management tabs must be visibly smaller than the global nav.
-pub const MANAGEMENT_TAB_HEIGHT: f32 = 30.0;
+pub const NAV_HEIGHT: f32 = 44.0;
+// Both navigation levels remain comfortable click targets; hierarchy comes
+// from placement, active colors and the 18pt/16pt typography difference.
+pub const MANAGEMENT_TAB_HEIGHT: f32 = 38.0;
 // Original React manual workspace: max 1760, viewport side gap 36,
 // source-to-sheet columns 34:66 (.manual-workspace .manual-columns).
 pub const MANUAL_DIALOG_MAX_WIDTH: f32 = 1760.0;
@@ -372,6 +381,18 @@ pub fn section_frame() -> Frame {
         .inner_margin(SECTION_PADDING)
 }
 
+/// Overview card keeps the shared frame identity with proportional padding.
+/// Only the freight KPI's vertical inset differs from standard section cards.
+pub fn freight_summary_frame() -> Frame {
+    Frame::new()
+        .fill(PANEL)
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
+        .corner_radius(CornerRadius::same(PANEL_RADIUS))
+        .inner_margin(egui::Margin::symmetric(
+            FREIGHT_SUMMARY_PADDING_X as i8, FREIGHT_SUMMARY_PADDING_Y as i8
+        ))
+}
+
 /// Management tables use a permanent, non-overlay scrollbar track.
 /// Solid scrollbars remain visible while a list has overflow and never
 /// collapse into a faint 2pt floating line when the pointer leaves.
@@ -509,7 +530,7 @@ fn action_with_min_width(
     let font_size = match role {
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => typography::FONT_MAIN_NAV,
         ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab =>
-            typography::FONT_STANDARD_ACTION,
+            typography::FONT_MANAGEMENT_TAB,
         ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl =>
             typography::FONT_METADATA,
         ButtonRole::Primary => typography::FONT_PRIMARY_ACTION,
@@ -521,7 +542,7 @@ fn action_with_min_width(
         ButtonRole::Primary => 14.0,
         ButtonRole::Quiet => 8.0,
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => 12.0,
-        ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 9.0,
+        ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 12.0,
         ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 7.0,
         _ => 12.0,
     };
@@ -542,7 +563,7 @@ fn action_with_min_width(
     ui.scope(|ui| {
         let padding_y = match role {
             ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 2.0,
-            ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 4.0,
+            ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 6.0,
             _ => 6.0,
         };
         ui.spacing_mut().button_padding = Vec2::new(padding_x, padding_y);
