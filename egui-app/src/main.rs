@@ -3655,7 +3655,13 @@ impl BandoEgui {
                                 main.set_clip_rect(right);
                                 main.set_width(right.width());
                                 main.set_height(right.height());
-                                Frame::new().inner_margin(theme::SPACE_16).show(main,|page|{
+                                // The shared workspace frame already owns the
+                                // outer top/right/bottom 6pt gutters. Do not
+                                // add a second 16pt page margin: management
+                                // cards should end on the same gutter line as
+                                // the reception panes. Individual section
+                                // frames retain their own content padding.
+                                Frame::new().inner_margin(0).show(main,|page|{
                                     match self.page{
                                         Page::Products=>{
                                             if let Some(manager)=self.product_manager.as_mut(){
