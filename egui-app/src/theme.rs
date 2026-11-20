@@ -154,22 +154,22 @@ pub const ACTION_EMPHASIZED_HEIGHT: f32 = 34.0;
 pub const ACTION_QUIET_HEIGHT: f32 = 32.0;
 // Reserve space for the single-row order total at the bottom of its pane.
 pub const SUMMARY_STRIP_HEIGHT: f32 = 58.0;
-// Freight overview cards are left-anchored, content-sized controls rather
-// than four equal-width columns spanning the whole management viewport.
-// 64pt numeric slot fits five decimal digits (up to 99,999) at the shared
-// 16pt monospaced summary font; the 16pt unit slot is fixed independently.
+// The four freight KPIs remain separate cards, each with a centered value
+// above its supporting label (not a merged summary strip).
 pub const FREIGHT_SUMMARY_CARD_WIDTH: f32 = 228.0;
-// Card spacing scales with its 16pt text, not an unrelated fixed margin:
-// horizontal inset 1.0em = 16pt, vertical inset 0.75em = 12pt.
-// One 1.375em line (22pt), two borders and insets => 48pt overall.
-pub const FREIGHT_SUMMARY_TEXT_SIZE: f32 = typography::FONT_SECTION_HEADING;
-pub const FREIGHT_SUMMARY_PADDING_X: f32 = FREIGHT_SUMMARY_TEXT_SIZE;
-pub const FREIGHT_SUMMARY_PADDING_Y: f32 = FREIGHT_SUMMARY_TEXT_SIZE * 0.75;
-pub const FREIGHT_SUMMARY_LINE_HEIGHT: f32 = FREIGHT_SUMMARY_TEXT_SIZE * 1.375;
+// Size all geometry from the two text roles: 28pt value, 13pt label.
+// Number line 34 + label line 18 + gap 2 + padding 12*2 + border 2 = 80pt.
+pub const FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT: f32 =
+    typography::FONT_FREIGHT_SUMMARY_NUMBER + 6.0;
+pub const FREIGHT_SUMMARY_LABEL_LINE_HEIGHT: f32 =
+    typography::FONT_FREIGHT_SUMMARY_LABEL + 5.0;
+pub const FREIGHT_SUMMARY_TEXT_GAP: f32 = 2.0;
+pub const FREIGHT_SUMMARY_PADDING_X: f32 = 16.0;
+pub const FREIGHT_SUMMARY_PADDING_Y: f32 = 12.0;
 pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 =
-    FREIGHT_SUMMARY_LINE_HEIGHT + 2.0 * (FREIGHT_SUMMARY_PADDING_Y + FRAME_STROKE_WIDTH);
-pub const FREIGHT_SUMMARY_NUMBER_WIDTH: f32 = 64.0;
-pub const FREIGHT_SUMMARY_UNIT_WIDTH: f32 = 16.0;
+    FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT + FREIGHT_SUMMARY_LABEL_LINE_HEIGHT
+    + FREIGHT_SUMMARY_TEXT_GAP
+    + 2.0 * (FREIGHT_SUMMARY_PADDING_Y + FRAME_STROKE_WIDTH);
 // Reception items/freight mirrors the React 3-column table. The summary
 // remains a separate fixed-height strip below its own scrolling content.
 pub const RECEPTION_ITEMS_HEADER_HEIGHT: f32 = 32.0;
