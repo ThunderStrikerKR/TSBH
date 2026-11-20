@@ -24,7 +24,7 @@ fn field<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {
 }
 
 fn rule(operation: &str, payload: Value) -> Result<Value, String> {
-    crate::reception_rules::execute(operation, payload)
+    crate::rules::execute(operation, payload)
 }
 
 fn order_from(result: Value) -> Result<Value, String> {
@@ -161,7 +161,7 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
     // Never trust price/total figures or a clientSnapshot supplied by egui.
     // Re-run recognition, dealer guard, item reprice and freight using the
     // fresh, authoritative state from inside the write transaction.
-    let evidence = crate::reception_recognition::execute("analyze_order", json!({
+    let evidence = crate::recognition::execute("analyze_order", json!({
         "raw":raw, "state":&state, "client":selected_client
     }))?;
     if !evidence.get("recipients").is_some_and(Value::is_array) ||
