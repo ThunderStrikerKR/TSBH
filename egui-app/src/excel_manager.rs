@@ -30,12 +30,6 @@ fn amount(v:&Value)->String{
     v.as_i64().map(components::display_won)
         .unwrap_or_else(||"확인 필요".to_owned())
 }
-fn account_for(state:&Value,ship:&Value)->Value{
-    let id=text(ship,"id");
-    rows(&state["shipmentReads"]["shipments"]).iter()
-        .find(|v|text(v,"shipmentId")==id)
-        .and_then(|v|v.get("client")).cloned().unwrap_or(Value::Null)
-}
 #[derive(Clone,Copy,PartialEq,Eq)]
 enum Tab{Factory,Store,History}
 impl Tab{
@@ -316,7 +310,17 @@ impl ExcelManager{
         };
         manager.refresh(ctx);manager
     }
-    pub fn take_open_order(&mut self)->Option<String>{self.open_order.take()}
+    pub fn take_open_order(&mut self)->Option<(String,String)>{
+        let id=self.open_order.take()?;
+        let when=self.result.as_ref()
+            .and_then(|snapshot|find(&snapshot.state["orders"],&id))
+            .map(|order|{
+                let confirmed=text(order,"confirmedAt");
+                if confirmed.is_empty(){text(order,"createdAt")}
+                else{confirmed}
+            }).unwrap_or("").to_owned();
+        Some((id,when))
+    }
     pub fn take_open_settings(&mut self)->bool{
         std::mem::take(&mut self.open_settings)
     }
@@ -431,8 +435,7 @@ impl ExcelManager{
         let mut open_history=None;
         let mut open_order=None;
         let mut copy_path=None;
-        let mut company_check=false;
-        let mut go_settings=false;
+            let mut go_settings=false;
         theme::management_list_frame().show(ui,|section|{
             theme::management_list_strip_frame().show(section,|toolbar|{
                 toolbar.horizontal(|line|{
@@ -538,9 +541,7 @@ impl ExcelManager{
                     .map(|r|r.id().to_owned()).collect();
                 self.selected.retain(|id|visible.contains(id));
                 let chosen=self.selected.len();
-                let all=!visible.is_empty()&&chosen==visible.len();
-                let mut check_all=all;
-                let records=queued.clone();
+                        let records=queued.clone();
                 table(section,"excel-queue-table",
                     ["선택","거래처 / 발주","수취인 / 배송 품목","금액","처리"],
                     QUEUE,[Align2::CENTER_CENTER,Align2::LEFT_CENTER,
@@ -656,7 +657,7 @@ impl ExcelManager{
             });
         }
         if self.preview.is_some(){
-            let response=self.preview.as_ref().unwrap();
+            let response=self.preview.as_ref().unwrap().clone();
             let missing=response["sender"]["companyMissing"]==true;
             let count=rows(&response["preview"]["rows"]).len();
             let ids=rows(&response["preview"]["ids"]).iter()
