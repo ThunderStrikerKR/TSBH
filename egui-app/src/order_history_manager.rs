@@ -459,6 +459,23 @@ impl OrderHistoryManager {
         manager.refresh(ctx);
         manager
     }
+    /// Navigate from an exported Excel row to the exact original order.
+    /// The caller passes the saved order's confirmed/created day, not a
+    /// guessed current-day filter. This is a presentation-only selection.
+    pub fn open_order(&mut self,id:&str,date:&str,ctx:egui::Context){
+        let parsed=seoul_date(date);
+        if let Ok(day)=NaiveDate::parse_from_str(&parsed,"%Y-%m-%d"){
+            self.date=parsed.clone();
+            self.date_input=parsed;
+            self.calendar_month=month_start(day);
+        }else{
+            self.date.clear();
+            self.date_input.clear();
+        }
+        self.query.clear();
+        self.expanded.insert(id.to_owned());
+        self.refresh(ctx);
+    }
     pub fn refresh(&mut self,ctx:egui::Context){
         self.error=None;
         self.snapshot=None;
