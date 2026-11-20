@@ -168,11 +168,6 @@ impl BrandManager {
                     });
                 });
             });
-            if let Some(message)=&self.error{
-                card.label(typography::status(message,theme::DANGER));
-            }else if let Some(message)=&self.notice{
-                card.label(typography::status(message,theme::SUCCESS));
-            }
             card.add_space(theme::SPACE_16);
             components::soft_divider(card);
             egui::ScrollArea::vertical()
@@ -220,9 +215,6 @@ impl BrandManager {
         components::decision_window("브랜드","brand-unsaved-confirm",work_area)
             .show(ctx,|dialog|{
                 dialog.label(typography::body("브랜드 변경사항을 저장할까요?"));
-                if let Some(error)=&self.error{
-                    dialog.label(typography::status(error,theme::DANGER));
-                }
                 dialog.horizontal(|buttons|{
                     cancel=theme::action(buttons,"취소",
                         theme::ButtonRole::Standard,!busy).clicked();
