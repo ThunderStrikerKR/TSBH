@@ -150,6 +150,7 @@ pub struct ProductManager {
     brand:String,
     missing:bool,
     selected:Option<Value>,
+    adding:bool,
     original_selected:Option<Value>,
     detail_prices:HashMap<String,String>,
     confirm_discard:bool,
@@ -170,7 +171,7 @@ impl ProductManager {
             gateway,catalog:None,products:Vec::new(),
             query:String::new(),category:String::new(),
             brand:String::new(),missing:false,selected:None,
-            original_selected:None,detail_prices:HashMap::new(),
+            adding:false,original_selected:None,detail_prices:HashMap::new(),
             confirm_discard:false,confirm_archive:false,
             price_mode:false,price_drafts:HashMap::new(),
             writing:None,notice:None,
@@ -397,9 +398,9 @@ impl ProductManager {
                 )));
                 header.with_layout(Layout::right_to_left(Align::Center),|actions|{
                     if theme::action(
-                        actions,"상품 추가",theme::ButtonRole::Primary,can_edit&&!saving
+                        actions,"상품 추가",theme::ButtonRole::Primary,!saving
                     ).clicked(){
-                        begin_new=true;
+                        self.adding=!self.adding;
                     }
                     if theme::action(actions,
                         if self.price_mode {"가격 수정 모드 종료"}else{"가격 수정 모드 켜기"},
@@ -419,6 +420,22 @@ impl ProductManager {
                 });
             });
             components::soft_divider(panel);
+            if self.adding {
+                panel.horizontal(|actions|{
+                    if theme::action(
+                        actions,"직접 등록",theme::ButtonRole::Primary,
+                        can_edit&&!saving
+                    ).clicked(){
+                        begin_new=true;
+                    }
+                    theme::action(
+                        actions,"홈페이지에서 수집",theme::ButtonRole::Standard,false
+                    ).on_disabled_hover_text(
+                        "상품 홈페이지 수집 기능은 아직 이전되지 않았습니다."
+                    );
+                });
+                components::soft_divider(panel);
+            }
             panel.horizontal_wrapped(|filter|{
                 filter.label(typography::field_label("상품 검색"));
                 let before=self.query.clone();
