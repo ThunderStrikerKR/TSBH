@@ -153,11 +153,9 @@ impl Sort {
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum HistoryLine {
     Order(usize),
-    // Each delivery is a distinct two-row group: recipient/address,
-    // followed by ALL items and freight/tracking, then the order billing.
+    // Exactly one expanded row per recipient, aligned to the seven columns
+    // of the parent order. No second item/transport row or billing footer.
     Recipient(usize,usize),
-    RecipientDetails(usize,usize),
-    Billing(usize),
 }
 fn display_lines(snapshot:&HistorySnapshot,expanded:&BTreeSet<String>,
     sorting:Option<Sort>)->Vec<HistoryLine>{
@@ -202,9 +200,7 @@ fn display_lines(snapshot:&HistorySnapshot,expanded:&BTreeSet<String>,
         if !expanded.contains(field(&row["order"],"id")){continue}
         for (recipient_index,_) in rows(&row["recipients"]).iter().enumerate(){
             lines.push(HistoryLine::Recipient(index,recipient_index));
-            lines.push(HistoryLine::RecipientDetails(index,recipient_index));
         }
-        lines.push(HistoryLine::Billing(index));
     }
     lines
 }
@@ -264,81 +260,66 @@ fn paint_caption(ui:&Ui,rect:Rect,value:&str){
             rect.center().y-galley.size().y/2.0),galley,theme::MUTED
     );
 }
-/// Expanded rows have two levels: a delivery header and one dense
-/// product/logistics row. Labels use the existing compact table hierarchy;
-/// no second large container, extra indentation, or multiline row growth.
-fn paint_history_detail(
-    ui:&Ui,rect:Rect,widths:&[f32;7],
-    number:Option<usize>,category:&str,primary:&str,secondary:&str
-){
-    let cols=cells(rect.min,widths,rect.height());
-    if let Some(number)=number{
-        paint_text(ui,cols[0],&format!("배송 {}",number),true,false);
-    }
-    paint_text(ui,cols[1],category,true,false);
-    let content=Rect::from_min_max(cols[2].min,rect.right_bottom());
-    let upper=Rect::from_min_max(
-        content.min,egui::pos2(content.right(),content.center().y)
-    );
-    let lower=Rect::from_min_max(
-        egui::pos2(content.left(),content.center().y),content.max
-    );
-    paint_text(ui,upper,primary,true,false);
-    if !secondary.is_empty(){
-        paint_caption(ui,lower,secondary);
-    }
-}
 fn history_recipient_products(row:&Value,recipient_index:usize)->String{
+    // This table cell contains ONLY original item names and quantities.
     let recipient=&row["recipients"][recipient_index];
     let products=rows(&recipient["items"]).iter().map(|item|{
-        let linked=rows(&row["display"]["references"]).iter().find(|reference|
-            field(reference,"recipientId")==field(recipient,"id")
-            && field(reference,"itemId")==field(item,"id"))
-            .map(|ref_row|&ref_row["link"]);
-        let status=match linked{
-            Some(link) if field(link,"via")=="HISTORICAL"=>
-                format!(" (현재 연결: {})",field(link,"name")),
-            Some(Value::Null)|None if !field(item,"productId").is_empty()=>
-                " (상품 연결 확인 필요)".to_owned(),
-            _=>String::new()
-        };
-        // Keep the original order-line name in DETAILS. Only the main
-        // summary simplifies product/model prefixes.
-        format!("{} × {}{}",
+        format!("{} × {}",
             field(item,"name"),
             item["quantity"].as_i64().map(|n|n.to_string())
-                .unwrap_or_else(||"수량 확인".to_owned()),status)
+                .unwrap_or_else(||"수량 미확인".to_owned()))
     }).collect::<Vec<_>>();
     if products.is_empty(){"상품 정보 없음".to_owned()}
     else{products.join("  /  ")}
 }
-fn history_recipient_freight(
+fn history_recipient_product_notes(row:&Value,recipient_index:usize)->String{
+    let recipient=&row["recipients"][recipient_index];
+    let notes=rows(&recipient["items"]).iter().filter_map(|item|{
+        let linked=rows(&row["display"]["references"]).iter().find(|reference|
+            field(reference,"recipientId")==field(recipient,"id")
+            && field(reference,"itemId")==field(item,"id"))
+            .map(|ref_row|&ref_row["link"]);
+        match linked{
+            Some(link) if field(link,"via")=="HISTORICAL"=>
+                Some(format!("{}: 현재 연결 상품 {}",
+                    field(item,"name"),field(link,"name"))),
+            Some(Value::Null)|None if !field(item,"productId").is_empty()=>
+                Some(format!("{}: 상품 연결 확인 필요",field(item,"name"))),
+            _=>None
+        }
+    }).collect::<Vec<_>>();
+    notes.join("\n")
+}
+fn history_recipient_logistics(
     snapshot:&HistorySnapshot,order_id:&str,recipient_id:&str
-)->String{
-    let shipments=rows(&snapshot.state["workflow"]["shipments"])
+)->(String,String){
+    // Keep actual freight distinct from shipment tracking. Each can be
+    // independently unknown, and neither is inferred from order billing.
+    let mut freight=Vec::new();
+    let mut tracking=Vec::new();
+    for shipment in rows(&snapshot.state["workflow"]["shipments"])
         .iter().filter(|shipment|
             field(shipment,"orderId")==order_id
-            && field(shipment,"recipientId")==recipient_id);
-    let parts=shipments.map(|shipment|{
-        let tracking=shipment["tracking"].as_object().into_iter().flatten()
-            .filter_map(|(_,v)|v.as_str()).filter(|v|!v.is_empty())
-            .collect::<Vec<_>>().join(" / ");
-        let freight=shipment["actualFreight"].as_object().into_iter().flatten()
-            .filter_map(|(_,v)|v.as_i64())
-            .map(components::display_won).collect::<Vec<_>>().join(" / ");
-        format!("실제 운임 {} · 운송장 {}",
-            if freight.is_empty(){"확인 필요"}else{&freight},
-            if tracking.is_empty(){"확인 필요"}else{&tracking})
-    }).collect::<Vec<_>>();
-    if parts.is_empty(){"실제 운임 확인 필요 · 운송장 확인 필요".to_owned()}
-    else{parts.join("  /  ")}
+            && field(shipment,"recipientId")==recipient_id)
+    {
+        freight.extend(shipment["actualFreight"].as_object().into_iter()
+            .flatten().filter_map(|(_,value)|value.as_i64())
+            .map(components::display_won));
+        tracking.extend(shipment["tracking"].as_object().into_iter()
+            .flatten().filter_map(|(_,value)|value.as_str())
+            .filter(|value|!value.is_empty()).map(str::to_owned));
+    }
+    (
+        if freight.is_empty(){"운임 미확인".to_owned()}else{freight.join(" / ")},
+        if tracking.is_empty(){"운송장 미확인".to_owned()}
+        else{tracking.join(" / ")}
+    )
 }
 fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
     expanded:&BTreeSet<String>,widths:&[f32;7],pending_toggle:&mut Option<String>){
     let area=rect.intersect(ui.clip_rect());
     let order_index=match line{
-        HistoryLine::Order(i)|HistoryLine::Billing(i)
-        |HistoryLine::Recipient(i,_)|HistoryLine::RecipientDetails(i,_)=>i,
+        HistoryLine::Order(i)|HistoryLine::Recipient(i,_)=>i,
     };
     let row=&snapshot.rows[order_index];
     let id=field(&row["order"],"id");
@@ -434,53 +415,42 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
         },
         HistoryLine::Recipient(_,recipient_index)=>{
             let recipient=&row["recipients"][recipient_index];
-            let address=field(recipient,"address");
-            let title=field(recipient,"name");
-            let primary=if title.is_empty(){"수취인 미확인"}else{title};
-            let secondary=if address.is_empty(){
-                "배송 주소 확인 필요".to_owned()
-            }else{format!("배송 주소  {address}")};
-            paint_history_detail(
-                ui,rect,widths,Some(recipient_index+1),"수취인",
-                primary,&secondary
-            );
-            ui.interact(area,
-                ui.make_persistent_id(("history-recipient",id,recipient_index)),
-                Sense::hover()).on_hover_text(
-                    format!("배송 {} · 수취인 {}\n{}",
-                        recipient_index+1,primary,secondary)
-                );
-        },
-        HistoryLine::RecipientDetails(_,recipient_index)=>{
-            let recipient=&row["recipients"][recipient_index];
+            let columns=cells(rect.min,widths,rect.height());
+            // 0 reception date: empty. 4 billed total and 5 payment
+            // confirmation: empty. They are displayed only on the parent.
+            let recipient_name=field(recipient,"name");
+            let name=if recipient_name.is_empty(){"수취인 미확인"}
+                else{recipient_name};
             let products=history_recipient_products(row,recipient_index);
-            let freight=history_recipient_freight(
+            let product_notes=history_recipient_product_notes(row,recipient_index);
+            let (freight,tracking)=history_recipient_logistics(
                 snapshot,id,field(recipient,"id")
             );
-            paint_history_detail(
-                ui,rect,widths,None,"품목 / 운송",&products,&freight
-            );
-            ui.interact(area,
-                ui.make_persistent_id(("history-recipient-detail",id,recipient_index)),
+            paint_text(ui,columns[1],name,true,false);
+            paint_text(ui,columns[2],&products,true,false);
+            paint_center(ui,columns[3],&freight);
+            paint_center(ui,columns[6],&tracking);
+            let address=field(recipient,"address");
+            let address=if address.is_empty(){"배송 주소 확인 필요"}
+                else{address};
+            ui.interact(columns[1].intersect(area),
+                ui.make_persistent_id(("history-recipient",id,recipient_index)),
                 Sense::hover()).on_hover_text(
-                    format!("상품 / 수량\n{products}\n\n운임 / 운송장\n{freight}")
+                    format!("수취인: {name}\n배송 주소: {address}")
                 );
-        },
-        HistoryLine::Billing(_)=>{
-            let billing=&row["billing"];
-            let primary=format!(
-                "상품대금 {}  ·  고객 청구 배송비 {}  ·  부가세 {}",
-                won(&billing["subtotal"]),
-                won(&billing["shipping"]),won(&billing["vat"])
-            );
-            let total=format!("청구 합계  {}",won(&row["total"]));
-            paint_history_detail(
-                ui,rect,widths,None,"청구 요약",&primary,&total
-            );
-            ui.interact(area,ui.make_persistent_id(("history-billing",id)),
-                Sense::hover()).on_hover_text(
-                    format!("{primary}\n{total}")
-                );
+            ui.interact(columns[2].intersect(area),
+                ui.make_persistent_id(("history-recipient-products",id,recipient_index)),
+                Sense::hover()).on_hover_text(if product_notes.is_empty(){
+                    products.clone()
+                }else{
+                    format!("{products}\n\n{product_notes}")
+                });
+            ui.interact(columns[3].intersect(area),
+                ui.make_persistent_id(("history-recipient-freight",id,recipient_index)),
+                Sense::hover()).on_hover_text(format!("실제 운임: {freight}"));
+            ui.interact(columns[6].intersect(area),
+                ui.make_persistent_id(("history-recipient-tracking",id,recipient_index)),
+                Sense::hover()).on_hover_text(format!("운송장 번호: {tracking}"));
         },
     }
 }
@@ -1050,9 +1020,7 @@ impl OrderHistoryManager {
                                         if line_index%2==0{theme::PANEL}
                                         else{theme::TABLE_ROW_ALT_BG}
                                     },
-                                    HistoryLine::Recipient(_,_)|HistoryLine::Billing(_)=>
-                                        theme::WORKFLOW_SELECTED_BG,
-                                    HistoryLine::RecipientDetails(_,_)=>theme::TABLE_ROW_ALT_BG,
+                                    HistoryLine::Recipient(_,_)=>theme::WORKFLOW_SELECTED_BG,
                                 };
                                 row_ui.painter().rect_filled(row_rect,0.0,background);
                                 row_ui.painter().line_segment(
@@ -1064,7 +1032,7 @@ impl OrderHistoryManager {
                                 }
                                 paint_column_dividers(
                                     row_ui,row_rect,&widths,
-                                    !matches!(line,HistoryLine::Order(_)),
+                                    false,
                                     row_rect
                                 );
                             });
