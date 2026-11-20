@@ -380,7 +380,7 @@ mod tests {
         assert!(!ui.can_apply());
         ui.review=Some(Arc::new(serde_json::json!({"rows":[
             {"status":"UPDATE"},{"status":"ERROR"}
-        ]}));
+        ]})));
         assert!(!ui.can_apply());
         ui.review=Some(Arc::new(serde_json::json!({"rows":[{"status":"UNCHANGED"}]})));
         assert!(!ui.can_apply());
