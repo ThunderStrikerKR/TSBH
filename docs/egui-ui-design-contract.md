@@ -463,3 +463,10 @@
 - **저장 도메인:** 별칭 변경은 `BANDO_EGUI_ENABLE_PRODUCT_WRITE=1` + 명시적 운영 DB/실행 helper에서만 가능하며, 격리된 egui PreviewStore/JSON/외부 DB에 쓰기 우회하지 않는다. 중복된 동의 버튼이나 새로운 별칭 삭제 동작을 추가하지 않는다. 동시 작업의 오래된 revision 저장은 거부하고 로컬 입력은 보존한다.
 - **미저장 전환:** 기존 별칭 선택·상품관리 하위 탭·전역 메뉴 이동에서 저장/버리기/취소를 구분한다. 저장 중 입력과 중복 저장을 방지하며, 실패 시 현재 별칭·범위·연결 상품 입력을 덮어쓰지 않는다. 성공 시 수정 폼은 초기화하고 적용 범위는 유지한다.
 - **검증:** React+실제 CSS+native Rust 정적 대조, alias Rust 단위 테스트, 원본 SQLite init/`save_alias`/교정/리비전 충돌/재연결 좁은 통합 테스트, Tauri/egui 컴파일을 개별 근거로 기록한다. Windows 화면은 사용자 결정에 따라 실행하지 않는다. 모델군/카테고리/브랜드/주문 화면에 대한 전역 수정은 범위 밖이다.
+
+
+### 상품관리 브랜드 관리: React RegistrySettings → Rust/egui
+
+- **기능·CSS 기준:** `src/ProductManager.tsx`는 `RegistrySettings`를 브랜드 관리 탭에서 `categories={false}`로 호출한다. `src/Classification.tsx::RegistrySettings`의 공식 브랜드명·한글 표기·검색 별칭(쉼표)·확인 근거 URL, 브랜드 저장, 등록 브랜드 목록과 '정정', 미저장 변경 시 선택/페이지 이탈 보호를 그대로 유지한다. 실제 적용 `src/styles/tauri-stage2-products.css`의 `.registry-brand-manager`, `.registry-edit-form` 자동 래핑 필드·우측 작업 버튼, `.registry-list`, `.registry-row`는 공통 egui 섹션·입력·버튼·서체 토큰으로 표현한다. 레거시 브랜드 목록 자동 병합·임의 삭제·추가 확인 단계는 만들지 않는다.
+- **Rust 단일 소유·저장:** `src-tauri/src/business_core/catalog_clients/brands.rs`의 `upsert_brand`/`validate`가 별칭 중복 정리·다른 브랜드와의 중복·HTTPS 증빙 근거 검증을 담당한다. `egui-app/src/brand_manager.rs`는 네 필드의 명시적 입력·정정/보존·이탈 확인과 결과 표시만 소유한다. `src-tauri/src/egui_product_bridge.rs`의 `upsert_brand` 액션이 고유 ID 생성 후 기존 Rust `catalog_clients` 명령 및 운영 SQLite `write_snapshot` 전역 리비전 CAS를 재사용한다. 상품·주문·별칭·모델군 데이터를 자동 편집하지 않으며, 저장 실패 시 입력값을 보존한다.
+- **범위·검증:** `egui-app/src/product_manager.rs`의 다섯 번째 브랜드 관리 탭만 활성화. 기존 수정 완료 탭·전체 상품 가격표·카카오톡·운임은 미변경. 좁은 `brands::tests` 및 격리 SQLite 등록/동일 ID 정정/유효성 오류/충돌/리비전 거부/재연결 테스트, Tauri·egui 컴파일로 검증하고 Windows 실화면은 사용자 결정에 따라 생략한다.
