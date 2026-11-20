@@ -18,6 +18,7 @@ mod client_directory;
 mod client_master;
 mod client_manager;
 mod category_manager;
+mod alias_manager;
 mod model_group_manager;
 mod product_manager;
 mod client_chooser;
