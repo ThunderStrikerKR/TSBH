@@ -390,16 +390,16 @@ impl SettingsView{
                 "현재 탭에서 수정한 설정이 있습니다. 변경사항을 저장할까요?"
             ));
             ui.add_space(theme::SPACE_12);
-            ui.horizontal(|actions|{
-                if theme::action(actions,"저장 안 함",ButtonRole::Standard,
-                    !self.busy()).clicked(){
-                    self.draft=settings(&self.source).clone();
-                    if let Some(next)=self.requested_tab.take(){self.tab=next;}
-                }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|actions|{
                 if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
                     !self.busy() && !self.read_only()).clicked(){
                     self.switch_after_save=true;
                     self.save(gateway.clone(),ctx.clone());
+                }
+                if theme::action(actions,"저장 안 함",ButtonRole::Standard,
+                    !self.busy()).clicked(){
+                    self.draft=settings(&self.source).clone();
+                    if let Some(next)=self.requested_tab.take(){self.tab=next;}
                 }
             });
         });
@@ -876,7 +876,7 @@ impl SettingsView{
                     "입력 중인 설정을 닫고 저장된 설정을 다시 불러올까요?"
                 ));
                 ui.add_space(theme::SPACE_12);
-                ui.horizontal(|actions|{
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|actions|{
                     if theme::action(
                         actions,"불러오기",ButtonRole::Primary,true
                     ).clicked(){
@@ -970,7 +970,7 @@ impl SettingsView{
                     "선택한 시점의 전체 데이터베이스로 복원할까요? 현재 데이터는 먼저 안전 백업으로 보관합니다. 주문과 감사 기록도 선택한 시점으로 되돌아갑니다."
                 ));
                 ui.add_space(theme::SPACE_12);
-                ui.horizontal(|actions|{
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|actions|{
                     if theme::action(actions,"이 백업으로 복구",ButtonRole::Primary,
                         self.data_available()&&!self.read_only()&&!self.busy()).clicked(){
                         self.restore_target=None;
