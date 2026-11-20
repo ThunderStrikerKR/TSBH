@@ -325,7 +325,6 @@ impl ManualWorkspace {
         let mut submit_direct=false;
         let mut lookup:Option<(String,String)>=None;
         components::modal_window("수동 분류","bando-native-manual-classification",work_area)
-            .open(&mut open)
             
             .default_width((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
                 .min(theme::MANUAL_DIALOG_MAX_WIDTH).max(0.0))
@@ -333,6 +332,12 @@ impl ManualWorkspace {
                 .max(0.0))
             .constrain_to(work_area)
             .show(ctx,|ui|{
+                if components::modal_header(
+                    ui,"수동 분류","취소",
+                    !self.busy()&&self.product_search.is_none()
+                        &&self.remove_recipient_pending.is_none()
+                        &&!self.reset_pending&&!self.confirm_discard
+                ){open=false;}
                 // Prompts and asynchronous native mutations own input while
                 // open. The background worksheet remains visible but inert.
                 ui.set_enabled(!self.busy() &&
@@ -627,8 +632,6 @@ impl ManualWorkspace {
                         |actions|{
                             if theme::action(actions,"초안에 적용",ButtonRole::Primary,!busy)
                                 .clicked(){apply=true;}
-                            if theme::action(actions,"닫기",ButtonRole::Quiet,!busy)
-                                .clicked(){discard=true;}
                         }
                     );
                 });
@@ -716,13 +719,13 @@ impl ManualWorkspace {
             components::decision_window("배송 건수 줄이기","manual-shipment-removal",work_area)
                 .constrain_to(work_area)
                 .show(ctx,|ui|{
+                    cancel=components::modal_header(
+                        ui,"배송 건수 줄이기","취소",true
+                    );
                     ui.label("마지막 배송 건의 입력값과 원문 배정을 제거할까요?");
                     ui.horizontal(|ui|{
                         if theme::action(ui,"확인",ButtonRole::Danger,true).clicked(){
                             confirm=true;
-                        }
-                        if theme::action(ui,"취소",ButtonRole::Quiet,true).clicked(){
-                            cancel=true;
                         }
                     });
                 });
@@ -748,12 +751,13 @@ impl ManualWorkspace {
             components::decision_window("전체 초기화","manual-reset-confirm",work_area)
                 .constrain_to(work_area)
                 .show(ctx,|ui|{
-                    ui.label("구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.");
-                    let (closed,approved)=components::modal_actions(
-                        ui,"취소","확인",ButtonRole::Primary,true
+                    cancel=components::modal_header(
+                        ui,"전체 초기화","취소",true
                     );
-                    cancel=closed;
-                    confirm=approved;
+                    ui.label("구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.");
+                    confirm=theme::action(
+                        ui,"확인",ButtonRole::Primary,true
+                    ).clicked();
                 });
             if cancel{self.reset_pending=false;}
             if confirm {
@@ -787,15 +791,14 @@ impl ManualWorkspace {
             let mut confirm=true;
             components::decision_window("수동 분류 변경 취소","manual-discard-prompt",work_area)
                 .constrain_to(work_area)
-                .open(&mut confirm)
                 .show(ctx,|ui|{
+                    if components::modal_header(
+                        ui,"수동 분류 변경 취소","취소",true
+                    ){confirm=false;}
                     ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
                     ui.horizontal(|ui|{
                         if theme::action(ui,"변경 취소",ButtonRole::Standard,true).clicked(){
                             discard_confirmed=true;
-                        }
-                        if theme::action(ui,"계속 편집",ButtonRole::Quiet,true).clicked(){
-                            self.confirm_discard=false;
                         }
                     });
                 });
