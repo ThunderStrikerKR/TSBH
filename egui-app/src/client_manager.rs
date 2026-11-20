@@ -533,16 +533,17 @@ impl ClientManager {
         let exists=self.clients().iter()
             .any(|row|field(row,"id")==field(&draft,"id"));
         let title=if exists {"거래처 상세 관리"}else{"거래처 등록"};
-        let mut opened=true;
         let mut save=false;
         let mut delete=false;
         let mut close=false;
         let editable=self.editable();
         let busy=self.saving.is_some();
         components::modal_window(title,"native-client-manager-editor",work_area)
-            .open(&mut opened)
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
             .show(ctx,|ui|{
+                if components::modal_header(ui,title,"취소",!busy){
+                    close=true;
+                }
                 let body_height=theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT
                     .min((work_area.height()-theme::SPACE_24*4.0).max(100.0));
                 egui::ScrollArea::vertical()
@@ -568,8 +569,6 @@ impl ClientManager {
                             editable && !busy && (!exists || dirty)).clicked(){
                             save=true;
                         }
-                        if theme::action(buttons,"닫기",ButtonRole::Quiet,!busy)
-                            .clicked(){close=true;}
                     });
                 });
             });
@@ -584,16 +583,17 @@ impl ClientManager {
         self.draft=Some(draft);
         if save {self.mutate(Arc::clone(&gateway),ctx,"upsert_client");}
         if delete {self.confirm_delete=true;}
-        if close || !opened {self.request_close();}
+        if close {self.request_close();}
         if self.confirm_delete {
             components::modal_backdrop(ctx,"client-manager-delete-backdrop",true);
             components::decision_window(
                 "거래처 삭제","client-manager-delete-confirm",work_area
             ).show(ctx,|ui|{
+                let cancel=components::modal_header(ui,"거래처 삭제","취소",true);
                 ui.label("거래처를 삭제할까요? 기존 주문의 송하인과 금액은 그대로 보존합니다.");
-                let (cancel,approve)=components::modal_actions(
-                    ui,"취소","거래처 삭제",ButtonRole::Danger,true
-                );
+                let approve=theme::action(
+                    ui,"거래처 삭제",ButtonRole::Danger,true
+                ).clicked();
                 if cancel {self.confirm_delete=false;}
                 if approve {
                     self.confirm_delete=false;
@@ -606,10 +606,11 @@ impl ClientManager {
             components::decision_window(
                 "변경사항 확인","client-manager-discard-confirm",work_area
             ).show(ctx,|ui|{
+                let cancel=components::modal_header(ui,"변경사항 확인","취소",true);
                 ui.label("거래처의 수정 내용을 버릴까요?");
-                let (cancel,approve)=components::modal_actions(
-                    ui,"계속 편집","변경 취소",ButtonRole::Danger,true
-                );
+                let approve=theme::action(
+                    ui,"변경 취소",ButtonRole::Danger,true
+                ).clicked();
                 if cancel {self.confirm_discard=false;}
                 if approve {
                     self.confirm_discard=false;self.draft=None;self.original=None;
