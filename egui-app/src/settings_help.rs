@@ -5,6 +5,12 @@ use crate::{theme,typography};
 use eframe::egui::{self,Align,Align2,Color32,Frame,Pos2,Rect,Sense,Stroke,Ui,Vec2};
 use std::time::{Duration,Instant};
 
+/// Temporarily hide every circular '?' contextual-help control across the
+/// native app, including Settings and all management/editor screens.
+/// Help contents and call sites are retained for a later full audit.
+/// Set to true only after the help review is explicitly approved.
+pub const HELP_ICONS_ENABLED: bool = false;
+
 #[derive(Clone,Default)]
 struct TooltipState {
     entered:Option<Instant>,
@@ -297,6 +303,10 @@ pub fn heading(ui:&mut Ui,title:&str){
 /// Mouse-only clickable ? help, using the same delayed, pinnable native
 /// tooltip already used throughout Settings. The caller owns title layout.
 pub fn icon(heading:&mut Ui,title:&str){
+    // Do not allocate the 22pt circle, click target, hover timer, or popup.
+    // Keeping this guard before the first UI operation also removes all
+    // residual whitespace beside headings while help is suspended.
+    if !HELP_ICONS_ENABLED{return;}
     let Some(help)=info(title) else{return;};
         let (rect,response)=heading.allocate_exact_size(
             Vec2::splat(theme::SETTINGS_HELP_ICON_SIZE),Sense::click()
