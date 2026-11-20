@@ -9,7 +9,10 @@ use crate::typography;
 
 pub const CANVAS: Color32 = Color32::from_rgb(16, 16, 16);
 pub const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
-pub const PANEL: Color32 = Color32::from_rgb(32, 32, 32);
+// Level-2 / primary section surface. Darker than INPUT (#292929) so
+// repeated order cards remain distinguishable inside the workflow pane.
+// This shared token intentionally updates every egui panel using PANEL.
+pub const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
 pub const INPUT: Color32 = Color32::from_rgb(41, 41, 41);
 pub const RAISED: Color32 = Color32::from_rgb(48, 48, 48);
 pub const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
@@ -21,7 +24,7 @@ pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
 // Workflow cards: original React workflow.css card, not generic navigation tiles.
 // The selected stroke color follows the shared selection role.
-// Individual orders are nested cards on the #202020 reception surface.
+// Individual orders are nested INPUT cards on the shared PANEL surface.
 pub const WORKFLOW_CARD_BG: Color32 = INPUT;
 pub const WORKFLOW_SELECTED_BG: Color32 = Color32::from_rgb(36, 36, 36);
 pub const WORKFLOW_CARD_BORDER: Color32 = Color32::from_rgb(83, 83, 83);
