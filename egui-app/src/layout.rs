@@ -202,7 +202,21 @@ impl LayoutState {
             DETAIL_MIN_HEIGHTS[0],
             space - DETAIL_MIN_HEIGHTS[1] - DETAIL_MIN_HEIGHTS[2],
         );
-        let second_end = (space * self.detail_second_ratio).clamp(
+        // Both saved default ratios are 0.5, but the source column has
+        // ONE horizontal gutter and this column has TWO. Computing both
+        // from their interior heights offsets the visible lower rule by
+        // SPLITTER / 2 (3pt). Align the two default rule centerlines in
+        // actual pane coordinates, without coupling independently dragged
+        // separators or modifying saved custom ratios.
+        let default_shared_axis =
+            (self.source_ratio - VERTICAL_DEFAULT).abs() < 0.00001 &&
+            (self.detail_second_ratio - DETAIL_SECOND_RATIO).abs() < 0.00001;
+        let requested_second_end = if default_shared_axis {
+            self.vertical_heights(available).0 - SPLITTER
+        } else {
+            space * self.detail_second_ratio
+        };
+        let second_end = requested_second_end.clamp(
             first + DETAIL_MIN_HEIGHTS[1],
             space - DETAIL_MIN_HEIGHTS[2],
         );
@@ -294,6 +308,32 @@ mod geometry_contract {
         ));
         assert_eq!(custom.ratios, [350.0, 440.0, 500.0, 380.0]);
         assert!((custom.source_ratio - 0.65).abs() < 0.00001);
+    }
+
+    #[test]
+    fn default_adjacent_horizontal_rules_share_the_same_axis() {
+        for height in [700.0, 800.0, 1000.0, 1200.0] {
+            let layout = LayoutState::default();
+            let source_axis = layout.vertical_heights(height).0 + SPLITTER / 2.0;
+            let [review, recipient, _] = layout.detail_heights(height);
+            let items_axis = review + SPLITTER + recipient + SPLITTER / 2.0;
+            assert!(
+                (source_axis - items_axis).abs() < 0.01,
+                "height={height}: source axis={source_axis}, items axis={items_axis}",
+            );
+        }
+    }
+
+    #[test]
+    fn custom_adjacent_split_keeps_its_independent_position() {
+        let mut layout = LayoutState::default();
+        layout.detail_second_ratio = 0.60;
+        let height = 1000.0;
+        let [review, recipient, _] = layout.detail_heights(height);
+        let items_axis = review + SPLITTER + recipient + SPLITTER / 2.0;
+        let expected_axis = (height - 2.0 * SPLITTER) * 0.60
+            + 1.5 * SPLITTER;
+        assert!((items_axis - expected_axis).abs() < 0.01);
     }
 
     #[test]
