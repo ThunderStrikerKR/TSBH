@@ -1137,21 +1137,21 @@ impl OrderHistoryManager {
                     .max_height((work_area.height()-150.0).max(180.0))
                     .show(ui,|body|{
                         body.label(typography::section_heading("접수 정보"));
-                        body.label(typography::body(format!(
+                        body.label(typography::body(&format!(
                             "거래처: {}",order_client(row)
                         )));
                         let reception=field(order,"createdAt");
-                        body.label(typography::body(format!(
+                        body.label(typography::body(&format!(
                             "접수일시: {}",memo_last_updated_label(reception)
                         )));
-                        body.label(typography::body(format!(
+                        body.label(typography::body(&format!(
                             "주문 확인일시: {}",
                             memo_last_updated_label(field(order,"confirmedAt"))
                         )));
                         body.add_space(theme::SPACE_8);
                         body.label(typography::section_heading("발주 원문"));
                         let raw=field(order,"raw");
-                        body.label(typography::body(if raw.is_empty(){
+                        body.label(typography::body(&if raw.is_empty(){
                             "보존된 발주 원문이 없습니다.".to_owned()
                         }else{raw.to_owned()}));
                         body.separator();
@@ -1164,7 +1164,7 @@ impl OrderHistoryManager {
                         }
                         for payment in &payments {
                             let account=&payment["account"];
-                            body.label(typography::body(format!(
+                            body.label(typography::body(&format!(
                                 "입금처리일시: {} · 실제 입금일시: {}",
                                 memo_last_updated_label(field(payment,"recordedAt")),
                                 memo_last_updated_label(field(payment,"paidAt"))
@@ -1172,7 +1172,7 @@ impl OrderHistoryManager {
                             let account_text=format!("{} {} · 예금주 {}",
                                 field(account,"bank"),field(account,"number"),
                                 field(account,"holder"));
-                            body.label(typography::body(format!(
+                            body.label(typography::body(&format!(
                                 "입금계좌번호: {}",if field(account,"number").is_empty(){
                                     "기록 없음".to_owned()
                                 }else{account_text}
@@ -1191,7 +1191,7 @@ impl OrderHistoryManager {
                             ("품목 금액","subtotal"),("운임","shipping"),
                             ("부가세","vat"),("청구 합계","total")
                         ]{
-                            body.label(typography::body(format!(
+                            body.label(typography::body(&format!(
                                 "{name}: {}",won(&bill[key])
                             )));
                         }
@@ -1215,15 +1215,15 @@ impl OrderHistoryManager {
                                 .unwrap_or_else(||"상품 정보 없음".to_owned());
                             let (freight,tracking)=history_shipment_logistics(Some(ship));
                             body.label(typography::subsection_heading(recipient_name));
-                            body.label(typography::body(products));
-                            body.label(typography::body(format!(
+                            body.label(typography::body(&products));
+                            body.label(typography::body(&format!(
                                 "운임: {freight} · 운송장번호: {tracking}"
                             )));
                             let memo=field(ship,"managementMemo");
-                            body.label(typography::body(format!(
+                            body.label(typography::body(&format!(
                                 "관리 메모: {}",if memo.is_empty(){"없음"}else{memo}
                             )));
-                            body.label(typography::caption(format!(
+                            body.label(typography::caption(&format!(
                                 "메모 마지막 갱신: {}",
                                 memo_last_updated_label(field(ship,"managementMemoUpdatedAt"))
                             )));
@@ -1234,7 +1234,7 @@ impl OrderHistoryManager {
                         let mut has_changes=false;
                         for change in rows(&order["rawHistory"]){
                             has_changes=true;
-                            body.label(typography::body(format!(
+                            body.label(typography::body(&format!(
                                 "{} · {} · 발주 원문 변경",
                                 memo_last_updated_label(field(change,"at")),
                                 field(change,"actor")
@@ -1242,7 +1242,7 @@ impl OrderHistoryManager {
                         }
                         for event in events {
                             has_changes=true;
-                            body.label(typography::body(format!(
+                            body.label(typography::body(&format!(
                                 "{} · {} · {}",
                                 memo_last_updated_label(field(event,"at")),
                                 field(event,"actor"),field(event,"action")
