@@ -1264,23 +1264,27 @@ impl FreightManager {
                 }else{
                     format!("{}개 상품의 배송 그룹을 변경합니다.",assignments.len())
                 }.as_str()));
-                if !assignments.is_empty() &&
-                    theme::action(actions,"미저장 변경 초기화",
-                        theme::ButtonRole::Standard,enabled).clicked(){
-                    pending.clear();
-                }
                 let save_label=if assignments.is_empty(){
                     "그룹 지정 저장".to_owned()
                 }else{
                     format!("그룹 지정 저장 / {}개",assignments.len())
                 };
-                if theme::action(actions,&save_label,
-                    theme::ButtonRole::Primary,enabled&&!assignments.is_empty()
-                ).clicked(){
-                    *action=Some(("assign_products".into(),json!({
-                        "assignments":assignments
-                    })));
-                }
+                actions.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),|buttons|{
+                        if theme::action(buttons,&save_label,
+                            theme::ButtonRole::Primary,enabled&&!assignments.is_empty()
+                        ).clicked(){
+                            *action=Some(("assign_products".into(),json!({
+                                "assignments":assignments
+                            })));
+                        }
+                        if !assignments.is_empty() &&
+                            theme::action(buttons,"미저장 변경 초기화",
+                                theme::ButtonRole::Standard,enabled).clicked(){
+                            pending.clear();
+                        }
+                    }
+                );
             });
         });
     }
