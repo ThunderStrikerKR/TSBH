@@ -3435,7 +3435,8 @@
       "menuActivation": "b55912e50803734c764f433dcdbe45e6c8a1f54a",
       "globalNavigationGuard": "b7b16bb087b783899d0c13c5f6c563f361e0e834",
       "twoLineList": "8665e98a044a99979e09a5377ecfe7e0a8daa562",
-      "latestUiDocument": "e2411651ed3aeb90f83f35aefcccb963adc52108"
+      "latestUiDocument": "e2411651ed3aeb90f83f35aefcccb963adc52108",
+    "provisionalNaturalSort": "8808a846b9c70de524b2f5e8b87742ab1e8330a1"
     },
     "gates": {
       "patch": "COMMITTED: main; new native 20-template and per-product editors, settings whitelist, Rust validation, CAS and backup paths",
