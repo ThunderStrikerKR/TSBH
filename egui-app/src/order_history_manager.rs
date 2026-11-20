@@ -3,11 +3,12 @@
 //! The native egui view owns only date/search presentation, sort, expansion,
 //! clipboard copy and virtualized fixed-height rows.
 use crate::{
-    components,
+    components::{self, calendar_dates, calendar_month_start as month_start,
+        date_calendar, shift_calendar_month},
     gateway::{BandoGateway, ReadOperation},
     settings_help, theme, typography,
 };
-use chrono::{DateTime, Datelike, Duration as Days, FixedOffset, Months, NaiveDate, Utc};
+use chrono::{DateTime, Duration as Days, FixedOffset, NaiveDate, Utc};
 use eframe::egui::{self, Align, Align2, Pos2, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use serde_json::{json, Value};
 use std::{
@@ -50,102 +51,6 @@ fn move_date(value:&str,step:i64)->String{
         .and_then(|date|date.checked_add_signed(Days::days(step)))
         .map(|date|date.format("%Y-%m-%d").to_string())
         .unwrap_or_else(||value.to_owned())
-}
-// This calendar belongs ONLY to OrderHistory's existing reception-date field.
-// It is anchored to the field's adjacent "달력" button; never a global
-// modal, a separate management screen, or a replacement business filter.
-fn month_start(date:NaiveDate)->NaiveDate{
-    NaiveDate::from_ymd_opt(date.year(),date.month(),1).unwrap_or(date)
-}
-fn shift_calendar_month(month:NaiveDate,offset:i32)->NaiveDate{
-    let first=month_start(month);
-    if offset>=0{
-        first.checked_add_months(Months::new(offset as u32))
-    }else{
-        first.checked_sub_months(Months::new(offset.unsigned_abs()))
-    }.unwrap_or(first)
-}
-fn calendar_dates(month:NaiveDate)->Vec<Option<NaiveDate>>{
-    let first=month_start(month);
-    let leading=first.weekday().num_days_from_monday() as usize;
-    let next=shift_calendar_month(first,1);
-    let days=next.pred_opt().map_or(31,|end|end.day() as usize);
-    let visible=((leading+days+6)/7)*7;
-    (0..visible).map(|index|{
-        (index>=leading && index<leading+days)
-            .then(||first.checked_add_signed(Days::days((index-leading) as i64)))
-            .flatten()
-    }).collect()
-}
-fn date_calendar(trigger:&egui::Response,month:&mut NaiveDate,selected:&str)
-    ->Option<NaiveDate>{
-    let mut chosen=None;
-    let selected_date=NaiveDate::parse_from_str(selected,"%Y-%m-%d").ok();
-    egui::Popup::menu(trigger)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|calendar|{
-            // Popup is attached below the date-field button and auto-flips
-            // near the screen edge. Navigation stays inside this popover.
-            calendar.spacing_mut().item_spacing=egui::vec2(
-                theme::SPACE_4,theme::SPACE_4
-            );
-            calendar.horizontal(|nav|{
-                if theme::action(nav,"«",theme::ButtonRole::Standard,true)
-                    .on_hover_text("이전 연도").clicked(){
-                    *month=shift_calendar_month(*month,-12);
-                }
-                if theme::action(nav,"‹",theme::ButtonRole::Standard,true)
-                    .on_hover_text("이전 달").clicked(){
-                    *month=shift_calendar_month(*month,-1);
-                }
-                nav.label(typography::field_label(&format!(
-                    "{}년 {}월",month.year(),month.month()
-                )));
-                if theme::action(nav,"›",theme::ButtonRole::Standard,true)
-                    .on_hover_text("다음 달").clicked(){
-                    *month=shift_calendar_month(*month,1);
-                }
-                if theme::action(nav,"»",theme::ButtonRole::Standard,true)
-                    .on_hover_text("다음 연도").clicked(){
-                    *month=shift_calendar_month(*month,12);
-                }
-            });
-            calendar.add_space(theme::SPACE_8);
-            let width=theme::ACTION_STANDARD_HEIGHT;
-            let dates=calendar_dates(*month);
-            egui::Grid::new("order-history-reception-date-calendar")
-                .num_columns(7)
-                .spacing(egui::vec2(theme::SPACE_4,theme::SPACE_4))
-                .show(calendar,|grid|{
-                    for day in ["월","화","수","목","금","토","일"]{
-                        grid.add_sized(
-                            egui::vec2(width,width),
-                            egui::Label::new(typography::caption(day))
-                                .halign(Align::Center),
-                        );
-                    }
-                    grid.end_row();
-                    for (index,day) in dates.iter().enumerate(){
-                        if let Some(date)=day{
-                            let mut button=egui::Button::new(typography::body(
-                                &date.day().to_string()
-                            ));
-                            if selected_date==Some(*date){
-                                button=button.fill(theme::WORKFLOW_SELECTED_BG)
-                                    .stroke(Stroke::new(1.0,theme::SELECTION));
-                            }
-                            if grid.add_sized(egui::vec2(width,width),button).clicked(){
-                                chosen=Some(*date);
-                                grid.close();
-                            }
-                        }else{
-                            grid.allocate_space(egui::vec2(width,width));
-                        }
-                        if index%7==6{grid.end_row();}
-                    }
-                });
-        });
-    chosen
 }
 fn model_label(raw:&str)->String{
     let name=raw.trim_start_matches("[가상]").trim_start();
@@ -555,8 +460,9 @@ impl OrderHistoryManager {
                             changed=true;
                         }
                     }
-                    // Put the calendar exclusively beside the existing date
-                    // input. It is NOT added to other menus or shared widgets.
+                    // Keep Order History's calendar beside its reception-date
+                    // input. The same approved picker is now reusable by
+                    // the separately requested Daily Settlement date field.
                     let trigger=theme::action(
                         tools,"달력",theme::ButtonRole::Standard,true
                     ).on_hover_text("접수 날짜를 달력에서 선택");
@@ -567,7 +473,8 @@ impl OrderHistoryManager {
                         self.calendar_month=month_start(open);
                     }
                     if let Some(day)=date_calendar(
-                        &trigger,&mut self.calendar_month,&self.date
+                        &trigger,&mut self.calendar_month,&self.date,
+                        "order-history-reception-date-calendar"
                     ){
                         self.date=day.format("%Y-%m-%d").to_string();
                         self.date_input=self.date.clone();
