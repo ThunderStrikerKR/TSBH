@@ -137,6 +137,18 @@ struct HistorySnapshot {
     rows:Vec<Value>,
 }
 
+struct MemoEditor {
+    shipment_id:String,
+    order_id:String,
+    expected_revision:u64,
+    original:String,
+    draft:String,
+}
+struct MemoSaveJob {
+    shipment_id:String,
+    receiver:Receiver<Result<Value,String>>,
+}
+
 #[derive(Clone,Copy,PartialEq,Eq)]
 enum SortColumn { Date, Client, Shipment, Status, Total, PaymentConfirmation }
 #[derive(Clone,Copy,PartialEq,Eq)]
@@ -456,7 +468,8 @@ fn history_shipment_logistics(shipment:Option<&Value>)->(String,String){
     )
 }
 fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
-    expanded:&BTreeSet<String>,widths:&[f32;7],pending_toggle:&mut Option<String>){
+    expanded:&BTreeSet<String>,widths:&[f32;7],pending_toggle:&mut Option<String>,
+    pending_memo:&mut Option<MemoEditor>){
     let area=rect.intersect(ui.clip_rect());
     let order_index=match line{
         HistoryLine::Order(i)|HistoryLine::Recipient(i,_,_)=>i,
@@ -629,6 +642,45 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             ui.interact(columns[3].intersect(area),
                 ui.make_persistent_id(("history-recipient-tracking",id,recipient_index,shipment_index)),
                 Sense::hover()).on_hover_text(format!("운송장 번호: {tracking}"));
+            // Actions live OUTSIDE the compact shipment card. Both actions
+            // target this one shipment; the order-level copy remains separate.
+            let block=history_detail_block_rect(rect,widths);
+            let actions_rect=Rect::from_min_max(
+                egui::pos2(block.right()+theme::SPACE_8,
+                    rect.center().y-theme::ACTION_STANDARD_HEIGHT/2.0),
+                egui::pos2(rect.right()-theme::SPACE_4,
+                    rect.center().y+theme::ACTION_STANDARD_HEIGHT/2.0)
+            );
+            let memo_text=shipment.map(|s|field(s,"managementMemo")).unwrap_or("");
+            ui.scope_builder(UiBuilder::new()
+                .id_salt(("history-shipment-actions",id,recipient_index,shipment_index))
+                .max_rect(actions_rect)
+                .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
+                    actions.set_clip_rect(actions_rect.intersect(area));
+                    actions.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    let memo_button=theme::action(actions,"관리 메모",
+                        theme::ButtonRole::TableSecondary,shipment.is_some());
+                    if memo_button.on_hover_text(if memo_text.is_empty(){
+                        "이 발송 건의 관리 메모를 작성하거나 수정합니다."
+                    }else{memo_text}).clicked(){
+                        if let Some(ship)=shipment{
+                            *pending_memo=Some(MemoEditor{
+                                shipment_id:field(ship,"id").to_owned(),
+                                order_id:id.to_owned(),
+                                expected_revision:snapshot.state["revision"].as_u64()
+                                    .unwrap_or(0),
+                                original:memo_text.to_owned(),
+                                draft:memo_text.to_owned(),
+                            });
+                        }
+                    }
+                    if theme::action(actions,"운송장 복사",
+                        theme::ButtonRole::TableSecondary,
+                        shipment.is_some() && tracking!="운송장 미확인"
+                    ).clicked(){
+                        actions.ctx().copy_text(tracking.clone());
+                    }
+                });
         },
     }
 }
@@ -1133,6 +1185,7 @@ impl OrderHistoryManager {
             );
             let mut header_origin=None;
             let mut pending_toggle=None;
+            let mut pending_memo=None;
             let snapshot=self.snapshot.as_ref();
             let lines=snapshot.map(|data|display_lines(data,&self.expanded,self.sort))
                 .unwrap_or_default();
@@ -1246,7 +1299,8 @@ impl OrderHistoryManager {
                                         }
                                         if let Some(snapshot)=snapshot {
                                             draw_line(row_ui,row_rect,line,snapshot,
-                                                &self.expanded,&widths,&mut pending_toggle);
+                                                &self.expanded,&widths,&mut pending_toggle,
+                                                &mut pending_memo);
                                         }
                                         if matches!(line,HistoryLine::Order(_)) {
                                             paint_column_dividers(
@@ -1351,6 +1405,10 @@ impl OrderHistoryManager {
                 if !self.expanded.insert(order_id.clone()){
                     self.expanded.remove(&order_id);
                 }
+            }
+            if let Some(editor)=pending_memo {
+                self.memo_editor=Some(editor);
+                self.memo_error=None;
             }
         });
     }
