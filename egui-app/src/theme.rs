@@ -275,6 +275,13 @@ pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 = 942.0;
 pub const FREIGHT_RATE_COL_WIDTHS: [f32;6] =
     [195.0,148.0,195.0,105.0,222.0,360.0];
 pub const FREIGHT_RATE_TABLE_MIN_WIDTH:f32 = 1265.0;
+// Combination and archived group tables have independent information widths.
+// Neither inherits the product-assignment 942pt geometry or the rate-edit
+// action column; unused space goes first to long identifiers and fee strings.
+pub const FREIGHT_COMBINATION_HISTORY_COL_WIDTHS:[f32;6] =
+    [350.0,285.0,130.0,130.0,124.0,170.0];
+pub const FREIGHT_GROUP_HISTORY_COL_WIDTHS:[f32;6] =
+    [190.0,142.0,400.0,150.0,260.0,115.0];
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
 // The three-column dealer list has its own content minimum (30/38/32).
 // Do not force freight/product's 1320pt table width onto the client list.
