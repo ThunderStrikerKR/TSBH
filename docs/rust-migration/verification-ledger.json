@@ -2974,7 +2974,7 @@
     {
       "id": "LIVE-20261120-EGUI-BRAND-MANAGEMENT",
       "scope": "상품관리 브랜드 관리 React RegistrySettings -> Rust/egui, existing Rust upsert_brand validation and CAS SQLite persistence",
-      "status": "NATIVE_BRAND_RULE_AND_SQLITE_ROUNDTRIP_PASS_LATEST_EGUI_BUILD_PENDING",
+      "status": "BRAND_UI_SOURCE_COMPILE_AND_NATIVE_SQLITE_TARGETED_PASS",
       "description": "2026-11-20 상품관리 5번째 '브랜드 관리' 탭 활성화. React src/Classification.tsx::RegistrySettings (categories=false)와 src/styles/tauri-stage2-products.css registry edit/list 화면 및 shared page-leave 계약을 대조. 공식 브랜드명/한글 표기/검색 별칭(쉼표)/HTTPS 확인 근거 URL 4개 입력, 브랜드 저장, 기존 목록/정정, 입력 초기화, 다른 브랜드·탭·전역 메뉴 이동 시 미저장 보호. Rust catalog_clients/brands.rs::upsert_brand와 validate만 업무 판단: 이름/근거 검증, 검색 별칭 중복 정리 및 브랜드 간 충돌 검사. EgUI 업무 판단/자동 병합 불가. Tauri egui_product_bridge::patch action upsert_brand 생성/정정 (기존 ID 보존) 후 원본 revision-checked write_snapshot. 제품/주문/별칭/모델군/배송 데이터 변경하지 않음. Read-only preview DB는 쓰기 금지.",
       "evidence": [
         "src/Classification.tsx",
@@ -2994,13 +2994,13 @@
         "static": "PASS: source compared actual React RegistrySettings, ProductManager categories=false, CSS auto-fit registry/edit-list spacing, Rust brands.rs validate/upsert_brand. No invented brand merge/delete or source-data mutation. Shared egui common section/text input/button/font/decision popup used.; brand form right-aligned primary action and interrupted save keeps 4 fields and editing ID.",
         "unit": "PASS original catalog_clients::brands::tests::brand_aliases_are_deduplicated_and_other_product_references_survive 1/1, 0 failed, run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661380535 on commit 8bf3327d63c7fff5b6d69f3ea0f388718a4242f8.",
         "action": "PASS native_brand_sqlite_save_correction_collision_and_reopen 1/1, 0 failed, on real isolated production-initialized v2 SQLite. Created brand, deduplicated comma aliases, preserved ID through correction, rejected duplicate alias and HTTP evidence without snapshot change, rejected stale CAS, disk reopen exact value, products/aliases/orders/clients/settings unchanged. Seed orders were empty; nonempty historic orders additionally protected by original Rust unit test. run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661380535.",
-        "ci": "PASS Tauri and egui cargo check + both brand narrow tests at source commit 8bf3327d63c7fff5b6d69f3ea0f388718a4242f8, https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661380535. After that source, egui brand save button was right aligned per original CSS (4abb7b1aeeda86c2a6e2c295064e1d403b7ecf4d) and interrupted native helper response surfaced (ae681b909b87ef563f60c20d7275660751894b41). Both pending latest source compile verification at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661863025.",
+        "ci": "PASS original brand Rust unit and actual SQLite create/edit/validation/stale-CAS/disk-reopen 2/2 at commit 8bf3327d63c7fff5b6d69f3ea0f388718a4242f8, https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661380535 (complete success). PASS Tauri cargo check and egui cargo check for the later brand UI right alignment and helper-disconnection source at commit ae681b909b87ef563f60c20d7275660751894b41, steps at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44661863025. The later run was still executing unrelated existing tests at observation; do not claim run-level completion. GitHub compare 8bf3327..ae681b9 changed only brand UI alignment, product manager helper error, unrelated freight gateway/workflow/docs; native brand rule/bridge/SQLite test source unchanged so the native rule/SQLite PASS is reusable.",
         "windows": "SKIPPED by explicit user policy: no real Windows GUI/DPI/click/screenshot test."
       },
       "clauses": {
         "applicable": "0-1~0-7, 3~10, 12~22, 27~32, 39~43, 47~54, 57~61",
         "notApplicable": "KakaoTalk window layout, freight, order matching, OCR: no relevant source change",
-        "pending": "Only latest 2 screen-level egui changes await source-specific CI. Windows GUI skipped; live DB not touched."
+        "pending": "Live Windows GUI intentionally excluded by user policy. Full process egui -> Tauri product helper was not separately launched for brand; backend direct-helper patch -> native SQLite tested. Operating DB untouched. No required source-level or narrow test failures remain for current brand scope."
       }
     }
   ],
