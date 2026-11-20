@@ -30,7 +30,9 @@ pub const WORKFLOW_CARD_PADDING_X: f32 = 9.0;
 pub const WORKFLOW_CARD_PADDING_Y: f32 = 8.0;
 pub const WORKFLOW_CARD_RADIUS: u8 = 7;
 pub const WORKFLOW_SELECTED_STRIPE: f32 = 2.0;
-pub const WORKFLOW_CARD_GAP: f32 = 8.0;
+// Actual vertical gap between adjacent order-group cards, not an
+// additional gap layered over egui's implicit vertical item spacing.
+pub const WORKFLOW_CARD_GAP: f32 = SPACE_4;
 pub const WORKFLOW_TITLE_HEIGHT: f32 = 34.0;
 pub const WORKFLOW_SIGNAL_WIDTH: f32 = 82.0;
 pub const WORKFLOW_SIGNAL_SIZE: f32 = 18.0;
