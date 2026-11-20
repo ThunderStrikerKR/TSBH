@@ -2341,19 +2341,12 @@ impl BandoEgui {
                     } else { 0.0 };
                 let manual_group_height = typography::SUBSECTION_LINE_HEIGHT
                     + theme::ACTION_EMPHASIZED_HEIGHT + theme::SPACE_8;
-                // The configured path and its actions take a 34pt row, while
-                // the unconfigured explanation remains one 18pt caption.
-                // Count the actual content height before distributing the
-                // four balanced spaces among the three intake groups.
-                let folder_inline = ui.available_width()
-                    >= theme::INBOX_FOLDER_INLINE_MIN_WIDTH;
+                // The configured folder shows a short usage sentence
+                // followed by the two standard actions. The saved path
+                // remains internal to those actions and is never displayed.
                 let folder_body_height = if inbox_path.is_some() {
-                    if folder_inline {
-                        theme::ACTION_STANDARD_HEIGHT
-                    } else {
-                        typography::METADATA_LINE_HEIGHT + theme::SPACE_8
-                            + theme::ACTION_STANDARD_HEIGHT
-                    }
+                    typography::METADATA_LINE_HEIGHT
+                        + theme::SPACE_8 + theme::ACTION_STANDARD_HEIGHT
                 } else {
                     typography::METADATA_LINE_HEIGHT
                 };
@@ -2423,45 +2416,21 @@ impl BandoEgui {
                         intake.label(typography::subsection_heading("폴더 자동 인식"));
                         intake.add_space(theme::SPACE_8);
                         if let Some(path) = inbox_path.as_deref() {
-                            // The saved directory is real app state, not a
-                            // placeholder or a Settings unsaved draft.
-                            if folder_inline {
-                                intake.horizontal(|row| {
-                                    row.spacing_mut().item_spacing.x = theme::SPACE_8;
-                                    let path_width = (row.available_width()
-                                        - theme::INBOX_FOLDER_BUTTONS_RESERVED).max(40.0);
-                                    row.add_sized(
-                                        Vec2::new(path_width, theme::ACTION_STANDARD_HEIGHT),
-                                        egui::Label::new(typography::caption(path))
-                                            .truncate().halign(Align::Min),
-                                    ).on_hover_text(path);
-                                    if theme::action(row, "폴더 열기",
-                                        ButtonRole::Standard, true).clicked() {
-                                        inbox_open_request = Some(path.to_owned());
-                                    }
-                                    if theme::action(row, "경로 복사",
-                                        ButtonRole::Standard, true).clicked() {
-                                        inbox_copy_request = Some(path.to_owned());
-                                    }
-                                });
-                            } else {
-                                intake.add(
-                                    egui::Label::new(typography::caption(path))
-                                        .truncate().halign(Align::Min)
-                                ).on_hover_text(path);
-                                intake.add_space(theme::SPACE_8);
-                                intake.horizontal(|buttons| {
-                                    buttons.spacing_mut().item_spacing.x = theme::SPACE_8;
-                                    if theme::action(buttons, "폴더 열기",
-                                        ButtonRole::Standard, true).clicked() {
-                                        inbox_open_request = Some(path.to_owned());
-                                    }
-                                    if theme::action(buttons, "경로 복사",
-                                        ButtonRole::Standard, true).clicked() {
-                                        inbox_copy_request = Some(path.to_owned());
-                                    }
-                                });
-                            }
+                            intake.label(typography::caption(
+                                "발주서 이미지를 지정한 폴더에 저장하세요."
+                            ));
+                            intake.add_space(theme::SPACE_8);
+                            intake.horizontal(|buttons| {
+                                buttons.spacing_mut().item_spacing.x = theme::SPACE_8;
+                                if theme::action(buttons, "경로 복사",
+                                    ButtonRole::Standard, true).clicked() {
+                                    inbox_copy_request = Some(path.to_owned());
+                                }
+                                if theme::action(buttons, "폴더 열기",
+                                    ButtonRole::Standard, true).clicked() {
+                                    inbox_open_request = Some(path.to_owned());
+                                }
+                            });
                         } else if let Some(error) = inbox_load_error.as_deref() {
                             intake.label(typography::status(error, theme::DANGER));
                         } else if !inbox_loaded {
