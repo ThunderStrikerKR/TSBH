@@ -1974,7 +1974,7 @@ impl BandoEgui {
                     // Match the visible space above and below the dealer
                     // card; avoid the former -4pt optical translation.
                     let card_rect = band_rect.shrink2(
-                        egui::vec2(0.0, theme::SPACE_8)
+                        egui::vec2(0.0, theme::PANEL_GAP)
                     );
                     ui.painter().rect(
                         card_rect,
@@ -2002,6 +2002,9 @@ impl BandoEgui {
                             .max_rect(card_rect.shrink2(egui::vec2(10.0, 5.0)))
                             .layout(Layout::top_down(Align::Min)),
                         |card| {
+                            // The outer source body uses explicit spacing,
+                            // but this 2-row card keeps its normal 8pt rhythm.
+                            card.spacing_mut().item_spacing.y = theme::SPACING;
                             card.set_clip_rect(card_rect);
                             card.label(typography::caption("현재 거래처"));
                             card.horizontal(|line| {
@@ -2067,10 +2070,10 @@ impl BandoEgui {
                             .max_rect(viewport)
                             .layout(Layout::top_down(Align::Min)),
                         |editor_ui| {
-                        editor_ui.set_clip_rect(clip);
-                        editor_ui.set_width(viewport.width());
-                        editor_ui.set_height(viewport.height());
-                        theme::source_document_frame().show(editor_ui, |document_ui| {
+                            editor_ui.set_clip_rect(clip);
+                            editor_ui.set_width(viewport.width());
+                            editor_ui.set_height(viewport.height());
+                            theme::source_document_frame().show(editor_ui, |document_ui| {
                             egui::ScrollArea::vertical()
                             .id_salt("source-editor-vertical-scroll")
                             // The frame border/padding occupies the outer
