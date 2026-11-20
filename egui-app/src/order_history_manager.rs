@@ -19,7 +19,8 @@ use std::{
 const ROW_HEIGHT: f32 = theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT;
 // Expanded shipment details are discrete one-row information blocks.
 // The parent history table keeps its original paint, spacing, and height.
-const DETAIL_BLOCK_INSET: f32 = theme::SPACE_4 * 0.5;
+const DETAIL_BLOCK_MAX_WIDTH: f32 = 780.0;
+const DETAIL_BLOCK_HEIGHT: f32 = ROW_HEIGHT - 3.0 * theme::SPACE_4;
 const EXCEL_ITEM_MARKER: &str = "◆ ";
 const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
@@ -180,12 +181,42 @@ fn history_branch(lines:&[HistoryLine],index:usize)->Option<HistoryBranch>{
         },
     }
 }
+// The branch tip and the shipment block share the SAME horizontal anchor.
+fn history_detail_block_rect(row_rect:Rect,widths:&[f32;7])->Rect{
+    let left=row_rect.left()+widths[0]-theme::SPACE_4;
+    let width=(row_rect.right()-left-theme::SPACE_12)
+        .min(DETAIL_BLOCK_MAX_WIDTH).max(1.0);
+    Rect::from_min_size(
+        egui::pos2(left,row_rect.center().y-DETAIL_BLOCK_HEIGHT/2.0),
+        Vec2::new(width,DETAIL_BLOCK_HEIGHT)
+    )
+}
+// The expanded shipment is a compact standalone summary, not seven table
+// cells stretched across the history grid.
+fn history_detail_cells(block:Rect)->[Rect;4]{
+    let content=block.shrink2(Vec2::new(theme::SPACE_12,0.0));
+    let recipient=96.0;
+    let freight=116.0;
+    let tracking=156.0;
+    let product=(content.width()-recipient-freight-tracking
+        -3.0*theme::SPACE_8).max(1.0);
+    let sizes=[recipient,product,freight,tracking];
+    let mut left=content.left();
+    std::array::from_fn(|i|{
+        let rect=Rect::from_min_size(
+            egui::pos2(left,content.top()),Vec2::new(sizes[i],content.height())
+        );
+        left+=sizes[i]+theme::SPACE_8;
+        rect
+    })
+}
 fn paint_history_branch(ui:&Ui,row_rect:Rect,widths:&[f32;7],
     branch:HistoryBranch){
     let painter=ui.painter().with_clip_rect(row_rect.intersect(ui.clip_rect()));
     // The last 12pt of the reception-date cell is blank even when a
     // YYYY-MM-DD is present; do not displace the date or column divider.
     let x=row_rect.left()+widths[0]-theme::SPACE_12;
+    let tip=history_detail_block_rect(row_rect,widths).left();
     let center=row_rect.center().y;
     let stroke=Stroke::new(1.25,theme::MUTED);
     match branch{
@@ -198,13 +229,13 @@ fn paint_history_branch(ui:&Ui,row_rect:Rect,widths:&[f32;7],
             painter.line_segment([
                 egui::pos2(x,row_rect.top()),egui::pos2(x,row_rect.bottom())],stroke);
             painter.line_segment([
-                egui::pos2(x,center),egui::pos2(x+theme::SPACE_8,center)],stroke);
+                egui::pos2(x,center),egui::pos2(tip,center)],stroke);
         },
         HistoryBranch::Last=>{
             painter.line_segment([
                 egui::pos2(x,row_rect.top()),egui::pos2(x,center)],stroke);
             painter.line_segment([
-                egui::pos2(x,center),egui::pos2(x+theme::SPACE_8,center)],stroke);
+                egui::pos2(x,center),egui::pos2(tip,center)],stroke);
         },
     }
 }
@@ -507,9 +538,9 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
         },
         HistoryLine::Recipient(_,recipient_index,shipment_index)=>{
             let recipient=&row["recipients"][recipient_index];
-            let columns=cells(rect.min,widths,rect.height());
-            // 0 reception date: empty. 4 billed total and 5 payment
-            // confirmation: empty. They are displayed only on the parent.
+            let columns=history_detail_cells(history_detail_block_rect(rect,widths));
+            // The four fields belong to ONE shipment block and are independent
+            // of the parent table's seven column locations.
             let shipment=shipment_index.and_then(|index|
                 rows(&snapshot.state["workflow"]["shipments"]).get(index)
             );
@@ -529,30 +560,34 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .unwrap_or_else(||history_recipient_products(row,recipient_index));
             let product_notes=history_recipient_product_notes(row,recipient_index);
             let (freight,tracking)=history_shipment_logistics(shipment);
-            paint_text(ui,columns[1],name,true,false);
-            paint_text(ui,columns[2],&products,true,false);
-            paint_center(ui,columns[3],&freight);
-            paint_center(ui,columns[6],&tracking);
+            let freight_label=if freight=="운임 미확인"{freight.clone()}
+                else{format!("운임 {freight}")};
+            let tracking_label=if tracking=="운송장 미확인"{tracking.clone()}
+                else{format!("송장 {tracking}")};
+            paint_text(ui,columns[0],name,true,false);
+            paint_text(ui,columns[1],&products,true,false);
+            paint_text(ui,columns[2],&freight_label,false,false);
+            paint_text(ui,columns[3],&tracking_label,false,false);
             let address=field(display_recipient,"address");
             let address=if address.is_empty(){"배송 주소 확인 필요"}
                 else{address};
-            ui.interact(columns[1].intersect(area),
+            ui.interact(columns[0].intersect(area),
                 ui.make_persistent_id(("history-recipient",id,recipient_index)),
                 Sense::hover()).on_hover_text(
                     format!("수취인: {name}\n배송 주소: {address}\n발송건: {}",
                         shipment.map(|s|field(s,"id")).unwrap_or("발송 대기"))
                 );
-            ui.interact(columns[2].intersect(area),
+            ui.interact(columns[1].intersect(area),
                 ui.make_persistent_id(("history-recipient-products",id,recipient_index)),
                 Sense::hover()).on_hover_text(if product_notes.is_empty(){
                     products.clone()
                 }else{
                     format!("{products}\n\n{product_notes}")
                 });
-            ui.interact(columns[3].intersect(area),
+            ui.interact(columns[2].intersect(area),
                 ui.make_persistent_id(("history-recipient-freight",id,recipient_index)),
                 Sense::hover()).on_hover_text(format!("실제 운임: {freight}"));
-            ui.interact(columns[6].intersect(area),
+            ui.interact(columns[3].intersect(area),
                 ui.make_persistent_id(("history-recipient-tracking",id,recipient_index)),
                 Sense::hover()).on_hover_text(format!("운송장 번호: {tracking}"));
         },
@@ -1135,8 +1170,8 @@ impl OrderHistoryManager {
                                         // cohesive block. No interior grid lines.
                                         row_ui.painter().rect_filled(
                                             row_rect,0.0,theme::CANVAS);
-                                        let block_rect=row_rect.shrink2(
-                                            Vec2::new(1.0,DETAIL_BLOCK_INSET));
+                                        let block_rect=history_detail_block_rect(
+                                            row_rect,&widths);
                                         row_ui.painter().rect(
                                             block_rect,theme::WORKFLOW_CHIP_RADIUS as f32,
                                             theme::PANEL,Stroke::new(1.0,theme::DIVIDER),
