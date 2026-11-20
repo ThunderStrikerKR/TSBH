@@ -17,6 +17,8 @@ pub struct ShipmentRow {
     pub recipient: Value,
     pub freight: Option<i64>,
     pub collect: bool,
+    pub vat_included: Option<bool>,
+    pub shipment_count: usize,
     pub order_total: Option<i64>,
 }
 #[derive(Clone, Debug)]
@@ -133,6 +135,11 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 recipient:recipient.clone(),
                 freight:field(field(native_ship,"totals"),"shipping").as_i64(),
                 collect:text(native_ship,"freightCode")=="020",
+                vat_included: field(native_ship, "vatIncluded").as_bool(),
+                shipment_count: rows(all_shipments).iter().filter(|other|
+                    text(other, "orderId") == order_id &&
+                    field(other, "legacyArchived") != &Value::Bool(true)
+                ).count(),
                 order_total,
             });
         }
