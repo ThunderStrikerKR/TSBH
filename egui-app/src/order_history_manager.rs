@@ -333,10 +333,8 @@ fn paint_caption(ui:&Ui,rect:Rect,value:&str){
             rect.center().y-galley.size().y/2.0),galley,theme::MUTED
     );
 }
-fn history_recipient_products(row:&Value,recipient_index:usize)->String{
-    // This table cell contains ONLY original item names and quantities.
-    let recipient=&row["recipients"][recipient_index];
-    let products=rows(&recipient["items"]).iter().map(|item|{
+fn history_items_one_line(items:&Value)->String{
+    let products=rows(items).iter().map(|item|{
         format!("{EXCEL_ITEM_MARKER}{} × {}",
             field(item,"name"),
             item["quantity"].as_i64().map(|n|n.to_string())
@@ -344,6 +342,9 @@ fn history_recipient_products(row:&Value,recipient_index:usize)->String{
     }).collect::<Vec<_>>();
     if products.is_empty(){"상품 정보 없음".to_owned()}
     else{products.join("  ")}
+}
+fn history_recipient_products(row:&Value,recipient_index:usize)->String{
+    history_items_one_line(&row["recipients"][recipient_index]["items"])
 }
 fn history_recipient_product_notes(row:&Value,recipient_index:usize)->String{
     let recipient=&row["recipients"][recipient_index];
@@ -485,20 +486,30 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let columns=cells(rect.min,widths,rect.height());
             // 0 reception date: empty. 4 billed total and 5 payment
             // confirmation: empty. They are displayed only on the parent.
-            let recipient_name=field(recipient,"name");
-            let name=if recipient_name.is_empty(){"수취인 미확인"}
-                else{recipient_name};
-            let products=history_recipient_products(row,recipient_index);
-            let product_notes=history_recipient_product_notes(row,recipient_index);
             let shipment=shipment_index.and_then(|index|
                 rows(&snapshot.state["workflow"]["shipments"]).get(index)
             );
+            // A transferred shipment can preserve its original recipient
+            // snapshot even if the current order recipient was later edited.
+            let shipment_recipient=shipment
+                .and_then(|s|s.get("recipientSnapshot"))
+                .filter(|snapshot|snapshot.is_object());
+            let display_recipient=shipment_recipient.unwrap_or(recipient);
+            let recipient_name=field(display_recipient,"name");
+            let name=if recipient_name.is_empty(){"수취인 미확인"}
+                else{recipient_name};
+            let products=shipment_recipient
+                .and_then(|snapshot|snapshot.get("items"))
+                .filter(|items|items.is_array())
+                .map(history_items_one_line)
+                .unwrap_or_else(||history_recipient_products(row,recipient_index));
+            let product_notes=history_recipient_product_notes(row,recipient_index);
             let (freight,tracking)=history_shipment_logistics(shipment);
             paint_text(ui,columns[1],name,true,false);
             paint_text(ui,columns[2],&products,true,false);
             paint_center(ui,columns[3],&freight);
             paint_center(ui,columns[6],&tracking);
-            let address=field(recipient,"address");
+            let address=field(display_recipient,"address");
             let address=if address.is_empty(){"배송 주소 확인 필요"}
                 else{address};
             ui.interact(columns[1].intersect(area),
@@ -1250,8 +1261,8 @@ mod tests{
             HistoryLine::Order(0)
         ]);
         expanded.insert("o1".to_owned());
-        // Order row + EXACTLY ONE detail row per recipient; the parent
-        // already owns billed total and employee payment approval columns.
+        // The parent owns billed total and employee approval. Detail
+        // rows use one block per actual shipment (or an unshipped recipient).
         let expanded_lines=display_lines(&snapshot,&expanded,None);
         assert_eq!(expanded_lines,vec![
             HistoryLine::Order(0),
@@ -1290,6 +1301,13 @@ mod tests{
         assert_eq!(history_shipment_logistics(
             rows(&multiple.state["workflow"]["shipments"]).get(1)
         ),("2,500원".into(),"987654321".into()));
+        multiple.state["workflow"]["shipments"][1]["recipientSnapshot"]=json!({
+            "id":"r1","name":"과거 수취인","address":"과거 주소",
+            "items":[{"name":"709 검정","quantity":1}]
+        });
+        let original=multiple.state["workflow"]["shipments"][1]
+            ["recipientSnapshot"]["items"].clone();
+        assert_eq!(history_items_one_line(&original),"◆ 709 검정 × 1");
     }
     #[test]
     fn employee_approval_column_sorts_by_confirmation_date_and_keeps_unknown_last(){
