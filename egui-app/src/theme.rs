@@ -179,6 +179,12 @@ pub const MODAL_VIEWPORT_GUTTER: f32 = 18.0;
 pub const MODAL_BACKDROP_ALPHA: u8 = 144;
 pub const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 // Shared management list roles; the client page does not invent row geometry.
+// React CategoryManager effective CSS: 43pt rows, 50pt roots,
+// 24pt nesting and a 430pt right-side editor overlay.
+pub const CATALOG_TREE_ROW_HEIGHT:f32 = 43.0;
+pub const CATALOG_ROOT_ROW_HEIGHT:f32 = 50.0;
+pub const CATALOG_TREE_INDENT:f32 = 24.0;
+pub const CATALOG_EDITOR_WIDTH:f32 = 430.0;
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
