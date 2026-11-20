@@ -175,6 +175,8 @@ struct BandoEgui {
     client_manager: Option<client_manager::ClientManager>,
     settings_view: Option<settings_view::SettingsView>,
     freight_manager: Option<freight_manager::FreightManager>,
+    freight_pending_page: Option<Page>,
+    freight_pending_save: bool,
     settings_pending_page: Option<Page>,
     settings_pending_save: bool,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
@@ -232,6 +234,8 @@ impl Default for BandoEgui {
             client_manager: None,
             settings_view: None,
             freight_manager: None,
+            freight_pending_page: None,
+            freight_pending_save: false,
             settings_pending_page: None,
             settings_pending_save: false,
             manual_workspace: None,
@@ -1399,7 +1403,10 @@ impl BandoEgui {
                                 // A client editor is modal: navigation cannot
                                 // dispose of an unsaved client draft.
                                 if !self.client_manager.as_ref()
-                                    .is_some_and(|manager|manager.has_modal()) {
+                                    .is_some_and(|manager|manager.has_modal()) &&
+                                    !self.freight_manager.as_ref()
+                                    .is_some_and(|manager|manager.has_modal()||manager.busy()) &&
+                                    self.freight_pending_page.is_none() {
                                     // Same page-leave guard as React SettingsView:
                                     // a modified settings draft is never lost
                                     // by clicking another global navigation tab.
@@ -1407,6 +1414,10 @@ impl BandoEgui {
                                         self.settings_view.as_ref().is_some_and(|view|view.dirty()){
                                         self.settings_pending_page=Some(page);
                                         self.settings_pending_save=false;
+                                    }else if self.page==Page::Freight && page!=Page::Freight &&
+                                        self.freight_manager.as_ref().is_some_and(|manager|manager.dirty()){
+                                        self.freight_pending_page=Some(page);
+                                        self.freight_pending_save=false;
                                     }else{
                                         // Kakao HWND ownership survives tab changes.
                                         self.page=page;
@@ -2821,6 +2832,62 @@ impl BandoEgui {
         }
     }
 
+    fn show_freight_leave_guard(&mut self,ctx:&egui::Context,work_area:Rect){
+        let Some(next)=self.freight_pending_page else{return;};
+        let Some(manager)=self.freight_manager.as_mut() else{
+            self.freight_pending_page=None;
+            self.freight_pending_save=false;
+            return;
+        };
+        if self.freight_pending_save{
+            if manager.busy(){return;}
+            if !manager.dirty(){
+                self.page=next;
+                self.freight_pending_page=None;
+                self.freight_pending_save=false;
+                return;
+            }
+            self.freight_pending_save=false;
+        }
+        if !manager.dirty(){
+            self.page=next;
+            self.freight_pending_page=None;
+            return;
+        }
+        components::modal_backdrop(ctx,"freight-global-leave-backdrop",false);
+        components::decision_window(
+            "저장하지 않은 변경사항","freight-global-leave",work_area
+        ).show(ctx,|dialog|{
+            dialog.label(typography::body(
+                "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
+            ));
+            if !manager.can_save_pending() {
+                dialog.label(typography::caption(
+                    "새 배송 그룹명은 배송 그룹 추가를 눌러 등록해야 합니다."
+                ));
+            }
+            dialog.add_space(theme::SPACE_12);
+            dialog.horizontal(|bar|{
+                if theme::action(bar,"취소",ButtonRole::Standard,
+                    !manager.busy()).clicked(){
+                    self.freight_pending_page=None;
+                }
+                if theme::action(bar,"저장 안 함",ButtonRole::Standard,
+                    !manager.busy()).clicked(){
+                    manager.discard_drafts();
+                    self.page=next;
+                    self.freight_pending_page=None;
+                }
+                if theme::action(bar,"저장하고 이동",ButtonRole::Primary,
+                    !manager.busy()&&manager.can_save_pending()).clicked(){
+                    if manager.save_pending(ctx.clone()){
+                        self.freight_pending_save=true;
+                    }
+                }
+            });
+        });
+    }
+
     fn show_settings_leave_guard(&mut self,ctx:&egui::Context,work_area:Rect){
         let Some(next)=self.settings_pending_page else{return;};
         let Some(view)=self.settings_view.as_mut() else{
@@ -3081,6 +3148,8 @@ impl eframe::App for BandoEgui {
                     settings.has_data_modal()){
                 self.show_settings_leave_guard(ctx,work_area);
             }
+        } else if self.page==Page::Freight {
+            self.show_freight_leave_guard(ctx,work_area);
         } else if self.page==Page::Clients {
             if let Some(manager)=self.client_manager.as_mut() {
                 if manager.has_modal() {
