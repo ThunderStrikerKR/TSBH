@@ -506,12 +506,14 @@ impl AliasManager {
                     dialog,"상품 별칭","취소",!busy
                 );
                 dialog.label(typography::body("상품 별칭 변경사항을 저장할까요?"));
-                dialog.horizontal(|actions|{
-                    discard=theme::action(actions,"저장 안 함",
-                        theme::ButtonRole::Standard,!busy).clicked();
-                    save_now=theme::action(actions,"저장",
-                        theme::ButtonRole::Primary,editable&&!busy).clicked();
-                });
+                dialog.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                        save_now=theme::action(actions,"저장",
+                            theme::ButtonRole::Primary,editable&&!busy).clicked();
+                        discard=theme::action(actions,"저장 안 함",
+                            theme::ButtonRole::Standard,!busy).clicked();
+                    }
+                );
             });
             if cancel{self.pending=None;}
             else if discard{
