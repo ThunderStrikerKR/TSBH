@@ -100,8 +100,11 @@ fn edit_input(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
     let mut current=if key=="senderName"{
         canonical(key,draft.get(key)).as_str().unwrap_or("").to_owned()
     }else{field(draft,key)};
+    let placeholder=if key=="operatorName"{
+        "진행 / 입금 / 발송 이력에 기록할 이름"
+    }else{""};
     if components::flexible_text_field(
-        ui,&mut current,ui.available_width(),""
+        ui,&mut current,ui.available_width(),placeholder
     ).changed(){
         draft[key]=json!(current);
     }
