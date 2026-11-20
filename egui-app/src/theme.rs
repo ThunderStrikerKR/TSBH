@@ -192,6 +192,9 @@ pub const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 pub const CATALOG_TREE_ROW_HEIGHT:f32 = 43.0;
 pub const CATALOG_ROOT_ROW_HEIGHT:f32 = 50.0;
 pub const CATALOG_TREE_INDENT:f32 = 24.0;
+// Keep category search useful without stretching a single field across
+// the full management panel width.
+pub const CATALOG_SEARCH_WIDTH:f32 = 560.0;
 pub const CATALOG_EDITOR_WIDTH:f32 = 430.0;
 // React product-admin-redesign.css: fixed 460pt group list / 52pt rows,
 // with an independently scrolling editor and fixed action footer.
