@@ -411,17 +411,33 @@ impl CategoryManager {
                         ],stroke);
                     }
                 }
-                line.label(if is_root(&item.id){
-                    typography::subsection_heading(&item.name)
-                }else{typography::body(&item.name)});
+                let count=total_count(catalog,cats,&item.id);
+                let summary=if branches.is_empty(){
+                    format!("상품 {count}개")
+                }else{
+                    format!("하위 {} · 상품 {count}개",branches.len())
+                };
+                let summary_width=typography::client_table_metadata_galley(
+                    line,&summary,theme::MUTED
+                ).size().x+theme::SPACE_24;
+                let name_width=(width
+                    -theme::CATALOG_TREE_INDENT*depth as f32
+                    -theme::SPACE_12-theme::SPACE_16
+                    -summary_width-theme::SPACE_24).max(theme::SPACE_16);
+                let font=if is_root(&item.id){
+                    typography::CategoryPathFont::Subsection
+                }else{typography::CategoryPathFont::Body};
+                let visible=typography::fit_category_path(
+                    line,&item.name,name_width,font
+                );
+                line.add_sized(
+                    Vec2::new(name_width,height),
+                    egui::Label::new(if is_root(&item.id){
+                        typography::subsection_heading(&visible)
+                    }else{typography::body(&visible)}).truncate()
+                ).on_hover_text(&item.name);
                 line.with_layout(Layout::right_to_left(Align::Center),|right|{
                     right.add_space(theme::SPACE_12);
-                    let count=total_count(catalog,cats,&item.id);
-                    let summary=if branches.is_empty(){
-                        format!("상품 {count}개")
-                    }else{
-                        format!("하위 {} · 상품 {count}개",branches.len())
-                    };
                     right.label(typography::caption(&summary));
                 });
             });
