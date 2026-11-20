@@ -119,6 +119,12 @@ struct VerticalSplitDrag {
     available_height: f32,
 }
 
+#[derive(Clone, Copy)]
+struct DetailSplitDrag {
+    index: usize,
+    initial_heights: [f32; 3],
+}
+
 struct PendingClientChange {
     order_id: String,
     source_raw: String,
@@ -144,6 +150,7 @@ struct BandoEgui {
     layout: layout::LayoutState,
     dragging_split: Option<HorizontalSplitDrag>,
     dragging_vertical: Option<VerticalSplitDrag>,
+    dragging_detail: Option<DetailSplitDrag>,
     raw_source: String,
     drafts: Vec<WorkingReception>,
     active_id: Option<String>,
@@ -200,6 +207,7 @@ impl Default for BandoEgui {
             layout: layout::LayoutState::load(),
             dragging_split: None,
             dragging_vertical: None,
+            dragging_detail: None,
             raw_source: String::new(),
             drafts: Vec::new(),
             active_id: None,
@@ -1743,7 +1751,7 @@ impl BandoEgui {
                                             // over already mutated widths.
                                             self.layout.resize_pair(
                                                 drag.initial_widths, index,
-                                                response.drag_delta().x,
+                                                response.total_drag_delta().unwrap_or_default().x,
                                             );
                                         }
                                     }
@@ -1755,7 +1763,7 @@ impl BandoEgui {
                                     let _ = self.layout.save();
                                 }
                                 if response.double_clicked() {
-                                    self.layout.reset();
+                                    self.layout.reset_pair(widths, index);
                                     let _ = self.layout.save();
                                 }
                                 x += layout::SPLITTER;
@@ -1768,18 +1776,21 @@ impl BandoEgui {
                         // Input hit areas and resizable pane geometry stay put.
                         if splitter_visuals.len() == layout::PANEL_COUNT - 1 {
                             let shared_upper = self.layout.vertical_heights(all.height()).0;
-                            let (review_upper, _) =
-                                self.layout.detail_upper_heights(all.height());
-                            let shared_y =
+                            let [review_height, recipient_height, _] =
+                                self.layout.detail_heights(all.height());
+                            let source_y =
                                 all.top() + shared_upper + layout::SPLITTER / 2.0;
                             let review_y =
-                                all.top() + review_upper + layout::SPLITTER / 2.0;
+                                all.top() + review_height + layout::SPLITTER / 2.0;
+                            let items_y = all.top() + review_height
+                                + layout::SPLITTER + recipient_height
+                                + layout::SPLITTER / 2.0;
                             components::paint_dock_network(
                                 ui, &splitter_visuals,
                                 &[
-                                    (0, 1, shared_y),
+                                    (0, 1, source_y),
                                     (1, 2, review_y),
-                                    (1, 2, shared_y),
+                                    (1, 2, items_y),
                                 ],
                             );
                         }
@@ -1843,7 +1854,7 @@ impl BandoEgui {
             if let Some(drag) = self.dragging_vertical {
                 self.layout.resize_vertical(
                     drag.initial_source_height,
-                    response.drag_delta().y,
+                    response.total_drag_delta().unwrap_or_default().y,
                     drag.available_height,
                 );
             }
@@ -2279,13 +2290,10 @@ impl BandoEgui {
 
     fn details_and_freight(&mut self, ui: &mut Ui) {
         let full_height = ui.available_height();
-        // The center-line between the second and third columns is shared.
-        // Independent 27% + 22% measurements used to put the lower third
-        // column divider 1–2 physical pixels above the source/message divider.
-        let (review_height, recipient_height) =
-            self.layout.detail_upper_heights(full_height);
-        // Fix the third column to the SAME upper/lower boundary as column
-        // two. Section content must never be allowed to move the divider.
+        // The review, recipient and items sections own two independent
+        // draggable boundaries; adjacent columns no longer dictate their sizes.
+        let [review_height, recipient_height, _items_height] =
+            self.layout.detail_heights(full_height);
         let full_width = ui.available_width();
         let (_, bounds) = ui.allocate_space(Vec2::new(full_width, full_height));
         let review_rect = Rect::from_min_size(
@@ -2310,6 +2318,44 @@ impl BandoEgui {
             ),
         );
 
+        // Register both middle-column splitters in the parent UI so they are
+        // draggable in both working-order and empty/new-order states.
+        let initial_heights = [review_height, recipient_height, bottom_rect.height()];
+        for (index, splitter_rect) in [(0, first_sep), (1, second_sep)] {
+            let id = ui.make_persistent_id(("detail-splitter", index));
+            let response = ui.interact(splitter_rect, id, Sense::click_and_drag());
+            if response.hovered() || response.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            }
+            components::paint_dock_splitter(
+                ui, splitter_rect, false, response.hovered() || response.dragged(),
+            );
+            if response.drag_started() {
+                self.dragging_detail = Some(DetailSplitDrag {
+                    index,
+                    initial_heights,
+                });
+            }
+            if response.dragged() {
+                if let Some(drag) = self.dragging_detail {
+                    if drag.index == index {
+                        let delta = response.total_drag_delta().unwrap_or_default().y;
+                        self.layout.resize_detail_pair(drag.initial_heights, index, delta);
+                    }
+                }
+            }
+            if response.drag_stopped()
+                && self.dragging_detail.is_some_and(|drag| drag.index == index)
+            {
+                self.dragging_detail = None;
+                let _ = self.layout.save();
+            }
+            if response.double_clicked() {
+                self.layout.reset_detail_pair(index, full_height);
+                let _ = self.layout.save();
+            }
+        }
+
         if let Some((group,ship))=self.visible_workflow_group(){
             // The same preallocated review/recipient/items rectangles are
             // used for real workflow rows. No source replacement, false
@@ -2333,7 +2379,6 @@ impl BandoEgui {
                     });
                 }
             );
-            components::paint_dock_splitter(ui,first_sep,false,false);
             ui.scope_builder(
                 UiBuilder::new().id_salt("native-workflow-recipient")
                     .max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
@@ -2362,7 +2407,6 @@ impl BandoEgui {
                     });
                 }
             );
-            components::paint_dock_splitter(ui,second_sep,false,false);
             ui.scope_builder(
                 UiBuilder::new().id_salt("native-workflow-items")
                     .max_rect(bottom_rect).layout(Layout::top_down(Align::Min)),
@@ -2543,7 +2587,6 @@ impl BandoEgui {
         if sync_clicked {
             self.start_working_sync(ui.ctx());
         }
-        components::paint_dock_splitter(ui, first_sep, false, false);
 
         let mut next_recipient = None;
         ui.scope_builder(
@@ -2632,7 +2675,6 @@ impl BandoEgui {
         let selected = self.analysis.as_ref().and_then(|analysis| {
             reception_service::recipients(analysis).get(self.selected_recipient)
         });
-        components::paint_dock_splitter(ui, second_sep, false, false);
 
         let remaining = bottom_rect.height();
         ui.scope_builder(
@@ -2891,7 +2933,7 @@ impl BandoEgui {
                             if let Some(drag)=self.dragging_split {
                                 if drag.index==0 {
                                     self.layout.resize_pair(
-                                        drag.initial_widths,0,response.drag_delta().x
+                                        drag.initial_widths,0,response.total_drag_delta().unwrap_or_default().x
                                     );
                                 }
                             }
