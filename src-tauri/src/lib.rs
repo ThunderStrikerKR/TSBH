@@ -13,6 +13,7 @@ mod relational_store;
 mod working_receptions;
 mod egui_reception_bridge;
 mod egui_manual_commit;
+#[cfg(test)]
 mod egui_shipping_bridge;
 mod egui_product_bridge;
 mod sale_unit_migration;
@@ -1096,10 +1097,7 @@ fn start_automatic_backup(app: tauri::AppHandle) {
 /// One-shot data-management bridge. Uses the ORIGINAL Tauri audit and
 /// backup manager; never makes a separate, incomplete egui archive writer.
 /// Archive and backup listing are read-only. Backup/restore additionally
-/// require explicit operator permission AND React-equivalent UI confirmation.
-pub fn run_egui_shipping_patch() -> i32 {
-    egui_shipping_bridge::run()
-}
+
 
 /// Product edits use the original Tauri catalog rules plus write_snapshot.
 pub fn run_egui_product_patch() -> i32 {
