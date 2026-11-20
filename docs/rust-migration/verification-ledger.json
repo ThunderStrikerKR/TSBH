@@ -3191,6 +3191,36 @@
         "notApplicable": "No React legacy changes, DB mutation/price/freight logic unchanged.",
         "pending": "Current commit compilation and actual Windows layout remain unverified; UI-only changes should not be presented as tested end to end."
       }
+    },
+    {
+      "id": "LIVE-20261120-EGUI-RESPONSIVENESS",
+      "scope": "별칭 반복 클릭 멈춤 및 관리 UI 반복 조회",
+      "status": "SCOPED_WINDOWS_VERIFIED_FULL_GATES_OPEN",
+      "commit": "a60b9a083487b618ecac7cd75adfcf7e8d4519ff",
+      "description": "별칭 매 프레임 4초 충돌 검사를 백그라운드/내용별 캐시로 이동하고 정규식 재컴파일 제거. 별칭 상품 선택과 모델군 등록 가능 질의도 캐시/백그라운드화. 상품 조회는 실행 1개+최신 대기 1개로 제한하고 오래된 응답 무시. 의심 경로와 미검증 범위를 보고서에 구분 기록.",
+      "evidence": [
+        "docs/rust-migration/2026-11-20-egui-responsiveness-fix.md",
+        "egui-app/src/latest_job.rs",
+        "egui-app/src/alias_manager.rs",
+        "egui-app/src/model_group_manager.rs",
+        "egui-app/src/product_manager.rs",
+        "src-tauri/src/business_core/catalog_clients/aliases.rs"
+      ],
+      "gates": {
+        "patch": "COMMITTED a60b9a083487b618ecac7cd75adfcf7e8d4519ff",
+        "unit": "169/172 pass; 5 new tests passed; 3 separate failures documented",
+        "differential": "SCOPED_PASS: unchanged actual developer catalog, original Rust vs modified Rust alias JSON equal, 4023ms vs137ms; full TS not run",
+        "action": "SCOPED_PASS: alias double click -> model group -> category expand -> alias product picker search709 -> close observed",
+        "windows": "DEV_WINDOWS_EGUI rebuilt and restarted; no >100ms UI update logs in observed scenario; no save/delete performed",
+        "ci": "NOT_EXECUTED; local main only"
+      },
+      "remaining": [
+        "카테고리 대규모/전체 펼침 집계 비용",
+        "거래처 및 접수 수동 검색의 요청별 스레드 생성",
+        "카카오톡 외부 HWND 지연",
+        "별도 전체 테스트 실패 3개",
+        "전체 TS 차등 및 CI"
+      ]
     }
   ],
   "reviewOnlyNotProvenDefects": [
