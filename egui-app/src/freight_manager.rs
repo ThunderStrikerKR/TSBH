@@ -1767,9 +1767,13 @@ impl FreightManager {
                     );
                 }
             }
+            // A single, 1pt outline under the column heading separates
+            // the fixed header from scrolling product rows. Reuse the shared
+            // border tone: the previous DIVIDER stroke was barely visible.
+            // No added widget height or duplicate divider.
             header_painter.line_segment(
                 [header_content_rect.left_bottom(),header_content_rect.right_bottom()],
-                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER)
             );
 
             // This is the single "select all" control for the currently
