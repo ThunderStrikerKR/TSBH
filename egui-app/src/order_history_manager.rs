@@ -842,7 +842,13 @@ fn range_date_picker_rtl(
                     .frame(false)
                     .horizontal_align(Align::Center)
                     .vertical_align(Align::Center)
-                    .margin(egui::Margin::symmetric(2,2))
+                    // Center the widget itself; shift only the TextEdit ink
+                    // up by 2pt (top 0pt / bottom 4pt instead of 2pt / 2pt).
+                    // Asymmetric inner padding preserves its 34pt hit area,
+                    // the date-group border, adjacent arrows and calendar.
+                    .margin(egui::Margin {
+                        left:2,right:2,top:0,bottom:4
+                    })
                     .hint_text("YYYY-MM-DD")
                     .desired_width(HISTORY_DATE_FIELD_WIDTH)
             ).on_hover_text(&format!("{label} 직접 입력"));
