@@ -973,6 +973,9 @@ pub struct OrderHistoryManager {
     to_month:NaiveDate,
     expanded:BTreeSet<String>,
     sort:Option<Sort>,
+    memo_editor:Option<MemoEditor>,
+    memo_save_job:Option<MemoSaveJob>,
+    memo_error:Option<String>,
 }
 impl OrderHistoryManager {
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:egui::Context)->Self{
@@ -987,6 +990,7 @@ impl OrderHistoryManager {
             to_month:month_start(NaiveDate::parse_from_str(&today,"%Y-%m-%d")
                 .expect("today in YYYY-MM-DD")),
             expanded:BTreeSet::new(),sort:None,
+            memo_editor:None,memo_save_job:None,memo_error:None,
         };
         manager.refresh(ctx);
         manager
@@ -1043,9 +1047,109 @@ impl OrderHistoryManager {
             _=>{}
         }
     }
+    fn poll_memo_save(&mut self,ctx:egui::Context){
+        let result=self.memo_save_job.as_ref().map(|job|job.receiver.try_recv());
+        let outcome=match result {
+            Some(Ok(answer))=>Some(answer),
+            Some(Err(TryRecvError::Disconnected))=>
+                Some(Err("관리 메모 저장 연결이 중단되었습니다.".into())),
+            _=>None
+        };
+        if let Some(answer)=outcome {
+            if let Some(job)=self.memo_save_job.take(){
+                if self.memo_editor.as_ref().is_some_and(|editor|
+                    editor.shipment_id==job.shipment_id){
+                    match answer {
+                        Ok(_)=>{
+                            self.memo_editor=None;
+                            self.memo_error=None;
+                            self.refresh(ctx);
+                        },
+                        Err(error)=>self.memo_error=Some(error),
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn show_memo_modal(&mut self,ctx:&egui::Context,work_area:Rect){
+        if self.memo_editor.is_none(){return;}
+        components::modal_backdrop(ctx,"history-memo-modal-backdrop",false);
+        let busy=self.memo_save_job.is_some();
+        let writable=self.gateway.shipment_memo_write_enabled();
+        let mut cancel=false;
+        let mut save=false;
+        components::modal_window("관리 메모","history-shipment-memo",work_area)
+            .default_width(520.0_f32.min(work_area.width()))
+            .show(ctx,|ui|{
+                cancel=components::modal_header(ui,"관리 메모","취소",!busy);
+                ui.label(typography::caption(
+                    "현재 발송 건에만 적용되는 내부 관리 메모입니다."
+                ));
+                ui.add_space(theme::SPACE_8);
+                if let Some(editor)=self.memo_editor.as_mut(){
+                    ui.add_enabled_ui(!busy,|fields|{
+                        fields.add_sized(
+                            Vec2::new(fields.available_width(),136.0),
+                            egui::TextEdit::multiline(&mut editor.draft)
+                                .desired_rows(5)
+                                .hint_text("관리 메모를 입력하세요")
+                        );
+                    });
+                    ui.label(typography::caption(&format!(
+                        "{} / 2,000자",editor.draft.chars().count()
+                    )));
+                    if !writable{
+                        ui.label(typography::caption(
+                            "현재 연결은 운영 메모 저장 권한이 없습니다."
+                        ));
+                    }
+                    if let Some(message)=self.memo_error.as_deref(){
+                        ui.colored_label(theme::DANGER,message);
+                    }
+                    ui.add_space(theme::SPACE_12);
+                    ui.with_layout(egui::Layout::right_to_left(Align::Center),|bar|{
+                        if theme::action(bar,"저장",theme::ButtonRole::Primary,
+                            !busy && writable &&
+                            editor.draft!=editor.original &&
+                            editor.draft.chars().count()<=2_000 &&
+                            editor.expected_revision>0).clicked(){
+                            save=true;
+                        }
+                    });
+                }
+            });
+        if cancel && !busy{
+            self.memo_editor=None;
+            self.memo_error=None;
+        }
+        if save && !busy {
+            if let Some(editor)=self.memo_editor.as_ref(){
+                let (sender,receiver)=mpsc::channel();
+                let gateway=Arc::clone(&self.gateway);
+                let revision=editor.expected_revision;
+                let shipment_id=editor.shipment_id.clone();
+                let memo=editor.draft.clone();
+                let wake=ctx.clone();
+                std::thread::spawn(move||{
+                    let result=gateway.save_shipment_management_memo(
+                        revision,&shipment_id,&memo
+                    );
+                    let _=sender.send(result);
+                    wake.request_repaint();
+                });
+                self.memo_save_job=Some(MemoSaveJob{
+                    shipment_id:editor.shipment_id.clone(),receiver
+                });
+                self.memo_error=None;
+            }
+        }
+    }
+
     pub fn show_page(&mut self,ui:&mut Ui){
         let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=theme::management_scroll_style();
+        self.poll_memo_save(ui.ctx().clone());
         self.poll();
         components::management_page_title_top_gap(ui);
         components::management_top_content(ui,|top|{
