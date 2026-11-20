@@ -977,12 +977,18 @@ impl FreightManager {
                     *bulk_feedback=None;
                 }
             let previous_group=bulk_group.clone();
-            section.scope_builder(
-                egui::UiBuilder::new()
-                    .id_salt("freight-assignment-bulk-toolbar")
-                    .max_rect(right_rect)
-                    .layout(egui::Layout::right_to_left(egui::Align::Center)),
-                |bulk|{
+            // Disable at the toolbar scope rather than using nested
+            // add_enabled_ui() scopes. Those nested scopes introduced a
+            // second vertical alignment pass that pushed the combo box
+            // and checkbox below the search control's center line.
+            let mut bulk_builder=egui::UiBuilder::new()
+                .id_salt("freight-assignment-bulk-toolbar")
+                .max_rect(right_rect)
+                .layout(egui::Layout::right_to_left(egui::Align::Center));
+            if !enabled {
+                bulk_builder=bulk_builder.disabled();
+            }
+            section.scope_builder(bulk_builder,|bulk|{
                     bulk.set_clip_rect(right_rect);
                     bulk.set_width(right_rect.width());
                     bulk.set_height(right_rect.height());
@@ -1015,41 +1021,37 @@ impl FreightManager {
                                 });
                             }
                         }
-                        bulk.add_enabled_ui(enabled,|control|{
-                            egui::ComboBox::from_id_salt("freight-bulk-assign")
-                                .width(theme::FREIGHT_BULK_GROUP_WIDTH)
-                                .selected_text(match bulk_group.as_deref(){
-                                    None=>"배송 그룹 선택",
-                                    Some("")=>"미지정으로 변경",
-                                    Some(id)=>group_name(groups,id),
-                                })
-                                .show_ui(control,|combo|{
+                        egui::ComboBox::from_id_salt("freight-bulk-assign")
+                            .width(theme::FREIGHT_BULK_GROUP_WIDTH)
+                            .selected_text(match bulk_group.as_deref(){
+                                None=>"배송 그룹 선택",
+                                Some("")=>"미지정으로 변경",
+                                Some(id)=>group_name(groups,id),
+                            })
+                            .show_ui(bulk,|combo|{
+                                combo.selectable_value(
+                                    bulk_group,Some(String::new()),"미지정으로 변경"
+                                );
+                                for group in groups {
                                     combo.selectable_value(
-                                        bulk_group,Some(String::new()),"미지정으로 변경"
+                                        bulk_group,Some(text(group,"id").to_owned()),
+                                        text(group,"name")
                                     );
-                                    for group in groups {
-                                        combo.selectable_value(
-                                            bulk_group,Some(text(group,"id").to_owned()),
-                                            text(group,"name")
-                                        );
-                                    }
-                                });
-                        });
+                                }
+                            });
                         bulk.label(typography::field_label(&format!(
                             "{}개 선택",selected.len()
                         )));
                         let mut all=!filtered.is_empty()
                             && filtered.iter().all(|p|selected.contains(text(p,"id")));
-                        bulk.add_enabled_ui(enabled,|control|{
-                            if control.checkbox(&mut all,"").changed(){
-                                selected.clear();
-                                *bulk_feedback=None;
-                                if all {
-                                    selected.extend(filtered.iter()
-                                        .map(|p|text(p,"id").to_owned()));
-                                }
+                        if bulk.checkbox(&mut all,"").changed(){
+                            selected.clear();
+                            *bulk_feedback=None;
+                            if all {
+                                selected.extend(filtered.iter()
+                                    .map(|p|text(p,"id").to_owned()));
                             }
-                        });
+                        }
                 }
             );
             if *bulk_group!=previous_group {
