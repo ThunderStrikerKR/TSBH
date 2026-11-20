@@ -681,9 +681,12 @@ pub fn align_management_primary_card(ui: &mut Ui, page_origin_y: f32) {
 /// Expand one primary list card to the bottom of the management workspace
 /// when its rows do not already require more room. Nested/multiple-card
 /// pages must not use this: their own content needs ordinary scrolling.
-pub fn management_primary_card_min_inner_height(ui: &Ui) -> f32 {
+/// Each original card type retains its own inner padding: freight uses
+/// SECTION_PADDING, while pre-existing list cards use a 1pt inset.
+/// Only the OUTER bottom border is standardized.
+pub fn management_primary_card_min_inner_height(ui: &Ui, vertical_inset: f32) -> f32 {
     (ui.available_height()
-        - 2.0 * (theme::SECTION_PADDING + theme::FRAME_STROKE_WIDTH))
+        - 2.0 * (vertical_inset + theme::FRAME_STROKE_WIDTH))
         .max(0.0)
 }
 pub fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
