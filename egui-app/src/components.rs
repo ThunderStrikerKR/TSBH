@@ -717,11 +717,14 @@ pub fn reception_total_footer(
     ).halign(Align::Max).truncate());
     let count_text = count.map(|n| n.to_string())
         .unwrap_or_else(|| "—".to_owned());
-    ui.painter().text(
-        egui::pos2(left, rect.top() + 42.0), egui::Align2::LEFT_CENTER,
-        format!("| 택배 {:>3}건 |", count_text),
-        egui::FontId::monospace(11.0), theme::SECONDARY,
+    let count_column=Rect::from_min_max(
+        egui::pos2(left,rect.top()+31.0),
+        egui::pos2((right-148.0).max(left+50.0),rect.bottom()-1.0),
     );
+    ui.put(count_column, egui::Label::new(
+        egui::RichText::new(format!("| 택배 {:>3}건 |", count_text))
+            .monospace().size(11.0).color(theme::SECONDARY),
+    ).halign(Align::Min).truncate());
     let vat_column=Rect::from_min_max(
         egui::pos2((right-148.0).max(left+50.0),rect.top()+31.0),
         egui::pos2(right,rect.bottom()-1.0),
