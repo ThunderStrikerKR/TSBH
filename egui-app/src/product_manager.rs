@@ -665,37 +665,37 @@ impl ProductManager {
         components::management_top_content(ui,|top|{
             top.horizontal(|heading|{
                 heading.label(typography::section_heading("상품 가격표"));
-            settings_help::icon(heading,"상품 가격 수정");
-            heading.label(typography::caption(&format!("{}개 상품",self.products.len())));
-            heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                if theme::action(
-                    actions,"상품 추가",theme::ButtonRole::Primary,!saving
-                ).clicked(){
-                    self.adding=!self.adding;
-                }
-                if theme::action(actions,
-                    if self.price_mode {"가격 수정 모드 종료"}else{"가격 수정 모드 켜기"},
-                    if self.price_mode {theme::ButtonRole::Primary}
-                    else {theme::ButtonRole::Standard},
-                    can_edit&&!saving
-                ).clicked(){
-                    if self.price_mode && self.has_pending_prices(){
-                        self.error=Some("저장하지 않은 가격이 있습니다. 각 가격 셀의 저장 또는 취소를 눌러주세요.".into());
-                    }else{
-                        self.price_mode=!self.price_mode;
-                        if !self.price_mode{self.price_drafts.clear();}
+                settings_help::icon(heading,"상품 가격 수정");
+                heading.label(typography::caption(&format!("{}개 상품",self.products.len())));
+                heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                    if theme::action(
+                        actions,"상품 추가",theme::ButtonRole::Primary,!saving
+                    ).clicked(){
+                        self.adding=!self.adding;
                     }
-                }
-                if theme::action(actions,"Excel 관리",theme::ButtonRole::Standard,
-                    !saving
-                ).clicked(){
-                    if self.has_pending_prices(){
-                        self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
-                    }else{
-                        self.excel.toggle();
+                    if theme::action(actions,
+                        if self.price_mode {"가격 수정 모드 종료"}else{"가격 수정 모드 켜기"},
+                        if self.price_mode {theme::ButtonRole::Primary}
+                        else {theme::ButtonRole::Standard},
+                        can_edit&&!saving
+                    ).clicked(){
+                        if self.price_mode && self.has_pending_prices(){
+                            self.error=Some("저장하지 않은 가격이 있습니다. 각 가격 셀의 저장 또는 취소를 눌러주세요.".into());
+                        }else{
+                            self.price_mode=!self.price_mode;
+                            if !self.price_mode{self.price_drafts.clear();}
+                        }
                     }
-                }
-            });
+                    if theme::action(actions,"Excel 관리",theme::ButtonRole::Standard,
+                        !saving
+                    ).clicked(){
+                        if self.has_pending_prices(){
+                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                        }else{
+                            self.excel.toggle();
+                        }
+                    }
+                });
         });
         });
         ui.add_space(theme::SPACE_12);
