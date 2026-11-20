@@ -706,6 +706,78 @@ fn paint_client_line(
     );
 }
 
+/// Keep client-list headings visible while the rows scroll. This uses
+/// the SAME 30/38/32 column coordinates and 12pt text insets as the
+/// existing client row renderer; horizontal scroll shifts only the glyphs,
+/// never the header's fixed 36pt viewport.
+pub fn management_client_header(
+    ui:&mut Ui,header:Rect,table_left:f32,table_width:f32,
+    current_sort:Option<(usize,bool)>
+)->Option<usize>{
+    let titles=["거래처","발송인 정보","거래 조건"];
+    let painter=ui.painter().with_clip_rect(header);
+    painter.rect_filled(header,0.0,theme::RAISED);
+    let mut x=table_left;
+    let mut selected=None;
+    for (i,title) in titles.iter().enumerate(){
+        let col_width=table_width*theme::MANAGEMENT_CLIENT_COLS[i];
+        let column=Rect::from_min_max(
+            egui::pos2(x,header.top()),
+            egui::pos2(x+col_width,header.bottom())
+        );
+        let visible=column.intersect(header);
+        if visible.width()>0.0 {
+            let response=ui.interact(
+                visible,ui.make_persistent_id(("client-management-sort",i)),
+                Sense::click()
+            ).on_hover_text(match current_sort{
+                Some((col,false)) if col==i=>"내림차순 정렬",
+                Some((col,true)) if col==i=>"기본 순서로 복귀",
+                _=>"오름차순 정렬"
+            });
+            if response.clicked(){selected=Some(i);}
+            if response.hovered(){
+                painter.rect_stroke(
+                    visible.shrink(1.0),2.0,
+                    Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
+                    egui::StrokeKind::Inside
+                );
+            }
+            let text_rect=Rect::from_min_max(
+                egui::pos2(column.left()+theme::SPACE_12,header.top()),
+                egui::pos2(column.right()-theme::SPACE_12,header.bottom())
+            ).intersect(header);
+            if text_rect.width()>0.0 {
+                // Same 14pt header hierarchy as Freight Assignment.
+                let title_galley=typography::freight_table_header_galley(ui,title);
+                let (arrow,color)=match current_sort{
+                    Some((col,false)) if col==i=>("▲",theme::SELECTION),
+                    Some((col,true)) if col==i=>("▼",theme::SELECTION),
+                    _=>("↕",theme::MUTED)
+                };
+                let arrow_galley=typography::freight_table_header_galley(ui,arrow);
+                let title_x=column.left()+theme::SPACE_12;
+                let text_clip=painter.with_clip_rect(text_rect);
+                text_clip.galley(
+                    egui::pos2(title_x,header.center().y-title_galley.size().y/2.0),
+                    title_galley.clone(),theme::SECONDARY
+                );
+                text_clip.galley(
+                    egui::pos2(title_x+title_galley.size().x+theme::SPACE_4,
+                        header.center().y-arrow_galley.size().y/2.0),
+                    arrow_galley,color
+                );
+            }
+        }
+        x+=col_width;
+    }
+    painter.line_segment(
+        [header.left_bottom(),header.right_bottom()],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    selected
+}
+
 /// Three React-derived client columns (30/38/32), with the heading and all
 /// data anchored at identical left edges. Every client occupies one row.
 /// Address/alias/contact text clips inside its own region without wrapping.
