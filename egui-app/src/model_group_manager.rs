@@ -262,7 +262,11 @@ impl ModelGroupManager {
                         });
                     }
                 );
-                components::soft_divider(whole);
+                // React .family-list-panel has a single border-right;
+                // the shared horizontal divider would add the wrong axis.
+                let (separator,_)=whole.allocate_exact_size(
+                    Vec2::new(theme::SOFT_DIVIDER_WIDTH,height),Sense::hover());
+                whole.painter().rect_filled(separator,0.0,theme::BORDER);
                 whole.allocate_ui_with_layout(
                     Vec2::new(whole.available_width(),height),
                     Layout::top_down(Align::Min),|right|{
