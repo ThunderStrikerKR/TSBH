@@ -1005,6 +1005,7 @@ impl FreightManager {
                         ).clicked(){
                             if let Some(target)=bulk_group.as_deref(){
                                 let (mut newly,mut moved,mut removed,mut unchanged)=(0,0,0,0);
+                                let mut assignments=serde_json::Map::new();
                                 for product in products.iter().copied()
                                     .filter(|product|selected.contains(text(product,"id"))) {
                                     let id=text(product,"id");
@@ -1014,6 +1015,7 @@ impl FreightManager {
                                         unchanged+=1;
                                     }else{
                                         pending.insert(id.to_owned(),target.to_owned());
+                                        assignments.insert(id.to_owned(),json!(target));
                                         if target.is_empty(){removed+=1;}
                                         else if original.is_empty(){newly+=1;}
                                         else{moved+=1;}
@@ -1024,6 +1026,13 @@ impl FreightManager {
                                 }else{
                                     format!("신규 지정 {newly}건 · 그룹 변경 {moved}건 · 변경 없음 {unchanged}건")
                                 });
+                                // Bulk Apply IS the save action. No second
+                                // '그룹 지정 저장' confirmation is required.
+                                if !assignments.is_empty(){
+                                    *action=Some(("assign_products".into(),json!({
+                                        "assignments":assignments
+                                    })));
+                                }
                             }
                         }
                         egui::ComboBox::from_id_salt("freight-bulk-assign")
@@ -1227,10 +1236,18 @@ impl FreightManager {
                         );
                         if current!=before_manual_edit {
                             *bulk_feedback=None;
+                            if current!=committed {
+                                // A per-product change saves immediately.
+                                // Retain the optimistic value only until Rust
+                                // confirms success or reports a failure.
+                                pending.insert(id.to_owned(),current.clone());
+                                *action=Some(("assign_products".into(),json!({
+                                    "assignments":{id:current}
+                                })));
+                            }else{
+                                pending.remove(id);
+                            }
                         }
-                        if current!=committed {
-                            pending.insert(id.to_owned(),current);
-                        }else{pending.remove(id);}
 
                         let changed=pending.contains_key(id);
                         let effective=product_views.get(id)
@@ -1435,48 +1452,9 @@ impl FreightManager {
                     *bulk_feedback=None;
                 }
             });
-            let mut assignments=serde_json::Map::new();
-            for (id,group) in pending.iter(){
-                if let Some(product)=products.iter().find(|p|text(p,"id")==id.as_str()){
-                    if text(product,"shippingGroupId")!=group.as_str(){
-                        assignments.insert(id.clone(),json!(group));
-                    }
-                }
-            }
-            components::soft_divider(section);
-            section.horizontal(|actions|{
-                // Reuse the existing footer, not another toolbar row or
-                // popup, to report the staged result of the last bulk action.
-                let summary=if let Some(feedback)=bulk_feedback.as_deref(){
-                    format!("{feedback} · 저장 대기 {}건",assignments.len())
-                }else if assignments.is_empty(){
-                    "등록된 상품을 임의로 분류하지 않습니다. 사용자가 확인한 그룹을 지정해 주세요.".to_owned()
-                }else{
-                    format!("{}개 상품의 배송 그룹을 변경합니다.",assignments.len())
-                };
-                actions.label(typography::caption(&summary));
-                let save_label=if assignments.is_empty(){
-                    "그룹 지정 저장".to_owned()
-                }else{
-                    format!("그룹 지정 저장 / {}개",assignments.len())
-                };
-                actions.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),|buttons|{
-                        if theme::action(buttons,&save_label,
-                            theme::ButtonRole::Primary,enabled&&!assignments.is_empty()
-                        ).clicked(){
-                            *action=Some(("assign_products".into(),json!({
-                                "assignments":assignments
-                            })));
-                        }
-                        if !assignments.is_empty() &&
-                            theme::action(buttons,"미저장 변경 초기화",
-                                theme::ButtonRole::Standard,enabled).clicked(){
-                            pending.clear();
-                        }
-                    }
-                );
-            });
+            // Assignment is persisted immediately from the product selector
+            // or the single bulk Apply button above. Do not render a second
+            // save footer, a redundant 'reset drafts' action, or guidance text.
         });
     }
 
