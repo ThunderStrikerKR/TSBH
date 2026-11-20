@@ -28,6 +28,42 @@ impl FreightTab {
 fn text<'a>(row: &'a Value, key: &str) -> &'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
 }
+/// Shared geometry for header and item rows. Each label/control uses this
+/// exact column rectangle; no intrinsic egui Grid sizing can shift a column.
+fn freight_assignment_cells(
+    origin: egui::Pos2, widths: &[f32;8], height:f32
+) -> [egui::Rect;8] {
+    let mut x=origin.x;
+    std::array::from_fn(|index|{
+        let cell=egui::Rect::from_min_size(
+            egui::pos2(x,origin.y),egui::vec2(widths[index],height)
+        );
+        x+=widths[index]+theme::FREIGHT_ASSIGNMENT_COL_GAP;
+        cell
+    })
+}
+
+/// One non-wrapping line anchored 6pt from the shared column origin. Keep
+/// the full content on hover without changing the cell's layout footprint.
+fn freight_assignment_text(
+    ui:&mut Ui,rect:egui::Rect,value:&str,emphasis:bool,secondary:bool,id:impl std::hash::Hash
+) {
+    let clipped=rect.shrink2(egui::vec2(6.0,0.0));
+    let (galley,color)=if secondary {
+        (typography::client_table_metadata_galley(ui,value,theme::MUTED),theme::MUTED)
+    }else{
+        (typography::client_table_cell_galley(ui,value,emphasis),theme::TEXT)
+    };
+    ui.painter().with_clip_rect(clipped).galley(
+        egui::pos2(clipped.left(),clipped.center().y-galley.size().y/2.0),galley,color
+    );
+    if !value.is_empty(){
+        let hover_id=ui.make_persistent_id(("freight-cell",id));
+        ui.interact(clipped,hover_id,egui::Sense::hover())
+            .on_hover_text(value);
+    }
+}
+
 fn rows(value: &Value) -> &[Value] {
     value.as_array().map(Vec::as_slice).unwrap_or(&[])
 }
