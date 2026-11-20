@@ -316,59 +316,71 @@ impl BandoGateway for LocalGateway {
         std::env::var("BANDO_EGUI_ENABLE_SHIPPING_WRITE")
             .ok().as_deref()==Some("1") &&
         std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .is_some_and(|v|!v.is_empty()) &&
-        std::env::var_os("BANDO_EGUI_TAURI_HELPER")
             .is_some_and(|v|!v.is_empty())
     }
     fn mutate_shipping(&self,revision:u64,action:&str,data:Value)
         -> Result<Value,String> {
-        use std::io::Write;
-        use std::process::{Command,Stdio};
+        use rusqlite::{Connection,OpenFlags};
         if !self.shipping_write_enabled() {
             return Err("운영 운임을 변경할 수 있는 연결이 아닙니다.".into());
         }
-        let path=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-            .ok_or("Tauri 업무 저장 도우미가 없습니다.")?;
+        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .filter(|value|!value.is_empty())
+            .ok_or("운영 DB 경로가 지정되지 않았습니다.")?;
         if !std::path::Path::new(&path).is_file(){
-            return Err("Tauri 업무 저장 도우미 파일이 없습니다.".into());
+            return Err("운영 DB 파일이 없습니다.".into());
         }
+        // Preserve the existing helper's request-size contract.
         let request=serde_json::json!({
-            "expectedRevision":revision,"action":action,"data":data
+            "expectedRevision":revision,"action":action,"data":&data,
         }).to_string();
-        if request.len()>2_000_000 {
-            return Err("운임 변경 요청이 허용 크기를 초과했습니다.".into());
+        if request.is_empty() || request.len()>2_000_000 {
+            return Err("운임 변경 요청 크기가 허용 범위를 초과했습니다.".into());
         }
-        let mut child=Command::new(path)
-            .arg("--bando-egui-shipping-patch")
-            .stdin(Stdio::piped()).stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn().map_err(|_|"운임 저장 도우미 실행 실패".to_owned())?;
-        let mut stdin=child.stdin.take().ok_or("운임 변경 입력을 열지 못했습니다.")?;
-        stdin.write_all(request.as_bytes()).map_err(|e|e.to_string())?;
-        drop(stdin);
-        let output=child.wait_with_output().map_err(|e|e.to_string())?;
-        if output.stdout.len()>65536{
-            return Err("운임 저장 응답이 허용 범위를 초과했습니다.".into());
+        // Direct native Rust call. No Tauri EXE or process IPC is involved.
+        let mut conn=Connection::open_with_flags(
+            &path,OpenFlags::SQLITE_OPEN_READ_WRITE
+        ).map_err(|_|"운영 DB를 열 수 없습니다.".to_owned())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|e|e.to_string())?;
+        let version:i64=conn.query_row(
+            "SELECT version FROM core_schema WHERE key='business-core'",
+            [],|row|row.get(0),
+        ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
+        if version!=2{return Err("지원하지 않는 운영 DB 버전입니다.".into());}
+        let before=bando_data_access::read_v2_snapshot(&conn)?;
+        let current=before["revision"].as_u64().ok_or("운영 DB 리비전 오류")?;
+        if current!=revision{
+            return Err("다른 작업에서 데이터가 수정되었습니다. 다시 불러오세요.".into());
         }
-        let reply:Value=serde_json::from_slice(&output.stdout)
-            .map_err(|_|"운임 저장 응답 형식 오류".to_owned())?;
-        if !output.status.success() || reply["ok"]!=true {
-            return Err(reply["error"].as_str()
-                .unwrap_or("운임 변경을 저장하지 못했습니다.").to_owned());
-        }
-        // Re-read the authoritative state after commit, never optimistic UI
-        // state or a second SQLite write performed by egui. Another writer
-        // may commit between helper success and this read: a mismatched
-        // revision must never be presented as our saved freight revision.
-        let committed_revision=reply["result"]["revision"].as_u64()
-            .ok_or("운임 저장 도우미가 확정 리비전을 반환하지 않았습니다.")?;
+        let payload=bando_data_access::shipping_action::action_payload(
+            action,&data,&before
+        )?;
+        // Execute the SAME original Rust shipping mutation rule as Tauri.
+        let result=rules::execute("apply_shipping_action",payload)?;
+        let mut next=if result.get("state").is_some(){
+            result["state"].clone()
+        }else if let Some(shipping)=result.get("shipping"){
+            let mut snapshot=before.clone();
+            snapshot["shipping"]=shipping.clone();
+            snapshot
+        }else{return Err("Rust 운임 처리 결과를 확인할 수 없습니다.".into());};
+        next["revision"]=serde_json::json!(revision);
+        let committed=bando_data_access::write_v2_snapshot(
+            &mut conn,next,revision,true
+        )?;
+        let committed_revision=committed["revision"].as_u64()
+            .ok_or("운임 저장 결과 리비전을 확인하지 못했습니다.")?;
+        drop(conn);
+        // Never present an optimistic draft as confirmed saved data.
         let state=self.load_business_state()?;
         if state["revision"].as_u64()!=Some(committed_revision) {
             return Err(
                 "운임은 저장됐지만 이후 다른 작업에서 데이터가 다시 수정되었습니다. 최신 상태를 불러와 확인하세요.".into()
             );
         }
-        // Use the same authoritative projection as initial freight loads.
         let projection=crate::management_queries::project_freight(self,&state)?;
         Ok(serde_json::json!({"state":state,"projection":projection}))
     }
