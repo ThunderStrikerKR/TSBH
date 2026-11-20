@@ -275,4 +275,47 @@ mod tests{
         assert_eq!(r["state"]["products"][0]["id"],"p1");
         assert_eq!(r["state"]["orders"][0]["price"],12000);
     }
+
+    #[test]
+    fn category_leaf_transfer_requires_explicit_consent_and_preserves_orders(){
+        let state=json!({
+            "categories":[
+                {"id":"catalog-root:BANDOSTAND","name":"반도스탠드","parentId":null},
+                {"id":"stand","name":"스탠드","parentId":"catalog-root:BANDOSTAND"}
+            ],
+            "products":[{"id":"p1","catalog":"BANDOSTAND",
+                "categories":["stand"],"category":"반도스탠드 > 스탠드"}],
+            "orders":[{"id":"historic","price":12000}]
+        });
+        let without_consent=change(&state,"leaf","보면대",Some("stand"),
+            false,false,"");
+        assert!(without_consent.unwrap_err().contains("이전 확인"));
+        let result=change(&state,"leaf","보면대",Some("stand"),
+            true,false,"").unwrap();
+        assert_eq!(result["state"]["products"][0]["categories"],json!(["leaf"]));
+        assert_eq!(result["state"]["products"][0]["category"],
+            "반도스탠드 > 스탠드 > 보면대");
+        assert_eq!(result["state"]["products"][0]["id"],"p1");
+        assert_eq!(result["state"]["orders"],state["orders"]);
+        assert_eq!(state["products"][0]["categories"],json!(["stand"]));
+    }
+
+    #[test]
+    fn category_cross_catalog_move_rejects_existing_product_mismatch(){
+        let state=json!({
+            "categories":[
+                {"id":"catalog-root:BANDOSTAND","name":"반도스탠드","parentId":null},
+                {"id":"catalog-root:BANDOMALL","name":"반도몰","parentId":null},
+                {"id":"stand","name":"스탠드","parentId":"catalog-root:BANDOSTAND"}
+            ],
+            "products":[{"id":"p1","catalog":"BANDOSTAND",
+                "categories":["stand"],"category":"반도스탠드 > 스탠드"}],
+            "orders":[{"id":"historic","price":12000}]
+        });
+        let rejected=change(&state,"stand","스탠드",
+            Some("catalog-root:BANDOMALL"),false,true,"상품 소속 충돌");
+        assert_eq!(rejected.unwrap_err(),"상품 소속 충돌");
+        assert_eq!(state["products"][0]["categories"],json!(["stand"]));
+        assert_eq!(state["orders"][0]["price"],12000);
+    }
 }
