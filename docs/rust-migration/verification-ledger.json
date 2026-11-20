@@ -2708,7 +2708,7 @@
       "id": "LIVE-20261120-EGUI-PRODUCT-MANAGEMENT",
       "scope": "52차 상품관리 React/CSS/Rust 전체 대비 egui 다섯 탭 누락 점검 및 중복·불필요 코드 정리",
       "status": "FIVE_TABS_LINKED_PRODUCT_LIST_DETAIL_PARTIAL_PRICE_AND_UI_CLEANUP_PATCHED",
-      "description": "2026-11-20 React ProductManager, ProductImports, ProductSyncWorkbookTools, RegistrationManager, ProductDetailComponents, PriceCell, CategoryManager, ColorGuidanceManager, AliasManager, Classification::RegistrySettings 및 실제 적용 product-admin-redesign/management-layout/tauri-stage2-products CSS와 egui 다섯 탭의 사용자 입력->상태->Rust->SQLite 경로 비교. 다섯 탭 모두 egui 소스에 연결됐지만 상품 목록/상세에 Excel 동기화/대량 등록/공식몰 가져오기/이미지/판매상태 및 일부 상세 UI 제약/표시가 미이전이므로 전체 상품관리 이전 완료 금지. Rust 기존 query/editor/brands/aliases/model_groups/categories 우선 재사용. Confirmed dead AliasManager::block_navigation 제거, PriceDraft/상세 금액 파서 통합, React PriceCell 0->null 변환 및 기존 0 값 무수정 상태 보호, 상품색상 변경 시 기본색/판매색 동기화, egui 내부 중복 카탈로그 루트 상수를 CategoryManager::ROOTS로 통합. 기존 React 원본/Rust 업무 처리/배송·주문·운임 코드 삭제 없음.",
+      "description": "2026-11-20 React ProductManager, ProductImports, ProductSyncWorkbookTools, RegistrationManager, ProductDetailComponents, PriceCell, CategoryManager, ColorGuidanceManager, AliasManager, Classification::RegistrySettings 및 실제 적용 product-admin-redesign/management-layout/tauri-stage2-products CSS와 egui 다섯 탭의 사용자 입력->상태->Rust->SQLite 경로 비교. 다섯 탭 모두 egui 소스에 연결됐지만 상품 목록/상세에 Excel 동기화/대량 등록/공식몰 가져오기/이미지/판매상태 및 일부 상세 UI 제약/표시가 미이전이므로 전체 상품관리 이전 완료 금지. Rust 기존 query/editor/brands/aliases/model_groups/categories 우선 재사용. Confirmed dead AliasManager::block_navigation 제거, PriceDraft/상세 금액 파서 통합, React PriceCell 0->null 변환 및 기존 0 값 무수정 상태 보호, 상품색상 변경 시 기본색/판매색 동기화, egui 내부 중복 카탈로그 루트 상수를 CategoryManager::ROOTS로 통합. 기존 React 원본/Rust 업무 처리/배송·주문·운임 코드 삭제 없음. 모델군 SKU 후보의 egui 자체 active/deleted 판정 역시 원본 Rust model_groups 검증과 중복이라 제거하고 Rust 허용 ID만 노출하도록 정리했다.",
       "evidence": [
         "src/ProductManager.tsx",
         "src/Classification.tsx",
@@ -2741,14 +2741,15 @@
         "egui-app/src/alias_manager.rs",
         "egui-app/src/brand_manager.rs",
         "egui-app/src/components.rs",
-        ".github/workflows/egui-targeted-check.yml"
+        ".github/workflows/egui-targeted-check.yml",
+        "src-tauri/src/business_core/catalog_clients/model_groups.rs"
       ],
       "gates": {
-        "patch": "PASS main source code cleanup: 6c1c048cc98be3e4a05b4500758786c29592ae62 alias dead guard, a39c45793d01baac70d8ab3fd6d7a98e152e21fe shared price parsing and zero semantics, 467d1450421ac5728349b6d766f49e214478ce41 single product color field, c294cf9d073d34f92b7146479a785f84929e6dfa + 70555252349c4f91262a444f9176515484e00720 + 22da0c85d2d0b7120573f283b0a951257ae6b0af shared root constants, 7f451f8f25b707366d2764a3aad2bc854bf9b304 historic 0 price input safe, e8c74cc7e47a14e512960d4868a190690a91f2c6 targeted test. Workflow f443397766d87ee6687ab368996f1ddcc6589777 added narrow egui test steps.",
+        "patch": "PASS main source code cleanup: 6c1c048cc98be3e4a05b4500758786c29592ae62 alias dead guard, a39c45793d01baac70d8ab3fd6d7a98e152e21fe shared price parsing and zero semantics, 467d1450421ac5728349b6d766f49e214478ce41 single product color field, c294cf9d073d34f92b7146479a785f84929e6dfa + 70555252349c4f91262a444f9176515484e00720 + 22da0c85d2d0b7120573f283b0a951257ae6b0af shared root constants, 7f451f8f25b707366d2764a3aad2bc854bf9b304 historic 0 price input safe, e8c74cc7e47a14e512960d4868a190690a91f2c6 targeted test. Workflow f443397766d87ee6687ab368996f1ddcc6589777 added narrow egui test steps.; Rust model group eligibility consolidation eb2061fab066a50f92952be1851f8d738a03a051, dispatch 74291e901cf0f52944dba830d3837190c58a38dd, egui bridge b20d2edd601505e28ab4b98e6cee58c04f08dc3d, UI duplicate removal 090cc7759e4f77a733d667dbfc76d713cbb4b422.",
         "differential": "STATIC SOURCE/ACTUAL CSS audit PASS for presence and absence mapping only, NOT functional completeness: ProductManager.tsx/PriceCell.tsx/ProductDetailComponents.tsx/ProductImports.tsx/ProductSyncWorkbookTools.tsx/RegistrationManager.tsx plus CategoryManager, ColorGuidanceManager, AliasManager, Classification and actual product-admin-redesign.css / tauri-stage2-products.css / management-layout.css against egui product and four child managers plus Rust catalog_clients. Substantive gaps listed in audit; five tabs mounted ≠ total migration done.",
-        "action": "Previous native alias, model group, brand SQLite targeted tests PASS on earlier source. Product direct egui -> Tauri external helper full subprocess and category/price/image/Excel workflows have NOT all been exercised; no overall product management action PASS. No operational database touched.",
-        "unit": "New egui product_manager::tests price-draft(0/null and historical stored zero), category-roots, alias_manager::tests shared roots source added. Latest targeted CI run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44664051174 pending source-specific unit result at initial observation. Previously passed native alias/model-group/brand rules and isolated SQLite from prior source revisions reuse if unchanged.",
-        "ci": "Latest code product/alias/category cleanup compile + focused egui tests are pending: https://github.com/ThunderStrikerKR/TSBH/actions/runs/44664051174. Do not extrapolate older cargo check to this revision.",
+        "action": "Previous native alias, model group, brand SQLite targeted tests PASS on earlier source. Product direct egui -> Tauri external helper full subprocess and category/price/image/Excel workflows have NOT all been exercised; no overall product management action PASS. No operational database touched. Native model-group eligibility code now routes via canonical Rust; test included in model_groups::tests, pending latest source build.",
+        "unit": "PASS product_manager::tests on run https://github.com/ThunderStrikerKR/TSBH/actions/runs/44664038049 (step completed success at source e8c74cc7e47a14e512960d4868a190690a91f2c6). Alias shared roots and new native model-group eligible IDs tests pending latest compiled source at https://github.com/ThunderStrikerKR/TSBH/actions/runs/44664467475.",
+        "ci": "PASS Tauri+egui cargo check and product_manager::tests at e8c74cc7e47a14e512960d4868a190690a91f2c6 in https://github.com/ThunderStrikerKR/TSBH/actions/runs/44664038049. Source changed after e8c for Rust model-group eligibility; latest scoped check https://github.com/ThunderStrikerKR/TSBH/actions/runs/44664467475 pending, not yet PASS.",
         "windows": "SKIPPED per user policy; no Windows GUI or DPI/hover screenshot comparison."
       },
       "audit": {
@@ -2790,18 +2791,20 @@
         },
         "other_tabs": {
           "category": "Core tree, expand/collapse, rename, add, move, guarded delete and original Rust category actions linked; native CSS pixel/interactive Windows check skipped by policy",
-          "model_groups": "Core manual group/SKU/representative/store CAS backed by native Rust; egui candidate filter registered(active) can include DEMO/multi-variant items ultimately rejected by Rust validator; follow-up source and validation ownership reconciliation needed",
+          "model_groups": "Core manual SKU grouping, representative picker and CAS save. FIXED: old UI candidate registered() duplicated and under-filtered native Rust rules; it now queries eligible_model_group_product_ids from same Rust model_groups::eligible_product used in validation, blocking DEMO/multi-variant/inactive candidates before Add. Existing stored memberships unchanged.",
           "aliases": "Core scope, product search and correction and Rust alias_problems + save_alias linked; existing known runtime action/Windows GUI excluded",
           "brands": "React four fields, correction, Rust upsert_brand and validator linked; native isolated SQLite validation passed at prior scoped CI"
         },
         "cleanup": {
           "removed": [
             "Unreferenced AliasManager::block_navigation, all egui source uses checked",
-            "Independent egui copies of virtual catalog root IDs in product and alias filters, now category_manager::ROOTS"
+            "Independent egui copies of virtual catalog root IDs in product and alias filters, now category_manager::ROOTS",
+            "egui model_group_manager::registered eligibility duplicate; Rust native helper now used for candidates"
           ],
           "consolidated": [
             "One parse_product_price for table and detail UI; per-mode React 0/null behavior respected",
-            "Single product-sale color editor updates defaultColor and variant.color in one event"
+            "Single product-sale color editor updates defaultColor and variant.color in one event",
+            "Rust model_groups::eligible_product is the only sale-unit/demo/active eligibility rule for both validation and UI candidate lookup"
           ],
           "retained_by_evidence": [
             "catalog_query_bridge::management_products is called by gateway, not dead",
