@@ -897,15 +897,24 @@ fn paint_chevron_at_angle(
     painter.line_segment([tip,b],Stroke::new(STROKE,ink));
 }
 
-pub(crate) fn paint_management_chevron(
-    painter:&egui::Painter,center:egui::Pos2,direction:ManagementChevronDirection
+fn paint_management_chevron_with_color(
+    painter:&egui::Painter,center:egui::Pos2,
+    direction:ManagementChevronDirection,color:Color32
 ){
     let (angle,raise)=match direction {
         ManagementChevronDirection::Right=>(0.0,0.0),
         ManagementChevronDirection::Down=>(std::f32::consts::FRAC_PI_2,1.0),
         ManagementChevronDirection::Left=>(std::f32::consts::PI,0.0),
     };
-    paint_chevron_at_angle(painter,center,angle,raise,theme::SECONDARY);
+    paint_chevron_at_angle(painter,center,angle,raise,color);
+}
+
+pub(crate) fn paint_management_chevron(
+    painter:&egui::Painter,center:egui::Pos2,direction:ManagementChevronDirection
+){
+    paint_management_chevron_with_color(
+        painter,center,direction,theme::SECONDARY
+    );
 }
 
 /// Native CollapsingHeader keeps its original click/keyboard/state/indent
@@ -932,14 +941,22 @@ pub fn management_dropdown(
     // Keep exact toolbar/cell width without stretching the subsequent action
     // or exceeding a narrow selector slot.
     let width=width.min(ui.available_width()).max(1.0);
+    // Parent Ui may be disabled independently of the explicit enabled flag.
+    let interactive=enabled && ui.is_enabled();
+    let fill=if interactive{theme::INPUT}
+        else{theme::MANAGEMENT_DROPDOWN_DISABLED_BG};
+    let border=if interactive{theme::BORDER}
+        else{theme::DISABLED_ACTION_BORDER};
+    let ink=if interactive{theme::TEXT}
+        else{theme::DISABLED_ACTION_TEXT};
+    let arrow_ink=if interactive{theme::SECONDARY}
+        else{theme::DISABLED_ACTION_TEXT};
     let trigger=ui.add_enabled(
         enabled,
         egui::Button::new("")
             .min_size(Vec2::new(width,theme::ACTION_STANDARD_HEIGHT))
-            // A dropdown is a filter/input control, not an action button.
-            // Match adjacent date fields (#292929) in management toolbars.
-            .fill(theme::INPUT)
-            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
+            .fill(fill)
+            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,border))
             .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
     );
     let trigger=if tooltip.is_empty(){trigger}
@@ -948,7 +965,7 @@ pub fn management_dropdown(
     let painter=ui.painter().with_clip_rect(rect);
     let arrow_left=rect.right()-30.0;
     let caption=typography::freight_table_cell_galley(
-        ui,label,false,if enabled{theme::TEXT}else{theme::SECONDARY}
+        ui,label,false,ink
     );
     let text_clip=Rect::from_min_max(
         rect.min+Vec2::new(theme::SPACE_12,0.0),
@@ -959,7 +976,7 @@ pub fn management_dropdown(
         egui::pos2(rect.left()+theme::SPACE_12,
             rect.center().y-caption.size().y/2.0
                 +typography::MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y),
-        caption,if enabled{theme::TEXT}else{theme::SECONDARY}
+        caption,ink
     );
     painter.line_segment(
         [egui::pos2(arrow_left,rect.top()+5.0),
@@ -968,9 +985,9 @@ pub fn management_dropdown(
     );
     // Restore the pre-enlargement dropdown chevron dimensions; the date
     // prev/next controls rotate this same shared shape.
-    paint_management_chevron(
+    paint_management_chevron_with_color(
         &painter,egui::pos2(rect.right()-15.0,rect.center().y),
-        ManagementChevronDirection::Down
+        ManagementChevronDirection::Down,arrow_ink
     );
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
