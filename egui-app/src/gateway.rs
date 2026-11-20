@@ -500,26 +500,24 @@ pub fn from_environment() -> Result<Arc<dyn BandoGateway>, String> {
 
 
 #[cfg(test)]
-mod shipping_gateway_process_roundtrip_tests {
+mod shipping_gateway_direct_roundtrip_tests {
     use super::{BandoGateway,LocalGateway};
     use serde_json::{json,Value};
 
-    /// Real LocalGateway -> spawned Tauri CLI -> native shipping rule ->
-    /// revision-checked v2 SQLite -> read-only egui re-query. No GUI and no
-    /// mocks. CI supplies a newly created isolated test file and compiled CLI.
+    /// Real LocalGateway -> shared Rust shipping service -> v2 SQLite ->
+    /// read-only egui re-query. No helper EXE, GUI, or mocked persistence.
+    /// An explicitly created isolated test database is mandatory.
     #[test]
-    fn shipping_gateway_process_roundtrip() {
+    fn shipping_gateway_direct_roundtrip() {
         let db=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
             .expect("test fixture DB is explicitly required");
-        let helper=std::env::var_os("BANDO_EGUI_TAURI_HELPER")
-            .expect("compiled native Tauri helper is explicitly required");
         assert_eq!(
             std::path::Path::new(&db).file_name().and_then(|x|x.to_str()),
             Some("bando-freight-gateway-e2e.sqlite"),
             "refuse to run against any operational DB"
         );
         assert!(std::path::Path::new(&db).is_file());
-        assert!(std::path::Path::new(&helper).is_file());
+
         let api=LocalGateway;
         assert!(api.shipping_write_enabled(),"native freight bridge must be enabled");
         let before=api.load_business_state().expect("egui reads initial native v2 state");
@@ -539,14 +537,14 @@ mod shipping_gateway_process_roundtrip_tests {
         rule["maxBundle"]=json!(2);
         rule["perItem"]=Value::Null;
         rule["fees"]=json!({"1":4321,"2":5678});
-        rule["notes"]=json!("실제 Tauri CLI 왕복 운임 검증");
+        rule["notes"]=json!("Rust 직접 호출 운임 검증");
         let update=json!({"groupId":group_id,"rule":rule});
         let response=api.mutate_shipping(revision,"save_group_rule",update.clone())
-            .expect("egui Gateway invokes native shipping CLI and reloads DB");
+            .expect("egui Gateway calls native storage directly and reloads DB");
         assert_eq!(response["state"]["revision"],json!(revision+1));
         assert!(response["projection"]["productViews"].is_object());
         let after=api.load_business_state()
-            .expect("read-only egui reload after subprocess commit");
+            .expect("read-only egui reload after direct Rust commit");
         assert_eq!(response["state"],after,
             "gateway response must match authoritative persisted snapshot");
         assert_eq!(after["products"],original_products,
@@ -561,18 +559,18 @@ mod shipping_gateway_process_roundtrip_tests {
         assert_eq!(saved["current"]["fees"]["2"],json!(5678));
         assert_eq!(saved["history"].as_array().unwrap().last(),Some(&previous));
         let stale=api.mutate_shipping(revision,"save_group_rule",update.clone())
-            .expect_err("stale revision must be rejected by real CLI");
+            .expect_err("stale revision must be rejected by real storage");
         assert!(stale.contains("다른 작업에서 데이터가 수정되었습니다."),"{stale}");
         assert_eq!(api.load_business_state().unwrap(),after,
             "rejected stale write must leave DB unchanged");
         let invalid=api.mutate_shipping(revision+1,"unknown_shipping_action",json!({}))
-            .expect_err("unknown command must be rejected by real CLI");
+            .expect_err("unknown command must be rejected by native Rust");
         assert!(invalid.contains("허용되지 않은 운임 변경 명령"),"{invalid}");
         assert_eq!(api.load_business_state().unwrap(),after);
         std::env::set_var("BANDO_EGUI_ENABLE_SHIPPING_WRITE","0");
         assert!(!api.shipping_write_enabled());
         let disabled=api.mutate_shipping(revision+1,"save_group_rule",update)
-            .expect_err("disabled gateway must not launch a writer");
+            .expect_err("disabled gateway must not write");
         assert!(disabled.contains("운영 운임을 변경할 수 있는 연결이 아닙니다."));
         assert_eq!(api.load_business_state().unwrap(),after);
         // The CI runner owns and disposes of this dedicated test DB. Do not
