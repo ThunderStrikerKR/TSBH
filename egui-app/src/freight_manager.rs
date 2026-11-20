@@ -273,10 +273,12 @@ fn freight_rate_cell(
 ){
     let cell=rect.shrink2(egui::vec2(6.0,0.0));
     let galley=typography::freight_table_cell_galley(ui,value,emphasized,color);
-    let x=match align {
-        egui::Align2::RIGHT_CENTER=>cell.right()-galley.size().x,
-        egui::Align2::CENTER_CENTER=>cell.center().x-galley.size().x/2.0,
-        _=>cell.left(),
+    let x=if align==egui::Align2::RIGHT_CENTER {
+        cell.right()-galley.size().x
+    }else if align==egui::Align2::CENTER_CENTER {
+        cell.center().x-galley.size().x/2.0
+    }else{
+        cell.left()
     };
     ui.painter().with_clip_rect(cell).galley(
         egui::pos2(x,cell.center().y-galley.size().y/2.0),galley,color
