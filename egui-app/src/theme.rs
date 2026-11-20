@@ -126,6 +126,9 @@ pub const PANEL_GAP: f32 = 6.0;
 pub const KAKAO_TOOLBAR_HEIGHT: f32 = 26.0;
 pub const KAKAO_CONTROL_HEIGHT: f32 = 22.0;
 pub const KAKAO_TOOLBAR_PAD_X: f32 = 4.0;
+// Deliberately separate the Kakao identity icon from the mode group;
+// mode-to-mode spacing stays at the shared 4pt.
+pub const KAKAO_ICON_MODE_GAP: f32 = SPACE_8;
 pub const KAKAO_MENU_ICON_SIZE: f32 = 20.0;
 pub const KAKAO_ICON_YELLOW: Color32 = Color32::from_rgb(254,229,0);
 pub const KAKAO_ICON_INK: Color32 = Color32::from_rgb(40,35,36);
