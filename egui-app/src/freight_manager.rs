@@ -1850,30 +1850,43 @@ fn summary(ui: &mut Ui, label: &str, count: usize) {
         |slot|{
             slot.set_width(card_width);
             theme::section_frame().show(slot,|cell|{
-                // A fixed inner width keeps numeric and unit positions
-                // identical in all four cards regardless of label length.
-                cell.set_width(card_width-2.0*theme::SECTION_PADDING
-                    -2.0*theme::FRAME_STROKE_WIDTH);
-                cell.horizontal(|line|{
-                    line.label(typography::caption(label));
-                    line.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |right|{
-                            right.spacing_mut().item_spacing.x=theme::SPACE_4;
-                            right.add_sized(
-                                [theme::FREIGHT_SUMMARY_UNIT_WIDTH,24.0],
-                                egui::Label::new(typography::caption("개"))
-                                    .halign(egui::Align::Min)
-                            );
-                            right.add_sized(
-                                [theme::FREIGHT_SUMMARY_NUMBER_WIDTH,24.0],
-                                egui::Label::new(
-                                    typography::summary_value(&count.to_string())
-                                ).halign(egui::Align::Max)
-                            );
-                        }
-                    );
-                });
+                let content_width=card_width-2.0*theme::SECTION_PADDING
+                    -2.0*theme::FRAME_STROKE_WIDTH;
+                // The frame margins plus this single 22pt content row
+                // preserve the existing 56pt card height. Every glyph is
+                // positioned against ONE centerline, not nested rows whose
+                // baseline and allocation depend on text length.
+                let (line,_)=cell.allocate_exact_size(
+                    egui::vec2(content_width,22.0),egui::Sense::hover()
+                );
+                let caption=typography::client_table_metadata_galley(
+                    cell,label,theme::MUTED
+                );
+                let digits=typography::summary_value_galley(
+                    cell,&count.to_string()
+                );
+                let unit=typography::client_table_metadata_galley(
+                    cell,"개",theme::MUTED
+                );
+                // Right-align the number to the unit: "358개" remains
+                // adjacent, and the last digit shares the same x-position
+                // for 0, 358, or a five-digit quantity.
+                let unit_x=line.right()-unit.size().x;
+                let digits_x=unit_x-theme::SPACE_4-digits.size().x;
+                let painter=cell.painter();
+                let y=line.center().y;
+                painter.galley(
+                    egui::pos2(line.left(),y-caption.size().y/2.0),
+                    caption,theme::MUTED
+                );
+                painter.galley(
+                    egui::pos2(digits_x,y-digits.size().y/2.0),
+                    digits,theme::TEXT
+                );
+                painter.galley(
+                    egui::pos2(unit_x,y-unit.size().y/2.0),
+                    unit,theme::MUTED
+                );
             });
         }
     );
