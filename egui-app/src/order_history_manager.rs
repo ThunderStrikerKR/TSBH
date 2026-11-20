@@ -572,23 +572,23 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let address=if address.is_empty(){"배송 주소 확인 필요"}
                 else{address};
             ui.interact(columns[0].intersect(area),
-                ui.make_persistent_id(("history-recipient",id,recipient_index)),
+                ui.make_persistent_id(("history-recipient",id,recipient_index,shipment_index)),
                 Sense::hover()).on_hover_text(
                     format!("수취인: {name}\n배송 주소: {address}\n발송건: {}",
                         shipment.map(|s|field(s,"id")).unwrap_or("발송 대기"))
                 );
             ui.interact(columns[1].intersect(area),
-                ui.make_persistent_id(("history-recipient-products",id,recipient_index)),
+                ui.make_persistent_id(("history-recipient-products",id,recipient_index,shipment_index)),
                 Sense::hover()).on_hover_text(if product_notes.is_empty(){
                     products.clone()
                 }else{
                     format!("{products}\n\n{product_notes}")
                 });
             ui.interact(columns[2].intersect(area),
-                ui.make_persistent_id(("history-recipient-freight",id,recipient_index)),
+                ui.make_persistent_id(("history-recipient-freight",id,recipient_index,shipment_index)),
                 Sense::hover()).on_hover_text(format!("실제 운임: {freight}"));
             ui.interact(columns[3].intersect(area),
-                ui.make_persistent_id(("history-recipient-tracking",id,recipient_index)),
+                ui.make_persistent_id(("history-recipient-tracking",id,recipient_index,shipment_index)),
                 Sense::hover()).on_hover_text(format!("운송장 번호: {tracking}"));
         },
     }
@@ -1367,6 +1367,24 @@ mod tests{
         let original=multiple.state["workflow"]["shipments"][1]
             ["recipientSnapshot"]["items"].clone();
         assert_eq!(history_items_one_line(&original),"◆ 709 검정 × 1");
+    }
+    #[test]
+    fn detail_block_starts_at_branch_tip_and_uses_compact_fixed_height(){
+        let row=Rect::from_min_size(
+            egui::pos2(20.0,70.0),Vec2::new(1200.0,ROW_HEIGHT)
+        );
+        let block=history_detail_block_rect(row,&COLS);
+        let branch_x=row.left()+COLS[0]-theme::SPACE_12;
+        assert_eq!(block.left(),branch_x+theme::SPACE_8);
+        assert_eq!(block.width(),DETAIL_BLOCK_MAX_WIDTH);
+        assert_eq!(block.height(),DETAIL_BLOCK_HEIGHT);
+        assert_eq!(block.center().y,row.center().y);
+        let fields=history_detail_cells(block);
+        assert!(fields[0].left()>block.left());
+        assert!(fields[3].right()<block.right());
+        for pair in fields.windows(2) {
+            assert!((pair[1].left()-pair[0].right()-theme::SPACE_8).abs()<0.01);
+        }
     }
     #[test]
     fn employee_approval_column_sorts_by_confirmation_date_and_keeps_unknown_last(){
