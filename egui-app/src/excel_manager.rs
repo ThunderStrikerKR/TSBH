@@ -674,7 +674,7 @@ impl ExcelManager{
                         cell(row,cells[3],&price,
                             Align2::RIGHT_CENTER,(id.clone(),3));
                         row.scope_builder(UiBuilder::new()
-                            .id_salt(("excel-queue-action",id))
+                            .id_salt(("excel-queue-action",id.clone()))
                             .max_rect(cells[4].shrink2(Vec2::new(theme::SPACE_8,0.0)))
                             .layout(egui::Layout::left_to_right(Align::Center)),
                             |buttons|{
