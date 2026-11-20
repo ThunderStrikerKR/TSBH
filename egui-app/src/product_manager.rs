@@ -150,6 +150,10 @@ pub struct ProductManager {
     brand:String,
     missing:bool,
     selected:Option<Value>,
+    original_selected:Option<Value>,
+    detail_prices:HashMap<String,String>,
+    confirm_discard:bool,
+    confirm_archive:bool,
     price_mode:bool,
     price_drafts:HashMap<String,PriceDraft>,
     writing:Option<ProductWrite>,
@@ -166,6 +170,8 @@ impl ProductManager {
             gateway,catalog:None,products:Vec::new(),
             query:String::new(),category:String::new(),
             brand:String::new(),missing:false,selected:None,
+            original_selected:None,detail_prices:HashMap::new(),
+            confirm_discard:false,confirm_archive:false,
             price_mode:false,price_drafts:HashMap::new(),
             writing:None,notice:None,
             result:None,generation:0,next_query:None,error:None,
@@ -178,6 +184,10 @@ impl ProductManager {
         // from another page. Never retain a stale edit/master snapshot.
         self.catalog=None;
         self.selected=None;
+        self.original_selected=None;
+        self.detail_prices.clear();
+        self.confirm_archive=false;
+        self.confirm_discard=false;
         self.next_query=None;
         self.reload(ctx);
     }
@@ -247,6 +257,13 @@ impl ProductManager {
                     if let Some(key)=job.key {
                         self.price_drafts.remove(&key);
                     }
+                    if job.kind=="upsert_product" || job.kind=="archive_product" {
+                        self.selected=None;
+                        self.original_selected=None;
+                        self.detail_prices.clear();
+                        self.confirm_archive=false;
+                        self.confirm_discard=false;
+                    }
                     self.notice=Some(match job.kind.as_str(){
                         "set_price"=>"가격 변경을 저장했습니다.",
                         "upsert_product"=>"상품 상세 정보를 저장했습니다.",
@@ -301,7 +318,58 @@ impl ProductManager {
         }
     }
     pub fn has_modal(&self)->bool {self.selected.is_some()}
-    pub fn close_detail(&mut self){self.selected=None;}
+    pub fn close_detail(&mut self){
+        self.selected=None;
+        self.original_selected=None;
+        self.detail_prices.clear();
+        self.confirm_archive=false;
+        self.confirm_discard=false;
+    }
+    pub fn allow_leave(&mut self)->bool{
+        if self.writing.is_some(){
+            self.error=Some("상품 저장이 완료된 뒤 다른 화면으로 이동하세요.".into());
+            return false;
+        }
+        if self.selected.is_some(){return false;}
+        if self.has_pending_prices(){
+            self.error=Some("가격 셀의 변경사항을 저장하거나 취소한 뒤 이동하세요.".into());
+            return false;
+        }
+        true
+    }
+    fn begin_edit(&mut self,product:Value){
+        if self.has_pending_prices(){
+            self.error=Some("가격 셀의 수정값부터 저장하거나 취소하세요.".into());
+            return;
+        }
+        self.detail_prices.clear();
+        if let Some(variant)=rows(&product["variants"]).first() {
+            for tier in ["wholesale","semi","retail"] {
+                self.detail_prices.insert(tier.to_owned(),
+                    variant[tier].as_i64().map(|v|v.to_string())
+                    .unwrap_or_default());
+            }
+        }
+        self.original_selected=Some(product.clone());
+        self.selected=Some(product);
+        self.confirm_discard=false;
+        self.confirm_archive=false;
+    }
+    fn new_product(&mut self){
+        let at=chrono::Utc::now().to_rfc3339();
+        self.begin_edit(json!({
+            "id":"","code":"","name":"","subtitle":"",
+            "category":"","categories":[],"catalog":"BANDOSTAND",
+            "origin":"FACTORY","defaultColor":"단일",
+            "active":true,"saleUnit":true,"colorStatus":"NOT_REQUIRED",
+            "variants":[{
+                "id":"","color":"단일","option":"",
+                "wholesale":null,"semi":null,"retail":null,
+                "url":"","source":"MANUAL"
+            }],
+            "createdAt":at,"updatedAt":at
+        }));
+    }
 
     pub fn show_page(&mut self,ui:&mut Ui){
         self.poll(ui.ctx());
@@ -319,6 +387,8 @@ impl ProductManager {
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
         let saving=self.writing.is_some();
         let mut price_write:Option<(String,Value)>=None;
+        let mut open_detail:Option<Value>=None;
+        let mut begin_new=false;
         theme::section_frame().show(ui,|panel|{
             panel.horizontal(|header|{
                 header.label(typography::section_heading("상품 가격표"));
@@ -326,8 +396,11 @@ impl ProductManager {
                     "{}개 상품",self.products.len()
                 )));
                 header.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                    theme::action(actions,"상품 추가",theme::ButtonRole::Primary,false)
-                        .on_disabled_hover_text("상품 저장 경로가 이전되지 않았습니다.");
+                    if theme::action(
+                        actions,"상품 추가",theme::ButtonRole::Primary,can_edit&&!saving
+                    ).clicked(){
+                        begin_new=true;
+                    }
                     if theme::action(actions,
                         if self.price_mode {"가격 수정 모드 종료"}else{"가격 수정 모드 켜기"},
                         if self.price_mode {theme::ButtonRole::Primary}
@@ -505,9 +578,9 @@ impl ProductManager {
                                         }
                                     }
                                     if theme::action(
-                                        grid,"상세 관리",theme::ButtonRole::Standard,true
+                                        grid,"상세 관리",theme::ButtonRole::Standard,!saving
                                     ).clicked(){
-                                        self.selected=Some(product.clone());
+                                        open_detail=Some(product.clone());
                                     }
                                     grid.end_row();
                                 }
@@ -528,6 +601,11 @@ impl ProductManager {
         });
         if let Some((key,data))=price_write {
             self.start_write("set_price",data,Some(key),ui.ctx().clone());
+        }
+        if let Some(product)=open_detail {
+            self.begin_edit(product);
+        }else if begin_new {
+            self.new_product();
         }
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
