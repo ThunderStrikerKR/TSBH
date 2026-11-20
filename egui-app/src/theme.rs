@@ -122,12 +122,6 @@ pub const RECIPIENT_PHONE_ROW_MIN_WIDTH: f32 =
     + RECIPIENT_MOBILE_INPUT_WIDTH + RECIPIENT_PHONE_COLUMN_GAP
     + RECIPIENT_PHONE_LABEL_WIDTH + RECIPIENT_LABEL_GAP
     + RECIPIENT_PHONE_INPUT_WIDTH;
-// Intake folder status: keep path and the two Standard actions side-by-side
-// in the normal reception pane, and stack them only in a very narrow pane.
-pub const INBOX_FOLDER_INLINE_MIN_WIDTH: f32 = 320.0;
-// Estimated width of both short Standard buttons plus their 8pt gaps;
-// reserve this before truncating long Windows directory paths.
-pub const INBOX_FOLDER_BUTTONS_RESERVED: f32 = 184.0;
 pub const PANEL_GAP: f32 = 6.0;
 // Kakao dock toolbar: one compact row (2pt vertical gap around 22pt controls).
 // Only its body rect is passed to the Win32 dock.
