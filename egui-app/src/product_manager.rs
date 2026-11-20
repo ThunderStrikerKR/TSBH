@@ -745,22 +745,27 @@ impl ProductManager {
                         filter,selected_category,text_width,
                         typography::CategoryPathFont::Body
                     );
-                    egui::ComboBox::from_id_salt("product-admin-category")
-                        .width(picker_width)
-                        .selected_text(visible)
-                        .show_ui(filter,|combo|{
-                            combo.selectable_value(
-                                &mut self.category,String::new(),"전체 카테고리"
+                    // Same split-chevron selector and active/disabled
+                    // colors as the two approved masters; keep the existing
+                    // 280pt category-path role and full-name hover details.
+                    components::management_dropdown(
+                        filter,&visible,picker_width,true,selected_category,
+                        |combo|{
+                            components::management_dropdown_option(
+                                combo,&mut self.category,String::new(),
+                                "전체 카테고리"
                             );
                             for (id,name) in &categories{
                                 let short=typography::fit_category_path(
                                     combo,name,text_width,
                                     typography::CategoryPathFont::Body
                                 );
-                                combo.selectable_value(&mut self.category,id.clone(),short)
-                                    .on_hover_text(name);
+                                components::management_dropdown_option(
+                                    combo,&mut self.category,id.clone(),&short
+                                ).on_hover_text(name);
                             }
-                        }).response.on_hover_text(selected_category);
+                        }
+                    );
                     if self.category!=before_category{
                         if self.has_pending_prices(){
                             self.category=before_category;
@@ -770,19 +775,20 @@ impl ProductManager {
                     let before_brand=self.brand.clone();
                     let brand_text=brands.iter().find(|b|field(b,"id")==self.brand)
                         .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
-                    egui::ComboBox::from_id_salt("product-admin-brand")
-                        .selected_text(brand_text)
-                        .show_ui(filter,|combo|{
-                            combo.selectable_value(
-                                &mut self.brand,String::new(),"전체 브랜드"
+                    components::management_dropdown(
+                        filter,brand_text,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
+                        true,brand_text,|combo|{
+                            components::management_dropdown_option(
+                                combo,&mut self.brand,String::new(),"전체 브랜드"
                             );
                             for brand in &brands{
-                                combo.selectable_value(
-                                    &mut self.brand,field(brand,"id").to_owned(),
+                                components::management_dropdown_option(
+                                    combo,&mut self.brand,field(brand,"id").to_owned(),
                                     field(brand,"name")
                                 );
                             }
-                        });
+                        }
+                    );
                     if self.brand!=before_brand{
                         if self.has_pending_prices(){
                             self.brand=before_brand;
