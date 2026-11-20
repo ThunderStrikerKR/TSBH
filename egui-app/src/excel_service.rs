@@ -274,6 +274,30 @@ pub fn open_daily(origin:&str)->Result<(),String>{
 mod tests{
     use super::*;
     #[test]
+    fn product_archive_preserves_date_folder_and_never_overwrites(){
+        let root=std::env::temp_dir().join(format!(
+            "bando-egui-product-archive-{}-{}",std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let canonical=root.canonicalize().unwrap();
+        let bytes=crate::product_excel::export(&json!({
+            "revision":1,"products":[],"categories":[],"brands":[]
+        })).unwrap();
+        let first=save(&canonical,"PRODUCT",&bytes).unwrap();
+        let second=save(&canonical,"PRODUCT",&bytes).unwrap();
+        assert_ne!(first,second);
+        assert_eq!(first.parent(),second.parent());
+        assert!(first.to_string_lossy().contains("상품 관리"));
+        assert!(first.file_name().unwrap().to_string_lossy().contains("(상품전체1).xlsx"));
+        assert!(second.file_name().unwrap().to_string_lossy().contains("(상품전체2).xlsx"));
+        assert_eq!(std::fs::read(&first).unwrap(),bytes);
+        assert_eq!(std::fs::read(&second).unwrap(),bytes);
+        assert_eq!(crate::product_excel::read(&first).unwrap()["revision"],1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn logen_xlsx_keeps_all_columns_as_strings(){
         assert_eq!(HEADERS.len(),16);
         let values=vec![
