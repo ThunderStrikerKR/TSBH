@@ -1616,14 +1616,13 @@ impl BandoEgui {
         theme::kakao_slot_frame().show(ui,|pane|{
             let slot=pane.max_rect();
             pane.set_min_size(slot.size());
-            // Match .kakao-panel-toolbar (34px) and its 1px bottom border.
-            // The same target is used on the Connect click and every later
-            // sync, so an external HWND never shifts between those frames.
+            // The connected HWND begins exactly below the 26pt toolbar.
+            // No redundant divider or 1pt reserved strip is left between
+            // toolbar and KakaoTalk; Connect and Sync use this same rect.
             region=Rect::from_min_max(
                 egui::pos2(
                     slot.left(),
-                    (slot.top()+theme::KAKAO_TOOLBAR_HEIGHT
-                        +theme::SOFT_DIVIDER_WIDTH).min(slot.bottom())
+                    (slot.top()+theme::KAKAO_TOOLBAR_HEIGHT).min(slot.bottom())
                 ),
                 slot.max,
             );
@@ -1639,9 +1638,12 @@ impl BandoEgui {
                         toolbar.set_clip_rect(toolbar_rect);
                         toolbar.spacing_mut().item_spacing.x=theme::SPACE_4;
                         toolbar.add_space(theme::KAKAO_TOOLBAR_PAD_X);
-                        // Explicit KakaoTalk menu prefix: icon and all three
-                        // controls form ONE compact left-aligned row.
+                        // Left: Kakao identity icon + one two-option mode
+                        // group. Give the icon a distinct 8pt gap; the two
+                        // related mode buttons themselves stay 4pt apart.
                         components::kakao_menu_icon(toolbar);
+                        toolbar.spacing_mut().item_spacing.x=
+                            theme::KAKAO_ICON_MODE_GAP;
                         let mode_role=|active|if active{
                             ButtonRole::ActiveKakaoControl
                         }else{ButtonRole::KakaoControl};
@@ -1650,23 +1652,23 @@ impl BandoEgui {
                         ).clicked(){
                             next_mode=Some(kakao_dock::DockMode::Together);
                         }
+                        toolbar.spacing_mut().item_spacing.x=theme::SPACE_4;
                         if theme::action(toolbar,"나누어 보기",
                             mode_role(current_mode==kakao_dock::DockMode::Split),true
                         ).clicked(){
                             next_mode=Some(kakao_dock::DockMode::Split);
                         }
-                        if theme::action(toolbar,"연결 해제",
-                            ButtonRole::KakaoControl,true
-                        ).clicked(){
-                            disconnect=true;
-                        }
+                        // Right: disconnect is an independent operation, not
+                        // a third choice in the display-mode group.
+                        toolbar.with_layout(Layout::right_to_left(Align::Center), |right| {
+                            right.add_space(theme::KAKAO_TOOLBAR_PAD_X);
+                            if theme::action(right,"연결 해제",
+                                ButtonRole::KakaoControl,true
+                            ).clicked(){
+                                disconnect=true;
+                            }
+                        });
                     },
-                );
-                let line_y=slot.top()+theme::KAKAO_TOOLBAR_HEIGHT;
-                pane.painter().line_segment(
-                    [egui::pos2(slot.left(),line_y),
-                        egui::pos2(slot.right(),line_y)],
-                    egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
                 );
             }else{
                 // The unconnected React slot has no toolbar, and its single
