@@ -23,9 +23,9 @@ const COLS: [f32;6] = [124.0,180.0,422.0,138.0,156.0,132.0];
 const MIN_WIDTH: f32 = 1192.0; // sum(COLS) + five 8pt gaps
 // Natural width of [date basis, previous, start date/calendar, end
 // date/calendar, next, all dates]. The search stays outside this right slot.
-const RANGE_CONTROLS_WIDTH:f32=836.0;
-const RANGE_COMPACT_START_WIDTH:f32=432.0;
-const RANGE_COMPACT_END_WIDTH:f32=408.0;
+const RANGE_CONTROLS_WIDTH:f32=940.0;
+const RANGE_COMPACT_START_WIDTH:f32=480.0;
+const RANGE_COMPACT_END_WIDTH:f32=460.0;
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum HistoryDateBasis { Reception, Payment }
 impl HistoryDateBasis {
@@ -853,6 +853,18 @@ mod tests{
     fn seoul_date_move_and_read_only_projection_labels(){
         assert_eq!(seoul_date("2026-11-19T16:00:00Z"),"2026-11-20");
         assert_eq!(move_date("2026-11-01",-1),"2026-10-31");
+        assert_eq!(HistoryDateBasis::Reception.key(),"RECEPTION");
+        assert_eq!(HistoryDateBasis::Payment.label(),"입금일 기준");
+        assert!(date_range_error("2026-11-01","2026-11-30").is_none());
+        assert!(date_range_error("2026-11-30","2026-11-01").is_some());
+        assert!(date_range_error("2026-02-30","").is_some());
+        assert!(date_range_error("","2026-11-30").is_none());
+        let mut from="2026-11-20".to_owned();
+        let mut to="2026-11-22".to_owned();
+        move_range(&mut from,&mut to,-1);
+        assert_eq!((&*from,&*to),("2026-11-19","2026-11-21"));
+        move_range(&mut from,&mut to,1);
+        assert_eq!((&*from,&*to),("2026-11-20","2026-11-22"));
         assert_eq!(model_label("BD 709 / 블랙"),"709 / 블랙");
         assert_eq!(won(&Value::Null),"확인 필요");
         let leap=NaiveDate::from_ymd_opt(2024,2,1).unwrap();
