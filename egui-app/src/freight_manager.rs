@@ -3,6 +3,7 @@
 //! rules::shipping_manager_view. No preview DB or hard-coded rate is treated as
 //! operational freight. Write actions are a separate migration step.
 use crate::{
+    category_manager::ProductCategoryPaths,
     components,
     gateway::{BandoGateway, ReadOperation},
     management_queries,
@@ -559,6 +560,7 @@ impl FreightManager {
             .iter().filter(|g| active(g)).cloned().collect();
         let products: Vec<&Value> = rows(&state["products"])
             .iter().filter(|p| registered(p)).collect();
+        let category_paths=ProductCategoryPaths::new(state,&products);
         let assigned = products.iter().filter(|p| {
             let id = text(p, "shippingGroupId");
             !id.is_empty() && groups.iter().any(|g| text(g, "id") == id)
@@ -583,7 +585,8 @@ impl FreightManager {
         // pushed the column headings offscreen with the product list.
         if self.tab == FreightTab::Groups {
             Self::show_groups(
-                ui, &groups, &products, &mut self.search, &mut self.group_filter,
+                ui, &groups, &products, &category_paths,
+                &mut self.search, &mut self.group_filter,
                 &mut self.only_missing, &mut self.pending, &mut self.selected,
                 &mut self.bulk_group, &mut self.bulk_feedback,
                 &mut self.rate_editor, &mut self.product_reset_target,
@@ -863,6 +866,7 @@ impl FreightManager {
     #[allow(clippy::too_many_arguments)]
     fn show_groups(
         ui: &mut Ui, groups: &[Value], products: &[&Value],
+        category_paths:&ProductCategoryPaths,
         search: &mut String, group_filter: &mut String,
         only_missing:&mut bool,
         pending: &mut BTreeMap<String,String>, selected: &mut BTreeSet<String>,
@@ -951,7 +955,7 @@ impl FreightManager {
                         text(g,"id")==text(p,"shippingGroupId")
                     );
                     (needle.is_empty()||[text(p,"code"),text(p,"name"),
-                        text(p,"subtitle"),text(p,"category")]
+                        text(p,"subtitle"),category_paths.for_product(p)]
                         .iter().any(|s|s.to_lowercase().split_whitespace()
                             .collect::<String>().contains(&needle)))
                     && (group_filter.is_empty()
@@ -1148,9 +1152,13 @@ impl FreightManager {
                             table,cells[1],&product_title,&product_title,
                             true,false,(id,1)
                         );
-                        let category=if text(product,"category").is_empty(){
+                        // The category cell and its hover text come from
+                        // the current canonical category tree, not a stale
+                        // product.category string with omitted root names.
+                        let category=category_paths.for_product(product);
+                        let category=if category.trim().is_empty(){
                             "분류 미지정"
-                        }else{text(product,"category")};
+                        }else{category};
                         freight_assignment_text(
                             table,cells[2],category,category,false,false,(id,2)
                         );
