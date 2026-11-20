@@ -15,7 +15,7 @@ use crate::preview_store::{PreviewStore, WorkingSource};
 #[path = "../../src-tauri/src/business_core/recognition/mod.rs"]
 mod recognition;
 #[path = "../../src-tauri/src/business_core/rules/mod.rs"]
-mod rules;
+pub(crate) mod rules;
 #[path = "../../src-tauri/src/business_core/output/mod.rs"]
 pub(crate) mod output;
 #[path = "../../src-tauri/src/business_core/catalog_clients/title_clients.rs"]
@@ -142,6 +142,12 @@ pub trait BandoGateway: Send + Sync {
     }
     /// Opt-in native freight write through the shared Rust v2 transaction.
     /// Does not spawn Tauri or write to the isolated egui preview DB.
+    fn mutate_excel_workflow(
+        &self,_revision:u64,_action:&str,_shipment_id:&str,
+        _queue_id:&str,_origin:&str,_value:Value,
+    )->Result<Value,String>{
+        Err("이 연결에서는 Excel 관리 작업 저장을 지원하지 않습니다.".into())
+    }
     fn excel_write_enabled(&self)->bool{false}
     fn export_excel(&self,_origin:&str,_ids:&[String])->Result<Value,String>{
         Err("이 연결에서는 Excel 파일 생성 및 출력 이력 저장을 지원하지 않습니다.".into())
@@ -341,6 +347,14 @@ impl BandoGateway for LocalGateway {
             return Err("상품은 저장됐지만 최신 상태 조회가 일치하지 않습니다. 새로고침하세요.".into());
         }
         Ok(catalog)
+    }
+    fn mutate_excel_workflow(
+        &self,revision:u64,action:&str,shipment_id:&str,
+        queue_id:&str,origin:&str,value:Value,
+    )->Result<Value,String>{
+        crate::excel_service::workflow_action(
+            revision,action,shipment_id,queue_id,origin,value
+        )
     }
     fn excel_write_enabled(&self)->bool{crate::excel_service::writable()}
     fn export_excel(&self,origin:&str,ids:&[String])->Result<Value,String>{
