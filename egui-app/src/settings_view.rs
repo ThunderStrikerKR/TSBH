@@ -463,17 +463,23 @@ impl SettingsView{
     pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
         let page_origin_y=ui.cursor().top();
         self.poll(ui.ctx(),Arc::clone(&gateway));
-        ui.label(typography::page_heading("설정"));
-        ui.add_space(theme::SPACE_12);
-        if let Some(tab)=components::management_tabs(ui,&[
-            ("기본 설정",self.tab==SettingsTab::Basic,true),
-            ("파일 관리",self.tab==SettingsTab::Files,true),
-            ("데이터 관리",self.tab==SettingsTab::Data,true),
-            ("시스템",self.tab==SettingsTab::System,true),
-        ]) {
+        components::management_page_title_top_gap(ui);
+        components::management_top_content(ui,|top|{
+            top.label(typography::page_heading("설정"));
+        });
+        ui.add_space(theme::SPACE_8);
+        let selected_tab=components::management_top_content(ui,|top|
+            components::management_tabs(top,&[
+                ("기본 설정",self.tab==SettingsTab::Basic,true),
+                ("파일 관리",self.tab==SettingsTab::Files,true),
+                ("데이터 관리",self.tab==SettingsTab::Data,true),
+                ("시스템",self.tab==SettingsTab::System,true),
+            ])
+        );
+        if let Some(tab)=selected_tab {
             self.request_tab(SettingsTab::ALL[tab]);
         }
-        ui.add_space(theme::SPACE_12);
+        ui.add_space(theme::SPACE_16);
         if let Some(error)=self.error.as_deref(){
             // React SettingsPanel conflict recovery: the employee can
             // reopen the saved version after acknowledging draft loss.
@@ -482,10 +488,12 @@ impl SettingsView{
                 || error.contains("설정 충돌");
             // Suppress unsolicited error prose; retain the targeted
             // conflict recovery action and its existing validation state.
-            if conflict && theme::action(
-                ui,"저장된 설정 불러오기",ButtonRole::Standard,
-                !self.busy()
-            ).clicked(){
+            if conflict && components::management_top_content(ui,|top|{
+                theme::action(
+                    top,"저장된 설정 불러오기",ButtonRole::Standard,
+                    !self.busy()
+                ).clicked()
+            }){
                 self.reload_confirmation=true;
             }
             ui.add_space(theme::SPACE_8);
