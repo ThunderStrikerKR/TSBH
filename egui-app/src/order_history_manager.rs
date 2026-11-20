@@ -1097,7 +1097,7 @@ impl OrderHistoryManager {
                                 // Column rules terminate at the block edge;
                                 // they do not fill the small gaps between rows.
                                 paint_column_dividers(
-                                    row_ui,block_rect,&widths,false,block_rect
+                                    row_ui,row_rect,&widths,false,block_rect
                                 );
                                 if let Some(snapshot)=snapshot {
                                     if let Some(branch)=history_branch(
