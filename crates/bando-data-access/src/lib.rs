@@ -2,8 +2,8 @@
 //!
 //! Both the legacy Tauri host and the egui host must reconstruct exactly the
 //! same business objects from the same SQLite rows. The caller owns the
-//! connection and the transaction: this module never opens, creates, writes,
-//! migrates or commits a database.
+//! connection; only explicitly invoked write_v2_snapshot commits changes.
+//! Database selection, schema creation and migration remain host-owned.
 
 use rusqlite::Connection;
 use serde_json::{json, Value};
