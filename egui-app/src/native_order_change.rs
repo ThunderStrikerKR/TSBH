@@ -13,7 +13,9 @@ use serde_json::{json,Value};
 
 pub struct ChangeResult {
     pub client_id: String,
-    pub pricing_preview: Value,
+    // None means a deliberately isolated manual identity link. Never
+    // present it as a priced native order or invent customer-level costs.
+    pub pricing_preview: Option<Value>,
 }
 
 fn required<'a>(value:&'a Value,key:&str)->Result<&'a Value,String>{
@@ -38,6 +40,33 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         return Err("현재 원문의 Rust 분석이 완료된 뒤 거래처를 선택하세요.".into());
     }
 
+    // An explicitly isolated egui client master has no full billing state.
+    // Permit only an employee-confirmed identity reference, validated against
+    // the current Rust catalog; no pricing or production order mutation.
+    // This is an intentional separate scope from full change_order_client.
+    if gateway.isolated_client_identity_link() {
+        if source.working_version.is_some() || source.pricing_preview.is_some() {
+            return Err("운영 작업본 또는 기존 계산 결과가 있어 격리 거래처 연결로 전환할 수 없습니다.".into());
+        }
+        let index=gateway.load_catalog()?;
+        let exists=index.get("clients").and_then(Value::as_array)
+            .is_some_and(|clients| clients.iter().any(|client|
+                client.get("id").and_then(Value::as_str)==Some(target_id) &&
+                client.get("deletedAt").is_none_or(|value|
+                    value.is_null() || value.as_str()==Some("")) &&
+                client.get("active")!=Some(&Value::Bool(false))
+            ));
+        if !exists {
+            return Err("현재 Rust 거래처 명단에 없는 거래처는 선택할 수 없습니다.".into());
+        }
+        return Ok(ChangeResult {
+            client_id:target_id.to_owned(),
+            pricing_preview:None,
+        });
+    }
+
+    // Full operating state follows the same Rust change_order_client →
+    // merge → reprice → calculate_price chain as the original React path.
     // Never use the name-only client index or the embedded retail seed to
     // calculate actual customer prices, shipping waivers or overrides.
     let state=gateway.load_business_state()?;
@@ -144,6 +173,6 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
     });
     Ok(ChangeResult {
         client_id:target_id.to_owned(),
-        pricing_preview:price_summary,
+        pricing_preview:Some(price_summary),
     })
 }
