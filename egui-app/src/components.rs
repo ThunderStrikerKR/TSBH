@@ -462,11 +462,13 @@ pub fn soft_divider(ui: &mut Ui) {
     );
 }
 
-/// The 6pt interaction gutter is always painted as a single surface.
-/// The line is a separate operation so the parent dock can extend horizontal
-/// dividers into a neighboring vertical gutter without painting a dark band.
-pub fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
-    ui.painter().rect_filled(rect, 0.0, theme::CANVAS);
+/// Keep a 6pt hit area for dragging, but visually join adjacent reception
+/// cards by filling their gutter with PANEL. The Kakao boundary instead
+/// continues its CANVAS workspace. Only hover/drag paints a resize marker.
+pub fn paint_dock_splitter(
+    ui: &Ui, rect: Rect, vertical: bool, active: bool, background: Color32
+) {
+    ui.painter().rect_filled(rect, 0.0, background);
     paint_dock_axis_line(ui, rect, vertical, active);
 }
 
@@ -476,6 +478,9 @@ pub fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
 /// Odd-width gutters use a single centered pixel. Hover uses the shared
 /// 2pt token, adjusted only when necessary for symmetrical pixel margins.
 pub fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
+    // No permanent 1-2pt splitter bar: section/card strokes are enough.
+    // A thin resize cue appears only when the pointer is over its hit zone.
+    if !active { return; }
     let scale = ui.ctx().pixels_per_point().max(1.0);
     let (low, high) = if vertical {
         (rect.left(), rect.right())
