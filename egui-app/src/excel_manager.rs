@@ -255,7 +255,7 @@ fn table<const N:usize>(
     for (i,title) in titles.iter().enumerate(){
         let h=heads[i];
         let suffix=if sort_enabled[i] {
-            match sort.filter(|s|s.column==i).map(|s|s.direction){
+            match (*sort).filter(|s|s.column==i).map(|s|s.direction){
                 Some(Direction::Up)=>" ▲",Some(Direction::Down)=>" ▼",None=>" ↕"
             }
         }else{""};
