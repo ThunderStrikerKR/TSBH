@@ -76,6 +76,29 @@ pub(super) fn patch(conn:&mut Connection, request:&Value)->Result<Value,String>{
             result.get("state").filter(|s|s.is_object()).cloned()
                 .ok_or("Rust 상품 저장 결과 형식 오류")?
         }
+        "upsert_brand"=>{
+            // React RegistrySettings supplies only the four edited fields.
+            // Brand normalization, HTTPS evidence, aliases and collisions
+            // belong exclusively to the existing Rust catalog_clients rule.
+            let editing=data["editing"].as_str().unwrap_or("");
+            let id=if editing.is_empty(){
+                unique_id("brand")?
+            }else{editing.to_owned()};
+            let result=business_core::execute(
+                "catalog_clients","upsert_brand",
+                json!({
+                    "state":&before,
+                    "editing":editing,
+                    "id":id,
+                    "name":data["name"],
+                    "korean":data["korean"],
+                    "aliases":data["aliases"],
+                    "evidence":data["evidence"],
+                }),
+            )?;
+            result.get("state").filter(Value::is_object).cloned()
+                .ok_or("Rust 브랜드 저장 결과 형식 오류")?
+        }
         "save_alias"=>{
             // The original React AliasManager submits one product id and
             // its first sale-unit variant; the Rust catalog engine owns
