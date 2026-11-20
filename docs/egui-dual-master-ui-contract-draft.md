@@ -67,7 +67,7 @@
 
 ## 5. 수치 기반 검증 구현 계획 — 아직 미구현
 
-- **1차 구현 완료:** 공통 trailing slot의 오른쪽 끝 및 높이 경계는 `debug_assert!`로 검증한다. `management_toolbar_geometry_tests`의 단일 집중 테스트가 카드 폭 400/704/1280pt와 줄바꿈 슬롯을 비교한다. 실제 컴파일 및 실행은 확인되지 않았다.
+- **1차 구현 완료:** 공통 trailing slot의 오른쪽 끝 및 높이 경계는 `debug_assert!`로 검증한다. `management_toolbar_geometry_tests`의 단일 집중 테스트가 카드 폭 400/704/1280pt와 줄바꿈 슬롯을 비교한다. 공통 `management_sticky_table_header` 역시 **할당된 실제 헤더 높이 36pt**와 **헤더 데이터 오른쪽 끝 = 헤더 외곽 오른쪽 끝 - 스크롤바 할당폭**을 검사한다(극단적으로 좁은 화면에서는 데이터 최소 1pt 예외). 실제 컴파일 및 Windows 실행은 확인되지 않았다.
 - **후속 과제:** 공통 레이아웃이 반환하는 `Rect`에 명시적인 역할 ID를 부여한다. 예: `page.title`, `card.outer`, `toolbar`, `table.header`, `table.data_right`, `scroll.track`, `button.primary`.
 - 동일 역할의 `min.x/min.y/width/height`를 **같은 크기·같은 배율**에서 비교한다. 다른 길이의 텍스트와 서로 다른 열 콘텐츠는 동일 좌표 대상으로 취급하지 않는다.
 - 고정 불변식은 `header.height=36pt`, `base_row.height=42pt`, `toolbar.height=36pt`, `dropdown.height=34pt`, `header.data_right=body.data_right`, `scroll.track.top=rows.top+3pt` 등이다.
