@@ -156,11 +156,16 @@ impl BrandManager {
                     });
                 });
                 form.vertical(|column|{
+                    // React .registry-edit-actions: right-aligned inside its
+                    // auto-fit field column, not left-anchored like a label.
+                    column.set_min_width(theme::MANAGEMENT_SEARCH_MIN_WIDTH);
                     column.add_space(theme::SPACE_24);
-                    if theme::action(column,"브랜드 저장",
-                        theme::ButtonRole::Primary,editable&&!busy).clicked(){
-                        save=true;
-                    }
+                    column.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                        if theme::action(actions,"브랜드 저장",
+                            theme::ButtonRole::Primary,editable&&!busy).clicked(){
+                            save=true;
+                        }
+                    });
                 });
             });
             if let Some(message)=&self.error{
