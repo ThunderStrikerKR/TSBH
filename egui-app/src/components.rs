@@ -702,9 +702,15 @@ pub fn management_row(
                     }
                 }else if secondary.is_empty() || primary.is_empty() {
                     let visible=if primary.is_empty(){secondary}else{primary};
-                    inner.add(egui::Label::new(
+                    // React always emphasizes the dealer's primary name,
+                    // including when there is no separate invoice name.
+                    let label=if i==0 && !primary.is_empty() {
+                        typography::table_cell(visible).strong()
+                    }else{
                         typography::table_cell(visible)
-                    ).truncate()).on_hover_text(*visible);
+                    };
+                    inner.add(egui::Label::new(label).truncate())
+                        .on_hover_text(*visible);
                 }else{
                     // The address stays ahead of its contact, just as in
                     // React, but neither field is allowed to wrap. Reserve
