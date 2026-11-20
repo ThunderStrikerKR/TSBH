@@ -21,9 +21,8 @@ pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
 // Workflow cards: original React workflow.css card, not generic navigation tiles.
 // The selected stroke color follows the shared selection role.
-// Order cards are the first-level card on the #101010 reception
-// workspace, matching the #202020 cards used by Settings.
-pub const WORKFLOW_CARD_BG: Color32 = PANEL;
+// Individual orders are nested cards on the #202020 reception surface.
+pub const WORKFLOW_CARD_BG: Color32 = INPUT;
 pub const WORKFLOW_SELECTED_BG: Color32 = Color32::from_rgb(36, 36, 36);
 pub const WORKFLOW_CARD_BORDER: Color32 = Color32::from_rgb(83, 83, 83);
 pub const WORKFLOW_SELECTED_BORDER: Color32 = Color32::from_rgb(245, 158, 11);
@@ -272,20 +271,20 @@ pub fn workspace_shell_frame() -> Frame {
         .inner_margin(SOFT_DIVIDER_WIDTH as i8)
 }
 
-/// Reception's large fixed regions are WORKSPACE (CANVAS), not cards.
-/// Their dividers own the borders. Preserve the 16pt horizontal inset and
-/// exact splitter geometry, but use an 8pt vertical inset so section titles
-/// do not waste height above and below their actual line boxes.
+/// Return reception panes to the Settings-inspired PANEL card tier.
+/// No outer margin: the 6pt splitter hit area is the only reserved gutter.
+/// Compensate the 1pt outline in inner margins so 16pt horizontal and 8pt
+/// vertical content insets (and the recently compacted title row) survive.
 pub fn docked_pane_frame() -> Frame {
     Frame::new()
-        .fill(CANVAS)
-        .stroke(Stroke::NONE)
-        .corner_radius(CornerRadius::same(0))
+        .fill(PANEL)
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
+        .corner_radius(CornerRadius::same(PANEL_RADIUS))
         .inner_margin(egui::Margin {
-            left: SECTION_PADDING as i8,
-            right: SECTION_PADDING as i8,
-            top: RECEPTION_PANE_PADDING_Y as i8,
-            bottom: RECEPTION_PANE_PADDING_Y as i8,
+            left: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
+            right: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
+            top: (RECEPTION_PANE_PADDING_Y - FRAME_STROKE_WIDTH) as i8,
+            bottom: (RECEPTION_PANE_PADDING_Y - FRAME_STROKE_WIDTH) as i8,
         })
 }
 
