@@ -285,13 +285,6 @@ impl ClientManager {
                 });
                 return;
             }
-            if !self.editable() {
-                theme::management_list_strip_frame().show(section,|strip|{
-                    strip.label(typography::caption(
-                        "현재 연결된 거래처 명단은 읽기 전용입니다."
-                    ));
-                });
-            }
             let rows=self.clients().iter()
                 .filter(|row|field(row,"deletedAt").is_empty())
                 .filter(|row|self.search.trim().is_empty() ||
