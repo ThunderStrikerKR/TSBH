@@ -234,19 +234,19 @@ pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = 42.0;
 // Freight assignment is a task-oriented table, not an auto-sized 11-column
 // audit grid. Every header and row uses the SAME widths to keep controls
 // readable without wrapped names or vertical buttons.
-// Ordered columns: selection, product, color/option, category, group,
-// assignment status, action. Redundant freight/bundle status is omitted.
-// The reclaimed width is shared by product name (+135pt) and category
-// (+68pt), keeping product wider. Total: 1255pt including six 8pt gaps.
-pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 7] =
-    [44.0, 455.0, 69.0, 290.0, 155.0, 66.0, 128.0];
+// Assignment table: selection, product, color/option, category, group,
+// action. The redundant "그룹 지정" status column is intentionally absent.
+// Compact minimum widths preserve one product per row and let the table fit
+// in ordinary management panes without an unnecessary horizontal scrollbar.
+pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 6] =
+    [44.0, 296.0, 69.0, 215.0, 150.0, 128.0];
 pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
 // Width for the single-line bulk shipping-group selector.
 pub const FREIGHT_BULK_GROUP_WIDTH: f32 = 200.0;
 pub const FREIGHT_ASSIGNMENT_ROW_HEIGHT: f32 = 42.0;
-// 8 allocated columns with seven 8pt gaps. Spare screen width grows the
-// identity/category/option columns instead of leaving an empty right margin.
-pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 = 1255.0;
+// Six columns plus five 8pt gaps: 902 + 40 = 942pt.
+// Any extra width is shared by product name and category.
+pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 = 942.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
 // The three-column dealer list has its own content minimum (30/38/32).
 // Do not force freight/product's 1320pt table width onto the client list.
