@@ -1105,7 +1105,7 @@ impl FreightManager {
         product_views: &Value, enabled:bool,
         action:&mut Option<(String,Value)>,
     ) {
-        let card_min_height=components::management_primary_card_min_inner_height(ui);
+        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
         theme::section_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
             section.horizontal(|title|{
@@ -1806,7 +1806,7 @@ impl FreightManager {
         let group_rules=&projection["editableRules"];
         // A single group table replaces the duplicate group cards + audit grid.
         // Its actions still use the original Rust write paths and modal editors.
-        let card_min_height=components::management_primary_card_min_inner_height(ui);
+        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
         theme::section_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
             section.horizontal(|heading|{
