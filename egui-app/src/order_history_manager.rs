@@ -1812,36 +1812,56 @@ mod tests{
             .contains('\n'));
     }
     #[test]
-    fn detail_products_expand_without_overlapping_shipment_actions(){
-        // At minimum table width, parent actions remain intact; the detail
-        // product column is already wider than the previous 780pt block.
-        let row=Rect::from_min_size(
-            egui::pos2(20.0,70.0),Vec2::new(MIN_WIDTH,ROW_HEIGHT)
-        );
-        let block=history_detail_block_rect(row,&COLS);
-        let branch_x=row.left()+COLS[0]-theme::SPACE_12;
-        assert_eq!(block.left(),branch_x+theme::SPACE_8);
-        assert_eq!(block.height(),DETAIL_BLOCK_HEIGHT);
-        assert_eq!(block.center().y,row.center().y);
-        assert!(block.right()+DETAIL_ACTIONS_MIN_WIDTH
-            +theme::SPACE_12<=row.right()+0.01);
-        let fields=history_detail_cells(block);
-        assert!(fields[1].width()>460.0);
-        assert!(fields[0].left()>block.left());
-        assert!(fields[3].right()<block.right());
-        for pair in fields.windows(2) {
-            assert!((pair[1].left()-pair[0].right()-theme::SPACE_8).abs()<0.01);
+    fn detail_products_and_actions_share_edges_and_vertical_alignment(){
+        // All horizontal space except two controls and deliberate spacers
+        // goes to the card. This must hold on narrow and wide desktops.
+        let mut prior_product_width=0.0;
+        for width in [MIN_WIDTH,1600.0,2100.0] {
+            let row=Rect::from_min_size(
+                egui::pos2(20.0,70.0),Vec2::new(width,ROW_HEIGHT)
+            );
+            let block=history_detail_block_rect(row,&COLS);
+            let actions=history_detail_actions_rect(row,block);
+            let branch_x=row.left()+COLS[0]-theme::SPACE_12;
+            assert_eq!(block.left(),branch_x+theme::SPACE_8);
+            assert_eq!(block.height(),DETAIL_BLOCK_HEIGHT);
+            assert_eq!(actions.height(),theme::ACTION_STANDARD_HEIGHT);
+            assert!((block.top()-actions.top()).abs()<0.01);
+            assert!((block.right()+DETAIL_ACTIONS_GAP-actions.left()).abs()<0.01);
+            assert!((actions.width()-DETAIL_ACTIONS_WIDTH).abs()<0.01);
+            assert!((row.right()-actions.right()-DETAIL_RIGHT_INSET).abs()<0.01);
+            let cells=history_detail_cells(block);
+            assert!(cells[0].left()>block.left());
+            assert!(cells[3].right()<block.right());
+            assert!(cells[1].width()>prior_product_width);
+            prior_product_width=cells[1].width();
+            for pair in cells.windows(2) {
+                assert!((pair[1].left()-pair[0].right()-theme::SPACE_8).abs()<0.01);
+            }
         }
-        // Wide windows now use the whole 1140pt card cap, but never take
-        // space reserved for the adjacent memo/tracking controls.
-        let wide=Rect::from_min_size(
-            row.min,Vec2::new(1700.0,ROW_HEIGHT)
+        // Multiline product details grow their card without changing the
+        // centered 34pt action buttons or their 8pt horizontal gap.
+        let tall=Rect::from_min_size(
+            egui::pos2(20.0,70.0),Vec2::new(MIN_WIDTH,102.0)
         );
-        let wide_block=history_detail_block_rect(wide,&COLS);
-        assert_eq!(wide_block.width(),DETAIL_BLOCK_MAX_WIDTH);
-        assert!(history_detail_cells(wide_block)[1].width()>700.0);
-        assert!(wide_block.right()+DETAIL_ACTIONS_MIN_WIDTH
-            +theme::SPACE_12<=wide.right()+0.01);
+        let block=history_detail_block_rect(tall,&COLS);
+        let actions=history_detail_actions_rect(tall,block);
+        assert_eq!(block.height(),102.0-2.0*theme::SPACE_4);
+        assert_eq!(actions.height(),theme::ACTION_STANDARD_HEIGHT);
+        assert_eq!(block.center().y,actions.center().y);
+    }
+    #[test]
+    fn expanding_another_order_closes_the_previous_one(){
+        let mut expanded=BTreeSet::new();
+        toggle_history_expansion(&mut expanded,"o1");
+        assert_eq!(expanded.iter().map(String::as_str).collect::<Vec<_>>(),vec!["o1"]);
+        toggle_history_expansion(&mut expanded,"o2");
+        assert_eq!(expanded.iter().map(String::as_str).collect::<Vec<_>>(),vec!["o2"]);
+        toggle_history_expansion(&mut expanded,"o2");
+        assert!(expanded.is_empty());
+        toggle_history_expansion(&mut expanded,"o3");
+        assert_eq!(expanded.len(),1);
+        assert!(expanded.contains("o3"));
     }
     #[test]
     fn employee_approval_column_sorts_by_confirmation_date_and_keeps_unknown_last(){
