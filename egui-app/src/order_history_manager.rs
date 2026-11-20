@@ -793,15 +793,30 @@ fn date_range_error(from:&str,to:&str)->Option<&'static str>{
 fn history_date_segment(
     ui:&mut Ui,label:&str,width:f32
 )->egui::Response{
-    ui.add_sized(
+    // Use the same drawn chevron as the dropdown, rotated horizontally.
+    // Keep calendar text and the segment's click geometry unchanged.
+    let direction=match label {
+        "‹"=>Some(components::ManagementChevronDirection::Left),
+        "›"=>Some(components::ManagementChevronDirection::Right),
+        _=>None
+    };
+    let display=if direction.is_some(){""}else{label};
+    let response=ui.add_sized(
         Vec2::new(width,theme::ACTION_STANDARD_HEIGHT),
         egui::Button::new(typography::action_label(
-            label,typography::FONT_STANDARD_ACTION,false,theme::TEXT
+            display,typography::FONT_STANDARD_ACTION,false,theme::TEXT
         ))
             .fill(theme::INPUT)
             .stroke(Stroke::NONE)
             .corner_radius(0)
-    )
+    );
+    if let Some(direction)=direction {
+        let painter=ui.painter().with_clip_rect(response.rect);
+        components::paint_management_chevron(
+            &painter,response.rect.center(),direction
+        );
+    }
+    response
 }
 /// Reserve exactly one 36pt outer row. Frame::show combined with an
 /// additional horizontal/with_layout child could grow the measured row by
