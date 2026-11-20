@@ -1065,9 +1065,11 @@ impl FreightManager {
             let table_width=viewport_width.max(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH);
             let mut widths=theme::FREIGHT_ASSIGNMENT_COL_WIDTHS;
             let extra=(table_width-theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH).max(0.0);
-            // Fixed product and color/option widths; all extra viewport
-            // space belongs to the canonical category path (column 4).
-            widths[3]+=extra;
+            // Preserve a compact fixed category width (about 2-3 levels).
+            // Every remaining point goes to the product/name column.
+            // Full category paths remain available on hover; the visible
+            // path truncates from the START so the leaf stays readable.
+            widths[1]+=extra;
             let titles=[
                 "","상품명 / 상품설명","색상/옵션","카테고리",
                 "배송 그룹","운임 / 묶음 상태","그룹 지정","설정"
