@@ -413,7 +413,10 @@ impl DailySettlementManager{
         let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=theme::management_scroll_style();
         self.poll();
-        ui.label(typography::page_heading("일일 결산"));
+        components::management_page_title_top_gap(ui);
+        components::management_top_content(ui,|top|{
+            top.label(typography::page_heading("일일 결산"));
+        });
         // The only date control is the original prev/date/next navigator.
         // In particular, OrderHistory's separately-approved calendar is not
         // copied into this page.
@@ -421,9 +424,16 @@ impl DailySettlementManager{
         // A compact date navigator above the KPIs preserves the existing
         // filter behavior without pushing the two accounting sections below
         // the approved Freight primary-card top border.
+        // The compact filter is a real control above the summary cards.
+        // Use 4pt vertical padding instead of the list's 8pt: this offsets
+        // the newly approved title top gap without crowding the first card.
         theme::management_compact_filter_frame().show(ui,|toolbar|{
             toolbar.set_min_width(toolbar.available_width());
-            theme::management_list_strip_frame().show(toolbar,|line|{
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(
+                    theme::SPACE_12 as i8,theme::SPACE_4 as i8
+                ))
+                .show(toolbar,|line|{
                 line.horizontal(|controls|{
                     controls.spacing_mut().item_spacing.x=theme::SPACE_8;
                     controls.label(typography::field_label("결산 날짜"));
@@ -472,15 +482,18 @@ impl DailySettlementManager{
         let payments=rows(&report["paymentRows"]);
         // The four native Rust summary values are NOT interchangeable:
         // billed totals are reception-day values; cash is bank-deposit day.
-        ui.horizontal_wrapped(|strip|{
-            strip.spacing_mut().item_spacing=
-                Vec2::new(theme::SPACE_8,theme::SPACE_8);
-            kpi(strip,"접수 주문",&format!("{}건",orders.len()));
-            kpi(strip,"청구 합계 확인분",&won(&report["billedKnown"]));
-            kpi(strip,"실제 계좌 입금",&won(&report["paidCash"]));
-            kpi(strip,"미확정 청구 주문",&format!(
-                "{}건",report["billedUnknown"].as_u64().unwrap_or(0)
-            ));
+        // Match the same 16pt horizontal guide as the title and Freight KPIs.
+        components::management_top_content(ui,|top|{
+            top.horizontal_wrapped(|strip|{
+                strip.spacing_mut().item_spacing=
+                    Vec2::new(theme::SPACE_8,theme::SPACE_8);
+                kpi(strip,"접수 주문",&format!("{}건",orders.len()));
+                kpi(strip,"청구 합계 확인분",&won(&report["billedKnown"]));
+                kpi(strip,"실제 계좌 입금",&won(&report["paidCash"]));
+                kpi(strip,"미확정 청구 주문",&format!(
+                    "{}건",report["billedUnknown"].as_u64().unwrap_or(0)
+                ));
+            });
         });
         ui.add_space(theme::SPACE_16);
         components::align_management_primary_card(ui,page_origin_y);
