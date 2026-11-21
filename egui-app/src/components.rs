@@ -1209,8 +1209,8 @@ pub fn management_dropdown(
     let rect=trigger.rect;
     let painter=ui.painter().with_clip_rect(rect);
     let arrow_left=rect.right()-30.0;
-    let caption=typography::freight_table_cell_galley(
-        ui,label,false,ink
+    let caption=typography::management_control_text_galley(
+        ui,label,ink
     );
     let text_clip=Rect::from_min_max(
         rect.min+Vec2::new(theme::SPACE_12,0.0),
