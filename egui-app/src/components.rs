@@ -800,13 +800,30 @@ pub fn align_management_primary_card(ui: &mut Ui, page_origin_y: f32) {
 /// Expand one primary list card to the bottom of the management workspace
 /// when its rows do not already require more room. Nested/multiple-card
 /// pages must not use this: their own content needs ordinary scrolling.
-/// Each original card type retains its own inner padding: freight uses
-/// SECTION_PADDING, while pre-existing list cards use a 1pt inset.
-/// Only the OUTER bottom border is standardized.
 pub fn management_primary_card_min_inner_height(ui: &Ui, vertical_inset: f32) -> f32 {
-    (ui.available_height()
-        - 2.0 * (vertical_inset + theme::FRAME_STROKE_WIDTH))
-        .max(0.0)
+    management_card_min_height_for_insets(
+        ui.available_height(),vertical_inset,vertical_inset
+    )
+}
+
+/// Same OUTER card height regardless of whether its role uses a symmetric
+/// inset or the single-master table's zero bottom inset.
+fn management_card_min_height_for_insets(
+    available_height:f32,top_inset:f32,bottom_inset:f32
+)->f32{
+    (available_height-top_inset-bottom_inset
+        -2.0*theme::FRAME_STROKE_WIDTH).max(0.0)
+}
+
+/// Both master tables use a full-bleed lower DATA viewport. The prior 16pt
+/// bottom frame padding left a blank strip after rows while the rail alone
+/// continued to the card outline. This computes the matching inner minimum
+/// for management_master_table_frame() without moving the OUTER border.
+pub fn management_master_table_card_min_inner_height(ui:&Ui)->f32{
+    management_card_min_height_for_insets(
+        ui.available_height(),theme::SECTION_PADDING,
+        theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
+    )
 }
 pub fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
     ui.set_min_width(ui.available_width().max(1.0));
@@ -1825,6 +1842,26 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
 #[cfg(test)]
 mod management_toolbar_geometry_tests {
     use super::*;
+    #[test]
+    fn master_table_bottom_padding_converts_to_rows_without_moving_card_border(){
+        let outer_height=800.0;
+        let regular=management_card_min_height_for_insets(
+            outer_height,theme::SECTION_PADDING,theme::SECTION_PADDING
+        );
+        let master=management_card_min_height_for_insets(
+            outer_height,theme::SECTION_PADDING,
+            theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
+        );
+        assert_eq!(master-regular,theme::SECTION_PADDING);
+        let regular_outer=regular+2.0*theme::FRAME_STROKE_WIDTH
+            +2.0*theme::SECTION_PADDING;
+        let master_outer=master+2.0*theme::FRAME_STROKE_WIDTH
+            +theme::SECTION_PADDING
+            +theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING;
+        assert_eq!(regular_outer,outer_height);
+        assert_eq!(master_outer,outer_height);
+    }
+
     #[test]
     fn management_scroll_track_uses_common_top_and_card_bottom_policy(){
         let bounds=Rect::from_min_size(
