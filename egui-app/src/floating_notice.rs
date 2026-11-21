@@ -373,4 +373,27 @@ mod tests {
         assert!(above);
         assert!(pos.y + 40.0 < 200.0);
     }
+    #[test]
+    fn clearing_success_signal_does_not_hide_a_new_save_failure() {
+        let ctx = Context::default();
+        begin_page(&ctx,"Excel");
+        sync(&ctx,"excel.result","excel.action",Tone::Success,Some("저장했습니다."));
+        sync(&ctx,"excel.error","excel.action",Tone::Error,Some("저장에 실패했습니다."));
+        sync(&ctx,"excel.result","excel.action",Tone::Success,None);
+        let active=with_state(&ctx,|state|state.active.clone()).expect("error persists");
+        assert_eq!(active.tone,Tone::Error);
+        assert_eq!(active.message,"저장에 실패했습니다.");
+        sync(&ctx,"excel.error","excel.action",Tone::Error,None);
+        assert!(with_state(&ctx,|state|state.active.is_none()));
+    }
+    #[test]
+    fn page_revisit_does_not_replay_old_success() {
+        let ctx = Context::default();
+        begin_page(&ctx,"Products");
+        sync(&ctx,"product.result","products.action",Tone::Success,Some("가격 저장 완료"));
+        begin_page(&ctx,"History");
+        begin_page(&ctx,"Products");
+        sync(&ctx,"product.result","products.action",Tone::Success,Some("가격 저장 완료"));
+        assert!(with_state(&ctx,|state|state.active.is_none()));
+    }
 }
