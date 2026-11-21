@@ -3,7 +3,7 @@
 //! The worker coalesces rapid edits and commits the last source on shutdown.
 
 use crate::gateway::BandoGateway;
-use crate::preview_store::WorkingSource;
+use crate::preview_store::{OcrFeedback, PreviewStore, WorkingSource};
 use eframe::egui;
 use std::{
     sync::{mpsc::{self, Receiver, Sender, RecvTimeoutError}, Arc},
@@ -12,7 +12,7 @@ use std::{
 };
 
 enum Command {
-    Save { source: WorkingSource },
+    Save { source: WorkingSource, feedback: Vec<OcrFeedback> },
     Shutdown,
 }
 
@@ -20,6 +20,7 @@ enum Command {
 pub enum SaveStatus {
     Saved { revision:u64, active_id:Option<String>, raw:String, order_type:String },
     Failed(String),
+    FeedbackFailed(String),
 }
 
 pub struct SourceAutosave {
@@ -40,8 +41,8 @@ impl SourceAutosave {
             let mut revision = initial_revision;
             loop {
                 let Ok(command) = rx.recv() else { break; };
-                let mut source = match command {
-                    Command::Save { source } => source,
+                let (mut source, mut feedback) = match command {
+                    Command::Save { source, feedback } => (source, feedback),
                     Command::Shutdown => break,
                 };
                 let mut shutdown = false;
@@ -49,8 +50,11 @@ impl SourceAutosave {
                 // Shutdown drains the latest pending edit before exiting.
                 loop {
                     match rx.recv_timeout(Duration::from_millis(180)) {
-                        Ok(Command::Save { source: latest }) => {
+                        Ok(Command::Save { source: latest, feedback: additions }) => {
                             source = latest;
+                            // Keep every approved OCR pair even when rapid
+                            // edits coalesce intermediate source snapshots.
+                            feedback.extend(additions);
                         },
                         Ok(Command::Shutdown) => {
                             shutdown = true;
@@ -67,6 +71,12 @@ impl SourceAutosave {
                 let status = match gateway.save_working_source(&source) {
                     Ok(next) if next > revision => {
                         revision = next;
+                        // Never collect corrections for an unpersisted
+                        // reception. This local-only write is separate from
+                        // production orders and has no network fallback.
+                        if let Err(error)=PreviewStore::append_ocr_feedback(&feedback) {
+                            let _=updates.send(SaveStatus::FeedbackFailed(error));
+                        }
                         SaveStatus::Saved {
                             revision:next,
                             active_id:source.active_id.clone(),
@@ -88,7 +98,13 @@ impl SourceAutosave {
     }
 
     pub fn queue(&self, source: WorkingSource) -> Result<(), String> {
-        self.sender.send(Command::Save { source })
+        self.queue_with_feedback(source, Vec::new())
+    }
+
+    pub fn queue_with_feedback(
+        &self,source: WorkingSource,feedback:Vec<OcrFeedback>
+    ) -> Result<(),String> {
+        self.sender.send(Command::Save { source, feedback })
             .map_err(|_| "egui 원문 자동저장 작업이 중단되었습니다.".to_owned())
     }
 
