@@ -815,8 +815,7 @@ impl ClientManager {
             ).show(ctx,|ui|{
                 let cancel=components::modal_header(ui,"거래처 삭제","취소",true);
                 ui.label("거래처를 삭제할까요? 기존 주문의 송하인과 금액은 그대로 보존합니다.");
-                let approve=ui.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),|buttons|{
+                let approve=components::modal_action_row(ui,|buttons|{
                         theme::action(
                             buttons,"거래처 삭제",ButtonRole::Danger,true
                         ).clicked()
@@ -836,8 +835,7 @@ impl ClientManager {
             ).show(ctx,|ui|{
                 let cancel=components::modal_header(ui,"변경사항 확인","취소",true);
                 ui.label("거래처의 수정 내용을 버릴까요?");
-                let approve=ui.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),|buttons|{
+                let approve=components::modal_action_row(ui,|buttons|{
                         theme::action(
                             buttons,"변경 취소",ButtonRole::Danger,true
                         ).clicked()
