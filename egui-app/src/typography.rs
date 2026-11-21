@@ -298,12 +298,12 @@ fn client_table_galley(
         egui::text::LayoutJob::single_section(text.to_owned(),format)
     ))
 }
-pub fn client_table_cell_galley(
-    ui: &egui::Ui, text: &str, emphasized: bool,
-) -> std::sync::Arc<egui::Galley> {
-    // Match the approved Freight Assignment 14pt data rows.
-    // Only the client directory's primary values use this role.
-    client_table_galley(ui,text,Role::Body,emphasized,TEXT)
+/// Controls and temporary notices which share the 14pt management-table
+/// text size, but may need their own enabled/disabled colors. Always Regular.
+pub fn management_control_text_galley(
+    ui:&egui::Ui,text:&str,color:Color32
+)->std::sync::Arc<egui::Galley>{
+    client_table_galley(ui,text,Role::Body,false,color)
 }
 pub fn client_table_metadata_galley(
     ui: &egui::Ui, text: &str, color: Color32,
@@ -327,11 +327,6 @@ pub fn freight_table_header_galley(
     management_table_header_galley(ui,text)
 }
 
-pub fn freight_table_cell_galley(
-    ui: &egui::Ui, text: &str, emphasized: bool, color: Color32
-) -> std::sync::Arc<egui::Galley> {
-    client_table_galley(ui,text,Role::Body,emphasized,color)
-}
 
 /// Semantic contrast for cells of *repeating management-table rows*.
 ///
