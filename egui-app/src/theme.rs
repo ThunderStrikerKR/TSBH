@@ -60,7 +60,9 @@ pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
 // Individual orders are nested INPUT cards on the shared PANEL surface.
 pub const WORKFLOW_CARD_BG: Color32 = INPUT;
 pub const WORKFLOW_SELECTED_BG: Color32 = Color32::from_rgb(36, 36, 36);
-pub const WORKFLOW_CARD_BORDER: Color32 = Color32::from_rgb(83, 83, 83);
+// Reception cards are inner content, not a second top-level section.
+// Follow the master's soft row divider instead of duplicating PANEL borders.
+pub const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_SELECTED_BORDER: Color32 = Color32::from_rgb(245, 158, 11);
 pub const WORKFLOW_CARD_PADDING_X: f32 = 9.0;
 pub const WORKFLOW_CARD_PADDING_Y: f32 = 8.0;
@@ -82,8 +84,10 @@ pub const WORKFLOW_SIGNAL_PENDING_BORDER: Color32 = Color32::from_rgb(85, 85, 85
 pub const WORKFLOW_RECIPIENT_COL: f32 = 64.0;
 pub const WORKFLOW_FREIGHT_COL: f32 = 68.0;
 pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
-pub const WORKFLOW_CHIP_FILL: Color32 = Color32::from_rgb(48, 48, 48);
-pub const WORKFLOW_CHIP_BORDER: Color32 = Color32::from_rgb(85, 85, 85);
+// Product chips are metadata within a workflow card: match the subdued
+// alternate-row surface and divider, not the brighter input/button tier.
+pub const WORKFLOW_CHIP_FILL: Color32 = TABLE_ROW_ALT_BG;
+pub const WORKFLOW_CHIP_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_CHIP_RADIUS: u8 = 4;
 pub const WORKFLOW_CHIP_HEIGHT: f32 = 24.0;
 pub const WORKFLOW_CHIP_PAD_X: i8 = 4;
@@ -137,6 +141,10 @@ pub const MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP: f32 = SPACE_4;
 // 16pt, but the top/bottom inset is 8pt; these tokens do not affect the
 // Settings card or its typography.
 pub const RECEPTION_PANE_PADDING_Y: f32 = SPACE_8;
+// Source's current-client summary is supporting information beside a
+// primary INPUT editor. Use master row/subsection roles, not a second editor.
+pub const RECEPTION_CLIENT_SUMMARY_BG: Color32 = TABLE_ROW_ALT_BG;
+pub const RECEPTION_CLIENT_SUMMARY_BORDER: Color32 = DIVIDER;
 pub const NESTED_PADDING: f32 = SPACE_12;
 // The 34pt title row still fully accommodates the standard "+ 새 주문"
 // button and other header controls without shortening their labels.
