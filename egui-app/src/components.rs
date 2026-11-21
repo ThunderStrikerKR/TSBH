@@ -436,6 +436,86 @@ pub fn modal_footer_in_rect(
     );
 }
 
+/// A review dialog is ONE workspace, not two unrelated nested cards.
+/// Title and explanation share the same header; only one rule separates
+/// them from the actual work surface. Other modal headers are unaffected.
+pub fn modal_review_header_in_rect(
+    ui:&mut Ui,rect:Rect,title:&str,description:&str,
+    close_label:&str,enabled:bool
+)->bool {
+    ui.painter().rect_filled(rect,0.0,theme::PANEL);
+    ui.painter().line_segment(
+        [rect.left_bottom(),rect.right_bottom()],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    let heading=Rect::from_min_size(
+        egui::pos2(rect.left()+theme::SPACE_8,rect.top()+theme::SPACE_8),
+        Vec2::new((rect.width()-2.0*theme::SPACE_8).max(1.0),
+            theme::ACTION_STANDARD_HEIGHT)
+    );
+    let subtitle=Rect::from_min_size(
+        egui::pos2(rect.left()+theme::SPACE_8,heading.bottom()+theme::SPACE_4),
+        Vec2::new(heading.width(),20.0)
+    );
+    let heading_clip=heading.intersect(ui.clip_rect());
+    let mut close=false;
+    ui.scope_builder(
+        egui::UiBuilder::new().id_salt("modal-review-heading")
+            .max_rect(heading)
+            .layout(Layout::left_to_right(Align::Center)),
+        |header|{
+            header.set_clip_rect(heading_clip);
+            header.set_width(heading.width());
+            header.label(typography::modal_title(title));
+            header.with_layout(Layout::right_to_left(Align::Center),|right|{
+                close=theme::action(
+                    right,close_label,theme::ButtonRole::Standard,enabled
+                ).clicked();
+            });
+        },
+    );
+    let subtitle_clip=subtitle.intersect(ui.clip_rect());
+    ui.scope_builder(
+        egui::UiBuilder::new().id_salt("modal-review-description")
+            .max_rect(subtitle),
+        |details|{
+            details.set_clip_rect(subtitle_clip);
+            details.set_width(subtitle.width());
+            details.label(typography::caption(description));
+        },
+    );
+    close
+}
+
+/// Quiet single-rule footer for document comparison. Keeps the same
+/// action alignment as standard popups without a detached contrasting strip.
+pub fn modal_review_footer_in_rect(
+    ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
+) {
+    ui.painter().rect_filled(rect,0.0,theme::PANEL);
+    ui.painter().line_segment(
+        [rect.left_top(),rect.right_top()],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    let content=Rect::from_min_size(
+        egui::pos2(rect.left()+theme::SPACE_8,
+            rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0).max(0.0)),
+        Vec2::new((rect.width()-2.0*theme::SPACE_8).max(1.0),
+            theme::ACTION_STANDARD_HEIGHT)
+    );
+    let clip=content.intersect(ui.clip_rect());
+    ui.scope_builder(
+        egui::UiBuilder::new().id_salt("modal-review-actions")
+            .max_rect(content)
+            .layout(Layout::right_to_left(Align::Center)),
+        |footer|{
+            footer.set_clip_rect(clip);
+            footer.set_width(content.width());
+            actions(footer);
+        },
+    );
+}
+
 pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
     let (rect,_)=ui.allocate_exact_size(
         Vec2::new(ui.available_width(),theme::MODAL_FOOTER_HEIGHT),
