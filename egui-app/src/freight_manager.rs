@@ -1367,7 +1367,7 @@ impl FreightManager {
                 section,card_min_height,0.0
             );
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
+                section,scroll_max_height,theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION
             );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
