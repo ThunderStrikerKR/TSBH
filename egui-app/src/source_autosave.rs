@@ -2,7 +2,8 @@
 //! This is a preview-only working source, not a confirmed business order.
 //! The worker coalesces rapid edits and commits the last source on shutdown.
 
-use crate::gateway::BandoGateway;
+use crate::gateway::{BandoGateway,ReadOperation};
+use serde_json::{json,Value};
 use crate::preview_store::{OcrFeedback, PreviewStore, WorkingSource};
 use eframe::egui;
 use std::{
@@ -74,8 +75,64 @@ impl SourceAutosave {
                         // Never collect corrections for an unpersisted
                         // reception. This local-only write is separate from
                         // production orders and has no network fallback.
-                        if let Err(error)=PreviewStore::append_ocr_feedback(&feedback) {
-                            let _=updates.send(SaveStatus::FeedbackFailed(error));
+                        match PreviewStore::append_ocr_feedback(&feedback) {
+                            Err(error)=>{
+                                let _=updates.send(SaveStatus::FeedbackFailed(error));
+                            }
+                            Ok(()) if !feedback.is_empty()=>{
+                                // Analysis must not delay the serialized
+                                // working-source save queue. Compare BOTH
+                                // texts with the existing Rust order engine
+                                // in an independent background worker.
+                                let engine=Arc::clone(&gateway);
+                                let pairs=feedback;
+                                std::thread::spawn(move||{
+                                    let catalog=engine.load_catalog();
+                                    for pair in pairs {
+                                        let result=(||->Result<(Value,Value,Option<String>),String>{
+                                            let state=catalog.as_ref().map_err(Clone::clone)?;
+                                            let revision=state.get("revision").and_then(|v|
+                                                v.as_str().map(str::to_owned)
+                                                .or_else(||v.as_u64().map(|n|n.to_string()))
+                                            );
+                                            let parsed_initial=engine.execute(
+                                                ReadOperation::AnalyzeOrder,
+                                                json!({
+                                                    "raw":pair.original_text,
+                                                    "state":state,
+                                                    "client":Value::Null
+                                                })
+                                            )?;
+                                            let parsed_corrected=engine.execute(
+                                                ReadOperation::AnalyzeOrder,
+                                                json!({
+                                                    "raw":pair.corrected_text,
+                                                    "state":state,
+                                                    "client":Value::Null
+                                                })
+                                            )?;
+                                            Ok((parsed_initial,parsed_corrected,revision))
+                                        })();
+                                        match result {
+                                            Ok((initial,corrected,revision))=>{
+                                                if let Err(error)=PreviewStore::store_ocr_analysis(
+                                                    &pair.id,&initial,&corrected,revision
+                                                ){
+                                                    let _=PreviewStore::fail_ocr_analysis(
+                                                        &pair.id,&error
+                                                    );
+                                                }
+                                            }
+                                            Err(error)=>{
+                                                let _=PreviewStore::fail_ocr_analysis(
+                                                    &pair.id,&error
+                                                );
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                            Ok(())=>{}
                         }
                         SaveStatus::Saved {
                             revision:next,
