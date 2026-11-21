@@ -233,6 +233,21 @@ fn table_state_message(
         }else{"검색 조건에 맞는 발송 대기 건이 없습니다."}),
     }
 }
+/// Pure visible-body geometry. Scrollbar allocation is excluded on the right,
+/// and all painting clips to the card rather than creating layout rows.
+fn table_state_body_rect(
+    scroll_track:Rect,viewport_width:f32,gutter:f32,
+    scroll_height:f32,clip:Rect,
+)->Option<Rect>{
+    let width=(viewport_width-gutter).min(scroll_track.width()).max(0.0);
+    let body=Rect::from_min_size(
+        scroll_track.min,Vec2::new(width,scroll_height.max(0.0))
+    );
+    let visible=body.intersect(clip);
+    if visible.width()>0.0&&visible.height()>0.0 {Some(visible)}
+    else{None}
+}
+
 fn table<const N:usize>(
     ui:&mut Ui,id:&str,titles:[&str;N],base:[f32;N],
     align:[Align2;N],stretch:usize,rows:usize,
@@ -391,12 +406,10 @@ fn table<const N:usize>(
         // D-type status lives in the visible body without reserving even 1pt.
         // Center inside the DATA viewport (scrollbar gutter excluded), like
         // Order History, and clip to the actual master card.
-        let data_width=(layout.viewport_width-layout.scrollbar_gutter)
-            .min(scroll_track.width()).max(1.0);
-        let viewport=Rect::from_min_size(scroll_track.min,
-            Vec2::new(data_width,scroll_max_height));
-        let visible=viewport.intersect(ui.clip_rect());
-        if visible.width()>0.0 && visible.height()>0.0 {
+        if let Some(visible)=table_state_body_rect(
+            scroll_track,layout.viewport_width,layout.scrollbar_gutter,
+            scroll_max_height,ui.clip_rect()
+        ){
             ui.painter().with_clip_rect(visible).text(
                 visible.center(),Align2::CENTER_CENTER,message,
                 egui::FontId::proportional(typography::FONT_METADATA),
@@ -1154,5 +1167,68 @@ impl ExcelManager{
             ui.ctx(),"excel.error","excel.action",
             crate::floating_notice::Tone::Error,self.error.as_deref()
         );
+    }
+}
+
+#[cfg(test)]
+mod table_state_tests {
+    use super::*;
+
+    #[test]
+    fn loading_empty_and_failed_states_never_create_an_inline_footer() {
+        // The only output is content for the existing table-body painter.
+        assert_eq!(
+            table_state_message(Tab::Factory,"",0,true,false),
+            Some("Excel 자료를 확인 중입니다.")
+        );
+        assert_eq!(
+            table_state_message(Tab::Store,"악기",0,false,false),
+            Some("검색 조건에 맞는 발송 대기 건이 없습니다.")
+        );
+        assert_eq!(
+            table_state_message(Tab::History,"",0,false,false),
+            Some("Excel 작성 이력이 없습니다.")
+        );
+        assert_eq!(
+            table_state_message(Tab::History,"관리",0,false,false),
+            Some("검색 조건에 맞는 Excel 작성 이력이 없습니다.")
+        );
+        assert_eq!(table_state_message(Tab::Factory,"",0,false,true),None);
+        assert_eq!(table_state_message(Tab::History,"",0,false,true),None);
+        assert_eq!(table_state_message(Tab::Factory,"",3,true,false),None);
+        assert_eq!(table_state_message(Tab::History,"",3,false,false),None);
+    }
+
+    #[test]
+    fn empty_status_centers_inside_table_body_not_between_toolbar_and_header() {
+        let track=Rect::from_min_size(
+            egui::pos2(32.0,136.0),Vec2::new(600.0,400.0)
+        );
+        let clip=Rect::from_min_max(
+            egui::pos2(16.0,30.0),egui::pos2(632.0,536.0)
+        );
+        let body=table_state_body_rect(track,600.0,10.0,400.0,clip)
+            .expect("visible body");
+        assert!((body.top()-136.0).abs()<0.01);
+        assert!((body.right()-622.0).abs()<0.01);
+        assert!((body.center().y-336.0).abs()<0.01);
+        assert!(body.top()>100.0,"body caption cannot shift toolbar/header");
+    }
+
+    #[test]
+    fn empty_status_is_clipped_inside_actual_card_and_can_be_absent() {
+        let track=Rect::from_min_size(
+            egui::pos2(32.0,136.0),Vec2::new(600.0,400.0)
+        );
+        let clipped=Rect::from_min_max(
+            egui::pos2(32.0,150.0),egui::pos2(420.0,260.0)
+        );
+        let visible=table_state_body_rect(track,600.0,10.0,400.0,clipped)
+            .expect("clipped body");
+        assert_eq!(visible,clipped);
+        let outside=Rect::from_min_max(
+            egui::pos2(0.0,0.0),egui::pos2(10.0,10.0)
+        );
+        assert!(table_state_body_rect(track,600.0,10.0,400.0,outside).is_none());
     }
 }
