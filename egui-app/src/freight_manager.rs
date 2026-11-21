@@ -2929,6 +2929,20 @@ mod rate_toolbar_tests{
     }
 
     #[test]
+    fn rate_summary_keeps_all_six_quantity_prices_in_one_string(){
+        let rule=serde_json::json!({
+            "fees":{"1":3000,"2":4500,"3":6000,
+                    "4":7500,"5":9000,"6":10500}
+        });
+        let summary=group_fee_summary(&rule);
+        for n in 1..=6 {
+            assert!(summary.contains(&format!("{n}개")),
+                "missing quantity {n}: {summary}");
+        }
+        assert_eq!(summary.matches(" · ").count(),5);
+    }
+
+    #[test]
     fn four_column_rate_table_gives_long_tariffs_priority(){
         let base=theme::FREIGHT_RATE_COL_WIDTHS;
         let gap=theme::FREIGHT_ASSIGNMENT_COL_GAP;
