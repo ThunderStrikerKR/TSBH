@@ -811,31 +811,25 @@ impl CategoryManager {
                             },
                         };
                     }
-                    modal.add_space(theme::SPACE_16);
-                    components::soft_divider(modal);
-                    modal.add_space(theme::SPACE_8);
-                    modal.horizontal(|actions|{
-                        actions.with_layout(
-                            Layout::right_to_left(Align::Center),|right|{
-                                submit=theme::action(right,
-                                    match operation{
-                                        Operation::Add=>"분류 생성",
-                                        Operation::Move=>"위치 변경",
-                                        Operation::Delete=>"분류 삭제",
-                                    },
-                                    if operation==Operation::Delete{
-                                        theme::ButtonRole::Danger
-                                    }else{theme::ButtonRole::Primary},
-                                    editable&&!busy && match operation{
-                                        Operation::Add=>!self.new_name.trim().is_empty()
-                                            && (self.current(&cats).is_some_and(|cur|
-                                                direct_count(catalog,&cur.id)==0)||self.transfer),
-                                        Operation::Move=>!self.target.is_empty(),
-                                        Operation::Delete=>true,
-                                    }
-                                ).clicked();
+                    modal.add_space(theme::SPACE_12);
+                    components::modal_action_row(modal,|right|{
+                        submit=theme::action(right,
+                            match operation{
+                                Operation::Add=>"분류 생성",
+                                Operation::Move=>"위치 변경",
+                                Operation::Delete=>"분류 삭제",
+                            },
+                            if operation==Operation::Delete{
+                                theme::ButtonRole::Danger
+                            }else{theme::ButtonRole::Primary},
+                            editable&&!busy && match operation{
+                                Operation::Add=>!self.new_name.trim().is_empty()
+                                    && (self.current(&cats).is_some_and(|cur|
+                                        direct_count(catalog,&cur.id)==0)||self.transfer),
+                                Operation::Move=>!self.target.is_empty(),
+                                Operation::Delete=>true,
                             }
-                        );
+                        ).clicked();
                     });
                 });
             if cancel{self.request_close_operation(&cats);}
