@@ -297,15 +297,15 @@ mod tests {
         phone:(&str,&str),street:(&str,&str),quantity:&str
     )->OcrLayoutExample{
         let original=format!(
-            "{}\\n{}\\n{}\\n{}\\n{}\\n{}\\n{}\\n반도\\n뮤직트레이 회색\\n{}\\n메모\\n문 앞에",
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n반도\n뮤직트레이 회색\n{}\n메모\n문 앞에",
             name[0],name[1],name[2],phone.0,phone.1,
             street.0,street.1,quantity
-        ).replace("\\\\n","\\n");
+        );
         let corrected=format!(
-            "{}{}{}\\n{}{}\\n{}{}\\n반도 뮤직트레이 회색 {}\\n메모 문 앞에",
+            "{}{}{}\n{}{}\n{}{}\n반도 뮤직트레이 회색 {}\n메모 문 앞에",
             name[0],name[1],name[2],phone.0,phone.1,
             street.0,street.1,quantity
-        ).replace("\\\\n","\\n");
+        );
         OcrLayoutExample{
             order_id:id.into(),client_id:Some(client.into()),
             original_text:original,corrected_text:corrected,
