@@ -617,27 +617,11 @@ pub fn modal_master_workspace_surface(
     ModalMasterWorkspace{toolbar_bottom,divider_x}
 }
 
-/// Common descriptive header. Same approved geometry as OCR, but no
-/// dependence on the OCR purpose. A blank description is permitted for
-/// compact dialogs whose header slot is sized by the caller.
+/// Canonical OCR-approved popup header, used for descriptive dialogs:
+/// title and top-right Cancel/Close in the first row, optional explanation
+/// in the second, ONE bottom divider. Height belongs to modal_master_layout.
+/// Use an empty description for dialogs with no explanatory subtitle.
 pub fn modal_master_header_in_rect(
-    ui:&mut Ui,rect:Rect,title:&str,description:&str,
-    close_label:&str,enabled:bool
-)->bool {
-    modal_review_header_in_rect(ui,rect,title,description,close_label,enabled)
-}
-
-/// One-rule, right-action footer. Shared alias for the approved OCR chrome.
-pub fn modal_master_footer_in_rect(
-    ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
-) {
-    modal_review_footer_in_rect(ui,rect,actions);
-}
-
-/// A review dialog is ONE workspace, not two unrelated nested cards.
-/// Title and explanation share the same header; only one rule separates
-/// them from the actual work surface. Other modal headers are unaffected.
-pub fn modal_review_header_in_rect(
     ui:&mut Ui,rect:Rect,title:&str,description:&str,
     close_label:&str,enabled:bool
 )->bool {
@@ -658,7 +642,7 @@ pub fn modal_review_header_in_rect(
     let heading_clip=heading.intersect(ui.clip_rect());
     let mut close=false;
     ui.scope_builder(
-        egui::UiBuilder::new().id_salt("modal-review-heading")
+        egui::UiBuilder::new().id_salt("modal-master-heading")
             .max_rect(heading)
             .layout(Layout::left_to_right(Align::Center)),
         |header|{
@@ -674,7 +658,7 @@ pub fn modal_review_header_in_rect(
     );
     let subtitle_clip=subtitle.intersect(ui.clip_rect());
     ui.scope_builder(
-        egui::UiBuilder::new().id_salt("modal-review-description")
+        egui::UiBuilder::new().id_salt("modal-master-description")
             .max_rect(subtitle),
         |details|{
             details.set_clip_rect(subtitle_clip);
@@ -685,9 +669,10 @@ pub fn modal_review_header_in_rect(
     close
 }
 
-/// Quiet single-rule footer for document comparison. Keeps the same
-/// action alignment as standard popups without a detached contrasting strip.
-pub fn modal_review_footer_in_rect(
+
+/// Canonical quiet modal footer: one upper divider and the final action
+/// anchored at the right, never an additional bottom Cancel button.
+pub fn modal_master_footer_in_rect(
     ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
 ) {
     ui.painter().rect_filled(rect,0.0,theme::PANEL);
@@ -703,7 +688,7 @@ pub fn modal_review_footer_in_rect(
     );
     let clip=content.intersect(ui.clip_rect());
     ui.scope_builder(
-        egui::UiBuilder::new().id_salt("modal-review-actions")
+        egui::UiBuilder::new().id_salt("modal-master-actions")
             .max_rect(content)
             .layout(Layout::right_to_left(Align::Center)),
         |footer|{
@@ -712,6 +697,24 @@ pub fn modal_review_footer_in_rect(
             actions(footer);
         },
     );
+}
+
+
+/// Retain the pilot API so older callers can migrate without visual churn.
+#[allow(dead_code)]
+pub fn modal_review_header_in_rect(
+    ui:&mut Ui,rect:Rect,title:&str,description:&str,
+    close_label:&str,enabled:bool
+)->bool {
+    modal_master_header_in_rect(ui,rect,title,description,close_label,enabled)
+}
+
+/// Retain the pilot API while new screens use the master naming.
+#[allow(dead_code)]
+pub fn modal_review_footer_in_rect(
+    ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
+) {
+    modal_master_footer_in_rect(ui,rect,actions);
 }
 
 pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
