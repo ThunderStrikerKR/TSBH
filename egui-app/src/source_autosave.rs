@@ -18,7 +18,7 @@ enum Command {
 
 #[derive(Debug)]
 pub enum SaveStatus {
-    Saved { revision:u64, active_id:Option<String>, raw:String },
+    Saved { revision:u64, active_id:Option<String>, raw:String, order_type:String },
     Failed(String),
 }
 
@@ -71,6 +71,7 @@ impl SourceAutosave {
                             revision:next,
                             active_id:source.active_id.clone(),
                             raw:source.raw.clone(),
+                            order_type:source.order_type.clone(),
                         }
                     }
                     Ok(_) => SaveStatus::Failed(
