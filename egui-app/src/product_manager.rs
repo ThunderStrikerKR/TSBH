@@ -627,7 +627,33 @@ impl ProductManager {
             self.query.clear();
             self.reload(ui.ctx().clone());
         }
-        ui.add_space(theme::SPACE_16);
+        // The category editor keeps its distinct tree layout. The other
+        // product tabs share Freight Assignment's actual four-card KPI strip.
+        if self.tab==1{
+            ui.add_space(theme::SPACE_16);
+        }else{
+            ui.add_space(theme::SPACE_12);
+            let (products,model_groups,aliases,brands)=self.catalog.as_ref()
+                .map(|catalog|{
+                    (rows(&catalog["products"]).len(),
+                    catalog["settings"]["colorGuidanceGroups"]
+                        .as_object().map_or(0,|groups|groups.len()),
+                    rows(&catalog["aliases"]).len(),
+                    rows(&catalog["brands"]).len())
+                }).unwrap_or((0,0,0,0));
+            components::management_top_content(ui,|top|{
+                top.horizontal_wrapped(|strip|{
+                    strip.spacing_mut().item_spacing=Vec2::new(
+                        theme::SPACE_8,theme::SPACE_8
+                    );
+                    components::management_summary_card(strip,"등록 상품",products);
+                    components::management_summary_card(strip,"모델군",model_groups);
+                    components::management_summary_card(strip,"별칭",aliases);
+                    components::management_summary_card(strip,"브랜드",brands);
+                });
+            });
+            ui.add_space(theme::SPACE_16);
+        }
         let can_edit=self.gateway.product_write_enabled()
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
         let saving=self.writing.is_some()||self.excel.busy();
@@ -677,66 +703,14 @@ impl ProductManager {
             }
             return;
         }
-        // Same hierarchy as the approved freight-assignment screen:
-        // title and three actions OUTSIDE the single bordered list card.
-        components::management_top_content(ui,|top|{
-            top.horizontal(|heading|{
-                heading.label(typography::section_heading("상품 가격표"));
-                settings_help::icon(heading,"상품 가격 수정");
-                heading.label(typography::caption(&format!("{}개 상품",self.products.len())));
-                heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                    if theme::action(
-                        actions,"상품 추가",theme::ButtonRole::Primary,!saving
-                    ).clicked(){
-                        self.adding=!self.adding;
-                    }
-                    if theme::action(actions,
-                        if self.price_mode {"가격 수정 모드 종료"}else{"가격 수정 모드 켜기"},
-                        if self.price_mode {theme::ButtonRole::Primary}
-                        else {theme::ButtonRole::Standard},
-                        can_edit&&!saving
-                    ).clicked(){
-                        if self.price_mode && self.has_pending_prices(){
-                            self.error=Some("저장하지 않은 가격이 있습니다. 각 가격 셀의 저장 또는 취소를 눌러주세요.".into());
-                        }else{
-                            self.price_mode=!self.price_mode;
-                            if !self.price_mode{self.price_drafts.clear();}
-                        }
-                    }
-                    if theme::action(actions,"Excel 관리",theme::ButtonRole::Standard,
-                        !saving
-                    ).clicked(){
-                        if self.has_pending_prices(){
-                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
-                        }else{
-                            self.excel.toggle();
-                        }
-                    }
-                });
-            });
-        });
-        ui.add_space(theme::SPACE_12);
-        if self.adding {
-            components::management_top_content(ui,|top|{
-                top.horizontal(|actions|{
-                    if theme::action(
-                        actions,"직접 등록",theme::ButtonRole::Primary,can_edit&&!saving
-                    ).clicked(){begin_new=true;}
-                });
-            });
-            ui.add_space(theme::SPACE_12);
-        }
-        self.excel.show_panel(
-            ui,Arc::clone(&self.gateway),
-            self.catalog.is_some()&&!self.writing.is_some()&&!self.has_pending_prices()
-        );
-        if self.excel.open(){ui.add_space(theme::SPACE_12);}
+        // Product list starts at the exact Freight Assignment card anchor.
+        // Actions and optional Excel/registration editors stay INSIDE the card.
         components::align_management_primary_card(ui,page_origin_y);
-        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::FRAME_STROKE_WIDTH);
-        theme::management_list_frame().show(ui,|panel|{
+        let card_min_height=components::management_master_table_card_min_inner_height(ui);
+        theme::management_master_table_frame().show(ui,|panel|{
             components::fill_management_primary_card(panel,card_min_height);
-            theme::management_list_strip_frame().show(panel,|strip|{
-                strip.horizontal_wrapped(|filter|{
+            panel.spacing_mut().item_spacing.y=0.0;
+            panel.horizontal_wrapped(|filter|{
                     filter.spacing_mut().item_spacing.x=theme::SPACE_8;
                     let before=self.query.clone();
                     if components::flexible_text_field(
@@ -819,8 +793,66 @@ impl ProductManager {
                             self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
                         }else{self.changed(filter.ctx());}
                     }
-                });
             });
+
+            // Product-only operations use the master's toolbar rhythm.
+            // They have their own right-aligned row: the category path and
+            // four search filters must never collapse into a clipped action.
+            panel.add_space(theme::SPACE_8);
+            let (actions_rect,_)=panel.allocate_exact_size(
+                Vec2::new(panel.available_width(),theme::INPUT_HEIGHT),
+                Sense::hover()
+            );
+            panel.scope_builder(
+                UiBuilder::new().id_salt("product-master-actions")
+                    .max_rect(actions_rect)
+                    .layout(Layout::right_to_left(Align::Center)),
+                |actions|{
+                    actions.set_width(actions_rect.width());
+                    actions.set_height(actions_rect.height());
+                    actions.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    if theme::action(actions,"상품 추가",
+                        theme::ButtonRole::Primary,!saving
+                    ).clicked(){
+                        self.adding=!self.adding;
+                    }
+                    if theme::action(actions,
+                        if self.price_mode{"가격 수정 모드 종료"}
+                        else{"가격 수정 모드 켜기"},
+                        if self.price_mode{theme::ButtonRole::Primary}
+                        else{theme::ButtonRole::Standard},
+                        can_edit&&!saving
+                    ).clicked(){
+                        if self.price_mode && self.has_pending_prices(){
+                            self.error=Some("저장하지 않은 가격이 있습니다. 각 가격 셀의 저장 또는 취소를 눌러주세요.".into());
+                        }else{
+                            self.price_mode=!self.price_mode;
+                            if !self.price_mode{self.price_drafts.clear();}
+                        }
+                    }
+                    if theme::action(actions,"Excel 관리",
+                        theme::ButtonRole::Standard,!saving
+                    ).clicked(){
+                        if self.has_pending_prices(){
+                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                        }else{self.excel.toggle();}
+                    }
+                }
+            );
+            if self.adding {
+                panel.add_space(theme::SPACE_8);
+                panel.horizontal(|actions|{
+                    if theme::action(
+                        actions,"직접 등록",theme::ButtonRole::Primary,can_edit&&!saving
+                    ).clicked(){begin_new=true;}
+                });
+            }
+            if self.excel.open(){panel.add_space(theme::SPACE_8);}
+            self.excel.show_panel(
+                panel,Arc::clone(&self.gateway),
+                self.catalog.is_some()&&self.writing.is_none()
+                    &&!self.has_pending_prices()
+            );
             // Keep the toolbar, header, and virtualized rows in one outline.
             // Only the list body scrolls; the page title and controls do not.
             if saving{
@@ -836,7 +868,8 @@ impl ProductManager {
             // Only a DIRECT filter-to-table transition uses the approved
             // 21pt strip. Inline saving/loading notices are separate
             // information blocks, so preserve their original divider.
-            let direct_filter_to_header=!saving&&!self.result.pending();
+            let direct_filter_to_header=!saving&&!self.result.pending()
+                &&!self.adding&&!self.excel.open();
             if !direct_filter_to_header{
                 components::soft_divider(panel);
             }
@@ -856,9 +889,8 @@ impl ProductManager {
             // native scrollbar allocation while using the shared table calculator.
             let min_table_width=theme::PRODUCT_TABLE_MIN_WIDTH.max(min_width);
             let layout=if direct_filter_to_header{
-                // Filter strip already contributes 8pt of bottom padding.
-                components::management_sticky_table_header_after_inset(
-                    panel,min_table_width,theme::SPACE_8
+                components::management_sticky_table_header(
+                    panel,min_table_width
                 )
             }else{
                 components::management_list_table_header(panel,min_table_width)
