@@ -1497,7 +1497,13 @@ fn management_row_impl(
                 let galley=if primary.is_empty() {
                     typography::client_table_metadata_galley(ui,visible,theme::MUTED)
                 }else{
-                    typography::client_table_cell_galley(ui,visible,i==0)
+                    typography::management_table_cell_galley(
+                        ui,visible,if i==0 {
+                            typography::ManagementTableCellRole::ClientName
+                        }else{
+                            typography::ManagementTableCellRole::Text
+                        }
+                    )
                 };
                 paint_client_line(
                     ui,cell,cell.left(),galley,
@@ -1518,7 +1524,13 @@ fn management_row_impl(
             );
             paint_client_line(
                 ui,first,first.left(),
-                typography::client_table_cell_galley(ui,primary,i==0),
+                typography::management_table_cell_galley(
+                    ui,primary,if i==0 {
+                        typography::ManagementTableCellRole::ClientName
+                    }else{
+                        typography::ManagementTableCellRole::Text
+                    }
+                ),
                 theme::TEXT
             );
             paint_client_line(
