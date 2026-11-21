@@ -4,7 +4,7 @@
 
 use std::{collections::HashMap, time::{Duration, Instant}};
 use eframe::egui::{
-    self, Context, Frame, Id, Pos2, Rect, Response, Sense, Stroke, Vec2,
+    self, Context, Id, Pos2, Rect, Response, Sense, Stroke, Vec2,
 };
 use crate::{theme, typography};
 
@@ -238,26 +238,145 @@ pub fn sync(
     }
 }
 
-fn estimate_width(message: &str, screen: Rect) -> f32 {
-    let glyphs = message.chars().map(|c| if c.is_ascii() { 7.1 } else { 13.0 })
-        .sum::<f32>();
-    (glyphs + 68.0).clamp(136.0, MAX_WIDTH)
-        .min((screen.width() - SCREEN_MARGIN * 2.0).max(1.0))
+// All visible bounds come from the same egui galley we actually paint.
+// This prevents the CJK/Latin/fallback-font discrepancies of character-count
+// estimates and keeps the floating overlay independent of table/card layout.
+fn measured_notice(
+    ctx: &Context, message: &str, tone: Tone, screen: Rect,
+) -> (Vec2, std::sync::Arc<egui::Galley>, f32) {
+    let pad_x = f32::from(theme::FLOATING_NOTICE_PADDING_X);
+    let pad_y = f32::from(theme::FLOATING_NOTICE_PADDING_Y);
+    let close_slot = if tone == Tone::Error {
+        theme::SPACE_8 + theme::FLOATING_NOTICE_CLOSE_HIT_SIZE
+    } else { 0.0 };
+    let chrome = pad_x * 2.0 + theme::FLOATING_NOTICE_ICON_SIZE
+        + theme::SPACE_8 + close_slot + theme::FRAME_STROKE_WIDTH * 2.0;
+    let max_width = MAX_WIDTH.min((screen.width() - SCREEN_MARGIN * 2.0).max(1.0));
+    let wrap_width = (max_width - chrome).max(1.0);
+    let galley = ctx.fonts_mut(|fonts| fonts.layout(
+        message.to_owned(),
+        egui::FontId::proportional(theme::FLOATING_NOTICE_TEXT_SIZE),
+        theme::TEXT,
+        wrap_width,
+    ));
+    let width = (galley.size().x + chrome).min(max_width);
+    let content_height = galley.size().y.max(theme::FLOATING_NOTICE_ICON_SIZE)
+        .max(if tone == Tone::Error {
+            theme::FLOATING_NOTICE_CLOSE_HIT_SIZE
+        } else { 0.0 });
+    let desired_height = content_height + pad_y * 2.0
+        + theme::FRAME_STROKE_WIDTH * 2.0;
+    let max_height = (screen.height() - SCREEN_MARGIN * 2.0
+        - theme::FLOATING_NOTICE_POINTER_HEIGHT).max(1.0);
+    (Vec2::new(width, desired_height.min(max_height)), galley, content_height)
 }
 
 fn placement(anchor: Pos2, size: Vec2, screen: Rect) -> (Pos2, bool) {
-    let left = (anchor.x - 28.0)
-        .clamp(screen.left() + SCREEN_MARGIN,
-            (screen.right() - size.x - SCREEN_MARGIN).max(screen.left() + SCREEN_MARGIN));
-    let above = anchor.y - ANCHOR_GAP - size.y;
-    let fits_above = above >= screen.top() + SCREEN_MARGIN;
-    let top = if fits_above { above } else { anchor.y + ANCHOR_GAP };
-    let top = top.clamp(screen.top() + SCREEN_MARGIN,
-        (screen.bottom() - size.y - SCREEN_MARGIN).max(screen.top() + SCREEN_MARGIN));
-    (Pos2::new(left, top), fits_above)
+    let min_x = screen.left() + SCREEN_MARGIN;
+    let max_x = (screen.right() - SCREEN_MARGIN - size.x).max(min_x);
+    let x = (anchor.x - 28.0).clamp(min_x, max_x);
+
+    let above_y = anchor.y - ANCHOR_GAP - size.y;
+    let below_y = anchor.y + ANCHOR_GAP;
+    let room_above = anchor.y - screen.top() - SCREEN_MARGIN;
+    let room_below = screen.bottom() - SCREEN_MARGIN - anchor.y;
+    let above = above_y >= screen.top() + SCREEN_MARGIN
+        || (below_y + size.y > screen.bottom() - SCREEN_MARGIN
+            && room_above >= room_below);
+    let min_y = screen.top() + SCREEN_MARGIN;
+    let max_y = (screen.bottom() - SCREEN_MARGIN - size.y).max(min_y);
+    let y = (if above { above_y } else { below_y }).clamp(min_y,max_y);
+    (Pos2::new(x,y),above)
 }
 
-/// One top-layer overlay, measured without adding anything to table/card flow.
+// Fixed 16pt vector glyphs: never use font-dependent ✓/!/i characters.
+// Align to the first text row, not the middle of a multi-line explanation.
+fn paint_status_icon(painter: &egui::Painter, center: Pos2, tone: Tone) {
+    let ink = match tone {
+        Tone::Success => theme::SUCCESS,
+        Tone::Info => theme::SECONDARY,
+        Tone::Validation | Tone::Error => theme::DANGER,
+    };
+    let stroke = Stroke::new(1.5, ink);
+    painter.circle_stroke(center,6.5,stroke);
+    match tone {
+        Tone::Success => {
+            painter.line_segment([
+                center + Vec2::new(-3.1,0.0),
+                center + Vec2::new(-0.7,2.4),
+            ],stroke);
+            painter.line_segment([
+                center + Vec2::new(-0.7,2.4),
+                center + Vec2::new(3.5,-2.7),
+            ],stroke);
+        }
+        Tone::Info => {
+            painter.circle_filled(center + Vec2::new(0.0,-2.6),0.9,ink);
+            painter.line_segment([
+                center + Vec2::new(0.0,0.1),
+                center + Vec2::new(0.0,3.6),
+            ],stroke);
+        }
+        Tone::Validation | Tone::Error => {
+            painter.line_segment([
+                center + Vec2::new(0.0,-3.4),
+                center + Vec2::new(0.0,1.0),
+            ],stroke);
+            painter.circle_filled(center + Vec2::new(0.0,3.7),0.9,ink);
+        }
+    }
+}
+
+// The arrow belongs to the body's 1pt outline, not a second bordered box.
+// Paint a filled triangle, cover ONLY the body border underneath its base,
+// then trace the two exposed sides. No doubled base stroke or white seam.
+fn paint_tail(
+    painter: &egui::Painter, rect: Rect, anchor: Pos2, above: bool,
+) {
+    let half = theme::FLOATING_NOTICE_POINTER_HALF_WIDTH;
+    let height = theme::FLOATING_NOTICE_POINTER_HEIGHT;
+    let radius = f32::from(theme::CONTROL_RADIUS);
+    let tail_x = anchor.x.clamp(
+        rect.left() + radius + half + 2.0,
+        rect.right() - radius - half - 2.0,
+    );
+    let base_y = if above { rect.bottom() - 0.5 } else { rect.top() + 0.5 };
+    let tip_y = if above { rect.bottom() + height } else { rect.top() - height };
+    // If the screen forced the box to overlap its source, omit the pointer
+    // rather than point a triangle at unrelated content.
+    if (above && rect.bottom() > anchor.y - height)
+        || (!above && rect.top() < anchor.y + height)
+    {
+        return;
+    }
+    let left = Pos2::new(tail_x-half,base_y);
+    let right = Pos2::new(tail_x+half,base_y);
+    let tip = Pos2::new(tail_x,tip_y);
+    painter.add(egui::Shape::convex_polygon(
+        vec![left,right,tip], theme::FLOATING_NOTICE_BG, Stroke::NONE,
+    ));
+    painter.line_segment([left,right],Stroke::new(
+        theme::FRAME_STROKE_WIDTH + 1.5,theme::FLOATING_NOTICE_BG,
+    ));
+    let stroke = Stroke::new(theme::FRAME_STROKE_WIDTH, theme::BORDER);
+    painter.line_segment([left,tip],stroke);
+    painter.line_segment([tip,right],stroke);
+}
+
+fn paint_close(painter: &egui::Painter, center: Pos2) {
+    let ink = Stroke::new(1.4,theme::SECONDARY);
+    painter.line_segment([
+        center + Vec2::new(-3.2,-3.2),
+        center + Vec2::new(3.2,3.2),
+    ],ink);
+    painter.line_segment([
+        center + Vec2::new(-3.2,3.2),
+        center + Vec2::new(3.2,-3.2),
+    ],ink);
+}
+
+/// Top-layer overlay, measured by the same font/layout used for painting.
+/// The popup reserves no size in the underlying fixed/virtualized tables.
 pub fn show(ctx: &Context) {
     let active = with_state(ctx, |state| {
         if state.active.as_ref().is_some_and(|n| {
@@ -283,75 +402,103 @@ pub fn show(ctx: &Context) {
             .saturating_sub(active.created.elapsed())),
         Tone::Error => {},
     }
+
     let screen = ctx.screen_rect();
-    let width = estimate_width(&active.message, screen);
-    // Reserve two text lines for long feedback and a short pointer-tail.
-    let estimated_lines = (active.message.chars().count() as f32 /
-        ((width - 56.0) / 13.0).max(1.0)).ceil().clamp(1.0, 4.0);
-    let height = (estimated_lines * 20.0 + 20.0).max(36.0);
-    let (at, above) = placement(active.at, Vec2::new(width, height + 9.0), screen);
+    let (size, galley, _content_height) = measured_notice(
+        ctx, &active.message, active.tone, screen,
+    );
+    let (at, above) = placement(active.at, size, screen);
+    let pad_x = f32::from(theme::FLOATING_NOTICE_PADDING_X);
+    let pad_y = f32::from(theme::FLOATING_NOTICE_PADDING_Y);
     let mut close = false;
-    let layer = egui::Area::new(Id::new(NOTICE_ID).with("bubble"))
+    egui::Area::new(Id::new(NOTICE_ID).with("bubble"))
         .order(egui::Order::Tooltip)
         .fixed_pos(at)
         .movable(false)
         .show(ctx, |ui| {
-            Frame::new()
-                .fill(theme::FLOATING_NOTICE_BG)
-                .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH, theme::BORDER))
-                .corner_radius(theme::CONTROL_RADIUS)
-                .inner_margin(egui::Margin::symmetric(
-                    theme::FLOATING_NOTICE_PADDING_X,
-                    theme::FLOATING_NOTICE_PADDING_Y
-                ))
-                .show(ui, |body| {
-                    body.set_max_width((width - 24.0).max(40.0));
-                    body.horizontal_wrapped(|line| {
-                        line.spacing_mut().item_spacing.x = theme::SPACE_8;
-                        let (glyph, color) = match active.tone {
-                            Tone::Success => ("✓", theme::SUCCESS),
-                            Tone::Info => ("i", theme::SECONDARY),
-                            Tone::Validation => ("!", theme::DANGER),
-                            Tone::Error => ("!", theme::DANGER),
-                        };
-                        line.label(egui::RichText::new(glyph).size(theme::FLOATING_NOTICE_ICON_SIZE).color(color));
-                        line.add(egui::Label::new(egui::RichText::new(&active.message)
-                            .size(typography::FONT_FIELD_LABEL).color(theme::TEXT)).wrap());
-                        if active.tone == Tone::Error {
-                            close = line.add(egui::Label::new(
-                                egui::RichText::new("×").size(theme::FLOATING_NOTICE_ICON_SIZE).color(theme::SECONDARY))
-                                .sense(Sense::click())).clicked();
-                        }
-                    });
-                });
+            let (rect, _) = ui.allocate_exact_size(size,Sense::hover());
+            let painter = ui.painter();
+            // Soft 3pt/down shadow separates overlapping fields from their
+            // floating result, without changing the approved grey palette.
+            painter.add(egui::epaint::Shadow{
+                offset:theme::FLOATING_NOTICE_SHADOW_OFFSET,
+                blur:theme::FLOATING_NOTICE_SHADOW_BLUR,
+                spread:0,
+                color:egui::Color32::from_black_alpha(
+                    theme::FLOATING_NOTICE_SHADOW_ALPHA
+                ),
+            }.as_shape(rect,theme::CONTROL_RADIUS));
+            painter.rect(
+                rect,theme::CONTROL_RADIUS,theme::FLOATING_NOTICE_BG,
+                Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER),
+                egui::StrokeKind::Inside,
+            );
+            paint_tail(painter,rect,active.at,above);
+            let first_row_height = galley.rows.first().map(|row|row.rect.height())
+                .unwrap_or(theme::FLOATING_NOTICE_TEXT_SIZE + 5.0);
+            let first_center = rect.top() + pad_y + first_row_height.max(
+                theme::FLOATING_NOTICE_ICON_SIZE
+            )/2.0;
+            paint_status_icon(painter,Pos2::new(
+                rect.left()+pad_x + theme::FLOATING_NOTICE_ICON_SIZE/2.0,
+                first_center
+            ),active.tone);
+            let text_left = rect.left() + pad_x
+                + theme::FLOATING_NOTICE_ICON_SIZE + theme::SPACE_8;
+            let text_top = rect.top() + pad_y;
+            let close_slot = if active.tone==Tone::Error {
+                theme::FLOATING_NOTICE_CLOSE_HIT_SIZE + theme::SPACE_8
+            } else { 0.0 };
+            let text_right = rect.right() - pad_x - close_slot;
+            let text_visible_height = (rect.bottom() - pad_y - text_top)
+                .max(1.0);
+            let text_rect = Rect::from_min_size(
+                Pos2::new(text_left,text_top),
+                Vec2::new((text_right - text_left).max(1.0),text_visible_height),
+            );
+            if galley.size().y <= text_visible_height {
+                painter.galley(text_rect.min,galley.clone(),theme::TEXT);
+            } else {
+                // Only exceptionally long failure details scroll INSIDE the
+                // floating box. Never increase the underlying page height.
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("floating-notice-detail-scroll")
+                        .max_rect(text_rect),
+                    |inner| {
+                        inner.set_clip_rect(text_rect);
+                        inner.set_width(text_rect.width());
+                        egui::ScrollArea::vertical()
+                            .id_salt("floating-notice-scroll")
+                            .auto_shrink([false,false])
+                            .max_height(text_rect.height())
+                            .show(inner,|content| {
+                                content.set_width(text_rect.width().max(1.0));
+                                content.add(egui::Label::new(
+                                    egui::RichText::new(&active.message)
+                                        .size(theme::FLOATING_NOTICE_TEXT_SIZE)
+                                        .color(theme::TEXT)
+                                ).wrap());
+                            });
+                    },
+                );
+            }
+            if active.tone == Tone::Error {
+                let side=theme::FLOATING_NOTICE_CLOSE_HIT_SIZE;
+                let center=Pos2::new(
+                    rect.right()-pad_x-side/2.0,
+                    rect.top()+pad_y+side/2.0,
+                );
+                let hit=Rect::from_center_size(center,Vec2::splat(side));
+                let response=ui.interact(
+                    hit,Id::new(NOTICE_ID).with("close"),Sense::click()
+                );
+                paint_close(painter,center);
+                close=response.clicked();
+            }
         });
-    // The tail is painted in the same top-layer as the bubble, so it never
-    // reserves height in the underlying table and follows the selected anchor.
-    let rect = layer.response.rect;
-    let tail_x = active.at.x.clamp(rect.left() + 14.0, rect.right() - 14.0);
-    let painter = ctx.layer_painter(layer.response.layer_id);
-    let fill = theme::FLOATING_NOTICE_BG;
-    let vertices = if above {
-        vec![
-            Pos2::new(tail_x - 6.0, rect.bottom() - 1.0),
-            Pos2::new(tail_x + 6.0, rect.bottom() - 1.0),
-            Pos2::new(tail_x, rect.bottom() + 7.0),
-        ]
-    } else {
-        vec![
-            Pos2::new(tail_x - 6.0, rect.top() + 1.0),
-            Pos2::new(tail_x + 6.0, rect.top() + 1.0),
-            Pos2::new(tail_x, rect.top() - 7.0),
-        ]
-    };
-    painter.add(egui::Shape::convex_polygon(
-        vertices, fill, Stroke::new(theme::FRAME_STROKE_WIDTH, theme::BORDER)
-    ));
-    // This expression intentionally reads the anchor kind: the caller can
-    // distinguish caret/button/section without changing visual styling.
-    let _ = active.kind;
     if close {
-        with_state(ctx, |state| state.active = None);
+        with_state(ctx,|state|state.active=None);
     }
 }
 
