@@ -427,12 +427,13 @@ pub const ORDER_HISTORY_COL_WIDTHS: [f32; 7] =
     ORDER_HISTORY_MASTER_TABLE.base_columns;
 pub const ORDER_HISTORY_TABLE_MIN_WIDTH: f32 =
     ORDER_HISTORY_MASTER_TABLE.min_width;
-// Shipping-group management: four-column grid (group, max bundle, full
-// 1..6-item tariff summary, one "관리" action). Freed status/notes/action
-// space is reassigned to the full tariff string. The previous 1265pt table
-// minimum remains unchanged, avoiding unexpected scrollbar/layout changes.
+// Shipping-group management: four-column grid. The group name gets twice
+// its previous width; bundle limit uses only enough space for a short label;
+// product membership replaces tariff amounts. The management popup retains
+// its compact button column. Keep the old 1265pt table minimum to avoid
+// moving scrollbars or the master header edges.
 pub const FREIGHT_RATE_COL_WIDTHS: [f32;4] =
-    [225.0,148.0,740.0,128.0];
+    [450.0,112.0,551.0,128.0];
 pub const FREIGHT_RATE_TABLE_MIN_WIDTH:f32 = 1265.0;
 // Combination and archived group tables have independent information widths.
 // Neither inherits the product-assignment 942pt geometry or the rate-edit
