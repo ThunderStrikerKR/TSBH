@@ -4098,7 +4098,7 @@ impl BandoEgui {
 
         let mut next_recipient = None;
         let recipient_nav=self.analysis.as_ref()
-            .map(reception_service::recipients)
+            .map(|analysis|reception_service::recipients(analysis))
             .filter(|recipients|recipients.len()>1)
             .map(|recipients|{
                 let index=self.selected_recipient.min(recipients.len()-1);
