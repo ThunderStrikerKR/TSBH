@@ -106,8 +106,8 @@ impl Page {
 
 // Keep OCR image in memory until an employee approves recognized text.
 enum ClipboardReceipt {
-    Text(String),
-    Ocr { text: String, image: ClipboardImage },
+    Text { text:String, sequence:Option<u32> },
+    Ocr { text:String, image:ClipboardImage, sequence:Option<u32> },
 }
 struct OcrReview {
     order_type: OrderType,
@@ -118,12 +118,21 @@ struct OcrReview {
     height: usize,
     zoom: f32,
     chat: Option<ChatWindow>,
+    clipboard_sequence: Option<u32>,
 }
 struct PendingReplace {
     text: String,
     order_type: OrderType,
     chat: Option<ChatWindow>,
     input_method: &'static str,
+    clipboard_sequence: Option<u32>,
+}
+// Do not clear a copied source until its exact order ID and raw text are
+// acknowledged by the serialized Rust autosave worker.
+struct PendingClipboardClear {
+    order_id:String,
+    raw:String,
+    sequence:Option<u32>,
 }
 
 // Keep deletion bound to the exact unconfirmed receipt and raw text. The
@@ -219,6 +228,7 @@ struct BandoEgui {
     ocr_review: Option<OcrReview>,
     discard_ocr_confirm: bool,
     pending_replace: Option<PendingReplace>,
+    pending_clipboard_clear: Option<PendingClipboardClear>,
     source_clear_confirm: Option<SourceClearRequest>,
     source_clear_job: Option<PendingSourceClear>,
     source_autosave: Option<source_autosave::SourceAutosave>,
@@ -299,6 +309,7 @@ impl Default for BandoEgui {
             ocr_review: None,
             discard_ocr_confirm: false,
             pending_replace: None,
+            pending_clipboard_clear: None,
             source_clear_confirm: None,
             source_clear_job: None,
             source_autosave: None,
@@ -1467,20 +1478,22 @@ impl BandoEgui {
         self.clipboard_receiver = Some(rx);
         // Clipboard image decoding and PaddleOCR never block the UI thread.
         std::thread::spawn(move || {
-            let result = clipboard_intake::read().and_then(|value| match value {
-                ClipboardPayload::Text(text) => Ok(ClipboardReceipt::Text(text)),
-                ClipboardPayload::Image(image) => {
-                    let text = clipboard_intake::recognize_image(&image, &cancelled)?;
-                    Ok(ClipboardReceipt::Ocr { text, image })
-                }
-            });
+            let result=clipboard_intake::read_with_sequence()
+                .and_then(|(value,sequence)|match value{
+                    ClipboardPayload::Text(text)=>
+                        Ok(ClipboardReceipt::Text{text,sequence}),
+                    ClipboardPayload::Image(image)=>{
+                        let text=clipboard_intake::recognize_image(&image,&cancelled)?;
+                        Ok(ClipboardReceipt::Ocr{text,image,sequence})
+                    }
+                });
             let _ = tx.send((order_type, result));
             ctx.request_repaint();
         });
     }
 
     fn accept_clipboard_text(&mut self, text: String, order_type: OrderType,
-        chat: Option<ChatWindow>, ctx: &egui::Context) {
+        chat: Option<ChatWindow>, sequence:Option<u32>, ctx: &egui::Context) {
         if text.trim().is_empty() {
             self.clipboard_error = Some("발주 원문이 비어 있습니다.".into());
             return;
@@ -1488,16 +1501,20 @@ impl BandoEgui {
         if self.raw_source != text && !self.raw_source.trim().is_empty() {
             // Exact replacement confirmation from the existing React intake.
             self.pending_replace = Some(PendingReplace {
-                text, order_type, chat, input_method: "TEXT_PASTE"
+                text, order_type, chat, input_method: "TEXT_PASTE",
+                clipboard_sequence:sequence,
             });
             return;
         }
-        self.apply_intake_text(text, order_type, chat, ctx, "TEXT_PASTE", false);
+        self.apply_intake_text(
+            text,order_type,chat,ctx,"TEXT_PASTE",false,sequence
+        );
     }
 
     fn apply_intake_text(&mut self, text: String, order_type: OrderType,
         chat: Option<ChatWindow>, ctx: &egui::Context,
-        input_method: &str, replace_original: bool) {
+        input_method: &str, replace_original: bool,
+        clipboard_sequence:Option<u32>) {
         if text.trim().is_empty() { return; }
         if self.active_id.is_none() {
             self.new_reception(ctx);
@@ -1528,6 +1545,15 @@ impl BandoEgui {
         }
         // One revision-checked write includes both raw and AGENCY/DEALER.
         self.queue_source_save();
+        // A successful enqueue is not a durable reception. Only clear
+        // after source_autosave explicitly acknowledges this exact snapshot.
+        self.pending_clipboard_clear=if self.source_save_error.is_none(){
+            self.active_id.as_ref().map(|id|PendingClipboardClear{
+                order_id:id.clone(),
+                raw:self.raw_source.clone(),
+                sequence:clipboard_sequence,
+            })
+        }else{None};
     }
 
     fn poll_clipboard_intake(&mut self, ctx: &egui::Context) {
@@ -1544,10 +1570,12 @@ impl BandoEgui {
                     return;
                 }
                 match result {
-                    Ok(ClipboardReceipt::Text(text)) => {
-                        self.accept_clipboard_text(text, order_type, intake_chat, ctx);
+                    Ok(ClipboardReceipt::Text{text,sequence}) => {
+                        self.accept_clipboard_text(
+                            text,order_type,intake_chat,sequence,ctx
+                        );
                     }
-                    Ok(ClipboardReceipt::Ocr { text, image }) => {
+                    Ok(ClipboardReceipt::Ocr{text,image,sequence}) => {
                         if text.trim().is_empty() {
                             self.clipboard_error=Some(
                                 "이미지에서 문자를 인식하지 못했습니다.".into()
@@ -1574,6 +1602,7 @@ impl BandoEgui {
                             edited_text:text,
                             texture,width:image.width,height:image.height,
                             zoom:1.0,chat:intake_chat,
+                            clipboard_sequence:sequence,
                         });
                         // The decoded texture was uploaded on this UI frame.
                         // Request another frame explicitly so the first OCR
