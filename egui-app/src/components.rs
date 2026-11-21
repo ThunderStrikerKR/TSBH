@@ -878,48 +878,15 @@ pub fn management_toolbar_trailing_rect(
     rect
 }
 
-/// Layout role of a management table's native scrollbar.
-///
-/// Callers describe their *structure*, never a pixel/point extension.
-/// The rail's final bottom position belongs to this common component.
-/// The data viewport is independent and never extended by this policy.
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum ManagementTableScrollRole {
-    /// Two approved full-height masters: Freight Assignment / Order History.
-    Master,
-    /// Symmetric 16pt section card, optionally followed by other content.
-    Section { content_below: bool },
-    /// 1pt list-frame card, optionally followed by other content.
-    List { content_below: bool },
-    /// Reports, stacked tables or any independently bounded row viewport.
-    Embedded,
-}
-
-impl ManagementTableScrollRole {
-    fn bottom_extension(self)->f32 {
-        match self {
-            Self::Master => theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION,
-            Self::Section { content_below:false } => theme::SECTION_PADDING,
-            Self::List { content_below:false } => theme::FRAME_STROKE_WIDTH,
-            Self::Section { content_below:true } |
-            Self::List { content_below:true } |
-            Self::Embedded => 0.0,
-        }
-    }
-}
-
-/// SSOT scrollbar track for native management tables.
-///
-/// The row viewport is ALWAYS limited by `scroll_height`. The common role
-/// decides whether the native rail can extend into an unused bottom inset:
-/// master = 7pt input (3pt optical correction + 4pt visual extension),
-/// section = 16pt, list = 1pt, embedded/footers = 0pt.
-/// No page may pass a raw extension or extend through a real footer.
+/// One shared 7pt rail extension for EVERY management table, regardless of
+/// its page, outer frame or footer. Each caller owns ONLY the viewport height
+/// (and reserves its footer separately); the scrollbar offset is not a
+/// per-page layout policy. The native 3pt bottom inset leaves 4pt beyond rows.
 pub fn management_table_scroll_track_rect(
-    ui:&Ui,scroll_height:f32,role:ManagementTableScrollRole
+    ui:&Ui,scroll_height:f32
 )->Rect {
     management_table_scroll_track_geometry(
-        ui.available_rect_before_wrap(),scroll_height,role.bottom_extension()
+        ui.available_rect_before_wrap(),scroll_height
     )
 }
 
@@ -929,12 +896,11 @@ pub fn management_table_scroll_track_rect(
 /// header-to-scrollbar join while retaining bottom clearance. The row
 /// viewport and the data columns are never extended by this function.
 fn management_table_scroll_track_geometry(
-    bounds:Rect,scroll_height:f32,bottom_extension:f32
+    bounds:Rect,scroll_height:f32
 )->Rect {
     debug_assert!(scroll_height.is_finite()&&scroll_height>=0.0);
-    debug_assert!(bottom_extension.is_finite()&&bottom_extension>=0.0);
     let rows_bottom=(bounds.top()+scroll_height).min(bounds.bottom());
-    let track_bottom=(rows_bottom+bottom_extension
+    let track_bottom=(rows_bottom+theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION
         -theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET)
         .max(bounds.top()+1.0);
     let track_top=(bounds.top()+theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET)
@@ -1894,95 +1860,26 @@ mod management_toolbar_geometry_tests {
     }
 
     #[test]
-    fn master_table_scroll_rail_ends_4pt_after_rows_with_12pt_card_clearance(){
-        // Keep the row viewport 16pt above the outer card border; only
-        // the native rail extends 4pt beyond rows into that padding.
+    fn management_table_scroll_policy_is_identical_for_every_table(){
         let bounds=Rect::from_min_size(
             egui::pos2(16.0,300.0),Vec2::new(800.0,484.0)
         );
-        let painted_rows_bottom=bounds.bottom();
-        let outer_card_bottom=painted_rows_bottom
-            +theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING;
-        let track=management_table_scroll_track_geometry(
-            bounds,bounds.height(),theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION
-        );
-        assert_eq!(outer_card_bottom-painted_rows_bottom,
-            theme::SECTION_PADDING);
-        assert_eq!(track.top(),bounds.top()); // joins fixed header
-        assert_eq!(painted_rows_bottom,784.0); // unchanged row viewport
-        assert_eq!(outer_card_bottom,800.0); // unchanged outer card
-        assert_eq!(track.bottom(),painted_rows_bottom+theme::SPACE_4);
-        assert_eq!(track.bottom(),788.0);
-        assert_eq!(outer_card_bottom-track.bottom(),
-            theme::SECTION_PADDING-theme::SPACE_4);
-        assert_eq!(outer_card_bottom-track.bottom(),12.0);
-        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION,
-            theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET+theme::SPACE_4);
-    }
-
-    #[test]
-    fn management_scroll_role_owns_extensions_and_protects_footers(){
-        use ManagementTableScrollRole as Role;
-        assert_eq!(Role::Master.bottom_extension(),
-            theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION);
-        assert_eq!(Role::Section{content_below:false}.bottom_extension(),
-            theme::SECTION_PADDING);
-        assert_eq!(Role::List{content_below:false}.bottom_extension(),
-            theme::FRAME_STROKE_WIDTH);
-        for role in [
-            Role::Section{content_below:true},
-            Role::List{content_below:true},
-            Role::Embedded,
-        ] {
-            assert_eq!(role.bottom_extension(),0.0);
-        }
-        // All roles keep a fixed body viewport. Only rail termination differs.
-        let rows=Rect::from_min_size(
-            egui::pos2(16.0,300.0),Vec2::new(800.0,484.0)
-        );
-        for (role,expected_bottom) in [
-            (Role::Master,788.0),
-            (Role::Section{content_below:false},797.0),
-            (Role::List{content_below:false},782.0),
-            (Role::Embedded,781.0),
-        ] {
-            let rail=management_table_scroll_track_geometry(
-                rows,rows.height(),role.bottom_extension()
-            );
-            assert_eq!(rail.top(),rows.top());
-            assert_eq!(rail.bottom(),expected_bottom);
-        }
-    }
-
-    #[test]
-    fn management_scroll_track_uses_common_top_and_card_bottom_policy(){
-        let bounds=Rect::from_min_size(
-            egui::pos2(16.0,300.0),Vec2::new(800.0,484.0)
-        );
-        let inset=management_table_scroll_track_geometry(
-            bounds,484.0,theme::SECTION_PADDING
-        );
-        assert_eq!(inset.top(),300.0);
-        assert_eq!(inset.bottom(),797.0); // 3pt before card bottom
-        assert_eq!(inset.left(),16.0);
-        assert_eq!(inset.right(),816.0);
+        let rows_bottom=bounds.bottom();
+        let rail=management_table_scroll_track_geometry(bounds,bounds.height());
+        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION,7.0);
         assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET,0.0);
-        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET,3.0);
+        assert_eq!(rail.top(),bounds.top()); // no gap under the header
+        assert_eq!(rail.bottom(),rows_bottom+theme::SPACE_4);
+        assert_eq!(rail.bottom(),788.0);
 
-        // When a footer follows the table, the rail remains limited to its
-        // viewport and only the bottom 3pt clearance remains.
-        let with_footer=management_table_scroll_track_geometry(bounds,400.0,0.0);
-        assert_eq!(with_footer.top(),300.0);
-        assert_eq!(with_footer.bottom(),697.0);
-
-        // The rows remain capped by the available data-viewport bounds.
-        let clipped=management_table_scroll_track_geometry(
-            bounds,1200.0,theme::SECTION_PADDING
-        );
-        assert_eq!(clipped.bottom(),797.0);
-
-        // Very small panes must still produce a non-inverted rail Rect.
-        let tiny=management_table_scroll_track_geometry(bounds,1.0,0.0);
+        // Neither a list's footer nor a master card's 16pt lower inset
+        // changes the shared rail offset. The scroll viewport is unchanged.
+        for height in [120.0,400.0,484.0,1200.0] {
+            let track=management_table_scroll_track_geometry(bounds,height);
+            let viewport_bottom=(bounds.top()+height).min(bounds.bottom());
+            assert_eq!(track.bottom(),viewport_bottom+theme::SPACE_4);
+        }
+        let tiny=management_table_scroll_track_geometry(bounds,1.0);
         assert!(tiny.height()>=1.0);
         assert!(tiny.top()>=bounds.top());
     }
