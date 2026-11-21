@@ -862,6 +862,39 @@ pub fn management_toolbar_trailing_rect(
     rect
 }
 
+/// SSOT scroll-track geometry for all native management tables.
+///
+/// The row viewport is ALWAYS limited by `scroll_height`; only the native
+/// scrollbar track may extend into the card's non-scrolling bottom inset.
+/// Use `theme::SECTION_PADDING` for a 16pt-inset full-card list and 0pt
+/// for lists followed by a footer, details or another table. Never extend
+/// through a footer or increase ScrollArea::max_height to move the rail.
+pub fn management_table_scroll_track_rect(
+    ui:&Ui,scroll_height:f32,bottom_extension:f32
+)->Rect {
+    management_table_scroll_track_geometry(
+        ui.available_rect_before_wrap(),scroll_height,bottom_extension
+    )
+}
+
+/// The only place that computes top/bottom of a management table rail.
+/// The scroll viewport and scrollbar may intentionally have different
+/// vertical extents; this rectangle governs the rail's paint/HIT geometry.
+fn management_table_scroll_track_geometry(
+    bounds:Rect,scroll_height:f32,bottom_extension:f32
+)->Rect {
+    debug_assert!(scroll_height.is_finite()&&scroll_height>=0.0);
+    debug_assert!(bottom_extension.is_finite()&&bottom_extension>=0.0);
+    let rows_bottom=(bounds.top()+scroll_height).min(bounds.bottom());
+    let track_bottom=rows_bottom+bottom_extension;
+    let track_top=(bounds.top()+theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET)
+        .min(track_bottom-1.0);
+    Rect::from_min_max(
+        egui::pos2(bounds.left(),track_top),
+        egui::pos2(bounds.right(),track_bottom)
+    )
+}
+
 /// One measured vertical transition for every fixed-header management table.
 ///
 /// Call with `item_spacing.y == 0` *from the toolbar allocation onward*.
@@ -1788,6 +1821,33 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
 #[cfg(test)]
 mod management_toolbar_geometry_tests {
     use super::*;
+    #[test]
+    fn management_scroll_track_uses_common_top_and_card_bottom_policy(){
+        let bounds=Rect::from_min_size(
+            egui::pos2(16.0,300.0),Vec2::new(800.0,484.0)
+        );
+        let inset=management_table_scroll_track_geometry(
+            bounds,484.0,theme::SECTION_PADDING
+        );
+        assert_eq!(inset.top(),303.0);
+        assert_eq!(inset.bottom(),800.0);
+        assert_eq!(inset.left(),16.0);
+        assert_eq!(inset.right(),816.0);
+
+        // A footer/list that is not a full-card table cannot claim
+        // another 16pt. Its rail stops at the reserved data viewport.
+        let with_footer=management_table_scroll_track_geometry(bounds,400.0,0.0);
+        assert_eq!(with_footer.top(),303.0);
+        assert_eq!(with_footer.bottom(),700.0);
+
+        // The card's current available rectangle still caps the ROWS,
+        // even if the caller asks for more max_height than it can show.
+        let clipped=management_table_scroll_track_geometry(
+            bounds,1200.0,theme::SECTION_PADDING
+        );
+        assert_eq!(clipped.bottom(),800.0);
+    }
+
     #[test]
     fn list_and_master_table_gutters_reserve_only_native_scrollbar_width() {
         // CONFLICT-003=A. Every role uses the same 10pt allocation;
