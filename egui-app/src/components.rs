@@ -878,19 +878,48 @@ pub fn management_toolbar_trailing_rect(
     rect
 }
 
-/// SSOT scroll-track geometry for all native management tables.
+/// Layout role of a management table's native scrollbar.
 ///
-/// The row viewport is ALWAYS limited by `scroll_height`; only the native
-/// scrollbar track may extend into a card's non-scrolling bottom inset.
-/// The two single-table masters pass 3pt of optical correction plus a
-/// 4pt lower rail extension, leaving 12pt clear to the card border while
-/// retaining the full 16pt row viewport inset. Other lists can have
-/// different extension policies, but never extend through a real footer.
+/// Callers describe their *structure*, never a pixel/point extension.
+/// The rail's final bottom position belongs to this common component.
+/// The data viewport is independent and never extended by this policy.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum ManagementTableScrollRole {
+    /// Two approved full-height masters: Freight Assignment / Order History.
+    Master,
+    /// Symmetric 16pt section card, optionally followed by other content.
+    Section { content_below: bool },
+    /// 1pt list-frame card, optionally followed by other content.
+    List { content_below: bool },
+    /// Reports, stacked tables or any independently bounded row viewport.
+    Embedded,
+}
+
+impl ManagementTableScrollRole {
+    fn bottom_extension(self)->f32 {
+        match self {
+            Self::Master => theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION,
+            Self::Section { content_below:false } => theme::SECTION_PADDING,
+            Self::List { content_below:false } => theme::FRAME_STROKE_WIDTH,
+            Self::Section { content_below:true } |
+            Self::List { content_below:true } |
+            Self::Embedded => 0.0,
+        }
+    }
+}
+
+/// SSOT scrollbar track for native management tables.
+///
+/// The row viewport is ALWAYS limited by `scroll_height`. The common role
+/// decides whether the native rail can extend into an unused bottom inset:
+/// master = 7pt input (3pt optical correction + 4pt visual extension),
+/// section = 16pt, list = 1pt, embedded/footers = 0pt.
+/// No page may pass a raw extension or extend through a real footer.
 pub fn management_table_scroll_track_rect(
-    ui:&Ui,scroll_height:f32,bottom_extension:f32
+    ui:&Ui,scroll_height:f32,role:ManagementTableScrollRole
 )->Rect {
     management_table_scroll_track_geometry(
-        ui.available_rect_before_wrap(),scroll_height,bottom_extension
+        ui.available_rect_before_wrap(),scroll_height,role.bottom_extension()
     )
 }
 
@@ -1889,6 +1918,40 @@ mod management_toolbar_geometry_tests {
         assert_eq!(outer_card_bottom-track.bottom(),12.0);
         assert_eq!(theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION,
             theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET+theme::SPACE_4);
+    }
+
+    #[test]
+    fn management_scroll_role_owns_extensions_and_protects_footers(){
+        use ManagementTableScrollRole as Role;
+        assert_eq!(Role::Master.bottom_extension(),
+            theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION);
+        assert_eq!(Role::Section{content_below:false}.bottom_extension(),
+            theme::SECTION_PADDING);
+        assert_eq!(Role::List{content_below:false}.bottom_extension(),
+            theme::FRAME_STROKE_WIDTH);
+        for role in [
+            Role::Section{content_below:true},
+            Role::List{content_below:true},
+            Role::Embedded,
+        ] {
+            assert_eq!(role.bottom_extension(),0.0);
+        }
+        // All roles keep a fixed body viewport. Only rail termination differs.
+        let rows=Rect::from_min_size(
+            egui::pos2(16.0,300.0),Vec2::new(800.0,484.0)
+        );
+        for (role,expected_bottom) in [
+            (Role::Master,788.0),
+            (Role::Section{content_below:false},797.0),
+            (Role::List{content_below:false},782.0),
+            (Role::Embedded,781.0),
+        ] {
+            let rail=management_table_scroll_track_geometry(
+                rows,rows.height(),role.bottom_extension()
+            );
+            assert_eq!(rail.top(),rows.top());
+            assert_eq!(rail.bottom(),expected_bottom);
+        }
     }
 
     #[test]
