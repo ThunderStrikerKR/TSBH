@@ -845,6 +845,16 @@ impl ProductManager {
                 &self.products,&self.selected_variants,self.sort
             );
             let header_rect=layout.header_rect;
+            // Product Excel actions, optional add controls and transient
+            // notices have already consumed their measured space above.
+            // Protect the empty-state caption under the fixed header.
+            let empty_reserve=if self.products.is_empty()
+                && !self.result.pending() && self.error.is_none(){
+                theme::INPUT_HEIGHT
+            }else{0.0};
+            let scroll_max_height=components::management_single_list_scroll_height(
+                panel,card_min_height,empty_reserve
+            );
             let mut row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
@@ -852,8 +862,7 @@ impl ProductManager {
                     .scroll_bar_visibility(
                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                     )
-                    .max_height(panel.ctx().content_rect().height()
-                        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+                    .max_height(scroll_max_height)
                     .auto_shrink([false,false]),
                 panel,table_width,theme::PRODUCT_TABLE_ROW_HEIGHT,ordered.len(),
                 |table,visible_rows|{
