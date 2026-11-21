@@ -1557,10 +1557,10 @@ impl BandoEgui {
                     );
                     // Fixed geometry, independent of OCR text length:
                     // title 46, description 38, status 26, actions 48.
-                    let header_h=46.0;
+                    let header_h=theme::MODAL_HEADER_HEIGHT;
                     let description_h=38.0;
                     let status_h=26.0;
-                    let actions_h=48.0;
+                    let actions_h=theme::MODAL_FOOTER_HEIGHT;
                     let header_rect=Rect::from_min_size(
                         bounds.min,Vec2::new(bounds.width(),header_h)
                     );
@@ -1581,18 +1581,8 @@ impl BandoEgui {
                         Vec2::new(bounds.width(),actions_h)
                     );
 
-                    let header_clip=header_rect.intersect(ui.clip_rect());
-                    ui.scope_builder(
-                        UiBuilder::new().id_salt("ocr-review-header")
-                            .max_rect(header_rect)
-                            .layout(Layout::top_down(Align::Min)),
-                        |header|{
-                            header.set_clip_rect(header_clip);
-                            header.set_width(header_rect.width());
-                            close=components::modal_header(
-                                header,"OCR 문자 인식 검토","취소",true
-                            );
-                        },
+                    close=components::modal_header_in_rect(
+                        ui,header_rect,"OCR 문자 인식 검토","취소",true
                     );
                     let description_clip=description_rect.intersect(ui.clip_rect());
                     ui.scope_builder(
@@ -1622,24 +1612,36 @@ impl BandoEgui {
                     );
                     // A shared heading row and a shared control row ensure
                     // that the image and text viewport top edges line up.
-                    let viewport_top=compare_rect.top()+64.0;
-                    let viewport_h=(compare_rect.bottom()-viewport_top).max(1.0);
+                    // Freight-style nested cards: a continuous 64pt
+                    // title/control band above independently clipped data.
+                    let section_inset=theme::MODAL_SECTION_PADDING;
+                    let viewport_top=compare_rect.top()+64.0+theme::SPACE_8;
+                    let viewport_h=(compare_rect.bottom()-section_inset-viewport_top)
+                        .max(1.0);
                     let image_view_rect=Rect::from_min_size(
-                        egui::pos2(original_rect.left(),viewport_top),
-                        Vec2::new(image_width,viewport_h)
+                        egui::pos2(original_rect.left()+section_inset,viewport_top),
+                        Vec2::new((image_width-2.0*section_inset).max(1.0),viewport_h)
                     );
                     let text_view_rect=Rect::from_min_size(
-                        egui::pos2(recognized_rect.left(),viewport_top),
-                        Vec2::new(text_width,viewport_h)
+                        egui::pos2(recognized_rect.left()+section_inset,viewport_top),
+                        Vec2::new((text_width-2.0*section_inset).max(1.0),viewport_h)
                     );
-                    let image_clip=original_rect.intersect(ui.clip_rect());
+                    components::modal_section_surface(ui,original_rect,64.0);
+                    components::modal_section_surface(ui,recognized_rect,64.0);
+                    let original_content=Rect::from_min_max(
+                        egui::pos2(original_rect.left()+section_inset,
+                            original_rect.top()+theme::SPACE_4),
+                        egui::pos2(original_rect.right()-section_inset,
+                            original_rect.bottom()-section_inset)
+                    );
+                    let image_clip=original_content.intersect(ui.clip_rect());
                     ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-review-original-pane")
-                            .max_rect(original_rect)
+                            .max_rect(original_content)
                             .layout(Layout::top_down(Align::Min)),
                         |original|{
                             original.set_clip_rect(image_clip);
-                            original.set_width(image_width);
+                            original.set_width(original_content.width());
                             original.label(
                                 typography::subsection_heading("원본 이미지")
                             );
@@ -1685,7 +1687,7 @@ impl BandoEgui {
                                             | egui::scroll_area::ScrollSource::DRAG
                                         )
                                         .show(viewport,|image_ui|{
-                                            let fit=((image_width-12.0)
+                                            let fit=((image_view_rect.width()-12.0)
                                                 /review.width as f32)
                                                 .min(1.0).max(0.01);
                                             let scale=fit*review.zoom;
@@ -1713,14 +1715,20 @@ impl BandoEgui {
                             );
                         },
                     );
-                    let text_clip=recognized_rect.intersect(ui.clip_rect());
+                    let recognized_content=Rect::from_min_max(
+                        egui::pos2(recognized_rect.left()+section_inset,
+                            recognized_rect.top()+theme::SPACE_4),
+                        egui::pos2(recognized_rect.right()-section_inset,
+                            recognized_rect.bottom()-section_inset)
+                    );
+                    let text_clip=recognized_content.intersect(ui.clip_rect());
                     ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-review-recognized-pane")
-                            .max_rect(recognized_rect)
+                            .max_rect(recognized_content)
                             .layout(Layout::top_down(Align::Min)),
                         |recognized|{
                             recognized.set_clip_rect(text_clip);
-                            recognized.set_width(text_width);
+                            recognized.set_width(recognized_content.width());
                             recognized.label(
                                 typography::subsection_heading(
                                     "인식된 텍스트 · 직접 수정"
@@ -1733,7 +1741,7 @@ impl BandoEgui {
                                     .layout(Layout::top_down(Align::Min)),
                                 |editor|{
                                     editor.set_clip_rect(editor_clip);
-                                    editor.set_width(text_width);
+                                    editor.set_width(text_view_rect.width());
                                     editor.set_height(viewport_h);
                                     // TextEdit scrolls internally. Its 1-row
                                     // minimum and exact allocated height keep
@@ -1765,23 +1773,15 @@ impl BandoEgui {
                             },
                         );
                     }
-                    let actions_clip=actions_rect.intersect(ui.clip_rect());
-                    ui.scope_builder(
-                        UiBuilder::new().id_salt("ocr-review-actions")
-                            .max_rect(actions_rect)
-                            .layout(Layout::right_to_left(Align::Center)),
-                        |buttons|{
-                            buttons.set_clip_rect(actions_clip);
-                            buttons.set_width(actions_rect.width());
-                            if theme::action(
-                                buttons,"적용",ButtonRole::Primary,valid
-                            ).clicked() {
-                                apply=Some((
-                                    edited.to_owned(),review.order_type,review.chat.clone()
-                                ));
-                            }
-                        },
-                    );
+                    components::modal_footer_in_rect(ui,actions_rect,|buttons|{
+                        if theme::action(
+                            buttons,"적용",ButtonRole::Primary,valid
+                        ).clicked() {
+                            apply=Some((
+                                edited.to_owned(),review.order_type,review.chat.clone()
+                            ));
+                        }
+                    });
                 });
         }
         if let Some((raw,kind,chat))=apply {
