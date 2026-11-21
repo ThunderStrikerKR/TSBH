@@ -114,6 +114,8 @@ impl BandoGateway for HttpGateway {
             crate::clipboard_intake::OrderType::parse(&kind)?;
             drafts.push(WorkingReception {
                 id, raw: source, order_type: kind,
+                source_input_method: record.get("sourceInputMethod").and_then(Value::as_str).map(str::to_owned),
+                last_input_method: record.get("lastInputMethod").and_then(Value::as_str).map(str::to_owned),
                 analysis_raw: record.get("analysisRaw").and_then(Value::as_str).map(str::to_owned),
                 analysis_evidence: record.get("analysisEvidence").filter(|v| !v.is_null()).cloned(),
                 client_match: record.get("clientMatch").filter(|v| !v.is_null()).cloned(),
@@ -138,6 +140,8 @@ impl BandoGateway for HttpGateway {
     fn save_working_source(&self, source: &WorkingSource) -> Result<u64, String> {
         let drafts: Vec<Value> = source.drafts.iter().map(|item| json!({
             "id": item.id, "raw": item.raw, "orderType": item.order_type,
+            "sourceInputMethod": item.source_input_method,
+            "lastInputMethod": item.last_input_method,
             "analysisRaw": item.analysis_raw, "analysisEvidence": item.analysis_evidence,
             "clientMatch": item.client_match,
             "chatHandle": item.chat_handle, "chatTitle": item.chat_title,
