@@ -1650,12 +1650,12 @@ impl BandoEgui {
                             original.horizontal(|controls|{
                                 controls.spacing_mut().item_spacing.x=theme::SPACE_8;
                                 controls.add_sized(
-                                    Vec2::new(118.0,theme::ACTION_STANDARD_HEIGHT),
+                                    Vec2::new(118.0,24.0),
                                     egui::Slider::new(&mut review.zoom,0.5..=4.0)
                                         .show_value(false),
                                 );
                                 controls.add_sized(
-                                    Vec2::new(70.0,theme::ACTION_STANDARD_HEIGHT),
+                                    Vec2::new(70.0,24.0),
                                     egui::Label::new(
                                         egui::RichText::new(format!(
                                             "{:>5.0}%",review.zoom*100.0
