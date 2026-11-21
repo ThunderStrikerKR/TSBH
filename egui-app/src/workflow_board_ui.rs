@@ -292,9 +292,9 @@ fn workflow_action_line(
                     Vec2::new(summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
                     Layout::left_to_right(Align::Center),|line|{
                         line.spacing_mut().item_spacing.x=theme::SPACE_4;
-                        line.label(typography::caption(
+                        line.label(typography::field_label(
                             &format!("배송 {shipments}건")
-                        ));
+                        ).color(theme::SECONDARY));
                         if let Some(vat)=vat{
                             line.with_layout(Layout::right_to_left(Align::Center),|right|{
                                 right.label(
@@ -307,15 +307,21 @@ fn workflow_action_line(
                 );
                 // Amount occupies its own right-aligned slot. A long sum
                 // never causes the VAT label to be clipped or a third row.
-                summary.allocate_ui_with_layout(
+                let (money_rect,_)=summary.allocate_exact_size(
                     Vec2::new(summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
-                    Layout::right_to_left(Align::Center),|line|{
-                        line.add(
-                            egui::Label::new(typography::caption(&amount))
-                                .truncate()
-                        ).on_hover_text(&amount);
-                    }
+                    egui::Sense::hover()
                 );
+                let money_clip=money_rect.intersect(summary.clip_rect());
+                summary.painter().with_clip_rect(money_clip).text(
+                    Pos2::new(money_rect.right(),money_rect.center().y),
+                    egui::Align2::RIGHT_CENTER,&amount,
+                    egui::FontId::proportional(typography::FONT_BODY),
+                    theme::TEXT
+                );
+                summary.interact(
+                    money_rect,Id::new(("workflow-money",id)),
+                    egui::Sense::hover()
+                ).on_hover_text(&amount);
             }
         );
         bar.allocate_ui_with_layout(
@@ -343,20 +349,42 @@ fn workflow_action_line(
 }
 fn workflow_table_header(ui:&mut Ui){
     let width=ui.available_width();
-    ui.horizontal(|columns|{
-        columns.spacing_mut().item_spacing.x=theme::SPACE_4;
-        columns.add_sized([
-            theme::WORKFLOW_RECIPIENT_COL,theme::SPACE_24
-        ],egui::Label::new(typography::table_header("수취인")));
-        let products=(width-theme::WORKFLOW_RECIPIENT_COL
-            -theme::WORKFLOW_FREIGHT_COL-theme::SPACE_8).max(0.0);
-        columns.add_sized([
-            products,theme::SPACE_24
-        ],egui::Label::new(typography::table_header("상품")));
-        columns.add_sized([
-            theme::WORKFLOW_FREIGHT_COL,theme::SPACE_24
-        ],egui::Label::new(typography::table_header("운임")));
-    });
+    // 24pt reception compact role, rendered with the same raised header
+    // surface, 2pt inset underline and consistent content columns as masters.
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(width,theme::SPACE_24),egui::Sense::hover()
+    );
+    ui.painter().rect_filled(rect,0.0,theme::WORKFLOW_DETAIL_HEADER_BG);
+    let content_bottom=rect.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT;
+    let first=Rect::from_min_max(
+        rect.min,Pos2::new(rect.left()+theme::WORKFLOW_RECIPIENT_COL,content_bottom)
+    );
+    let last=Rect::from_min_max(
+        Pos2::new(rect.right()-theme::WORKFLOW_FREIGHT_COL,rect.top()),
+        Pos2::new(rect.right(),content_bottom)
+    );
+    let middle=Rect::from_min_max(
+        Pos2::new(first.right()+theme::SPACE_4,rect.top()),
+        Pos2::new(last.left()-theme::SPACE_4,content_bottom)
+    );
+    for (text,cell,align_right) in [
+        ("수취인",first,false),("상품",middle,false),("운임",last,true)
+    ]{
+        if cell.width()<=0.0{continue;}
+        let galley=typography::table_header_galley(ui,text);
+        let x=if align_right{
+            cell.right()-theme::SPACE_4-galley.size().x
+        }else{cell.left()+theme::SPACE_4};
+        ui.painter().with_clip_rect(cell).galley(
+            Pos2::new(x,cell.center().y-galley.size().y/2.0),
+            galley,theme::SECONDARY
+        );
+    }
+    ui.painter().rect_filled(
+        Rect::from_min_max(
+            Pos2::new(rect.left(),content_bottom),rect.right_bottom()
+        ),0.0,theme::TABLE_HEADER_OUTLINE
+    );
 }
 /// One product occupies a compact chip, exactly as the React
 /// .workflow-shipment .product-chip style, not an unframed text fragment.
@@ -399,13 +427,14 @@ fn product_chip(ui:&mut Ui,label:&str,max_width:f32){
 /// accent stripe, not an extra input-style border around every recipient.
 fn shipment_line(
     ui:&mut Ui,name:&str,products:&[String],freight:&str,
-    chosen:bool,previewed:bool
+    chosen:bool,previewed:bool,alternate:bool
 )->egui::Response{
     let fill=if chosen{
         theme::WORKFLOW_SELECTED_BORDER.linear_multiply(0.20)
     }else if previewed{
         theme::SELECTION.linear_multiply(0.14)
-    }else{egui::Color32::TRANSPARENT};
+    }else if alternate{theme::WORKFLOW_DETAIL_ALT_BG}
+    else{egui::Color32::TRANSPARENT};
     let outer=ui.available_width();
     let response=Frame::new()
         .fill(fill)
@@ -456,12 +485,14 @@ fn shipment_line(
     }
     response.response
 }
-fn row(ui:&mut Ui,ship:&ShipmentRow,chosen:bool,in_preview:bool)->egui::Response{
+fn row(
+    ui:&mut Ui,ship:&ShipmentRow,chosen:bool,in_preview:bool,alternate:bool
+)->egui::Response{
     let name=if ship.recipient_name.is_empty(){
         "수취인 확인"
     }else{ship.recipient_name.as_str()};
     let freight=if ship.collect{"착불".to_owned()}else{money(ship.freight)};
-    shipment_line(ui,name,&ship.products,&freight,chosen,in_preview)
+    shipment_line(ui,name,&ship.products,&freight,chosen,in_preview,alternate)
 }
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
@@ -500,13 +531,14 @@ fn group_frame(
         }
         if open || in_preview{
             components::soft_divider(ui);
+            ui.add_space(theme::SPACE_4);
             workflow_table_header(ui);
-            for ship in &group.shipments{
+            for (index,ship) in group.shipments.iter().enumerate(){
                 // Orange means committed selection ONLY on the base card.
                 // Blue means the temporarily hovered row ONLY in the clone.
                 let chosen=!in_preview && selected.is_some_and(|s|s.shipment_id==ship.id);
                 let previewed=in_preview && previewed_id==Some(ship.id.as_str());
-                let label=row(ui,ship,chosen,previewed);
+                let label=row(ui,ship,chosen,previewed,index%2==1);
                 let response=ui.interact(
                     label.rect,Id::new(("workflow-shipment",ship.id.as_str(),in_preview)),
                     egui::Sense::click()
@@ -551,12 +583,13 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
         if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
         if open{
             components::soft_divider(ui);
+            ui.add_space(theme::SPACE_4);
             workflow_table_header(ui);
             if recipients.is_empty(){
                 let excerpt=draft.raw.lines().find(|s|!s.trim().is_empty())
                     .unwrap_or("새 발주서");
                 let response=shipment_line(ui,"수취인 확인",
-                    &[excerpt.chars().take(60).collect()],"—",false,false);
+                    &[excerpt.chars().take(60).collect()],"—",false,false,false);
                 if ui.interact(response.rect,
                     Id::new(("pending-reception-row",draft.id.as_str(),0usize)),
                     egui::Sense::click()).clicked(){
@@ -576,7 +609,9 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
                                 .filter(|q|*q>0).map_or("?".to_owned(),|q|q.to_string());
                             format!("{name} × {qty}")
                         }).collect::<Vec<_>>();
-                    let response=shipment_line(ui,name,&products,"—",false,false);
+                    let response=shipment_line(
+                        ui,name,&products,"—",false,false,index%2==1
+                    );
                     if ui.interact(response.rect,
                         Id::new(("pending-reception-row",draft.id.as_str(),index)),
                         egui::Sense::click()).clicked(){
