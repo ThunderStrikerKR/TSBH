@@ -421,13 +421,6 @@ fn table<const N:usize>(
 }
 #[derive(Default)]
 struct Snapshot{state:Value,shipments:Value}
-struct PendingConfirmation{
-    message:String,
-    action:String,
-    shipment_id:String,
-    queue_id:String,
-    origin:String,
-}
 pub struct ExcelManager{
     gateway:Arc<dyn BandoGateway>,
     receiver:Option<Receiver<Result<Snapshot,String>>>,
@@ -442,12 +435,10 @@ pub struct ExcelManager{
     selected:BTreeSet<String>,
     sort_queue:Option<Sort>,
     sort_history:Option<Sort>,
-    history_detail:Option<String>,
     managed_queue:Option<String>,
     freight_drafts:HashMap<String,String>,
     open_order:Option<String>,
     open_settings:bool,
-    pending_confirmation:Option<PendingConfirmation>,
 }
 impl ExcelManager{
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:egui::Context)->Self{
@@ -455,10 +446,9 @@ impl ExcelManager{
             gateway,receiver:None,result:None,operation:None,operation_name:None,
             preview:None,error:None,notice:None,tab:Tab::Factory,
             query:String::new(),selected:BTreeSet::new(),
-            sort_queue:None,sort_history:None,history_detail:None,
+            sort_queue:None,sort_history:None,
             managed_queue:None,freight_drafts:HashMap::new(),
             open_order:None,open_settings:false,
-            pending_confirmation:None,
         };
         manager.refresh(ctx);manager
     }
@@ -522,15 +512,12 @@ impl ExcelManager{
                     self.notice=Some(match action{
                         "restore_shipment"=>"배송 건을 처리 중 주문으로 복구했습니다.",
                         "mark_store_sent"=>"매장 발송을 확인했습니다.",
-                        "mark_factory_delivered"=>"공장 전달을 확인했습니다.",
-                        "reopen_unsent_export"=>"전달 전 출력본을 정정할 수 있도록 변경했습니다.",
                         _=>"Excel 관리 변경사항을 저장했습니다.",
                     }.into());
                     self.result=Some(Snapshot{
                         state:result["state"].clone(),
                         shipments:result["shipmentReads"].clone()
                     });
-                    self.history_detail=None;
                     self.selected.clear();
                 }else if operation=="export"{
                     let count=result["count"].as_u64().unwrap_or(0);
@@ -617,7 +604,6 @@ impl ExcelManager{
                 self.tab=selected;
                 self.selected.clear();self.query.clear();
                 self.sort_history=None;self.sort_queue=None;
-                self.history_detail=None;
                 self.managed_queue=None;
             }
         }
@@ -625,7 +611,6 @@ impl ExcelManager{
         let mut exported=None;
         let mut open_file=None;
         let mut open_daily=false;
-        let mut open_history=None;
         let mut workflow_action:Option<(String,String,String,String,Value)>=None;
         let mut manage_clicked=None;
         let mut open_order=None;
@@ -747,14 +732,6 @@ impl ExcelManager{
                 sort_history(&mut history,self.sort_history);
                 let indexes=0..history.len();
                 let order_list=history.clone();
-                // Related-order details can be arbitrarily tall. When
-                // expanded, keep the original 60% table cap and let the
-                // details remain reachable below it; never cover them.
-                let history_height_policy=if self.history_detail.is_some(){
-                    ExcelTableHeightPolicy::LegacyForExpandedDetails
-                }else{
-                    ExcelTableHeightPolicy::FillCard{card_min_height}
-                };
                 let empty_message=table_state_message(
                     self.tab,&self.query,history.len(),self.receiver.is_some(),
                     self.error.is_some()
@@ -763,7 +740,8 @@ impl ExcelManager{
                     ["작성 날짜","작성 건수","파일 / 주문","조회"],
                     HISTORY,[Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
                         Align2::LEFT_CENTER,Align2::CENTER_CENTER],
-                    2,indexes.len(),history_height_policy,
+                    2,indexes.len(),
+                    ExcelTableHeightPolicy::FillCard{card_min_height},
                     &mut self.sort_history,
                     [true,true,true,false],None,empty_message,|row,cells,i|{
                         let entry=&order_list[i];
@@ -792,69 +770,8 @@ impl ExcelManager{
                                         copy_path=Some(text(entry,"savedPath").to_owned());
                                     }
                                 }
-                                if theme::action(buttons,"관련 주문",
-                                    theme::ButtonRole::TableSecondary,true).clicked(){
-                                    open_history=Some(id.to_owned());
-                                }
                             });
                     });
-                if let Some(id)=self.history_detail.as_deref(){
-                    if let Some(record)=history.iter().find(|r|text(r,"id")==id){
-                        section.scope(|details|{
-                            details.label(typography::subsection_heading("관련 주문"));
-                            details.horizontal_wrapped(|bar|{
-                                for order in rows(&record["orderIds"]){
-                                    if let Some(order_id)=order.as_str(){
-                                        if theme::action(bar,"주문 상세 보기",
-                                            theme::ButtonRole::Standard,true).clicked(){
-                                            open_order=Some(order_id.to_owned());
-                                        }
-                                    }
-                                }
-                                if let Some(state)=state{
-                                    for value in rows(&record["queueEntryIds"]){
-                                        let Some(queue_id)=value.as_str() else{continue};
-                                        let Some(queue)=find(&state["workflow"]["queue"],queue_id)
-                                            else{continue};
-                                        if queue["fileOnly"]!=true{continue;}
-                                        let origin=text(queue,"origin");
-                                        let shipment_id=text(queue,"shipmentId");
-                                        let choices:Vec<(&str,&str,&str)>=if origin=="STORE"{
-                                            vec![(
-                                                "매장 발송 확인","mark_store_sent",
-                                                "이 매장 발송 파일의 상품을 실제 발송했나요? 파일 작성만으로 발송 완료 처리하지 않습니다."
-                                            )]
-                                        }else{
-                                            vec![(
-                                                "실제 공장 전달 확인","mark_factory_delivered",
-                                                "이 발송 파일을 실제 공장에 전달했나요? 실제 전달 여부를 직접 확인한 후에만 전달 완료로 표시합니다."
-                                            ),(
-                                                "전달 전 정정 / 재출력","reopen_unsent_export",
-                                                "아직 공장에 전달하지 않은 출력본을 폐기하고 다시 작성할까요? 기존 출력 이력은 보존됩니다."
-                                            )]
-                                        };
-                                        for (label,action,message) in choices{
-                                            if theme::action(bar,label,
-                                                theme::ButtonRole::Standard,
-                                                !busy&&self.gateway.excel_write_enabled()
-                                            ).clicked(){
-                                                self.pending_confirmation=Some(
-                                                    PendingConfirmation{
-                                                        message:message.into(),
-                                                        action:action.into(),
-                                                        shipment_id:shipment_id.into(),
-                                                        queue_id:queue_id.into(),
-                                                        origin:origin.into(),
-                                                    }
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            });
-                        });
-                    }
-                }
             }else{
                 let all=!visible.is_empty()
                     &&self.selected.len()==visible.len();
@@ -1032,11 +949,6 @@ impl ExcelManager{
                 g.open_excel_folder(None,Some(&origin))?;Ok(json!({}))
             });
         }
-        if let Some(id)=open_history{
-            self.history_detail=if self.history_detail.as_deref()==Some(&id){
-                None
-            }else{Some(id)};
-        }
         if let Some(id)=open_order{self.open_order=Some(id);}
         if let Some(ids)=exported{
             let Some(state)=self.result.as_ref().map(|x|x.state.clone()) else{return};
@@ -1119,46 +1031,6 @@ impl ExcelManager{
             });
         }
         if go_settings{self.open_settings=true;}
-        // Existing React confirmations: these transitions represent
-        // actual sending/delivery or reopening an already printed document.
-        let mut accepted=false;
-        let mut dismissed=false;
-        if let Some(confirmation)=self.pending_confirmation.as_ref(){
-            components::modal_backdrop(ui.ctx(),"excel-confirm-backdrop",false);
-            components::decision_window(
-                "발송 상태 확인","excel-existing-status-confirm",ui.max_rect()
-            ).show(ui.ctx(),|dialog|{
-                dialog.label(typography::body(&confirmation.message));
-                dialog.add_space(theme::SPACE_12);
-                dialog.horizontal(|bar|{
-                    if theme::action(bar,"취소",
-                        theme::ButtonRole::Standard,true).clicked(){
-                        dismissed=true;
-                    }
-                    if theme::action(bar,"확인",
-                        theme::ButtonRole::Primary,
-                        !busy&&self.gateway.excel_write_enabled()).clicked(){
-                        accepted=true;
-                    }
-                });
-            });
-        }
-        if dismissed{self.pending_confirmation=None;}
-        if accepted{
-            if let Some(confirm)=self.pending_confirmation.take(){
-                let Some(revision)=self.result.as_ref()
-                    .and_then(|snapshot|snapshot.state["revision"].as_u64()) else{
-                    self.error=Some("업무 DB 리비전을 확인할 수 없습니다.".into());
-                    return;
-                };
-                self.task("workflow",ui.ctx().clone(),move|gateway|{
-                    gateway.mutate_excel_workflow(
-                        revision,&confirm.action,&confirm.shipment_id,
-                        &confirm.queue_id,&confirm.origin,Value::Null
-                    )
-                });
-            }
-        }
         crate::floating_notice::sync(
             ui.ctx(),"excel.result","excel.action",
             crate::floating_notice::Tone::Success,self.notice.as_deref()
