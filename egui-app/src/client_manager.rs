@@ -444,7 +444,8 @@ impl ClientManager {
             let mut chosen=None;
             let mut first_row_left=None;
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,theme::FRAME_STROKE_WIDTH
+                section,scroll_max_height,
+                components::ManagementTableScrollRole::List{content_below:false}
             );
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
