@@ -2453,14 +2453,61 @@ impl BandoEgui {
         let mut inbox_open_request: Option<String> = None;
         let mut inbox_copy_request: Option<String> = None;
         Self::section_with_header(ui, "발주 원문", height, |ui| {
-            if theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, true).clicked() {
+            if theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, !ocr_processing).clicked() {
                 begin_new_order = true;
             }
         }, |ui| {
             // Only the source-body layout owns spacing; the section header
             // and neighboring message pane keep their established tokens.
             ui.spacing_mut().item_spacing.y = 0.0;
-            if self.source_editing || !self.raw_source.is_empty() {
+            if ocr_processing {
+                // Match the React/Electron source-document blocking state:
+                // replace the entire source body instead of overlaying a
+                // small status line on an interactive editor or intake menu.
+                self.source_hover = None;
+                let available_body = components::docked_section_body_height(height)
+                    .min(ui.available_height().max(0.0));
+                let (body_rect, _) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), available_body),
+                    Sense::hover(),
+                );
+                ui.painter().rect_filled(body_rect, 0.0, theme::CANVAS);
+                ui.scope_builder(
+                    UiBuilder::new()
+                        .id_salt("source-ocr-processing-blocker")
+                        .max_rect(body_rect)
+                        .layout(Layout::top_down(Align::Center)),
+                    |progress| {
+                        progress.set_clip_rect(body_rect.intersect(ui.clip_rect()));
+                        let content_height = typography::FONT_OCR_PROGRESS_TITLE * 1.4
+                            + typography::METADATA_LINE_HEIGHT
+                            + theme::ACTION_STANDARD_HEIGHT
+                            + theme::SPACE_12 + theme::SPACE_16;
+                        progress.add_space(
+                            ((body_rect.height() - content_height) / 2.0).max(0.0)
+                        );
+                        progress.label(
+                            egui::RichText::new("OCR 처리 중…")
+                                .size(typography::FONT_OCR_PROGRESS_TITLE)
+                                .strong()
+                                .color(theme::TEXT)
+                        );
+                        progress.add_space(theme::SPACE_12);
+                        progress.label(
+                            egui::RichText::new(
+                                "선택한 이미지에서 글자를 인식하고 있습니다."
+                            ).size(typography::FONT_FIELD_LABEL)
+                                .color(theme::SECONDARY)
+                        );
+                        progress.add_space(theme::SPACE_16);
+                        if theme::action(
+                            progress, "취소", ButtonRole::Standard, true
+                        ).clicked() {
+                            cancel_ocr.store(true, Ordering::Release);
+                        }
+                    },
+                );
+            } else if self.source_editing || !self.raw_source.is_empty() {
                 // One allocated body rectangle owns the client card, source
                 // editor and manual-classification action. The former sequence
                 // of allocations mixed with scope_builder() could advance the
@@ -2728,10 +2775,7 @@ impl BandoEgui {
                 let clipboard_group_height = typography::SUBSECTION_LINE_HEIGHT
                     + 2.0 * typography::METADATA_LINE_HEIGHT
                     + theme::ACTION_EMPHASIZED_HEIGHT
-                    + 3.0 * theme::SPACE_8
-                    + if ocr_processing {
-                        theme::ACTION_STANDARD_HEIGHT + theme::SPACE_8
-                    } else { 0.0 };
+                    + 3.0 * theme::SPACE_8;
                 let manual_group_height = typography::SUBSECTION_LINE_HEIGHT
                     + theme::ACTION_EMPHASIZED_HEIGHT + theme::SPACE_8;
                 // The configured folder shows a short usage sentence
@@ -2772,17 +2816,6 @@ impl BandoEgui {
                             start_clipboard = Some(OrderType::Agency);
                         } else if dealer.clicked() {
                             start_clipboard = Some(OrderType::Dealer);
-                        }
-                        if ocr_processing {
-                            intake.add_space(theme::SPACE_8);
-                            intake.horizontal(|ui| {
-                                ui.label(typography::caption("OCR 처리 중…"));
-                                if theme::action(
-                                    ui, "취소", ButtonRole::Standard, true
-                                ).clicked() {
-                                    cancel_ocr.store(true, Ordering::Release);
-                                }
-                            });
                         }
                         intake.add_space(theme::SPACE_8);
                         intake.label(typography::caption(
