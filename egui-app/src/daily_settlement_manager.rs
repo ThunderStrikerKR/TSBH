@@ -593,7 +593,7 @@ impl DailySettlementManager{
                          Align2::RIGHT_CENTER,Align2::RIGHT_CENTER,
                          Align2::RIGHT_CENTER,Align2::RIGHT_CENTER],
                         [typography::ManagementTableCellRole::ClientName,typography::ManagementTableCellRole::Status,
-                         typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Total,
+                         typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::RowTotal,
                          typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money],
                         0,&indices,&mut self.order_sort,|index|{
                             let order=&orders[index];
