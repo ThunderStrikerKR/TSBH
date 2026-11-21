@@ -196,6 +196,10 @@ impl ClientManager {
                 self.draft=None;self.original=None;self.confirm_delete=false;
                 self.confirm_discard=false;self.error=None;
                 self.changed=true;
+                crate::floating_notice::publish(
+                    ctx,"clients.action",crate::floating_notice::Tone::Success,
+                    "거래처 변경사항을 반영했습니다."
+                );
                 self.query(Arc::clone(&gateway),ctx.clone());
             },
             Some(Ok(Err(error)))=>{
@@ -228,6 +232,7 @@ impl ClientManager {
         let Some(client)=self.draft.clone() else {return};
         let Some(revision)=self.state.get("revision").and_then(Value::as_u64)
             else{self.error=Some("거래처 revision을 확인할 수 없습니다.".into());return};
+        crate::floating_notice::dispatch_pointer(ctx,"clients.action");
         let (tx,rx)=mpsc::channel();
         self.saving=Some(rx);
         self.error=None;
@@ -277,6 +282,10 @@ impl ClientManager {
     pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>) {
         let page_origin_y=ui.cursor().top();
         self.poll(Arc::clone(&gateway),ui.ctx());
+        crate::floating_notice::sync(
+            ui.ctx(),"clients.error","clients.action",
+            crate::floating_notice::Tone::Error,self.error.as_deref()
+        );
         // The client directory uses the same always-readable 10pt solid
         // scrollbar track as the approved Freight Assignment screen.
         ui.spacing_mut().scroll=theme::management_scroll_style();
