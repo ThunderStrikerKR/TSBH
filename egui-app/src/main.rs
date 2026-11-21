@@ -3654,11 +3654,7 @@ impl BandoEgui {
             dialog.label(typography::body(
                 "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
             ));
-            if !manager.can_save_dirty() && !manager.busy(){
-                dialog.label(typography::caption(
-                    "새 배송 그룹명은 배송 그룹 추가를 눌러 등록해야 합니다."
-                ));
-            }
+
             dialog.add_space(theme::SPACE_12);
             dialog.with_layout(Layout::right_to_left(Align::Center),|bar|{
                 if theme::action(bar,"저장하고 이동",ButtonRole::Primary,
