@@ -434,8 +434,10 @@ pub fn show(ctx: &Context) {
                 egui::StrokeKind::Inside,
             );
             paint_tail(&painter,rect,active.at,above);
-            let first_row_height = galley.rows.first().map(|row|row.rect.height())
-                .unwrap_or(theme::FLOATING_NOTICE_TEXT_SIZE + 5.0);
+            // All rows use the same notice font; average laid-out row height
+            // is stable even when egui has wrapped a long message.
+            let first_row_height = galley.size().y /
+                galley.rows.len().max(1) as f32;
             let first_center = rect.top() + pad_y + first_row_height.max(
                 theme::FLOATING_NOTICE_ICON_SIZE
             )/2.0;
