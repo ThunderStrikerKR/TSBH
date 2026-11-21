@@ -669,6 +669,43 @@ pub fn modal_review_footer_in_rect(
     modal_master_footer_in_rect(ui,rect,actions);
 }
 
+/// Flow-layout sibling of modal_master_footer_in_rect for compact
+/// confirmations. Shares the OCR master footer appearance and 36pt hitbox
+/// while retaining egui's InnerResponse<R>, so existing confirmation state
+/// machines (including .inner results) remain unchanged.
+pub fn modal_action_row<R>(
+    ui:&mut Ui,actions:impl FnOnce(&mut Ui)->R
+)->egui::InnerResponse<R> {
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),theme::MODAL_FOOTER_HEIGHT),
+        Sense::hover()
+    );
+    ui.painter().rect_filled(rect,0.0,theme::PANEL);
+    ui.painter().line_segment(
+        [rect.left_top(),rect.right_top()],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    let action_height=theme::ACTION_PRIMARY_HEIGHT
+        .max(theme::ACTION_STANDARD_HEIGHT);
+    let area=Rect::from_min_size(
+        egui::pos2(rect.left()+theme::SPACE_8,
+            rect.top()+((rect.height()-action_height)/2.0).max(0.0)),
+        Vec2::new((rect.width()-2.0*theme::SPACE_8).max(1.0),
+            action_height)
+    );
+    let clip=area.intersect(ui.clip_rect());
+    ui.scope_builder(
+        egui::UiBuilder::new().id_salt("modal-master-flow-actions")
+            .max_rect(area)
+            .layout(Layout::right_to_left(Align::Center)),
+        |buttons|{
+            buttons.set_clip_rect(clip);
+            buttons.set_width(area.width());
+            actions(buttons)
+        }
+    )
+}
+
 pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
     let (rect,_)=ui.allocate_exact_size(
         Vec2::new(ui.available_width(),theme::MODAL_FOOTER_HEIGHT),
