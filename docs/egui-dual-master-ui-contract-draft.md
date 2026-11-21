@@ -35,7 +35,7 @@
 | SELECT-HEIGHT | 관리형 드롭다운 | 34pt | `theme::ACTION_STANDARD_HEIGHT` |
 | HEADER-HEIGHT | 표 헤더 | 36pt (하단 2pt 윤곽선을 내부에 포함) | `theme::MANAGEMENT_TABLE_HEADER_HEIGHT` |
 | ROW-BASE-HEIGHT | 기본 한 줄 데이터행 | 42pt | `theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT` |
-| TOOLBAR-TO-HEADER | 도구줄 후 구분선 및 헤더까지 전환 | 17pt (8+4+1+4) | `management_sticky_table_header` |
+| TOOLBAR-TO-HEADER | 도구줄 후 구분선 및 헤더까지 전환 | **현행 21pt (16+1+4)**. 초안 17pt는 옛 단계의 수치로 사용 금지 | `management_sticky_table_header` |
 | SCROLL-RAIL | 실선 스크롤 레일 | 폭 10pt, 핸들 최소 길이 44pt, 대상 두 화면의 좌우 추가 여백 0 | `management_scroll_style` 및 화면별 조정 |
 | SCROLL-TRACK | 트랙 상단 | 행 본문 시작점 +3pt | 두 화면의 `scroll_bar_rect` |
 | SELECT-ACTIVE-BG | 활성 드롭다운 배경 | #292929 | `theme::INPUT` |
