@@ -1625,11 +1625,11 @@ impl BandoEgui {
                         Vec2::new(ui.available_width(),ui.available_height()),
                         Sense::hover(),
                     );
-                    // Fixed geometry, independent of OCR text length:
-                    // title 46, description 38, status 26, actions 48.
+                    // Fixed slots: 12pt on both sides of the explanation,
+                    // 16pt between comparison cards and footer.
                     let header_h=theme::MODAL_HEADER_HEIGHT;
-                    let description_h=38.0;
-                    let status_h=26.0;
+                    let description_h=2.0*theme::SPACE_12+20.0;
+                    let status_h=theme::SPACE_16;
                     let actions_h=theme::MODAL_FOOTER_HEIGHT;
                     let header_rect=Rect::from_min_size(
                         bounds.min,Vec2::new(bounds.width(),header_h)
@@ -1654,12 +1654,19 @@ impl BandoEgui {
                     close=components::modal_header_in_rect(
                         ui,header_rect,"OCR 문자 인식 검토","취소",true
                     );
-                    let description_clip=description_rect.intersect(ui.clip_rect());
+                    let description_content=Rect::from_min_size(
+                        egui::pos2(description_rect.left(),
+                            description_rect.top()+theme::SPACE_12),
+                        Vec2::new(description_rect.width(),
+                            (description_rect.height()-2.0*theme::SPACE_12).max(1.0))
+                    );
+                    let description_clip=description_content.intersect(ui.clip_rect());
                     ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-review-description")
-                            .max_rect(description_rect),
+                            .max_rect(description_content),
                         |description|{
                             description.set_clip_rect(description_clip);
+                            description.set_width(description_content.width());
                             description.label(typography::caption(
                                 "원본 이미지와 인식된 텍스트를 대조하고 오타를 수정한 뒤 반영하세요."
                             ));
@@ -1680,12 +1687,13 @@ impl BandoEgui {
                         egui::pos2(original_rect.right()+gap,compare_rect.top()),
                         Vec2::new(text_width,compare_rect.height())
                     );
-                    // A shared heading row and a shared control row ensure
-                    // that the image and text viewport top edges line up.
-                    // Freight-style nested cards: a continuous 64pt
-                    // title/control band above independently clipped data.
+                    // Both cards now share a single 40pt title row.
+                    // The image zoom controls sit on that SAME row, aligned
+                    // to the right, instead of requiring a second row.
                     let section_inset=theme::MODAL_SECTION_PADDING;
-                    let viewport_top=compare_rect.top()+64.0+theme::SPACE_8;
+                    let panel_header_height=theme::MODAL_COMPARISON_HEADER_HEIGHT;
+                    let viewport_top=compare_rect.top()+panel_header_height
+                        +theme::SPACE_8;
                     let viewport_h=(compare_rect.bottom()-section_inset-viewport_top)
                         .max(1.0);
                     let image_view_rect=Rect::from_min_size(
@@ -1696,8 +1704,12 @@ impl BandoEgui {
                         egui::pos2(recognized_rect.left()+section_inset,viewport_top),
                         Vec2::new((text_width-2.0*section_inset).max(1.0),viewport_h)
                     );
-                    components::modal_section_surface(ui,original_rect,64.0);
-                    components::modal_section_surface(ui,recognized_rect,64.0);
+                    components::modal_section_surface(
+                        ui,original_rect,panel_header_height
+                    );
+                    components::modal_section_surface(
+                        ui,recognized_rect,panel_header_height
+                    );
                     let original_content=Rect::from_min_max(
                         egui::pos2(original_rect.left()+section_inset,
                             original_rect.top()+theme::SPACE_4),
@@ -1712,31 +1724,36 @@ impl BandoEgui {
                         |original|{
                             original.set_clip_rect(image_clip);
                             original.set_width(original_content.width());
-                            original.label(
-                                typography::subsection_heading("원본 이미지")
-                            );
-                            // The built-in Slider value editor changes
-                            // its measured width as decimal digits change.
-                            // Keep slider, readout and hint in separately
-                            // sized slots so wheel zoom cannot shift labels.
+                            // Independently fixed title/slider/value slots.
+                            // No number of digits can shift a neighboring
+                            // control, and the control row cannot grow taller.
+                            let slider_width=(original_content.width()
+                                -100.0-54.0-2.0*theme::SPACE_8)
+                                .clamp(60.0,118.0);
                             original.horizontal(|controls|{
+                                controls.set_width(original_content.width());
                                 controls.spacing_mut().item_spacing.x=theme::SPACE_8;
-                                controls.add_sized(
-                                    Vec2::new(118.0,24.0),
-                                    egui::Slider::new(&mut review.zoom,0.5..=4.0)
-                                        .show_value(false),
+                                controls.label(
+                                    typography::subsection_heading("원본 이미지")
                                 );
-                                controls.add_sized(
-                                    Vec2::new(70.0,24.0),
-                                    egui::Label::new(
-                                        egui::RichText::new(format!(
-                                            "{:>5.0}%",review.zoom*100.0
-                                        )).monospace()
-                                    ),
+                                controls.with_layout(
+                                    Layout::right_to_left(Align::Center),
+                                    |right|{
+                                        right.add_sized(
+                                            Vec2::new(54.0,24.0),
+                                            egui::Label::new(egui::RichText::new(
+                                                format!("{:>3.0}%",review.zoom*100.0)
+                                            ).monospace()),
+                                        );
+                                        right.add_sized(
+                                            Vec2::new(slider_width,24.0),
+                                            egui::Slider::new(&mut review.zoom,0.5..=4.0)
+                                                .show_value(false),
+                                        ).on_hover_text(
+                                            "원본 이미지 위에서 마우스 휠로 확대·축소"
+                                        );
+                                    },
                                 );
-                                controls.label(typography::caption(
-                                    "확대 배율 · 마우스 휠"
-                                ));
                             });
                             let viewport_clip=image_view_rect.intersect(original.clip_rect());
                             original.scope_builder(
@@ -1761,13 +1778,23 @@ impl BandoEgui {
                                                 /review.width as f32)
                                                 .min(1.0).max(0.01);
                                             let scale=fit*review.zoom;
-                                            image_ui.image((
-                                                review.texture.id(),
-                                                Vec2::new(
-                                                    review.width as f32*scale,
-                                                    review.height as f32*scale,
-                                                ),
-                                            ));
+                                            let displayed=Vec2::new(
+                                                review.width as f32*scale,
+                                                review.height as f32*scale,
+                                            );
+                                            // When the document is smaller
+                                            // than the viewport, center it.
+                                            // Larger images keep zero inset
+                                            // and both-axis pan/scroll.
+                                            let left_inset=((image_view_rect.width()
+                                                -displayed.x)/2.0).max(0.0);
+                                            image_ui.horizontal(|line|{
+                                                line.spacing_mut().item_spacing.x=0.0;
+                                                if left_inset>0.0 {
+                                                    line.add_space(left_inset);
+                                                }
+                                                line.image((review.texture.id(),displayed));
+                                            });
                                         });
                                     // Wheel zoom is local to the image,
                                     // never to the text edit or dialog.
@@ -1820,7 +1847,7 @@ impl BandoEgui {
                                         text_view_rect.size(),
                                         egui::TextEdit::multiline(&mut review.edited_text)
                                             .font(egui::TextStyle::Body)
-                                            .desired_width(text_width)
+                                            .desired_width(text_view_rect.width())
                                             .desired_rows(1),
                                     );
                                 },
@@ -1830,19 +1857,6 @@ impl BandoEgui {
 
                     let edited=review.edited_text.trim();
                     let valid=!edited.is_empty() && edited.chars().count()<=20_000;
-                    let status_clip=status_rect.intersect(ui.clip_rect());
-                    if !valid {
-                        ui.scope_builder(
-                            UiBuilder::new().id_salt("ocr-review-status")
-                                .max_rect(status_rect),
-                            |status|{
-                                status.set_clip_rect(status_clip);
-                                status.label(egui::RichText::new(
-                                    "인식된 텍스트는 1~20,000자로 수정해 주세요."
-                                ).color(theme::DANGER));
-                            },
-                        );
-                    }
                     components::modal_footer_in_rect(ui,actions_rect,|buttons|{
                         if theme::action(
                             buttons,"적용",ButtonRole::Primary,valid
@@ -1852,6 +1866,26 @@ impl BandoEgui {
                             ));
                         }
                     });
+                    // Validation belongs to the reserved footer, not a
+                    // dynamically tall row between cards and actions.
+                    if !valid {
+                        let hint_rect=Rect::from_min_size(
+                            egui::pos2(actions_rect.left()+theme::SPACE_12,
+                                actions_rect.top()+(actions_h-22.0)/2.0),
+                            Vec2::new((actions_rect.width()-130.0).max(1.0),22.0)
+                        );
+                        let hint_clip=hint_rect.intersect(ui.clip_rect());
+                        ui.scope_builder(
+                            UiBuilder::new().id_salt("ocr-review-footer-error")
+                                .max_rect(hint_rect),
+                            |hint|{
+                                hint.set_clip_rect(hint_clip);
+                                hint.label(egui::RichText::new(
+                                    "인식된 텍스트는 1~20,000자로 수정해 주세요."
+                                ).color(theme::DANGER));
+                            },
+                        );
+                    }
                 });
         }
         if let Some((raw,kind,chat))=apply {
