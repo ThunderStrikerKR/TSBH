@@ -263,6 +263,41 @@ pub fn paired_actions(
 }
 
 
+/// Keyboard shortcuts rendered as actual compact keycaps. Win+Shift+S
+/// opens Windows region snipping; Print Screen is an alternative capture
+/// key (behavior follows Windows' Print Screen accessibility setting).
+fn reception_keycap(ui:&mut Ui,key:&str){
+    Frame::new()
+        .fill(theme::RAISED)
+        .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER))
+        .corner_radius(theme::CONTROL_RADIUS)
+        .inner_margin(egui::Margin::symmetric(6,3))
+        .show(ui,|cap|{
+            cap.label(
+                egui::RichText::new(key).size(typography::FONT_FIELD_LABEL)
+                    .strong().color(theme::TEXT)
+            );
+        });
+}
+
+/// Reuse the same 4pt key grouping on every reception layout. Unlike plain
+/// prose, each shortcut key has its own bordered background and hit-free box.
+pub fn reception_capture_shortcut_hint(ui:&mut Ui){
+    ui.horizontal_wrapped(|line|{
+        line.spacing_mut().item_spacing=egui::vec2(
+            theme::SPACE_4,theme::SPACE_4
+        );
+        line.label(typography::caption("이미지 캡처:"));
+        reception_keycap(line,"Win");
+        line.label(typography::caption("+"));
+        reception_keycap(line,"Shift");
+        line.label(typography::caption("+"));
+        reception_keycap(line,"S");
+        line.label(typography::caption("또는"));
+        reception_keycap(line,"Print Screen");
+    });
+}
+
 /// The actual content space in a fixed-height docked section. Reserve
 /// exactly the existing top/bottom frame padding, title, divider and gaps.
 /// Section widgets must not impose independent minimums that can spill
