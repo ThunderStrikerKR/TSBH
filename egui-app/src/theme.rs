@@ -427,11 +427,12 @@ pub const ORDER_HISTORY_COL_WIDTHS: [f32; 7] =
     ORDER_HISTORY_MASTER_TABLE.base_columns;
 pub const ORDER_HISTORY_TABLE_MIN_WIDTH: f32 =
     ORDER_HISTORY_MASTER_TABLE.min_width;
-// Shipping-group management has its own six-column grid. These proportions
-// reserve all four existing per-group actions in a single 42pt row, and keep
-// numeric/status columns readable without copying the assignment widths.
-pub const FREIGHT_RATE_COL_WIDTHS: [f32;6] =
-    [195.0,148.0,195.0,105.0,222.0,360.0];
+// Shipping-group management: four-column grid (group, max bundle, full
+// 1..6-item tariff summary, one "관리" action). Freed status/notes/action
+// space is reassigned to the full tariff string. The previous 1265pt table
+// minimum remains unchanged, avoiding unexpected scrollbar/layout changes.
+pub const FREIGHT_RATE_COL_WIDTHS: [f32;4] =
+    [225.0,148.0,740.0,128.0];
 pub const FREIGHT_RATE_TABLE_MIN_WIDTH:f32 = 1265.0;
 // Combination and archived group tables have independent information widths.
 // Neither inherits the product-assignment 942pt geometry or the rate-edit
