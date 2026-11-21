@@ -161,8 +161,12 @@ impl ClientChooser {
                 if components::modal_header_chrome(ui,"거래처 변경","닫기",!busy){
                     is_open=false;
                 }
-                ui.add_space(theme::SPACE_12);
-                components::modal_section(ui,"거래처 검색",|search_panel|{
+                ui.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
+                // One OCR-master work surface, with search and results
+                // separated by headings rather than two stacked card edges.
+                components::modal_master_body(ui,|workspace|{
+                components::modal_master_body_section(
+                    workspace,"거래처 검색",|search_panel|{
                 let currently=self.clients.iter()
                     .find(|c|Some(text(c,"id"))==current_id)
                     .map(|c|text(c,"name")).unwrap_or("미선택");
@@ -176,8 +180,9 @@ impl ClientChooser {
                     self.search(Arc::clone(&gateway),ctx.clone());
                 }
                 });
-                ui.add_space(theme::SPACE_12);
-                components::modal_section(ui,"검색 결과",|results_panel|{
+                workspace.add_space(theme::SPACE_16);
+                components::modal_master_body_section(
+                    workspace,"검색 결과",|results_panel|{
                 if busy {
                     results_panel.label(typography::caption("거래처 적용 중…"));
                 }
@@ -257,6 +262,7 @@ impl ClientChooser {
                             }
                         });
                 }
+                });
                 });
             });
         if let Some(id)=chosen {
