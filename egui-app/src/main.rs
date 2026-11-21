@@ -55,7 +55,7 @@ mod developer_ui_samples;
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
 use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
-use preview_store::{WorkingReception, WorkingSource};
+use preview_store::{OcrFeedback, WorkingReception, WorkingSource};
 use kakao_context::{ChatWindow, KakaoTracker};
 use client_chooser::{ClientChooser, Choice};
 use std::collections::HashMap;
@@ -138,6 +138,9 @@ struct PendingReplace {
     chat: Option<ChatWindow>,
     input_method: &'static str,
     clipboard_sequence: Option<u32>,
+    // Present only for manually approved OCR. Kept through the second
+    // replacement confirmation and never captured on cancel.
+    ocr_original: Option<String>,
 }
 // Do not clear a copied source until its exact order ID and raw text are
 // acknowledged by the serialized Rust autosave worker.
@@ -445,6 +448,10 @@ impl BandoEgui {
     // Run parsing outside the egui frame loop. Any changed source invalidates
     // the previous result and its request sequence, so stale replies are ignored.
     fn queue_source_save(&mut self) {
+        self.queue_source_save_with_feedback(None);
+    }
+
+    fn queue_source_save_with_feedback(&mut self, feedback:Option<OcrFeedback>) {
         self.source_save_error = None;
         if let Some(active_id) = self.active_id.as_deref() {
             let Some(active) = self.drafts.iter_mut().find(|item| item.id == active_id) else {
@@ -480,7 +487,9 @@ impl BandoEgui {
             drafts: self.drafts.clone(),
         };
         if let Some(worker) = &self.source_autosave {
-            if let Err(error) = worker.queue(source) {
+            if let Err(error) = worker.queue_with_feedback(
+                source, feedback.into_iter().collect()
+            ) {
                 self.source_save_error = Some(error);
             }
         } else {
@@ -1209,6 +1218,13 @@ impl BandoEgui {
                     self.pending_clipboard_clear=None;
                     self.source_save_error=Some(error);
                 }
+                source_autosave::SaveStatus::FeedbackFailed(error) => {
+                    // Source storage succeeded but the separate, private OCR
+                    // audit write failed. Never silently report learning saved.
+                    self.clipboard_error=Some(format!(
+                        "OCR 정정 원본/수정본 보관 실패: {error}"
+                    ));
+                }
             }
         }
     }
@@ -1571,23 +1587,35 @@ impl BandoEgui {
             // Exact replacement confirmation from the existing React intake.
             self.pending_replace = Some(PendingReplace {
                 text, order_type, chat, input_method: "TEXT_PASTE",
-                clipboard_sequence:sequence,
+                clipboard_sequence:sequence, ocr_original:None,
             });
             return;
         }
         self.apply_intake_text(
-            text,order_type,chat,ctx,"TEXT_PASTE",false,sequence
+            text,order_type,chat,ctx,"TEXT_PASTE",false,sequence,None
         );
     }
 
     fn apply_intake_text(&mut self, text: String, order_type: OrderType,
         chat: Option<ChatWindow>, ctx: &egui::Context,
         input_method: &str, replace_original: bool,
-        clipboard_sequence:Option<u32>) {
+        clipboard_sequence:Option<u32>,ocr_original:Option<String>) {
         if text.trim().is_empty() { return; }
         if self.active_id.is_none() {
             self.new_reception(ctx);
         }
+        let Some(receipt_id)=self.active_id.clone() else {
+            self.clipboard_error=Some("OCR 정정 이력을 연결할 접수 건이 없습니다.".into());
+            return;
+        };
+        // Persist the FULL initial recognition and FULL staff-approved text.
+        // Corrections are a retrospective corpus, never an auto-rewrite rule.
+        let feedback=ocr_original.map(|original_text|OcrFeedback {
+            id:uuid::Uuid::new_v4().to_string(),
+            order_id:receipt_id,
+            original_text,
+            corrected_text:text.clone(),
+        });
         let first_content = self.raw_source.trim().is_empty();
         let changed = self.raw_source != text;
         if changed {
@@ -1612,8 +1640,9 @@ impl BandoEgui {
             self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
             ctx.request_repaint_after(Duration::from_millis(260));
         }
-        // One revision-checked write includes both raw and AGENCY/DEALER.
-        self.queue_source_save();
+        // Pair the audit with the same worker batch as the approved source.
+        // A failed source save must not produce an accepted OCR audit.
+        self.queue_source_save_with_feedback(feedback);
         // A successful enqueue is not a durable reception. Only clear
         // after source_autosave explicitly acknowledges this exact snapshot.
         self.pending_clipboard_clear=if self.source_save_error.is_none(){
@@ -1710,7 +1739,7 @@ impl BandoEgui {
     /// 400% zoom must never move the title, pane borders or Apply button.
     fn show_ocr_review(&mut self, ctx: &egui::Context, work_area:Rect) {
         let mut close=false;
-        let mut apply:Option<(String,OrderType,Option<ChatWindow>,Option<u32>)>=None;
+        let mut apply:Option<(String,OrderType,Option<ChatWindow>,Option<u32>,String)>=None;
         let dialog_width=(work_area.width()*0.94).clamp(560.0,1480.0)
             .min(work_area.width().max(1.0));
         let dialog_height=(work_area.height()*0.88).clamp(450.0,960.0)
@@ -1974,7 +2003,8 @@ impl BandoEgui {
                                     edited.to_owned(),
                                     review.order_type,
                                     review.chat.clone(),
-                                    review.clipboard_sequence
+                                    review.clipboard_sequence,
+                                    review.original_text.clone()
                                 ));
                             }
                         }
@@ -2000,17 +2030,18 @@ impl BandoEgui {
                     }
                 });
         }
-        if let Some((raw,kind,chat,sequence))=apply {
+        if let Some((raw,kind,chat,sequence,original))=apply {
             self.ocr_review=None;
             self.discard_ocr_confirm=false;
             if !self.raw_source.trim().is_empty() && self.raw_source!=raw {
                 self.pending_replace=Some(PendingReplace {
                     text:raw,order_type:kind,chat,input_method:"OCR",
                     clipboard_sequence:sequence,
+                    ocr_original:Some(original),
                 });
             } else {
                 self.apply_intake_text(
-                    raw,kind,chat,ctx,"OCR",true,sequence
+                    raw,kind,chat,ctx,"OCR",true,sequence,Some(original)
                 );
             }
         } else if close {
@@ -2072,7 +2103,8 @@ impl BandoEgui {
                 // OCR appended later still preserves this first method.
                 self.apply_intake_text(
                     next.text,next.order_type,next.chat,ctx,
-                    next.input_method,true,next.clipboard_sequence
+                    next.input_method,true,next.clipboard_sequence,
+                    next.ocr_original
                 );
             }
         } else if cancel {
