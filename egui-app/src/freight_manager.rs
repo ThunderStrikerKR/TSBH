@@ -3069,6 +3069,30 @@ mod rate_toolbar_tests{
     }
 
     #[test]
+    fn five_column_combination_history_preserves_existing_table_width(){
+        let widths=theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS;
+        let gap=theme::FREIGHT_ASSIGNMENT_COL_GAP;
+        assert_eq!(widths.len(),5);
+        assert!((widths.iter().sum::<f32>()+4.0*gap-1229.0).abs()<0.01);
+        assert!(matches!(
+            HistorySort::column_at(0),Some(HistorySortColumn::Combination)
+        ));
+        assert!(matches!(
+            HistorySort::column_at(1),Some(HistorySortColumn::Charge)
+        ));
+        assert!(matches!(
+            HistorySort::column_at(2),Some(HistorySortColumn::Actual)
+        ));
+        assert!(matches!(
+            HistorySort::column_at(3),Some(HistorySortColumn::Basis)
+        ));
+        assert!(HistorySort::column_at(4).is_none(),
+            "details is an action, not a sortable registration column");
+        let expanded=theme::FREIGHT_GROUP_HISTORY_COL_WIDTHS;
+        assert_eq!(expanded.len(),6,"archived group history retains its columns");
+    }
+
+    #[test]
     fn four_tabs_preserve_order_and_isolate_global_basis_action(){
         assert_eq!(FreightTab::ALL.len(),4);
         assert!(matches!(FreightTab::ALL[0],FreightTab::Groups));
