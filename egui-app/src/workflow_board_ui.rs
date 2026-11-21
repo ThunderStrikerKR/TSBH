@@ -163,11 +163,18 @@ fn workflow_card<R>(
 /// regardless of window width.
 fn workflow_header(
     ui:&mut Ui,id:&str,title:&str,open:bool,step:usize,notice:bool
-)->egui::Response{
+)->(egui::Response,bool){
     let width=ui.available_width();
-    let title_width=(width-theme::WORKFLOW_SIGNAL_WIDTH
+    let inline_title=(width-theme::WORKFLOW_SIGNAL_WIDTH
         -theme::WORKFLOW_MANAGE_WIDTH-theme::WORKFLOW_TRASH_WIDTH
         -3.0*theme::SPACE_4).max(0.0);
+    // All four 18pt status lamps remain intact. When the dealer caption
+    // would lose its ten-character reading area, move only the two
+    // disabled auxiliary actions to a right-aligned row below the summary.
+    let wrapped_actions=inline_title<theme::WORKFLOW_TITLE_MIN_WIDTH;
+    let title_width=if wrapped_actions{
+        (width-theme::WORKFLOW_SIGNAL_WIDTH-theme::SPACE_4).max(0.0)
+    }else{inline_title};
     let mut title_response=None;
     ui.horizontal(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
@@ -235,14 +242,33 @@ fn workflow_header(
             );
         }
 
+        if !wrapped_actions {
+            components::workflow_auxiliary_button(
+                bar, components::WorkflowAuxiliaryAction::Manage,
+            );
+            components::workflow_auxiliary_button(
+                bar, components::WorkflowAuxiliaryAction::Delete,
+            );
+        }
+    });
+    (
+        title_response.expect("workflow heading must reserve a clickable title"),
+        wrapped_actions
+    )
+}
+
+/// Preserve both auxiliary controls at the same 52/34pt widths when a
+/// narrow reception column cannot also fit a readable dealer title.
+fn workflow_wrapped_header_actions(ui:&mut Ui){
+    ui.with_layout(Layout::right_to_left(Align::Center),|right|{
+        right.spacing_mut().item_spacing.x=theme::SPACE_4;
         components::workflow_auxiliary_button(
-            bar, components::WorkflowAuxiliaryAction::Manage,
+            right,components::WorkflowAuxiliaryAction::Delete
         );
         components::workflow_auxiliary_button(
-            bar, components::WorkflowAuxiliaryAction::Delete,
+            right,components::WorkflowAuxiliaryAction::Manage
         );
     });
-    title_response.expect("workflow heading must reserve a clickable title")
 }
 fn stage_name(step:usize,notice:bool)->&'static str{
     if notice && step>=2 {"계좌 재안내 완료"}
@@ -305,22 +331,12 @@ fn workflow_action_line(
                         }
                     }
                 );
-                // Amount occupies its own right-aligned slot. A long sum
-                // never causes the VAT label to be clipped or a third row.
-                let (money_rect,_)=summary.allocate_exact_size(
+                // Right-anchored and truncation-aware. Even an unusually
+                // long amount cannot paint into the adjacent one-touch slot.
+                summary.add_sized(
                     Vec2::new(summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
-                    egui::Sense::hover()
-                );
-                let money_clip=money_rect.intersect(summary.clip_rect());
-                summary.painter().with_clip_rect(money_clip).text(
-                    Pos2::new(money_rect.right(),money_rect.center().y),
-                    egui::Align2::RIGHT_CENTER,&amount,
-                    egui::FontId::proportional(typography::FONT_BODY),
-                    theme::TEXT
-                );
-                summary.interact(
-                    money_rect,Id::new(("workflow-money",id)),
-                    egui::Sense::hover()
+                    egui::Label::new(typography::body(&amount))
+                        .halign(Align::RIGHT).truncate()
                 ).on_hover_text(&amount);
             }
         );
@@ -349,10 +365,10 @@ fn workflow_action_line(
 }
 fn workflow_table_header(ui:&mut Ui){
     let width=ui.available_width();
-    // 24pt reception compact role, rendered with the same raised header
+    // 28pt reception compact role, rendered with the same raised header
     // surface, 2pt inset underline and consistent content columns as masters.
     let (rect,_)=ui.allocate_exact_size(
-        Vec2::new(width,theme::SPACE_24),egui::Sense::hover()
+        Vec2::new(width,theme::WORKFLOW_DETAIL_HEADER_HEIGHT),egui::Sense::hover()
     );
     ui.painter().rect_filled(rect,0.0,theme::WORKFLOW_DETAIL_HEADER_BG);
     let content_bottom=rect.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT;
@@ -371,7 +387,7 @@ fn workflow_table_header(ui:&mut Ui){
         ("수취인",first,false),("상품",middle,false),("운임",last,true)
     ]{
         if cell.width()<=0.0{continue;}
-        let galley=typography::table_header_galley(ui,text);
+        let galley=typography::management_table_header_galley(ui,text);
         let x=if align_right{
             cell.right()-theme::SPACE_4-galley.size().x
         }else{cell.left()+theme::SPACE_4};
@@ -502,7 +518,7 @@ fn group_frame(
     let mut event=None;
     let active=selected.is_some_and(|s|s.group_id==group.id);
     workflow_card(ui,active && !in_preview,in_preview,|ui|{
-        let btn=workflow_header(
+        let (btn,wrapped_actions)=workflow_header(
             ui,&group.id,&group.dealer_name,open || in_preview,
             group.step,group.needs_notice
         );
@@ -529,6 +545,7 @@ fn group_frame(
         if stage_hovered && !in_preview{
             *trigger=Some(group.id.clone());
         }
+        if wrapped_actions{workflow_wrapped_header_actions(ui);}
         if open || in_preview{
             components::soft_divider(ui);
             ui.add_space(theme::SPACE_4);
@@ -567,7 +584,8 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
                 .and_then(|m|m.get("name")).and_then(|n|n.as_str())
                 .filter(|n|!n.trim().is_empty()).unwrap_or("거래처 확인").to_owned()
         };
-        if workflow_header(ui,&draft.id,&title,open,0,false).clicked(){
+        let (header,wrapped_actions)=workflow_header(ui,&draft.id,&title,open,0,false);
+        if header.clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
                 else{Event::SelectPending(draft.id.clone())});
         }
@@ -581,6 +599,7 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
             draft.client_id.is_none()
         );
         if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
+        if wrapped_actions{workflow_wrapped_header_actions(ui);}
         if open{
             components::soft_divider(ui);
             ui.add_space(theme::SPACE_4);
