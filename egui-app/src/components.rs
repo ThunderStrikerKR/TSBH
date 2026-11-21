@@ -681,6 +681,19 @@ pub fn reception_review_status(ui:&mut Ui,message:&str){
     );
 }
 
+/// Keep the exact existing eight-point canvas-to-action clearance, but
+/// use its middle one-point band to visually connect copy controls to canvas.
+pub fn reception_message_footer_gap(ui:&mut Ui){
+    let (gap_rect,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),theme::SPACE_8),Sense::hover()
+    );
+    let y=gap_rect.center().y;
+    ui.painter().line_segment(
+        [egui::pos2(gap_rect.left(),y),egui::pos2(gap_rect.right(),y)],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+}
+
 /// Copy actions belong to the same fixed footer width as the document.
 /// Keep existing disabled behavior and actions, only align to master right.
 pub fn reception_message_copy_actions(ui:&mut Ui){
