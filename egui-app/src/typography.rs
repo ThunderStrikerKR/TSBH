@@ -21,8 +21,10 @@ pub const BRAND_OPTICAL_CENTER_Y: f32 = 5.0;
 pub const FONT_PAGE_HEADING: f32 = 20.0;
 // Centered, full-pane native OCR blocking state in Reception.
 pub const FONT_OCR_PROGRESS_TITLE: f32 = 28.0;
-// Readable side-by-side OCR source verification. Keep standard body text at 14pt.
+// Readable side-by-side OCR source verification. All reception source
+// documents use this same 16pt size; general body text remains 14pt.
 pub const FONT_OCR_REVIEW_TEXT: f32 = 16.0;
+pub const FONT_RECEPTION_SOURCE_TEXT: f32 = FONT_OCR_REVIEW_TEXT;
 pub const FONT_MODAL_TITLE: f32 = 18.0;
 pub const FONT_SECTION_HEADING: f32 = 16.0;
 pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
@@ -236,6 +238,12 @@ pub fn section_heading_galley(
 }
 pub fn subsection_heading(text: &str) -> RichText { render(text, Role::Subsection) }
 pub fn body(text: &str) -> RichText { render(text, Role::Body) }
+/// Reception source document only: editable/highlighted source, read-only
+/// workflow source and OCR review agree at 16pt without enlarging labels,
+/// client metadata or other master-table content.
+pub fn reception_source_text(text:&str)->RichText {
+    body(text).size(FONT_RECEPTION_SOURCE_TEXT)
+}
 pub fn field_label(text: &str) -> RichText { render(text, Role::FieldLabel) }
 
 /// Shared field-label typography laid out for exact left-edge painting.
