@@ -271,10 +271,13 @@ fn measured_notice(
     (Vec2::new(width, desired_height.min(max_height)), galley, content_height)
 }
 
-fn placement(anchor: Pos2, size: Vec2, screen: Rect) -> (Pos2, bool) {
+fn placement(anchor: Pos2, size: Vec2, screen: Rect, kind: AnchorKind) -> (Pos2, bool) {
     let min_x = screen.left() + SCREEN_MARGIN;
     let max_x = (screen.right() - SCREEN_MARGIN - size.x).max(min_x);
-    let x = (anchor.x - 28.0).clamp(min_x, max_x);
+    // Caret/buttons keep the pointer near the leading edge; a feature-wide
+    // automatic notice is centered above its relevant section heading.
+    let offset_x = if kind==AnchorKind::Section {size.x/2.0} else {28.0};
+    let x = (anchor.x - offset_x).clamp(min_x, max_x);
 
     let above_y = anchor.y - ANCHOR_GAP - size.y;
     let below_y = anchor.y + ANCHOR_GAP;
@@ -407,7 +410,7 @@ pub fn show(ctx: &Context) {
     let (size, galley, _content_height) = measured_notice(
         ctx, &active.message, active.tone, screen,
     );
-    let (at, above) = placement(active.at, size, screen);
+    let (at, above) = placement(active.at, size, screen, active.kind);
     let pad_x = f32::from(theme::FLOATING_NOTICE_PADDING_X);
     let pad_y = f32::from(theme::FLOATING_NOTICE_PADDING_Y);
     let mut close = false;
@@ -510,7 +513,7 @@ mod tests {
     #[test]
     fn notice_flips_when_there_is_no_room_above() {
         let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(500.0, 350.0));
-        let (pos, above) = placement(Pos2::new(320.0, 12.0), Vec2::new(200.0, 40.0), screen);
+        let (pos, above) = placement(Pos2::new(320.0, 12.0), Vec2::new(200.0, 40.0), screen, AnchorKind::Action);
         assert!(!above);
         assert!(pos.y > 12.0);
         assert!(pos.x + 200.0 <= screen.right() - SCREEN_MARGIN + 0.01);
@@ -518,7 +521,7 @@ mod tests {
     #[test]
     fn notice_prefers_caret_above() {
         let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(500.0, 350.0));
-        let (pos, above) = placement(Pos2::new(100.0, 200.0), Vec2::new(180.0, 40.0), screen);
+        let (pos, above) = placement(Pos2::new(100.0, 200.0), Vec2::new(180.0, 40.0), screen, AnchorKind::Caret);
         assert!(above);
         assert!(pos.y + 40.0 < 200.0);
     }
@@ -542,7 +545,8 @@ mod tests {
     fn narrow_viewport_keeps_notice_rect_inside_screen() {
         let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(240.0,190.0));
         let (pos,_)=placement(
-            Pos2::new(238.0,185.0),Vec2::new(220.0,70.0),screen
+            Pos2::new(238.0,185.0),Vec2::new(220.0,70.0),screen,
+            AnchorKind::Section
         );
         assert!(pos.x>=screen.left()+SCREEN_MARGIN);
         assert!(pos.y>=screen.top()+SCREEN_MARGIN);
