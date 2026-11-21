@@ -74,7 +74,9 @@ fn compare_ocr_analyses(initial:&Value,corrected:&Value)->Value{
         if changes.len()>=150 || a==b {return;}
         if depth>=8 {changes.push(path.to_owned());return;}
         if let (Some(x),Some(y))=(a.as_object(),b.as_object()){
-            let keys=x.keys().chain(y.keys()).collect::<HashSet<_>>();
+            let keys=x.keys().map(String::as_str)
+                .chain(y.keys().map(String::as_str))
+                .collect::<HashSet<_>>();
             for key in keys {
                 if changes.len()>=150 {break;}
                 visit(x.get(key).unwrap_or(&Value::Null),
@@ -507,7 +509,10 @@ impl PreviewStore {
         let conn=store.open_connection()?;
         let mut stmt=conn.prepare(
             "SELECT id,order_id,original_text,corrected_text
-             FROM ocr_feedback ORDER BY recorded_at DESC,id DESC LIMIT ?1"
+             FROM ocr_feedback
+             WHERE learning_used=0 OR model_suggestion IS NULL
+                 OR corrected_text<>model_suggestion
+             ORDER BY recorded_at DESC,id DESC LIMIT ?1"
         ).map_err(|e|e.to_string())?;
         let rows=stmt.query_map([limit.min(1000) as i64],|row|Ok((
             row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?
