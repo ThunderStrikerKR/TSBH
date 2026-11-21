@@ -97,6 +97,7 @@ impl ProductExcelUi {
     fn start<F>(&mut self,ctx:&Context,job:F)
         where F:FnOnce()->Result<JobResult,String>+Send+'static {
         if self.busy(){return;}
+        crate::floating_notice::dispatch_pointer(ctx,"products.excel");
         self.error=None;
         self.notice=None;
         let (tx,rx)=mpsc::channel();
@@ -150,6 +151,15 @@ impl ProductExcelUi {
         &mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,allowed:bool
     ){
         if !self.open{return;}
+        crate::floating_notice::sync(
+            ui.ctx(),"products.excel.result","products.excel",
+            crate::floating_notice::Tone::Success,self.notice.as_deref()
+        );
+        crate::floating_notice::sync(
+            ui.ctx(),"products.excel.error","products.excel",
+            crate::floating_notice::Tone::Error,
+            if self.review.is_none(){self.error.as_deref()}else{None}
+        );
         theme::section_frame().show(ui,|panel|{
             panel.horizontal(|heading|{
                 heading.label(typography::section_heading("상품 Excel 관리"));
@@ -173,12 +183,8 @@ impl ProductExcelUi {
             if self.busy(){
                 panel.label(typography::caption("상품 Excel 작업 중…"));
             }
-            if let Some(msg)=&self.notice{
-                panel.label(typography::caption(msg));
-            }
-            if let Some(err)=&self.error{
-                panel.colored_label(theme::DANGER,err);
-            }
+            // One-off completion/error feedback is a shared floating
+            // overlay; validation within the review dialog stays inline.
         });
     }
     fn can_apply(&self)->bool{
