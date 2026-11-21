@@ -108,7 +108,7 @@ impl RateSort {
 // History sort is visual only. Reset returns to newest-first order and the
 // original group-version order remains untouched.
 #[derive(Clone,Copy,PartialEq,Eq)]
-enum HistorySortColumn { Combination, RecordedAt, Charge, Actual, Basis }
+enum HistorySortColumn { Combination, Charge, Actual, Basis }
 #[derive(Clone,Copy,PartialEq,Eq)]
 struct HistorySort {
     column:HistorySortColumn,
@@ -118,10 +118,9 @@ impl HistorySort {
     fn column_at(index:usize)->Option<HistorySortColumn>{
         match index {
             0=>Some(HistorySortColumn::Combination),
-            1=>Some(HistorySortColumn::RecordedAt),
-            2=>Some(HistorySortColumn::Charge),
-            3=>Some(HistorySortColumn::Actual),
-            4=>Some(HistorySortColumn::Basis),
+            1=>Some(HistorySortColumn::Charge),
+            2=>Some(HistorySortColumn::Actual),
+            3=>Some(HistorySortColumn::Basis),
             _=>None,
         }
     }
@@ -2509,8 +2508,6 @@ impl FreightManager {
                     let key=match active_sort.column{
                         HistorySortColumn::Combination=>
                             text(record,"description").to_lowercase(),
-                        HistorySortColumn::RecordedAt=>
-                            text(record,"at").to_owned(),
                         HistorySortColumn::Charge=>record["charge"].as_i64()
                             .map(|n|format!("{n:020}")).unwrap_or_default(),
                         HistorySortColumn::Actual=>record["actual"].as_i64()
@@ -2528,9 +2525,9 @@ impl FreightManager {
             }
             freight_history_table(
                 section,"freight-verified-combinations",
-                ["조합","등록일 / 검증","청구 운임","실제 운임","기준","수정"],
+                ["조합","청구 운임","실제 운임","기준","상세정보"],
                 theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS,
-                [0.65,0.35,0.0,0.0,0.0,0.0],ordered.len(),Some(sort),
+                [1.0,0.0,0.0,0.0,0.0],ordered.len(),Some(sort),
                 true,
                 if combinations.is_empty(){
                     Some("실제 배송 완료 후 검증한 운임 조합이 없습니다.")
@@ -2538,35 +2535,17 @@ impl FreightManager {
                 |row,cells,index|{
                     let record=ordered[index];
                     let id=text(record,"id");
-                    let at=text(record,"at");
-                    let verified_at=text(record,"verifiedAt");
-                    let recorded_date=at.split('T').next()
-                        .filter(|date|!date.is_empty()).unwrap_or("날짜 미확인");
-                    let samples=record["sampleCount"].as_u64().unwrap_or(1);
-                    let verification=if verified_at.is_empty(){
-                        format!("{recorded_date} · 사용자 등록")
-                    }else{
-                        format!("{recorded_date} · 실배송 검증 {samples}회")
-                    };
-                    let verification_detail=if verified_at.is_empty(){
-                        format!("등록: {at} / 사용자 등록 기준")
-                    }else{
-                        format!("등록: {at} / 검증: {verified_at} / 실배송 {samples}회")
-                    };
                     history_cell(
                         row,cells[0],text(record,"description"),
                         text(record,"description"),egui::Align2::LEFT_CENTER,
                         typography::ManagementTableCellRole::Text,(id,0)
                     );
-                    history_cell(
-                        row,cells[1],&verification,&verification_detail,
-                        egui::Align2::LEFT_CENTER,typography::ManagementTableCellRole::Description,(id,1)
-                    );
-                    for (column,key) in [(2,"charge"),(3,"actual")]{
+                    for (column,key) in [(1,"charge"),(2,"actual")]{
                         let fee=as_fee(&record[key]);
                         history_cell(
                             row,cells[column],&fee,&fee,
-                            egui::Align2::RIGHT_CENTER,typography::ManagementTableCellRole::Money,(id,column)
+                            egui::Align2::RIGHT_CENTER,
+                            typography::ManagementTableCellRole::Money,(id,column)
                         );
                     }
                     let validity=projection["currentCombinations"]
@@ -2577,33 +2556,72 @@ impl FreightManager {
                         None=>"운임 기준 조회 중",
                     };
                     history_cell(
-                        row,cells[4],status,status,
-                        egui::Align2::CENTER_CENTER,typography::ManagementTableCellRole::Status,(id,4)
+                        row,cells[3],status,status,
+                        egui::Align2::CENTER_CENTER,
+                        typography::ManagementTableCellRole::Status,(id,3)
                     );
-                    let action_rect=cells[5].shrink2(egui::vec2(theme::SPACE_8,0.0));
+                    let action_rect=cells[4].shrink2(egui::vec2(theme::SPACE_8,0.0));
                     let history_row_clip=row.clip_rect();
                     row.scope_builder(
                         egui::UiBuilder::new()
-                            .id_salt(("freight-history-change",id))
+                            .id_salt(("freight-history-details",id))
                             .max_rect(action_rect)
                             .layout(egui::Layout::left_to_right(
                                 egui::Align::Center
                             ).with_main_align(egui::Align::Center)),
                         |buttons|{
-                            buttons.set_clip_rect(cells[5].intersect(history_row_clip));
+                            buttons.set_clip_rect(cells[4].intersect(history_row_clip));
                             buttons.set_width(action_rect.width());
-                            if theme::action(
-                                buttons,"예외 운임 변경",
-                                theme::ButtonRole::TableSecondary,enabled
-                            ).clicked(){
-                                // This is the existing revise_combination
-                                // modal and Rust mutation path, unchanged.
-                                *exception=Some((
-                                    id.to_owned(),
-                                    record["charge"].as_i64()
-                                        .map(|n|n.to_string()).unwrap_or_default()
-                                ));
-                            }
+                            let trigger=theme::action(
+                                buttons,"상세정보",
+                                theme::ButtonRole::TableSecondary,true
+                            );
+                            // Registration and verification are retained in
+                            // the record, but are no longer table columns.
+                            // Popup lives above the virtualized row layout.
+                            egui::Popup::menu(&trigger)
+                                .close_behavior(
+                                    egui::PopupCloseBehavior::CloseOnClickOutside
+                                )
+                                .show(|menu|{
+                                    menu.set_min_width(280.0);
+                                    menu.label(typography::field_label("등록일"));
+                                    let at=text(record,"at");
+                                    menu.label(typography::body(
+                                        if at.is_empty(){"등록일 미확인"}else{at}
+                                    ));
+                                    menu.add_space(theme::SPACE_8);
+                                    menu.label(typography::field_label("검증 이력"));
+                                    let verified_at=text(record,"verifiedAt");
+                                    if verified_at.is_empty(){
+                                        menu.label(typography::body(
+                                            "실배송 검증 기록 없음 (사용자 등록)"
+                                        ));
+                                    }else{
+                                        let samples=record["sampleCount"].as_u64()
+                                            .unwrap_or(1);
+                                        menu.label(typography::body(&format!(
+                                            "{verified_at} · 실배송 검증 {samples}회"
+                                        )));
+                                    }
+                                    menu.add_space(theme::SPACE_8);
+                                    components::soft_divider(menu);
+                                    menu.add_space(theme::SPACE_8);
+                                    if theme::action_full_width(
+                                        menu,"예외 운임 변경",
+                                        theme::ButtonRole::TableSecondary,enabled
+                                    ).clicked(){
+                                        // Existing revise_combination modal
+                                        // and Rust mutation path are preserved.
+                                        *exception=Some((
+                                            id.to_owned(),
+                                            record["charge"].as_i64()
+                                                .map(|n|n.to_string())
+                                                .unwrap_or_default()
+                                        ));
+                                        menu.close();
+                                    }
+                                });
                         }
                     );
                 }
@@ -2734,17 +2752,17 @@ fn history_cell(
 /// and expanded historical group versions. The fixed header is outside the
 /// virtual row scroll, with the same column origins and gutter reservation.
 #[allow(clippy::too_many_arguments)]
-fn freight_history_table(
-    ui:&mut Ui,id:&str,titles:[&str;6],bases:[f32;6],shares:[f32;6],
+fn freight_history_table<const N:usize>(
+    ui:&mut Ui,id:&str,titles:[&str;N],bases:[f32;N],shares:[f32;N],
     total_rows:usize,mut sort:Option<&mut Option<HistorySort>>,
     follows_master_toolbar:bool,empty_message:Option<&str>,
-    mut render_row:impl FnMut(&mut Ui,&[egui::Rect;6],usize),
+    mut render_row:impl FnMut(&mut Ui,&[egui::Rect;N],usize),
 ){
     ui.spacing_mut().scroll=theme::management_table_scroll_style();
     let old_spacing=ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y=0.0;
     let minimum=bases.iter().sum::<f32>()
-        +5.0*theme::FREIGHT_ASSIGNMENT_COL_GAP;
+        +N.saturating_sub(1) as f32*theme::FREIGHT_ASSIGNMENT_COL_GAP;
     let layout=if follows_master_toolbar {
         // Only the first/history overview has the approved toolbar guide.
         // Expanded group-version tables already have their own section
@@ -2810,7 +2828,7 @@ fn freight_history_table(
                             }else{theme::TABLE_ROW_ALT_BG}
                         );
                         render_row(row,&cells,index);
-                        for column in 0..5{
+                        for column in 0..N.saturating_sub(1){
                             let boundary=cells[column].right()
                                 +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                             row.painter().line_segment(
@@ -2882,10 +2900,20 @@ fn freight_history_table(
         let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};
         let arrow=indicator.as_ref().map_or(0.0,|(galley,_)|galley.size().x);
         let combined=label.size().x+gap+arrow;
-        let x=match index{
-            2|3=>cell.right()-6.0-combined,
-            4|5=>cell.center().x-combined/2.0,
-            _=>cell.left()+6.0,
+        let x=if sort.is_some(){
+            // Overview: combination / charge / actual / basis / details.
+            match index{
+                1|2=>cell.right()-6.0-combined,
+                3|4=>cell.center().x-combined/2.0,
+                _=>cell.left()+6.0,
+            }
+        }else{
+            // Expanded historic group versions keep their old 6-column alignment.
+            match index{
+                2|3=>cell.right()-6.0-combined,
+                4|5=>cell.center().x-combined/2.0,
+                _=>cell.left()+6.0,
+            }
         };
         let ink=painter.with_clip_rect(cell.intersect(header_rect));
         ink.galley(
@@ -2899,7 +2927,7 @@ fn freight_history_table(
                 arrow_galley,color
             );
         }
-        if index<5{
+        if index<N.saturating_sub(1){
             let boundary=cell.right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
             painter.line_segment(
                 [egui::pos2(boundary,header_rect.top()),
