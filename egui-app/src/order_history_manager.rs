@@ -874,7 +874,11 @@ fn range_date_picker_rtl(
                     .hint_text("YYYY-MM-DD")
                     .desired_width(HISTORY_DATE_FIELD_WIDTH)
             ).on_hover_text(&format!("{label} 직접 입력"));
-            crate::floating_notice::input(row.ctx(),"history.date",&edit);
+            crate::floating_notice::sized_text_caret(
+                row,"history.date",&edit,date,
+                egui::FontId::proportional(typography::FONT_BODY),
+                true,2.0
+            );
             changed|=edit.changed();
             let next=history_date_segment(row,"›",NEXT)
                 .on_hover_text(&format!("{label} 하루 뒤"));
