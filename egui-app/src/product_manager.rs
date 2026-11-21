@@ -1170,11 +1170,15 @@ impl ProductManager {
                 egui::pos2(header_left,header_rect.top()),
                 &widths,header_rect.height()
             );
+            // Master header owns the same 34pt text area and inset 2pt
+            // bottom rule as Freight Assignment; no clipped 1pt edge stroke.
+            let header_text_rect=components::management_master_header_begin(
+                panel,header_rect,layout.header_content_rect
+            );
             let painter=panel.painter().with_clip_rect(header_rect);
-            painter.rect_filled(header_rect,0.0,theme::RAISED);
             let mut clicked_sort=None;
             for (index,title) in headings.iter().enumerate(){
-                let rect=header_cells[index].intersect(header_rect);
+                let rect=header_cells[index].intersect(header_text_rect);
                 if rect.width()<=0.0{continue;}
                 let column=ProductSort::column_at(index);
                 let title_galley=typography::freight_table_header_galley(panel,title);
@@ -1221,21 +1225,21 @@ impl ProductManager {
                             =>"내림차순 정렬",
                         None=>"기본 순서로 복귀",
                     });
+                    if response.hovered(){
+                        components::management_master_header_sort_hover(panel,rect);
+                    }
                     if response.clicked(){clicked_sort=Some(ProductSort::next(self.sort,column));}
                 }
                 if index<5{
                     let edge=header_cells[index].right()+gap/2.0;
                     painter.line_segment(
-                        [egui::pos2(edge,header_rect.top()),
-                         egui::pos2(edge,header_rect.bottom())],
+                        [egui::pos2(edge,header_text_rect.top()),
+                         egui::pos2(edge,header_text_rect.bottom())],
                         egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
                     );
                 }
             }
-            painter.line_segment(
-                [header_rect.left_bottom(),header_rect.right_bottom()],
-                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-            );
+            components::management_master_header_finish(panel,header_rect);
             if let Some(next)=clicked_sort{
                 self.sort=next;
                 panel.ctx().request_repaint();
