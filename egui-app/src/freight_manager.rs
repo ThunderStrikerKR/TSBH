@@ -1129,10 +1129,7 @@ impl FreightManager {
             // Keep the 10pt thumb width but dock its rail flush with the
             // table rows. The 6pt inset on the last action cell still
             // separates clickable buttons from the scroll hit target.
-            let mut table_scroll=theme::management_scroll_style();
-            table_scroll.bar_inner_margin=0.0;
-            table_scroll.bar_outer_margin=0.0;
-            section.spacing_mut().scroll=table_scroll;
+            section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Both Freight and Order History now reserve the toolbar, divider
             // and header with one common zero-implicit-gap layout path.
             let previous_table_spacing_y=section.spacing().item_spacing.y;
@@ -1360,39 +1357,15 @@ impl FreightManager {
                 "","상품명 / 상품설명","색상/옵션","카테고리",
                 "배송 그룹","설정"
             ];
-            // The shared header matches the virtualized rows' column
-            // boundaries; scrollbar_gutter is reserved once by the helper.
-            // The explicit scrollbar track starts 3pt below row origin
-            // and extends through the card's bottom 16pt inner padding.
-            // The independently scrolling ROWS remain bounded by the card
-            // inner content; scrollbar and rows do not need equal Y extents.
-            // egui 0.33.3 scroll_bar_rect controls the visible rail region,
-            // replacing the old paint-over hack.
-            // Keep ROWS inside the card's existing 16pt content padding.
-            // The scroll bar, however, belongs to the entire card edge:
-            // previously its track ended at the padded content bottom,
-            // leaving a conspicuous 16pt gap above the card's lower rule.
-            // Extend only the independent scroll-bar rect into that bottom
-            // padding. Do not grow ScrollArea::max_height or move the
-            // bottom border; that would merely move the gap elsewhere.
+            // Match the shared scroll track to the full-card section:
+            // 3pt top inset, bottom extended through existing 16pt padding.
+            // Row viewport stays within the card's original inner height.
             let card_inner_bottom=section.min_rect().top()+card_min_height;
             let scroll_max_height=(card_inner_bottom-section.cursor().top())
                 .max(theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
-            let scroll_area_bounds=section.available_rect_before_wrap();
-            let scroll_rows_bottom=(scroll_area_bounds.top()+scroll_max_height)
-                .min(scroll_area_bounds.bottom());
-            // Inside the 1pt outer stroke of section_frame(). The explicit
-            // 3pt top inset is independent and must not shorten the bottom.
-            let scroll_track_bottom=scroll_rows_bottom+theme::SECTION_PADDING;
-            let scroll_track_top=(scroll_area_bounds.top()+3.0)
-                .min(scroll_track_bottom-1.0);
-            let scroll_track=egui::Rect::from_min_max(
-                egui::pos2(scroll_area_bounds.left(),scroll_track_top),
-                egui::pos2(scroll_area_bounds.right(),scroll_track_bottom),
+            let scroll_track=components::management_table_scroll_track_rect(
+                section,scroll_max_height,theme::SECTION_PADDING
             );
-            debug_assert!((scroll_track.bottom()-scroll_rows_bottom
-                -theme::SECTION_PADDING).abs()<0.01,
-                "freight scrollbar must reach the card bottom padding edge");
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
