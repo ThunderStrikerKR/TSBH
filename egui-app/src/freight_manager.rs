@@ -2399,6 +2399,19 @@ impl FreightManager {
         });
     }
 
+    /// Reserve the approved first-row geometry without adding an empty
+    /// heading or duplicate divider. The history overview needs the same
+    /// 36pt guide before the 21pt master header transition as the other
+    /// freight management tabs.
+    fn history_header_guide(section:&mut Ui)->egui::Rect{
+        let (rect,_)=section.allocate_exact_size(
+            egui::vec2(section.available_width(),theme::INPUT_HEIGHT),
+            egui::Sense::hover()
+        );
+        debug_assert!((rect.height()-theme::INPUT_HEIGHT).abs()<0.01);
+        rect
+    }
+
     fn show_history(
         ui: &mut Ui, shipping: &Value, projection: &Value,
         exception: &mut Option<(String,String)>,
@@ -2414,11 +2427,7 @@ impl FreightManager {
             // divider transition. Zero implicit spacing prevents drift.
             let prior_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
-            let (history_toolbar_guide,_)=section.allocate_exact_size(
-                egui::vec2(section.available_width(),theme::INPUT_HEIGHT),
-                egui::Sense::hover()
-            );
-            debug_assert!((history_toolbar_guide.height()-theme::INPUT_HEIGHT).abs()<0.01);
+            Self::history_header_guide(section);
             let combinations=rows(&shipping["combinations"]);
             // Keep React's original newest-first order unless the user
             // explicitly sorts a meaningful column.
@@ -2923,6 +2932,41 @@ fn summary(ui: &mut Ui, label: &str, count: usize) {
 #[cfg(test)]
 mod rate_toolbar_tests{
     use super::*;
+
+    #[test]
+    fn history_header_matches_master_36pt_toolbar_plus_21pt_transition(){
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        let mut input=egui::RawInput::default();
+        input.screen_rect=Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,egui::vec2(1350.0,880.0)
+        ));
+        let mut measured=None;
+        let _=ctx.run(input,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                theme::section_frame().show(ui,|section|{
+                    section.spacing_mut().item_spacing.y=0.0;
+                    let guide=FreightManager::history_header_guide(section);
+                    let header=components::management_sticky_table_header(
+                        section,theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS
+                            .iter().sum::<f32>()
+                            +5.0*theme::FREIGHT_ASSIGNMENT_COL_GAP
+                    ).header_rect;
+                    measured=Some((guide,header));
+                });
+            });
+        });
+        let (guide,header)=measured.expect("history header measured");
+        assert!((guide.height()-theme::INPUT_HEIGHT).abs()<0.01);
+        let expected_gap=theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
+            +theme::SOFT_DIVIDER_WIDTH
+            +theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP;
+        assert!((expected_gap-21.0).abs()<0.01);
+        assert!((header.top()-guide.bottom()-expected_gap).abs()<0.01,
+            "deleting the history heading must not raise the table header");
+        assert!((header.top()-guide.top()-theme::INPUT_HEIGHT-21.0).abs()<0.01);
+        assert!((header.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01);
+    }
 
     #[test]
     fn four_tabs_preserve_order_and_isolate_global_basis_action(){
