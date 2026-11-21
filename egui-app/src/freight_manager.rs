@@ -428,6 +428,7 @@ pub struct FreightManager {
     bulk_group: Option<String>,
     bulk_feedback: Option<String>,
     new_name: String,
+    create_group_open: bool,
     rename_target: Option<(String,String)>,
     delete_target: Option<String>,
     rate_editor: Option<RateEditor>,
@@ -484,6 +485,7 @@ impl FreightManager {
             bulk_group: None,
             bulk_feedback: None,
             new_name: String::new(),
+            create_group_open: false,
             rename_target: None,
             delete_target: None,
             rate_editor: None,
@@ -529,8 +531,9 @@ impl FreightManager {
                 !self.pending_changes().is_empty())
     }
     fn has_other_modal(&self)->bool{
-        self.rename_target.is_some() || self.delete_target.is_some() ||
-            self.basis_target.is_some() || self.exception_target.is_some() ||
+        self.create_group_open || self.rename_target.is_some() ||
+            self.delete_target.is_some() || self.basis_target.is_some() ||
+            self.exception_target.is_some() ||
             self.product_reset_target.is_some()
     }
     pub fn blocks_navigation(&self)->bool{
@@ -545,6 +548,7 @@ impl FreightManager {
         self.bulk_group=None;
         self.bulk_feedback=None;
         self.new_name.clear();
+        self.create_group_open=false;
         self.rate_editor=None;
         self.rename_target=None;
         self.delete_target=None;
@@ -624,7 +628,10 @@ impl FreightManager {
                             _=>"운임 변경사항을 저장했습니다."
                         }.into());
                         match action.as_str(){
-                            "create_group"=>self.new_name.clear(),
+                            "create_group"=>{
+                                self.new_name.clear();
+                                self.create_group_open=false;
+                            },
                             "rename_group"=>self.rename_target=None,
                             "delete_group"=>self.delete_target=None,
                             "assign_products"=>{
@@ -821,7 +828,7 @@ impl FreightManager {
                 // scroll used to move the header away with the old duplicate list.
                 FreightTab::Rates => Self::show_rates(
                     ui,&groups,&products,projection,
-                    &mut self.new_name,&mut self.rename_target,
+                    &mut self.create_group_open,&mut self.rename_target,
                     &mut self.delete_target,&mut self.rate_editor,
                     &mut self.basis_target,&mut self.rate_sort,
                     &mut self.error,enabled,&mut action
@@ -844,10 +851,41 @@ impl FreightManager {
             // tab, while individual product reset stays on assignment.
             let area=ui.max_rect();
             let ctx=ui.ctx();
+            let mut close_create=false;
             let mut close_rename=false;
             let mut close_delete=false;
             let mut close_product_reset=false;
-            if let Some((id,name))=self.rename_target.as_mut(){
+            if self.tab==FreightTab::Rates && self.create_group_open {
+                components::modal_backdrop(ctx,"freight-create-backdrop",false);
+                components::decision_window(
+                    "배송 그룹 추가","freight-create",area
+                ).show(ctx,|modal|{
+                    if components::modal_header(
+                        modal,"배송 그룹 추가","취소",enabled
+                    ){close_create=true;}
+                    modal.label(typography::field_label("배송 그룹명"));
+                    modal.add_enabled_ui(enabled,|field|{
+                        components::flexible_text_field(
+                            field,&mut self.new_name,
+                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,"그룹 이름 입력"
+                        );
+                    });
+                    modal.add_space(theme::SPACE_12);
+                    modal.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |controls|{
+                            if theme::action(
+                                controls,"배송 그룹 추가",theme::ButtonRole::Primary,
+                                enabled&&!self.new_name.trim().is_empty()
+                            ).clicked(){
+                                action=Some(("create_group".into(),json!({
+                                    "name":self.new_name.trim()
+                                })));
+                            }
+                        }
+                    );
+                });
+            }else if let Some((id,name))=self.rename_target.as_mut(){
                 components::modal_backdrop(ctx,"freight-rename-backdrop",false);
                 components::decision_window("배송 그룹명","freight-rename",area)
                     .show(ctx,|modal|{
@@ -933,6 +971,10 @@ impl FreightManager {
                         }
                     });
                 });
+            }
+            if close_create{
+                self.create_group_open=false;
+                self.new_name.clear();
             }
             if close_rename{self.rename_target=None;}
             if close_delete{self.delete_target=None;}
@@ -1828,7 +1870,7 @@ impl FreightManager {
     #[allow(clippy::too_many_arguments)]
     fn show_rates(
         ui: &mut Ui, groups: &[Value], products: &[&Value], projection: &Value,
-        new_name: &mut String,
+        create_group_open: &mut bool,
         rename_target: &mut Option<(String,String)>,
         delete_target: &mut Option<String>,
         editor: &mut Option<RateEditor>,
@@ -1844,48 +1886,39 @@ impl FreightManager {
         theme::section_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
-            section.horizontal(|heading|{
-                heading.label(typography::section_heading("그룹 운임표"));
-                settings_help::icon(heading,"그룹 운임표");
-                heading.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),|right|{
-                        settings_help::icon(right,"전체 운임 기준 변경");
-                        if theme::action(
-                            right,"전체 운임 기준 변경",theme::ButtonRole::Danger,enabled
-                        ).clicked(){
-                            *basis=Some(None);
-                        }
-                    }
-                );
-            });
-            section.horizontal(|tools|{
-                tools.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
-                tools.label(typography::field_label("새 배송 그룹명"));
-                tools.add_enabled_ui(enabled,|field|{
-                    components::flexible_text_field(
-                        field,new_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                        "새 배송 그룹명"
-                    );
-                });
-                tools.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),|right|{
-                        if theme::action(
-                            right,"배송 그룹 추가",theme::ButtonRole::Primary,
-                            enabled&&!new_name.trim().is_empty()
-                        ).clicked(){
-                            *action=Some(("create_group".into(),json!({
-                                "name":new_name.trim()
-                            })));
-                        }
-                    }
-                );
-            });
-            // Direct new-group toolbar -> pinned rate-table header:
-            // use the shared 21pt breathing room (16 + 1pt rule + 4).
-            // Reset implicit item spacing before the shared allocation
-            // so the old free-standing divider is not counted twice.
+            // One measured 36pt toolbar: no redundant heading/inline name
+            // editor. The primary add action lives at the far right, and the
+            // global rate-basis action shares its vertical center and 8pt gap.
+            // Creating a name is deferred to the existing modal layer.
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
+            let (toolbar_rect,_)=section.allocate_exact_size(
+                egui::vec2(section.available_width(),theme::INPUT_HEIGHT),
+                egui::Sense::hover()
+            );
+            section.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt("freight-rate-toolbar")
+                    .max_rect(toolbar_rect)
+                    .layout(egui::Layout::right_to_left(egui::Align::Center)),
+                |tools|{
+                    tools.set_width(toolbar_rect.width());
+                    tools.set_height(toolbar_rect.height());
+                    tools.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    if theme::action(
+                        tools,"배송 그룹 추가",theme::ButtonRole::Primary,enabled
+                    ).clicked(){
+                        *create_group_open=true;
+                    }
+                    if theme::action(
+                        tools,"전체 운임 기준 변경",theme::ButtonRole::Danger,enabled
+                    ).clicked(){
+                        *basis=Some(None);
+                    }
+                }
+            );
+            // Shared master: exactly 16pt + 1pt divider + 4pt before
+            // the fixed 36pt rate-table header, irrespective of modal state.
             let rate_layout=components::management_sticky_table_header(
                 section,theme::FREIGHT_RATE_TABLE_MIN_WIDTH
             );
