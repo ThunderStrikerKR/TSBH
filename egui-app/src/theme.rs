@@ -162,6 +162,17 @@ pub const NESTED_PADDING: f32 = SPACE_12;
 // The 34pt title row still fully accommodates the standard "+ 새 주문"
 // button and other header controls without shortening their labels.
 pub const SECTION_HEADER_HEIGHT: f32 = 34.0;
+// Recipient navigator in a section title row: same segmented INPUT surface
+// and 28pt arrow targets as the Order History date picker, with the current
+// recipient name and 1/N progress between arrows. No extra tab/body row.
+pub const RECEPTION_RECIPIENT_NAV_ARROW_WIDTH:f32 = MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
+pub const RECEPTION_RECIPIENT_NAV_NAME_WIDTH:f32 = 116.0;
+pub const RECEPTION_RECIPIENT_NAV_COUNT_WIDTH:f32 = 38.0;
+pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
+    2.0*RECEPTION_RECIPIENT_NAV_ARROW_WIDTH
+    +RECEPTION_RECIPIENT_NAV_NAME_WIDTH
+    +RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
+    +2.0*FRAME_STROKE_WIDTH;
 // Reception titles need the same breathing room as other management headings.
 // Body-height accounting consumes this shared token; split rectangles stay put.
 pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
