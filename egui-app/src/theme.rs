@@ -101,6 +101,9 @@ pub const WORKFLOW_AUX_CONTROL_HEIGHT: f32 = ACTION_STANDARD_HEIGHT;
 pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = ACTION_PRIMARY_HEIGHT;
 pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
 pub const WORKFLOW_SUMMARY_LINE_HEIGHT: f32 = 18.0;
+// Workflow details use the same subdued, borderless zebra roles as master lists.
+pub const WORKFLOW_DETAIL_HEADER_BG: Color32 = RAISED;
+pub const WORKFLOW_DETAIL_ALT_BG: Color32 = TABLE_ROW_ALT_BG;
 pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
 pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const BRIGHT: Color32 = Color32::WHITE;
@@ -149,7 +152,9 @@ pub const NESTED_PADDING: f32 = SPACE_12;
 // The 34pt title row still fully accommodates the standard "+ 새 주문"
 // button and other header controls without shortening their labels.
 pub const SECTION_HEADER_HEIGHT: f32 = 34.0;
-pub const SECTION_CONTENT_GAP: f32 = SPACE_4;
+// Reception titles need the same breathing room as other management headings.
+// Body-height accounting consumes this shared token; split rectangles stay put.
+pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 // React recipient detail grid: full-width rows and paired contact cells.
