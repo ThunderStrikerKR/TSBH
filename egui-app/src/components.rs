@@ -845,6 +845,109 @@ pub fn labeled_field(
     }).inner
 }
 
+/// Navigate one recipient from the 34pt section HEADER, never from a
+/// separate row over the recipient fields. Geometry and arrow glyphs follow
+/// Order History's segmented date selector: INPUT fill, 28pt arrow hits,
+/// zero internal spacing, 1pt outline and subtle vertical separators.
+/// The name is a read-only truncated label with the full value on hover.
+pub fn reception_recipient_navigator(
+    ui:&mut Ui,name:&str,index:usize,total:usize
+)->Option<usize>{
+    if total<=1{return None;}
+    let wanted=theme::RECEPTION_RECIPIENT_NAV_WIDTH;
+    let width=ui.available_width().min(wanted).max(0.0);
+    if width<2.0*theme::RECEPTION_RECIPIENT_NAV_ARROW_WIDTH
+        +theme::RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
+        +2.0*theme::FRAME_STROKE_WIDTH
+    {return None;}
+    let height=theme::SECTION_HEADER_HEIGHT;
+    let (outer,_)=ui.allocate_exact_size(
+        Vec2::new(width,height),Sense::hover()
+    );
+    let inner=outer.shrink(theme::FRAME_STROKE_WIDTH);
+    let arrow_width=theme::RECEPTION_RECIPIENT_NAV_ARROW_WIDTH;
+    let count_width=theme::RECEPTION_RECIPIENT_NAV_COUNT_WIDTH;
+    let name_width=(inner.width()-2.0*arrow_width-count_width).max(0.0);
+    let current=index.min(total-1);
+    let mut selected=None;
+    ui.painter().rect_filled(
+        outer,theme::CONTROL_RADIUS as f32,theme::INPUT
+    );
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .id_salt("reception-recipient-nav-header")
+            .max_rect(inner)
+            .layout(Layout::left_to_right(Align::Center)),
+        |segments|{
+            segments.set_width(inner.width());
+            segments.set_height(inner.height());
+            segments.spacing_mut().item_spacing=Vec2::ZERO;
+            let arrow=|row:&mut Ui,direction:ManagementChevronDirection,
+                       enabled:bool,hint:&str|{
+                let response=row.add_enabled(
+                    enabled,
+                    egui::Button::new("")
+                        .fill(theme::INPUT)
+                        .stroke(Stroke::NONE)
+                        .corner_radius(0)
+                        .min_size(Vec2::new(arrow_width,inner.height()))
+                ).on_hover_text(hint);
+                paint_management_chevron_with_color(
+                    &row.painter().with_clip_rect(response.rect),
+                    response.rect.center(),direction,
+                    if enabled{theme::SECONDARY}
+                    else{theme::DISABLED_ACTION_TEXT}
+                );
+                response
+            };
+            let prev=arrow(
+                segments,ManagementChevronDirection::Left,
+                current>0,"이전 수취인"
+            );
+            if prev.clicked(){selected=Some(current-1);}
+            let fallback=format!("수취인 {}",current+1);
+            let display=if name.trim().is_empty(){fallback.as_str()}else{name};
+            let label=segments.add_sized(
+                Vec2::new(name_width,inner.height()),
+                egui::Label::new(typography::body(display))
+                    .truncate().halign(Align::Center)
+            );
+            label.on_hover_text(display);
+            segments.add_sized(
+                Vec2::new(count_width,inner.height()),
+                egui::Label::new(typography::field_label(
+                    &format!("{}/{}",current+1,total)
+                )).halign(Align::Center)
+            );
+            let next=arrow(
+                segments,ManagementChevronDirection::Right,
+                current+1<total,"다음 수취인"
+            );
+            if next.clicked(){selected=Some(current+1);}
+            let borders=[
+                inner.left()+arrow_width,
+                inner.left()+arrow_width+name_width,
+                inner.left()+arrow_width+name_width+count_width
+            ];
+            for x in borders{
+                segments.painter().line_segment(
+                    [
+                        egui::pos2(x,inner.top()+4.0),
+                        egui::pos2(x,inner.bottom()-4.0)
+                    ],
+                    Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+                );
+            }
+        }
+    );
+    ui.painter().rect_stroke(
+        outer.shrink(0.5),theme::CONTROL_RADIUS as f32,
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
+        egui::StrokeKind::Inside
+    );
+    selected
+}
+
 /// Every recipient field shares one 36pt baseline. The two telephone
 /// editors occupy the same FULL-WIDTH row: mobile begins at the same x
 /// coordinate as the other text inputs, and the landline fills the right.
