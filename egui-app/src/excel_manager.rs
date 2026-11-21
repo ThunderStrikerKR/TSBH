@@ -1047,6 +1047,41 @@ mod table_state_tests {
     use super::*;
 
     #[test]
+    fn history_table_has_only_file_actions_and_no_related_order_panel() {
+        // The archive lists files; it does not mutate or navigate orders.
+        // Source-level guard is intentional: this regression was an inline
+        // panel and mutable workflow action, not a data-contract change.
+        let source=include_str!("excel_manager.rs");
+        let start=source.find("let mut history=state.map")
+            .expect("history table must still exist");
+        let end=start+source[start..]
+            .find("}else{\n                let all=!visible.is_empty()")
+            .expect("history branch must end before queue actions");
+        let history=&source[start..end];
+        assert!(history.contains("ExcelTableHeightPolicy::FillCard{card_min_height}"));
+        assert!(history.contains("\"파일 열기\""));
+        assert!(history.contains("\"경로 복사\""));
+        for obsolete in [
+            concat!("관련", " 주문"),
+            concat!("주문", " 상세 보기"),
+            concat!("실제 공장", " 전달 확인"),
+            concat!("전달 전 정정", " / 재출력"),
+            concat!("매장 발송", " 확인"),
+            "history_detail",
+            "pending_confirmation",
+            "LegacyForExpandedDetails",
+        ] {
+            assert!(!history.contains(obsolete),
+                "Excel export history must not expose: {obsolete}");
+        }
+        assert!(!source.contains(concat!("struct Pending", "Confirmation")));
+        assert!(!source.contains(concat!("self.pending", "_confirmation")));
+        // Queue-level details remain a separate, unchanged workflow.
+        assert!(source.contains("ExcelTableHeightPolicy::LegacyForExpandedDetails"));
+        assert!(source.contains("pub fn take_open_order"));
+    }
+
+    #[test]
     fn loading_empty_and_failed_states_never_create_an_inline_footer() {
         // The only output is content for the existing table-body painter.
         assert_eq!(
