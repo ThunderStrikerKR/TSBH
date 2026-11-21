@@ -103,6 +103,55 @@ fn clipboard_sequence() -> Option<u32> {
 #[cfg(not(windows))]
 fn clipboard_sequence() -> Option<u32> { None }
 
+/// Capture the Windows clipboard change counter along with the bytes we
+/// actually imported. If the source changes while reading, do not queue an
+/// ambiguous intake. Other platforms can read but cannot automatically
+/// clear a clipboard without a reliable ownership/change guard.
+pub fn read_with_sequence() -> Result<(ClipboardPayload, Option<u32>), String> {
+    let before=clipboard_sequence();
+    let payload=read()?;
+    let after=clipboard_sequence();
+    if before!=after {
+        return Err("클립보드 내용이 접수 도중 변경되었습니다. 다시 시도해 주세요.".into());
+    }
+    Ok((payload,after))
+}
+
+/// Clear ONLY the clipboard version that was read for the successful
+/// reception. Locking the Windows clipboard makes the comparison and
+/// EmptyClipboard atomic with respect to concurrent clipboard writers.
+/// A new copy, an inaccessible sequence, or a non-Windows platform is never
+/// cleared. The return value means whether this call actually cleared it.
+#[cfg(windows)]
+pub fn clear_if_unchanged(sequence: Option<u32>) -> Result<bool, String> {
+    use std::{ffi::c_void,ptr};
+    unsafe extern "system" {
+        fn OpenClipboard(owner: *mut c_void) -> i32;
+        fn EmptyClipboard() -> i32;
+        fn CloseClipboard() -> i32;
+    }
+    let Some(expected)=sequence else { return Ok(false); };
+    // Opening with no owner is valid when only EmptyClipboard is needed.
+    if unsafe { OpenClipboard(ptr::null_mut()) }==0 {
+        return Err("접수는 저장됐지만 클립보드가 사용 중이어서 비우지 못했습니다.".into());
+    }
+    let current=clipboard_sequence();
+    let result=if current!=Some(expected){
+        Ok(false)
+    }else if unsafe { EmptyClipboard() }==0{
+        Err("접수는 저장됐지만 클립보드를 비우지 못했습니다.".into())
+    }else{
+        Ok(true)
+    };
+    let _=unsafe { CloseClipboard() };
+    result
+}
+
+#[cfg(not(windows))]
+pub fn clear_if_unchanged(_sequence: Option<u32>) -> Result<bool, String> {
+    Ok(false)
+}
+
 pub fn read() -> Result<ClipboardPayload, String> {
     let mut clipboard = Clipboard::new().map_err(|e| format!("클립보드를 열 수 없습니다: {e}"))?;
     if let Ok(text) = clipboard.get_text() {
