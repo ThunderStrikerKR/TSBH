@@ -4,14 +4,14 @@
 
 use std::{collections::HashMap, time::{Duration, Instant}};
 use eframe::egui::{
-    self, Color32, Context, Frame, Id, Pos2, Rect, Response, Sense, Stroke, Vec2,
+    self, Context, Frame, Id, Pos2, Rect, Response, Sense, Stroke, Vec2,
 };
 use crate::{theme, typography};
 
 const NOTICE_ID: &str = "bando-shared-floating-notice";
-const MAX_WIDTH: f32 = 320.0;
-const SCREEN_MARGIN: f32 = 10.0;
-const ANCHOR_GAP: f32 = 9.0;
+const MAX_WIDTH: f32 = theme::FLOATING_NOTICE_MAX_WIDTH;
+const SCREEN_MARGIN: f32 = theme::FLOATING_NOTICE_SCREEN_MARGIN;
+const ANCHOR_GAP: f32 = theme::FLOATING_NOTICE_ANCHOR_GAP;
 const ANCHOR_VALID_FOR: Duration = Duration::from_secs(45);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -292,10 +292,13 @@ pub fn show(ctx: &Context) {
         .movable(false)
         .show(ctx, |ui| {
             Frame::new()
-                .fill(Color32::from_rgb(48, 48, 48))
+                .fill(theme::FLOATING_NOTICE_BG)
                 .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH, theme::BORDER))
                 .corner_radius(theme::CONTROL_RADIUS)
-                .inner_margin(egui::Margin::symmetric(12, 8))
+                .inner_margin(egui::Margin::symmetric(
+                    theme::FLOATING_NOTICE_PADDING_X,
+                    theme::FLOATING_NOTICE_PADDING_Y
+                ))
                 .show(ui, |body| {
                     body.set_max_width((width - 24.0).max(40.0));
                     body.horizontal_wrapped(|line| {
@@ -306,12 +309,12 @@ pub fn show(ctx: &Context) {
                             Tone::Validation => ("!", theme::DANGER),
                             Tone::Error => ("!", theme::DANGER),
                         };
-                        line.label(egui::RichText::new(glyph).size(16.0).color(color));
+                        line.label(egui::RichText::new(glyph).size(theme::FLOATING_NOTICE_ICON_SIZE).color(color));
                         line.add(egui::Label::new(egui::RichText::new(&active.message)
                             .size(typography::FONT_FIELD_LABEL).color(theme::TEXT)).wrap());
                         if active.tone == Tone::Error {
                             close = line.add(egui::Label::new(
-                                egui::RichText::new("×").size(16.0).color(theme::SECONDARY))
+                                egui::RichText::new("×").size(theme::FLOATING_NOTICE_ICON_SIZE).color(theme::SECONDARY))
                                 .sense(Sense::click())).clicked();
                         }
                     });
@@ -322,7 +325,7 @@ pub fn show(ctx: &Context) {
     let rect = layer.response.rect;
     let tail_x = active.at.x.clamp(rect.left() + 14.0, rect.right() - 14.0);
     let painter = ctx.layer_painter(layer.response.layer_id);
-    let fill = Color32::from_rgb(48, 48, 48);
+    let fill = theme::FLOATING_NOTICE_BG;
     let vertices = if above {
         vec![
             Pos2::new(tail_x - 6.0, rect.bottom() - 1.0),
