@@ -1168,12 +1168,32 @@ impl BandoEgui {
         }
         for event in events {
             match event {
-                source_autosave::SaveStatus::Saved(revision) => {
-                    let _ = revision;
-                    self.source_save_error = None;
+                source_autosave::SaveStatus::Saved{revision,active_id,raw}=>{
+                    let _=revision;
+                    self.source_save_error=None;
+                    let saved_import=self.pending_clipboard_clear.as_ref()
+                        .is_some_and(|pending|
+                            active_id.as_deref()==Some(pending.order_id.as_str())
+                            && raw==pending.raw
+                        );
+                    if saved_import{
+                        let pending=self.pending_clipboard_clear.take()
+                            .expect("checked pending clipboard after save");
+                        match clipboard_intake::clear_if_unchanged(pending.sequence){
+                            Ok(true)=>{
+                                // The just-cleared clipboard must immediately
+                                // disable the two reception intake buttons.
+                                self.clipboard_monitor.refresh();
+                            }
+                            Ok(false)=>{} // The user copied something new.
+                            Err(error)=>{self.clipboard_error=Some(error);}
+                        }
+                    }
                 }
                 source_autosave::SaveStatus::Failed(error) => {
-                    self.source_save_error = Some(error);
+                    // The order was NOT stored. Keep the clipboard unchanged.
+                    self.pending_clipboard_clear=None;
+                    self.source_save_error=Some(error);
                 }
             }
         }
