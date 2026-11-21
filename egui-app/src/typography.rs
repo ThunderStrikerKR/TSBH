@@ -333,6 +333,62 @@ pub fn freight_table_cell_galley(
     client_table_galley(ui,text,Role::Body,emphasized,color)
 }
 
+/// Semantic emphasis and contrast for data in management tables.
+///
+/// Normal product names, customer names, quantities and amounts are NOT
+/// bold. Only an explicitly final result (Total) uses the existing real
+/// emphasis font face. Headers and KPI cards keep their own established
+/// emphasis policies. The data font remains the existing 14pt Body face.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManagementTableCellRole {
+    ProductName,
+    ClientName,
+    Option,
+    Quantity,
+    Money,
+    Total,
+    Category,
+    Description,
+    Status,
+    Muted,
+}
+
+impl ManagementTableCellRole {
+    const fn emphasized(self) -> bool {
+        matches!(self, Self::Total)
+    }
+}
+
+pub fn management_table_cell_color(role:ManagementTableCellRole)->Color32 {
+    match role {
+        ManagementTableCellRole::ProductName
+        | ManagementTableCellRole::ClientName
+        | ManagementTableCellRole::Option
+        | ManagementTableCellRole::Money
+        | ManagementTableCellRole::Total => TEXT,
+        ManagementTableCellRole::Quantity
+        | ManagementTableCellRole::Category
+        | ManagementTableCellRole::Description
+        | ManagementTableCellRole::Status => SECONDARY,
+        ManagementTableCellRole::Muted => MUTED,
+    }
+}
+
+pub fn management_table_cell_galley(
+    ui:&egui::Ui,text:&str,role:ManagementTableCellRole
+)->std::sync::Arc<egui::Galley>{
+    client_table_galley(
+        ui,text,Role::Body,role.emphasized(),
+        management_table_cell_color(role)
+    )
+}
+
+/// Existing product-table prices use a numeric face, which must remain
+/// regular even when the monetary field happens to have a high value.
+pub fn management_table_money_font()->FontId {
+    numeric_editor_font()
+}
+
 /// Order-history shipment details use the same table font with true
 /// measured wrapping. The row height is derived from THIS galley, so a long
 /// product list never overlaps the next shipment.
@@ -656,5 +712,37 @@ pub fn install(ctx: &egui::Context) {
     match numeric {
         Some((path, _)) => eprintln!("[BANDO HUB] Numeric face: {path}"),
         None => eprintln!("[BANDO HUB] Numeric face: egui monospace fallback"),
+    }
+}
+
+#[cfg(test)]
+mod management_table_type_roles_tests {
+    use super::*;
+    #[test]
+    fn ordinary_table_data_never_uses_bold_face(){
+        for role in [
+            ManagementTableCellRole::ProductName,
+            ManagementTableCellRole::ClientName,
+            ManagementTableCellRole::Option,
+            ManagementTableCellRole::Quantity,
+            ManagementTableCellRole::Money,
+            ManagementTableCellRole::Category,
+            ManagementTableCellRole::Description,
+            ManagementTableCellRole::Status,
+            ManagementTableCellRole::Muted,
+        ] {
+            assert!(!role.emphasized(),"{role:?} must remain Regular");
+        }
+        assert!(ManagementTableCellRole::Total.emphasized());
+        assert_eq!(spec(Role::Body).size,FONT_BODY);
+        assert_eq!(spec(Role::Body).weight as u8, Weight::Regular as u8);
+    }
+    #[test]
+    fn money_quantity_and_final_total_have_shared_contrast(){
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::Money),TEXT);
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),SECONDARY);
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::Total),TEXT);
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::Category),SECONDARY);
+        assert_eq!(management_table_money_font(),numeric_editor_font());
     }
 }
