@@ -207,49 +207,61 @@ fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,
             .on_hover_text(visible);
     }
 }
-/// Each Excel tab shows one table at a time. Use the full master-card height
-/// unless inline details are expanded; an empty-state caption still needs
-/// a reserved row below its table.
+/// Each Excel tab shows one table at a time. Loading and empty-state text
+/// belongs to the scrollable table BODY, not the search-to-header transition.
+/// Only expanded detail editors may reduce the visible table height.
 #[derive(Clone,Copy)]
 enum ExcelTableHeightPolicy {
-    FillCard { card_min_height:f32, reserve_below:f32 },
+    FillCard { card_min_height:f32 },
     LegacyForExpandedDetails,
+}
+
+/// D-type current table state, deliberately distinct from A/B/C action notices.
+/// A failed load is reported through FloatingNotice, never as "0 results".
+fn table_state_message(
+    tab:Tab, query:&str, count:usize, loading:bool, failed:bool,
+)->Option<&'static str>{
+    if count>0 {return None;}
+    if loading {return Some("Excel 자료를 확인 중입니다.");}
+    if failed {return None;}
+    match tab {
+        Tab::History => Some(if query.is_empty(){
+            "Excel 작성 이력이 없습니다."
+        }else{"검색 조건에 맞는 Excel 작성 이력이 없습니다."}),
+        Tab::Factory | Tab::Store => Some(if query.is_empty(){
+            "발송 대기 건이 없습니다."
+        }else{"검색 조건에 맞는 발송 대기 건이 없습니다."}),
+    }
 }
 fn table<const N:usize>(
     ui:&mut Ui,id:&str,titles:[&str;N],base:[f32;N],
     align:[Align2;N],stretch:usize,rows:usize,
     height_policy:ExcelTableHeightPolicy,
-    direct_toolbar_to_header:bool,
     sort:&mut Option<Sort>,sort_enabled:[bool;N],
     header_selection:Option<(bool,bool)>,
+    empty_message:Option<&str>,
     mut render:impl FnMut(&mut Ui,[Rect;N],usize)
 )->Option<bool>{
     let old_gap=ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y=0.0;
     let minimum=base.iter().sum::<f32>()+(N-1) as f32*GAP;
-    let layout=if direct_toolbar_to_header{
-        // The Excel toolbar is now a master-style allocated rectangle, with
-        // no nested bottom inset. Use the complete shared 16+1+4 transition.
-        components::management_sticky_table_header(ui,minimum)
-    }else{
-        // Status text intervenes between toolbar and header: retain
-        // its original divider and don't add a second 21pt transition.
-        components::management_list_table_header(ui,minimum)
-    };
+    // The toolbar and 36pt header always share the two-master 16+1+4
+    // transition. No status or error line may change their coordinates.
+    let layout=components::management_sticky_table_header(ui,minimum);
     let width=layout.table_width;
     let widths=theme::management_single_stretch_columns(base,width,GAP,stretch);
     let header=layout.header_rect;
     let header_content=layout.header_content_rect;
     let scroll_max_height=match height_policy {
-        ExcelTableHeightPolicy::FillCard{card_min_height,reserve_below}=>
+        ExcelTableHeightPolicy::FillCard{card_min_height}=>
             components::management_single_list_scroll_height(
-                ui,card_min_height,reserve_below
+                ui,card_min_height,0.0
             ),
         ExcelTableHeightPolicy::LegacyForExpandedDetails=>
             ui.ctx().content_rect().height()*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION,
     };
-    // Empty-state notices and expanded detail space remain reserved in
-    // scroll_max_height. Rail extension itself is shared across all tables.
+    // No 36pt empty-state footer: the caption is painted inside the body.
+    // Rail extension still uses the same shared master scroll policy.
     let scroll_track=components::management_table_scroll_track_rect(
         ui,scroll_max_height
     );
@@ -373,6 +385,23 @@ fn table<const N:usize>(
             (id,"select-all")
         ).changed(){
             return Some(checked);
+        }
+    }
+    if let Some(message)=empty_message.filter(|_|rows==0){
+        // D-type status lives in the visible body without reserving even 1pt.
+        // Center inside the DATA viewport (scrollbar gutter excluded), like
+        // Order History, and clip to the actual master card.
+        let data_width=(layout.viewport_width-layout.scrollbar_gutter)
+            .min(scroll_track.width()).max(1.0);
+        let viewport=Rect::from_min_size(scroll_track.min,
+            Vec2::new(data_width,scroll_max_height));
+        let visible=viewport.intersect(ui.clip_rect());
+        if visible.width()>0.0 && visible.height()>0.0 {
+            ui.painter().with_clip_rect(visible).text(
+                visible.center(),Align2::CENTER_CENTER,message,
+                egui::FontId::proportional(typography::FONT_METADATA),
+                theme::MUTED
+            );
         }
     }
     None
@@ -695,15 +724,9 @@ impl ExcelManager{
                     }
                 );
             }
-            // Results and failures are anchored overlays, not rows between the
-            // toolbar and the sticky header. Preserve only the actual busy state.
-            if busy{
-                section.label(typography::caption("Excel 자료를 확인 중입니다."));
-            }
-            let direct_toolbar_to_header=!busy;
-            if !direct_toolbar_to_header{
-                components::soft_divider(section);
-            }
+            // One stable search-to-header transition for loading, empty,
+            // populated and error states. Action notices float independently;
+            // D-type loading/empty captions are drawn in the BODY below.
             let state=self.result.as_ref().map(|r|&r.state);
             let native=self.result.as_ref().map(|r|&r.shipments);
             if self.tab==Tab::History{
@@ -717,20 +740,19 @@ impl ExcelManager{
                 let history_height_policy=if self.history_detail.is_some(){
                     ExcelTableHeightPolicy::LegacyForExpandedDetails
                 }else{
-                    ExcelTableHeightPolicy::FillCard {
-                        card_min_height,
-                        reserve_below:if history.is_empty()&&self.receiver.is_none(){
-                            theme::INPUT_HEIGHT
-                        }else{0.0},
-                    }
+                    ExcelTableHeightPolicy::FillCard{card_min_height}
                 };
+                let empty_message=table_state_message(
+                    self.tab,&self.query,history.len(),self.receiver.is_some(),
+                    self.error.is_some()
+                );
                 let _=table(section,"excel-history-table",
                     ["작성 날짜","작성 건수","파일 / 주문","조회"],
                     HISTORY,[Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
                         Align2::LEFT_CENTER,Align2::CENTER_CENTER],
                     2,indexes.len(),history_height_policy,
-                    direct_toolbar_to_header,&mut self.sort_history,
-                    [true,true,true,false],None,|row,cells,i|{
+                    &mut self.sort_history,
+                    [true,true,true,false],None,empty_message,|row,cells,i|{
                         let entry=&order_list[i];
                         let id=text(entry,"id");
                         cell(row,cells[0],&datetime(text(entry,"at")),
@@ -763,12 +785,6 @@ impl ExcelManager{
                                 }
                             });
                     });
-                if history.is_empty()&&self.receiver.is_none(){
-                    section.add_space(theme::SPACE_8);
-                    section.label(typography::caption(
-                        if self.query.is_empty(){"Excel 작성 이력이 없습니다."}
-                        else{"검색 조건에 맞는 Excel 작성 이력이 없습니다."}));
-                }
                 if let Some(id)=self.history_detail.as_deref(){
                     if let Some(record)=history.iter().find(|r|text(r,"id")==id){
                         section.scope(|details|{
@@ -836,22 +852,21 @@ impl ExcelManager{
                 let queue_height_policy=if self.managed_queue.is_some(){
                     ExcelTableHeightPolicy::LegacyForExpandedDetails
                 }else{
-                    ExcelTableHeightPolicy::FillCard {
-                        card_min_height,
-                        reserve_below:if records.is_empty()&&self.receiver.is_none(){
-                            theme::INPUT_HEIGHT
-                        }else{0.0},
-                    }
+                    ExcelTableHeightPolicy::FillCard{card_min_height}
                 };
+                let empty_message=table_state_message(
+                    self.tab,&self.query,records.len(),self.receiver.is_some(),
+                    self.error.is_some()
+                );
                 let toggle_all=table(section,"excel-queue-table",
                     ["선택","거래처 / 발주","수취인 / 배송 품목","금액","처리"],
                     QUEUE,[Align2::CENTER_CENTER,Align2::LEFT_CENTER,
                         Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
                         Align2::CENTER_CENTER],
                     2,records.len(),queue_height_policy,
-                    direct_toolbar_to_header,&mut self.sort_queue,
+                    &mut self.sort_queue,
                     [false,true,true,true,false],Some((all,!visible.is_empty())),
-                    |row,cells,index|{
+                    empty_message,|row,cells,index|{
                         let entry=&records[index];
                         let id=entry.id().to_owned();
                         let mut checked=self.selected.contains(&id);
@@ -985,14 +1000,6 @@ impl ExcelManager{
                         });
                     }
                 }
-                if records.is_empty()&&self.receiver.is_none(){
-                    section.add_space(theme::SPACE_8);
-                    section.label(typography::caption(
-                        if self.query.is_empty(){"발송 대기 건이 없습니다."}
-                        else{"검색 조건에 맞는 발송 대기 건이 없습니다."}
-                    ));
-                }
-
             }
         });
         if let Some(id)=open_file{
