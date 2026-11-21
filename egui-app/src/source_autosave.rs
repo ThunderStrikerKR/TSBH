@@ -75,14 +75,6 @@ impl SourceAutosave {
                         // Never collect corrections for an unpersisted
                         // reception. This local-only write is separate from
                         // production orders and has no network fallback.
-                        // An OCR sample often arrives before dealer matching.
-                        // Enrich previously saved samples only once the
-                        // employee explicitly selects a verified dealer.
-                        // Keep this off the UI thread and report audit errors
-                        // separately from successful reception storage.
-                        if let Err(error)=PreviewStore::bind_verified_ocr_clients(&source){
-                            let _=updates.send(SaveStatus::FeedbackFailed(error));
-                        }
                         match PreviewStore::append_ocr_feedback(&feedback) {
                             Err(error)=>{
                                 let _=updates.send(SaveStatus::FeedbackFailed(error));
@@ -141,6 +133,13 @@ impl SourceAutosave {
                                 });
                             }
                             Ok(())=>{}
+                        }
+                        // This runs AFTER the append, so even an OCR event
+                        // whose dealer was selected before capture is tagged.
+                        // Future manual client selection updates earlier
+                        // samples by the same unconfirmed receipt ID.
+                        if let Err(error)=PreviewStore::bind_verified_ocr_clients(&source){
+                            let _=updates.send(SaveStatus::FeedbackFailed(error));
                         }
                         SaveStatus::Saved {
                             revision:next,
