@@ -4480,7 +4480,11 @@ impl eframe::App for BandoEgui {
             self.kakao_tracker.refresh();
             ctx.request_repaint_after(Duration::from_millis(450));
             if !self.source_editing && self.raw_source.is_empty() {
+                // Clipboard intake actions are visible only in this state.
+                // Poll the cheap Win32 change counter promptly so clearing
+                // text/image disables both buttons without a stale frame.
                 self.clipboard_monitor.refresh();
+                ctx.request_repaint_after(Duration::from_millis(200));
             }
         }
         if self.analysis_due_at.is_some_and(|at| Instant::now() >= at) {
