@@ -779,20 +779,22 @@ impl ClientManager {
                             self.editor_fields(form,&mut draft);
                         });
                     });
-                components::soft_divider(ui);
-                ui.horizontal(|footer|{
-                    if exists && theme::action(footer,"거래처 삭제",
-                        ButtonRole::Danger,editable && !busy).clicked(){
-                        delete=true;
-                    }
-                    footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                        let label=if exists {"변경사항 저장"}else{"거래처 등록"};
-                        let dirty=self.original.as_ref()
-                            .is_some_and(|old|*old!=draft);
-                        if theme::action(buttons,label,ButtonRole::Primary,
-                            editable && !busy && (!exists || dirty)).clicked(){
-                            save=true;
+                ui.add_space(theme::SPACE_12);
+                components::modal_action_row(ui,|footer|{
+                    footer.with_layout(Layout::left_to_right(Align::Center),|row|{
+                        if exists && theme::action(row,"거래처 삭제",
+                            ButtonRole::Danger,editable && !busy).clicked(){
+                            delete=true;
                         }
+                        row.with_layout(Layout::right_to_left(Align::Center),|buttons|{
+                            let label=if exists {"변경사항 저장"}else{"거래처 등록"};
+                            let dirty=self.original.as_ref()
+                                .is_some_and(|old|*old!=draft);
+                            if theme::action(buttons,label,ButtonRole::Primary,
+                                editable && !busy && (!exists || dirty)).clicked(){
+                                save=true;
+                            }
+                        });
                     });
                 });
             });
