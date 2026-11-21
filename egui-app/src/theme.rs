@@ -592,13 +592,12 @@ pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=0.0;
 /// viewport. This does not alter row clipping or the card's 16pt padding.
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=3.0;
 
-/// The two single-table masters keep the row viewport 16pt above the card
-/// border. The rail should extend only 4pt below the row viewport, leaving
-/// 12pt to the outer border. In the screenshots, a 0pt visual extension
-/// (3pt input) was too short while 8pt (11pt input) was too long.
-/// The shared track geometry subtracts 3pt, so compensate for it here.
-/// Never change the scroll viewport height to alter this rail length.
-pub const MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION:f32=
+/// One bottom extension for EVERY management-table scrollbar. The
+/// 3pt optical shortening is canceled and the rail extends 4pt beyond
+/// the rows' viewport. This applies to full-height and embedded tables;
+/// their viewport height / footer reservation remain independent.
+/// All management tables consume this value via components.rs only.
+pub const MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION:f32=
     MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET+SPACE_4;
 
 pub fn management_scroll_style() -> egui::style::ScrollStyle {
