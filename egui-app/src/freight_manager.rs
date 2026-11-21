@@ -1447,33 +1447,16 @@ impl FreightManager {
                             );
                         }
 
-                        // A checkbox owns exactly one column rectangle; it
-                        // must not be allowed to change subsequent column widths.
-                        // Center the checkbox within the FIRST COLUMN,
-                        // not 4pt from its left edge. Keep one stable
-                        // interactive box centered vertically in the 42pt row.
-                        let check_width=row.spacing().icon_width
-                            +row.spacing().icon_spacing;
-                        let checkbox_rect=egui::Rect::from_center_size(
-                            cells[0].center(),
-                            egui::vec2(check_width,theme::INPUT_HEIGHT)
-                        );
-                        let checkbox_clip=cells[0].intersect(row.clip_rect());
-                        let mut checkbox_builder=egui::UiBuilder::new()
-                            .id_salt(("freight-checkbox",id))
-                            .max_rect(checkbox_rect)
-                            .layout(egui::Layout::left_to_right(egui::Align::Center));
-                        if !enabled {
-                            checkbox_builder=checkbox_builder.disabled();
+                        // Shared centered checkbox: same placement as Excel
+                        // regardless of each table's first-column width.
+                        if components::management_table_checkbox(
+                            row,cells[0],cells[0],&mut checked,enabled,
+                            ("freight-checkbox",id)
+                        ).changed(){
+                            if checked {selected.insert(id.to_owned());}
+                            else {selected.remove(id);}
+                            *bulk_feedback=None;
                         }
-                        row.scope_builder(checkbox_builder,|controls|{
-                            controls.set_clip_rect(checkbox_clip);
-                            if controls.checkbox(&mut checked,"").changed(){
-                                if checked {selected.insert(id.to_owned());}
-                                else {selected.remove(id);}
-                                *bulk_feedback=None;
-                            }
-                        });
 
                         let model=model_label(text(product,"name"));
                         let subtitle=text(product,"subtitle").trim();
@@ -1819,40 +1802,22 @@ impl FreightManager {
             // It replaces the redundant checkbox in the bulk-action toolbar.
             let mut all_filtered=!filtered.is_empty()
                 && filtered.iter().all(|p|selected.contains(text(p,"id")));
-            let header_check_width=section.spacing().icon_width
-                +section.spacing().icon_spacing;
-            let header_check_rect=egui::Rect::from_center_size(
-                egui::pos2(header_cells[0].center().x,header_text_center_y),
-                egui::vec2(
-                    header_check_width,
-                    header_text_rect.height().min(theme::INPUT_HEIGHT)
-                )
-            );
-            let mut header_check_builder=egui::UiBuilder::new()
-                .id_salt("freight-select-all-filtered")
-                .max_rect(header_check_rect)
-                .layout(egui::Layout::left_to_right(egui::Align::Center));
-            if !enabled || filtered.is_empty(){
-                header_check_builder=header_check_builder.disabled();
-            }
-            section.scope_builder(header_check_builder,|header_check|{
-                header_check.set_clip_rect(
-                    header_cells[0].intersect(header_text_rect)
-                );
-                if header_check.checkbox(&mut all_filtered,"")
-                    .on_hover_text("현재 검색·필터 결과 전체 선택 / 해제")
-                    .changed()
-                {
-                    let current_ids: BTreeSet<&str>=filtered.iter()
-                        .map(|p|text(p,"id")).collect();
-                    // Keep selections outside the current filtered list.
-                    selected.retain(|id|!current_ids.contains(id.as_str()));
-                    if all_filtered{
-                        selected.extend(current_ids.into_iter().map(str::to_owned));
-                    }
-                    *bulk_feedback=None;
+            if components::management_table_checkbox(
+                section,header_cells[0],header_text_rect,
+                &mut all_filtered,enabled&&!filtered.is_empty(),
+                "freight-select-all-filtered"
+            ).on_hover_text("현재 검색·필터 결과 전체 선택 / 해제")
+                .changed()
+            {
+                let current_ids: BTreeSet<&str>=filtered.iter()
+                    .map(|p|text(p,"id")).collect();
+                // Keep selections outside the current filtered list.
+                selected.retain(|id|!current_ids.contains(id.as_str()));
+                if all_filtered{
+                    selected.extend(current_ids.into_iter().map(str::to_owned));
                 }
-            });
+                *bulk_feedback=None;
+            }
             // Assignment is persisted immediately from the product selector
             // or the single bulk Apply button above. Do not render a second
             // save footer, a redundant 'reset drafts' action, or guidance text.
