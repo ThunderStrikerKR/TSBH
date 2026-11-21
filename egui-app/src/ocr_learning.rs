@@ -293,6 +293,73 @@ mod tests {
         assert_eq!(suggest("010-1234-5678",&samples).replacements,0);
     }
 
+    fn table_example(id:&str,client:&str,name:[&str;3],
+        phone:(&str,&str),street:(&str,&str),quantity:&str
+    )->OcrLayoutExample{
+        let original=format!(
+            "{}\\n{}\\n{}\\n{}\\n{}\\n{}\\n{}\\n반도\\n뮤직트레이 회색\\n{}\\n메모\\n문 앞에",
+            name[0],name[1],name[2],phone.0,phone.1,
+            street.0,street.1,quantity
+        ).replace("\\\\n","\\n");
+        let corrected=format!(
+            "{}{}{}\\n{}{}\\n{}{}\\n반도 뮤직트레이 회색 {}\\n메모 문 앞에",
+            name[0],name[1],name[2],phone.0,phone.1,
+            street.0,street.1,quantity
+        ).replace("\\\\n","\\n");
+        OcrLayoutExample{
+            order_id:id.into(),client_id:Some(client.into()),
+            original_text:original,corrected_text:corrected,
+        }
+    }
+
+    #[test]
+    fn learns_repeated_table_wrapping_without_changing_any_character(){
+        let examples=[
+            table_example("1","A",["홍","길","동"],("010-1111-","2222"),
+                ("서울특별시 강남구 테","헤란로 3"),"1개"),
+            table_example("2","A",["김","철","수"],("010-2222-","3333"),
+                ("서울특별시 강남구 가","나다로 5"),"2개"),
+            table_example("3","A",["박","영","희"],("010-3333-","4444"),
+                ("서울특별시 강남구 나","다라로 7"),"3개"),
+        ];
+        let incoming=table_example("new","A",["최","민","준"],
+            ("010-4444-","5555"),("서울특별시 강남구 라","마바로 9"),"4개");
+        let (proposed,count)=layout_suggestion(
+            &incoming.original_text,&examples,Some("A")
+        );
+        assert!(count>=6,"expected multiple table wraps to be joined");
+        assert_eq!(proposed,incoming.corrected_text);
+        // Two independent examples are not enough even with an exact shape.
+        assert_eq!(layout_suggestion(
+            &incoming.original_text,&examples[..2],Some("A")
+        ).1,0);
+    }
+
+    #[test]
+    fn never_mix_ambiguous_dealer_templates(){
+        let a=table_example("1","A",["홍","길","동"],("010-1111-","2222"),
+            ("서울특별시 강남구 테","헤란로 3"),"1개");
+        let b=table_example("2","A",["김","철","수"],("010-2222-","3333"),
+            ("서울특별시 강남구 가","나다로 5"),"2개");
+        let c=table_example("3","A",["박","영","희"],("010-3333-","4444"),
+            ("서울특별시 강남구 나","다라로 7"),"3개");
+        let mut cases=vec![a,b,c];
+        for id in 4..=6 {
+            let mut other=table_example(&id.to_string(),"B",
+                ["임","은","진"],("010-5555-","6666"),
+                ("서울특별시 강남구 테","헤란로 3"),"1개");
+            // A second dealer's identical visual layout may have
+            // different column semantics; ambiguity means no proposal.
+            other.corrected_text=other.original_text.clone();
+            cases.push(other);
+        }
+        let incoming=table_example("new","A",["최","민","준"],
+            ("010-4444-","5555"),("서울특별시 강남구 라","마바로 9"),"4개");
+        assert_eq!(layout_suggestion(&incoming.original_text,&cases,None).1,0);
+        assert_eq!(layout_suggestion(&incoming.original_text,&cases,Some("A")).0,
+            incoming.corrected_text);
+    }
+
     #[test]
     fn duplicate_receipts_are_not_training_support(){
         let samples=[
