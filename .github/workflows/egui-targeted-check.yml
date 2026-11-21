@@ -58,6 +58,8 @@ jobs:
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify shared Freight and Excel table-checkbox centered geometry
         run: cargo test --manifest-path egui-app/Cargo.toml components::management_toolbar_geometry_tests::table_checkbox -- --nocapture
+      - name: Verify shared concise product-name table header
+        run: cargo test --manifest-path egui-app/Cargo.toml components::management_toolbar_geometry_tests::product_name_column_header -- --nocapture
       - name: Verify read-only order history date, row expansion and label rules
         run: cargo test --manifest-path egui-app/Cargo.toml order_history_manager::tests -- --nocapture
       - name: Verify daily settlement Seoul date navigation and view-only sort rules
