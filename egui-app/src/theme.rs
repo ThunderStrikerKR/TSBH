@@ -457,8 +457,6 @@ pub const MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH: f32 = 700.0;
 /// Two Excel queue actions occupy one trailing slot of the shared 36pt
 /// management toolbar. Stack below search only in genuinely narrow panes.
 pub const MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH: f32 = 330.0;
-/// Draw the fixed-table header outline *inside* its 36pt rectangle.
-pub const MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT: f32 = 2.0;
 /// Consistent leading inset for text columns in master headers and rows.
 pub const MANAGEMENT_TABLE_TEXT_LEADING_INSET: f32 = 6.0;
 // Existing React TierBadge palette; color is display-only, never a pricing rule.
