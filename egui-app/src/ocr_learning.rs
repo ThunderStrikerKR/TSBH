@@ -124,6 +124,145 @@ pub fn suggest(
     Suggestion{text:current,replacements,patterns}
 }
 
+/// Conservative table-form layout learning, scoped to a verified dealer
+/// or a unique matching dealer-specific form shape. Unlike character typo
+/// suggestions this changes ONLY whitespace between identical OCR characters.
+/// If any pattern is ambiguous, the original line breaks are preserved.
+use crate::preview_store::OcrLayoutExample;
+
+fn nonwhite_layout(text:&str)->(String,Vec<String>){
+    let mut letters=String::new();
+    let mut spaces=vec![String::new()];
+    for ch in text.chars(){
+        if ch.is_whitespace(){
+            spaces.last_mut().expect("initial gap").push(ch);
+        }else{
+            letters.push(ch);
+            spaces.push(String::new());
+        }
+    }
+    (letters,spaces)
+}
+
+/// A low-information morphology signature. No customer names, phone digits
+/// or street names become a template key. It only compares line structure:
+/// short Hangul cells, number cells, mixed address cells, long text cells.
+fn layout_shape(text:&str)->Option<Vec<u8>>{
+    let lines=text.lines().collect::<Vec<_>>();
+    if lines.len()<3 || lines.len()>200 {return None;}
+    Some(lines.into_iter().map(|line|{
+        let contents=line.trim();
+        if contents.is_empty(){return 0}
+        let hangul=contents.chars()
+            .filter(|c|('가'..='힣').contains(c)).count();
+        let digits=contents.chars().filter(char::is_ascii_digit).count();
+        if hangul>0 && digits>0 {3}
+        else if digits>0 {2}
+        else if hangul>0 && contents.chars().count()<=3 {1}
+        else if hangul>0 {4}
+        else {5}
+    }).collect())
+}
+
+fn layout_suggestion(
+    original:&str, examples:&[OcrLayoutExample], known_client:Option<&str>
+)->(String,usize){
+    let Some(signature)=layout_shape(original) else{
+        return (original.to_owned(),0);
+    };
+    let (characters,original_gaps)=nonwhite_layout(original);
+    let lines_to_fix=original_gaps.iter().enumerate()
+        .filter(|(_,gap)|gap.contains('\n'))
+        .map(|(index,_)|index).collect::<Vec<_>>();
+    if lines_to_fix.is_empty(){return (original.to_owned(),0);}
+
+    let mut groups:HashMap<&str,Vec<&OcrLayoutExample>>=HashMap::new();
+    for example in examples {
+        let Some(dealer)=example.client_id.as_deref() else{continue};
+        if known_client.is_some_and(|current|current!=dealer) {
+            continue;
+        }
+        if layout_shape(&example.original_text).as_ref()!=Some(&signature){
+            continue;
+        }
+        let (initial_chars,old_gaps)=nonwhite_layout(&example.original_text);
+        let (corrected_chars,_)=nonwhite_layout(&example.corrected_text);
+        if initial_chars!=corrected_chars ||
+            old_gaps.iter().filter(|gap|gap.contains('\n')).count()
+                !=lines_to_fix.len(){
+            continue;
+        }
+        groups.entry(dealer).or_default().push(example);
+    }
+    // A known dealer always stays within that dealer. Without an assigned
+    // dealer, only ONE independently corroborated template may be used.
+    let mut eligible=groups.into_iter().filter_map(|(_,rows)|{
+        let mut receipts=HashSet::new();
+        let unique=rows.into_iter().filter(|row|
+            receipts.insert(row.order_id.as_str())
+        ).collect::<Vec<_>>();
+        (unique.len()>=MIN_INDEPENDENT_RECEIPTS).then_some(unique)
+    }).collect::<Vec<_>>();
+    if eligible.len()!=1 {
+        return (original.to_owned(),0);
+    }
+    let group=eligible.pop().expect("one cohort");
+    let mut new_gaps=original_gaps.clone();
+    let mut changes=0usize;
+    for (ordinal,index) in lines_to_fix.iter().copied().enumerate(){
+        // An identical structural position must have an identical
+        // correction on at least three independent receipts.
+        let mut votes:HashMap<String,usize>=HashMap::new();
+        let mut total=0usize;
+        for item in &group {
+            let (_,before)=nonwhite_layout(&item.original_text);
+            let (_,after)=nonwhite_layout(&item.corrected_text);
+            let old_idx=before.iter().enumerate()
+                .filter(|(_,gap)|gap.contains('\n'))
+                .nth(ordinal).map(|(index,_)|index);
+            let Some(old_idx)=old_idx else{continue};
+            if before[old_idx]!=original_gaps[index]{continue;}
+            let destination=&after[old_idx];
+            // Only a newline, a space, or a complete join is learnable.
+            if !matches!(destination.as_str(),""|" "|"\n"|"\n\n"){continue;}
+            *votes.entry(destination.clone()).or_default()+=1;
+            total+=1;
+        }
+        if total<MIN_INDEPENDENT_RECEIPTS || votes.len()!=1 {continue;}
+        let (target,support)=votes.into_iter().next().expect("one vote");
+        if support==total && target!=original_gaps[index]{
+            new_gaps[index]=target;
+            changes+=1;
+        }
+    }
+    if changes==0 {return (original.to_owned(),0);}
+    let mut output=String::with_capacity(original.len());
+    let chars=characters.chars().collect::<Vec<_>>();
+    for (i,gap) in new_gaps.iter().enumerate(){
+        output.push_str(gap);
+        if let Some(ch)=chars.get(i){output.push(*ch);}
+    }
+    (output,changes)
+}
+
+/// The experimental checkbox combines two independent proposal families:
+/// dealer/template-specific line layout + existing repeated text corrections.
+/// Both are previews only; employee confirmation still owns the final order.
+pub fn suggest_with_layout(
+    original:&str,
+    spelling_samples:&[(String,String,String,String)],
+    table_samples:&[OcrLayoutExample],
+    known_client:Option<&str>
+)->Suggestion{
+    let (unwrapped,joins)=layout_suggestion(original,table_samples,known_client);
+    let ordinary=suggest(&unwrapped,spelling_samples);
+    Suggestion{
+        text:ordinary.text,
+        replacements:ordinary.replacements+joins,
+        patterns:ordinary.patterns+usize::from(joins>0),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
