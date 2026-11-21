@@ -240,18 +240,10 @@ fn table<const N:usize>(
         ExcelTableHeightPolicy::LegacyForExpandedDetails=>
             ui.ctx().content_rect().height()*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION,
     };
-    // Queue has its export footer below; expanded details and capped
-    // reports retain their own space. A full-card history without trailing
-    // content can use the List rail role; the common helper owns its extent.
-    let rail_role=match height_policy{
-        ExcelTableHeightPolicy::FillCard{reserve_below,..}=>
-            components::ManagementTableScrollRole::List{
-                content_below:reserve_below>0.0
-            },
-        _=>components::ManagementTableScrollRole::Embedded,
-    };
+    // Queue footers and expanded detail space remain reserved in
+    // scroll_max_height. Rail extension itself is shared across all tables.
     let scroll_track=components::management_table_scroll_track_rect(
-        ui,scroll_max_height,rail_role
+        ui,scroll_max_height
     );
     let mut left=None;
     let output=components::virtual_fixed_rows(
