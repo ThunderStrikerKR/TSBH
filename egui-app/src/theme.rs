@@ -38,6 +38,13 @@ pub const FLOATING_NOTICE_ANCHOR_GAP: f32 = SPACE_8;
 pub const FLOATING_NOTICE_PADDING_X: i8 = 12;
 pub const FLOATING_NOTICE_PADDING_Y: i8 = 8;
 pub const FLOATING_NOTICE_ICON_SIZE: f32 = 16.0;
+pub const FLOATING_NOTICE_TEXT_SIZE: f32 = typography::FONT_FIELD_LABEL;
+pub const FLOATING_NOTICE_CLOSE_HIT_SIZE: f32 = 20.0;
+pub const FLOATING_NOTICE_POINTER_HALF_WIDTH: f32 = 6.0;
+pub const FLOATING_NOTICE_POINTER_HEIGHT: f32 = 7.0;
+pub const FLOATING_NOTICE_SHADOW_OFFSET: [i8;2] = [0,3];
+pub const FLOATING_NOTICE_SHADOW_BLUR: u8 = 8;
+pub const FLOATING_NOTICE_SHADOW_ALPHA: u8 = 80;
 pub const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
 pub const DIVIDER: Color32 = Color32::from_rgb(63, 63, 63);
 // Stronger than the normal 1pt row divider so fixed table headers have a
