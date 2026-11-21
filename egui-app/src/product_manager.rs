@@ -1552,27 +1552,29 @@ impl ProductManager {
                         }
                     });
                 modal.add_space(theme::SPACE_12);
-                modal.horizontal(|footer|{
-                    if !is_new && theme::action(
-                        footer,"상품 삭제",theme::ButtonRole::Danger,
-                        editable&&!busy
-                    ).clicked(){
-                        request_archive=true;
-                    }
-                    footer.with_layout(Layout::right_to_left(Align::Center),|right|{
-                        let price_changed=prices.iter().any(|(tier,raw)|{
-                            let before=original["variants"].as_array()
-                                .and_then(|v|v.first())
-                                .and_then(|v|v.get(tier))
-                                .and_then(Value::as_i64)
-                                .map(|n|n.to_string()).unwrap_or_default();
-                            raw.trim().replace(',', "")!=before
+                components::modal_action_row(modal,|footer|{
+                    footer.with_layout(Layout::left_to_right(Align::Center),|row|{
+                        if !is_new && theme::action(
+                            row,"상품 삭제",theme::ButtonRole::Danger,
+                            editable&&!busy
+                        ).clicked(){
+                            request_archive=true;
+                        }
+                        row.with_layout(Layout::right_to_left(Align::Center),|right|{
+                            let price_changed=prices.iter().any(|(tier,raw)|{
+                                let before=original["variants"].as_array()
+                                    .and_then(|v|v.first())
+                                    .and_then(|v|v.get(tier))
+                                    .and_then(Value::as_i64)
+                                    .map(|n|n.to_string()).unwrap_or_default();
+                                raw.trim().replace(',', "")!=before
+                            });
+                            if theme::action(right,"변경사항 저장",
+                                theme::ButtonRole::Primary,
+                                editable&&!busy&&
+                                    (is_new || draft!=original || price_changed)
+                            ).clicked(){request_save=true;}
                         });
-                        if theme::action(right,"변경사항 저장",
-                            theme::ButtonRole::Primary,
-                            editable&&!busy&&
-                                (is_new || draft!=original || price_changed)
-                        ).clicked(){request_save=true;}
                     });
                 });
             });
