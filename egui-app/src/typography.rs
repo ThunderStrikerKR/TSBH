@@ -39,13 +39,13 @@ pub const FONT_STANDARD_ACTION: f32 = 13.0;
 /// Keep this shared: date-basis, product-filter and freight-group selectors
 /// must not acquire separate screen-local Y corrections.
 pub const MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y: f32 = 2.0;
-/// Date TextEdit ink sits about 1.5 logical px below the control's center
-/// with the 14pt Body face in Windows screenshots. Keep this compensation
-/// separate from the date control Rects and other management text roles.
-pub const MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y: i8 = -2;
+/// Date TextEdit optical centering: the original ink appeared too low, while
+/// the full -2pt correction appeared too high in subsequent Windows captures.
+/// Use the midpoint -1pt without moving control or table rectangles.
+pub const MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y: i8 = -1;
 
-/// Preserve 2pt total-per-side vertical padding, but shift the editable
-/// text area's center upward 2pt. Unlike painting text over a TextEdit,
+/// Preserve 2pt average vertical padding, but shift the editable
+/// text area's center upward 1pt. Unlike painting text over a TextEdit,
 /// this moves the selection cursor and placeholder with the typed text.
 pub fn management_date_text_margin() -> egui::Margin {
     const BASE: i8 = 2;
