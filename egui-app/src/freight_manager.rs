@@ -1357,7 +1357,8 @@ impl FreightManager {
             // allocation from the single master specification in theme.rs.
             let widths=theme::FREIGHT_ASSIGNMENT_MASTER_TABLE.widths_for(table_width);
             let titles=[
-                "","상품명 / 상품설명","색상/옵션","카테고리",
+                "",components::ManagementTableColumnLabel::ProductName.text(),
+                "색상/옵션","카테고리",
                 "배송 그룹","설정"
             ];
             // Preserve the row viewport and card's full 16pt lower inset.
