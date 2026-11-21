@@ -2057,7 +2057,7 @@ impl BandoEgui {
                 },
             );
             ui.add_space(theme::SECTION_CONTENT_GAP);
-            components::soft_divider(ui);
+            components::reception_section_divider(ui);
             ui.add_space(theme::SPACE_4);
             ui.scope(|body| {
                 body.spacing_mut().item_spacing.y = body_item_spacing;
@@ -2975,11 +2975,8 @@ impl BandoEgui {
                         },
                     );
                 }
-                body.add_space(theme::SPACE_8);
-                components::paired_actions(body,
-                    ("그대로 복사",ButtonRole::Standard,false),
-                    ("인사말 포함 복사",ButtonRole::Standard,false)
-                );
+                components::reception_message_footer_gap(body);
+                components::reception_message_copy_actions(body);
             });
             return;
         }
@@ -3014,12 +3011,8 @@ impl BandoEgui {
                 Sense::hover(),
             );
             components::paint_source_document_surface(ui, field_rect);
-            ui.add_space(theme::SPACE_8);
-            components::paired_actions(
-                ui,
-                ("그대로 복사", ButtonRole::Standard, false),
-                ("인사말 포함 복사", ButtonRole::Standard, false),
-            );
+            components::reception_message_footer_gap(ui);
+            components::reception_message_copy_actions(ui);
         });
     }
 
@@ -3108,7 +3101,7 @@ impl BandoEgui {
                             .id_salt(("native-workflow-issues",group.id.as_str()))
                             .show(ui,|issues|{
                                 for issue in &group.issues{
-                                    issues.label(typography::status(issue,theme::SELECTED_ORDER));
+                                    components::reception_review_status(issues,issue);
                                 }
                             });
                     });
@@ -3300,10 +3293,9 @@ impl BandoEgui {
                             .is_some_and(|pending|
                                 self.active_id.as_deref()==Some(pending.order_id.as_str()));
                         if analysis.directory_count == 0 {
-                            ui.label(typography::status(
-                                "거래처 명단 미연결 · 자동 매칭 확인 필요",
-                                theme::SELECTED_ORDER,
-                            ));
+                            components::reception_review_status(
+                                ui,"거래처 명단 미연결 · 자동 매칭 확인 필요"
+                            );
                         } else if manually_selected {
                             if let Some(name) = &analysis.chosen_client_name {
                                 ui.label(typography::body(
@@ -3317,11 +3309,10 @@ impl BandoEgui {
                                 ));
                             }
                         } else {
-                            ui.label(typography::status(
-                                if matching_pending {"거래처 확인 중"}
-                                else {"거래처 확인 필요"},
-                                theme::SELECTED_ORDER,
-                            ));
+                            components::reception_review_status(
+                                ui,if matching_pending {"거래처 확인 중"}
+                                else {"거래처 확인 필요"}
+                            );
                         }
                         if !analysis.client_candidates.is_empty() {
                             ui.label(typography::caption("거래처 후보 선택"));
@@ -3341,10 +3332,9 @@ impl BandoEgui {
                             .and_then(serde_json::Value::as_array)
                             .map(Vec::len).unwrap_or(0);
                         if unidentified > 0 || candidates > 0 {
-                            ui.label(typography::status(
-                                &format!("미분류 {unidentified}건 · 확인 후보 {candidates}건"),
-                                theme::SELECTED_ORDER,
-                            ));
+                            components::reception_review_status(
+                                ui,&format!("미분류 {unidentified}건 · 확인 후보 {candidates}건")
+                            );
                         }
                         let issue_count: usize = reception_service::recipients(analysis).iter()
                             .flat_map(|recipient| recipient.get("items")
@@ -3355,10 +3345,9 @@ impl BandoEgui {
                                 .map(Vec::len).unwrap_or(0))
                             .sum();
                         if issue_count > 0 {
-                            ui.label(typography::status(
-                                &format!("상품 확인 {issue_count}건"),
-                                theme::SELECTED_ORDER,
-                            ));
+                            components::reception_review_status(
+                                ui,&format!("상품 확인 {issue_count}건")
+                            );
                         }
                     }
                         });
