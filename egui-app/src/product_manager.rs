@@ -1043,8 +1043,10 @@ impl ProductManager {
                                                             let response=components::money_field(
                                                                 inputs,&mut entry.input,true
                                                             );
-                                                            crate::floating_notice::input(
-                                                                inputs.ctx(),"products.price",&response
+                                                            crate::floating_notice::sized_text_caret(
+                                                                inputs,"products.price",&response,
+                                                                &entry.input,typography::numeric_editor_font(),
+                                                                false,8.0
                                                             );
                                                             let enter=response.lost_focus() &&
                                                                 inputs.input(|i|
