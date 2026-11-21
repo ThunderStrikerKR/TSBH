@@ -775,7 +775,7 @@ fn valid_date_input(value:&str)->bool{
     value.is_empty()||NaiveDate::parse_from_str(value,"%Y-%m-%d")
         .is_ok_and(|day|day.format("%Y-%m-%d").to_string()==value)
 }
-fn date_range_error(from:&str,to:&str)->Option<&'static str>{
+pub(crate) fn date_range_error(from:&str,to:&str)->Option<&'static str>{
     if !valid_date_input(from)||!valid_date_input(to){
         return Some("검색 날짜는 YYYY-MM-DD 형식으로 입력하세요.");
     }
@@ -971,6 +971,88 @@ fn history_date_range_end(
     }
     changed
 }
+/// Excel export history reuses the approved Order History calendar,
+/// date field, chevrons, date separator and all-dates action. Unlike order
+/// history it has only one date basis: the Excel file's creation date.
+pub(crate) const EXCEL_EXPORT_DATE_CONTROLS_WIDTH:f32=536.0;
+
+pub(crate) fn excel_export_date_controls(
+    ui:&mut Ui,from:&mut String,to:&mut String,
+    from_month:&mut NaiveDate,to_month:&mut NaiveDate,compact:bool
+)->bool{
+    let mut changed=false;
+    ui.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
+    let inner_height=theme::INPUT_HEIGHT;
+    if compact {
+        // Below 536pt use two right-aligned rows with a common 8pt gap.
+        // No controls are clipped, even when the search itself wraps.
+        let width=ui.available_width().max(1.0);
+        let (outer,_)=ui.allocate_exact_size(
+            Vec2::new(width,inner_height*2.0+theme::SPACE_8),Sense::hover()
+        );
+        let first=Rect::from_min_size(
+            egui::pos2(outer.right()-width,outer.top()),
+            Vec2::new(width,inner_height)
+        );
+        let second=Rect::from_min_size(
+            egui::pos2(outer.right()-width,
+                outer.top()+inner_height+theme::SPACE_8),
+            Vec2::new(width,inner_height)
+        );
+        ui.scope_builder(UiBuilder::new().id_salt("excel-export-from-line")
+            .max_rect(first)
+            .layout(egui::Layout::left_to_right(Align::Center)
+                .with_main_align(Align::Max)),|line|{
+                line.set_width(first.width());
+                line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
+                changed|=range_date_picker_rtl(line,"시작일",from,from_month,
+                    "excel-export-from-calendar");
+            });
+        ui.scope_builder(UiBuilder::new().id_salt("excel-export-to-line")
+            .max_rect(second)
+            .layout(egui::Layout::left_to_right(Align::Center)
+                .with_main_align(Align::Max)),|line|{
+                line.set_width(second.width());
+                line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
+                changed|=excel_export_date_end(line,from,to,to_month);
+            });
+    }else{
+        changed|=range_date_picker_rtl(
+            ui,"시작일",from,from_month,"excel-export-from-calendar");
+        changed|=excel_export_date_end(ui,from,to,to_month);
+    }
+    if changed{
+        if let Ok(day)=NaiveDate::parse_from_str(from,"%Y-%m-%d"){
+            *from_month=month_start(day);
+        }
+        if let Ok(day)=NaiveDate::parse_from_str(to,"%Y-%m-%d"){
+            *to_month=month_start(day);
+        }
+    }
+    changed
+}
+
+fn excel_export_date_end(
+    ui:&mut Ui,from:&mut String,to:&mut String,to_month:&mut NaiveDate
+)->bool{
+    let (separator,_)=ui.allocate_exact_size(
+        Vec2::new(theme::MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH,
+            theme::INPUT_HEIGHT),Sense::hover()
+    );
+    ui.painter().text(
+        separator.center(),Align2::CENTER_CENTER,"~",
+        egui::FontId::proportional(typography::FONT_METADATA),theme::MUTED
+    );
+    let mut changed=range_date_picker_rtl(
+        ui,"종료일",to,to_month,"excel-export-to-calendar"
+    );
+    if theme::action(ui,"전체 날짜",theme::ButtonRole::Standard,
+        !from.is_empty()||!to.is_empty()).clicked(){
+        from.clear();to.clear();changed=true;
+    }
+    changed
+}
+
 /// The date toolbar is drawn in a fixed LTR slot, positioned at the
 /// right-hand data-column edge by the page. Compact mode reserves
 /// two physical lines; it does not reverse the children in either line.
