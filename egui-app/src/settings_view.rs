@@ -197,6 +197,7 @@ impl SettingsView{
         gateway:Arc<dyn BandoGateway>,ctx:Context
     ){
         if self.data_request.is_some(){return;}
+        crate::floating_notice::dispatch_pointer(&ctx,"settings.action");
         let (tx,rx)=mpsc::channel();
         self.data_request=Some((operation.to_owned(),rx));
         self.error=None;
@@ -357,6 +358,7 @@ impl SettingsView{
             }
             return;
         }
+        crate::floating_notice::dispatch_pointer(&ctx,"settings.action");
         let (tx,rx)=mpsc::channel();
         self.saving=Some((kind,rx));
         self.error=None;
@@ -463,6 +465,14 @@ impl SettingsView{
     pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
         let page_origin_y=ui.cursor().top();
         self.poll(ui.ctx(),Arc::clone(&gateway));
+        crate::floating_notice::sync(
+            ui.ctx(),"settings.result","settings.action",
+            crate::floating_notice::Tone::Success,self.notice.as_deref()
+        );
+        crate::floating_notice::sync(
+            ui.ctx(),"settings.error","settings.action",
+            crate::floating_notice::Tone::Error,self.error.as_deref()
+        );
         components::management_page_title_top_gap(ui);
         components::management_top_content(ui,|top|{
             top.label(typography::page_heading("설정"));
