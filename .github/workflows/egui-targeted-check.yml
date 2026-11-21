@@ -29,6 +29,7 @@ on:
       - src-tauri/src/business_core/catalog_clients/model_groups.rs
       - egui-app/src/catalog_query_bridge.rs
       - egui-app/src/theme.rs
+      - egui-app/src/components.rs
       - crates/bando-data-access/**
       - src-tauri/src/business_core/catalog_clients/categories.rs
       - src-tauri/src/egui_shipping_bridge.rs
@@ -55,6 +56,8 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify shared Freight and Excel table-checkbox centered geometry
+        run: cargo test --manifest-path egui-app/Cargo.toml components::management_toolbar_geometry_tests::table_checkbox -- --nocapture
       - name: Verify read-only order history date, row expansion and label rules
         run: cargo test --manifest-path egui-app/Cargo.toml order_history_manager::tests -- --nocapture
       - name: Verify daily settlement Seoul date navigation and view-only sort rules
