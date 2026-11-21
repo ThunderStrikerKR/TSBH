@@ -1643,10 +1643,29 @@ impl BandoEgui {
                             original.label(
                                 typography::subsection_heading("원본 이미지")
                             );
-                            original.add(
-                                egui::Slider::new(&mut review.zoom,0.5..=4.0)
-                                    .text("확대 배율 · 마우스 휠")
-                            );
+                            // The built-in Slider value editor changes
+                            // its measured width as decimal digits change.
+                            // Keep slider, readout and hint in separately
+                            // sized slots so wheel zoom cannot shift labels.
+                            original.horizontal(|controls|{
+                                controls.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                controls.add_sized(
+                                    Vec2::new(118.0,theme::ACTION_STANDARD_HEIGHT),
+                                    egui::Slider::new(&mut review.zoom,0.5..=4.0)
+                                        .show_value(false),
+                                );
+                                controls.add_sized(
+                                    Vec2::new(70.0,theme::ACTION_STANDARD_HEIGHT),
+                                    egui::Label::new(
+                                        egui::RichText::new(format!(
+                                            "{:>5.0}%",review.zoom*100.0
+                                        )).monospace()
+                                    ),
+                                );
+                                controls.label(typography::caption(
+                                    "확대 배율 · 마우스 휠"
+                                ));
+                            });
                             let viewport_clip=image_view_rect.intersect(original.clip_rect());
                             original.scope_builder(
                                 UiBuilder::new().id_salt("ocr-image-fixed-viewport")
