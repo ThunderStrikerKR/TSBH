@@ -905,13 +905,19 @@ pub fn management_sticky_table_header(
 pub fn management_sticky_table_header_after_inset(
     ui:&mut Ui,min_table_width:f32,consumed_bottom_inset:f32
 )->ManagementTableHeader{
-    debug_assert!(consumed_bottom_inset>=0.0
-        && consumed_bottom_inset<=theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP,
-        "toolbar bottom inset must fit inside the standard top gap");
     management_sticky_table_header_with_top_gap(
         ui,min_table_width,
-        (theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP-consumed_bottom_inset).max(0.0)
+        management_remaining_predivider_gap(consumed_bottom_inset)
     )
+}
+
+/// Pure SSOT conversion: the frame's existing bottom inset is part of the
+/// 16pt pre-divider whitespace, not space to add on top of it.
+fn management_remaining_predivider_gap(consumed_bottom_inset:f32)->f32{
+    debug_assert!(consumed_bottom_inset.is_finite()&&consumed_bottom_inset>=0.0
+        && consumed_bottom_inset<=theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP,
+        "toolbar bottom inset must fit inside the standard top gap");
+    (theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP-consumed_bottom_inset).max(0.0)
 }
 
 fn management_sticky_table_header_with_top_gap(
@@ -1809,8 +1815,10 @@ mod management_toolbar_geometry_tests {
         let bottom=theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP;
         assert_eq!(top+rule+bottom,21.0);
         let existing_toolbar_inset=theme::SPACE_8;
-        assert_eq!(existing_toolbar_inset
-            +(top-existing_toolbar_inset)+rule+bottom,21.0);
+        let remaining=management_remaining_predivider_gap(existing_toolbar_inset);
+        assert_eq!(remaining,8.0);
+        assert_eq!(existing_toolbar_inset+remaining+rule+bottom,21.0);
+        assert_eq!(management_remaining_predivider_gap(0.0),16.0);
     }
 
     #[test]
