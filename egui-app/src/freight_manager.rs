@@ -1367,22 +1367,31 @@ impl FreightManager {
             // still begin immediately below the 36pt sticky header.
             // This replaces the former 3pt paint-over hack, so the handle's
             // visual bounds and mouse hit bounds agree at every DPI.
-            // Use the PRIMARY CARD's actual remaining inner height after
-            // toolbar, 9pt separator and fixed 36pt header. A global 60vh
-            // limit left an artificial strip of empty card below the list.
-            // This does not expand the outer card or move the page heading.
+            // Keep ROWS inside the card's existing 16pt content padding.
+            // The scroll bar, however, belongs to the entire card edge:
+            // previously its track ended at the padded content bottom,
+            // leaving a conspicuous 16pt gap above the card's lower rule.
+            // Extend only the independent scroll-bar rect into that bottom
+            // padding. Do not grow ScrollArea::max_height or move the
+            // bottom border; that would merely move the gap elsewhere.
             let card_inner_bottom=section.min_rect().top()+card_min_height;
             let scroll_max_height=(card_inner_bottom-section.cursor().top())
                 .max(theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
             let scroll_area_bounds=section.available_rect_before_wrap();
-            let scroll_track_bottom=(scroll_area_bounds.top()+scroll_max_height)
+            let scroll_rows_bottom=(scroll_area_bounds.top()+scroll_max_height)
                 .min(scroll_area_bounds.bottom());
+            // Inside the 1pt outer stroke of section_frame(). The explicit
+            // 3pt top inset is independent and must not shorten the bottom.
+            let scroll_track_bottom=scroll_rows_bottom+theme::SECTION_PADDING;
             let scroll_track_top=(scroll_area_bounds.top()+3.0)
                 .min(scroll_track_bottom-1.0);
             let scroll_track=egui::Rect::from_min_max(
                 egui::pos2(scroll_area_bounds.left(),scroll_track_top),
                 egui::pos2(scroll_area_bounds.right(),scroll_track_bottom),
             );
+            debug_assert!((scroll_track.bottom()-scroll_rows_bottom
+                -theme::SECTION_PADDING).abs()<0.01,
+                "freight scrollbar must reach the card bottom padding edge");
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
