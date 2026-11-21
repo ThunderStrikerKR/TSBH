@@ -366,12 +366,12 @@ fn table<const N:usize>(
     );
     if let Some((all,enabled))=header_selection{
         let mut checked=all;
-        let rect=heads[0].shrink2(Vec2::new(theme::SPACE_8,theme::SPACE_4))
-            .intersect(header_text_rect);
-        let response=ui.add_enabled_ui(enabled,|controls|
-            controls.put(rect,egui::Checkbox::without_text(&mut checked))
-        ).inner;
-        if response.clicked(){return Some(checked)}
+        if components::management_table_checkbox(
+            ui,heads[0],header_text_rect,&mut checked,enabled,
+            (id,"select-all")
+        ).changed(){
+            return Some(checked);
+        }
     }
     None
 }
@@ -852,15 +852,11 @@ impl ExcelManager{
                         let id=entry.id().to_owned();
                         let mut checked=self.selected.contains(&id);
                         let selectable=!entry.legacy;
-                        let checked_response=row.add_enabled_ui(selectable,|control|{
-                            control.put(
-                                cells[0].shrink2(Vec2::new(
-                                    theme::SPACE_8,theme::SPACE_4
-                                )),
-                                egui::Checkbox::without_text(&mut checked)
-                            )
-                        }).inner;
-                        if checked_response.clicked() && selectable{
+                        let checked_response=components::management_table_checkbox(
+                            row,cells[0],cells[0],&mut checked,selectable,
+                            ("excel-queue-checkbox",id.clone())
+                        );
+                        if checked_response.changed() && selectable{
                             if checked{self.selected.insert(id.clone());}
                             else{self.selected.remove(&id);}
                         }
