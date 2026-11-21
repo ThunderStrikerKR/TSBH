@@ -77,7 +77,7 @@ impl FreightSort {
 // Group management reuses the assignment table's 3-step sort interaction.
 // Sorting changes presentation only, not the stored order of shipping groups.
 #[derive(Clone,Copy,PartialEq,Eq)]
-enum RateSortColumn { Group, Bundle, Status }
+enum RateSortColumn { Group, Bundle }
 
 #[derive(Clone,Copy,PartialEq,Eq)]
 struct RateSort {
@@ -89,7 +89,6 @@ impl RateSort {
         match index {
             0=>Some(RateSortColumn::Group),
             1=>Some(RateSortColumn::Bundle),
-            3=>Some(RateSortColumn::Status),
             _=>None,
         }
     }
@@ -169,9 +168,9 @@ fn text<'a>(row: &'a Value, key: &str) -> &'a str {
 }
 /// Shared geometry for header and item rows. Each label/control uses this
 /// exact column rectangle; no intrinsic egui Grid sizing can shift a column.
-fn freight_table_cells(
-    origin: egui::Pos2, widths: &[f32;6], height:f32
-) -> [egui::Rect;6] {
+fn freight_table_cells<const N:usize>(
+    origin: egui::Pos2, widths: &[f32;N], height:f32
+) -> [egui::Rect;N] {
     let mut x=origin.x;
     std::array::from_fn(|index|{
         let cell=egui::Rect::from_min_size(
@@ -286,13 +285,7 @@ fn as_fee(value: &Value) -> String {
     value.as_i64().map(components::display_won)
         .unwrap_or_else(|| "미등록".to_owned())
 }
-fn group_rate_registered(rule:&Value)->bool{
-    rule["perItem"].as_i64().is_some() ||
-        rule["fees"].as_object().is_some_and(|fees|
-            fees.values().any(Value::is_number))
-}
-
-// Text, numeric, status and metadata share one fixed-height cell geometry.
+ // Text, numeric, status and metadata share one fixed-height cell geometry.
 fn freight_rate_cell(
     ui:&mut Ui,rect:egui::Rect,value:&str,align:egui::Align2,
     role:typography::ManagementTableCellRole,id:impl std::hash::Hash
@@ -1968,12 +1961,11 @@ impl FreightManager {
             let table_width=rate_layout.table_width;
             let widths=theme::management_weighted_columns(
                 theme::FREIGHT_RATE_COL_WIDTHS,
-                [0.40,0.0,0.20,0.0,0.40,0.0],
+                [0.0,0.0,1.0,0.0],
                 table_width,theme::FREIGHT_ASSIGNMENT_COL_GAP
             );
             let titles=[
-                "배송 그룹","최대 묶음 수량","수량별 배송비",
-                "운임 상태","참고 메모 / 최근 수정","관리"
+                "배송 그룹","최대 묶음 수량","수량별 배송비","관리"
             ];
             let mut ordered=Self::filtered_rate_groups(groups,search);
             if let Some(active)=*sort {
@@ -1983,9 +1975,6 @@ impl FreightManager {
                         RateSortColumn::Bundle=>group["current"]["maxBundle"]
                             .as_i64().filter(|_|group["current"]["maxConfirmed"]==true)
                             .map(|n|format!("{n:012}")).unwrap_or_default(),
-                        RateSortColumn::Status=>if group_rate_registered(&group["current"]){
-                            "1".to_owned()
-                        }else{"0".to_owned()},
                     };
                     (key,text(group,"id").to_owned())
                 });
@@ -2072,24 +2061,10 @@ impl FreightManager {
                                     row,cells[2],&fees,egui::Align2::LEFT_CENTER,
                                     typography::ManagementTableCellRole::Money,(id,2)
                                 );
-                                freight_rate_cell(
-                                    row,cells[3],
-                                    if group_rate_registered(current){"등록"}else{"미등록"},
-                                    egui::Align2::CENTER_CENTER,typography::ManagementTableCellRole::Status,(id,3)
-                                );
-                                let note=text(current,"notes");
-                                let date=text(current,"at").split('T').next().unwrap_or("");
-                                let metadata=match (note.is_empty(),date.is_empty()){
-                                    (true,true)=>"-".to_owned(),
-                                    (true,false)=>date.to_owned(),
-                                    (false,true)=>note.to_owned(),
-                                    (false,false)=>format!("{note} · {date}"),
-                                };
-                                freight_rate_cell(
-                                    row,cells[4],&metadata,egui::Align2::LEFT_CENTER,
-                                    typography::ManagementTableCellRole::Description,(id,4)
-                                );
-                                let rect=cells[5].shrink2(egui::vec2(6.0,0.0));
+                                // Group operations are one compact trigger.
+                                // The popup is an independent overlay and never
+                                // changes the virtualized row or scrollbar height.
+                                let rect=cells[3].shrink2(egui::vec2(6.0,0.0));
                                 row.scope_builder(
                                     egui::UiBuilder::new()
                                         .id_salt(("freight-rate-actions",id))
@@ -2099,46 +2074,66 @@ impl FreightManager {
                                         ).with_main_align(egui::Align::Center)),
                                     |buttons|{
                                         buttons.set_clip_rect(
-                                            cells[5].intersect(row_rect)
+                                            cells[3].intersect(row_rect)
                                         );
                                         buttons.set_width(rect.width());
                                         buttons.set_height(rect.height());
-                                        buttons.spacing_mut().item_spacing.x=
-                                            theme::SPACE_8;
-                                        if theme::action(
-                                            buttons,"운임 수정",
+                                        let trigger=theme::action(
+                                            buttons,"관리",
                                             theme::ButtonRole::TableSecondary,enabled
-                                        ).clicked(){
-                                            match group_rules.get(id)
-                                                .filter(|rule|rule.is_object()){
-                                                Some(rule)=>*editor=Some(
-                                                    RateEditor::new(
-                                                        id,text(group,"name"),rule
-                                                    )
-                                                ),
-                                                None=>*error=Some(
-                                                    "그룹 운임 기준을 읽지 못했습니다. 새로고침 후 확인하세요.".into()
-                                                ),
-                                            }
-                                        }
-                                        if theme::action(
-                                            buttons,"기준 변경",
-                                            theme::ButtonRole::TableSecondary,enabled
-                                        ).clicked(){*basis=Some(Some(id.to_owned()));}
-                                        if theme::action(
-                                            buttons,"이름 수정",
-                                            theme::ButtonRole::TableSecondary,enabled
-                                        ).clicked(){
-                                            *rename_target=Some((
-                                                id.to_owned(),text(group,"name").to_owned()
-                                            ));
-                                        }
-                                        if theme::action(
-                                            buttons,"삭제",theme::ButtonRole::Danger,enabled
-                                        ).clicked(){*delete_target=Some(id.to_owned());}
+                                        ).on_hover_text("운임 수정 · 기준 변경 · 이름 수정 · 삭제");
+                                        egui::Popup::menu(&trigger)
+                                            .close_behavior(
+                                                egui::PopupCloseBehavior::CloseOnClickOutside
+                                            )
+                                            .show(|menu|{
+                                                menu.set_min_width(148.0);
+                                                menu.spacing_mut().item_spacing.y=
+                                                    theme::SPACE_4;
+                                                if theme::action_full_width(
+                                                    menu,"운임 수정",
+                                                    theme::ButtonRole::TableSecondary,enabled
+                                                ).clicked(){
+                                                    match group_rules.get(id)
+                                                        .filter(|rule|rule.is_object()){
+                                                        Some(rule)=>*editor=Some(
+                                                            RateEditor::new(
+                                                                id,text(group,"name"),rule
+                                                            )
+                                                        ),
+                                                        None=>*error=Some(
+                                                            "그룹 운임 기준을 읽지 못했습니다. 새로고침 후 확인하세요.".into()
+                                                        ),
+                                                    }
+                                                    menu.close();
+                                                }
+                                                if theme::action_full_width(
+                                                    menu,"기준 변경",
+                                                    theme::ButtonRole::TableSecondary,enabled
+                                                ).clicked(){
+                                                    *basis=Some(Some(id.to_owned()));
+                                                    menu.close();
+                                                }
+                                                if theme::action_full_width(
+                                                    menu,"이름 수정",
+                                                    theme::ButtonRole::TableSecondary,enabled
+                                                ).clicked(){
+                                                    *rename_target=Some((
+                                                        id.to_owned(),text(group,"name").to_owned()
+                                                    ));
+                                                    menu.close();
+                                                }
+                                                if theme::action_full_width(
+                                                    menu,"삭제",
+                                                    theme::ButtonRole::Danger,enabled
+                                                ).clicked(){
+                                                    *delete_target=Some(id.to_owned());
+                                                    menu.close();
+                                                }
+                                            });
                                     }
                                 );
-                                for col in 0..5{
+                                for col in 0..3{
                                     let x=cells[col].right()
                                         +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                                     row.painter().line_segment(
@@ -2204,7 +2199,7 @@ impl FreightManager {
                 let total=galley.size().x+gap+arrow_width;
                 let x=match index{
                     1=>cell.right()-6.0-total,
-                    3|5=>cell.center().x-total/2.0,
+                    3=>cell.center().x-total/2.0,
                     _=>cell.left()+6.0,
                 };
                 let ink=painter.with_clip_rect(cell.intersect(header_rect));
@@ -2219,7 +2214,7 @@ impl FreightManager {
                         arrow,color
                     );
                 }
-                if index<5{
+                if index<3{
                     let x=cell.right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                     painter.line_segment(
                         [egui::pos2(x,header_rect.top()),
@@ -2931,6 +2926,23 @@ mod rate_toolbar_tests{
         assert!(search.right()+theme::SPACE_16<=add.left()+0.01,
             "search must not overlap group addition");
         assert!((add.right()-toolbar.right()).abs()<0.01);
+    }
+
+    #[test]
+    fn four_column_rate_table_gives_long_tariffs_priority(){
+        let base=theme::FREIGHT_RATE_COL_WIDTHS;
+        let gap=theme::FREIGHT_ASSIGNMENT_COL_GAP;
+        assert_eq!(base.len(),4);
+        assert!((base.iter().sum::<f32>()+3.0*gap-
+            theme::FREIGHT_RATE_TABLE_MIN_WIDTH).abs()<0.01);
+        assert!(base[2]>=740.0,"all six tariff amounts need a wide column");
+        assert!(base[3]<=148.0,"one Manage trigger must not reserve four buttons");
+        let wide=theme::management_weighted_columns(
+            base,[0.0,0.0,1.0,0.0],
+            theme::FREIGHT_RATE_TABLE_MIN_WIDTH+120.0,gap
+        );
+        assert!((wide[2]-base[2]-120.0).abs()<0.01);
+        assert!((wide[3]-base[3]).abs()<0.01);
     }
 
     #[test]
