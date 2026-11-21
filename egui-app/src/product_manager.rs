@@ -710,6 +710,15 @@ impl ProductManager {
         theme::management_master_table_frame().show(ui,|panel|{
             components::fill_management_primary_card(panel,card_min_height);
             panel.spacing_mut().item_spacing.y=0.0;
+            // Freight-style dual-slot toolbar at wide widths. Only when
+            // product filters genuinely need the space do actions wrap onto
+            // a second right-aligned row; never overlay a search selector.
+            let toolbar_width=panel.available_width();
+            let toolbar_rect=Rect::from_min_size(
+                panel.cursor().left_top(),
+                Vec2::new(toolbar_width,theme::INPUT_HEIGHT)
+            );
+            let dual_slot=toolbar_width>=1320.0;
             panel.horizontal_wrapped(|filter|{
                     filter.spacing_mut().item_spacing.x=theme::SPACE_8;
                     let before=self.query.clone();
@@ -795,19 +804,26 @@ impl ProductManager {
                     }
             });
 
-            // Product-only operations use the master's toolbar rhythm.
-            // They have their own right-aligned row: the category path and
-            // four search filters must never collapse into a clipped action.
-            panel.add_space(theme::SPACE_8);
-            let (actions_rect,_)=panel.allocate_exact_size(
-                Vec2::new(panel.available_width(),theme::INPUT_HEIGHT),
-                Sense::hover()
-            );
+            // The trailing slot ends at the CARD inner-right edge, without
+            // subtracting the table-only scrollbar gutter (master contract).
+            let actions_rect=if dual_slot{
+                components::management_toolbar_trailing_rect(
+                    toolbar_rect,390.0,0.0,theme::INPUT_HEIGHT
+                )
+            }else{
+                panel.add_space(theme::SPACE_8);
+                let (rect,_)=panel.allocate_exact_size(
+                    Vec2::new(panel.available_width(),theme::INPUT_HEIGHT),
+                    Sense::hover()
+                );
+                rect
+            };
             panel.scope_builder(
                 UiBuilder::new().id_salt("product-master-actions")
                     .max_rect(actions_rect)
                     .layout(Layout::right_to_left(Align::Center)),
                 |actions|{
+                    actions.set_clip_rect(actions_rect);
                     actions.set_width(actions_rect.width());
                     actions.set_height(actions_rect.height());
                     actions.spacing_mut().item_spacing.x=theme::SPACE_8;
