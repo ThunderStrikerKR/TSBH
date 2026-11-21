@@ -438,8 +438,11 @@ pub const FREIGHT_RATE_TABLE_MIN_WIDTH:f32 = 1265.0;
 // Combination and archived group tables have independent information widths.
 // Neither inherits the product-assignment 942pt geometry or the rate-edit
 // action column; unused space goes first to long identifiers and fee strings.
-pub const FREIGHT_COMBINATION_HISTORY_COL_WIDTHS:[f32;6] =
-    [350.0,285.0,130.0,130.0,124.0,170.0];
+// Combination history keeps registration/verification metadata in a
+// row-anchored "상세정보" popup, not in its compact overview columns.
+// The total minimum remains 1229pt (1197pt + four 8pt separators).
+pub const FREIGHT_COMBINATION_HISTORY_COL_WIDTHS:[f32;5] =
+    [500.0,160.0,160.0,140.0,237.0];
 pub const FREIGHT_GROUP_HISTORY_COL_WIDTHS:[f32;6] =
     [190.0,142.0,400.0,150.0,260.0,115.0];
 
