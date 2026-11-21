@@ -3257,6 +3257,10 @@ impl BandoEgui {
                                     );
                                     lay_ui.fonts_mut(|fonts|fonts.layout_job(job))
                                 };
+                                // Reserve an under-text paint slot before TextEdit draws its
+                                // glyphs, caret and selection. Rounded gray source blocks
+                                // remain decoration, never input hit targets.
+                                let block_slot=scroll_ui.painter().add(egui::Shape::Noop);
                                 let output=egui::TextEdit::multiline(&mut self.raw_source)
                                     .frame(false)
                                     .font(egui::FontId::proportional(
@@ -3266,6 +3270,14 @@ impl BandoEgui {
                                     .desired_width(scroll_ui.available_width())
                                     .layouter(&mut layouter)
                                     .show(scroll_ui);
+                                let block_shapes=source_highlight::block_shapes(
+                                    &self.raw_source,&output.galley,output.galley_pos,
+                                    &spans,selected_id.as_deref(),active_link.as_ref(),
+                                    scroll_ui.clip_rect().intersect(output.text_clip_rect),
+                                );
+                                scroll_ui.painter().set(
+                                    block_slot,egui::Shape::Vec(block_shapes)
+                                );
                                 if output.response.hovered() {
                                     if let Some(pointer)=scroll_ui.input(|i|i.pointer.hover_pos()) {
                                         let cursor=output.galley.cursor_from_pos(
