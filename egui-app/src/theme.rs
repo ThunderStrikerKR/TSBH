@@ -302,6 +302,11 @@ pub const MODAL_SECTION_BG: Color32 = TABLE_ROW_ALT_BG;
 pub const MODAL_SECTION_HEADER_BG: Color32 = INPUT;
 // One-line header for side-by-side comparison panels (OCR pilot).
 pub const MODAL_COMPARISON_HEADER_HEIGHT: f32 = 40.0;
+// OCR review shares the freight-master palette while presenting a single
+// comparison workspace rather than two stacked bordered cards.
+pub const MODAL_REVIEW_HEADER_HEIGHT: f32 = 84.0;
+pub const MODAL_REVIEW_GAP: f32 = SPACE_16;
+pub const MODAL_REVIEW_CONTENT_INSET: f32 = SPACE_16;
 pub const MODAL_HEADER_HEIGHT: f32 = 56.0;
 pub const MODAL_FOOTER_HEIGHT: f32 = 58.0;
 pub const MODAL_SECTION_PADDING: f32 = SPACE_12;
