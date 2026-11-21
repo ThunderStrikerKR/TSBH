@@ -1362,11 +1362,12 @@ impl FreightManager {
             ];
             // The shared header matches the virtualized rows' column
             // boundaries; scrollbar_gutter is reserved once by the helper.
-            // Shorten only the native SCROLLBAR TRACK at its upper edge.
-            // egui 0.33.3 supports a separate scroll_bar_rect: scrolling rows
-            // still begin immediately below the 36pt sticky header.
-            // This replaces the former 3pt paint-over hack, so the handle's
-            // visual bounds and mouse hit bounds agree at every DPI.
+            // The explicit scrollbar track starts 3pt below row origin
+            // and extends through the card's bottom 16pt inner padding.
+            // The independently scrolling ROWS remain bounded by the card
+            // inner content; scrollbar and rows do not need equal Y extents.
+            // egui 0.33.3 scroll_bar_rect controls the visible rail region,
+            // replacing the old paint-over hack.
             // Keep ROWS inside the card's existing 16pt content padding.
             // The scroll bar, however, belongs to the entire card edge:
             // previously its track ended at the padded content bottom,
