@@ -1267,12 +1267,11 @@ impl OrderHistoryManager {
         ui.add_space(theme::SPACE_16);
         let mut changed=false;
         components::align_management_primary_card(ui,page_origin_y);
-        // Match Freight > Shipping Group Assignment: a 16pt interior inset
-        // on EVERY side, without moving the 59th-round outer card border.
-        let card_min_height=components::management_primary_card_min_inner_height(
-            ui,theme::SECTION_PADDING
-        );
-        theme::section_frame().show(ui,|section|{
+        // Same full-height single-table card as Freight Assignment:
+        // preserve 16pt top/left/right and the outer border, but devote
+        // the former 16pt bottom padding to actual scrolling data rows.
+        let card_min_height=components::management_master_table_card_min_inner_height(ui);
+        theme::management_master_table_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Use the identical zero-implicit-gap toolbar-to-header
@@ -1387,16 +1386,14 @@ impl OrderHistoryManager {
                     "저장된 주문이 없습니다."
                 }else{"조건에 맞는 주문이 없습니다."},theme::MUTED))
             }else{None};
-            // Use the exact remaining primary-card height. The old 60vh
-            // cap left a dark blank strip beneath long order histories.
-            let card_inner_bottom=section.min_rect().top()+card_min_height;
-            let scroll_max_height=(card_inner_bottom-section.cursor().top())
-                .max(ROW_HEIGHT);
-            // Same 3pt top and card-bottom rail as Freight Assignment.
-            // The independently scrolling rows keep their original height.
+            // One bottom edge for the painted rows and native scroll rail,
+            // not a 16pt empty band below the data viewport.
+            let scroll_max_height=components::management_single_list_scroll_height(
+                section,card_min_height,0.0
+            );
             let scroll_bounds=section.available_rect_before_wrap();
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,theme::SECTION_PADDING
+                section,scroll_max_height,0.0
             );
             // Mixed fixed parent rows and auto-height shipment details need
             // prefix offsets. A fixed-height virtual grid would clip wrapped
