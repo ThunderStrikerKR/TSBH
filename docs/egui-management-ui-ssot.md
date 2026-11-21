@@ -23,7 +23,7 @@
 | 하위 관리 탭 | 글씨 16pt, 버튼 높이 38pt | `typography::FONT_MANAGEMENT_TAB`; `theme::MANAGEMENT_TAB_HEIGHT` |
 | 기본 상단 여백 리듬 | 제목→탭 8pt, 탭→KPI 12pt, KPI→첫 카드 16pt(각 요소가 실제 존재할 때) | `theme::management_primary_card_top_offset()` 및 상단 구성 함수 |
 | 주요 카드 외곽 | 두 마스터의 첫 카드 상단을 동일한 기준식으로 계산. KPI 줄바꿈에 따라 기준 높이 가변; 한 줄 KPI에서 페이지 원점부터 216pt | `components::align_management_primary_card`; `theme::management_primary_card_top_offset` |
-| 주요 카드 안쪽 | **일반 섹션 카드:** 상하좌우 16pt. **단일 목록 마스터 두 화면:** 상하좌우 **16pt**(데이터 행은 하단 16pt 위에서 끝나고, 스크롤 레일만 하단 여백의 중앙인 외곽선 8pt 위에서 종료), 테두리 1pt. 외곽 카드 크기·위치는 유지 | `theme::section_frame()`, `management_master_table_frame()`, `MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING`, `components::management_master_table_card_min_inner_height()` |
+| 주요 카드 안쪽 | **일반 섹션 카드:** 상하좌우 16pt. **단일 목록 마스터 두 화면:** 상하좌우 **16pt**(데이터 행과 스크롤 레일 모두 하단 16pt 위의 동일한 Y에서 종료), 테두리 1pt. 외곽 카드 크기·위치는 유지 | `theme::section_frame()`, `management_master_table_frame()`, `MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING`, `components::management_master_table_card_min_inner_height()` |
 | 검색·필터 도구줄 | 기본 높이 36pt; 필드/드롭다운은 해당 역할의 높이로 가운데 정렬 | `theme::INPUT_HEIGHT`, `components::management_toolbar_trailing_rect` |
 | **도구줄 오른쪽 끝** | **주 카드 내부 오른쪽 끝**과 일치, 스크롤바 폭을 차감하지 않음 (**CONFLICT-001=C**) | `components::management_toolbar_trailing_rect()` |
 | 기본 컨트롤 | 텍스트 입력 36pt, 일반 선택·작업 버튼 34pt, 컨트롤 모서리 반경 6pt | `theme::INPUT_HEIGHT`, `ACTION_STANDARD_HEIGHT`, `CONTROL_RADIUS` |
