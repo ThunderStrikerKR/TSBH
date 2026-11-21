@@ -1899,18 +1899,25 @@ impl BandoEgui {
                         |toolbar|{
                             toolbar.set_clip_rect(right_clip);
                             toolbar.set_width(right_header.width());
-                            // The opt-in checkbox precedes the OCR text
-                            // heading. Narrow windows truncate only the
-                            // heading; they never push or resize the editor.
-                            let help=review.model_error.as_deref()
-                                .unwrap_or("반복 정정 패턴을 적용하되 최종 판단은 직원이 합니다.");
-                            let changed=toolbar.checkbox(
-                                &mut review.learning_enabled,"학습 모델 사용 (시험 기능)"
-                            ).on_hover_text(help).changed();
-                            toolbar.add_space(theme::SPACE_8);
+                            // Keep the section heading LEFT and put the
+                            // experimental option in a distinct RIGHT-anchored
+                            // slot. The checkbox never consumes the heading's
+                            // leading edge or gets pushed outside its clip.
                             toolbar.add(egui::Label::new(
                                 typography::subsection_heading("인식된 텍스트 · 직접 수정")
                             ).truncate());
+                            let help=review.model_error.as_deref()
+                                .unwrap_or("반복 정정 패턴을 적용하되 최종 판단은 직원이 합니다.");
+                            let mut changed=false;
+                            toolbar.with_layout(
+                                Layout::right_to_left(Align::Center),
+                                |option|{
+                                    changed=option.checkbox(
+                                        &mut review.learning_enabled,
+                                        "학습 모델 사용 (시험 기능)"
+                                    ).on_hover_text(help).changed();
+                                },
+                            );
                             if changed {
                                 review.model_error=None;
                                 if review.learning_enabled {
