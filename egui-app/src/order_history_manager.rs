@@ -865,11 +865,9 @@ fn range_date_picker_rtl(
                     .frame(false)
                     .horizontal_align(Align::Center)
                     .vertical_align(Align::Center)
-                    // Center the date glyphs within the existing 34pt
-                    // field with symmetric vertical padding.
-                    .margin(egui::Margin {
-                        left:2,right:2,top:2,bottom:2
-                    })
+                    // Match the *visible* digit center, not only the
+                    // TextEdit's glyph line box; keep caret and hint aligned.
+                    .margin(typography::management_date_text_margin())
                     .hint_text("YYYY-MM-DD")
                     .desired_width(HISTORY_DATE_FIELD_WIDTH)
             ).on_hover_text(&format!("{label} 직접 입력"));
