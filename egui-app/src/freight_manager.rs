@@ -2852,6 +2852,9 @@ mod rate_toolbar_tests{
     #[test]
     fn search_left_and_two_buttons_right_share_a_centered_36pt_row(){
         let ctx=egui::Context::default();
+        // The real app registers branded emphasis faces before rendering.
+        // A bare test Context would otherwise panic on FontFamily::Name.
+        typography::install(&ctx);
         let mut input=egui::RawInput::default();
         input.screen_rect=Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1160.0,800.0)
