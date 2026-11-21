@@ -1965,7 +1965,7 @@ impl FreightManager {
                 table_width,theme::FREIGHT_ASSIGNMENT_COL_GAP
             );
             let titles=[
-                "배송 그룹","최대 묶음 수량","수량별 배송비","관리"
+                "그룹명","최대 묶음 수량","수량별 배송비","관리"
             ];
             let mut ordered=Self::filtered_rate_groups(groups,search);
             if let Some(active)=*sort {
