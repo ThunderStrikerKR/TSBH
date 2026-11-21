@@ -555,23 +555,101 @@ impl ExcelManager{
         let mut manage_clicked=None;
         let mut open_order=None;
         let mut copy_path=None;
-            let mut go_settings=false;
+        let mut go_settings=false;
+        // Resolve the currently selectable queue BEFORE allocating the fixed
+        // toolbar: its right-hand action caption and enabled state must use
+        // the same visible selection as the table below.
+        let mut queued=if self.tab==Tab::History{
+            Vec::new()
+        }else if let Some(snapshot)=self.result.as_ref(){
+            records(&snapshot.state,&snapshot.shipments,self.tab,&self.query)
+        }else{Vec::new()};
+        sort_queue(&mut queued,self.sort_queue);
+        let visible:BTreeSet<String>=queued.iter().filter(|r|!r.legacy)
+            .map(|r|r.id().to_owned()).collect();
+        if self.tab!=Tab::History{
+            self.selected.retain(|id|visible.contains(id));
+        }
         components::align_management_primary_card(ui,page_origin_y);
-        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::FRAME_STROKE_WIDTH);
-        theme::management_list_frame().show(ui,|section|{
+        // Exact same 16pt interior inset and frame as the approved master.
+        let card_min_height=components::management_master_table_card_min_inner_height(ui);
+        theme::management_master_table_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
-            theme::management_list_strip_frame().show(section,|toolbar|{
-                toolbar.horizontal(|line|{
+            // Allocate a true 36pt master toolbar. Search and trailing
+            // actions use the SAME 16pt card interior width as the header.
+            section.spacing_mut().item_spacing.y=0.0;
+            let toolbar_width=section.available_width().max(1.0);
+            let has_actions=self.tab!=Tab::History;
+            let stacked=has_actions && toolbar_width
+                <theme::MANAGEMENT_SEARCH_MIN_WIDTH+theme::SPACE_16
+                    +theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH;
+            let toolbar_height=if stacked{
+                theme::INPUT_HEIGHT*2.0+theme::SPACE_8
+            }else{theme::INPUT_HEIGHT};
+            let (toolbar_rect,_)=section.allocate_exact_size(
+                Vec2::new(toolbar_width,toolbar_height),Sense::hover()
+            );
+            let search_width=if stacked||!has_actions{
+                toolbar_width
+            }else{
+                (toolbar_width-theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH
+                    -theme::SPACE_16).max(1.0)
+            };
+            let search_rect=Rect::from_min_size(
+                toolbar_rect.min,Vec2::new(search_width,theme::INPUT_HEIGHT)
+            );
+            section.scope_builder(
+                UiBuilder::new().id_salt("excel-master-search")
+                    .max_rect(search_rect)
+                    .layout(egui::Layout::left_to_right(Align::Center)),
+                |search|{
+                    search.set_clip_rect(search_rect);
+                    search.set_width(search_rect.width());
                     if components::flexible_text_field(
-                        line,&mut self.query,
+                        search,&mut self.query,
                         theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                         "거래처 / 수취인 / 상품 검색"
                     ).changed(){
                         self.selected.clear();
+                        search.ctx().request_repaint();
                     }
-                });
-            });
+                }
+            );
+            if has_actions{
+                let actions_y=if stacked{
+                    theme::INPUT_HEIGHT+theme::SPACE_8
+                }else{0.0};
+                let actions_rect=components::management_toolbar_trailing_rect(
+                    toolbar_rect,
+                    theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH.min(toolbar_width),
+                    actions_y,theme::INPUT_HEIGHT
+                );
+                section.scope_builder(
+                    UiBuilder::new().id_salt("excel-master-actions")
+                        .max_rect(actions_rect)
+                        .layout(egui::Layout::right_to_left(Align::Center)),
+                    |actions|{
+                        actions.set_clip_rect(actions_rect);
+                        actions.set_width(actions_rect.width());
+                        if theme::action(actions,"폴더 열기",
+                            theme::ButtonRole::Standard,!busy).clicked(){
+                            open_daily=true;
+                        }
+                        if theme::action(actions,
+                            &format!("선택 {}건 {} Excel 작성",
+                                self.selected.len(),
+                                if self.tab==Tab::Factory{"공장"}else{"매장"}),
+                            theme::ButtonRole::Primary,
+                            !self.selected.is_empty()&&!busy
+                                &&self.gateway.excel_write_enabled()
+                        ).clicked(){
+                            exported=Some(self.selected.iter().cloned()
+                                .collect::<Vec<_>>());
+                        }
+                    }
+                );
+            }
             if let Some(error)=self.error.as_deref(){
                 theme::management_list_strip_frame().show(section,|line|{
                     line.label(typography::status(error,theme::DANGER));
@@ -717,29 +795,20 @@ impl ExcelManager{
                     }
                 }
             }else{
-                let mut queued=if let (Some(s),Some(r))=(state,native){
-                    records(s,r,self.tab,&self.query)
-                }else{Vec::new()};
-                sort_queue(&mut queued,self.sort_queue);
-                let visible:BTreeSet<String>=queued.iter().filter(|r|!r.legacy)
-                    .map(|r|r.id().to_owned()).collect();
-                self.selected.retain(|id|visible.contains(id));
-                let chosen=self.selected.len();
-                let all=!visible.is_empty()&&chosen==visible.len();
-                let records=queued.clone();
-                // Always protect the Excel-export / folder footer. Extra
-                // text for an empty queue also sits below the table.
-                // The expanded per-shipment management editor has dynamic
-                // height and retains the prior conservative table cap.
+                let all=!visible.is_empty()
+                    &&self.selected.len()==visible.len();
+                let records=queued;
+                // The Excel/export actions are now in the fixed search
+                // toolbar. Do not reserve an obsolete bottom footer.
+                // Dynamic per-shipment editors still use the conservative cap.
                 let queue_height_policy=if self.managed_queue.is_some(){
                     ExcelTableHeightPolicy::LegacyForExpandedDetails
                 }else{
                     ExcelTableHeightPolicy::FillCard {
                         card_min_height,
-                        reserve_below:theme::INPUT_HEIGHT+theme::SPACE_24
-                            +if records.is_empty()&&self.receiver.is_none(){
-                                theme::INPUT_HEIGHT
-                            }else{0.0},
+                        reserve_below:if records.is_empty()&&self.receiver.is_none(){
+                            theme::INPUT_HEIGHT
+                        }else{0.0},
                     }
                 };
                 let toggle_all=table(section,"excel-queue-table",
@@ -895,28 +964,7 @@ impl ExcelManager{
                         else{"검색 조건에 맞는 발송 대기 건이 없습니다."}
                     ));
                 }
-                theme::management_list_strip_frame().show(section,|footer|{
-                    footer.horizontal(|line|{
-                        line.label(typography::caption(
-                            "파일 작성은 실제 상품 발송 완료를 의미하지 않습니다."
-                        ));
-                        line.with_layout(egui::Layout::right_to_left(Align::Center),|right|{
-                            if theme::action(right,"폴더 열기",
-                                theme::ButtonRole::Standard,!busy).clicked(){
-                                open_daily=true;
-                            }
-                            if theme::action(right,
-                                &format!("선택 {}건 {} Excel 작성",
-                                    chosen,if self.tab==Tab::Factory{"공장"}else{"매장"}),
-                                theme::ButtonRole::Primary,
-                                chosen>0&&!busy&&self.gateway.excel_write_enabled()
-                            ).clicked(){
-                                exported=Some(self.selected.iter().cloned()
-                                    .collect::<Vec<_>>());
-                            }
-                        });
-                    });
-                });
+
             }
         });
         if let Some(id)=open_file{
