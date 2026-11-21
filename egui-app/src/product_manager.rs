@@ -867,13 +867,10 @@ impl ProductManager {
             let scroll_max_height=components::management_single_list_scroll_height(
                 panel,card_min_height,empty_reserve
             );
-            // Leave the empty-state caption in the reserved footer.
-            // Common List role decides the rail extension for this card.
+            // The empty-state reserve affects only viewport height.
+            // The shared component owns the 7pt rail extension.
             let scroll_track=components::management_table_scroll_track_rect(
-                panel,scroll_max_height,
-                components::ManagementTableScrollRole::List{
-                    content_below:empty_reserve>0.0
-                }
+                panel,scroll_max_height
             );
             let mut row_left=None;
             let scroll_output=components::virtual_fixed_rows(
