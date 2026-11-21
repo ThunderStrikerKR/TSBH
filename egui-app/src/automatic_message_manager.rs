@@ -711,7 +711,7 @@ impl AutomaticMessageManager {
             components::modal_action_row(dialog,|actions|{
                 save=theme::action(actions,"저장하고 이동",ButtonRole::Primary,
                     self.writable()&&!self.busy()).clicked();
-                discard=theme::action(actions,"저장 안 함",ButtonRole::Standard,
+                discard=theme::action(actions,"저장 안 함",ButtonRole::Danger,
                     !self.busy()).clicked();
             });
         });
