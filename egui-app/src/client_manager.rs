@@ -426,15 +426,12 @@ impl ClientManager {
                         );
                     }
                 });
-            components::soft_divider(section);
-
-            // Match Freight Assignment's header + independently scrolling
-            // 42pt rows. Header x coordinates follow the scroll offset;
-            // scrolling vertically never hides or moves column names.
-            // Use the common 36pt pinned header and zero-extra scrollbar gap
-            // (CONFLICT-003=A); keep this client's 900pt table minimum.
-            let layout=components::management_list_table_header(
-                section,theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH
+            // CONFLICT-005: the toolbar Frame already contributes 8pt
+            // bottom inset. Add only 8pt + 1pt rule + 4pt below, so the
+            // actual toolbar-to-header transition totals exactly 21pt.
+            // Keep this client's 900pt table minimum and 36pt header.
+            let layout=components::management_sticky_table_header_after_inset(
+                section,theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH,theme::SPACE_8
             );
             let table_width=layout.table_width;
             let header_rect=layout.header_rect;
