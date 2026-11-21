@@ -34,6 +34,10 @@ pub struct GroupRow {
     pub shipments: Vec<ShipmentRow>,
     pub automatic_text: Option<String>,
     pub automatic_error: Option<String>,
+    // Copy enablement follows the same Rust phase/payment issue response
+    // as React; a rendered monetary string alone is not proof it is safe.
+    pub automatic_phase: Option<String>,
+    pub automatic_payment_issues: Vec<String>,
     pub issues: Vec<String>,
 }
 #[derive(Clone, Debug, Default)]
@@ -157,11 +161,17 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
             "state":&state,"groupId":group_id,"includeLinks":false,
             "accountWire":wire,
         }));
-        let (automatic_text,automatic_error)=match automatic{
-            Ok(result)=>(result.get("text").and_then(Value::as_str)
-                .map(str::to_owned),None),
-            Err(error)=>(None,Some(error)),
-        };
+        let (automatic_text,automatic_error,automatic_phase,automatic_payment_issues)=
+            match automatic{
+                Ok(result)=>(
+                    result.get("text").and_then(Value::as_str).map(str::to_owned),
+                    None,
+                    result.get("phase").and_then(Value::as_str).map(str::to_owned),
+                    rows(field(&result,"paymentIssues")).iter()
+                        .filter_map(Value::as_str).map(str::to_owned).collect()
+                ),
+                Err(error)=>(None,Some(error),None,Vec::new()),
+            };
         let issues=rows(field(native,"issues")).iter()
             .filter_map(|issue|issue.get("message").and_then(Value::as_str)
                 .or_else(||issue.as_str())).map(str::to_owned)
@@ -175,7 +185,8 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
             total:field(field(native,"totals"),"total").as_i64(),
             vat_included,vat_excluded,
             shipments:display_shipments,
-            automatic_text,automatic_error,issues,
+            automatic_text,automatic_error,automatic_phase,
+            automatic_payment_issues,issues,
         });
     }
     groups.sort_by(|a,b|b.created_at.cmp(&a.created_at));
