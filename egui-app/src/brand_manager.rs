@@ -239,7 +239,7 @@ impl BrandManager {
                         save=theme::action(buttons,"저장",
                             theme::ButtonRole::Primary,editable&&!busy).clicked();
                         discard=theme::action(buttons,"저장 안 함",
-                            theme::ButtonRole::Standard,!busy).clicked();
+                            theme::ButtonRole::Danger,!busy).clicked();
                     }
                 );
             });
