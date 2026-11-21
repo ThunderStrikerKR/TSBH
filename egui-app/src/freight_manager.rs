@@ -685,6 +685,7 @@ impl FreightManager {
                 self.error=Some("운영 DB 리비전을 확인하지 못했습니다.".into());
                 return;
             };
+        crate::floating_notice::dispatch_pointer(&ctx,"freight.action");
         let gateway=Arc::clone(&self.gateway);
         let requested=action.clone();
         let (sender,receiver)=mpsc::channel();
@@ -705,6 +706,14 @@ impl FreightManager {
         // management tab. This is scoped to the freight page, not global nav.
         ui.spacing_mut().scroll=theme::management_scroll_style();
         self.poll(ui.ctx().clone());
+        crate::floating_notice::sync(
+            ui.ctx(),"freight.result","freight.action",
+            crate::floating_notice::Tone::Success,self.notice.as_deref()
+        );
+        crate::floating_notice::sync(
+            ui.ctx(),"freight.error","freight.action",
+            crate::floating_notice::Tone::Error,self.error.as_deref()
+        );
         if self.saving_for_tab && !self.busy() && self.dirty() &&
             !self.save_dirty(ui.ctx().clone()) {
             self.saving_for_tab=false;
@@ -1089,6 +1098,10 @@ impl FreightManager {
         if let Some((kind,data))=action {
             self.write(kind,data,ui.ctx().clone());
         }
+        crate::floating_notice::sync(
+            ui.ctx(),"freight.bulk.feedback","freight.action",
+            crate::floating_notice::Tone::Info,self.bulk_feedback.as_deref()
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
