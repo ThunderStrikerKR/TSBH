@@ -219,11 +219,9 @@ fn table<const N:usize>(
     ui.spacing_mut().item_spacing.y=0.0;
     let minimum=base.iter().sum::<f32>()+(N-1) as f32*GAP;
     let layout=if direct_toolbar_to_header{
-        // The standard filter strip already contains 8pt bottom padding;
-        // share the remaining 8 + 1 + 4pt of the approved 21pt transition.
-        components::management_sticky_table_header_after_inset(
-            ui,minimum,theme::SPACE_8
-        )
+        // The Excel toolbar is now a master-style allocated rectangle, with
+        // no nested bottom inset. Use the complete shared 16+1+4 transition.
+        components::management_sticky_table_header(ui,minimum)
     }else{
         // Status text intervenes between toolbar and header: retain
         // its original divider and don't add a second 21pt transition.
@@ -232,6 +230,7 @@ fn table<const N:usize>(
     let width=layout.table_width;
     let widths=theme::management_single_stretch_columns(base,width,GAP,stretch);
     let header=layout.header_rect;
+    let header_content=layout.header_content_rect;
     let scroll_max_height=match height_policy {
         ExcelTableHeightPolicy::FillCard{card_min_height,reserve_below}=>
             components::management_single_list_scroll_height(
@@ -282,6 +281,15 @@ fn table<const N:usize>(
     let heads=geometry(egui::pos2(left,header.top()),&widths,HEADER);
     let painter=ui.painter().with_clip_rect(header);
     painter.rect_filled(header,0.0,theme::RAISED);
+    // Same inner 2pt outline and 34pt caption area as Freight Assignment.
+    // The rightmost native scrollbar gutter is NEVER part of header text.
+    let header_text_rect=Rect::from_min_max(
+        header_content.min,
+        egui::pos2(
+            header_content.right(),
+            header_content.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
+        )
+    );
     let mut clicked=None;
     for (i,title) in titles.iter().enumerate(){
         let h=heads[i];
@@ -297,10 +305,15 @@ fn table<const N:usize>(
         }else if align[i]==Align2::CENTER_CENTER{
             h.center().x-galley.size().x/2.0
         }else{h.left()+theme::SPACE_8};
-        painter.with_clip_rect(h.intersect(header)).galley(
-            egui::pos2(x,h.center().y-galley.size().y/2.0),galley,theme::SECONDARY);
+        let visible=h.intersect(header_text_rect);
+        if visible.width()>0.0 && visible.height()>0.0 {
+            painter.with_clip_rect(visible).galley(
+                egui::pos2(x,header_text_rect.center().y-galley.size().y/2.0),
+                galley,theme::SECONDARY
+            );
+        }
         if sort_enabled[i]{
-            let hit=h.intersect(header);
+            let hit=h.intersect(header_text_rect);
             if hit.width()>0.0&&hit.height()>0.0&&ui.interact(hit,
                 ui.make_persistent_id((id,"sort",i)),Sense::click()).clicked(){
                 clicked=Some(Sort::next(*sort,i));
@@ -308,12 +321,31 @@ fn table<const N:usize>(
         }
     }
     if let Some(next)=clicked{*sort=next;}
-    painter.line_segment([header.left_bottom(),header.right_bottom()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER));
+    // Paint the very same column separators as the data rows.
+    for c in heads.iter().take(N.saturating_sub(1)) {
+        let x=c.right()+GAP/2.0;
+        if x>=header_content.left() && x<=header_content.right() {
+            painter.line_segment(
+                [egui::pos2(x,header.top()),egui::pos2(x,header.bottom())],
+                Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+            );
+        }
+    }
+    // Solid outline is painted wholly INSIDE the 36pt header, like Master.
+    painter.rect_filled(
+        Rect::from_min_max(
+            egui::pos2(
+                header.left(),
+                header.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
+            ),
+            header.right_bottom()
+        ),
+        0.0,theme::TABLE_HEADER_OUTLINE
+    );
     if let Some((all,enabled))=header_selection{
         let mut checked=all;
         let rect=heads[0].shrink2(Vec2::new(theme::SPACE_8,theme::SPACE_4))
-            .intersect(header);
+            .intersect(header_text_rect);
         let response=ui.add_enabled_ui(enabled,|controls|
             controls.put(rect,egui::Checkbox::without_text(&mut checked))
         ).inner;
