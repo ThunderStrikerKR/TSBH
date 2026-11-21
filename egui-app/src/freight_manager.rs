@@ -445,6 +445,7 @@ pub struct FreightManager {
     group_filter: String,
     sort: Option<FreightSort>,
     rate_sort: Option<RateSort>,
+    rate_search: String,
     history_sort: Option<HistorySort>,
 }
 impl FreightManager {
@@ -502,6 +503,7 @@ impl FreightManager {
             group_filter: String::new(),
             sort: None,
             rate_sort: None,
+            rate_search: String::new(),
             history_sort: None,
         }
     }
@@ -831,7 +833,7 @@ impl FreightManager {
                     &mut self.create_group_open,&mut self.rename_target,
                     &mut self.delete_target,&mut self.rate_editor,
                     &mut self.basis_target,&mut self.rate_sort,
-                    &mut self.error,enabled,&mut action
+                    &mut self.rate_search,&mut self.error,enabled,&mut action
                 ),
                 FreightTab::History => {
                     egui::ScrollArea::vertical()
@@ -1863,19 +1865,19 @@ impl FreightManager {
         });
     }
 
-    /// The rate-management master toolbar owns exactly one 36pt row.
-    /// Return the actual painted button rectangles for geometry regression
-    /// tests; callers preserve the existing Rust command/dialog ownership.
+    /// One 36pt management toolbar. Search lives on the left; the established
+    /// basis-change and group-add actions retain their right-aligned positions.
+    /// Name entry belongs exclusively to the existing "배송 그룹 추가" modal.
     fn rate_toolbar(
-        section:&mut Ui,enabled:bool
-    )->(egui::Response,egui::Response,egui::Rect){
+        section:&mut Ui,search:&mut String,enabled:bool
+    )->(egui::Response,egui::Response,egui::Rect,Option<egui::Response>){
         let width=section.available_width().max(1.0);
         let (toolbar_rect,_)=section.allocate_exact_size(
             egui::vec2(width,theme::INPUT_HEIGHT),egui::Sense::hover()
         );
         let (create,basis)=section.scope_builder(
             egui::UiBuilder::new()
-                .id_salt("freight-rate-toolbar")
+                .id_salt("freight-rate-toolbar-actions")
                 .max_rect(toolbar_rect)
                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
             |tools|{
@@ -1891,7 +1893,40 @@ impl FreightManager {
                 (create,basis)
             }
         ).inner;
-        (create,basis,toolbar_rect)
+        // Reserve 16pt between distinct search and action groups. The
+        // editor shrinks with a narrow pane but never overlaps action buttons.
+        let room=(basis.rect.left()-theme::SPACE_16-toolbar_rect.left())
+            .max(0.0);
+        let search_width=room.min(theme::MANAGEMENT_SEARCH_MIN_WIDTH);
+        let search_response=if search_width>=60.0{
+            let search_rect=egui::Rect::from_min_size(
+                toolbar_rect.min,egui::vec2(search_width,theme::INPUT_HEIGHT)
+            );
+            Some(section.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt("freight-rate-toolbar-search")
+                    .max_rect(search_rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                |field|{
+                    field.set_clip_rect(search_rect);
+                    field.set_width(search_rect.width());
+                    components::flexible_text_field(
+                        field,search,search_width,"배송 그룹 검색"
+                    )
+                }
+            ).inner)
+        }else{None};
+        (create,basis,toolbar_rect,search_response)
+    }
+
+    fn filtered_rate_groups<'a>(
+        groups:&'a [Value],query:&str
+    )->Vec<&'a Value>{
+        let needle=query.trim().to_lowercase();
+        groups.iter().filter(|group|
+            needle.is_empty() ||
+            text(group,"name").to_lowercase().contains(&needle)
+        ).collect()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1902,7 +1937,7 @@ impl FreightManager {
         delete_target: &mut Option<String>,
         editor: &mut Option<RateEditor>,
         basis: &mut Option<Option<String>>,
-        sort: &mut Option<RateSort>,
+        sort: &mut Option<RateSort>,search:&mut String,
         error: &mut Option<String>,enabled:bool,
         action: &mut Option<(String,Value)>,
     ) {
@@ -1913,13 +1948,12 @@ impl FreightManager {
         theme::section_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
-            // One measured 36pt toolbar: no redundant heading/inline name
-            // editor. The primary add action lives at the far right, and the
-            // global rate-basis action shares its vertical center and 8pt gap.
-            // Creating a name is deferred to the existing modal layer.
+            // Search + both actions share one fixed 36pt toolbar. Entering
+            // a group name still happens only inside the add-group modal.
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
-            let (create,basis_change,_toolbar)=Self::rate_toolbar(section,enabled);
+            let (create,basis_change,_toolbar,_search)=
+                Self::rate_toolbar(section,search,enabled);
             if create.clicked(){*create_group_open=true;}
             if basis_change.clicked(){*basis=Some(None);}
             // Shared master: exactly 16pt + 1pt divider + 4pt before
@@ -1937,7 +1971,7 @@ impl FreightManager {
                 "배송 그룹","최대 묶음 수량","수량별 배송비",
                 "운임 상태","참고 메모 / 최근 수정","관리"
             ];
-            let mut ordered:Vec<&Value>=groups.iter().collect();
+            let mut ordered=Self::filtered_rate_groups(groups,search);
             if let Some(active)=*sort {
                 ordered.sort_by_cached_key(|group|{
                     let key=match active.column {
@@ -1956,11 +1990,10 @@ impl FreightManager {
                 }
             }
             let header_rect=rate_layout.header_rect;
-            // Single group-rates list: fill the remaining card, reserving
-            // one 36pt strip for the empty-state label below the table.
-            let footer_reserve=if groups.is_empty(){theme::INPUT_HEIGHT}else{0.0};
+            // No footer allocation for empty/search-miss states; their
+            // persistent D-type message is painted in the data viewport.
             let scroll_max_height=components::management_single_list_scroll_height(
-                section,card_min_height,footer_reserve
+                section,card_min_height,0.0
             );
             // Footer reservation determines viewport height, not rail offset.
             // Every management table uses the same 7pt extension.
@@ -2197,9 +2230,28 @@ impl FreightManager {
                 [header_rect.left_bottom(),header_rect.right_bottom()],
                 egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
             );
-            if groups.is_empty(){
-                section.add_space(theme::SPACE_12);
-                section.label(typography::caption("등록된 배송 그룹이 없습니다."));
+            if ordered.is_empty(){
+                let caption=if groups.is_empty(){
+                    "등록된 배송 그룹이 없습니다."
+                }else{
+                    "검색 조건에 맞는 배송 그룹이 없습니다."
+                };
+                // Keep the master header and scrollbar geometry invariant:
+                // empty/search states do not allocate a row below the table.
+                let available=egui::Rect::from_min_size(
+                    scroll_track.min,egui::vec2(
+                        (rate_layout.viewport_width-rate_layout.scrollbar_gutter)
+                            .min(scroll_track.width()).max(1.0),
+                        scroll_max_height
+                    )
+                ).intersect(section.clip_rect());
+                if available.width()>0.0 && available.height()>0.0 {
+                    section.painter().with_clip_rect(available).text(
+                        available.center(),egui::Align2::CENTER_CENTER,caption,
+                        egui::FontId::proportional(typography::FONT_METADATA),
+                        theme::MUTED
+                    );
+                }
             }
         });
     }
@@ -2798,7 +2850,7 @@ mod rate_toolbar_tests{
     use super::*;
 
     #[test]
-    fn group_add_and_global_basis_share_one_centered_master_toolbar(){
+    fn search_left_and_two_buttons_right_share_a_centered_36pt_row(){
         let ctx=egui::Context::default();
         let mut input=egui::RawInput::default();
         input.screen_rect=Some(egui::Rect::from_min_size(
@@ -2807,19 +2859,39 @@ mod rate_toolbar_tests{
         let mut measured=None;
         let _=ctx.run(input,|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
-                let (add,basis,toolbar)=FreightManager::rate_toolbar(ui,true);
-                measured=Some((add.rect,basis.rect,toolbar));
+                let mut search=String::new();
+                let (add,basis,toolbar,field)=
+                    FreightManager::rate_toolbar(ui,&mut search,true);
+                measured=Some((add.rect,basis.rect,toolbar,field.map(|r|r.rect)));
             });
         });
-        let (add,basis,toolbar)=measured.expect("rate toolbar rendered");
+        let (add,basis,toolbar,search)=measured.expect("rate toolbar rendered");
+        let search=search.expect("search must be visible in desktop layout");
         assert!((toolbar.height()-theme::INPUT_HEIGHT).abs()<0.01);
-        assert!((add.center().y-basis.center().y).abs()<0.01,
-            "both actions must be visually centered on the same row");
+        assert!((search.left()-toolbar.left()).abs()<0.01);
+        assert!((search.center().y-toolbar.center().y).abs()<0.01);
+        assert!((add.center().y-basis.center().y).abs()<0.01);
         assert!((add.center().y-toolbar.center().y).abs()<0.01);
         assert!((basis.center().y-toolbar.center().y).abs()<0.01);
-        assert!(basis.right()<=add.left()-theme::SPACE_8+0.01,
-            "primary action should be at the far right with an 8pt gap");
-        assert!((add.right()-toolbar.right()).abs()<0.01,
-            "primary action should end at the card inner right boundary");
+        assert!(search.right()+theme::SPACE_16<=basis.left()+0.01,
+            "left search must not overlap right action group");
+        assert!(basis.right()+theme::SPACE_8<=add.left()+0.01);
+        assert!((add.right()-toolbar.right()).abs()<0.01);
+    }
+
+    #[test]
+    fn search_filters_only_group_names_case_insensitively(){
+        let groups=vec![
+            serde_json::json!({"name":"[TEST] 표준 배송 그룹"}),
+            serde_json::json!({"name":"Express Group"}),
+            serde_json::json!({"name":"이동형 그룹"})
+        ];
+        let find=|query:&str|FreightManager::filtered_rate_groups(&groups,query).len();
+        assert_eq!(find(""),3);
+        assert_eq!(find("  "),3);
+        assert_eq!(find("배송"),1);
+        assert_eq!(find("  group "),1);
+        assert_eq!(find("이동형"),1);
+        assert_eq!(find("존재하지 않는 이름"),0);
     }
 }
