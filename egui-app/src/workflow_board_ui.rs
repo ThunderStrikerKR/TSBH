@@ -257,26 +257,6 @@ fn workflow_header(
     )
 }
 
-/// Preserve both auxiliary controls at their approved 52/34pt widths
-/// without allowing a right-to-left child Ui to inherit the remaining
-/// vertical ScrollArea viewport as its height. An unbounded with_layout()
-/// here made each collapsed order card expand almost to the pane bottom.
-fn workflow_wrapped_header_actions(ui:&mut Ui){
-    let width=ui.available_width();
-    ui.allocate_ui_with_layout(
-        Vec2::new(width,theme::WORKFLOW_AUX_CONTROL_HEIGHT),
-        Layout::right_to_left(Align::Center),
-        |right|{
-            right.spacing_mut().item_spacing.x=theme::SPACE_4;
-            components::workflow_auxiliary_button(
-                right,components::WorkflowAuxiliaryAction::Delete
-            );
-            components::workflow_auxiliary_button(
-                right,components::WorkflowAuxiliaryAction::Manage
-            );
-        }
-    );
-}
 fn stage_name(step:usize,notice:bool)->&'static str{
     if notice && step>=2 {"계좌 재안내 완료"}
     else if step==4 {"처리완료"}
@@ -286,19 +266,58 @@ fn stage_name(step:usize,notice:bool)->&'static str{
 fn money(amount:Option<i64>)->String{
     amount.map(components::display_won).unwrap_or_else(||"—".to_owned())
 }
-/// Same two CARD rows as React: summary and the one-touch action share
-/// the second row. The summary itself is allowed two short text lines inside
-/// the EXISTING button height so shipping, VAT and actual total remain
-/// readable without clipping or adding a third card row.
+/// A 36pt two-line summary, shared by both narrow and wide order cards.
+/// The caller determines the available width; data and pricing stay Rust-owned.
+fn workflow_summary(
+    ui:&mut Ui,width:f32,shipments:usize,total:Option<i64>,vat:Option<&str>
+){
+    let amount=total.map(components::display_won)
+        .unwrap_or_else(||"금액 미확정".to_owned());
+    ui.allocate_ui_with_layout(
+        Vec2::new(width,theme::WORKFLOW_ACTION_ROW_HEIGHT),
+        Layout::top_down(Align::Min),|summary|{
+            summary.spacing_mut().item_spacing.y=0.0;
+            summary.set_width(width);
+            summary.allocate_ui_with_layout(
+                Vec2::new(width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
+                Layout::left_to_right(Align::Center),|line|{
+                    line.spacing_mut().item_spacing.x=theme::SPACE_4;
+                    let shipping_text=format!("배송 {shipments}건");
+                    line.add(
+                        egui::Label::new(typography::field_label(&shipping_text)
+                            .color(theme::SECONDARY)
+                            .line_height(Some(theme::WORKFLOW_SUMMARY_LINE_HEIGHT)))
+                            .truncate()
+                    ).on_hover_text(&shipping_text);
+                    if let Some(vat)=vat{
+                        line.with_layout(Layout::right_to_left(Align::Center),|right|{
+                            right.add(
+                                egui::Label::new(typography::caption(vat)
+                                    .color(theme::WORKFLOW_VAT_TEXT)).truncate()
+                            ).on_hover_text(vat);
+                        });
+                    }
+                }
+            );
+            summary.add_sized(
+                Vec2::new(width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
+                egui::Label::new(typography::body(&amount)
+                    .line_height(Some(theme::WORKFLOW_SUMMARY_LINE_HEIGHT)))
+                    .halign(Align::RIGHT).truncate()
+            ).on_hover_text(&amount);
+        }
+    );
+}
 
+/// Wide cards retain the approved two-row structure. Narrow cards reserve
+/// the entire middle row for shipping/price information and align ALL four
+/// operations in one compact trailing action bar. This avoids an isolated
+/// Manage/Delete row without shrinking the 18pt status lamps or dealer name.
 fn workflow_action_line(
     ui:&mut Ui,id:&str,shipments:usize,total:Option<i64>,
-    vat:Option<&str>,button_text:&str,enabled:bool
+    vat:Option<&str>,button_text:&str,enabled:bool,compact:bool
 )->(bool,bool){
     let width=ui.available_width();
-    // The one-touch button is the SAME Emphasized role as "+ 새 주문".
-    // Measure its entire real caption before reserving the action slot.
-    // Do not shorten "계좌 재안내 완료" or allow it to wrap.
     let caption_width=ui.painter().layout_no_wrap(
         button_text.to_owned(),
         egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
@@ -307,70 +326,70 @@ fn workflow_action_line(
     let button_width=theme::WORKFLOW_CONTROL_WIDTH.max(
         (caption_width+theme::SPACE_24+theme::SPACE_8).ceil()
     );
-    let actions=button_width+theme::WORKFLOW_TRASH_WIDTH+theme::SPACE_4;
-    let summary_width=(width-actions-theme::SPACE_4).max(0.0);
     let mut stage_button=None;
-    ui.horizontal(|bar|{
-        bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-        let amount=total.map(components::display_won)
-            .unwrap_or_else(||"금액 미확정".to_owned());
-        bar.allocate_ui_with_layout(
-            Vec2::new(summary_width,theme::WORKFLOW_ACTION_ROW_HEIGHT),
-            Layout::top_down(Align::Min),|summary|{
-                summary.spacing_mut().item_spacing.y=0.0;
-                summary.set_width(summary_width);
-                // React flow-summary-compact: shipment count is LEFT,
-                // included/mixed VAT is RIGHT. Both are on the top line.
-                summary.allocate_ui_with_layout(
-                    Vec2::new(summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
-                    Layout::left_to_right(Align::Center),|line|{
-                        line.spacing_mut().item_spacing.x=theme::SPACE_4;
-                        let shipping_text=format!("배송 {shipments}건");
-                        line.add(
-                            egui::Label::new(typography::field_label(&shipping_text)
-                                .color(theme::SECONDARY)
-                                .line_height(Some(theme::WORKFLOW_SUMMARY_LINE_HEIGHT)))
-                                .truncate()
-                        ).on_hover_text(&shipping_text);
-                        if let Some(vat)=vat{
-                            line.with_layout(Layout::right_to_left(Align::Center),|right|{
-                                right.add(
-                                    egui::Label::new(typography::caption(vat)
-                                        .color(theme::WORKFLOW_VAT_TEXT))
-                                        .truncate()
-                                ).on_hover_text(vat);
-                            });
-                        }
+    if compact {
+        workflow_summary(ui,width,shipments,total,vat);
+        let actions_width=button_width + theme::WORKFLOW_TRASH_WIDTH*2.0
+            +theme::WORKFLOW_MANAGE_WIDTH+3.0*theme::SPACE_4;
+        let (_row,_) = ui.allocate_exact_size(
+            Vec2::new(width,theme::WORKFLOW_ACTION_ROW_HEIGHT),egui::Sense::hover()
+        );
+        let action_rect=Rect::from_min_size(
+            Pos2::new(_row.right()-actions_width,_row.top()),
+            Vec2::new(actions_width.min(width),theme::WORKFLOW_ACTION_ROW_HEIGHT)
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .id_salt(("workflow-compact-actions",id))
+                .max_rect(action_rect)
+                .layout(Layout::right_to_left(Align::Center)),
+            |buttons|{
+                buttons.set_clip_rect(action_rect);
+                buttons.set_width(action_rect.width());
+                buttons.set_height(action_rect.height());
+                buttons.spacing_mut().item_spacing.x=theme::SPACE_4;
+                components::workflow_auxiliary_button(
+                    buttons,components::WorkflowAuxiliaryAction::Delete
+                );
+                components::workflow_auxiliary_button(
+                    buttons,components::WorkflowAuxiliaryAction::Manage
+                );
+                components::workflow_auxiliary_button(
+                    buttons,components::WorkflowAuxiliaryAction::PreviousStage
+                );
+                buttons.allocate_ui_with_layout(
+                    Vec2::new(button_width,theme::WORKFLOW_ACTION_ROW_HEIGHT),
+                    Layout::top_down(Align::Min),|control|{
+                        stage_button=Some(theme::action_full_width(
+                            control,button_text,theme::ButtonRole::Emphasized,enabled
+                        ));
                     }
                 );
-                // Right-anchored and truncation-aware. Even an unusually
-                // long amount cannot paint into the adjacent one-touch slot.
-                summary.add_sized(
-                    Vec2::new(summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
-                    egui::Label::new(typography::body(&amount)
-                        .line_height(Some(theme::WORKFLOW_SUMMARY_LINE_HEIGHT)))
-                        .halign(Align::RIGHT).truncate()
-                ).on_hover_text(&amount);
             }
         );
-        bar.allocate_ui_with_layout(
-            Vec2::new(button_width,
-                theme::WORKFLOW_ACTION_ROW_HEIGHT),
-            Layout::top_down(Align::Min),|control|{
-                stage_button=Some(theme::action_full_width(
-                    control,button_text,theme::ButtonRole::Emphasized,enabled
-                ));
-            }
-        );
-        components::workflow_auxiliary_button(
-            bar, components::WorkflowAuxiliaryAction::PreviousStage,
-        );
-    });
+    }else{
+        let summary_width=(width-button_width-theme::WORKFLOW_TRASH_WIDTH
+            -2.0*theme::SPACE_4).max(0.0);
+        ui.horizontal(|bar|{
+            bar.spacing_mut().item_spacing.x=theme::SPACE_4;
+            workflow_summary(bar,summary_width,shipments,total,vat);
+            bar.allocate_ui_with_layout(
+                Vec2::new(button_width,theme::WORKFLOW_ACTION_ROW_HEIGHT),
+                Layout::top_down(Align::Min),|control|{
+                    stage_button=Some(theme::action_full_width(
+                        control,button_text,theme::ButtonRole::Emphasized,enabled
+                    ));
+                }
+            );
+            components::workflow_auxiliary_button(
+                bar,components::WorkflowAuxiliaryAction::PreviousStage
+            );
+        });
+    }
     let response=stage_button.expect("workflow action occupies a fixed slot");
     let hovered=if enabled{
         response.hovered()
     }else{
-        // A disabled save action must not block a non-mutating hover preview.
         ui.interact(response.rect,Id::new(("workflow-stage-hover",id)),
             egui::Sense::hover()).hovered()
     };
@@ -553,12 +572,11 @@ fn group_frame(
         let (_,stage_hovered)=workflow_action_line(
             ui,&group.id,group.shipments.len(),group.total,
             if group.vat_included>0{Some(vat.as_str())}else{None},
-            stage_name(group.step,group.needs_notice),false
+            stage_name(group.step,group.needs_notice),false,wrapped_actions
         );
         if stage_hovered && !in_preview{
             *trigger=Some(group.id.clone());
         }
-        if wrapped_actions{workflow_wrapped_header_actions(ui);}
         if open || in_preview{
             components::soft_divider(ui);
             ui.add_space(theme::SPACE_4);
@@ -609,10 +627,9 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
         }else{&[]};
         let (clicked,_)=workflow_action_line(
             ui,&draft.id,recipients.len(),None,None,"거래처 확인",
-            draft.client_id.is_none()
+            draft.client_id.is_none(),wrapped_actions
         );
         if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
-        if wrapped_actions{workflow_wrapped_header_actions(ui);}
         if open{
             components::soft_divider(ui);
             ui.add_space(theme::SPACE_4);
