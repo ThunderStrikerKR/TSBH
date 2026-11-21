@@ -15,6 +15,8 @@ const SOURCE_LIMIT_BYTES: usize = 2 * 1024 * 1024;
 pub struct OcrFeedback {
     pub id: String,
     pub order_id: String,
+    /// Verified staff-selected dealer; can be bound later after OCR intake.
+    pub client_id: Option<String>,
     pub original_text: String,
     pub corrected_text: String,
     /// Whether the employee enabled local learned suggestions on this review.
@@ -64,6 +66,79 @@ fn correction_changes(before: &str, after: &str) -> Value {
     }
     json!({"algorithm":"line-lcs-v1","truncated":false,
         "same":before==after,"changes":changes})
+}
+
+/// Learnable layout supervision for narrow-table OCR captures.
+///
+/// Old line-based LCS describes changed lines, but misses the crucial
+/// difference between a character error and a hard table-cell wrap.
+/// These examples are aligned by non-whitespace characters, so *only* actual
+/// line break/space edits become labeled boundaries. A document that also
+/// has transcription errors remains intact and is marked unaligned for a
+/// later, more capable alignment engine.
+fn layout_correction_trace(before:&str,after:&str)->Value{
+    fn split(text:&str)->(Vec<char>,Vec<String>){
+        let mut characters=Vec::new();
+        let mut gaps=vec![String::new()];
+        for ch in text.chars(){
+            if ch.is_whitespace(){
+                gaps.last_mut().expect("initial gap").push(ch);
+            }else{
+                characters.push(ch);
+                gaps.push(String::new());
+            }
+        }
+        (characters,gaps)
+    }
+    fn shape(text:&str)->Vec<Value>{
+        text.lines().take(200).map(|line|{
+            let meaningful=line.chars().filter(|c|!c.is_whitespace())
+                .take(100).collect::<Vec<_>>();
+            json!({
+                "widthBucket":match meaningful.len(){
+                    0=>0,1=>1,2=>2,3..=5=>3,6..=10=>4,11..=20=>5,_=>6,
+                },
+                "containsDigits":meaningful.iter().any(|c|c.is_ascii_digit()),
+                "containsHangul":meaningful.iter().any(|c|
+                    ('가'..='힣').contains(c)),
+                "containsHyphen":meaningful.contains(&'-'),
+                "containsParentheses":meaningful.contains(&'(')
+                    ||meaningful.contains(&')'),
+            })
+        }).collect()
+    }
+    let (left_chars,left_gaps)=split(before);
+    let (right_chars,right_gaps)=split(after);
+    let mut result=json!({
+        "schema":"ocr-layout-boundaries-v1",
+        "originalLineCount":before.lines().count(),
+        "correctedLineCount":after.lines().count(),
+        "originalLineShapes":shape(before),
+        "contentAligned":left_chars==right_chars,
+        "boundaryChanges":[],
+        "truncated":false,
+    });
+    if left_chars!=right_chars {
+        return result;
+    }
+    let mut changes=Vec::new();
+    let mut truncated=false;
+    for (i,(old,new)) in left_gaps.iter().zip(right_gaps.iter()).enumerate(){
+        if old==new {continue;}
+        // We deliberately keep no duplicated text here. Original/corrected
+        // full documents already support any future re-alignment.
+        if changes.len()==2000 {truncated=true;break;}
+        changes.push(json!({
+            "afterNonWhitespaceChars":i,
+            "before":old,
+            "after":new,
+            "wasLineBreak":old.contains('\n')||old.contains('\r'),
+            "isLineBreak":new.contains('\n')||new.contains('\r'),
+        }));
+    }
+    result["boundaryChanges"]=Value::Array(changes);
+    result["truncated"]=json!(truncated);
+    result
 }
 
 /// Key-level delta of the SAME Rust parser on original and corrected
@@ -254,6 +329,9 @@ impl PreviewStore {
                 original_text TEXT NOT NULL,
                 corrected_text TEXT NOT NULL,
                 changes_json TEXT NOT NULL CHECK(json_valid(changes_json)),
+                layout_trace_json TEXT CHECK(layout_trace_json IS NULL
+                    OR json_valid(layout_trace_json)),
+                client_id TEXT,
                 recorded_at TEXT NOT NULL DEFAULT
                     (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
                 learning_used INTEGER NOT NULL DEFAULT 0,
@@ -282,6 +360,8 @@ impl PreviewStore {
             .collect::<Result<HashSet<_>,_>>().map_err(|e|e.to_string())?;
         drop(stmt);
         let additions=[
+            ("layout_trace_json","TEXT"),
+            ("client_id","TEXT"),
             ("learning_used","INTEGER NOT NULL DEFAULT 0"),
             ("model_suggestion","TEXT"),
             ("initial_analysis_json","TEXT"),
@@ -489,17 +569,41 @@ impl PreviewStore {
             let changes=correction_changes(
                 &sample.original_text,&sample.corrected_text
             ).to_string();
+            let layout_trace=layout_correction_trace(
+                &sample.original_text,&sample.corrected_text
+            ).to_string();
             tx.execute(
                 "INSERT OR IGNORE INTO ocr_feedback
                  (id,order_id,original_text,corrected_text,changes_json,
-                  learning_used,model_suggestion)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                  layout_trace_json,client_id,learning_used,model_suggestion)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![sample.id,sample.order_id,sample.original_text,
-                    sample.corrected_text,changes,
-                    i64::from(sample.learning_used),sample.model_suggestion],
+                    sample.corrected_text,changes,layout_trace,
+                    sample.client_id,i64::from(sample.learning_used),
+                    sample.model_suggestion],
             ).map_err(|e| format!("OCR 정정 이력 저장 실패: {e}"))?;
         }
         tx.commit().map_err(|e| format!("OCR 정정 이력 확정 실패: {e}"))
+    }
+
+    /// Enrich existing OCR pairs after a staff member explicitly assigns
+    /// the dealer. The record may predate client selection; do not guess
+    /// its origin from OCR text or an unconfirmed client suggestion.
+    pub fn bind_verified_ocr_clients(source:&WorkingSource)->Result<(),String>{
+        let verified=source.drafts.iter().filter_map(|row|{
+            (row.client_selection.as_deref()==Some("MANUAL"))
+                .then(||(row.id.as_str(),row.client_id.as_deref()?))
+        }).collect::<Vec<_>>();
+        if verified.is_empty(){return Ok(());}
+        let store=Self::initialize()?;
+        let mut conn=store.open_connection()?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        for (receipt_id,client_id) in verified{
+            tx.execute("UPDATE ocr_feedback SET client_id=?2 WHERE order_id=?1",
+                params![receipt_id,client_id])
+                .map_err(|e|format!("OCR 양식 거래처 연결 실패: {e}"))?;
+        }
+        tx.commit().map_err(|e|e.to_string())
     }
 
     /// Candidate examples for the optional local pattern learner. Samples
@@ -570,7 +674,7 @@ impl PreviewStore {
              learning_used,model_suggestion,initial_analysis_json,
              corrected_analysis_json,analysis_comparison_json,
              analysis_status,analysis_error,analyzer_label,catalog_revision,
-             recorded_at,analyzed_at
+             recorded_at,analyzed_at,client_id,layout_trace_json
              FROM ocr_feedback WHERE id=?1",
             [id],
             |row|Ok(json!({
@@ -590,11 +694,13 @@ impl PreviewStore {
                 "catalogRevision":row.get::<_,Option<String>>(13)?,
                 "recordedAt":row.get::<_,String>(14)?,
                 "analyzedAt":row.get::<_,Option<String>>(15)?,
+                "clientId":row.get::<_,Option<String>>(16)?,
+                "layoutTrace":row.get::<_,Option<String>>(17)?,
             }))
         ).optional().map_err(|e|format!("OCR 정정 분석 이력 조회 실패: {e}"))?;
         let Some(mut record)=record else{return Ok(None)};
         for field in ["textChanges","initialAnalysis","correctedAnalysis",
-            "analysisComparison"]{
+            "analysisComparison","layoutTrace"]{
             if let Some(json_text)=record[field].as_str(){
                 record[field]=serde_json::from_str(json_text)
                     .map_err(|e|format!("OCR 정정 이력 {field} 형식 오류: {e}"))?;
