@@ -1756,7 +1756,37 @@ impl BandoEgui {
     /// 400% zoom must never move the title, pane borders or Apply button.
     fn show_ocr_review(&mut self, ctx: &egui::Context, work_area:Rect) {
         let mut close=false;
-        let mut apply:Option<(String,OrderType,Option<ChatWindow>,Option<u32>,String)>=None;
+        let mut apply:Option<(
+            String,OrderType,Option<ChatWindow>,Option<u32>,String,bool,Option<String>
+        )>=None;
+        // Receive optional model suggestions without reading SQLite or
+        // running pattern learning on the egui UI thread.
+        if let Some(review)=self.ocr_review.as_mut(){
+            if let Some(outcome)=review.model_receiver.as_ref().map(|rx|rx.try_recv()){
+                match outcome {
+                    Ok(Ok(suggestion))=>{
+                        if review.learning_enabled && suggestion.replacements>0
+                            && review.edited_text==review.original_text {
+                            review.edited_text=suggestion.text.clone();
+                            review.model_suggestion=Some(suggestion.text);
+                        }
+                        review.model_error=None;
+                        review.model_receiver=None;
+                    }
+                    Ok(Err(error))=>{
+                        review.model_error=Some(error);
+                        review.model_receiver=None;
+                    }
+                    Err(mpsc::TryRecvError::Disconnected)=>{
+                        review.model_error=Some(
+                            "학습 모델을 읽지 못해 기본 OCR 모드를 유지합니다.".into()
+                        );
+                        review.model_receiver=None;
+                    }
+                    Err(mpsc::TryRecvError::Empty)=>{}
+                }
+            }
+        }
         let dialog_width=(work_area.width()*0.94).clamp(560.0,1480.0)
             .min(work_area.width().max(1.0));
         let dialog_height=(work_area.height()*0.88).clamp(450.0,960.0)
@@ -1882,9 +1912,41 @@ impl BandoEgui {
                         |toolbar|{
                             toolbar.set_clip_rect(right_clip);
                             toolbar.set_width(right_header.width());
-                            toolbar.label(typography::subsection_heading(
-                                "인식된 텍스트 · 직접 수정"
-                            ));
+                            // The opt-in checkbox precedes the OCR text
+                            // heading. Narrow windows truncate only the
+                            // heading; they never push or resize the editor.
+                            let help=review.model_error.as_deref()
+                                .unwrap_or("반복 정정 패턴을 적용하되 최종 판단은 직원이 합니다.");
+                            let changed=toolbar.checkbox(
+                                &mut review.learning_enabled,"학습 모델 사용"
+                            ).on_hover_text(help).changed();
+                            toolbar.add_space(theme::SPACE_8);
+                            toolbar.add(egui::Label::new(
+                                typography::subsection_heading("인식된 텍스트 · 직접 수정")
+                            ).truncate());
+                            if changed {
+                                review.model_error=None;
+                                if review.learning_enabled {
+                                    let initial=review.original_text.clone();
+                                    let (tx,rx)=mpsc::channel();
+                                    review.model_receiver=Some(rx);
+                                    let repaint=toolbar.ctx().clone();
+                                    std::thread::spawn(move||{
+                                        let outcome=preview_store::PreviewStore
+                                            ::list_ocr_feedback(1000)
+                                            .map(|rows|ocr_learning::suggest(&initial,&rows));
+                                        let _=tx.send(outcome);
+                                        repaint.request_repaint();
+                                    });
+                                }else{
+                                    review.model_receiver=None;
+                                    if review.model_suggestion.as_ref()
+                                        ==Some(&review.edited_text){
+                                        review.edited_text=review.original_text.clone();
+                                    }
+                                    review.model_suggestion=None;
+                                }
+                            }
                         },
                     );
 
@@ -2021,7 +2083,9 @@ impl BandoEgui {
                                     review.order_type,
                                     review.chat.clone(),
                                     review.clipboard_sequence,
-                                    review.original_text.clone()
+                                    review.original_text.clone(),
+                                    review.learning_enabled,
+                                    review.model_suggestion.clone()
                                 ));
                             }
                         }
@@ -2047,7 +2111,7 @@ impl BandoEgui {
                     }
                 });
         }
-        if let Some((raw,kind,chat,sequence,original))=apply {
+        if let Some((raw,kind,chat,sequence,original,learned,suggestion))=apply {
             self.ocr_review=None;
             self.discard_ocr_confirm=false;
             if !self.raw_source.trim().is_empty() && self.raw_source!=raw {
@@ -2055,10 +2119,13 @@ impl BandoEgui {
                     text:raw,order_type:kind,chat,input_method:"OCR",
                     clipboard_sequence:sequence,
                     ocr_original:Some(original),
+                    ocr_learning_used:learned,
+                    ocr_model_suggestion:suggestion,
                 });
             } else {
                 self.apply_intake_text(
-                    raw,kind,chat,ctx,"OCR",true,sequence,Some(original)
+                    raw,kind,chat,ctx,"OCR",true,sequence,
+                    Some(original),learned,suggestion
                 );
             }
         } else if close {
@@ -2121,7 +2188,8 @@ impl BandoEgui {
                 self.apply_intake_text(
                     next.text,next.order_type,next.chat,ctx,
                     next.input_method,true,next.clipboard_sequence,
-                    next.ocr_original
+                    next.ocr_original,next.ocr_learning_used,
+                    next.ocr_model_suggestion
                 );
             }
         } else if cancel {
