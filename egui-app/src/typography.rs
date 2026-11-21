@@ -333,12 +333,12 @@ pub fn freight_table_cell_galley(
     client_table_galley(ui,text,Role::Body,emphasized,color)
 }
 
-/// Semantic emphasis and contrast for data in management tables.
+/// Semantic contrast for cells of *repeating management-table rows*.
 ///
-/// Normal product names, customer names, quantities and amounts are NOT
-/// bold. Only an explicitly final result (Total) uses the existing real
-/// emphasis font face. Headers and KPI cards keep their own established
-/// emphasis policies. The data font remains the existing 14pt Body face.
+/// Every data cell, INCLUDING billed row totals and other row-level totals,
+/// uses the same 14pt Regular face. "Total" is not a reason for bold inside
+/// a repeated table. Table headers and standalone KPI/summary cards own
+/// their separate emphasis roles and are not rendered by this function.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ManagementTableCellRole {
     ProductName,
@@ -347,7 +347,7 @@ pub enum ManagementTableCellRole {
     Option,
     Quantity,
     Money,
-    Total,
+    RowTotal,
     Category,
     Description,
     Status,
@@ -355,9 +355,9 @@ pub enum ManagementTableCellRole {
 }
 
 impl ManagementTableCellRole {
-    const fn emphasized(self) -> bool {
-        matches!(self, Self::Total)
-    }
+    // Never promote repeated-row data to a bold font. This intentionally
+    // has no per-role branch: emphasis belongs to headers/KPI components.
+    const fn emphasized(self) -> bool { false }
 }
 
 pub fn management_table_cell_color(role:ManagementTableCellRole)->Color32 {
@@ -367,7 +367,7 @@ pub fn management_table_cell_color(role:ManagementTableCellRole)->Color32 {
         | ManagementTableCellRole::Text
         | ManagementTableCellRole::Option
         | ManagementTableCellRole::Money
-        | ManagementTableCellRole::Total => TEXT,
+        | ManagementTableCellRole::RowTotal => TEXT,
         ManagementTableCellRole::Quantity
         | ManagementTableCellRole::Category
         | ManagementTableCellRole::Description
@@ -727,6 +727,7 @@ mod management_table_type_roles_tests {
             ManagementTableCellRole::Option,
             ManagementTableCellRole::Quantity,
             ManagementTableCellRole::Money,
+            ManagementTableCellRole::RowTotal,
             ManagementTableCellRole::Category,
             ManagementTableCellRole::Description,
             ManagementTableCellRole::Status,
@@ -734,15 +735,16 @@ mod management_table_type_roles_tests {
         ] {
             assert!(!role.emphasized(),"{role:?} must remain Regular");
         }
-        assert!(ManagementTableCellRole::Total.emphasized());
+        assert!(!ManagementTableCellRole::RowTotal.emphasized());
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::RowTotal),TEXT);
         assert_eq!(spec(Role::Body).size,FONT_BODY);
         assert_eq!(spec(Role::Body).weight as u8, Weight::Regular as u8);
     }
     #[test]
-    fn money_quantity_and_final_total_have_shared_contrast(){
+    fn money_quantity_and_row_total_have_shared_contrast(){
         assert_eq!(management_table_cell_color(ManagementTableCellRole::Money),TEXT);
         assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),SECONDARY);
-        assert_eq!(management_table_cell_color(ManagementTableCellRole::Total),TEXT);
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::RowTotal),TEXT);
         assert_eq!(management_table_cell_color(ManagementTableCellRole::Category),SECONDARY);
         assert_eq!(management_table_money_font(),numeric_editor_font());
     }
