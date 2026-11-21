@@ -170,17 +170,17 @@ pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
 // One 13pt shortcut label with 3pt keycap top/bottom padding and border.
 // The reception intake free-space calculator uses this instead of a plain
 // metadata text line, keeping three section groups vertically balanced.
-pub const RECEPTION_SHORTCUT_ROW_HEIGHT:f32 = 28.0;
-// Passive, sculpted keyboard caps in help text — not interactive buttons.
-// Use separate top/side tiers so they read as physical keycaps without
-// borrowing the hover/pressed language of the actual action controls.
-pub const RECEPTION_KEYCAP_HEIGHT:f32 = 25.0;
-pub const RECEPTION_KEYCAP_DEPTH:f32 = 3.0;
+pub const RECEPTION_SHORTCUT_ROW_HEIGHT:f32 = 30.0;
+// Passive, low-angle 3D keycap illustrations. The 5pt exposed bottom lip
+// makes their underside visible, unlike the flat reception action buttons.
+pub const RECEPTION_KEYCAP_HEIGHT:f32 = 27.0;
+pub const RECEPTION_KEYCAP_DEPTH:f32 = 5.0;
 pub const RECEPTION_KEYCAP_RADIUS:u8 = 4;
-pub const RECEPTION_KEYCAP_FACE:Color32 = Color32::from_rgb(74,74,74);
-pub const RECEPTION_KEYCAP_SIDE:Color32 = Color32::from_rgb(36,36,36);
-pub const RECEPTION_KEYCAP_EDGE:Color32 = Color32::from_rgb(105,105,105);
-pub const RECEPTION_KEYCAP_HIGHLIGHT:Color32 = Color32::from_rgb(128,128,128);
+pub const RECEPTION_KEYCAP_FACE:Color32 = Color32::from_rgb(82,82,82);
+pub const RECEPTION_KEYCAP_SIDE:Color32 = Color32::from_rgb(34,34,34);
+pub const RECEPTION_KEYCAP_EDGE:Color32 = Color32::from_rgb(112,112,112);
+pub const RECEPTION_KEYCAP_HIGHLIGHT:Color32 = Color32::from_rgb(150,150,150);
+pub const RECEPTION_KEYCAP_BOTTOM_HIGHLIGHT:Color32 = Color32::from_rgb(70,70,70);
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 // React recipient detail grid: full-width rows and paired contact cells.
