@@ -882,10 +882,10 @@ pub fn management_toolbar_trailing_rect(
 ///
 /// The row viewport is ALWAYS limited by `scroll_height`; only the native
 /// scrollbar track may extend into a card's non-scrolling bottom inset.
-/// The two single-table masters pass the common 3pt optical correction,
-/// so their rail ends at the painted body viewport rather than protruding
-/// into the card's 16pt lower padding. Other lists may extend through a
-/// non-scrolling inset, but never through a real footer.
+/// The two single-table masters pass 3pt of optical correction plus a
+/// 4pt lower rail extension, leaving 12pt clear to the card border while
+/// retaining the full 16pt row viewport inset. Other lists can have
+/// different extension policies, but never extend through a real footer.
 pub fn management_table_scroll_track_rect(
     ui:&Ui,scroll_height:f32,bottom_extension:f32
 )->Rect {
