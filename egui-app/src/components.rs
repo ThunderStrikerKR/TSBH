@@ -547,6 +547,93 @@ pub fn modal_footer_in_rect(
     );
 }
 
+/// Approved OCR modal geometry, now the default structural baseline for
+/// future egui dialogs. Text length and local scrollbars never move these
+/// three regions. Callers choose the appropriate popup size.
+#[derive(Clone,Copy,Debug)]
+pub struct ModalMasterLayout {
+    pub header:Rect,
+    pub workspace:Rect,
+    pub footer:Rect,
+}
+
+pub fn modal_master_layout(
+    bounds:Rect,header_height:f32,footer_height:f32,gap:f32
+)->ModalMasterLayout {
+    let h=bounds.height().max(0.0);
+    let title_h=header_height.max(0.0).min(h);
+    let actions_h=footer_height.max(0.0).min((h-title_h).max(0.0));
+    let header=Rect::from_min_size(bounds.min,Vec2::new(bounds.width(),title_h));
+    let footer=Rect::from_min_size(
+        egui::pos2(bounds.left(),bounds.bottom()-actions_h),
+        Vec2::new(bounds.width(),actions_h)
+    );
+    let gap=gap.max(0.0);
+    let top=(header.bottom()+gap).min(footer.top());
+    let bottom=(footer.top()-gap).max(top);
+    let workspace=Rect::from_min_max(
+        egui::pos2(bounds.left(),top),
+        egui::pos2(bounds.right(),bottom)
+    );
+    ModalMasterLayout{header,workspace,footer}
+}
+
+/// A single continuous PANEL surface; toolbar and split are optional.
+/// Returned lines are authoritative layout anchors for clipped contents.
+/// NO nested cards, doubled strokes, or independent popup color palette.
+#[derive(Clone,Copy,Debug)]
+pub struct ModalMasterWorkspace {
+    pub toolbar_bottom:f32,
+    pub divider_x:Option<f32>,
+}
+
+pub fn modal_master_workspace_surface(
+    ui:&Ui,rect:Rect,toolbar_height:f32,split_ratio:Option<f32>
+)->ModalMasterWorkspace {
+    let painter=ui.painter();
+    painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::PANEL);
+    painter.rect_stroke(
+        rect,theme::CONTROL_RADIUS,
+        Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER),
+        egui::StrokeKind::Inside
+    );
+    let toolbar_bottom=(rect.top()+toolbar_height.max(0.0)).min(rect.bottom());
+    if toolbar_height>0.0 {
+        painter.line_segment(
+            [egui::pos2(rect.left(),toolbar_bottom),
+             egui::pos2(rect.right(),toolbar_bottom)],
+            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+        );
+    }
+    let divider_x=split_ratio.map(|share|{
+        (rect.left()+rect.width()*share.clamp(0.0,1.0)).floor()
+    });
+    if let Some(x)=divider_x {
+        painter.line_segment(
+            [egui::pos2(x,rect.top()),egui::pos2(x,rect.bottom())],
+            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+        );
+    }
+    ModalMasterWorkspace{toolbar_bottom,divider_x}
+}
+
+/// Common descriptive header. Same approved geometry as OCR, but no
+/// dependence on the OCR purpose. A blank description is permitted for
+/// compact dialogs whose header slot is sized by the caller.
+pub fn modal_master_header_in_rect(
+    ui:&mut Ui,rect:Rect,title:&str,description:&str,
+    close_label:&str,enabled:bool
+)->bool {
+    modal_review_header_in_rect(ui,rect,title,description,close_label,enabled)
+}
+
+/// One-rule, right-action footer. Shared alias for the approved OCR chrome.
+pub fn modal_master_footer_in_rect(
+    ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
+) {
+    modal_review_footer_in_rect(ui,rect,actions);
+}
+
 /// A review dialog is ONE workspace, not two unrelated nested cards.
 /// Title and explanation share the same header; only one rule separates
 /// them from the actual work surface. Other modal headers are unaffected.
