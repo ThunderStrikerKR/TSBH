@@ -1795,33 +1795,34 @@ impl BandoEgui {
                         },
                     );
 
-                    // Both viewports start at the SAME baseline. Only their
-                    // own contents scroll. The source is placed on a dark
-                    // viewer mat rather than directly on the modal canvas.
-                    let viewport_top=toolbar_bottom+theme::SPACE_12;
-                    let viewport_bottom=compare_rect.bottom()-inset;
-                    let viewport_height=(viewport_bottom-viewport_top).max(1.0);
-                    let image_view_rect=Rect::from_min_size(
-                        egui::pos2(compare_rect.left()+inset,viewport_top),
-                        Vec2::new(
-                            (divider_x-compare_rect.left()-2.0*inset).max(1.0),
-                            viewport_height
-                        )
+                    // One contiguous work surface: the dark document mat and
+                    // editable text extend directly from the shared toolbar
+                    // rule to the bottom outer border. The old 16pt outer
+                    // inset and second viewer outline created double gutters
+                    // ("creases") around BOTH panes. Keep the 16pt spacing
+                    // only INSIDE the document viewer; the TextEdit already
+                    // owns its 12pt interior text margin.
+                    let viewport_top=toolbar_bottom
+                        +theme::SOFT_DIVIDER_WIDTH;
+                    let viewport_bottom=compare_rect.bottom()
+                        -theme::FRAME_STROKE_WIDTH;
+                    let image_view_rect=Rect::from_min_max(
+                        egui::pos2(compare_rect.left()
+                            +theme::FRAME_STROKE_WIDTH,viewport_top),
+                        egui::pos2(divider_x,viewport_bottom)
                     );
-                    let text_view_rect=Rect::from_min_size(
-                        egui::pos2(divider_x+inset,viewport_top),
-                        Vec2::new(
-                            (compare_rect.right()-divider_x-2.0*inset).max(1.0),
-                            viewport_height
-                        )
+                    let text_view_rect=Rect::from_min_max(
+                        egui::pos2(divider_x+theme::FRAME_STROKE_WIDTH,viewport_top),
+                        egui::pos2(compare_rect.right()
+                            -theme::FRAME_STROKE_WIDTH,viewport_bottom)
+                    );
+                    // Colors identify the two uses of ONE contiguous area:
+                    // no separate nested cards, strokes or rounded corners.
+                    ui.painter().rect_filled(
+                        image_view_rect,0.0,theme::CANVAS
                     );
                     ui.painter().rect_filled(
-                        image_view_rect,theme::CONTROL_RADIUS,theme::CANVAS
-                    );
-                    ui.painter().rect_stroke(
-                        image_view_rect,theme::CONTROL_RADIUS,
-                        egui::Stroke::new(theme::FRAME_STROKE_WIDTH,edge),
-                        egui::StrokeKind::Inside
+                        text_view_rect,0.0,theme::INPUT
                     );
 
                     let image_clip=image_view_rect.intersect(ui.clip_rect());
@@ -1843,6 +1844,9 @@ impl BandoEgui {
                                     | egui::scroll_area::ScrollSource::DRAG
                                 )
                                 .show(viewport,|image_ui|{
+                                    // Breathing room belongs to the document,
+                                    // not to an extra nested viewer frame.
+                                    image_ui.add_space(theme::SPACE_12);
                                     let fit=((image_view_rect.width()
                                         -2.0*inset)/review.width as f32)
                                         .min(1.0).max(0.01);
@@ -1894,6 +1898,9 @@ impl BandoEgui {
                             editor.add_sized(
                                 text_view_rect.size(),
                                 egui::TextEdit::multiline(&mut review.edited_text)
+                                    // The unified workspace paints INPUT;
+                                    // remove TextEdit's own second outline.
+                                    .frame(false)
                                     .font(egui::FontId::proportional(
                                         typography::FONT_BODY
                                     ))
