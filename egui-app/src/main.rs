@@ -1530,6 +1530,174 @@ impl BandoEgui {
         }
     }
 
+    /// OCR never changes an order until the employee checks the original
+    /// image against the editable recognition result and explicitly applies.
+    fn show_ocr_review(&mut self, ctx: &egui::Context, work_area:Rect) {
+        let mut close=false;
+        let mut apply:Option<(String,OrderType,bool,Option<ChatWindow>)>=None;
+        let dialog_width=(work_area.width()*0.94).clamp(560.0,1480.0)
+            .min(work_area.width().max(1.0));
+        let dialog_height=(work_area.height()*0.88).clamp(450.0,960.0)
+            .min(work_area.height().max(1.0));
+        if let Some(review)=self.ocr_review.as_mut() {
+            components::modal_window(
+                "OCR 문자 인식 검토","egui-ocr-review",work_area
+            )
+                .default_width(dialog_width)
+                .min_width(dialog_width)
+                .show(ctx,|ui|{
+                    close=components::modal_header(
+                        ui,"OCR 문자 인식 검토","취소",true
+                    );
+                    ui.label(typography::caption(
+                        "원본 이미지와 인식된 텍스트를 대조하고 오타를 수정한 뒤 반영하세요."
+                    ));
+                    ui.add_space(theme::SPACE_12);
+                    // Independently scrollable comparison panes. No full
+                    // dialog scrolling and no tiny image preview.
+                    let pane_height=(dialog_height-170.0).max(230.0);
+                    ui.horizontal(|row|{
+                        row.spacing_mut().item_spacing.x=theme::SPACE_16;
+                        let pane_width=((row.available_width()-theme::SPACE_16)
+                            /2.0).max(175.0);
+                        row.allocate_ui_with_layout(
+                            Vec2::new(pane_width,pane_height),
+                            Layout::top_down(Align::Min),
+                            |original|{
+                                original.label(
+                                    typography::subsection_heading("원본 이미지")
+                                );
+                                original.add(
+                                    egui::Slider::new(&mut review.zoom,0.5..=4.0)
+                                        .text("확대 배율")
+                                );
+                                egui::ScrollArea::both()
+                                    .id_salt("ocr-original-image-scroll")
+                                    .max_height((pane_height-75.0).max(100.0))
+                                    .auto_shrink([false,false])
+                                    .show(original,|image_ui|{
+                                        // 100% means fit-to-pane; zooming
+                                        // reveals pixels via local pan/scroll.
+                                        let fit=((pane_width-12.0)/review.width as f32)
+                                            .min(1.0).max(0.01);
+                                        let scale=fit*review.zoom;
+                                        image_ui.image((
+                                            review.texture.id(),
+                                            Vec2::new(
+                                                review.width as f32*scale,
+                                                review.height as f32*scale,
+                                            ),
+                                        ));
+                                    });
+                            },
+                        );
+                        row.allocate_ui_with_layout(
+                            Vec2::new(pane_width,pane_height),
+                            Layout::top_down(Align::Min),
+                            |recognized|{
+                                recognized.label(
+                                    typography::subsection_heading(
+                                        "인식된 텍스트 · 직접 수정"
+                                    )
+                                );
+                                recognized.add_space(theme::SPACE_8);
+                                recognized.add_sized(
+                                    Vec2::new(pane_width,(pane_height-55.0).max(100.0)),
+                                    egui::TextEdit::multiline(&mut review.edited_text)
+                                        .font(egui::TextStyle::Body)
+                                        .desired_width(pane_width)
+                                        .desired_rows(28),
+                                );
+                            },
+                        );
+                    });
+                    ui.add_space(theme::SPACE_12);
+                    let edited=review.edited_text.trim();
+                    let valid=!edited.is_empty() && edited.chars().count()<=20_000;
+                    let appended_length=self.raw_source.trim_end().chars().count()
+                        +usize::from(!self.raw_source.trim().is_empty())
+                        +edited.chars().count();
+                    let can_append=valid && appended_length<=20_000;
+                    if valid && !can_append {
+                        ui.label(egui::RichText::new(
+                            "기존 원문에 추가하면 20,000자를 초과합니다. 교체만 가능합니다."
+                        ).color(theme::DANGER));
+                    } else if !valid {
+                        ui.label(egui::RichText::new(
+                            "인식된 텍스트는 1~20,000자로 수정해 주세요."
+                        ).color(theme::DANGER));
+                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center),|buttons|{
+                        if theme::action(
+                            buttons,"원문 교체",ButtonRole::Primary,valid
+                        ).clicked() {
+                            apply=Some((
+                                edited.to_owned(),review.order_type,true,review.chat.clone()
+                            ));
+                        }
+                        if theme::action(
+                            buttons,"원문에 추가",ButtonRole::Standard,can_append
+                        ).clicked() {
+                            let added=if self.raw_source.trim().is_empty() {
+                                edited.to_owned()
+                            } else {
+                                format!("{}\n{}",self.raw_source.trim_end(),edited)
+                            };
+                            apply=Some((
+                                added,review.order_type,false,review.chat.clone()
+                            ));
+                        }
+                    });
+                });
+        }
+        if let Some((raw,kind,replacing,chat))=apply {
+            self.ocr_review=None;
+            self.discard_ocr_confirm=false;
+            if replacing && !self.raw_source.trim().is_empty()
+                && self.raw_source!=raw
+            {
+                // Preserve the existing source until replacement is confirmed.
+                self.pending_replace=Some(PendingReplace {
+                    text:raw,order_type:kind,chat,input_method:"OCR"
+                });
+            } else {
+                self.apply_intake_text(raw,kind,chat,ctx,"OCR",replacing);
+            }
+        } else if close {
+            if self.ocr_review.as_ref().is_some_and(|review|
+                review.edited_text!=review.original_text
+            ) {
+                self.discard_ocr_confirm=true;
+            } else {
+                self.ocr_review=None;
+                self.discard_ocr_confirm=false;
+            }
+        }
+        if self.discard_ocr_confirm {
+            components::modal_backdrop(
+                ctx,"ocr-discard-nested-backdrop",true
+            );
+            components::decision_window(
+                "변경사항 확인","ocr-review-discard-confirm",work_area
+            ).show(ctx,|ui|{
+                if components::modal_header(
+                    ui,"변경사항 확인","돌아가기",true
+                ) {
+                    self.discard_ocr_confirm=false;
+                }
+                ui.label("OCR 검토에서 수정한 내용을 버릴까요?");
+                ui.with_layout(Layout::right_to_left(Align::Center),|buttons|{
+                    if theme::action(
+                        buttons,"수정 내용 버리기",ButtonRole::Danger,true
+                    ).clicked() {
+                        self.ocr_review=None;
+                        self.discard_ocr_confirm=false;
+                    }
+                });
+            });
+        }
+    }
+
     fn show_replacement_confirmation(&mut self, ctx: &egui::Context, work_area:Rect) {
         if self.pending_replace.is_none() { return; }
         let mut accept = false;
