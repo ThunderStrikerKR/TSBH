@@ -90,6 +90,14 @@ pub fn clicked(ctx: &Context, source: &'static str, response: &Response) {
     record(ctx, source, position, AnchorKind::Action);
 }
 
+/// For jobs dispatched by several nested buttons that all share an async
+/// receiver. Capture the *dispatch-time* pointer, not the later completion-time
+/// pointer. Explicit response-based capture remains preferable where available.
+pub fn dispatch_pointer(ctx: &Context, source: &'static str) {
+    let at = ctx.input(|i| i.pointer.latest_pos()).unwrap_or_else(|| fallback(ctx));
+    record(ctx, source, at, AnchorKind::Action);
+}
+
 /// Input fallback (for fields that only expose a Response, not TextEditOutput).
 /// A field's editing point is preferred over the outer card or table center.
 pub fn input(ctx: &Context, source: &'static str, response: &Response) {
