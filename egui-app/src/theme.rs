@@ -325,13 +325,20 @@ pub const MANUAL_INPUT_WIDTH: f32 = 250.0;
 pub const MODAL_CHROME_BG: Color32 = TABLE_ROW_ALT_BG;
 pub const MODAL_SECTION_BG: Color32 = TABLE_ROW_ALT_BG;
 pub const MODAL_SECTION_HEADER_BG: Color32 = INPUT;
-// One-line header for side-by-side comparison panels (OCR pilot).
-pub const MODAL_COMPARISON_HEADER_HEIGHT: f32 = 40.0;
-// OCR review shares the freight-master palette while presenting a single
-// comparison workspace rather than two stacked bordered cards.
-pub const MODAL_REVIEW_HEADER_HEIGHT: f32 = 84.0;
-pub const MODAL_REVIEW_GAP: f32 = SPACE_16;
-pub const MODAL_REVIEW_CONTENT_INSET: f32 = SPACE_16;
+// Approved OCR review chrome is now the common popup structural master.
+// These are visual-role tokens; pane counts and OCR document gutters remain
+// content-specific. Changing one master token updates all adopted dialogs.
+pub const MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT: f32 = 40.0;
+pub const MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT: f32 = 84.0;
+pub const MODAL_MASTER_WORKSPACE_GAP: f32 = SPACE_16;
+pub const MODAL_MASTER_CONTENT_INSET: f32 = SPACE_16;
+// Compatibility aliases for the earlier OCR review pilot.
+pub const MODAL_COMPARISON_HEADER_HEIGHT: f32 =
+    MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT;
+pub const MODAL_REVIEW_HEADER_HEIGHT: f32 =
+    MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT;
+pub const MODAL_REVIEW_GAP: f32 = MODAL_MASTER_WORKSPACE_GAP;
+pub const MODAL_REVIEW_CONTENT_INSET: f32 = MODAL_MASTER_CONTENT_INSET;
 pub const MODAL_HEADER_HEIGHT: f32 = 56.0;
 pub const MODAL_FOOTER_HEIGHT: f32 = 58.0;
 pub const MODAL_SECTION_PADDING: f32 = SPACE_12;
