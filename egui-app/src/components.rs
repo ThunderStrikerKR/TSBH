@@ -644,14 +644,15 @@ pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
     );
 }
 
-/// Reception title rule: an independent section uses the master's
-/// stronger header edge, not the faint intra-record list divider.
+/// Reception section titles are NOT fixed table headers. Keep a soft
+/// 1pt DIVIDER under them; the strong 2pt TABLE_HEADER_OUTLINE belongs
+/// exclusively to the management/list column headers.
 /// Preserve the existing one-point slot and all dock splitter coordinates.
 pub fn reception_section_divider(ui:&mut Ui){
     let (rect,_)=ui.allocate_exact_size(
         Vec2::new(ui.available_width(),theme::SOFT_DIVIDER_WIDTH),Sense::hover()
     );
-    ui.painter().rect_filled(rect,0.0,theme::TABLE_HEADER_OUTLINE);
+    ui.painter().rect_filled(rect,0.0,theme::DIVIDER);
 }
 
 /// Readability for actionable recognition/workflow issues. Full-width
@@ -681,11 +682,11 @@ pub fn reception_review_status(ui:&mut Ui,message:&str){
     );
 }
 
-/// Keep the exact existing eight-point canvas-to-action clearance, but
-/// use its middle one-point band to visually connect copy controls to canvas.
+/// The message editor/footer uses a 12pt spacer with a 1pt centered divider.
+/// The caller subtracts the SAME token before sizing the editable canvas.
 pub fn reception_message_footer_gap(ui:&mut Ui){
     let (gap_rect,_)=ui.allocate_exact_size(
-        Vec2::new(ui.available_width(),theme::SPACE_8),Sense::hover()
+        Vec2::new(ui.available_width(),theme::RECEPTION_MESSAGE_ACTION_GAP),Sense::hover()
     );
     let y=gap_rect.center().y;
     ui.painter().line_segment(
@@ -1903,7 +1904,7 @@ pub fn reception_items_header(ui: &mut Ui) {
     let columns = reception_item_columns(rect);
     for (index, label) in ["품목", "수량", "금액"].iter().enumerate() {
         let cell = columns[index].shrink2(egui::vec2(theme::SPACE_4, 0.0));
-        let galley = typography::table_header_galley(ui, label);
+        let galley = typography::management_table_header_galley(ui, label);
         // The product header starts at the same LEFT edge as product text;
         // quantity and amount end at the same RIGHT edges as their values.
         let x = if index == 0 {
@@ -1911,8 +1912,10 @@ pub fn reception_items_header(ui: &mut Ui) {
         } else {
             cell.right() - galley.size().x
         };
+        let text_bottom = cell.bottom() - theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT;
+        let text_center_y = (cell.top() + text_bottom) / 2.0;
         ui.painter().with_clip_rect(cell).galley(
-            egui::pos2(x, cell.center().y - galley.size().y / 2.0),
+            egui::pos2(x, text_center_y - galley.size().y / 2.0),
             galley, theme::SECONDARY,
         );
     }
