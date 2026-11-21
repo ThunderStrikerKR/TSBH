@@ -1,8 +1,8 @@
 //! React WorkflowQueue's Excel management view, now native egui.
 //! Export, sender validation, workflow state and file history remain owned by
 //! the original Rust business core and Tauri's existing SQLite database.
-use crate::{components,gateway::{BandoGateway,ReadOperation},settings_help,theme,typography};
-use chrono::{DateTime,FixedOffset};
+use crate::{components,gateway::{BandoGateway,ReadOperation},order_history_manager,settings_help,theme,typography};
+use chrono::{DateTime,FixedOffset,NaiveDate,Utc};
 use eframe::egui::{self,Align,Align2,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
 use serde_json::{json,Value};
 use std::{collections::{BTreeSet,HashMap},sync::{mpsc::{self,Receiver,TryRecvError},Arc}};
@@ -11,7 +11,9 @@ const HEIGHT:f32=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
 const HEADER:f32=theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const GAP:f32=theme::FREIGHT_ASSIGNMENT_COL_GAP;
 const QUEUE:[f32;5]=[48.0,212.0,354.0,178.0,182.0];
-const HISTORY:[f32;4]=[176.0,122.0,485.0,292.0];
+// Date, agency, exported items and file actions. The long products column
+// expands into spare width while keeping the other columns readable.
+const HISTORY:[f32;4]=[176.0,210.0,485.0,292.0];
 fn text<'a>(v:&'a Value,key:&str)->&'a str{
     v.get(key).and_then(Value::as_str).unwrap_or("")
 }
@@ -125,14 +127,75 @@ fn records(state:&Value,reads:&Value,tab:Tab,search:&str)->Vec<QueueRow>{
     }
     result
 }
-fn export_history(state:&Value,query:&str)->Vec<Value>{
-    let mut result=rows(&state["exports"]).iter().filter(|e|{
-        text(e,"filename").contains(query)||
-        rows(&e["orderIds"]).iter().any(|id|{
-            id.as_str().and_then(|id|find(&state["orders"],id))
-                .is_some_and(|order|text(&order["clientSnapshot"],"name").contains(query))
-        })
-    }).cloned().collect::<Vec<_>>();
+/// Never reconstruct exported products from today's editable order fields:
+/// the XLSX ledger stores the exact frozen recipient snapshot for each row.
+#[derive(Clone)]
+struct HistoryRow{
+    export:Value,
+    clients:String,
+    products:String,
+}
+fn export_day(raw:&str)->String{
+    if let Ok(dt)=DateTime::parse_from_rfc3339(raw){
+        return dt.with_timezone(&FixedOffset::east_opt(9*3600).unwrap())
+            .format("%Y-%m-%d").to_string();
+    }
+    raw.get(..10).filter(|day|
+        NaiveDate::parse_from_str(day,"%Y-%m-%d").is_ok()
+    ).unwrap_or("").to_owned()
+}
+fn export_date_matches(raw:&str,from:&str,to:&str)->bool{
+    if from.is_empty()&&to.is_empty(){return true;}
+    let day=export_day(raw);
+    !day.is_empty()&&(from.is_empty()||day.as_str()>=from)
+        &&(to.is_empty()||day.as_str()<=to)
+}
+fn history_projection(state:&Value,export:&Value)->HistoryRow{
+    let mut clients=Vec::<String>::new();
+    for order_id in rows(&export["orderIds"]).iter().filter_map(Value::as_str){
+        let Some(order)=find(&state["orders"],order_id) else{continue};
+        let snapshot=&order["confirmationSnapshot"]["client"];
+        let client=if snapshot.is_object(){snapshot}
+            else{&order["clientSnapshot"]};
+        let name=if text(order,"orderType")=="RETAIL"{
+            "반도스탠드"
+        }else if !text(client,"displayName").is_empty(){
+            text(client,"displayName")
+        }else{text(client,"name")};
+        if !name.is_empty() && !clients.iter().any(|x|x==name){
+            clients.push(name.to_owned());
+        }
+    }
+    // Old ledger records may not have orderIds. Do not invent a party name.
+    let clients=if clients.is_empty(){"거래처 기록 없음".to_owned()}
+        else{clients.join(" / ")};
+    let mut product_lines=Vec::new();
+    for queued in rows(&export["snapshots"]){
+        for item in rows(&queued["snapshot"]["recipient"]["items"]){
+            let name=text(item,"name").trim();
+            if name.is_empty(){continue;}
+            let qty=item["quantity"].as_i64().map(|v|v.to_string())
+                .unwrap_or_else(||"수량 미확인".to_owned());
+            product_lines.push(format!("◆ {name} × {qty}"));
+        }
+    }
+    let products=if product_lines.is_empty(){
+        "출력 당시 상품 기록 없음".to_owned()
+    }else{product_lines.join("  ")};
+    HistoryRow{export:export.clone(),clients,products}
+}
+fn export_history(
+    state:&Value,query:&str,from:&str,to:&str
+)->Vec<HistoryRow>{
+    let query=query.trim().to_lowercase();
+    let mut result=rows(&state["exports"]).iter()
+        .filter(|e|export_date_matches(text(e,"at"),from,to))
+        .map(|e|history_projection(state,e))
+        .filter(|e|{
+            let haystack=format!("{} {} {}",text(&e.export,"filename"),
+                e.clients,e.products).to_lowercase();
+            haystack.contains(&query)
+        }).collect::<Vec<_>>();
     result.reverse();
     result
 }
@@ -145,12 +208,11 @@ fn cmp_queues(a:&QueueRow,b:&QueueRow,column:usize)->std::cmp::Ordering{
         _=>std::cmp::Ordering::Equal
     }
 }
-fn cmp_history(a:&Value,b:&Value,column:usize)->std::cmp::Ordering{
+fn cmp_history(a:&HistoryRow,b:&HistoryRow,column:usize)->std::cmp::Ordering{
     match column{
-        0=>text(a,"at").cmp(text(b,"at")),
-        1=>rows(&a["queueEntryIds"]).len()
-            .cmp(&rows(&b["queueEntryIds"]).len()),
-        2=>text(a,"filename").cmp(text(b,"filename")),
+        0=>text(&a.export,"at").cmp(text(&b.export,"at")),
+        1=>a.clients.cmp(&b.clients),
+        2=>a.products.cmp(&b.products),
         _=>std::cmp::Ordering::Equal
     }
 }
@@ -162,7 +224,7 @@ fn sort_queue(lines:&mut [QueueRow],sort:Option<Sort>){
         });
     }
 }
-fn sort_history(lines:&mut [Value],sort:Option<Sort>){
+fn sort_history(lines:&mut [HistoryRow],sort:Option<Sort>){
     if let Some(sort)=sort{
         lines.sort_by(|a,b|{
             let cmp=cmp_history(a,b,sort.column);
@@ -435,6 +497,10 @@ pub struct ExcelManager{
     selected:BTreeSet<String>,
     sort_queue:Option<Sort>,
     sort_history:Option<Sort>,
+    export_from:String,
+    export_to:String,
+    export_from_month:NaiveDate,
+    export_to_month:NaiveDate,
     managed_queue:Option<String>,
     freight_drafts:HashMap<String,String>,
     open_order:Option<String>,
@@ -442,11 +508,17 @@ pub struct ExcelManager{
 }
 impl ExcelManager{
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:egui::Context)->Self{
+        let today=Utc::now().with_timezone(
+            &FixedOffset::east_opt(9*3600).expect("Seoul offset")
+        ).date_naive();
         let mut manager=Self{
             gateway,receiver:None,result:None,operation:None,operation_name:None,
             preview:None,error:None,notice:None,tab:Tab::Factory,
             query:String::new(),selected:BTreeSet::new(),
             sort_queue:None,sort_history:None,
+            export_from:String::new(),export_to:String::new(),
+            export_from_month:components::calendar_month_start(today),
+            export_to_month:components::calendar_month_start(today),
             managed_queue:None,freight_drafts:HashMap::new(),
             open_order:None,open_settings:false,
         };
