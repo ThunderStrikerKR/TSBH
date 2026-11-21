@@ -132,6 +132,7 @@ struct PendingReplace {
 struct PendingClipboardClear {
     order_id:String,
     raw:String,
+    order_type:String,
     sequence:Option<u32>,
 }
 
@@ -1168,13 +1169,14 @@ impl BandoEgui {
         }
         for event in events {
             match event {
-                source_autosave::SaveStatus::Saved{revision,active_id,raw}=>{
+                source_autosave::SaveStatus::Saved{revision,active_id,raw,order_type}=>{
                     let _=revision;
                     self.source_save_error=None;
                     let saved_import=self.pending_clipboard_clear.as_ref()
                         .is_some_and(|pending|
                             active_id.as_deref()==Some(pending.order_id.as_str())
                             && raw==pending.raw
+                            && order_type==pending.order_type
                         );
                     if saved_import{
                         let pending=self.pending_clipboard_clear.take()
@@ -1571,6 +1573,7 @@ impl BandoEgui {
             self.active_id.as_ref().map(|id|PendingClipboardClear{
                 order_id:id.clone(),
                 raw:self.raw_source.clone(),
+                order_type:self.order_type.as_str().to_owned(),
                 sequence:clipboard_sequence,
             })
         }else{None};
