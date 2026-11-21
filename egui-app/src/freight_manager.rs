@@ -175,34 +175,31 @@ fn freight_table_cells(
     })
 }
 
-/// This table uses the standard 14pt body step for data and headers.
-/// Product names use bold emphasis, while categories stay secondary.
-#[derive(Clone,Copy)]
-enum FreightCellRole { Primary, Normal, Category }
+/// These table cells use the shared 14pt semantic regular-data roles.
+/// Only headings and explicit final results retain strong emphasis.
 
 /// One non-wrapping line anchored 6pt from the shared column origin. Keep
 /// the full content on hover without changing the cell's layout footprint.
 fn freight_assignment_text(
     ui:&mut Ui,rect:egui::Rect,value:&str,full_text:&str,
-    role:FreightCellRole,id:impl std::hash::Hash
+    role:typography::ManagementTableCellRole,id:impl std::hash::Hash
 ) {
     let clipped=rect.shrink2(egui::vec2(theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,0.0));
     let painter=ui.painter().with_clip_rect(clipped);
     match role {
-        FreightCellRole::Category=>{
-            // Show ancestry as secondary context, but emphasize the leaf.
-            // Keep the original category text intact on hover. The leading
-            // truncation is calculated using both actual glyph widths.
+        typography::ManagementTableCellRole::Category=>{
+            // Show ancestry as muted context with a readable, regular leaf.
+            // Keep the original category text intact on hover.
             let (prefix,leaf)=match value.rfind('>'){
                 Some(index) if !value[index+1..].trim().is_empty() =>
                     value.split_at(index+1),
                 _=>("",value),
             };
-            let prefix_galley=typography::freight_table_cell_galley(
-                ui,prefix,false,theme::MUTED
+            let prefix_galley=typography::management_table_cell_galley(
+                ui,prefix,typography::ManagementTableCellRole::Muted
             );
-            let leaf_galley=typography::freight_table_cell_galley(
-                ui,leaf,true,theme::SECONDARY
+            let leaf_galley=typography::management_table_cell_galley(
+                ui,leaf,typography::ManagementTableCellRole::Category
             );
             let y=clipped.center().y-prefix_galley.size().y.max(
                 leaf_galley.size().y
@@ -217,19 +214,8 @@ fn freight_assignment_text(
             );
         }
         other=>{
-            let (galley,color)=match other {
-                FreightCellRole::Primary=>(
-                    typography::freight_table_cell_galley(
-                        ui,value,true,theme::TEXT
-                    ),theme::TEXT
-                ),
-                FreightCellRole::Normal=>(
-                    typography::freight_table_cell_galley(
-                        ui,value,false,theme::TEXT
-                    ),theme::TEXT
-                ),
-                FreightCellRole::Category=>unreachable!(),
-            };
+            let galley=typography::management_table_cell_galley(ui,value,other);
+            let color=typography::management_table_cell_color(other);
             painter.galley(
                 egui::pos2(
                     clipped.left(),
@@ -1467,13 +1453,13 @@ impl FreightManager {
                         }else{format!("{model} / {subtitle}")};
                         freight_assignment_text(
                             row,cells[1],&product_title,&product_title,
-                            FreightCellRole::Primary,(id,1)
+                            typography::ManagementTableCellRole::ProductName,(id,1)
                         );
                         // The narrow third column is color/option. The wide
                         // fourth column is the full canonical category path.
                         let colors=variant_colors(product);
                         freight_assignment_text(
-                            row,cells[2],&colors,&colors,FreightCellRole::Normal,(id,2)
+                            row,cells[2],&colors,&colors,typography::ManagementTableCellRole::Option,(id,2)
                         );
                         let category=category_paths.for_product(product);
                         let category=if category.trim().is_empty(){
@@ -1486,7 +1472,7 @@ impl FreightManager {
                         );
                         freight_assignment_text(
                             row,cells[3],&visible_category,category,
-                            FreightCellRole::Category,(id,3)
+                            typography::ManagementTableCellRole::Category,(id,3)
                         );
 
                         // The group selector's own child UI shares the same
