@@ -459,6 +459,8 @@ pub const MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH: f32 = 700.0;
 pub const MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH: f32 = 330.0;
 /// Draw the fixed-table header outline *inside* its 36pt rectangle.
 pub const MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT: f32 = 2.0;
+/// Consistent leading inset for text columns in master headers and rows.
+pub const MANAGEMENT_TABLE_TEXT_LEADING_INSET: f32 = 6.0;
 // Existing React TierBadge palette; color is display-only, never a pricing rule.
 pub const CLIENT_TIER_WHOLESALE_BG: Color32 = Color32::from_rgb(35,76,55);
 pub const CLIENT_TIER_WHOLESALE_TEXT: Color32 = Color32::from_rgb(166,237,192);
