@@ -3031,7 +3031,7 @@ impl BandoEgui {
                                 .auto_shrink([false,false])
                                 .show(canvas,|content|{
                                     content.add(
-                                        egui::Label::new(typography::body(
+                                        egui::Label::new(typography::reception_source_text(
                                             &shipment.source_raw
                                         )).selectable(true)
                                     );
@@ -3259,14 +3259,17 @@ impl BandoEgui {
                                     let job=source_highlight::layout(
                                         buffer.as_str(),&spans,
                                         selected_id.as_deref(),active_link.as_ref(),
-                                        width,egui::FontId::proportional(typography::FONT_BODY),
-                                        theme::TEXT,
+                                        width,egui::FontId::proportional(
+                                            typography::FONT_RECEPTION_SOURCE_TEXT
+                                        ),theme::TEXT,
                                     );
                                     lay_ui.fonts_mut(|fonts|fonts.layout_job(job))
                                 };
                                 let output=egui::TextEdit::multiline(&mut self.raw_source)
                                     .frame(false)
-                                    .font(egui::TextStyle::Body)
+                                    .font(egui::FontId::proportional(
+                                        typography::FONT_RECEPTION_SOURCE_TEXT
+                                    ))
                                     .desired_rows(lines)
                                     .desired_width(scroll_ui.available_width())
                                     .layouter(&mut layouter)
