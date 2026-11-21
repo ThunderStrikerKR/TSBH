@@ -3208,6 +3208,15 @@ impl BandoEgui {
 
     fn message_section(&mut self, ui: &mut Ui, height: f32) {
         if let Some((group,_shipment))=self.visible_workflow_group(){
+            // React also blocks payment copies with actionable Rust issues.
+            // Do not enable controls just because the preview has text.
+            let can_copy=group.automatic_text.as_deref()
+                .is_some_and(|text|!text.trim().is_empty())
+                && matches!(group.automatic_phase.as_deref(),
+                    Some("request") | Some("payment"))
+                && (group.automatic_phase.as_deref()!=Some("payment")
+                    ||group.automatic_payment_issues.is_empty());
+            let mut copy_with_greeting=None;
             Self::section_with_header(ui,"복사용 자동 메시지",height,|header|{
                 let mut include_link=false;
                 header.add_enabled(false,egui::Checkbox::new(&mut include_link,"링크 포함"));
@@ -3253,8 +3262,49 @@ impl BandoEgui {
                     );
                 }
                 components::reception_message_footer_gap(body);
-                components::reception_message_copy_actions(body);
+                copy_with_greeting=components::reception_message_copy_actions(
+                    body,can_copy
+                );
             });
+            if let Some(include_greeting)=copy_with_greeting{
+                floating_notice::dispatch_pointer(
+                    ui.ctx(),"reception.automatic.copy"
+                );
+                // The native Rust output engine owns the optional greeting.
+                // Copying is clipboard-only until an authorized workflow
+                // audit CAS transaction is exposed to this egui frontend.
+                let result=self.gateway.execute(
+                    gateway::ReadOperation::DecorateAutomaticCopy,
+                    serde_json::json!({
+                        "text":group.automatic_text.as_deref().unwrap_or(""),
+                        "includeGreeting":include_greeting
+                    })
+                );
+                match result {
+                    Ok(rendered)=>{
+                        if let Some(text)=rendered.get("text")
+                            .and_then(serde_json::Value::as_str)
+                            .filter(|text|!text.trim().is_empty()){
+                            ui.ctx().copy_text(text.to_owned());
+                            floating_notice::publish(
+                                ui.ctx(),"reception.automatic.copy",
+                                floating_notice::Tone::Success,
+                                "클립보드 복사 완료 · 업무 이력은 기록되지 않았습니다."
+                            );
+                        }else{
+                            floating_notice::publish(
+                                ui.ctx(),"reception.automatic.copy",
+                                floating_notice::Tone::Error,
+                                "복사할 메시지가 없습니다."
+                            );
+                        }
+                    }
+                    Err(error)=>floating_notice::publish(
+                        ui.ctx(),"reception.automatic.copy",
+                        floating_notice::Tone::Error,error
+                    ),
+                }
+            }
             return;
         }
         // The intake standby screen has no recognized source or working
@@ -3289,7 +3339,7 @@ impl BandoEgui {
             );
             components::paint_source_document_surface(ui, field_rect);
             components::reception_message_footer_gap(ui);
-            components::reception_message_copy_actions(ui);
+            let _=components::reception_message_copy_actions(ui,false);
         });
     }
 
