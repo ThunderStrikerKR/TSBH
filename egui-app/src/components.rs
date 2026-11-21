@@ -263,21 +263,54 @@ pub fn paired_actions(
 }
 
 
-/// Keyboard shortcuts rendered as actual compact keycaps. Win+Shift+S
-/// opens Windows region snipping; Print Screen is an alternative capture
-/// key (behavior follows Windows' Print Screen accessibility setting).
+/// Passive *illustrations* of keyboard keys, never action buttons.
+/// Draw the lower shell first, then the raised face, subtle rim and a
+/// one-pixel highlight. No hover, pressed, focus, or click behavior is added.
 fn reception_keycap(ui:&mut Ui,key:&str){
-    Frame::new()
-        .fill(theme::RAISED)
-        .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER))
-        .corner_radius(theme::CONTROL_RADIUS)
-        .inner_margin(egui::Margin::symmetric(6,3))
-        .show(ui,|cap|{
-            cap.label(
-                egui::RichText::new(key).size(typography::FONT_FIELD_LABEL)
-                    .strong().color(theme::TEXT)
-            );
-        });
+    let font=egui::FontId::proportional(typography::FONT_FIELD_LABEL);
+    let galley=ui.painter().layout_no_wrap(
+        key.to_owned(),font,theme::TEXT
+    );
+    let width=(galley.size().x+2.0*theme::SPACE_8).ceil().max(26.0);
+    let height=theme::RECEPTION_KEYCAP_HEIGHT;
+    let depth=theme::RECEPTION_KEYCAP_DEPTH;
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(width,height),Sense::hover()
+    );
+    let radius=theme::RECEPTION_KEYCAP_RADIUS;
+    let face=Rect::from_min_max(
+        rect.min,egui::pos2(rect.right(),rect.bottom()-depth)
+    );
+    let shell=face.translate(egui::vec2(0.0,depth));
+    let painter=ui.painter();
+    // The exposed bottom three points provide depth even without a
+    // drop-shadow and remain visible on the dark reception panel.
+    painter.rect_filled(shell,radius,theme::RECEPTION_KEYCAP_SIDE);
+    painter.rect_stroke(
+        shell,radius,Stroke::new(1.0,theme::BORDER),
+        egui::StrokeKind::Inside
+    );
+    painter.rect_filled(face,radius,theme::RECEPTION_KEYCAP_FACE);
+    painter.rect_stroke(
+        face,radius,Stroke::new(1.0,theme::RECEPTION_KEYCAP_EDGE),
+        egui::StrokeKind::Inside
+    );
+    // An inset highlight reads as a raised top plane rather than the
+    // interactive border of a standard flat action button.
+    painter.line_segment(
+        [
+            egui::pos2(face.left()+6.0,face.top()+1.5),
+            egui::pos2(face.right()-6.0,face.top()+1.5)
+        ],
+        Stroke::new(1.0,theme::RECEPTION_KEYCAP_HIGHLIGHT)
+    );
+    painter.galley(
+        egui::pos2(
+            (face.center().x-galley.size().x*0.5).round(),
+            (face.center().y-galley.size().y*0.5).round()
+        ),
+        galley,theme::TEXT
+    );
 }
 
 /// Reuse the same 4pt key grouping on every reception layout. Unlike plain
