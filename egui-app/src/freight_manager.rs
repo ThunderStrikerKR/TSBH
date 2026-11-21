@@ -288,10 +288,11 @@ fn group_rate_registered(rule:&Value)->bool{
 // Text, numeric, status and metadata share one fixed-height cell geometry.
 fn freight_rate_cell(
     ui:&mut Ui,rect:egui::Rect,value:&str,align:egui::Align2,
-    emphasized:bool,color:egui::Color32,id:impl std::hash::Hash
+    role:typography::ManagementTableCellRole,id:impl std::hash::Hash
 ){
     let cell=rect.shrink2(egui::vec2(6.0,0.0));
-    let galley=typography::freight_table_cell_galley(ui,value,emphasized,color);
+    let color=typography::management_table_cell_color(role);
+    let galley=typography::management_table_cell_galley(ui,value,role);
     let x=if align==egui::Align2::RIGHT_CENTER {
         cell.right()-galley.size().x
     }else if align==egui::Align2::CENTER_CENTER {
@@ -1971,22 +1972,22 @@ impl FreightManager {
                                 let identity=format!("{} · {count}개 상품",text(group,"name"));
                                 freight_rate_cell(
                                     row,cells[0],&identity,egui::Align2::LEFT_CENTER,
-                                    true,theme::TEXT,(id,0)
+                                    typography::ManagementTableCellRole::ClientName,(id,0)
                                 );
                                 let current=&group["current"];
                                 freight_rate_cell(
                                     row,cells[1],&group_bundle_summary(current),
-                                    egui::Align2::RIGHT_CENTER,false,theme::TEXT,(id,1)
+                                    egui::Align2::RIGHT_CENTER,typography::ManagementTableCellRole::Quantity,(id,1)
                                 );
                                 let fees=group_fee_summary(current);
                                 freight_rate_cell(
                                     row,cells[2],&fees,egui::Align2::LEFT_CENTER,
-                                    false,theme::TEXT,(id,2)
+                                    typography::ManagementTableCellRole::Money,(id,2)
                                 );
                                 freight_rate_cell(
                                     row,cells[3],
                                     if group_rate_registered(current){"등록"}else{"미등록"},
-                                    egui::Align2::CENTER_CENTER,false,theme::SECONDARY,(id,3)
+                                    egui::Align2::CENTER_CENTER,typography::ManagementTableCellRole::Status,(id,3)
                                 );
                                 let note=text(current,"notes");
                                 let date=text(current,"at").split('T').next().unwrap_or("");
@@ -1998,7 +1999,7 @@ impl FreightManager {
                                 };
                                 freight_rate_cell(
                                     row,cells[4],&metadata,egui::Align2::LEFT_CENTER,
-                                    false,theme::SECONDARY,(id,4)
+                                    typography::ManagementTableCellRole::Description,(id,4)
                                 );
                                 let rect=cells[5].shrink2(egui::vec2(6.0,0.0));
                                 row.scope_builder(
@@ -2326,17 +2327,17 @@ impl FreightManager {
                     history_cell(
                         row,cells[0],text(record,"description"),
                         text(record,"description"),egui::Align2::LEFT_CENTER,
-                        true,theme::TEXT,(id,0)
+                        typography::ManagementTableCellRole::Text,(id,0)
                     );
                     history_cell(
                         row,cells[1],&verification,&verification_detail,
-                        egui::Align2::LEFT_CENTER,false,theme::SECONDARY,(id,1)
+                        egui::Align2::LEFT_CENTER,typography::ManagementTableCellRole::Description,(id,1)
                     );
                     for (column,key) in [(2,"charge"),(3,"actual")]{
                         let fee=as_fee(&record[key]);
                         history_cell(
                             row,cells[column],&fee,&fee,
-                            egui::Align2::RIGHT_CENTER,false,theme::TEXT,(id,column)
+                            egui::Align2::RIGHT_CENTER,typography::ManagementTableCellRole::Money,(id,column)
                         );
                     }
                     let validity=projection["currentCombinations"]
@@ -2348,7 +2349,7 @@ impl FreightManager {
                     };
                     history_cell(
                         row,cells[4],status,status,
-                        egui::Align2::CENTER_CENTER,false,theme::SECONDARY,(id,4)
+                        egui::Align2::CENTER_CENTER,typography::ManagementTableCellRole::Status,(id,4)
                     );
                     let action_rect=cells[5].shrink2(egui::vec2(theme::SPACE_8,0.0));
                     let history_row_clip=row.clip_rect();
@@ -2413,32 +2414,31 @@ impl FreightManager {
                                     .unwrap_or("날짜 미확인");
                                 history_cell(
                                     row,cells[0],display_date,at,
-                                    egui::Align2::LEFT_CENTER,false,theme::TEXT,
+                                    egui::Align2::LEFT_CENTER,typography::ManagementTableCellRole::Text,
                                     (group_id,index,0)
                                 );
                                 let bundle=group_bundle_summary(old);
                                 history_cell(
                                     row,cells[1],&bundle,&bundle,
-                                    egui::Align2::RIGHT_CENTER,false,theme::TEXT,
+                                    egui::Align2::RIGHT_CENTER,typography::ManagementTableCellRole::Quantity,
                                     (group_id,index,1)
                                 );
                                 let fees=group_history_fee_summary(old);
                                 history_cell(
                                     row,cells[2],&fees,&fees,
-                                    egui::Align2::LEFT_CENTER,false,theme::TEXT,
+                                    egui::Align2::LEFT_CENTER,typography::ManagementTableCellRole::Money,
                                     (group_id,index,2)
                                 );
                                 let each=as_fee(&old["perItem"]);
                                 history_cell(
                                     row,cells[3],&each,&each,
-                                    egui::Align2::RIGHT_CENTER,false,theme::TEXT,
+                                    egui::Align2::RIGHT_CENTER,typography::ManagementTableCellRole::Money,
                                     (group_id,index,3)
                                 );
                                 let note=text(old,"notes");
                                 history_cell(
                                     row,cells[4],if note.is_empty(){"-"}else{note},
-                                    note,egui::Align2::LEFT_CENTER,false,
-                                    theme::SECONDARY,(group_id,index,4)
+                                    note,egui::Align2::LEFT_CENTER,typography::ManagementTableCellRole::Description,(group_id,index,4)
                                 );
                                 let version=match old.get("version"){
                                     Some(Value::String(value))=>value.to_owned(),
@@ -2447,8 +2447,7 @@ impl FreightManager {
                                 };
                                 history_cell(
                                     row,cells[5],&version,&version,
-                                    egui::Align2::CENTER_CENTER,false,
-                                    theme::SECONDARY,(group_id,index,5)
+                                    egui::Align2::CENTER_CENTER,typography::ManagementTableCellRole::Status,(group_id,index,5)
                                 );
                             }
                         );
@@ -2476,13 +2475,14 @@ fn group_history_fee_summary(rule:&Value)->String{
 /// is clipped. This is only a view: no fee/status business decision is added.
 fn history_cell(
     ui:&mut Ui,rect:egui::Rect,visible:&str,full:&str,
-    align:egui::Align2,emphasized:bool,color:egui::Color32,
+    align:egui::Align2,role:typography::ManagementTableCellRole,
     id:impl std::hash::Hash
 ){
     let cell=rect.shrink2(egui::vec2(6.0,0.0));
     let clip=cell.intersect(ui.clip_rect());
     if clip.width()<=0.0 || clip.height()<=0.0{return;}
-    let galley=typography::freight_table_cell_galley(ui,visible,emphasized,color);
+    let color=typography::management_table_cell_color(role);
+    let galley=typography::management_table_cell_galley(ui,visible,role);
     let x=if align==egui::Align2::RIGHT_CENTER{
         cell.right()-galley.size().x
     }else if align==egui::Align2::CENTER_CENTER{
