@@ -399,9 +399,7 @@ pub fn freight_table_wrapped_galley(
 )->std::sync::Arc<egui::Galley>{
     let style=spec(Role::Body);
     let format=egui::TextFormat{
-        font_id:FontId::new(
-            style.size,FontFamily::Name(EMPHASIS_FAMILY.into())
-        ),
+        font_id:FontId::new(style.size,FontFamily::Proportional),
         color:TEXT,
         extra_letter_spacing:style.tracking,
         line_height:Some(style.line),
@@ -434,19 +432,19 @@ pub fn category_tree_name_galley(
 pub enum CategoryPathFont { Body, Metadata, TableCell, FreightTableCell, Subsection }
 
 fn category_path_text_width(ui:&egui::Ui,text:&str,font:CategoryPathFont)->f32{
-    // Freight paints the ancestors muted and the leaf in an emphasis font.
-    // Measure those ACTUAL two font faces before truncating the start of
-    // the path, otherwise the emphasized leaf could get clipped.
+    // Freight paints muted ancestors and a regular secondary leaf.
+    // Measure the same role-specific glyphs as the visible table cell,
+    // otherwise the truncated path can end too early or clip its leaf.
     if matches!(font,CategoryPathFont::FreightTableCell){
         let (prefix,leaf)=match text.rfind('>'){
             Some(index) if !text[index+1..].trim().is_empty() =>
                 text.split_at(index+1),
             _=>("",text),
         };
-        return client_table_galley(
-            ui,prefix,Role::Body,false,MUTED
-        ).size().x + client_table_galley(
-            ui,leaf,Role::Body,true,SECONDARY
+        return management_table_cell_galley(
+            ui,prefix,ManagementTableCellRole::Muted
+        ).size().x + management_table_cell_galley(
+            ui,leaf,ManagementTableCellRole::Category
         ).size().x;
     }
     let (role,emphasized,color)=match font{
