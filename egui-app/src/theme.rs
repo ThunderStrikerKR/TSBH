@@ -286,6 +286,9 @@ pub const FAMILY_LIST_WIDTH:f32 = 460.0;
 pub const FAMILY_ROW_HEIGHT:f32 = 52.0;
 pub const FAMILY_FOOTER_HEIGHT:f32 = 68.0;
 pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
+/// The bottom 2pt stroke is painted inside the fixed 36pt header,
+/// so its text centers in the remaining 34pt, never below the baseline.
+pub const MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT:f32=2.0;
 /// Single-line management data rows, shared by the approved masters and
 /// other compact lists. The 58pt two-line management rows are a different role.
 pub const MANAGEMENT_COMPACT_ROW_HEIGHT: f32 = 42.0;
