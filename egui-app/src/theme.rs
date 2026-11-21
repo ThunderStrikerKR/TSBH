@@ -29,6 +29,15 @@ pub const DISABLED_ACTION_BG: Color32 = Color32::from_rgb(30, 30, 30);
 pub const DISABLED_ACTION_TEXT: Color32 = Color32::from_rgb(124, 124, 124);
 pub const DISABLED_ACTION_BORDER: Color32 = Color32::from_rgb(55, 55, 55);
 pub const RAISED: Color32 = Color32::from_rgb(48, 48, 48);
+// One component-wide floating feedback style; management screens never define
+// independent toast backgrounds, dimensions, type sizes or offsets.
+pub const FLOATING_NOTICE_BG: Color32 = RAISED;
+pub const FLOATING_NOTICE_MAX_WIDTH: f32 = 320.0;
+pub const FLOATING_NOTICE_SCREEN_MARGIN: f32 = 10.0;
+pub const FLOATING_NOTICE_ANCHOR_GAP: f32 = SPACE_8;
+pub const FLOATING_NOTICE_PADDING_X: i8 = 12;
+pub const FLOATING_NOTICE_PADDING_Y: i8 = 8;
+pub const FLOATING_NOTICE_ICON_SIZE: f32 = 16.0;
 pub const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
 pub const DIVIDER: Color32 = Color32::from_rgb(63, 63, 63);
 // Stronger than the normal 1pt row divider so fixed table headers have a
