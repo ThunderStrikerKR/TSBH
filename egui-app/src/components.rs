@@ -1865,9 +1865,9 @@ mod management_toolbar_geometry_tests {
     }
 
     #[test]
-    fn master_table_scroll_rail_reaches_card_bottom_but_rows_keep_padding(){
-        // The body viewport ends 16pt before the card bottom, while the
-        // native rail alone extends through that inset with 3pt clearance.
+    fn master_table_scroll_rail_centers_in_bottom_inset_without_moving_rows(){
+        // The viewport ends 16pt above the outer border, but the native
+        // rail finishes 8pt above it, without protruding into the outline.
         let bounds=Rect::from_min_size(
             egui::pos2(16.0,300.0),Vec2::new(800.0,484.0)
         );
@@ -1875,7 +1875,7 @@ mod management_toolbar_geometry_tests {
         let outer_card_bottom=painted_rows_bottom
             +theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING;
         let track=management_table_scroll_track_geometry(
-            bounds,bounds.height(),theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
+            bounds,bounds.height(),theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION
         );
         assert_eq!(outer_card_bottom-painted_rows_bottom,
             theme::SECTION_PADDING);
@@ -1883,11 +1883,12 @@ mod management_toolbar_geometry_tests {
         assert_eq!(painted_rows_bottom,784.0); // unchanged row viewport
         assert_eq!(outer_card_bottom,800.0); // unchanged outer card
         assert_eq!(track.bottom(),outer_card_bottom
-            -theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET);
-        assert_eq!(track.bottom(),797.0); // only 3pt card-edge clearance
+            -theme::MANAGEMENT_MASTER_TABLE_SCROLL_BOTTOM_CLEARANCE);
+        assert_eq!(track.bottom(),792.0); // 8pt from outer border
         assert_eq!(track.bottom()-painted_rows_bottom,
             theme::SECTION_PADDING
-                -theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET);
+                -theme::MANAGEMENT_MASTER_TABLE_SCROLL_BOTTOM_CLEARANCE);
+        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION,11.0);
     }
 
     #[test]
