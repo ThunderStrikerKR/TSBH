@@ -1360,15 +1360,14 @@ impl FreightManager {
                 "","상품명 / 상품설명","색상/옵션","카테고리",
                 "배송 그룹","설정"
             ];
-            // The row viewport ends above the card's restored 16pt bottom
-            // padding. The rail shares its measured start/end, starts flush
-            // beneath the fixed header and stops 3pt before the rows' end.
-            // Never extend the rail independently past painted rows.
+            // Preserve the 16pt card inset for ROWS. Only the native rail
+            // uses that inset: it starts flush with the fixed header and
+            // continues down to 3pt above the card's bottom border.
             let scroll_max_height=components::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,0.0
+                section,scroll_max_height,theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
             );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
