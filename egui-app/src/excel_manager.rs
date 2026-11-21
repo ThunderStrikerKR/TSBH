@@ -713,16 +713,31 @@ impl ExcelManager{
             section.spacing_mut().item_spacing.y=0.0;
             let toolbar_width=section.available_width().max(1.0);
             let has_actions=self.tab!=Tab::History;
-            let stacked=has_actions && toolbar_width
+            let history_tab=self.tab==Tab::History;
+            let history_range_width=order_history_manager::EXCEL_EXPORT_DATE_CONTROLS_WIDTH;
+            let history_one_row=history_tab&&toolbar_width>=
+                theme::MANAGEMENT_SEARCH_MIN_WIDTH+theme::SPACE_16
+                    +history_range_width;
+            let history_compact=history_tab&&toolbar_width<history_range_width;
+            let stacked=has_actions&&toolbar_width
                 <theme::MANAGEMENT_SEARCH_MIN_WIDTH+theme::SPACE_16
                     +theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH;
-            let toolbar_height=if stacked{
+            let toolbar_height=if history_tab{
+                if history_one_row{theme::INPUT_HEIGHT}else{
+                    theme::INPUT_HEIGHT+theme::SPACE_8+
+                        if history_compact{
+                            theme::INPUT_HEIGHT*2.0+theme::SPACE_8
+                        }else{theme::INPUT_HEIGHT}
+                }
+            }else if stacked{
                 theme::INPUT_HEIGHT*2.0+theme::SPACE_8
             }else{theme::INPUT_HEIGHT};
             let (toolbar_rect,_)=section.allocate_exact_size(
                 Vec2::new(toolbar_width,toolbar_height),Sense::hover()
             );
-            let search_width=if stacked||!has_actions{
+            let search_width=if history_one_row{
+                (toolbar_width-history_range_width-theme::SPACE_16).max(1.0)
+            }else if stacked||history_tab{
                 toolbar_width
             }else{
                 (toolbar_width-theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH
@@ -741,7 +756,9 @@ impl ExcelManager{
                     if components::flexible_text_field(
                         search,&mut self.query,
                         theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                        "거래처 / 수취인 / 상품 검색"
+                        if history_tab{
+                            "거래처 / 상품명 / 파일 검색"
+                        }else{"거래처 / 수취인 / 상품 검색"}
                     ).changed(){
                         self.selected.clear();
                         // Rebuild rows in this SAME frame, so changing the
@@ -760,6 +777,41 @@ impl ExcelManager{
                     }
                 }
             );
+            if history_tab{
+                // Use the exact date/calendar widgets from Order History.
+                // The Excel archive has only one date basis: file creation.
+                let date_height=if history_compact{
+                    theme::INPUT_HEIGHT*2.0+theme::SPACE_8
+                }else{theme::INPUT_HEIGHT};
+                let dates_rect=components::management_toolbar_trailing_rect(
+                    toolbar_rect,history_range_width.min(toolbar_width),
+                    if history_one_row{0.0}else{
+                        theme::INPUT_HEIGHT+theme::SPACE_8
+                    },date_height
+                );
+                section.scope_builder(
+                    UiBuilder::new().id_salt("excel-export-dates")
+                        .max_rect(dates_rect)
+                        .layout(egui::Layout::left_to_right(Align::Center)
+                            .with_main_align(Align::Max)),
+                    |dates|{
+                        dates.set_width(dates_rect.width());
+                        dates.set_height(dates_rect.height());
+                        order_history_manager::excel_export_date_controls(
+                            dates,&mut self.export_from,&mut self.export_to,
+                            &mut self.export_from_month,&mut self.export_to_month,
+                            history_compact
+                        );
+                    }
+                );
+                let range_error=order_history_manager::date_range_error(
+                    &self.export_from,&self.export_to
+                );
+                crate::floating_notice::sync(
+                    section.ctx(),"excel.export-dates","excel.history-dates",
+                    crate::floating_notice::Tone::Error,range_error
+                );
+            }
             if has_actions{
                 let actions_y=if stacked{
                     theme::INPUT_HEIGHT+theme::SPACE_8
@@ -800,7 +852,9 @@ impl ExcelManager{
             let state=self.result.as_ref().map(|r|&r.state);
             let native=self.result.as_ref().map(|r|&r.shipments);
             if self.tab==Tab::History{
-                let mut history=state.map(|s|export_history(s,&self.query)).unwrap_or_default();
+                let mut history=state.map(|s|{
+                    export_history(s,&self.query,&self.export_from,&self.export_to)
+                }).unwrap_or_default();
                 sort_history(&mut history,self.sort_history);
                 let indexes=0..history.len();
                 let order_list=history.clone();
@@ -809,37 +863,34 @@ impl ExcelManager{
                     self.error.is_some()
                 );
                 let _=table(section,"excel-history-table",
-                    ["작성 날짜","작성 건수","파일 / 주문","조회"],
-                    HISTORY,[Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
+                    ["작성 날짜","거래처","상품 목록","조회"],
+                    HISTORY,[Align2::LEFT_CENTER,Align2::LEFT_CENTER,
                         Align2::LEFT_CENTER,Align2::CENTER_CENTER],
                     2,indexes.len(),
                     ExcelTableHeightPolicy::FillCard{card_min_height},
                     &mut self.sort_history,
                     [true,true,true,false],None,empty_message,|row,cells,i|{
                         let entry=&order_list[i];
-                        let id=text(entry,"id");
-                        cell(row,cells[0],&datetime(text(entry,"at")),
+                        let id=text(&entry.export,"id");
+                        cell(row,cells[0],&datetime(text(&entry.export,"at")),
                             Align2::LEFT_CENTER,typography::ManagementTableCellRole::Text,(id,0));
-                        let count=rows(&entry["queueEntryIds"]).len().max(
-                            rows(&entry["orderIds"]).len()
-                        );
-                        cell(row,cells[1],&format!("{count}건"),
-                            Align2::RIGHT_CENTER,typography::ManagementTableCellRole::Quantity,(id,1));
-                        cell(row,cells[2],text(entry,"filename"),
-                            Align2::LEFT_CENTER,typography::ManagementTableCellRole::Text,(id,2));
+                        cell(row,cells[1],&entry.clients,
+                            Align2::LEFT_CENTER,typography::ManagementTableCellRole::ClientName,(id,1));
+                        cell(row,cells[2],&entry.products,
+                            Align2::LEFT_CENTER,typography::ManagementTableCellRole::ProductName,(id,2));
                         row.scope_builder(UiBuilder::new()
                             .id_salt(("excel-history-actions",id))
                             .max_rect(cells[3].shrink2(Vec2::new(theme::SPACE_8,0.0)))
                             .layout(egui::Layout::left_to_right(Align::Center)),
                             |buttons|{
-                                if !text(entry,"savedPath").is_empty() {
+                                if !text(&entry.export,"savedPath").is_empty() {
                                     if theme::action(buttons,"파일 열기",
                                         theme::ButtonRole::TableSecondary,!busy).clicked(){
                                         open_file=Some(id.to_owned());
                                     }
                                     if theme::action(buttons,"경로 복사",
                                         theme::ButtonRole::TableSecondary,!busy).clicked(){
-                                        copy_path=Some(text(entry,"savedPath").to_owned());
+                                        copy_path=Some(text(&entry.export,"savedPath").to_owned());
                                     }
                                 }
                             });
