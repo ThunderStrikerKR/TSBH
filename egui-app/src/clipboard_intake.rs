@@ -125,6 +125,7 @@ pub fn read_with_sequence() -> Result<(ClipboardPayload, Option<u32>), String> {
 #[cfg(windows)]
 pub fn clear_if_unchanged(sequence: Option<u32>) -> Result<bool, String> {
     use std::{ffi::c_void,ptr};
+    #[link(name = "user32")]
     unsafe extern "system" {
         fn OpenClipboard(owner: *mut c_void) -> i32;
         fn EmptyClipboard() -> i32;
