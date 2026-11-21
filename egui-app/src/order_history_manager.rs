@@ -612,13 +612,13 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 cautions.push("기존 입금 표시 / 실제 입금 기록 미확인");
             }
             if cautions.is_empty(){
-                paint_text(ui,columns[4],&total,typography::ManagementTableCellRole::Total,true);
+                paint_text(ui,columns[4],&total,typography::ManagementTableCellRole::RowTotal,true);
             }else{
                 let upper=Rect::from_min_max(columns[4].min,
                     egui::pos2(columns[4].right(),columns[4].center().y));
                 let lower=Rect::from_min_max(egui::pos2(columns[4].left(),
                     columns[4].center().y),columns[4].max);
-                paint_text(ui,upper,&total,typography::ManagementTableCellRole::Total,true);
+                paint_text(ui,upper,&total,typography::ManagementTableCellRole::RowTotal,true);
                 paint_caption(ui,lower,&cautions.join(" / "));
                 ui.interact(columns[4].intersect(area),
                     ui.make_persistent_id(("history-billing-caution",id)),
