@@ -89,8 +89,8 @@ pub const WORKFLOW_SIGNAL_PENDING_BORDER: Color32 = Color32::from_rgb(85, 85, 85
 pub const WORKFLOW_RECIPIENT_COL: f32 = 64.0;
 pub const WORKFLOW_FREIGHT_COL: f32 = 68.0;
 pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
-// Product chips are metadata within a workflow card: match the subdued
-// alternate-row surface and divider, not the brighter input/button tier.
+// Product chips remain a distinct metadata layer on BOTH regular and
+// alternate rows: muted #373737 fill with the common soft divider border.
 // A chip must remain discernible on BOTH the base (#292929) and
 // alternate (#303030) row. Reuse the existing muted control-border tier.
 pub const WORKFLOW_CHIP_FILL: Color32 = DISABLED_ACTION_BORDER;
