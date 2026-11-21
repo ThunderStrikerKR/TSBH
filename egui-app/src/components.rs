@@ -700,6 +700,7 @@ pub fn reception_message_footer_gap(ui:&mut Ui){
 pub fn reception_message_copy_actions(ui:&mut Ui){
     if ui.available_width()<280.0 {
         ui.with_layout(Layout::top_down(Align::Max),|actions|{
+            actions.spacing_mut().item_spacing.y=theme::SPACE_8;
             theme::action(actions,"그대로 복사",theme::ButtonRole::Standard,false);
             theme::action(actions,"인사말 포함 복사",theme::ButtonRole::Standard,false);
         });
