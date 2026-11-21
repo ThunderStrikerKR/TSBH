@@ -825,7 +825,7 @@ impl ProductManager {
             }
             let original_spacing=panel.spacing().item_spacing.y;
             panel.spacing_mut().item_spacing.y=0.0;
-            panel.spacing_mut().scroll=theme::management_scroll_style();
+            panel.spacing_mut().scroll=theme::management_table_scroll_style();
             let option_width=theme::PRODUCT_TABLE_OPTION_WIDTH;
             let price_width=if self.price_mode{
                 theme::PRODUCT_TABLE_EDIT_PRICE_WIDTH
@@ -867,9 +867,19 @@ impl ProductManager {
             let scroll_max_height=components::management_single_list_scroll_height(
                 panel,card_min_height,empty_reserve
             );
+            // Leave the empty-state caption in the reserved footer.
+            // Otherwise extend the rail through the one-point list-frame
+            // inset, never by the freight master's 16pt section inset.
+            let bottom_extension=if empty_reserve>0.0{
+                0.0
+            }else{theme::FRAME_STROKE_WIDTH};
+            let scroll_track=components::management_table_scroll_track_rect(
+                panel,scroll_max_height,bottom_extension
+            );
             let mut row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
+                    .scroll_bar_rect(scroll_track)
                     .id_salt("egui-product-price-grid")
                     .scroll_bar_visibility(
                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
