@@ -987,38 +987,42 @@ impl FreightManager {
                 components::modal_backdrop(ctx,"freight-delete-backdrop",false);
                 components::decision_window("배송 그룹 삭제","freight-delete",area)
                     .show(ctx,|modal|{
-                        if components::modal_header(
+                        if components::modal_header_chrome(
                             modal,"배송 그룹 삭제","취소",enabled
                         ){close_delete=true;}
-                        modal.label(typography::section_heading(name));
-                        if !affected.is_empty(){
-                            modal.label(typography::status(
-                                "사용 중인 상품이 있습니다. 상품을 다른 그룹으로 옮기거나 미지정으로 변경한 후 삭제해야 합니다.",
-                                theme::SELECTED_ORDER
-                            ));
-                            egui::ScrollArea::vertical()
-                                .id_salt("freight-delete-affected-products")
-                                .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
-                                .show(modal,|list|{
-                                    for product in &affected {
-                                        let first=rows(&product["variants"]).first();
-                                        let color=first.map(|v|color_label(text(v,"color")))
-                                            .unwrap_or_default();
-                                        let label=if color.is_empty(){
-                                            model_label(text(product,"name")).to_owned()
-                                        }else{
-                                            format!("{} / {}",model_label(text(product,"name")),color)
-                                        };
-                                        list.label(typography::table_cell(&label));
-                                    }
-                                });
-                        }else{
-                            modal.label(typography::body(
-                                "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
-                            ));
-                        }
                         modal.add_space(theme::SPACE_12);
-                        modal.with_layout(egui::Layout::right_to_left(egui::Align::Center),|controls|{
+                        components::modal_section(modal,"삭제 대상",|details|{
+                            details.label(typography::section_heading(name));
+                            if !affected.is_empty(){
+                                details.label(typography::status(
+                                    "사용 중인 상품이 있습니다. 상품을 다른 그룹으로 옮기거나 미지정으로 변경한 후 삭제해야 합니다.",
+                                    theme::SELECTED_ORDER
+                                ));
+                                egui::ScrollArea::vertical()
+                                    .id_salt("freight-delete-affected-products")
+                                    .max_height((area.height()-310.0).max(70.0)
+                                        .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT))
+                                    .show(details,|list|{
+                                        for product in &affected {
+                                            let first=rows(&product["variants"]).first();
+                                            let color=first.map(|v|color_label(text(v,"color")))
+                                                .unwrap_or_default();
+                                            let label=if color.is_empty(){
+                                                model_label(text(product,"name")).to_owned()
+                                            }else{
+                                                format!("{} / {}",model_label(text(product,"name")),color)
+                                            };
+                                            list.label(typography::table_cell(&label));
+                                        }
+                                    });
+                            }else{
+                                details.label(typography::body(
+                                    "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
+                                ));
+                            }
+                        });
+                        modal.add_space(theme::SPACE_12);
+                        components::modal_footer_chrome(modal,|controls|{
                             if theme::action(controls,if !affected.is_empty(){
                                 "상품 연결을 미지정으로 변경하고 삭제"
                             }else{"그룹 삭제"},theme::ButtonRole::Danger,enabled)
