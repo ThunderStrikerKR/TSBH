@@ -86,7 +86,7 @@
 | EX-PRODUCT-004 | 상품 관리 → 카테고리 관리 | 카테고리 트리/계층 구조는 이번 마스터 복제 대상에서 제외. 화면 제목·탭 내비게이션만 기존 공통을 유지하며 별도 KPI를 삽입하지 않음 | 기존 카테고리 편집 기능과 배치 |
 | EX-RECEPTION-001 | 접수 화면 테마 정합성 1차 | 기존 카카오톡 도킹·4패널 비율·8pt 상하/16pt 좌우 외곽·34pt 제목줄·32pt 품목 헤더·42pt 품목 행 등 **업무 구조 및 좌표 보존**. 현재 거래처 요약만 `TABLE_ROW_ALT_BG` + `DIVIDER`로 낮춰 입력 편집창(`INPUT`+`BORDER`)보다 가볍게 표현. 주문 카드·상품 칩은 기존 좌표/상태색을 유지하면서 보조 테두리/교차 배경 역할을 참조. 품목 표 헤더는 기존 32pt 안에 `RAISED` 배경과 마스터와 동일한 **내부 2pt** 하단선을 적용. 비활성 주문 보조버튼은 공통 비활성 3토큰 사용 | `theme::{RECEPTION_CLIENT_SUMMARY_*,WORKFLOW_CARD_BORDER,WORKFLOW_CHIP_*,DISABLED_ACTION_*}`, `components::{paint_reception_client_summary_surface,reception_items_header,workflow_auxiliary_button}` |
 | EX-RECEPTION-002 | 접수 화면 미적용 레이아웃 2차 | 34pt 섹션 제목줄·고정 4열 도킹은 유지하면서 제목→구분선 8pt, 헤더 아래 기존 4pt 간격 보존. 섹션 경계는 관리 마스터 강조선 1pt 재사용. `확인할 내용`은 가변 높이·줄바꿈 가능한 중요 정보줄, 수취인 입력은 36pt 읽기 전용(비활성 대비 편차 제거). 메시지 편집영역/복사 버튼 사이 8pt 고정 슬롯의 중앙 구분선과 우측 정렬, 주문 카드간 간격 8pt, 요약 운임/금액 시각 위계와 24pt 주문 상세 헤더 및 교차 행 배경 반영. 4단계 신호등 18pt와 원터치·관리·삭제·이전 버튼 크기 및 기능/저장 호출 변경 없음 | `theme::{SECTION_CONTENT_GAP,WORKFLOW_CARD_GAP,WORKFLOW_DETAIL_*}`; `components::{reception_section_divider,reception_review_status,reception_message_footer_gap,reception_message_copy_actions,reception_recipient_fields}`; `workflow_board_ui::{workflow_action_line,workflow_table_header,shipment_line}` |
-| EX-RECEPTION-003 | 접수 화면 64차 불일치 보정 | 품목 32pt·주문 상세 28pt 헤더는 각각 역할 높이를 유지하면서 **마스터 14pt 강조 헤더 글꼴**과 내부 2pt 하단선을 공유. 주문 카드 바탕 `INPUT(#292929)`보다 교차 행은 밝은 `RAISED(#303030)`, 상품 칩은 `DISABLED_ACTION_BORDER(#373737)`로 별도 구분. 폭 부족 시 184pt 거래처명 슬롯을 우선 확보하도록 관리/삭제 버튼만 별도 우측 정렬 행에 배치, 18pt 신호등·82pt 슬롯 불변. 섹션 구분선 `DIVIDER` 1pt, 수취인 라벨·행 간격 8pt, 접수 주문/품목 목록 10pt solid 예약 레일, 메시지 편집창→버튼 간격 12pt로 수정. 나머지 도킹·업무 판단·읽기 전용·클립보드·저장 기능 변경 없음 | `theme::{WORKFLOW_DETAIL_*,WORKFLOW_TITLE_MIN_WIDTH,WORKFLOW_CHIP_FILL,RECIPIENT_*_GAP,RECEPTION_MESSAGE_ACTION_GAP}`; `components::{reception_section_divider,reception_items_header,reception_message_footer_gap}`; `workflow_board_ui::{workflow_header,workflow_table_header,shipment_line}`; `main::{message_section,orders_pane,details_and_freight}` |
+| EX-RECEPTION-003 | 접수 화면 64차 불일치 보정 | 품목 32pt·주문 상세 28pt 헤더는 각각 역할 높이를 유지하면서 **마스터 14pt 강조 헤더 글꼴**과 내부 2pt 하단선을 공유. 주문 카드 바탕 `INPUT(#292929)`보다 교차 행은 밝은 `RAISED(#303030)`, 상품 칩은 `DISABLED_ACTION_BORDER(#373737)`로 별도 구분. 폭 부족 시 184pt 거래처명 슬롯을 우선 확보하도록 좁은 폭에서 거래처명·신호등 헤더, 배송/금액 요약, 원터치·이전 단계·관리·삭제가 함께 있는 하단 작업줄로 그룹화, 18pt 신호등·82pt 슬롯 불변. 섹션 구분선 `DIVIDER` 1pt, 수취인 라벨·행 간격 8pt, 접수 주문/품목 목록 10pt solid 예약 레일, 메시지 편집창→버튼 간격 12pt로 수정. 나머지 도킹·업무 판단·읽기 전용·클립보드·저장 기능 변경 없음 | `theme::{WORKFLOW_DETAIL_*,WORKFLOW_TITLE_MIN_WIDTH,WORKFLOW_CHIP_FILL,RECIPIENT_*_GAP,RECEPTION_MESSAGE_ACTION_GAP}`; `components::{reception_section_divider,reception_items_header,reception_message_footer_gap}`; `workflow_board_ui::{workflow_header,workflow_table_header,shipment_line}`; `main::{message_section,orders_pane,details_and_freight}` |
 | EX-OTHER-004 | 그 외 관리 화면 | 다중 카드/좌우 편집 패널, 발주서 상세/팝업, 결산 표, 두 줄 선택 목록 등은 해당 역할이 다르므로 42pt 단일행/942pt 6열을 강제하지 않음 | **같은 역할**을 재사용할 때만 공통 토큰·컴포넌트 준수 |
 
 예외는 **존재하지 않는 가짜 탭·KPI 카드·빈 공간을 추가**하는 근거가 아니다. 다른 화면으로 규격을 확장할 때는 예외 ID·대상·사유·재사용할 기본 토큰을 먼저 적고, 승인되지 않은 새로운 디자인 값은 만들지 않는다.
@@ -133,7 +133,7 @@
 ### 접수 화면 3차 — 마스터 좌표·위계 불일치 패치 (2026-11-22)
 
 - **헤더 텍스트:** 품목(32pt) 및 주문 상세(28pt) 헤더에 `typography::management_table_header_galley`의 14pt 강조 글꼴을 적용. 하단 2pt 띠는 위젯 내부에 그려서 실제 헤더 길이를 추가하지 않는다. 주문 상세는 기존 24pt에서 28pt로 확장하되 36pt 단일 관리 표의 별도 역할로 남는다.
-- **주문 카드 반응형:** 좁은 창에서 제목 슬롯이 184pt보다 작아질 경우 관리·삭제 보조 버튼만 두 번째 작업 영역의 오른쪽 행으로 이동한다. 거래처명은 신호등 4개(지름 18pt, 예약 폭 82pt)를 축소하지 않고 표시. 주문/금액/부가세의 가용폭을 고려해 줄임과 원문 툴팁을 적용.
+- **주문 카드 반응형(후속 개선 적용):** 좁은 창에서 제목 슬롯이 184pt보다 작아지면 거래처명·신호등 헤더 아래에 배송/금액 요약을 전폭으로 배치하고, 원터치·이전 단계·관리·삭제를 한 작업줄에 묶는다. 거래처명은 신호등 4개(지름 18pt, 예약 폭 82pt)를 축소하지 않고 표시. 주문/금액/부가세의 가용폭을 고려해 줄임과 원문 툴팁을 적용.
 - **명도·그리드:** 접수 카드의 기본 `INPUT(#292929)` → 대체 행 `RAISED(#303030)` 순으로 명도를 올린다. 제품 칩은 `DISABLED_ACTION_BORDER(#373737)` 및 `DIVIDER`를 사용하여 두 배경에서 모두 식별 가능. 선택 상태 색상 우선순위는 유지한다.
 - **섹션·수취인:** 제목 아래 선은 표 헤더 전용의 강한 `TABLE_HEADER_OUTLINE`이 아니라 섹션용 `DIVIDER` 1pt로 수정. 이름·주소·휴대폰·전화·메시지 필드의 가로/세로 간격을 6→8pt로 변경하고, 각 입력은 36pt 읽기 전용을 그대로 유지한다.
 - **스크롤/메시지:** 주문 목록과 두 품목 목록에 관리 마스터의 10pt solid 스크롤 스타일을 스코프로 적용한다. 접수의 스크롤은 도킹별·내용별 영역이므로 관리 단일표의 하단 7pt 연장 또는 전역 고정 헤더는 강제하지 않는다. 메시지 편집창과 복사 버튼의 고정 여백은 8→12pt, 그 높이를 메시지 캔버스에서 동일하게 차감해 버튼 하단을 유지한다.
@@ -143,8 +143,16 @@
 
 - **재현:** 접수 → 처리 중인 주문, 최소 폭에 가까운 주문 패널(거래처명 확보를 위해 `wrapped_actions=true`). 거래처명/신호등과 배송·금액 요약은 카드 맨 위에 있는데 `관리`·`삭제` 버튼이 화면 중간으로 내려가고 카드 배경이 나머지 패널을 가득 채움.
 - **원인:** 64차 반응형 패치에서 새로 추가된 `workflow_wrapped_header_actions`가 카드 세로 영역을 제한하지 않은 채 `ui.with_layout(Layout::right_to_left(Align::Center), ...)`을 호출해, 남은 `ScrollArea` 높이를 자식 영역으로 점유했음. 발주서 중복 생성/영구 데이터 증가가 아니라 **뷰 레이아웃 높이 계산 오류**.
-- **수정:** 위 함수를 `ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), WORKFLOW_AUX_CONTROL_HEIGHT), Layout::right_to_left(Align::Center), ...)`로 전환. 버튼 행은 **34pt**만 예약, 버튼 폭(관리 52pt·삭제 34pt), 신호등 18pt, 거래처명 184pt 최소 슬롯 정책은 그대로 유지한다. 접힌 카드의 표준 높이는 제목 34pt + 요약/실행 36pt + 보조작업 34pt + 행간 8pt×2 + 카드 상하 8pt×2 + 테두리 2pt = **138pt**(논리 배치 예상값, DPI 실측 아님).
+- **당시 수정:** 위 함수를 `ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), WORKFLOW_AUX_CONTROL_HEIGHT), Layout::right_to_left(Align::Center), ...)`로 전환. 버튼 행은 **34pt**만 예약, 버튼 폭(관리 52pt·삭제 34pt), 신호등 18pt, 거래처명 184pt 최소 슬롯 정책은 그대로 유지한다. 접힌 카드의 표준 높이는 제목 34pt + 요약/실행 36pt + 보조작업 34pt + 행간 8pt×2 + 카드 상하 8pt×2 + 테두리 2pt = **138pt**(논리 배치 예상값, DPI 실측 아님).
 - **범위:** `egui-app/src/workflow_board_ui.rs`의 UI 배치 함수만 변경. 주문 식별자·수량·상품·선택/입금/저장 로직 및 실데이터는 수정하지 않는다. 컴파일/Windows 실화면 검수 여부는 별도 확인한다.
+
+### 접수 화면 높은 우선순위 3건 후속 패치 (2026-11-22)
+
+- **처리 중 주문 카드:** 넓은 화면은 제목+신호등+관리/삭제, 배송·금액+원터치+이전 단계의 기존 2행 계약 유지. 좁은 화면(거래처명 184pt 확보 실패 시)은 **제목+신호등(34pt)**, **배송·금액·부가세 요약(36pt)**, **원터치+이전 단계+관리+삭제(고정 36pt)**로 명확한 정보·작업 그룹을 구성한다. 기존 관리/삭제만 떨어진 34pt 세 번째 줄은 제거했다. 각 버튼 고정 폭과 18pt 신호등, 카드간 8pt 간격 및 업무 이벤트는 유지.
+- **발주 원문:** 처리 중 선택 주문의 `source_raw` 읽기 전용 표시는 자동 메시지와 같은 `paint_source_document_surface`(INPUT + BORDER + 6pt 모서리) 및 4pt 안쪽 콘텐츠 여백을 공유한다. 두 영역은 같은 문서 역할이지만 편집 여부/복사 동작은 각각의 기존 업무 계약을 따른다. 원문은 기존 selectable Label을 그대로 유지하고 독립 스크롤만 허용한다.
+- **자동 메시지 복사:** `workflow_board::GroupRow`에서 Rust `render_automatic_message`의 `phase`와 `paymentIssues`를 함께 투영하여 React와 같이 결제 확인 문제가 있을 때는 복사 버튼을 비활성화한다. 활성 상태에서 `그대로 복사`는 원본을, `인사말 포함 복사`는 **기존 Rust `decorate_automatic_copy`**의 결과를 `Context::copy_text`로 복사한다. 신규 인사말 문자열이나 TS 메시지 판단은 추가하지 않는다.
+- **업무 이력 한계 명시:** 현재 egui의 업무 게이트웨이는 `record_message_copy`의 승인된 운영 DB CAS 쓰기 경로를 제공하지 않는다. 따라서 클립보드 복사는 동작하지만 Tauri/React가 기록하는 `requestCopiedGroups`·`메시지 복사` 이벤트는 기록되지 않으며, 성공 알림에도 이 사실을 명시한다. 감사 이력 연동이 필요한 최종 배포에 앞서 별도 승인된 Rust 쓰기 경로를 제공해야 한다.
+- **검수 경계:** 소스 정적 계약/기하 계산과 Windows 실제 실행 검수는 구분한다. 대규모 회귀테스트의 수동 재실행은 범위 밖.
 
 ## 6. 후속 변경 원칙
 
