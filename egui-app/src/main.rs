@@ -3818,7 +3818,18 @@ impl BandoEgui {
                     pane.set_clip_rect(recipient_rect);
                     pane.set_width(recipient_rect.width());
                     pane.set_height(recipient_rect.height());
-                    Self::section(pane,"수취인별 주문 정보",recipient_height,|ui|{
+                    let mut next_ship=None;
+                    let count=group.shipments.len();
+                    let index=group.shipments.iter()
+                        .position(|item|item.id==ship.id).unwrap_or(0);
+                    let name=reception_service::text(&ship.recipient,"name");
+                    Self::section_with_header(
+                        pane,"수취인별 주문 정보",recipient_height,
+                        |header|{
+                            next_ship=components::reception_recipient_navigator(
+                                header,name,index,count
+                            );
+                        },|ui|{
                         egui::ScrollArea::vertical()
                             .max_height(components::docked_section_body_height(recipient_height))
                             .id_salt(("native-workflow-recipient-readonly",ship.id.as_str()))
@@ -3833,7 +3844,18 @@ impl BandoEgui {
                                     &mut phone, &mut note,
                                 );
                             });
-                    });
+                        }
+                    );
+                    if let Some(next_index)=next_ship{
+                        if let Some(target)=group.shipments.get(next_index){
+                            self.workflow_ui.select(workflow_board_ui::Selection{
+                                group_id:group.id.clone(),
+                                order_id:target.order_id.clone(),
+                                shipment_id:target.id.clone(),
+                            });
+                            pane.ctx().request_repaint();
+                        }
+                    }
                 }
             );
             ui.scope_builder(
