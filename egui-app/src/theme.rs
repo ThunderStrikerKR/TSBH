@@ -555,9 +555,9 @@ pub fn section_frame() -> Frame {
 }
 
 /// Full-height master table cards keep the same 16pt interior clearance on
-/// all four sides. The table row viewport and native scrollbar track end
-/// together ABOVE the bottom inset, rather than letting either touch the
-/// outer card border. Use for the two single-table masters only.
+/// all four sides. Row rendering ends above the bottom inset; the scrollbar
+/// rail is independent and remains visually centered in that inset rather
+/// than touching the outer border. Only the two single-table masters use it.
 pub const MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING:f32=SECTION_PADDING;
 pub fn management_master_table_frame()->Frame{
     section_frame().inner_margin(egui::Margin{
@@ -591,6 +591,17 @@ pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=0.0;
 /// Retain a small clearance at the BOTTOM of the rail within the body
 /// viewport. This does not alter row clipping or the card's 16pt padding.
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=3.0;
+
+/// A single-master rail may occupy the center of the card's 16pt lower
+/// whitespace without touching its outer border. Keep 8pt clear below
+/// the rail and keep row viewport height completely unchanged.
+/// `management_table_scroll_track_geometry` subtracts its 3pt inset, so
+/// include that inset when computing the native rail extension.
+pub const MANAGEMENT_MASTER_TABLE_SCROLL_BOTTOM_CLEARANCE:f32=SPACE_8;
+pub const MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION:f32=
+    MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
+    -MANAGEMENT_MASTER_TABLE_SCROLL_BOTTOM_CLEARANCE
+    +MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET;
 
 pub fn management_scroll_style() -> egui::style::ScrollStyle {
     let mut style=egui::style::ScrollStyle::solid();
