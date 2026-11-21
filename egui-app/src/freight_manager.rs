@@ -22,9 +22,16 @@ enum FreightTab {
     Groups,
     Rates,
     History,
+    Basis,
 }
 impl FreightTab {
-    const ALL: [Self; 3] = [Self::Groups, Self::Rates, Self::History];
+    const ALL: [Self; 4] = [
+        Self::Groups, Self::Rates, Self::History, Self::Basis
+    ];
+    const LABELS: [&'static str; 4] = [
+        "배송 그룹 편성", "배송 그룹 관리",
+        "조합 / 기준 이력", "운임 기준 관리"
+    ];
 }
 
 // Sort only meaningful text columns. No sorting control on selection or
@@ -753,9 +760,10 @@ impl FreightManager {
         ui.add_space(theme::SPACE_8);
         let selected_tab=freight_top_content(ui,|top|
             components::management_tabs(top, &[
-                ("배송 그룹 편성", self.tab == FreightTab::Groups, true),
-                ("배송 그룹 관리", self.tab == FreightTab::Rates, true),
-                ("조합 / 기준 이력", self.tab == FreightTab::History, true),
+                (FreightTab::LABELS[0], self.tab == FreightTab::Groups, true),
+                (FreightTab::LABELS[1], self.tab == FreightTab::Rates, true),
+                (FreightTab::LABELS[2], self.tab == FreightTab::History, true),
+                (FreightTab::LABELS[3], self.tab == FreightTab::Basis, true),
             ])
         );
         if let Some(index) = selected_tab {
@@ -845,6 +853,9 @@ impl FreightManager {
                             enabled
                         ));
                 }
+                FreightTab::Basis => Self::show_basis_management(
+                    ui,shipping,enabled,&mut self.basis_target
+                ),
                 FreightTab::Groups => {}
             }
         }
@@ -982,7 +993,8 @@ impl FreightManager {
             if close_delete{self.delete_target=None;}
             if close_product_reset{self.product_reset_target=None;}
         }
-        if self.rate_editor.is_some() || self.tab==FreightTab::Rates {
+        if self.rate_editor.is_some() || self.basis_target.is_some() ||
+            self.tab==FreightTab::Rates {
             let area=ui.max_rect();
             let ctx=ui.ctx();
             let mut close_editor=false;
@@ -1865,17 +1877,17 @@ impl FreightManager {
         });
     }
 
-    /// One 36pt management toolbar. Search lives on the left; the established
-    /// basis-change and group-add actions retain their right-aligned positions.
-    /// Name entry belongs exclusively to the existing "배송 그룹 추가" modal.
+    /// Rate management has only the search field on the left and
+    /// group creation on the right. The destructive global basis command
+    /// is intentionally isolated in the fourth freight-management tab.
     fn rate_toolbar(
         section:&mut Ui,search:&mut String,enabled:bool
-    )->(egui::Response,egui::Response,egui::Rect,Option<egui::Response>){
+    )->(egui::Response,egui::Rect,Option<egui::Response>){
         let width=section.available_width().max(1.0);
         let (toolbar_rect,_)=section.allocate_exact_size(
             egui::vec2(width,theme::INPUT_HEIGHT),egui::Sense::hover()
         );
-        let (create,basis)=section.scope_builder(
+        let create=section.scope_builder(
             egui::UiBuilder::new()
                 .id_salt("freight-rate-toolbar-actions")
                 .max_rect(toolbar_rect)
@@ -1883,19 +1895,12 @@ impl FreightManager {
             |tools|{
                 tools.set_width(toolbar_rect.width());
                 tools.set_height(toolbar_rect.height());
-                tools.spacing_mut().item_spacing.x=theme::SPACE_8;
-                let create=theme::action(
+                theme::action(
                     tools,"배송 그룹 추가",theme::ButtonRole::Primary,enabled
-                );
-                let basis=theme::action(
-                    tools,"전체 운임 기준 변경",theme::ButtonRole::Danger,enabled
-                );
-                (create,basis)
+                )
             }
         ).inner;
-        // Reserve 16pt between distinct search and action groups. The
-        // editor shrinks with a narrow pane but never overlaps action buttons.
-        let room=(basis.rect.left()-theme::SPACE_16-toolbar_rect.left())
+        let room=(create.rect.left()-theme::SPACE_16-toolbar_rect.left())
             .max(0.0);
         let search_width=room.min(theme::MANAGEMENT_SEARCH_MIN_WIDTH);
         let search_response=if search_width>=60.0{
@@ -1916,7 +1921,7 @@ impl FreightManager {
                 }
             ).inner)
         }else{None};
-        (create,basis,toolbar_rect,search_response)
+        (create,toolbar_rect,search_response)
     }
 
     fn filtered_rate_groups<'a>(
@@ -1948,14 +1953,13 @@ impl FreightManager {
         theme::section_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
-            // Search + both actions share one fixed 36pt toolbar. Entering
-            // a group name still happens only inside the add-group modal.
+            // Search and group creation share one fixed 36pt toolbar.
+            // The global rate-basis action is now on the dedicated Basis tab.
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
-            let (create,basis_change,_toolbar,_search)=
+            let (create,_toolbar,_search)=
                 Self::rate_toolbar(section,search,enabled);
             if create.clicked(){*create_group_open=true;}
-            if basis_change.clicked(){*basis=Some(None);}
             // Shared master: exactly 16pt + 1pt divider + 4pt before
             // the fixed 36pt rate-table header, irrespective of modal state.
             let rate_layout=components::management_sticky_table_header(
@@ -2358,6 +2362,45 @@ impl FreightManager {
                     Err(message)=>editor.error=Some(message)
                 }
             }
+        });
+    }
+
+    /// Global rate-basis changes are intentionally NOT available on the
+    /// routine group-edit toolbar. This page exposes scope and consequences
+    /// before letting the user open the existing confirmation dialog.
+    fn show_basis_management(
+        ui:&mut Ui,shipping:&Value,enabled:bool,
+        basis:&mut Option<Option<String>>,
+    ){
+        let card_min_height=components::management_primary_card_min_inner_height(
+            ui,theme::SECTION_PADDING
+        );
+        theme::section_frame().show(ui,|section|{
+            components::fill_management_primary_card(section,card_min_height);
+            section.label(typography::section_heading("전체 운임 기준"));
+            section.add_space(theme::SPACE_12);
+            let epoch=shipping["epoch"].as_i64().unwrap_or(1);
+            section.label(typography::body(&format!("현재 운임 기준: {epoch}")));
+            section.add_space(theme::SPACE_16);
+            section.label(typography::body(
+                "전체 운임 기준을 변경하면 기존 운임의 자동 추천을 중단합니다. \
+                 변경 후 그룹별·상품별 운임을 다시 확인하여 등록해야 합니다."
+            ));
+            section.add_space(theme::SPACE_16);
+            // A dedicated, explicitly labeled destructive action. It still
+            // opens freight-basis-confirm and does not mutate on click.
+            section.horizontal(|row|{
+                row.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),|right|{
+                        if theme::action(
+                            right,"전체 운임 기준 변경",
+                            theme::ButtonRole::Danger,enabled
+                        ).clicked(){
+                            *basis=Some(None);
+                        }
+                    }
+                );
+            });
         });
     }
 
@@ -2850,10 +2893,21 @@ mod rate_toolbar_tests{
     use super::*;
 
     #[test]
-    fn search_left_and_two_buttons_right_share_a_centered_36pt_row(){
+    fn four_tabs_preserve_order_and_isolate_global_basis_action(){
+        assert_eq!(FreightTab::ALL.len(),4);
+        assert!(matches!(FreightTab::ALL[0],FreightTab::Groups));
+        assert!(matches!(FreightTab::ALL[1],FreightTab::Rates));
+        assert!(matches!(FreightTab::ALL[2],FreightTab::History));
+        assert!(matches!(FreightTab::ALL[3],FreightTab::Basis));
+        assert_eq!(FreightTab::LABELS,[
+            "배송 그룹 편성","배송 그룹 관리",
+            "조합 / 기준 이력","운임 기준 관리"
+        ]);
+    }
+
+    #[test]
+    fn search_and_group_add_share_a_centered_master_toolbar(){
         let ctx=egui::Context::default();
-        // The real app registers branded emphasis faces before rendering.
-        // A bare test Context would otherwise panic on FontFamily::Name.
         typography::install(&ctx);
         let mut input=egui::RawInput::default();
         input.screen_rect=Some(egui::Rect::from_min_size(
@@ -2863,22 +2917,19 @@ mod rate_toolbar_tests{
         let _=ctx.run(input,|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 let mut search=String::new();
-                let (add,basis,toolbar,field)=
+                let (add,toolbar,field)=
                     FreightManager::rate_toolbar(ui,&mut search,true);
-                measured=Some((add.rect,basis.rect,toolbar,field.map(|r|r.rect)));
+                measured=Some((add.rect,toolbar,field.map(|r|r.rect)));
             });
         });
-        let (add,basis,toolbar,search)=measured.expect("rate toolbar rendered");
+        let (add,toolbar,search)=measured.expect("rate toolbar rendered");
         let search=search.expect("search must be visible in desktop layout");
         assert!((toolbar.height()-theme::INPUT_HEIGHT).abs()<0.01);
         assert!((search.left()-toolbar.left()).abs()<0.01);
         assert!((search.center().y-toolbar.center().y).abs()<0.01);
-        assert!((add.center().y-basis.center().y).abs()<0.01);
         assert!((add.center().y-toolbar.center().y).abs()<0.01);
-        assert!((basis.center().y-toolbar.center().y).abs()<0.01);
-        assert!(search.right()+theme::SPACE_16<=basis.left()+0.01,
-            "left search must not overlap right action group");
-        assert!(basis.right()+theme::SPACE_8<=add.left()+0.01);
+        assert!(search.right()+theme::SPACE_16<=add.left()+0.01,
+            "search must not overlap group addition");
         assert!((add.right()-toolbar.right()).abs()<0.01);
     }
 
