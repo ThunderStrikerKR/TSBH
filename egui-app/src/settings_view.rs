@@ -398,7 +398,7 @@ impl SettingsView{
                     self.switch_after_save=true;
                     self.save(gateway.clone(),ctx.clone());
                 }
-                if theme::action(actions,"저장 안 함",ButtonRole::Standard,
+                if theme::action(actions,"저장 안 함",ButtonRole::Danger,
                     !self.busy()).clicked(){
                     self.draft=settings(&self.source).clone();
                     if let Some(next)=self.requested_tab.take(){self.tab=next;}
@@ -995,7 +995,7 @@ impl SettingsView{
                 ));
                 ui.add_space(theme::SPACE_12);
                 components::modal_action_row(ui,|actions|{
-                    if theme::action(actions,"이 백업으로 복구",ButtonRole::Primary,
+                    if theme::action(actions,"이 백업으로 복구",ButtonRole::Danger,
                         self.data_available()&&!self.read_only()&&!self.busy()).clicked(){
                         self.restore_target=None;
                         self.data_action(
