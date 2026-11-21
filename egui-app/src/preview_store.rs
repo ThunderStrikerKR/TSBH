@@ -391,6 +391,30 @@ impl PreviewStore {
                 )).map_err(|e|format!("OCR 학습 이력 확장 실패 ({name}): {e}"))?;
             }
         }
+        // Incrementally backfill table-layout labels for legacy corpus rows.
+        // Full OCR text stays byte-for-byte unchanged, so older employee
+        // corrections remain useful when the experimental model evolves.
+        // A bounded batch prevents a large old corpus from stalling startup.
+        let mut pending_stmt=conn.prepare(
+            "SELECT id,original_text,corrected_text FROM ocr_feedback
+             WHERE layout_trace_json IS NULL
+             ORDER BY recorded_at,id LIMIT 100"
+        ).map_err(|e|e.to_string())?;
+        let pending=pending_stmt.query_map([],|row|Ok((
+            row.get::<_,String>(0)?,
+            row.get::<_,String>(1)?,
+            row.get::<_,String>(2)?,
+        ))).map_err(|e|e.to_string())?
+            .collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+        drop(pending_stmt);
+        for (id,initial,corrected) in pending {
+            let layout=layout_correction_trace(&initial,&corrected).to_string();
+            conn.execute(
+                "UPDATE ocr_feedback SET layout_trace_json=?2
+                 WHERE id=?1 AND layout_trace_json IS NULL",
+                params![id,layout],
+            ).map_err(|e|format!("기존 OCR 줄바꿈 학습 이력 보강 실패: {e}"))?;
+        }
         // Non-destructive migration of the isolated egui preview database.
         // Never touch Tauri operational tables or truncate an existing source.
         let mut stmt = conn.prepare("PRAGMA table_info(working_source)")
