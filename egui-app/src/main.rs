@@ -8,6 +8,7 @@ mod theme;
 mod typography;
 mod layout;
 mod components;
+mod floating_notice;
 mod reception_service;
 mod gateway;
 mod http_gateway;
@@ -3905,6 +3906,7 @@ impl eframe::App for BandoEgui {
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_started=Instant::now();
+        floating_notice::begin_page(ctx,self.page.label());
         if let Some(page)=self.client_pending_page{
             let approved=self.client_manager.as_mut()
                 .is_some_and(|manager|manager.take_global_approved());
@@ -4051,6 +4053,9 @@ impl eframe::App for BandoEgui {
             }
         }
         self.frameless_resize(ctx);
+        // Tooltip-order overlay is drawn LAST, on top of the current modal,
+        // without allocating space in any card, row or scrollbar viewport.
+        floating_notice::show(ctx);
         // Developer console only; never expose performance diagnostics as
         // product notifications or include any order/customer data.
         if cfg!(debug_assertions) && frame_started.elapsed()>Duration::from_millis(100){
