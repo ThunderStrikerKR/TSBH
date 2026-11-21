@@ -1820,54 +1820,30 @@ impl BandoEgui {
                     let (bounds,_) = ui.allocate_exact_size(
                         Vec2::new(body_width,body_height),Sense::hover()
                     );
-                    let header_rect=Rect::from_min_size(
-                        bounds.min,Vec2::new(
-                            bounds.width(),theme::MODAL_REVIEW_HEADER_HEIGHT
-                        )
+                    let master=components::modal_master_layout(
+                        bounds,
+                        theme::MODAL_REVIEW_HEADER_HEIGHT,
+                        theme::MODAL_FOOTER_HEIGHT,
+                        theme::MODAL_REVIEW_GAP
                     );
-                    let footer_rect=Rect::from_min_size(
-                        egui::pos2(bounds.left(),
-                            bounds.bottom()-theme::MODAL_FOOTER_HEIGHT),
-                        Vec2::new(bounds.width(),theme::MODAL_FOOTER_HEIGHT)
-                    );
-                    let compare_rect=Rect::from_min_max(
-                        egui::pos2(bounds.left(),
-                            header_rect.bottom()+theme::MODAL_REVIEW_GAP),
-                        egui::pos2(bounds.right(),
-                            footer_rect.top()-theme::MODAL_REVIEW_GAP)
-                    );
-                    close=components::modal_review_header_in_rect(
+                    let header_rect=master.header;
+                    let footer_rect=master.footer;
+                    let compare_rect=master.workspace;
+                    close=components::modal_master_header_in_rect(
                         ui,header_rect,"OCR 문자 인식 검토",
                         "원본 이미지와 인식된 텍스트를 대조하고 오타를 수정한 뒤 반영하세요.",
                         "취소",true
                     );
 
-                    // One comparison workspace: a single outer boundary,
-                    // one header rule, and a thin vertical data separator.
-                    // No nested cards, header strips, or doubled outlines.
-                    let divider_x=(compare_rect.left()
-                        +compare_rect.width()*2.0/3.0).floor();
-                    let toolbar_bottom=compare_rect.top()
-                        +theme::MODAL_COMPARISON_HEADER_HEIGHT;
+                    // Common popup master owns the ONE workspace frame and
+                    // both divider lines. The OCR pane ratio is content-specific.
+                    let frame=components::modal_master_workspace_surface(
+                        ui,compare_rect,theme::MODAL_COMPARISON_HEADER_HEIGHT,
+                        Some(2.0/3.0)
+                    );
+                    let divider_x=frame.divider_x.expect("OCR has two panes");
+                    let toolbar_bottom=frame.toolbar_bottom;
                     let edge=theme::DIVIDER;
-                    ui.painter().rect_filled(
-                        compare_rect,theme::CONTROL_RADIUS,theme::PANEL
-                    );
-                    ui.painter().rect_stroke(
-                        compare_rect,theme::CONTROL_RADIUS,
-                        egui::Stroke::new(theme::FRAME_STROKE_WIDTH,edge),
-                        egui::StrokeKind::Inside
-                    );
-                    ui.painter().line_segment(
-                        [egui::pos2(compare_rect.left(),toolbar_bottom),
-                         egui::pos2(compare_rect.right(),toolbar_bottom)],
-                        egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,edge)
-                    );
-                    ui.painter().line_segment(
-                        [egui::pos2(divider_x,compare_rect.top()),
-                         egui::pos2(divider_x,compare_rect.bottom())],
-                        egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,edge)
-                    );
 
                     let inset=theme::MODAL_REVIEW_CONTENT_INSET;
                     let left_header=Rect::from_min_size(
@@ -2101,7 +2077,7 @@ impl BandoEgui {
 
                     let edited=review.edited_text.trim();
                     let valid=!edited.is_empty() && edited.chars().count()<=20_000;
-                    components::modal_review_footer_in_rect(
+                    components::modal_master_footer_in_rect(
                         ui,footer_rect,|buttons|{
                             if theme::action(
                                 buttons,"적용",ButtonRole::Primary,valid
