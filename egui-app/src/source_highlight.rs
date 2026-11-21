@@ -331,7 +331,7 @@ fn visual_blocks(
         let (start,end)=(window[0],window[1]);
         let start_char=char_cursor;
         char_cursor+=raw[start..end].chars().count();
-        let visible=spans.iter().filter(|s|s.start<=start && s.end>=end);
+        let mut visible=spans.iter().filter(|s|s.start<=start && s.end>=end);
         let focused=active.and_then(|key|visible.clone().find(|s|
             same_target(&s.key,key)));
         let contextual=visible.clone().find(|s|
