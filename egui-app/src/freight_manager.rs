@@ -2408,15 +2408,18 @@ impl FreightManager {
         // non-wrapping rows and reserved solid scrollbar. No fee computation
         // or history mutation is performed by this view.
         theme::section_frame().show(ui, |section| {
-            section.label(typography::section_heading("확인된 배송 조합"));
-            components::soft_divider(section);
+            // The first history table has no redundant title. Its fixed
+            // header must start at the same vertical position as the two
+            // freight master tabs: 36pt toolbar-height guide + shared 21pt
+            // divider transition. Zero implicit spacing prevents drift.
+            let prior_gap=section.spacing().item_spacing.y;
+            section.spacing_mut().item_spacing.y=0.0;
+            let (history_toolbar_guide,_)=section.allocate_exact_size(
+                egui::vec2(section.available_width(),theme::INPUT_HEIGHT),
+                egui::Sense::hover()
+            );
+            debug_assert!((history_toolbar_guide.height()-theme::INPUT_HEIGHT).abs()<0.01);
             let combinations=rows(&shipping["combinations"]);
-            if combinations.is_empty(){
-                section.label(typography::caption(
-                    "실제 배송 완료 후 검증한 운임 조합이 여기에 표시됩니다."
-                ));
-                return;
-            }
             // Keep React's original newest-first order unless the user
             // explicitly sorts a meaningful column.
             let mut ordered:Vec<&Value>=combinations.iter().rev().collect();
@@ -2447,6 +2450,10 @@ impl FreightManager {
                 ["조합","등록일 / 검증","청구 운임","실제 운임","기준","수정"],
                 theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS,
                 [0.65,0.35,0.0,0.0,0.0,0.0],ordered.len(),Some(sort),
+                true,
+                if combinations.is_empty(){
+                    Some("실제 배송 완료 후 검증한 운임 조합이 없습니다.")
+                }else{None},
                 |row,cells,index|{
                     let record=ordered[index];
                     let id=text(record,"id");
@@ -2520,6 +2527,7 @@ impl FreightManager {
                     );
                 }
             );
+            section.spacing_mut().item_spacing.y=prior_gap;
         });
         ui.add_space(theme::SPACE_12);
         theme::section_frame().show(ui, |section| {
@@ -2547,6 +2555,7 @@ impl FreightManager {
                              "기존 개당 기준","사용자 참고 메모","버전"],
                             theme::FREIGHT_GROUP_HISTORY_COL_WIDTHS,
                             [0.10,0.0,0.55,0.0,0.35,0.0],history.len(),None,
+                            false,None,
                             |row,cells,index|{
                                 let old=&history[index];
                                 let at=text(old,"at");
@@ -2647,6 +2656,7 @@ fn history_cell(
 fn freight_history_table(
     ui:&mut Ui,id:&str,titles:[&str;6],bases:[f32;6],shares:[f32;6],
     total_rows:usize,mut sort:Option<&mut Option<HistorySort>>,
+    follows_master_toolbar:bool,empty_message:Option<&str>,
     mut render_row:impl FnMut(&mut Ui,&[egui::Rect;6],usize),
 ){
     ui.spacing_mut().scroll=theme::management_table_scroll_style();
@@ -2654,7 +2664,14 @@ fn freight_history_table(
     ui.spacing_mut().item_spacing.y=0.0;
     let minimum=bases.iter().sum::<f32>()
         +5.0*theme::FREIGHT_ASSIGNMENT_COL_GAP;
-    let layout=components::management_list_table_header(ui,minimum);
+    let layout=if follows_master_toolbar {
+        // Only the first/history overview has the approved toolbar guide.
+        // Expanded group-version tables already have their own section
+        // heading and must not receive an unrelated 21pt strip.
+        components::management_sticky_table_header(ui,minimum)
+    }else{
+        components::management_list_table_header(ui,minimum)
+    };
     let width=layout.table_width;
     let widths=theme::management_weighted_columns(
         bases,shares,width,theme::FREIGHT_ASSIGNMENT_COL_GAP
@@ -2816,6 +2833,26 @@ fn freight_history_table(
         [header_rect.left_bottom(),header_rect.right_bottom()],
         egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
     );
+    if total_rows==0 {
+        if let Some(message)=empty_message {
+            // D-type state paints in the body, with no extra title/footer
+            // allocation that could raise or lower the fixed header.
+            let body=egui::Rect::from_min_size(
+                scroll_track.min,egui::vec2(
+                    (layout.viewport_width-layout.scrollbar_gutter)
+                        .min(scroll_track.width()).max(0.0),
+                    scroll_max_height
+                )
+            ).intersect(ui.clip_rect());
+            if body.width()>0.0&&body.height()>0.0 {
+                ui.painter().with_clip_rect(body).text(
+                    body.center(),egui::Align2::CENTER_CENTER,message,
+                    egui::FontId::proportional(typography::FONT_METADATA),
+                    theme::MUTED,
+                );
+            }
+        }
+    }
 }
 
 /// Only Freight management currently trials the 16pt page-title inset.
