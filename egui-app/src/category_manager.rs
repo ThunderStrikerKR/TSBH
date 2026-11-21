@@ -688,29 +688,31 @@ impl CategoryManager {
                                 ));
                             }
                             body.add_space(theme::SPACE_8);
-                            components::soft_divider(body);
-                            body.horizontal(|footer|{
-                                if theme::action(footer,"분류 삭제",
-                                    theme::ButtonRole::Danger,
-                                    editable&&!busy&&!is_root(&current.id)
-                                    &&children(&cats,&current.id).is_empty()
-                                    &&direct_count(catalog,&current.id)==0
-                                ).clicked(){
-                                    self.begin_operation(&cats,catalog,Operation::Delete);
-                                }
-                                footer.with_layout(
-                                    Layout::right_to_left(Align::Center),|right|{
-                                        if theme::action(right,"변경사항 저장",
-                                            theme::ButtonRole::Primary,
-                                            editable&&!busy&&self.rename_dirty(&cats)
-                                        ).clicked(){
-                                            match self.write_request(&cats,catalog){
-                                                Ok(req)=>write=Some(req),
-                                                Err(e)=>self.error=Some(e),
+                            body.add_space(theme::SPACE_12);
+                            components::modal_action_row(body,|footer|{
+                                footer.with_layout(Layout::left_to_right(Align::Center),|row|{
+                                    if theme::action(row,"분류 삭제",
+                                        theme::ButtonRole::Danger,
+                                        editable&&!busy&&!is_root(&current.id)
+                                        &&children(&cats,&current.id).is_empty()
+                                        &&direct_count(catalog,&current.id)==0
+                                    ).clicked(){
+                                        self.begin_operation(&cats,catalog,Operation::Delete);
+                                    }
+                                    row.with_layout(
+                                        Layout::right_to_left(Align::Center),|right|{
+                                            if theme::action(right,"변경사항 저장",
+                                                theme::ButtonRole::Primary,
+                                                editable&&!busy&&self.rename_dirty(&cats)
+                                            ).clicked(){
+                                                match self.write_request(&cats,catalog){
+                                                    Ok(req)=>write=Some(req),
+                                                    Err(e)=>self.error=Some(e),
+                                                }
                                             }
                                         }
-                                    }
-                                );
+                                    );
+                                });
                             });
 
                         }
