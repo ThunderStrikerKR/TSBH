@@ -2895,7 +2895,8 @@ impl BandoEgui {
                 }else{theme::ACTION_STANDARD_HEIGHT};
                 let available=components::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
-                let message_height=(available-button_row_height-theme::SPACE_8).max(0.0);
+                let message_height=(available-button_row_height
+                    -theme::RECEPTION_MESSAGE_ACTION_GAP).max(0.0);
                 // The canvas owns its fixed rectangle even when the message
                 // is empty or its content is shorter than the viewport.
                 let (message_rect,_)=body.allocate_exact_size(
@@ -2953,7 +2954,7 @@ impl BandoEgui {
             } else {
                 theme::ACTION_STANDARD_HEIGHT
             };
-            let bottom_controls = button_row_height + theme::SPACE_8;
+            let bottom_controls = button_row_height + theme::RECEPTION_MESSAGE_ACTION_GAP;
             let available_body = components::docked_section_body_height(height)
                 .min(ui.available_height().max(0.0));
             let field_height = (available_body - bottom_controls).max(0.0);
@@ -3094,6 +3095,9 @@ impl BandoEgui {
                         // Footer slots must consume EXACTLY their reserved
                         // heights, with no hidden egui spacing added between.
                         ui.spacing_mut().item_spacing.y=0.0;
+                        // The list inherits the master's 10pt reserved solid
+                        // rail; only the interior data viewport can scroll.
+                        ui.spacing_mut().scroll=theme::management_table_scroll_style();
                         // React structure: 3-column product grid + freight + actions,
                         // independently scrolling above a fixed VAT and total footer.
                         let available = components::docked_section_body_height(
@@ -3109,6 +3113,9 @@ impl BandoEgui {
                             |area| {
                                 area.set_min_height(list_height);
                                 egui::ScrollArea::vertical()
+                                    .scroll_bar_visibility(
+                                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                                    )
                                     .id_salt(("native-workflow-products",ship.id.as_str()))
                                     .max_height(list_height)
                                     .auto_shrink([false,false])
@@ -3414,6 +3421,7 @@ impl BandoEgui {
                         return;
                     }
                     ui.spacing_mut().item_spacing.y=0.0;
+                    ui.spacing_mut().scroll=theme::management_table_scroll_style();
                     let preview = self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
                         .and_then(|draft|draft.pricing_preview.as_ref())
@@ -3432,6 +3440,9 @@ impl BandoEgui {
                         |list_area|{
                             list_area.set_min_height(list_height);
                             egui::ScrollArea::vertical()
+                                .scroll_bar_visibility(
+                                    egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                                )
                                 .id_salt("recognized-items")
                                 .max_height(list_height)
                                 .auto_shrink([false,false])
@@ -3555,7 +3566,13 @@ impl BandoEgui {
         let height=ui.available_height();
         let mut event=None;
         Self::section(ui,"처리 중인 주문",height,|ui|{
+            // A continuous order-card list needs the same 10pt solid
+            // scrollbar that management lists use, never a floating thumb.
+            ui.spacing_mut().scroll=theme::management_table_scroll_style();
             egui::ScrollArea::vertical()
+                .scroll_bar_visibility(
+                    egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                )
                 .id_salt("working-receptions-list")
                 .auto_shrink([false,false])
                 .show(ui,|ui|{
