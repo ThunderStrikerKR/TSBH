@@ -2535,12 +2535,11 @@ impl BandoEgui {
                         egui::pos2(body_rect.left(), body_rect.top() + gap),
                         Vec2::new(body_rect.width(), client_card_height),
                     );
-                    ui.painter().rect(
-                        card_rect,
-                        theme::CONTROL_RADIUS as f32,
-                        theme::INPUT,
-                        egui::Stroke::new(1.0, theme::BORDER),
-                        egui::StrokeKind::Inside,
+                    // The current client is supporting metadata, not
+                    // another input editor. Shared master surface treatment
+                    // changes only paint, never its reserved 70pt Rect.
+                    components::paint_reception_client_summary_surface(
+                        ui,card_rect
                     );
                     let client_name = self.active_id.as_deref()
                         .and_then(|id| self.drafts.iter().find(|item| item.id == id))
