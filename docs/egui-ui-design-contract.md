@@ -607,3 +607,13 @@
 - **기능·CSS 기준:** `src/ProductManager.tsx`는 `RegistrySettings`를 브랜드 관리 탭에서 `categories={false}`로 호출한다. `src/Classification.tsx::RegistrySettings`의 공식 브랜드명·한글 표기·검색 별칭(쉼표)·확인 근거 URL, 브랜드 저장, 등록 브랜드 목록과 '정정', 미저장 변경 시 선택/페이지 이탈 보호를 그대로 유지한다. 실제 적용 `src/styles/tauri-stage2-products.css`의 `.registry-brand-manager`, `.registry-edit-form` 자동 래핑 필드·우측 작업 버튼, `.registry-list`, `.registry-row`는 공통 egui 섹션·입력·버튼·서체 토큰으로 표현한다. 레거시 브랜드 목록 자동 병합·임의 삭제·추가 확인 단계는 만들지 않는다.
 - **Rust 단일 소유·저장:** `src-tauri/src/business_core/catalog_clients/brands.rs`의 `upsert_brand`/`validate`가 별칭 중복 정리·다른 브랜드와의 중복·HTTPS 증빙 근거 검증을 담당한다. `egui-app/src/brand_manager.rs`는 네 필드의 명시적 입력·정정/보존·이탈 확인과 결과 표시만 소유한다. `src-tauri/src/egui_product_bridge.rs`의 `upsert_brand` 액션이 고유 ID 생성 후 기존 Rust `catalog_clients` 명령 및 운영 SQLite `write_snapshot` 전역 리비전 CAS를 재사용한다. 상품·주문·별칭·모델군 데이터를 자동 편집하지 않으며, 저장 실패 시 입력값을 보존한다.
 - **범위·검증:** `egui-app/src/product_manager.rs`의 다섯 번째 브랜드 관리 탭만 활성화. 기존 수정 완료 탭·전체 상품 가격표·카카오톡·운임은 미변경. 좁은 `brands::tests` 및 격리 SQLite 등록/동일 ID 정정/유효성 오류/충돌/리비전 거부/재연결 테스트, Tauri·egui 컴파일로 검증하고 Windows 실화면은 사용자 결정에 따라 생략한다.
+
+
+### 65차 — 공통 팝업 테마 1차 시범 적용 (2026-11-22)
+
+- **마스터**: 운임 관리 → 배송 그룹 편성의 표면 역할, 1pt 구분선, 12/16pt 간격 및 기존 13~18pt 타이포그래피 위계를 따른다. 팝업에 배송 그룹 표의 36pt 헤더·42pt 행을 획일적으로 복제하지 않는다.
+- **단일 토큰 소유**: `egui-app/src/theme.rs`의 `MODAL_CHROME_BG = TABLE_ROW_ALT_BG`, `MODAL_SECTION_BG = TABLE_ROW_ALT_BG`, `MODAL_SECTION_HEADER_BG = INPUT`, `MODAL_HEADER_HEIGHT = 56`, `MODAL_FOOTER_HEIGHT = 58`과 기존 `DIVIDER`, `BORDER`, `PANEL`, `SPACE_12`를 사용한다. 독립적인 RGB 팝업 팔레트를 만들지 않는다.
+- **컴포넌트**: `egui-app/src/components.rs`의 `modal_header_chrome`/`modal_header_in_rect`(제목과 취소·닫기, 하단선), `modal_section`/`modal_section_surface`(업무별 배경·제목·단일 구분), `modal_footer_chrome`/`modal_footer_in_rect`(상단선과 최종 실행 버튼)을 사용한다. 각 화면에서 동일한 배경·여백·구분선을 임의로 다시 만들지 않는다.
+- **1차 적용 대상**: `egui-app/src/main.rs`의 OCR 검토(원본 2 : 인식 텍스트 1, 고정 비교 카드와 국소 스크롤), `egui-app/src/client_chooser.rs`의 거래처 변경(검색 그룹/결과 그룹), `egui-app/src/freight_manager.rs`의 배송 그룹 삭제 확인(대상 그룹/하단 위험 작업). 다른 팝업은 사용자 시각 검수 이후 점진적으로 이전한다.
+- **시각·동작 불변식**: 상태·텍스트 길이·이미지 확대가 팝업 제목·본문 경계·하단 작업 버튼을 움직이지 않아야 한다. 우상단 `취소/닫기`, 우하단 확인/적용/삭제, 카카오톡 제외 작업영역 기준 배치와 움직임/크기 조절 금지, 기존 Rust 명령·경고·미저장 확인 및 실패 처리 흐름을 유지한다. 간단한 확인창에 업무 카드 두 개를 무조건 만들지 않는다.
+- **검수**: 100/125/150% DPI에서 OCR 긴 원문·400% 확대, 거래처 검색 0/수백 건과 비동기 오류, 배송 그룹 연결 상품 0/다수 및 좁은 창의 하단 작업영역을 확인한다. UI 정적 확인·Windows CI·실제 화면 검증은 각각 별도로 기록한다.
