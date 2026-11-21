@@ -58,6 +58,7 @@ use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, Order
 use preview_store::{WorkingReception, WorkingSource};
 use kakao_context::{ChatWindow, KakaoTracker};
 use client_chooser::{ClientChooser, Choice};
+use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::{self, Receiver},
@@ -259,6 +260,11 @@ struct BandoEgui {
     workflow_receiver: Option<Receiver<Result<workflow_board::BoardSnapshot,String>>>,
     workflow_last_fetch: Option<Instant>,
     workflow_ui: workflow_board_ui::BoardUi,
+    // Transient name-only directory: resolve selected dealer ID in ALL
+    // pending cards, not from an advisory match discarded on manual edits.
+    client_names: HashMap<String,String>,
+    client_names_receiver: Option<Receiver<Result<HashMap<String,String>,String>>>,
+    client_names_last_refresh: Option<Instant>,
     analysis_request: u64,
     analysis_pending: bool,
     analysis_due_at: Option<Instant>,
@@ -332,6 +338,9 @@ impl Default for BandoEgui {
             workflow_receiver: None,
             workflow_last_fetch: None,
             workflow_ui: workflow_board_ui::BoardUi::default(),
+            client_names: HashMap::new(),
+            client_names_receiver: None,
+            client_names_last_refresh: None,
             analysis_request: 0,
             analysis_pending: false,
             analysis_due_at: None,
@@ -460,6 +469,67 @@ impl BandoEgui {
     /// A strictly read-only lookup against an explicitly chosen Tauri v2
     /// database. Calculations come from Rust preview_workflow/read_shipments,
     /// never from UI arithmetic or fabricated placeholder workflow groups.
+    /// Name-only master projection for pending-order headings. The worker
+    /// reads the same explicitly configured catalog as client selection.
+    /// Never run IO in egui's frame and never persist names in draft SQLite.
+    fn poll_client_names(&mut self,ctx:&egui::Context){
+        if let Some(result)=self.client_names_receiver.as_ref()
+            .map(|receiver|receiver.try_recv()){
+            match result{
+                Ok(Ok(names))=>{
+                    self.client_names=names;
+                    self.client_names_receiver=None;
+                    ctx.request_repaint();
+                }
+                Ok(Err(_)) | Err(mpsc::TryRecvError::Disconnected)=>{
+                    self.client_names_receiver=None;
+                }
+                Err(mpsc::TryRecvError::Empty)=>{}
+            }
+        }
+        if self.page!=Page::Reception{
+            // Re-check the current customer master on return from its editor.
+            self.client_names_last_refresh=None;
+            return;
+        }
+        if self.client_names_receiver.is_some() ||
+            self.client_names_last_refresh.is_some_and(|time|
+                time.elapsed()<Duration::from_secs(60)){return;}
+        self.client_names_last_refresh=Some(Instant::now());
+        let gateway=Arc::clone(&self.gateway);
+        let context=ctx.clone();
+        let (sender,receiver)=mpsc::channel();
+        self.client_names_receiver=Some(receiver);
+        std::thread::spawn(move||{
+            let result=gateway.load_catalog().map(|catalog|{
+                let mut names=HashMap::new();
+                if let Some(clients)=catalog.get("clients")
+                    .and_then(serde_json::Value::as_array){
+                    for client in clients{
+                        if client.get("deletedAt").is_some_and(|v|!v.is_null())
+                            || client.get("active")==Some(&serde_json::Value::Bool(false)){
+                            continue;
+                        }
+                        let id=client.get("id")
+                            .and_then(serde_json::Value::as_str).unwrap_or("");
+                        let name=client.get("name")
+                            .and_then(serde_json::Value::as_str)
+                            .filter(|name|!name.trim().is_empty())
+                            .or_else(||client.get("displayName")
+                                .and_then(serde_json::Value::as_str))
+                            .unwrap_or("");
+                        if !id.is_empty() && !name.trim().is_empty(){
+                            names.insert(id.to_owned(),name.to_owned());
+                        }
+                    }
+                }
+                names
+            });
+            let _=sender.send(result);
+            context.request_repaint();
+        });
+    }
+
     fn poll_workflow_board(&mut self,ctx:&egui::Context){
         if let Some(receiver)=self.workflow_receiver.as_ref(){
             match receiver.try_recv(){
@@ -3951,9 +4021,16 @@ impl BandoEgui {
                 .id_salt("working-receptions-list")
                 .auto_shrink([false,false])
                 .show(ui,|ui|{
+                    let active_selected=self.active_id.as_deref()
+                        .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
+                        .and_then(|draft|draft.client_id.as_deref())
+                        .zip(self.analysis.as_ref()
+                            .and_then(|analysis|analysis.chosen_client_name.as_deref()));
                     event=workflow_board_ui::show(
                         ui,self.workflow_snapshot.as_ref(),&self.drafts,
-                        self.active_id.as_deref(),&mut self.workflow_ui
+                        self.active_id.as_deref(),
+                        &self.client_names,active_selected,
+                        &mut self.workflow_ui
                     );
                 });
         });
@@ -4327,6 +4404,7 @@ impl eframe::App for BandoEgui {
             self.clear_source_analysis();
         }
         self.poll_workflow_board(ctx);
+        self.poll_client_names(ctx);
         self.poll_client_change(ctx);
         self.poll_working_sync(ctx);
         self.poll_source_clear(ctx);
