@@ -878,15 +878,18 @@ pub fn management_table_scroll_track_rect(
 }
 
 /// The only place that computes top/bottom of a management table rail.
-/// The scroll viewport and scrollbar may intentionally have different
-/// vertical extents; this rectangle governs the rail's paint/HIT geometry.
+/// The track may extend into a card's bottom padding, but MUST stop before
+/// the bottom outline: a handle flush against that outline appears clipped.
+/// Keep this rail-only clearance separate from the actual row viewport.
 fn management_table_scroll_track_geometry(
     bounds:Rect,scroll_height:f32,bottom_extension:f32
 )->Rect {
     debug_assert!(scroll_height.is_finite()&&scroll_height>=0.0);
     debug_assert!(bottom_extension.is_finite()&&bottom_extension>=0.0);
     let rows_bottom=(bounds.top()+scroll_height).min(bounds.bottom());
-    let track_bottom=rows_bottom+bottom_extension;
+    let track_bottom=(rows_bottom+bottom_extension
+        -theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET)
+        .max(bounds.top()+1.0);
     let track_top=(bounds.top()+theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET)
         .min(track_bottom-1.0);
     Rect::from_min_max(
@@ -1830,22 +1833,27 @@ mod management_toolbar_geometry_tests {
             bounds,484.0,theme::SECTION_PADDING
         );
         assert_eq!(inset.top(),303.0);
-        assert_eq!(inset.bottom(),800.0);
+        assert_eq!(inset.bottom(),796.0); // 4pt above card outline
         assert_eq!(inset.left(),16.0);
         assert_eq!(inset.right(),816.0);
 
         // A footer/list that is not a full-card table cannot claim
-        // another 16pt. Its rail stops at the reserved data viewport.
+        // another 16pt. The rail ends 4pt BEFORE its data-viewport edge.
         let with_footer=management_table_scroll_track_geometry(bounds,400.0,0.0);
         assert_eq!(with_footer.top(),303.0);
-        assert_eq!(with_footer.bottom(),700.0);
+        assert_eq!(with_footer.bottom(),696.0);
 
         // The card's current available rectangle still caps the ROWS,
         // even if the caller asks for more max_height than it can show.
         let clipped=management_table_scroll_track_geometry(
             bounds,1200.0,theme::SECTION_PADDING
         );
-        assert_eq!(clipped.bottom(),800.0);
+        assert_eq!(clipped.bottom(),796.0);
+
+        // Very small panes must still produce a non-inverted rail Rect.
+        let tiny=management_table_scroll_track_geometry(bounds,1.0,0.0);
+        assert!(tiny.height()>=1.0);
+        assert!(tiny.top()>=bounds.top());
     }
 
     #[test]
