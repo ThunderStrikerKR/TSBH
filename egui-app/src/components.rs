@@ -714,6 +714,35 @@ pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
     modal_footer_in_rect(ui,rect,actions);
 }
 
+/// One framed content work surface for flow-based popup bodies. Use one
+/// per dialog rather than wrapping every subsection in another card.
+pub fn modal_master_body<R>(
+    ui:&mut Ui,contents:impl FnOnce(&mut Ui)->R
+)->R {
+    let inset=theme::MODAL_SECTION_PADDING;
+    let width=(ui.available_width()-2.0*inset
+        -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
+    Frame::new()
+        .fill(theme::PANEL)
+        .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER))
+        .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
+        .inner_margin(inset)
+        .show(ui,|body|{
+            body.set_min_width(width);
+            contents(body)
+        }).inner
+}
+
+/// A simple heading and one divider WITHIN the same master work surface.
+/// No additional per-section fill, rounded card, or duplicate outline.
+pub fn modal_master_body_section<R>(
+    ui:&mut Ui,title:&str,contents:impl FnOnce(&mut Ui)->R
+)->R {
+    ui.label(typography::section_heading(title));
+    theme::divider(ui);
+    contents(ui)
+}
+
 /// One coherent nested information section, visually related to Freight
 /// Shipping-Group Assignment's PANEL/DIVIDER hierarchy. Continuous fields
 /// share the same frame rather than each receiving a redundant border.
