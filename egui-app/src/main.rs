@@ -1837,7 +1837,7 @@ impl BandoEgui {
 
                     // Common popup master owns the ONE workspace frame and
                     // both divider lines. The OCR pane ratio is content-specific.
-                    let frame=components::modal_master_workspace_surface(
+                    let frame=components::modal_master_workspace_background(
                         ui,compare_rect,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT,
                         Some(2.0/3.0)
                     );
@@ -1975,11 +1975,25 @@ impl BandoEgui {
                     );
                     // Colors identify the two uses of ONE contiguous area:
                     // no separate nested cards, strokes or rounded corners.
-                    ui.painter().rect_filled(
-                        image_view_rect,0.0,theme::CANVAS
+                    // Lower pane corners follow the ONE outer 6pt workspace
+                    // radius. The 1pt inset belongs to the final stroke,
+                    // not a second card border or a square background leak.
+                    let inner_radius=theme::CONTROL_RADIUS.saturating_sub(
+                        theme::FRAME_STROKE_WIDTH.ceil() as u8
                     );
                     ui.painter().rect_filled(
-                        text_view_rect,0.0,theme::INPUT
+                        image_view_rect,
+                        egui::CornerRadius{
+                            nw:0,ne:0,sw:inner_radius,se:0
+                        },
+                        theme::CANVAS
+                    );
+                    ui.painter().rect_filled(
+                        text_view_rect,
+                        egui::CornerRadius{
+                            nw:0,ne:0,sw:0,se:inner_radius
+                        },
+                        theme::INPUT
                     );
 
                     // Inset the entire scroll viewport by 12pt. Keeping
@@ -2080,6 +2094,13 @@ impl BandoEgui {
                                     .desired_rows(1)
                             );
                         },
+                    );
+
+                    // The final master pass sits above both pane fills.
+                    // Its flat, pixel-snapped dividers and single rounded
+                    // outline repair the tiny overhangs and corner seams.
+                    components::modal_master_workspace_finish(
+                        ui,compare_rect,frame
                     );
 
                     let edited=review.edited_text.trim();
