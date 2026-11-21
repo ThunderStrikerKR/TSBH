@@ -158,14 +158,16 @@ impl ClientChooser {
             .default_width(460.0_f32.min(work_area.width()))
             .min_width(340.0_f32.min(work_area.width()))
             .show(ctx,|ui| {
-                if components::modal_header(ui,"거래처 변경","닫기",!busy){
+                if components::modal_header_chrome(ui,"거래처 변경","닫기",!busy){
                     is_open=false;
                 }
+                ui.add_space(theme::SPACE_12);
+                components::modal_section(ui,"거래처 검색",|search_panel|{
                 let currently=self.clients.iter()
                     .find(|c|Some(text(c,"id"))==current_id)
                     .map(|c|text(c,"name")).unwrap_or("미선택");
-                ui.label(typography::body(&format!("현재 거래처: {currently}")));
-                let response=ui.add_enabled(!busy,
+                search_panel.label(typography::body(&format!("현재 거래처: {currently}")));
+                let response=search_panel.add_enabled(!busy,
                     egui::TextEdit::singleline(&mut self.query)
                         .hint_text("상호 / 별칭 / 주소 / 전화번호 검색")
                         .desired_width(ui.available_width())
@@ -173,27 +175,31 @@ impl ClientChooser {
                 if response.changed()&&self.loaded {
                     self.search(Arc::clone(&gateway),ctx.clone());
                 }
+                });
+                ui.add_space(theme::SPACE_12);
+                components::modal_section(ui,"검색 결과",|results_panel|{
                 if busy {
-                    ui.label(typography::caption("거래처 적용 중…"));
+                    results_panel.label(typography::caption("거래처 적용 중…"));
                 }
                 // Native selection errors must remain visible in the chooser.
                 // Otherwise a failed Rust repricing looks like a dead button.
                 if let Some(error)=self.error.as_deref() {
-                    ui.label(egui::RichText::new(error).color(theme::DANGER));
+                    results_panel.label(egui::RichText::new(error).color(theme::DANGER));
                 }
                 if !self.loaded||self.searching {
-                    ui.label(typography::caption("검색 중"));
+                    results_panel.label(typography::caption("검색 중"));
                 } else {
                     let ids:Vec<&str>=if self.query.trim().is_empty() {
                         self.clients.iter().map(|c|text(c,"id")).collect()
                     } else {
                         self.results.iter().map(String::as_str).collect()
                     };
-                    ui.label(typography::caption(&format!("{}개 거래처",ids.len())));
+                    results_panel.label(typography::caption(&format!("{}개 거래처",ids.len())));
                     egui::ScrollArea::vertical()
                         .id_salt("egui-all-clients-scroll")
-                        .max_height((work_area.height()-180.0).max(60.0).min(390.0))
-                        .show(ui,|ui|{
+                        .max_height((work_area.height()-310.0).max(80.0).min(390.0))
+                        .auto_shrink([false,false])
+                        .show(results_panel,|ui|{
                             for id in ids {
                                 if let Some(row)=self.clients.iter().find(|c|text(c,"id")==id) {
                                     let name=text(row,"name");
@@ -251,6 +257,7 @@ impl ClientChooser {
                             }
                         });
                 }
+                });
             });
         if let Some(id)=chosen {
             if self.contains(&id) {return Some(Choice::Selected(id));}
