@@ -426,10 +426,11 @@ fn paint_column_dividers(
         );
     }
 }
-fn paint_text(ui:&Ui,rect:Rect,value:&str,emphasized:bool,right:bool){
+fn paint_text(ui:&Ui,rect:Rect,value:&str,
+    role:typography::ManagementTableCellRole,right:bool){
     if rect.width()<=0.0{return}
-    let color=if emphasized{theme::TEXT}else{theme::SECONDARY};
-    let galley=typography::freight_table_cell_galley(ui,value,emphasized,color);
+    let color=typography::management_table_cell_color(role);
+    let galley=typography::management_table_cell_galley(ui,value,role);
     // Freight table's text columns use a 6pt leading guide; monetary
     // figures keep their 8pt trailing guide for right alignment.
     let inset=if right{theme::SPACE_8}else{6.0};
@@ -442,7 +443,9 @@ fn paint_text(ui:&Ui,rect:Rect,value:&str,emphasized:bool,right:bool){
     );
 }
 fn paint_center(ui:&Ui,rect:Rect,value:&str){
-    let galley=typography::freight_table_cell_galley(ui,value,false,theme::SECONDARY);
+    let galley=typography::management_table_cell_galley(
+        ui,value,typography::ManagementTableCellRole::Status
+    );
     let x=(rect.center().x-galley.size().x/2.0)
         .max(rect.left()+6.0);
     ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(
@@ -565,9 +568,9 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
     match line {
         HistoryLine::Order(_)=>{
             let columns=cells(rect.min,widths,rect.height());
-            paint_text(ui,columns[0],&order_date(row),false,false);
+            paint_text(ui,columns[0],&order_date(row),typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[1],&display_client_name(order_client(row)),
-                true,false);
+                typography::ManagementTableCellRole::ClientName,false);
             ui.interact(columns[1].intersect(area),
                 ui.make_persistent_id(("history-client-name",id)),Sense::hover())
                 .on_hover_text(order_client(row));
@@ -591,7 +594,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 egui::pos2(columns[2].left()+20.0,columns[2].top()),
                 columns[2].right_bottom()
             );
-            paint_text(ui,summary_rect,&summary,true,false);
+            paint_text(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName,false);
             let open_area=Rect::from_min_max(
                 rect.left_top(),egui::pos2(columns[6].left(),rect.bottom())
             ).intersect(area);
@@ -609,13 +612,13 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 cautions.push("기존 입금 표시 / 실제 입금 기록 미확인");
             }
             if cautions.is_empty(){
-                paint_text(ui,columns[4],&total,true,true);
+                paint_text(ui,columns[4],&total,typography::ManagementTableCellRole::Total,true);
             }else{
                 let upper=Rect::from_min_max(columns[4].min,
                     egui::pos2(columns[4].right(),columns[4].center().y));
                 let lower=Rect::from_min_max(egui::pos2(columns[4].left(),
                     columns[4].center().y),columns[4].max);
-                paint_text(ui,upper,&total,true,true);
+                paint_text(ui,upper,&total,typography::ManagementTableCellRole::Total,true);
                 paint_caption(ui,lower,&cautions.join(" / "));
                 ui.interact(columns[4].intersect(area),
                     ui.make_persistent_id(("history-billing-caution",id)),
@@ -705,10 +708,10 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 else{format!("운임 {freight}")};
             let tracking_label=if tracking=="운송장 미확인"{tracking.clone()}
                 else{format!("송장 {tracking}")};
-            paint_text(ui,columns[0],name,true,false);
+            paint_text(ui,columns[0],name,typography::ManagementTableCellRole::ClientName,false);
             paint_detail_products(ui,columns[1],&products);
-            paint_text(ui,columns[2],&freight_label,false,false);
-            paint_text(ui,columns[3],&tracking_label,false,false);
+            paint_text(ui,columns[2],&freight_label,typography::ManagementTableCellRole::Description,false);
+            paint_text(ui,columns[3],&tracking_label,typography::ManagementTableCellRole::Description,false);
             let address=field(display_recipient,"address");
             let address=if address.is_empty(){"배송 주소 확인 필요"}
                 else{address};
