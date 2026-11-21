@@ -850,7 +850,9 @@ impl ProductManager {
             let widths=theme::management_single_stretch_columns(
                 base,table_width,gap,0
             );
-            let headings=["상품명 / 상품설명","색상/옵션","도매가",
+            let headings=[
+                components::ManagementTableColumnLabel::ProductName.text(),
+                "색상/옵션","도매가",
                 "반도매가","소매가","상세"];
             let selection_locked=self.has_pending_prices();
             let ordered=product_sort_order(
