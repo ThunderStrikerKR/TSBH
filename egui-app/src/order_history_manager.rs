@@ -874,6 +874,7 @@ fn range_date_picker_rtl(
                     .hint_text("YYYY-MM-DD")
                     .desired_width(HISTORY_DATE_FIELD_WIDTH)
             ).on_hover_text(&format!("{label} 직접 입력"));
+            crate::floating_notice::input(row.ctx(),"history.date",&edit);
             changed|=edit.changed();
             let next=history_date_segment(row,"›",NEXT)
                 .on_hover_text(&format!("{label} 하루 뒤"));
@@ -1348,8 +1349,11 @@ impl OrderHistoryManager {
             // Same measured transition as Freight > Shipping Group
             // Assignment: symmetric toolbar breathing room, divider and header come from
             // ONE shared allocator instead of a separate add_space call.
-            // Invalid dates and other notices are painted inside the rows,
-            // never inserted into this vertical rhythm.
+            // Only empty/loading state is painted inside the table body;
+            // validation and request failures use the shared floating overlay.
+            crate::floating_notice::section(
+                section.ctx(),"history.query",toolbar_rect
+            );
             let table_header=components::management_sticky_table_header(
                 section,MIN_WIDTH
             );
@@ -1374,11 +1378,17 @@ impl OrderHistoryManager {
             let validation=date_range_error(
                 &self.from_input,&self.to_input
             );
-            let notice=if let Some(message)=validation{
-                Some((message,theme::DANGER))
-            }else if let Some(message)=self.error.as_deref(){
-                Some((message,theme::DANGER))
-            }else if self.receiver.is_some(){
+            crate::floating_notice::sync(
+                section.ctx(),"history.date.validation","history.date",
+                crate::floating_notice::Tone::Validation,validation
+            );
+            crate::floating_notice::sync(
+                section.ctx(),"history.query.error","history.query",
+                crate::floating_notice::Tone::Error,self.error.as_deref()
+            );
+            // Empty, loading and no-result states remain in the table body.
+            // Input/server errors are floating notices anchored to the toolbar.
+            let notice=if self.receiver.is_some(){
                 Some(("주문 이력을 확인 중입니다.",theme::MUTED))
             }else if snapshot.is_some_and(|data|data.rows.is_empty()){
                 Some((if self.query.is_empty()
