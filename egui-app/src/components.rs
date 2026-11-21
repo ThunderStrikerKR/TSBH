@@ -688,11 +688,16 @@ pub fn modal_master_footer_in_rect(
         [rect.left_top(),rect.right_top()],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
     );
+    // Primary actions are 36pt, but standard actions are 34pt. The
+    // shared footer must reserve the taller control's ACTUAL hit/paint
+    // height; a 34pt clip sliced 2pt off the bottom of "적용".
+    let action_height=theme::ACTION_PRIMARY_HEIGHT
+        .max(theme::ACTION_STANDARD_HEIGHT);
     let content=Rect::from_min_size(
         egui::pos2(rect.left()+theme::SPACE_8,
-            rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0).max(0.0)),
+            rect.top()+((rect.height()-action_height)/2.0).max(0.0)),
         Vec2::new((rect.width()-2.0*theme::SPACE_8).max(1.0),
-            theme::ACTION_STANDARD_HEIGHT)
+            action_height)
     );
     let clip=content.intersect(ui.clip_rect());
     ui.scope_builder(
