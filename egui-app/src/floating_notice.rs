@@ -15,7 +15,7 @@ const ANCHOR_GAP: f32 = 9.0;
 const ANCHOR_VALID_FOR: Duration = Duration::from_secs(45);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tone { Success, Info, Error }
+pub enum Tone { Success, Info, Validation, Error }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AnchorKind { Caret, Action, Section }
@@ -76,7 +76,7 @@ fn record(ctx: &Context, source: &'static str, at: Pos2, kind: AnchorKind) {
             at, page: state.page, created: Instant::now(), kind,
         });
         // A new explicit action can replace a prior, persistent failure.
-        if kind != AnchorKind::Caret &&
+        if kind == AnchorKind::Action &&
             state.active.as_ref().is_some_and(|n| n.source == source) {
             state.active = None;
         }
@@ -181,6 +181,11 @@ pub fn sync(
             }
             None => {
                 state.seen.remove(signal);
+                if state.active.as_ref().is_some_and(|n|
+                    n.source==source && n.tone==Tone::Validation
+                ) {
+                    state.active=None;
+                }
                 false
             }
         }
@@ -218,6 +223,7 @@ pub fn show(ctx: &Context) {
             let ttl = match n.tone {
                 Tone::Success => Some(Duration::from_millis(2500)),
                 Tone::Info => Some(Duration::from_millis(3000)),
+                Tone::Validation => Some(Duration::from_millis(4000)),
                 Tone::Error => None,
             };
             ttl.is_some_and(|duration| n.created.elapsed() >= duration)
@@ -231,6 +237,8 @@ pub fn show(ctx: &Context) {
         Tone::Success => ctx.request_repaint_after(Duration::from_millis(2500)
             .saturating_sub(active.created.elapsed())),
         Tone::Info => ctx.request_repaint_after(Duration::from_millis(3000)
+            .saturating_sub(active.created.elapsed())),
+        Tone::Validation => ctx.request_repaint_after(Duration::from_millis(4000)
             .saturating_sub(active.created.elapsed())),
         Tone::Error => {},
     }
@@ -259,6 +267,7 @@ pub fn show(ctx: &Context) {
                         let (glyph, color) = match active.tone {
                             Tone::Success => ("✓", theme::SUCCESS),
                             Tone::Info => ("i", theme::SECONDARY),
+                            Tone::Validation => ("!", theme::DANGER),
                             Tone::Error => ("!", theme::DANGER),
                         };
                         line.label(egui::RichText::new(glyph).size(16.0).color(color));
