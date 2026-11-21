@@ -1293,7 +1293,9 @@ pub fn management_chooser_row(
             egui::StrokeKind::Inside
         );
     }
-    let primary=typography::client_table_cell_galley(ui,title,true);
+    let primary=typography::management_table_cell_galley(
+        ui,title,typography::ManagementTableCellRole::ClientName
+    );
     let secondary=typography::client_table_metadata_galley(
         ui,status,theme::MUTED
     );
