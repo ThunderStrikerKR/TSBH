@@ -2472,13 +2472,14 @@ impl BandoEgui {
                     Sense::hover(),
                 );
                 ui.painter().rect_filled(body_rect, 0.0, theme::CANVAS);
+                let clip = body_rect.intersect(ui.clip_rect());
                 ui.scope_builder(
                     UiBuilder::new()
                         .id_salt("source-ocr-processing-blocker")
                         .max_rect(body_rect)
                         .layout(Layout::top_down(Align::Center)),
                     |progress| {
-                        progress.set_clip_rect(body_rect.intersect(ui.clip_rect()));
+                        progress.set_clip_rect(clip);
                         let content_height = typography::FONT_OCR_PROGRESS_TITLE * 1.4
                             + typography::METADATA_LINE_HEIGHT
                             + theme::ACTION_STANDARD_HEIGHT
