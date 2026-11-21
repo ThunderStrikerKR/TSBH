@@ -318,14 +318,19 @@ fn workflow_action_line(
                     Vec2::new(summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
                     Layout::left_to_right(Align::Center),|line|{
                         line.spacing_mut().item_spacing.x=theme::SPACE_4;
-                        line.label(typography::field_label(
-                            &format!("배송 {shipments}건")
-                        ).color(theme::SECONDARY));
+                        let shipping_text=format!("배송 {shipments}건");
+                        line.add(
+                            egui::Label::new(typography::field_label(&shipping_text)
+                                .color(theme::SECONDARY)
+                                .line_height(Some(theme::WORKFLOW_SUMMARY_LINE_HEIGHT)))
+                                .truncate()
+                        ).on_hover_text(&shipping_text);
                         if let Some(vat)=vat{
                             line.with_layout(Layout::right_to_left(Align::Center),|right|{
-                                right.label(
-                                    typography::caption(vat)
-                                        .color(theme::WORKFLOW_VAT_TEXT)
+                                right.add(
+                                    egui::Label::new(typography::caption(vat)
+                                        .color(theme::WORKFLOW_VAT_TEXT))
+                                        .truncate()
                                 ).on_hover_text(vat);
                             });
                         }
@@ -335,7 +340,8 @@ fn workflow_action_line(
                 // long amount cannot paint into the adjacent one-touch slot.
                 summary.add_sized(
                     Vec2::new(summary_width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
-                    egui::Label::new(typography::body(&amount))
+                    egui::Label::new(typography::body(&amount)
+                        .line_height(Some(theme::WORKFLOW_SUMMARY_LINE_HEIGHT)))
                         .halign(Align::RIGHT).truncate()
                 ).on_hover_text(&amount);
             }
