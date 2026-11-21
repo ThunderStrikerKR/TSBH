@@ -53,6 +53,52 @@ pub fn virtual_fixed_rows<R>(
 
 pub const TABLE_HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 
+/**
+ * Shared management-table checkbox placement.
+ *
+ * `cell` is the complete first-column rectangle (44pt Freight, 48pt Excel,
+ * or another approved width). `vertical_area` is the 42pt data-row rect,
+ * or the fixed header's text area excluding its inner 2pt bottom outline.
+ * The checkbox always follows Freight Assignment's centered 36pt/34pt
+ * hit-box policy rather than a caller-specific `shrink2` or `Ui::put`.
+ */
+fn management_table_checkbox_rect(
+    cell:Rect,vertical_area:Rect,icon_width:f32,icon_spacing:f32
+)->Rect{
+    debug_assert!(icon_width>=0.0&&icon_spacing>=0.0);
+    egui::Rect::from_center_size(
+        egui::pos2(cell.center().x,vertical_area.center().y),
+        egui::vec2(
+            icon_width+icon_spacing,
+            vertical_area.height().min(theme::INPUT_HEIGHT)
+        )
+    )
+}
+
+/// Render either a fixed-header select-all checkbox or a body-row checkbox
+/// with identical centering, clipping, stable identity and enabled semantics.
+/// Keep selection business rules at the call site.
+pub fn management_table_checkbox(
+    ui:&mut Ui,cell:Rect,vertical_area:Rect,
+    checked:&mut bool,enabled:bool,id:impl std::hash::Hash
+)->Response {
+    let rect=management_table_checkbox_rect(
+        cell,vertical_area,ui.spacing().icon_width,ui.spacing().icon_spacing
+    );
+    let clip=cell.intersect(vertical_area).intersect(ui.clip_rect());
+    let mut builder=egui::UiBuilder::new()
+        .id_salt(id)
+        .max_rect(rect)
+        .layout(egui::Layout::left_to_right(egui::Align::Center));
+    if !enabled {
+        builder=builder.disabled();
+    }
+    ui.scope_builder(builder,|control|{
+        control.set_clip_rect(clip);
+        control.checkbox(checked,"")
+    }).inner
+}
+
 #[derive(Clone, Copy)]
 pub enum WorkflowIcon {
     Collapsed,
@@ -1856,6 +1902,42 @@ mod management_toolbar_geometry_tests {
             +theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING;
         assert_eq!(regular_outer,outer_height);
         assert_eq!(master_outer,outer_height);
+    }
+
+    #[test]
+    fn table_checkbox_is_centered_for_freight_and_excel_column_widths(){
+        // The 44pt and 48pt first columns differ in width but NOT their
+        // widget-centering rule; no 8pt/4pt shrink offsets are permitted.
+        for width in [44.0,48.0] {
+            let cell=Rect::from_min_size(
+                egui::pos2(100.0,200.0),Vec2::new(width,42.0)
+            );
+            let rect=management_table_checkbox_rect(cell,cell,18.0,4.0);
+            assert_eq!(rect.center(),cell.center());
+            assert_eq!(rect.height(),theme::INPUT_HEIGHT);
+            assert_eq!(rect.width(),22.0);
+            assert_eq!(rect.left()-cell.left(),cell.right()-rect.right());
+            assert_eq!(rect.top()-cell.top(),cell.bottom()-rect.bottom());
+            assert!(cell.contains(rect.min)&&cell.contains(rect.max));
+        }
+    }
+
+    #[test]
+    fn table_header_checkbox_is_centered_above_inner_two_point_rule(){
+        let first_col=Rect::from_min_size(
+            egui::pos2(100.0,300.0),Vec2::new(48.0,36.0)
+        );
+        let text_area=Rect::from_min_max(
+            egui::pos2(0.0,300.0),
+            egui::pos2(600.0,336.0-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT)
+        );
+        let rect=management_table_checkbox_rect(first_col,text_area,18.0,4.0);
+        assert_eq!(rect.center().x,first_col.center().x);
+        assert_eq!(rect.center().y,text_area.center().y);
+        assert_eq!(rect.height(),34.0);
+        assert_eq!(rect.bottom(),text_area.bottom());
+        assert_eq!(rect.left()-first_col.left(),first_col.right()-rect.right());
+        assert!(rect.bottom()<=first_col.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT);
     }
 
     #[test]
