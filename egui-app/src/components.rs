@@ -630,8 +630,14 @@ pub fn modal_master_header_in_rect(
         [rect.left_bottom(),rect.right_bottom()],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
     );
+    let has_description=!description.trim().is_empty();
+    let heading_top=if has_description {
+        rect.top()+theme::SPACE_8
+    }else{
+        rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0).max(0.0)
+    };
     let heading=Rect::from_min_size(
-        egui::pos2(rect.left()+theme::SPACE_8,rect.top()+theme::SPACE_8),
+        egui::pos2(rect.left()+theme::SPACE_8,heading_top),
         Vec2::new((rect.width()-2.0*theme::SPACE_8).max(1.0),
             theme::ACTION_STANDARD_HEIGHT)
     );
@@ -656,16 +662,18 @@ pub fn modal_master_header_in_rect(
             });
         },
     );
-    let subtitle_clip=subtitle.intersect(ui.clip_rect());
-    ui.scope_builder(
-        egui::UiBuilder::new().id_salt("modal-master-description")
-            .max_rect(subtitle),
-        |details|{
-            details.set_clip_rect(subtitle_clip);
-            details.set_width(subtitle.width());
-            details.label(typography::caption(description));
-        },
-    );
+    if has_description {
+        let subtitle_clip=subtitle.intersect(ui.clip_rect());
+        ui.scope_builder(
+            egui::UiBuilder::new().id_salt("modal-master-description")
+                .max_rect(subtitle),
+            |details|{
+                details.set_clip_rect(subtitle_clip);
+                details.set_width(subtitle.width());
+                details.label(typography::caption(description));
+            },
+        );
+    }
     close
 }
 
