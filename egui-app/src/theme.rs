@@ -171,6 +171,16 @@ pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
 // The reception intake free-space calculator uses this instead of a plain
 // metadata text line, keeping three section groups vertically balanced.
 pub const RECEPTION_SHORTCUT_ROW_HEIGHT:f32 = 28.0;
+// Passive, sculpted keyboard caps in help text — not interactive buttons.
+// Use separate top/side tiers so they read as physical keycaps without
+// borrowing the hover/pressed language of the actual action controls.
+pub const RECEPTION_KEYCAP_HEIGHT:f32 = 25.0;
+pub const RECEPTION_KEYCAP_DEPTH:f32 = 3.0;
+pub const RECEPTION_KEYCAP_RADIUS:u8 = 4;
+pub const RECEPTION_KEYCAP_FACE:Color32 = Color32::from_rgb(74,74,74);
+pub const RECEPTION_KEYCAP_SIDE:Color32 = Color32::from_rgb(36,36,36);
+pub const RECEPTION_KEYCAP_EDGE:Color32 = Color32::from_rgb(105,105,105);
+pub const RECEPTION_KEYCAP_HIGHLIGHT:Color32 = Color32::from_rgb(128,128,128);
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 // React recipient detail grid: full-width rows and paired contact cells.
