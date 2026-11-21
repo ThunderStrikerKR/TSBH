@@ -896,14 +896,26 @@ impl FreightManager {
                     &mut self.rate_search,&mut self.error,enabled,&mut action
                 ),
                 FreightTab::History => {
-                    egui::ScrollArea::vertical()
-                        .id_salt(("freight-management",self.tab as u8))
-                        .auto_shrink([false,false])
-                        .show(ui,|scroll|Self::show_history(
-                            scroll,shipping,projection,
+                    if SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY {
+                        // Only a deliberately restored multi-card report may
+                        // scroll the full page. This feature is currently off.
+                        egui::ScrollArea::vertical()
+                            .id_salt(("freight-management",self.tab as u8))
+                            .auto_shrink([false,false])
+                            .show(ui,|scroll|Self::show_history(
+                                scroll,shipping,projection,
+                                &mut self.exception_target,&mut self.history_sort,
+                                enabled
+                            ));
+                    }else{
+                        // One visible table: its HEADER stays fixed and
+                        // only virtual data rows scroll, as in assignment.
+                        Self::show_history(
+                            ui,shipping,projection,
                             &mut self.exception_target,&mut self.history_sort,
                             enabled
-                        ));
+                        );
+                    }
                 }
                 FreightTab::Basis => Self::show_basis_management(
                     ui,shipping,enabled,&mut self.basis_target
@@ -2456,35 +2468,29 @@ impl FreightManager {
         });
     }
 
-    /// Reserve the approved first-row geometry without adding an empty
-    /// heading or duplicate divider. The history overview needs the same
-    /// 36pt guide before the 21pt master header transition as the other
-    /// freight management tabs.
-    fn history_header_guide(section:&mut Ui)->egui::Rect{
-        let (rect,_)=section.allocate_exact_size(
-            egui::vec2(section.available_width(),theme::INPUT_HEIGHT),
-            egui::Sense::hover()
-        );
-        debug_assert!((rect.height()-theme::INPUT_HEIGHT).abs()<0.01);
-        rect
-    }
-
     fn show_history(
         ui: &mut Ui, shipping: &Value, projection: &Value,
         exception: &mut Option<(String,String)>,
         sort:&mut Option<HistorySort>,enabled:bool,
     ) {
-        // Both sections reuse the assignment reference's fixed header, 42pt
-        // non-wrapping rows and reserved solid scrollbar. No fee computation
-        // or history mutation is performed by this view.
-        theme::section_frame().show(ui, |section| {
-            // The first history table has no redundant title. Its fixed
-            // header must start at the same vertical position as the two
-            // freight master tabs: 36pt toolbar-height guide + shared 21pt
-            // divider transition. Zero implicit spacing prevents drift.
+        // A single visible combination table must take the same full-height
+        // primary card as the two freight master lists. When archived group
+        // history is explicitly restored, retain the multi-card behavior.
+        let single_list=!SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY;
+        let card_min_height=if single_list{
+            components::management_master_table_card_min_inner_height(ui)
+        }else{0.0};
+        let frame=if single_list{
+            theme::management_master_table_frame()
+        }else{theme::section_frame()};
+        frame.show(ui, |section| {
+            if single_list{
+                components::fill_management_primary_card(section,card_min_height);
+            }
+            // A missing toolbar is represented by one shared 57pt master
+            // transition, not an inert 36pt widget plus a second divider.
             let prior_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
-            Self::history_header_guide(section);
             let combinations=rows(&shipping["combinations"]);
             // Keep React's original newest-first order unless the user
             // explicitly sorts a meaningful column.
@@ -2514,6 +2520,7 @@ impl FreightManager {
                 ["조합","청구 운임","실제 운임","기준","상세정보"],
                 theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS,
                 [1.0,0.0,0.0,0.0,0.0],ordered.len(),Some(sort),
+                if single_list{Some(card_min_height)}else{None},
                 true,
                 if combinations.is_empty(){
                     Some("등록된 배송 조합이 없습니다.")
@@ -2644,7 +2651,7 @@ impl FreightManager {
                              "기존 개당 기준","사용자 참고 메모","버전"],
                             theme::FREIGHT_GROUP_HISTORY_COL_WIDTHS,
                             [0.10,0.0,0.55,0.0,0.35,0.0],history.len(),None,
-                            false,None,
+                            None,false,None,
                             |row,cells,index|{
                                 let old=&history[index];
                                 let at=text(old,"at");
@@ -2746,6 +2753,7 @@ fn history_cell(
 fn freight_history_table<const N:usize>(
     ui:&mut Ui,id:&str,titles:[&str;N],bases:[f32;N],shares:[f32;N],
     total_rows:usize,mut sort:Option<&mut Option<HistorySort>>,
+    single_list_card_min_height:Option<f32>,
     follows_master_toolbar:bool,empty_message:Option<&str>,
     mut render_row:impl FnMut(&mut Ui,&[egui::Rect;N],usize),
 ){
@@ -2755,10 +2763,9 @@ fn freight_history_table<const N:usize>(
     let minimum=bases.iter().sum::<f32>()
         +N.saturating_sub(1) as f32*theme::FREIGHT_ASSIGNMENT_COL_GAP;
     let layout=if follows_master_toolbar {
-        // Only the first/history overview has the approved toolbar guide.
-        // Expanded group-version tables already have their own section
-        // heading and must not receive an unrelated 21pt strip.
-        components::management_sticky_table_header(ui,minimum)
+        // No phantom toolbar widget. The common 57pt reserved transition
+        // keeps this header exactly level with assignment and rate management.
+        components::management_sticky_table_header_without_toolbar(ui,minimum)
     }else{
         components::management_list_table_header(ui,minimum)
     };
@@ -2767,9 +2774,16 @@ fn freight_history_table<const N:usize>(
         bases,shares,width,theme::FREIGHT_ASSIGNMENT_COL_GAP
     );
     let header_rect=layout.header_rect;
-    let scroll_max_height=ui.ctx().content_rect().height()
-        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
-    // Multi-section history: never extend a rail through the next card.
+    let scroll_max_height=if let Some(card_min_height)=single_list_card_min_height{
+        // Same remaining-card-height calculation used by assignment/rates.
+        components::management_single_list_scroll_height(
+            ui,card_min_height,0.0
+        )
+    }else{
+        // Only for deliberately enabled MULTI-card archived history.
+        ui.ctx().content_rect().height()*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION
+    };
+    // The rail itself always uses the same common 7pt extension.
     let scroll_track=components::management_table_scroll_track_rect(
         ui,scroll_max_height
     );
@@ -2849,8 +2863,10 @@ fn freight_history_table<const N:usize>(
     let columns=freight_table_cells(
         egui::pos2(left,header_rect.top()),&widths,header_rect.height()
     );
+    let header_text_rect=components::management_master_header_begin(
+        ui,header_rect,layout.header_content_rect
+    );
     let painter=ui.painter().with_clip_rect(header_rect);
-    painter.rect_filled(header_rect,0.0,theme::RAISED);
     for (index,title) in titles.iter().enumerate(){
         let cell=columns[index];
         let label=typography::freight_table_header_galley(ui,title);
@@ -2868,7 +2884,7 @@ fn freight_history_table<const N:usize>(
                         ("▼",theme::SELECTION),
                     None=>("↕",theme::MUTED),
                 };
-            let hit=cell.intersect(header_rect);
+            let hit=cell.intersect(header_text_rect);
             if hit.width()>0.0 && hit.height()>0.0{
                 let next=HistorySort::next(current,column);
                 let tooltip=match next.map(|value|value.direction){
@@ -2876,12 +2892,16 @@ fn freight_history_table<const N:usize>(
                     Some(FreightSortDirection::Descending)=>"내림차순 정렬",
                     None=>"기본 순서로 복귀",
                 };
-                if ui.interact(
+                let response=ui.interact(
                     hit,ui.make_persistent_id((id,"history-sort",index)),
                     egui::Sense::click()
-                ).on_hover_text(tooltip).clicked(){
+                ).on_hover_text(tooltip);
+                if response.clicked(){
                     **slot=next;
                     ui.ctx().request_repaint();
+                }
+                if response.hovered(){
+                    components::management_master_header_sort_hover(ui,hit);
                 }
             }
             indicator=Some((
@@ -2906,15 +2926,15 @@ fn freight_history_table<const N:usize>(
                 _=>cell.left()+6.0,
             }
         };
-        let ink=painter.with_clip_rect(cell.intersect(header_rect));
+        let ink=painter.with_clip_rect(cell.intersect(header_text_rect));
         ink.galley(
-            egui::pos2(x,cell.center().y-label.size().y/2.0),
+            egui::pos2(x,header_text_rect.center().y-label.size().y/2.0),
             label,theme::SECONDARY
         );
         if let Some((arrow_galley,color))=indicator{
             ink.galley(
                 egui::pos2(x+combined-arrow_galley.size().x,
-                    cell.center().y-arrow_galley.size().y/2.0),
+                    header_text_rect.center().y-arrow_galley.size().y/2.0),
                 arrow_galley,color
             );
         }
@@ -2929,10 +2949,7 @@ fn freight_history_table<const N:usize>(
             );
         }
     }
-    painter.line_segment(
-        [header_rect.left_bottom(),header_rect.right_bottom()],
-        egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
+    components::management_master_header_finish(ui,header_rect);
     if total_rows==0 {
         if let Some(message)=empty_message {
             // D-type state paints in the body, with no extra title/footer
@@ -3025,7 +3042,7 @@ mod rate_toolbar_tests{
     use super::*;
 
     #[test]
-    fn history_header_matches_master_36pt_toolbar_plus_21pt_transition(){
+    fn history_header_matches_master_toolbar_origin_without_fake_toolbar(){
         let ctx=egui::Context::default();
         typography::install(&ctx);
         let mut input=egui::RawInput::default();
@@ -3035,28 +3052,40 @@ mod rate_toolbar_tests{
         let mut measured=None;
         let _=ctx.run(input,|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
-                theme::section_frame().show(ui,|section|{
+                theme::management_master_table_frame().show(ui,|section|{
                     section.spacing_mut().item_spacing.y=0.0;
-                    let guide=FreightManager::history_header_guide(section);
-                    let header=components::management_sticky_table_header(
+                    let top=section.cursor().top();
+                    let layout=components::management_sticky_table_header_without_toolbar(
                         section,theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS
                             .iter().sum::<f32>()
-                            +5.0*theme::FREIGHT_ASSIGNMENT_COL_GAP
-                    ).header_rect;
-                    measured=Some((guide,header));
+                            +4.0*theme::FREIGHT_ASSIGNMENT_COL_GAP
+                    );
+                    measured=Some((top,layout.header_rect,layout.header_content_rect));
                 });
             });
         });
-        let (guide,header)=measured.expect("history header measured");
-        assert!((guide.height()-theme::INPUT_HEIGHT).abs()<0.01);
-        let expected_gap=theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
-            +theme::SOFT_DIVIDER_WIDTH
-            +theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP;
-        assert!((expected_gap-21.0).abs()<0.01);
-        assert!((header.top()-guide.bottom()-expected_gap).abs()<0.01,
-            "deleting the history heading must not raise the table header");
-        assert!((header.top()-guide.top()-theme::INPUT_HEIGHT-21.0).abs()<0.01);
+        let (top,header,content)=measured.expect("history header measured");
+        let expected_gap=theme::INPUT_HEIGHT+
+            theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP+
+            theme::SOFT_DIVIDER_WIDTH+
+            theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP;
+        assert!((expected_gap-57.0).abs()<0.01);
+        assert!((header.top()-top-expected_gap).abs()<0.01,
+            "history header must stay at master's 36pt + 21pt origin");
         assert!((header.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01);
+        assert!((content.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01);
+    }
+
+    #[test]
+    fn visible_combination_history_uses_one_master_height_table(){
+        assert!(!SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY,
+            "the archived group section is deliberately hidden");
+        // The single-list card chooses the common remaining-height helper,
+        // while the 60% viewport cap is ONLY for a future multi-card report.
+        let widths=theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS;
+        assert_eq!(widths.len(),5);
+        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING,
+            theme::SECTION_PADDING);
     }
 
     #[test]
