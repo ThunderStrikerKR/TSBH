@@ -2162,7 +2162,7 @@ impl BandoEgui {
                     self.discard_ocr_confirm=false;
                 }
                 ui.label("OCR 검토에서 수정한 내용을 버릴까요?");
-                ui.with_layout(Layout::right_to_left(Align::Center),|buttons|{
+                components::modal_action_row(ui,|buttons|{
                     if theme::action(
                         buttons,"수정 내용 버리기",ButtonRole::Danger,true
                     ).clicked() {
@@ -2186,7 +2186,7 @@ impl BandoEgui {
                     ui,"발주원문 교체 확인","취소",true
                 );
                 ui.label("현재 초안과 분석 결과를 새 원문으로 교체할까요?");
-                ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                components::modal_action_row(ui,|actions|{
                     if theme::action(actions, "교체", ButtonRole::Primary, true).clicked() {
                         accept = true;
                     }
@@ -2237,7 +2237,7 @@ impl BandoEgui {
         ).show(ctx,|ui|{
             cancel=components::modal_header(ui,"발주원문 삭제 확인","취소",true);
             ui.label("현재 미확정 원문과 분석 결과를 비울까요?");
-            ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
+            components::modal_action_row(ui,|actions|{
                 if theme::action(actions,"내용 삭제",ButtonRole::Danger,true).clicked(){
                     accept=true;
                 }
@@ -4402,7 +4402,7 @@ impl BandoEgui {
             ));
 
             dialog.add_space(theme::SPACE_12);
-            dialog.with_layout(Layout::right_to_left(Align::Center),|bar|{
+            components::modal_action_row(dialog,|bar|{
                 if theme::action(bar,"저장하고 이동",ButtonRole::Primary,
                     manager.can_save_dirty()).clicked(){
                     if manager.save_dirty(ctx.clone()){
@@ -4448,7 +4448,7 @@ impl BandoEgui {
                 "설정에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
             ));
             ui.add_space(theme::SPACE_12);
-            ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
+            components::modal_action_row(ui,|actions|{
                 if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
                     !view.busy()&&!view.read_only()).clicked(){
                     self.settings_pending_save=true;
