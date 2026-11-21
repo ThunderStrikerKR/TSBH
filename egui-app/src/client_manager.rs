@@ -352,6 +352,7 @@ impl ClientManager {
         let card_min_height=components::management_primary_card_min_inner_height(ui,theme::FRAME_STROKE_WIDTH);
         theme::management_list_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
+            section.spacing_mut().scroll=theme::management_table_scroll_style();
             section.spacing_mut().item_spacing.y=0.0;
             egui::Frame::new()
                 .inner_margin(egui::Margin::symmetric(
@@ -442,8 +443,12 @@ impl ClientManager {
             );
             let mut chosen=None;
             let mut first_row_left=None;
+            let scroll_track=components::management_table_scroll_track_rect(
+                section,scroll_max_height,theme::FRAME_STROKE_WIDTH
+            );
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
+                    .scroll_bar_rect(scroll_track)
                     .id_salt("client-management-table-rows")
                     .scroll_bar_visibility(
                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
