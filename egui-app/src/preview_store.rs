@@ -25,6 +25,17 @@ pub struct OcrFeedback {
     pub model_suggestion: Option<String>,
 }
 
+/// One manually verified OCR table-layout example. Source text remains
+/// private in the local isolated SQLite database; caller uses it on a
+/// background thread and never transmits it to a model service.
+#[derive(Clone, Debug)]
+pub struct OcrLayoutExample {
+    pub order_id:String,
+    pub client_id:Option<String>,
+    pub original_text:String,
+    pub corrected_text:String,
+}
+
 /// Compute reproducible, candidate line changes. The two full documents are
 /// authoritative: this digest is never treated as an automatic correction.
 /// LCS is bounded so pasted 20k-character documents cannot force an
@@ -624,6 +635,28 @@ impl PreviewStore {
         let rows=stmt.query_map([limit.min(1000) as i64],|row|Ok((
             row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?
         ))).map_err(|e|e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+    }
+
+    /// Read training examples with full, auditable text. Unreviewed
+    /// model predictions are not treated as independent human corrections.
+    pub fn list_ocr_layout_examples(limit:usize)->Result<Vec<OcrLayoutExample>,String>{
+        let store=Self::initialize()?;
+        let conn=store.open_connection()?;
+        let mut stmt=conn.prepare(
+            "SELECT order_id,client_id,original_text,corrected_text
+             FROM ocr_feedback
+             WHERE (learning_used=0 OR model_suggestion IS NULL
+                 OR corrected_text<>model_suggestion)
+               AND layout_trace_json IS NOT NULL
+             ORDER BY recorded_at DESC,id DESC LIMIT ?1"
+        ).map_err(|e|e.to_string())?;
+        let rows=stmt.query_map([limit.min(1000) as i64],|row|Ok(OcrLayoutExample{
+            order_id:row.get(0)?,
+            client_id:row.get(1)?,
+            original_text:row.get(2)?,
+            corrected_text:row.get(3)?,
+        })).map_err(|e|e.to_string())?;
         rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
     }
 
