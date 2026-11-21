@@ -1532,6 +1532,9 @@ impl BandoEgui {
 
     /// OCR never changes an order until the employee checks the original
     /// image against the editable recognition result and explicitly applies.
+    /// OCR review owns a fixed-size, non-scrolling window. Its image and
+    /// editor have separately clipped viewports; even 20,000 characters or
+    /// 400% zoom must never move the title, pane borders or Apply button.
     fn show_ocr_review(&mut self, ctx: &egui::Context, work_area:Rect) {
         let mut close=false;
         let mut apply:Option<(String,OrderType,Option<ChatWindow>)>=None;
@@ -1543,125 +1546,229 @@ impl BandoEgui {
             components::modal_window(
                 "OCR 문자 인식 검토","egui-ocr-review",work_area
             )
-                .default_width(dialog_width)
-                .min_width(dialog_width)
+                // A default width alone lets dynamic TextEdit/image content
+                // change the window's measured size between frames.
+                .fixed_size(Vec2::new(dialog_width,dialog_height))
+                .scroll2([false,false])
                 .show(ctx,|ui|{
-                    close=components::modal_header(
-                        ui,"OCR 문자 인식 검토","취소",true
+                    let (bounds,_) = ui.allocate_exact_size(
+                        Vec2::new(ui.available_width(),ui.available_height()),
+                        Sense::hover(),
                     );
-                    ui.label(typography::caption(
-                        "원본 이미지와 인식된 텍스트를 대조하고 오타를 수정한 뒤 반영하세요."
-                    ));
-                    ui.add_space(theme::SPACE_12);
-                    // Independently scrollable comparison panes. No full
-                    // dialog scrolling and no tiny image preview.
-                    let pane_height=(dialog_height-170.0).max(230.0);
-                    ui.horizontal(|row|{
-                        row.spacing_mut().item_spacing.x=theme::SPACE_16;
-                        // The recognized-text pane is 2/3 of its old 50%
-                        // share: image 2/3, text 1/3 of usable width.
-                        let comparison_width=
-                            (row.available_width()-theme::SPACE_16).max(0.0);
-                        let text_width=comparison_width/3.0;
-                        let image_width=comparison_width-text_width;
-                        row.allocate_ui_with_layout(
-                            Vec2::new(image_width,pane_height),
-                            Layout::top_down(Align::Min),
-                            |original|{
-                                original.label(
-                                    typography::subsection_heading("원본 이미지")
-                                );
-                                original.add(
-                                    egui::Slider::new(&mut review.zoom,0.5..=4.0)
-                                        .text("확대 배율 · 마우스 휠")
-                                );
-                                let image_view=egui::ScrollArea::both()
-                                    .id_salt("ocr-original-image-scroll")
-                                    .max_height((pane_height-75.0).max(100.0))
-                                    .auto_shrink([false,false])
-                                    // Keep scrollbar/pan controls, but give
-                                    // mouse wheel to image zoom rather than
-                                    // vertical scrolling in the image.
-                                    .scroll_source(
-                                        egui::scroll_area::ScrollSource::SCROLL_BAR
-                                        | egui::scroll_area::ScrollSource::DRAG
-                                    )
-                                    .show(original,|image_ui|{
-                                        // 100% means fit-to-pane; zooming
-                                        // reveals pixels via local pan/scroll.
-                                        let fit=((image_width-12.0)/review.width as f32)
-                                            .min(1.0).max(0.01);
-                                        let scale=fit*review.zoom;
-                                        image_ui.image((
-                                            review.texture.id(),
-                                            Vec2::new(
-                                                review.width as f32*scale,
-                                                review.height as f32*scale,
-                                            ),
-                                        ));
+                    // Fixed geometry, independent of OCR text length:
+                    // title 46, description 38, status 26, actions 48.
+                    let header_h=46.0;
+                    let description_h=38.0;
+                    let status_h=26.0;
+                    let actions_h=48.0;
+                    let header_rect=Rect::from_min_size(
+                        bounds.min,Vec2::new(bounds.width(),header_h)
+                    );
+                    let description_rect=Rect::from_min_size(
+                        egui::pos2(bounds.left(),header_rect.bottom()),
+                        Vec2::new(bounds.width(),description_h)
+                    );
+                    let compare_rect=Rect::from_min_max(
+                        egui::pos2(bounds.left(),description_rect.bottom()),
+                        egui::pos2(bounds.right(),bounds.bottom()-status_h-actions_h)
+                    );
+                    let status_rect=Rect::from_min_size(
+                        egui::pos2(bounds.left(),compare_rect.bottom()),
+                        Vec2::new(bounds.width(),status_h)
+                    );
+                    let actions_rect=Rect::from_min_size(
+                        egui::pos2(bounds.left(),status_rect.bottom()),
+                        Vec2::new(bounds.width(),actions_h)
+                    );
+
+                    let header_clip=header_rect.intersect(ui.clip_rect());
+                    ui.scope_builder(
+                        UiBuilder::new().id_salt("ocr-review-header")
+                            .max_rect(header_rect)
+                            .layout(Layout::top_down(Align::Min)),
+                        |header|{
+                            header.set_clip_rect(header_clip);
+                            header.set_width(header_rect.width());
+                            close=components::modal_header(
+                                header,"OCR 문자 인식 검토","취소",true
+                            );
+                        },
+                    );
+                    let description_clip=description_rect.intersect(ui.clip_rect());
+                    ui.scope_builder(
+                        UiBuilder::new().id_salt("ocr-review-description")
+                            .max_rect(description_rect),
+                        |description|{
+                            description.set_clip_rect(description_clip);
+                            description.label(typography::caption(
+                                "원본 이미지와 인식된 텍스트를 대조하고 오타를 수정한 뒤 반영하세요."
+                            ));
+                        },
+                    );
+
+                    // Both content surfaces begin at the same vertical
+                    // coordinate. Text remains 1/3, original image 2/3.
+                    let gap=theme::SPACE_16;
+                    let usable_width=(compare_rect.width()-gap).max(0.0);
+                    let image_width=(usable_width*2.0/3.0).floor();
+                    let text_width=usable_width-image_width;
+                    let original_rect=Rect::from_min_size(
+                        compare_rect.min,
+                        Vec2::new(image_width,compare_rect.height())
+                    );
+                    let recognized_rect=Rect::from_min_size(
+                        egui::pos2(original_rect.right()+gap,compare_rect.top()),
+                        Vec2::new(text_width,compare_rect.height())
+                    );
+                    // A shared heading row and a shared control row ensure
+                    // that the image and text viewport top edges line up.
+                    let viewport_top=compare_rect.top()+64.0;
+                    let viewport_h=(compare_rect.bottom()-viewport_top).max(1.0);
+                    let image_view_rect=Rect::from_min_size(
+                        egui::pos2(original_rect.left(),viewport_top),
+                        Vec2::new(image_width,viewport_h)
+                    );
+                    let text_view_rect=Rect::from_min_size(
+                        egui::pos2(recognized_rect.left(),viewport_top),
+                        Vec2::new(text_width,viewport_h)
+                    );
+                    let image_clip=original_rect.intersect(ui.clip_rect());
+                    ui.scope_builder(
+                        UiBuilder::new().id_salt("ocr-review-original-pane")
+                            .max_rect(original_rect)
+                            .layout(Layout::top_down(Align::Min)),
+                        |original|{
+                            original.set_clip_rect(image_clip);
+                            original.set_width(image_width);
+                            original.label(
+                                typography::subsection_heading("원본 이미지")
+                            );
+                            original.add(
+                                egui::Slider::new(&mut review.zoom,0.5..=4.0)
+                                    .text("확대 배율 · 마우스 휠")
+                            );
+                            let viewport_clip=image_view_rect.intersect(original.clip_rect());
+                            original.scope_builder(
+                                UiBuilder::new().id_salt("ocr-image-fixed-viewport")
+                                    .max_rect(image_view_rect)
+                                    .layout(Layout::top_down(Align::Min)),
+                                |viewport|{
+                                    viewport.set_clip_rect(viewport_clip);
+                                    viewport.set_width(image_view_rect.width());
+                                    viewport.set_height(image_view_rect.height());
+                                    let image_view=egui::ScrollArea::both()
+                                        .id_salt("ocr-original-image-scroll")
+                                        .max_width(image_view_rect.width())
+                                        .max_height(image_view_rect.height())
+                                        .auto_shrink([false,false])
+                                        .scroll_source(
+                                            egui::scroll_area::ScrollSource::SCROLL_BAR
+                                            | egui::scroll_area::ScrollSource::DRAG
+                                        )
+                                        .show(viewport,|image_ui|{
+                                            let fit=((image_width-12.0)
+                                                /review.width as f32)
+                                                .min(1.0).max(0.01);
+                                            let scale=fit*review.zoom;
+                                            image_ui.image((
+                                                review.texture.id(),
+                                                Vec2::new(
+                                                    review.width as f32*scale,
+                                                    review.height as f32*scale,
+                                                ),
+                                            ));
+                                        });
+                                    // Wheel zoom is local to the image,
+                                    // never to the text edit or dialog.
+                                    let wheel=viewport.input(|input|{
+                                        if input.pointer.hover_pos().is_some_and(|pos|
+                                            image_view.inner_rect.contains(pos)
+                                        ) { input.raw_scroll_delta.y } else {0.0}
                                     });
-                                // Check the image viewport only: wheel events
-                                // over the text editor or the zoom slider
-                                // retain their own input behavior.
-                                let wheel=original.input(|input|{
-                                    if input.pointer.hover_pos().is_some_and(|pos|
-                                        image_view.inner_rect.contains(pos)
-                                    ) {
-                                        input.raw_scroll_delta.y
-                                    } else {0.0}
-                                });
-                                if wheel!=0.0 {
-                                    let factor=(wheel*0.0018_f32).exp();
-                                    review.zoom=(review.zoom*factor).clamp(0.5,4.0);
-                                    original.ctx().request_repaint();
-                                }
-                            },
-                        );
-                        row.allocate_ui_with_layout(
-                            Vec2::new(text_width,pane_height),
-                            Layout::top_down(Align::Min),
-                            |recognized|{
-                                recognized.label(
-                                    typography::subsection_heading(
-                                        "인식된 텍스트 · 직접 수정"
-                                    )
-                                );
-                                recognized.add_space(theme::SPACE_8);
-                                recognized.add_sized(
-                                    Vec2::new(text_width,(pane_height-55.0).max(100.0)),
-                                    egui::TextEdit::multiline(&mut review.edited_text)
-                                        .font(egui::TextStyle::Body)
-                                        .desired_width(text_width)
-                                        .desired_rows(28),
-                                );
-                            },
-                        );
-                    });
-                    ui.add_space(theme::SPACE_12);
+                                    if wheel!=0.0 {
+                                        review.zoom=(review.zoom
+                                            *(wheel*0.0018_f32).exp()).clamp(0.5,4.0);
+                                        viewport.ctx().request_repaint();
+                                    }
+                                },
+                            );
+                        },
+                    );
+                    let text_clip=recognized_rect.intersect(ui.clip_rect());
+                    ui.scope_builder(
+                        UiBuilder::new().id_salt("ocr-review-recognized-pane")
+                            .max_rect(recognized_rect)
+                            .layout(Layout::top_down(Align::Min)),
+                        |recognized|{
+                            recognized.set_clip_rect(text_clip);
+                            recognized.set_width(text_width);
+                            recognized.label(
+                                typography::subsection_heading(
+                                    "인식된 텍스트 · 직접 수정"
+                                )
+                            );
+                            let editor_clip=text_view_rect.intersect(recognized.clip_rect());
+                            recognized.scope_builder(
+                                UiBuilder::new().id_salt("ocr-text-fixed-viewport")
+                                    .max_rect(text_view_rect)
+                                    .layout(Layout::top_down(Align::Min)),
+                                |editor|{
+                                    editor.set_clip_rect(editor_clip);
+                                    editor.set_width(text_width);
+                                    editor.set_height(viewport_h);
+                                    // TextEdit scrolls internally. Its 1-row
+                                    // minimum and exact allocated height keep
+                                    // long text from growing the layout.
+                                    editor.add_sized(
+                                        text_view_rect.size(),
+                                        egui::TextEdit::multiline(&mut review.edited_text)
+                                            .font(egui::TextStyle::Body)
+                                            .desired_width(text_width)
+                                            .desired_rows(1),
+                                    );
+                                },
+                            );
+                        },
+                    );
+
                     let edited=review.edited_text.trim();
                     let valid=!edited.is_empty() && edited.chars().count()<=20_000;
+                    let status_clip=status_rect.intersect(ui.clip_rect());
                     if !valid {
-                        ui.label(egui::RichText::new(
-                            "인식된 텍스트는 1~20,000자로 수정해 주세요."
-                        ).color(theme::DANGER));
+                        ui.scope_builder(
+                            UiBuilder::new().id_salt("ocr-review-status")
+                                .max_rect(status_rect),
+                            |status|{
+                                status.set_clip_rect(status_clip);
+                                status.label(egui::RichText::new(
+                                    "인식된 텍스트는 1~20,000자로 수정해 주세요."
+                                ).color(theme::DANGER));
+                            },
+                        );
                     }
-                    ui.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                        if theme::action(
-                            buttons,"적용",ButtonRole::Primary,valid
-                        ).clicked() {
-                            apply=Some((
-                                edited.to_owned(),review.order_type,review.chat.clone()
-                            ));
-                        }
-                    });
+                    let actions_clip=actions_rect.intersect(ui.clip_rect());
+                    ui.scope_builder(
+                        UiBuilder::new().id_salt("ocr-review-actions")
+                            .max_rect(actions_rect)
+                            .layout(Layout::right_to_left(Align::Center)),
+                        |buttons|{
+                            buttons.set_clip_rect(actions_clip);
+                            buttons.set_width(actions_rect.width());
+                            if theme::action(
+                                buttons,"적용",ButtonRole::Primary,valid
+                            ).clicked() {
+                                apply=Some((
+                                    edited.to_owned(),review.order_type,review.chat.clone()
+                                ));
+                            }
+                        },
+                    );
                 });
         }
         if let Some((raw,kind,chat))=apply {
             self.ocr_review=None;
             self.discard_ocr_confirm=false;
-            if !self.raw_source.trim().is_empty() && self.raw_source!=raw
-            {
-                // Preserve the existing source until replacement is confirmed.
+            if !self.raw_source.trim().is_empty() && self.raw_source!=raw {
                 self.pending_replace=Some(PendingReplace {
                     text:raw,order_type:kind,chat,input_method:"OCR"
                 });
