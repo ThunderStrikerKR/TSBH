@@ -526,34 +526,74 @@ pub struct ModalMasterWorkspace {
     pub divider_x:Option<f32>,
 }
 
-pub fn modal_master_workspace_surface(
+/// Paint only the single shared work-surface background. OCR paints its
+/// two content panes after this step, then uses `finish` for crisp borders.
+/// This order prevents rectangular pane fills from erasing rounded corners.
+pub fn modal_master_workspace_background(
     ui:&Ui,rect:Rect,toolbar_height:f32,split_ratio:Option<f32>
 )->ModalMasterWorkspace {
+    ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,theme::PANEL);
+    let toolbar_bottom=(rect.top()+toolbar_height.max(0.0)).min(rect.bottom());
+    let divider_x=split_ratio.map(|share|{
+        (rect.left()+rect.width()*share.clamp(0.0,1.0)).floor()
+    });
+    ModalMasterWorkspace{toolbar_bottom,divider_x}
+}
+
+/// Paint separators AFTER pane backgrounds and widgets, then redraw exactly
+/// one outer outline as the final layer. Pixel-aligned rectangular hairlines
+/// have flat endpoints; intersecting dividers therefore do not protrude into
+/// the outer frame or leave doubled anti-aliased corner pixels.
+pub fn modal_master_workspace_finish(
+    ui:&Ui,rect:Rect,geometry:ModalMasterWorkspace
+) {
     let painter=ui.painter();
-    painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::PANEL);
+    let ppp=ui.ctx().pixels_per_point().max(1.0);
+    let snap=|v:f32|(v*ppp).round()/ppp;
+    let line_width=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
+    let inset=theme::FRAME_STROKE_WIDTH.max(line_width);
+    let left=snap(rect.left()+inset);
+    let right=snap(rect.right()-inset);
+    let top=snap(rect.top()+inset);
+    let bottom=snap(rect.bottom()-inset);
+    if right>left && bottom>top {
+        if geometry.toolbar_bottom>rect.top() &&
+            geometry.toolbar_bottom<rect.bottom() {
+            let y=snap(geometry.toolbar_bottom-line_width/2.0)
+                .clamp(top,(bottom-line_width).max(top));
+            painter.rect_filled(
+                Rect::from_min_max(
+                    egui::pos2(left,y),egui::pos2(right,y+line_width)
+                ),0.0,theme::DIVIDER
+            );
+        }
+        if let Some(divider_x)=geometry.divider_x {
+            let x=snap(divider_x-line_width/2.0)
+                .clamp(left,(right-line_width).max(left));
+            painter.rect_filled(
+                Rect::from_min_max(
+                    egui::pos2(x,top),egui::pos2(x+line_width,bottom)
+                ),0.0,theme::DIVIDER
+            );
+        }
+    }
     painter.rect_stroke(
         rect,theme::CONTROL_RADIUS,
         Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER),
         egui::StrokeKind::Inside
     );
-    let toolbar_bottom=(rect.top()+toolbar_height.max(0.0)).min(rect.bottom());
-    if toolbar_height>0.0 {
-        painter.line_segment(
-            [egui::pos2(rect.left(),toolbar_bottom),
-             egui::pos2(rect.right(),toolbar_bottom)],
-            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-        );
-    }
-    let divider_x=split_ratio.map(|share|{
-        (rect.left()+rect.width()*share.clamp(0.0,1.0)).floor()
-    });
-    if let Some(x)=divider_x {
-        painter.line_segment(
-            [egui::pos2(x,rect.top()),egui::pos2(x,rect.bottom())],
-            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-        );
-    }
-    ModalMasterWorkspace{toolbar_bottom,divider_x}
+}
+
+/// Keep the one-call API for other dialogs. Screens with separately painted
+/// content can opt into background/finish without changing the master style.
+pub fn modal_master_workspace_surface(
+    ui:&Ui,rect:Rect,toolbar_height:f32,split_ratio:Option<f32>
+)->ModalMasterWorkspace {
+    let geometry=modal_master_workspace_background(
+        ui,rect,toolbar_height,split_ratio
+    );
+    modal_master_workspace_finish(ui,rect,geometry);
+    geometry
 }
 
 /// Canonical OCR-approved popup header, used for descriptive dialogs:
