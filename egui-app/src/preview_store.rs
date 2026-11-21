@@ -17,6 +17,10 @@ pub struct OcrFeedback {
     pub order_id: String,
     pub original_text: String,
     pub corrected_text: String,
+    /// Whether the employee enabled local learned suggestions on this review.
+    pub learning_used: bool,
+    /// Proposed result before employee edits (None if no patterns applied).
+    pub model_suggestion: Option<String>,
 }
 
 /// Compute reproducible, candidate line changes. The two full documents are
@@ -60,6 +64,44 @@ fn correction_changes(before: &str, after: &str) -> Value {
     }
     json!({"algorithm":"line-lcs-v1","truncated":false,
         "same":before==after,"changes":changes})
+}
+
+/// Key-level delta of the SAME Rust parser on original and corrected
+/// OCR text. Full JSON snapshots are retained separately for future audit.
+fn compare_ocr_analyses(initial:&Value,corrected:&Value)->Value{
+    let mut changed=Vec::<String>::new();
+    fn visit(a:&Value,b:&Value,path:&str,depth:usize,changes:&mut Vec<String>){
+        if changes.len()>=150 || a==b {return;}
+        if depth>=8 {changes.push(path.to_owned());return;}
+        if let (Some(x),Some(y))=(a.as_object(),b.as_object()){
+            let keys=x.keys().chain(y.keys()).collect::<HashSet<_>>();
+            for key in keys {
+                if changes.len()>=150 {break;}
+                visit(x.get(key).unwrap_or(&Value::Null),
+                    y.get(key).unwrap_or(&Value::Null),
+                    &format!("{path}/{key}"),depth+1,changes);
+            }
+        }else if let (Some(x),Some(y))=(a.as_array(),b.as_array()){
+            if x.len()!=y.len(){changes.push(format!("{path}/length"));}
+            for (i,(a,b)) in x.iter().zip(y.iter()).enumerate(){
+                if changes.len()>=150{break;}
+                visit(a,b,&format!("{path}/{i}"),depth+1,changes);
+            }
+        }else {
+            changes.push(path.to_owned());
+        }
+    }
+    visit(initial,corrected,"",0,&mut changed);
+    changed.sort();
+    json!({
+        "schema":"ocr-rust-analysis-diff-v1",
+        "analysisChanged":initial!=corrected,
+        "changedPaths":changed,
+        "initialRecipientCount":initial.get("recipients")
+            .and_then(Value::as_array).map(Vec::len),
+        "correctedRecipientCount":corrected.get("recipients")
+            .and_then(Value::as_array).map(Vec::len),
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -211,11 +253,51 @@ impl PreviewStore {
                 corrected_text TEXT NOT NULL,
                 changes_json TEXT NOT NULL CHECK(json_valid(changes_json)),
                 recorded_at TEXT NOT NULL DEFAULT
-                    (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                    (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+                learning_used INTEGER NOT NULL DEFAULT 0,
+                model_suggestion TEXT,
+                initial_analysis_json TEXT CHECK(initial_analysis_json IS NULL
+                    OR json_valid(initial_analysis_json)),
+                corrected_analysis_json TEXT CHECK(corrected_analysis_json IS NULL
+                    OR json_valid(corrected_analysis_json)),
+                analysis_comparison_json TEXT CHECK(analysis_comparison_json IS NULL
+                    OR json_valid(analysis_comparison_json)),
+                analysis_status TEXT NOT NULL DEFAULT 'pending',
+                analysis_error TEXT,
+                analyzer_label TEXT,
+                catalog_revision TEXT,
+                analyzed_at TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_ocr_feedback_order
                 ON ocr_feedback(order_id,recorded_at);"
         ).map_err(|e| format!("OCR 정정 이력 테이블 준비 실패: {e}"))?;
+        // Non-destructive migration of corpus rows already collected by
+        // earlier 65th-session builds; NEVER drop original/corrected text.
+        let mut stmt=conn.prepare("PRAGMA table_info(ocr_feedback)")
+            .map_err(|e|e.to_string())?;
+        let columns=stmt.query_map([],|row|row.get::<_,String>(1))
+            .map_err(|e|e.to_string())?
+            .collect::<Result<HashSet<_>,_>>().map_err(|e|e.to_string())?;
+        drop(stmt);
+        let additions=[
+            ("learning_used","INTEGER NOT NULL DEFAULT 0"),
+            ("model_suggestion","TEXT"),
+            ("initial_analysis_json","TEXT"),
+            ("corrected_analysis_json","TEXT"),
+            ("analysis_comparison_json","TEXT"),
+            ("analysis_status","TEXT NOT NULL DEFAULT 'pending'"),
+            ("analysis_error","TEXT"),
+            ("analyzer_label","TEXT"),
+            ("catalog_revision","TEXT"),
+            ("analyzed_at","TEXT"),
+        ];
+        for (name,definition) in additions {
+            if !columns.contains(name) {
+                conn.execute_batch(&format!(
+                    "ALTER TABLE ocr_feedback ADD COLUMN {name} {definition}"
+                )).map_err(|e|format!("OCR 학습 이력 확장 실패 ({name}): {e}"))?;
+            }
+        }
         // Non-destructive migration of the isolated egui preview database.
         // Never touch Tauri operational tables or truncate an existing source.
         let mut stmt = conn.prepare("PRAGMA table_info(working_source)")
@@ -407,10 +489,12 @@ impl PreviewStore {
             ).to_string();
             tx.execute(
                 "INSERT OR IGNORE INTO ocr_feedback
-                 (id,order_id,original_text,corrected_text,changes_json)
-                 VALUES (?1,?2,?3,?4,?5)",
+                 (id,order_id,original_text,corrected_text,changes_json,
+                  learning_used,model_suggestion)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
                 params![sample.id,sample.order_id,sample.original_text,
-                    sample.corrected_text,changes],
+                    sample.corrected_text,changes,
+                    i64::from(sample.learning_used),sample.model_suggestion],
             ).map_err(|e| format!("OCR 정정 이력 저장 실패: {e}"))?;
         }
         tx.commit().map_err(|e| format!("OCR 정정 이력 확정 실패: {e}"))
@@ -429,6 +513,44 @@ impl PreviewStore {
             row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?
         ))).map_err(|e|e.to_string())?;
         rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+    }
+
+    /// Store BOTH Rust-order-analysis snapshots and their structured
+    /// difference. A future engine version can re-run either original text.
+    /// This local artifact is independent from the employee's approved order.
+    pub fn store_ocr_analysis(
+        id:&str,initial:&Value,corrected:&Value,catalog_revision:Option<String>
+    )->Result<(),String>{
+        let store=Self::initialize()?;
+        let conn=store.open_connection()?;
+        let diff=compare_ocr_analyses(initial,corrected);
+        conn.execute(
+            "UPDATE ocr_feedback SET initial_analysis_json=?2,
+             corrected_analysis_json=?3,analysis_comparison_json=?4,
+             analysis_status='complete',analysis_error=NULL,
+             analyzer_label='rust.analyze_order',
+             catalog_revision=?5,
+             analyzed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+             WHERE id=?1",
+            params![id,initial.to_string(),corrected.to_string(),
+                diff.to_string(),catalog_revision],
+        ).map_err(|e|format!("OCR 양쪽 분석 결과 저장 실패: {e}"))?;
+        Ok(())
+    }
+
+    /// Preserve full originals even when analysis cannot run. Failures
+    /// are visible to future reprocessing; reception stays unaffected.
+    pub fn fail_ocr_analysis(id:&str,error:&str)->Result<(),String>{
+        let store=Self::initialize()?;
+        let conn=store.open_connection()?;
+        conn.execute(
+            "UPDATE ocr_feedback SET analysis_status='failed',
+             analysis_error=?2,analyzer_label='rust.analyze_order',
+             analyzed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+             WHERE id=?1",
+            params![id,error.chars().take(1000).collect::<String>()],
+        ).map_err(|e|format!("OCR 분석 실패 이력 저장 실패: {e}"))?;
+        Ok(())
     }
 
     pub fn path(&self) -> &std::path::Path { &self.path }
