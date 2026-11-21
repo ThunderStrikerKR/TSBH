@@ -990,49 +990,84 @@ pub fn reception_recipient_navigator(
                 let response=row.add_enabled(
                     enabled,
                     egui::Button::new("")
-                        .fill(theme::INPUT)
+                        .fill(if enabled{theme::INPUT}
+                            else{theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG})
                         .stroke(Stroke::NONE)
                         .corner_radius(0)
                         .min_size(Vec2::new(arrow_width,inner.height()))
-                ).on_hover_text(hint);
-                paint_management_chevron_with_color(
-                    &row.painter().with_clip_rect(response.rect),
-                    response.rect.center(),direction,
-                    if enabled{theme::SECONDARY}
-                    else{theme::DISABLED_ACTION_TEXT}
                 );
-                response
+                // Clearly recessed endpoints, not merely egui's subtle
+                // disabled tint. Use the same direction glyph as date nav.
+                let painter=row.painter().with_clip_rect(response.rect);
+                if !enabled {
+                    painter.rect_filled(
+                        response.rect,0.0,
+                        theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG
+                    );
+                }
+                paint_management_chevron_with_color(
+                    &painter,response.rect.center(),direction,
+                    if enabled{theme::RECEPTION_RECIPIENT_NAV_ACTIVE_ICON}
+                    else{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
+                );
+                if enabled{response.on_hover_text(hint)}else{response}
             };
+
             let prev=arrow(
                 segments,ManagementChevronDirection::Left,
                 current>0,"이전 수취인"
             );
             if prev.clicked(){selected=Some(current-1);}
+
             let fallback=format!("수취인 {}",current+1);
             let display=if name.trim().is_empty(){fallback.as_str()}else{name};
+            let natural_width=segments.painter().layout_no_wrap(
+                display.to_owned(),
+                egui::FontId::proportional(typography::FONT_BODY),
+                theme::TEXT
+            ).size().x;
+            let content_width=(name_width-2.0*theme::SPACE_8).max(0.0);
+            let clipped=natural_width>content_width;
             let label=segments.add_sized(
                 Vec2::new(name_width,inner.height()),
                 egui::Label::new(typography::body(display))
                     .truncate().halign(Align::Center)
+                    .sense(if clipped{Sense::click()}else{Sense::hover()})
+            ).on_hover_text(display);
+            if clipped {
+                // Long names stay within the header slot; click the name
+                // to inspect its entire value in a wrapping anchored popup.
+                egui::Popup::menu(&label)
+                    .close_behavior(
+                        egui::PopupCloseBehavior::CloseOnClickOutside
+                    )
+                    .show(|popup|{
+                        popup.set_max_width(320.0);
+                        popup.add(
+                            egui::Label::new(typography::body(display)).wrap()
+                        );
+                    });
+            }
+
+            let next=arrow(
+                segments,ManagementChevronDirection::Right,
+                current+1<total,"다음 수취인"
             );
-            label.on_hover_text(display);
+            if next.clicked(){selected=Some(current+1);}
+
+            // Progress is informational metadata OUTSIDE the arrow pair:
+            // ‹  김준희  ›  |  1/2
             segments.add_sized(
                 Vec2::new(count_width,inner.height()),
                 egui::Label::new(typography::field_label(
                     &format!("{}/{}",current+1,total)
                 )).halign(Align::Center)
             );
-            let next=arrow(
-                segments,ManagementChevronDirection::Right,
-                current+1<total,"다음 수취인"
-            );
-            if next.clicked(){selected=Some(current+1);}
-            let borders=[
+            for x in [
                 inner.left()+arrow_width,
                 inner.left()+arrow_width+name_width,
-                inner.left()+arrow_width+name_width+count_width
-            ];
-            for x in borders{
+                inner.left()+2.0*arrow_width+name_width
+            ]{
                 segments.painter().line_segment(
                     [
                         egui::pos2(x,inner.top()+4.0),
