@@ -118,6 +118,42 @@ pub fn input(ctx: &Context, source: &'static str, response: &Response) {
     }
 }
 
+/// Caret anchor for existing add_sized(TextEdit) widgets, without changing
+/// their proven 34/36pt geometry. Recover the TextEdit cursor from the widget
+/// id and measure with the exact font used by that input.
+/// Clamps long/scrolled text back inside the visible field.
+pub fn sized_text_caret(
+    ui: &egui::Ui, source: &'static str, response: &Response,
+    value: &str, font: egui::FontId, centered: bool, horizontal_padding: f32,
+) {
+    if !response.has_focus() && !response.changed() { return; }
+    let caret = egui::TextEdit::load_state(ui.ctx(), response.id)
+        .and_then(|state| state.cursor.char_range())
+        .map(|range| {
+            let galley = ui.fonts_mut(|f| f.layout_no_wrap(
+                value.to_owned(), font, theme::TEXT
+            ));
+            let offset = galley.pos_from_cursor(range.primary);
+            let text_left = if centered {
+                response.rect.center().x - galley.size().x / 2.0
+            } else {
+                response.rect.left() + horizontal_padding
+            };
+            let x = (text_left + offset.left())
+                .clamp(response.rect.left() + 3.0, response.rect.right() - 3.0);
+            Pos2::new(x, response.rect.center().y - 9.0)
+        })
+        .unwrap_or(response.rect.center_top());
+    if response.changed() {
+        with_state(ui.ctx(), |state| {
+            if state.active.as_ref().is_some_and(|n| n.source==source) {
+                state.active = None;
+            }
+        });
+    }
+    record(ui.ctx(), source, caret, AnchorKind::Caret);
+}
+
 /// Exact caret location, from TextEditOutput::galley/galley_pos/cursor_range.
 pub fn text_edit_caret(
     ctx: &Context, source: &'static str, output: &egui::widgets::text_edit::TextEditOutput,
