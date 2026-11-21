@@ -259,21 +259,21 @@ fn cells<const N:usize>(
     })
 }
 fn paint_cell(
-    ui:&Ui,rect:Rect,content:&str,align:Align2,id:impl std::hash::Hash,
+    ui:&Ui,rect:Rect,content:&str,align:Align2,
+    role:typography::ManagementTableCellRole,id:impl std::hash::Hash,
 ){
     let padded=rect.shrink2(Vec2::new(theme::SPACE_8,0.0));
     let visible=padded.intersect(ui.clip_rect());
     if visible.width()<=0.0 || visible.height()<=0.0{return;}
-    let text=typography::freight_table_cell_galley(
-        ui,content,false,theme::TEXT
-    );
+    let color=typography::management_table_cell_color(role);
+    let text=typography::management_table_cell_galley(ui,content,role);
     let x=if align==Align2::RIGHT_CENTER{
         padded.right()-text.size().x
     }else if align==Align2::CENTER_CENTER{
         padded.center().x-text.size().x/2.0
     }else{padded.left()};
     ui.painter().with_clip_rect(visible).galley(
-        egui::pos2(x,padded.center().y-text.size().y/2.0),text,theme::TEXT
+        egui::pos2(x,padded.center().y-text.size().y/2.0),text,color
     );
     if !content.is_empty(){
         ui.interact(
@@ -288,7 +288,8 @@ fn paint_cell(
 #[allow(clippy::too_many_arguments)]
 fn report_table<const N:usize>(
     ui:&mut Ui,id:&str,headings:[&str;N],base:[f32;N],
-    align:[Align2;N],stretch_column:usize,indices:&[usize],
+    align:[Align2;N],roles:[typography::ManagementTableCellRole;N],
+    stretch_column:usize,indices:&[usize],
     sort:&mut Option<Sort>,format_row:impl Fn(usize)->[String;N],
 ){
     ui.spacing_mut().scroll=theme::management_table_scroll_style();
@@ -348,7 +349,7 @@ fn report_table<const N:usize>(
                         for (column,cell) in row_cells.iter().enumerate(){
                             paint_cell(
                                 row,*cell,&data[column],align[column],
-                                (id,indices[index],column),
+                                roles[column],(id,indices[index],column),
                             );
                             if column+1<N{
                                 let x=cell.right()+COL_GAP/2.0;
@@ -591,6 +592,9 @@ impl DailySettlementManager{
                          Align2::RIGHT_CENTER,Align2::RIGHT_CENTER,
                          Align2::RIGHT_CENTER,Align2::RIGHT_CENTER,
                          Align2::RIGHT_CENTER,Align2::RIGHT_CENTER],
+                        [typography::ManagementTableCellRole::ClientName,typography::ManagementTableCellRole::Status,
+                         typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Total,
+                         typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money],
                         0,&indices,&mut self.order_sort,|index|{
                             let order=&orders[index];
                             [
@@ -644,6 +648,9 @@ impl DailySettlementManager{
                         [Align2::LEFT_CENTER,Align2::LEFT_CENTER,Align2::LEFT_CENTER,
                          Align2::RIGHT_CENTER,Align2::RIGHT_CENTER,
                          Align2::RIGHT_CENTER,Align2::LEFT_CENTER],
+                        [typography::ManagementTableCellRole::Text,typography::ManagementTableCellRole::ClientName,typography::ManagementTableCellRole::Description,
+                         typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,
+                         typography::ManagementTableCellRole::Description],
                         6,&indices,&mut self.payment_sort,|index|{
                             let payment=&payments[index];
                             [
