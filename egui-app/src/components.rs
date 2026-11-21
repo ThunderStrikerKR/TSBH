@@ -822,12 +822,20 @@ pub fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
 pub fn management_single_list_scroll_height(
     ui:&Ui,card_min_inner_height:f32,reserve_below:f32
 )->f32 {
-    let card_inner_bottom=ui.min_rect().top()+card_min_inner_height;
-    let remaining=(card_inner_bottom-ui.cursor().top()
-        -reserve_below.max(0.0)).max(0.0);
-    // In a very short window leave the footer accessible rather than
-    // demanding an entire 42pt row that can push it below the workspace.
-    remaining.min(ui.available_height().max(0.0)).max(1.0)
+    management_single_list_scroll_height_geometry(
+        ui.min_rect().top()+card_min_inner_height,
+        ui.cursor().top(),ui.available_height(),reserve_below
+    )
+}
+
+/// Pure calculation used by the management list geometry check. A 1pt
+/// minimum avoids requesting an invalid/negative scroll area when a split
+/// window is shorter than its non-scrolling toolbar and reserved footer.
+fn management_single_list_scroll_height_geometry(
+    card_bottom:f32,rows_top:f32,available_height:f32,reserve_below:f32
+)->f32 {
+    let remaining=(card_bottom-rows_top-reserve_below.max(0.0)).max(0.0);
+    remaining.min(available_height.max(0.0)).max(1.0)
 }
 
 /// C-approved dual-master toolbar alignment contract:
@@ -1772,17 +1780,24 @@ mod management_toolbar_geometry_tests {
 
     #[test]
     fn single_list_scroll_height_reserves_footer_and_uses_card_bottom() {
-        // See management_single_list_scroll_height: given a full card
-        // region and identical header positions, the visible height is the
-        // remaining card space minus only the explicitly reserved footer.
-        for (card_bottom,rows_top,footer) in [
-            (800.0,260.0,0.0),(800.0,260.0,72.0),
-            (410.0,402.0,36.0)
-        ] {
-            let expected=(card_bottom-rows_top-footer).max(0.0).max(1.0);
-            assert!(expected>=1.0);
-            assert!(expected<=(card_bottom-rows_top).max(1.0));
-        }
+        // 200pt card top + 600pt card height = 800pt bottom.
+        // The toolbar and sticky header have already used 60pt.
+        let full=management_single_list_scroll_height_geometry(
+            800.0,260.0,700.0,0.0
+        );
+        let with_footer=management_single_list_scroll_height_geometry(
+            800.0,260.0,700.0,72.0
+        );
+        let capped_by_actual_window=management_single_list_scroll_height_geometry(
+            800.0,260.0,300.0,0.0
+        );
+        let very_short=management_single_list_scroll_height_geometry(
+            410.0,402.0,20.0,36.0
+        );
+        assert_eq!(full,540.0);
+        assert_eq!(with_footer,468.0);
+        assert_eq!(capped_by_actual_window,300.0);
+        assert_eq!(very_short,1.0);
     }
 
     #[test]
