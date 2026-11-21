@@ -2804,7 +2804,19 @@ impl BandoEgui {
                         intake.add_space(balanced_gap / 2.0);
                         components::soft_divider(intake);
                         intake.add_space(balanced_gap / 2.0);
-                        intake.label(typography::subsection_heading("폴더 자동 인식"));
+                        let folder_heading=intake.label(
+                            typography::subsection_heading("폴더 자동 인식")
+                        );
+                        // C-type automatic failure: only surface it while the
+                        // corresponding feature is visible in Reception. The
+                        // normal configured/idle state remains inline.
+                        floating_notice::section(
+                            intake.ctx(),"reception.folder",folder_heading.rect
+                        );
+                        floating_notice::sync(
+                            intake.ctx(),"reception.folder.error","reception.folder",
+                            floating_notice::Tone::Error,inbox_load_error.as_deref()
+                        );
                         intake.add_space(theme::SPACE_8);
                         if let Some(path) = inbox_path.as_deref() {
                             intake.label(typography::caption(
