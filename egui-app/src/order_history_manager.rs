@@ -1268,8 +1268,8 @@ impl OrderHistoryManager {
         let mut changed=false;
         components::align_management_primary_card(ui,page_origin_y);
         // Same full-height single-table card as Freight Assignment:
-        // preserve 16pt top/left/right and the outer border, but devote
-        // the former 16pt bottom padding to actual scrolling data rows.
+        // preserve 16pt clearance on all four sides and keep both the
+        // scrolling rows and the native rail within the inner card.
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
         theme::management_master_table_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
@@ -1386,8 +1386,8 @@ impl OrderHistoryManager {
                     "저장된 주문이 없습니다."
                 }else{"조건에 맞는 주문이 없습니다."},theme::MUTED))
             }else{None};
-            // One bottom edge for the painted rows and native scroll rail,
-            // not a 16pt empty band below the data viewport.
+            // Keep the 16pt inner bottom clearance below BOTH painted rows
+            // and native rail. The rail stops 3pt before the row viewport end.
             let scroll_max_height=components::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
