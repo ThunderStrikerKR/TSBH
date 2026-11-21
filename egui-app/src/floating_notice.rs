@@ -521,6 +521,33 @@ mod tests {
         assert!(pos.y + 40.0 < 200.0);
     }
     #[test]
+    fn measured_korean_and_latin_message_wraps_without_exceeding_maximum() {
+        let ctx=Context::default();
+        let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(900.0,620.0));
+        let mut outcome=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            let message="상품 가격이 저장되지 않았습니다. 거래처 기준과 기존 상품 분류를 확인한 후 다시 시도하세요. ".repeat(6)
+                + "detail: RECONCILIATION_CONFLICT";
+            let (size,galley,_) = measured_notice(ctx,&message,Tone::Error,screen);
+            outcome=Some((size,galley.rows.len()));
+        });
+        let (size,rows)=outcome.expect("measured inside the font pass");
+        assert!(size.x<=theme::FLOATING_NOTICE_MAX_WIDTH +0.01);
+        assert!(size.y<=screen.height() - 2.0*SCREEN_MARGIN);
+        assert!(rows>1,"long notice must wrap based on actual glyph widths");
+    }
+    #[test]
+    fn narrow_viewport_keeps_notice_rect_inside_screen() {
+        let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(240.0,190.0));
+        let (pos,_)=placement(
+            Pos2::new(238.0,185.0),Vec2::new(220.0,70.0),screen
+        );
+        assert!(pos.x>=screen.left()+SCREEN_MARGIN);
+        assert!(pos.y>=screen.top()+SCREEN_MARGIN);
+        assert!(pos.x +220.0<=screen.right()-SCREEN_MARGIN+0.01);
+        assert!(pos.y +70.0<=screen.bottom()-SCREEN_MARGIN+0.01);
+    }
+    #[test]
     fn clearing_success_signal_does_not_hide_a_new_save_failure() {
         let ctx = Context::default();
         begin_page(&ctx,"Excel");
