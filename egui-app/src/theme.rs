@@ -554,6 +554,22 @@ pub fn section_frame() -> Frame {
         .inner_margin(SECTION_PADDING)
 }
 
+/// Full-height master table cards have a 16pt inset on top and both sides,
+/// but NO unused 16pt strip beneath the last visible zebra row. The body
+/// viewport and scrollbar rail can then terminate at the SAME lower edge
+/// while the outside card rectangle stays in its approved position.
+/// Use for the two single-table masters only; other section cards keep
+/// the symmetric section_frame() padding.
+pub const MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING:f32=0.0;
+pub fn management_master_table_frame()->Frame{
+    section_frame().inner_margin(egui::Margin{
+        left:SECTION_PADDING as i8,
+        right:SECTION_PADDING as i8,
+        top:SECTION_PADDING as i8,
+        bottom:MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING as i8,
+    })
+}
+
 /// Overview card keeps the shared frame identity with proportional padding.
 /// Only the freight KPI's vertical inset differs from standard section cards.
 pub fn freight_summary_frame() -> Frame {
