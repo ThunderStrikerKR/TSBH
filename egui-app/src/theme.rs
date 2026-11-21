@@ -554,13 +554,11 @@ pub fn section_frame() -> Frame {
         .inner_margin(SECTION_PADDING)
 }
 
-/// Full-height master table cards have a 16pt inset on top and both sides,
-/// but NO unused 16pt strip beneath the last visible zebra row. The body
-/// viewport and scrollbar rail can then terminate at the SAME lower edge
-/// while the outside card rectangle stays in its approved position.
-/// Use for the two single-table masters only; other section cards keep
-/// the symmetric section_frame() padding.
-pub const MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING:f32=0.0;
+/// Full-height master table cards keep the same 16pt interior clearance on
+/// all four sides. The table row viewport and native scrollbar track end
+/// together ABOVE the bottom inset, rather than letting either touch the
+/// outer card border. Use for the two single-table masters only.
+pub const MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING:f32=SECTION_PADDING;
 pub fn management_master_table_frame()->Frame{
     section_frame().inner_margin(egui::Margin{
         left:SECTION_PADDING as i8,
@@ -586,15 +584,13 @@ pub fn freight_summary_frame() -> Frame {
 /// Solid scrollbars remain visible while a list has overflow and never
 /// collapse into a faint 2pt floating line when the pointer leaves.
 /// Reserve the width in layout so row buttons do not sit underneath it.
-/// Shared Y inset between the first table row and the start of the
-/// visible scrollbar track. The bottom extension is measured separately.
-pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=3.0;
-/// Apply the SAME optical inset at both ends of the table rail.
-/// When this was 0pt, the scrollbar thumb touched the card's 1pt bottom
-/// outline (2026-11-21 image, thumb y=750 / border y=751).
-/// This is a visual rail inset only: the table row viewport is unchanged.
-pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=
-    MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET;
+/// The native rail begins at the first row's exact top edge: a 3pt top
+/// inset left a visible break beneath the full-width fixed-header border.
+/// Keep this zero for all management tables sharing that header role.
+pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=0.0;
+/// Retain a small clearance at the BOTTOM of the rail within the body
+/// viewport. This does not alter row clipping or the card's 16pt padding.
+pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=3.0;
 
 pub fn management_scroll_style() -> egui::style::ScrollStyle {
     let mut style=egui::style::ScrollStyle::solid();
