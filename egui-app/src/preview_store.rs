@@ -841,3 +841,33 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod ocr_layout_tests {
+    use super::*;
+
+    #[test]
+    fn narrow_table_wraps_are_recoverable_without_changing_content(){
+        // Synthetic layout, not a customer document or real phone number.
+        let raw="김\n수\n현\n010-1234-\n5678\n서울특별시 강남구 테\n헤란로 3\n뮤직\n트레이 회색\n1개\n메모\n문 앞에";
+        let fixed="김수현\n010-1234-5678\n서울특별시 강남구 테헤란로 3\n뮤직트레이 회색 1개\n메모 문 앞에";
+        let trace=layout_correction_trace(raw,fixed);
+        assert_eq!(trace["contentAligned"],true);
+        assert_eq!(trace["schema"],"ocr-layout-boundaries-v1");
+        let changes=trace["boundaryChanges"].as_array().expect("changes");
+        assert!(changes.iter().any(|x|
+            x["wasLineBreak"]==true && x["after"]==""));
+        assert!(changes.iter().any(|x|
+            x["wasLineBreak"]==true && x["after"]==" "));
+        assert!(changes.len()>=6);
+    }
+
+    #[test]
+    fn character_recognition_errors_are_not_guessed_as_layout_only(){
+        let trace=layout_correction_trace(
+            "서울특별시 테\n헤란로 3","서울특별시 테헤란로 8"
+        );
+        assert_eq!(trace["contentAligned"],false);
+        assert_eq!(trace["boundaryChanges"],json!([]));
+    }
+}
