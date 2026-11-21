@@ -1406,11 +1406,12 @@ impl BandoEgui {
             self.pending_replace = Some(PendingReplace { text, order_type, chat });
             return;
         }
-        self.apply_intake_text(text, order_type, chat, ctx, "TEXT_PASTE");
+        self.apply_intake_text(text, order_type, chat, ctx, "TEXT_PASTE", false);
     }
 
     fn apply_intake_text(&mut self, text: String, order_type: OrderType,
-        chat: Option<ChatWindow>, ctx: &egui::Context, input_method: &str) {
+        chat: Option<ChatWindow>, ctx: &egui::Context,
+        input_method: &str, replace_original: bool) {
         if text.trim().is_empty() { return; }
         if self.active_id.is_none() {
             self.new_reception(ctx);
@@ -1421,7 +1422,7 @@ impl BandoEgui {
             if let Some(active)=self.active_id.as_deref()
                 .and_then(|id|self.drafts.iter_mut().find(|row|row.id==id))
             {
-                if first_content {
+                if first_content || replace_original {
                     active.source_input_method = Some(input_method.to_owned());
                 }
                 active.last_input_method = Some(input_method.to_owned());
@@ -1482,7 +1483,7 @@ impl BandoEgui {
                             );
                             return;
                         }
-                        self.apply_intake_text(joined, order_type, intake_chat, ctx, "OCR");
+                        self.apply_intake_text(joined, order_type, intake_chat, ctx, "OCR", false);
                     }
                     Err(error) if error == "OCR_CANCELLED" => {}
                     Err(error) => {
@@ -1528,7 +1529,11 @@ impl BandoEgui {
             });
         if accept {
             if let Some(next) = self.pending_replace.take() {
-                self.apply_intake_text(next.text, next.order_type, next.chat, ctx, "TEXT_PASTE");
+                // Explicit replacement starts a new original-source route;
+                // OCR appended later still preserves this first method.
+                self.apply_intake_text(
+                    next.text, next.order_type, next.chat, ctx, "TEXT_PASTE", true
+                );
             }
         } else if cancel {
             self.pending_replace = None;
