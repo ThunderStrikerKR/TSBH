@@ -64,6 +64,8 @@ jobs:
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify floating notice placement at screen edges and caret anchors
         run: cargo test --manifest-path egui-app/Cargo.toml floating_notice::tests -- --nocapture
+      - name: Verify Excel loading and empty-state text does not shift its table
+        run: cargo test --manifest-path egui-app/Cargo.toml excel_manager::table_state_tests -- --nocapture
       - name: Verify shared Freight and Excel table-checkbox centered geometry
         run: cargo test --manifest-path egui-app/Cargo.toml components::management_toolbar_geometry_tests::table_checkbox -- --nocapture
       - name: Verify shared concise product-name table header
