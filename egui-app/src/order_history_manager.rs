@@ -1522,8 +1522,8 @@ impl OrderHistoryManager {
                             .max(ROW_HEIGHT)
                     )
                 );
-                let galley=typography::freight_table_cell_galley(
-                    section,message,false,color
+                let galley=typography::management_control_text_galley(
+                    section,message,color
                 );
                 let origin=notice_rect.center()-galley.size()/2.0;
                 section.painter()
