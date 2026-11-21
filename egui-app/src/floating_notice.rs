@@ -417,7 +417,7 @@ pub fn show(ctx: &Context) {
         .movable(false)
         .show(ctx, |ui| {
             let (rect, _) = ui.allocate_exact_size(size,Sense::hover());
-            let painter = ui.painter();
+            let painter = ui.painter().clone();
             // Soft 3pt/down shadow separates overlapping fields from their
             // floating result, without changing the approved grey palette.
             painter.add(egui::epaint::Shadow{
@@ -433,13 +433,13 @@ pub fn show(ctx: &Context) {
                 Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER),
                 egui::StrokeKind::Inside,
             );
-            paint_tail(painter,rect,active.at,above);
+            paint_tail(&painter,rect,active.at,above);
             let first_row_height = galley.rows.first().map(|row|row.rect.height())
                 .unwrap_or(theme::FLOATING_NOTICE_TEXT_SIZE + 5.0);
             let first_center = rect.top() + pad_y + first_row_height.max(
                 theme::FLOATING_NOTICE_ICON_SIZE
             )/2.0;
-            paint_status_icon(painter,Pos2::new(
+            paint_status_icon(&painter,Pos2::new(
                 rect.left()+pad_x + theme::FLOATING_NOTICE_ICON_SIZE/2.0,
                 first_center
             ),active.tone);
@@ -493,7 +493,7 @@ pub fn show(ctx: &Context) {
                 let response=ui.interact(
                     hit,Id::new(NOTICE_ID).with("close"),Sense::click()
                 );
-                paint_close(painter,center);
+                paint_close(&painter,center);
                 close=response.clicked();
             }
         });
