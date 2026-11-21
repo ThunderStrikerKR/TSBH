@@ -332,6 +332,9 @@ impl ProductManager {
             self.error=Some("상품 변경 저장 권한이 없습니다.".into());
             return;
         }
+        if action!="set_price"{
+            crate::floating_notice::dispatch_pointer(&ctx,"products.action");
+        }
         let gateway=Arc::clone(&self.gateway);
         let name=action.to_owned();
         let (tx,rx)=mpsc::channel();
@@ -549,6 +552,18 @@ impl ProductManager {
     pub fn show_page(&mut self,ui:&mut Ui){
         let page_origin_y=ui.cursor().top();
         self.poll(ui.ctx());
+        let price_result=self.notice.as_deref().is_some_and(|msg|
+            msg.starts_with("가격 변경"));
+        crate::floating_notice::sync(
+            ui.ctx(),"products.result",
+            if price_result{"products.price"}else{"products.action"},
+            crate::floating_notice::Tone::Success,self.notice.as_deref()
+        );
+        crate::floating_notice::sync(
+            ui.ctx(),"products.error",
+            if self.price_mode&&self.tab==0{"products.price"}else{"products.action"},
+            crate::floating_notice::Tone::Error,self.error.as_deref()
+        );
         components::management_page_title_top_gap(ui);
         components::management_top_content(ui,|top|{
             top.label(typography::page_heading("상품 관리"));
@@ -1027,6 +1042,9 @@ impl ProductManager {
                                                         |inputs|{
                                                             let response=components::money_field(
                                                                 inputs,&mut entry.input,true
+                                                            );
+                                                            crate::floating_notice::input(
+                                                                inputs.ctx(),"products.price",&response
                                                             );
                                                             let enter=response.lost_focus() &&
                                                                 inputs.input(|i|
