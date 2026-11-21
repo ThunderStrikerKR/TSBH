@@ -567,6 +567,10 @@ pub fn freight_summary_frame() -> Frame {
 /// Solid scrollbars remain visible while a list has overflow and never
 /// collapse into a faint 2pt floating line when the pointer leaves.
 /// Reserve the width in layout so row buttons do not sit underneath it.
+/// Shared Y inset between the first table row and the start of the
+/// visible scrollbar track. The bottom extension is measured separately.
+pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=3.0;
+
 pub fn management_scroll_style() -> egui::style::ScrollStyle {
     let mut style=egui::style::ScrollStyle::solid();
     style.bar_width=10.0;
@@ -574,6 +578,16 @@ pub fn management_scroll_style() -> egui::style::ScrollStyle {
     style.bar_inner_margin=SPACE_4;
     style.bar_outer_margin=SPACE_4;
     style.foreground_color=true;
+    style
+}
+
+/// CONFLICT-003=A: table rails use the same 10pt solid style but WITHOUT
+/// independent 4pt inner/outer margins. Non-table scroll areas keep the
+/// original management_scroll_style until their role is reviewed.
+pub fn management_table_scroll_style()->egui::style::ScrollStyle{
+    let mut style=management_scroll_style();
+    style.bar_inner_margin=0.0;
+    style.bar_outer_margin=0.0;
     style
 }
 
