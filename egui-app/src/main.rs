@@ -1999,52 +1999,61 @@ impl BandoEgui {
                         text_view_rect,0.0,theme::INPUT
                     );
 
-                    let image_clip=image_view_rect.intersect(ui.clip_rect());
+                    // Inset the entire scroll viewport by 12pt. Keeping
+                    // the matte OUTSIDE the scrolling area preserves a
+                    // visible dark border even when the source is zoomed or
+                    // panned to an image edge. No nested card or frame.
+                    let image_scroll_rect=image_view_rect.shrink(theme::SPACE_12);
+                    let image_clip=image_scroll_rect.intersect(ui.clip_rect());
                     ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-image-fixed-viewport")
-                            .max_rect(image_view_rect)
+                            .max_rect(image_scroll_rect)
                             .layout(Layout::top_down(Align::Min)),
                         |viewport|{
                             viewport.set_clip_rect(image_clip);
-                            viewport.set_width(image_view_rect.width());
-                            viewport.set_height(image_view_rect.height());
+                            viewport.set_width(image_scroll_rect.width());
+                            viewport.set_height(image_scroll_rect.height());
                             let image_scroll=egui::ScrollArea::both()
                                 .id_salt("ocr-original-image-scroll")
-                                .max_width(image_view_rect.width())
-                                .max_height(image_view_rect.height())
+                                .max_width(image_scroll_rect.width())
+                                .max_height(image_scroll_rect.height())
                                 .auto_shrink([false,false])
                                 .scroll_source(
                                     egui::scroll_area::ScrollSource::SCROLL_BAR
                                     | egui::scroll_area::ScrollSource::DRAG
                                 )
                                 .show(viewport,|image_ui|{
-                                    // Breathing room belongs to the document,
-                                    // not to an extra nested viewer frame.
-                                    image_ui.add_space(theme::SPACE_12);
-                                    let fit=((image_view_rect.width()
-                                        -2.0*inset)/review.width as f32)
+                                    // 100% = width fit within the inset mat,
+                                    // not 100% of the image's pixel dimensions.
+                                    let fit=(image_scroll_rect.width()
+                                        /review.width as f32)
                                         .min(1.0).max(0.01);
                                     let scale=fit*review.zoom;
                                     let display=Vec2::new(
                                         review.width as f32*scale,
                                         review.height as f32*scale
                                     );
-                                    let left_pad=((image_view_rect.width()
-                                        -display.x)/2.0).max(inset);
+                                    // Center only when narrower than the
+                                    // viewport; larger images retain normal
+                                    // independent horizontal scrolling.
+                                    let left_pad=((image_scroll_rect.width()
+                                        -display.x)/2.0).max(0.0);
                                     image_ui.horizontal(|line|{
                                         line.spacing_mut().item_spacing.x=0.0;
-                                        line.add_space(left_pad);
+                                        if left_pad>0.0 {
+                                            line.add_space(left_pad);
+                                        }
                                         let image=line.image((
                                             review.texture.id(),display
                                         ));
-                                        // A single restrained edge makes the
-                                        // white source read as a document.
+                                        // The stroke belongs to the actual
+                                        // source boundary and moves with it.
                                         line.painter().rect_stroke(
                                             image.rect,0.0,
                                             egui::Stroke::new(
                                                 theme::SOFT_DIVIDER_WIDTH,edge
                                             ),
-                                            egui::StrokeKind::Outside
+                                            egui::StrokeKind::Inside
                                         );
                                     });
                                 });
