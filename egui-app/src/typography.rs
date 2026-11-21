@@ -343,6 +343,7 @@ pub fn freight_table_cell_galley(
 pub enum ManagementTableCellRole {
     ProductName,
     ClientName,
+    Text,
     Option,
     Quantity,
     Money,
@@ -363,6 +364,7 @@ pub fn management_table_cell_color(role:ManagementTableCellRole)->Color32 {
     match role {
         ManagementTableCellRole::ProductName
         | ManagementTableCellRole::ClientName
+        | ManagementTableCellRole::Text
         | ManagementTableCellRole::Option
         | ManagementTableCellRole::Money
         | ManagementTableCellRole::Total => TEXT,
@@ -723,6 +725,7 @@ mod management_table_type_roles_tests {
         for role in [
             ManagementTableCellRole::ProductName,
             ManagementTableCellRole::ClientName,
+            ManagementTableCellRole::Text,
             ManagementTableCellRole::Option,
             ManagementTableCellRole::Quantity,
             ManagementTableCellRole::Money,
