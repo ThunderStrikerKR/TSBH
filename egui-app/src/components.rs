@@ -878,9 +878,10 @@ pub fn management_table_scroll_track_rect(
 }
 
 /// The only place that computes top/bottom of a management table rail.
-/// The track may extend into a card's bottom padding, but MUST stop before
-/// the bottom outline: a handle flush against that outline appears clipped.
-/// Keep this rail-only clearance separate from the actual row viewport.
+/// The track may extend through bottom padding to the data-visible edge,
+/// stopping immediately ABOVE the card's own 1pt outline. No extra 4pt
+/// clearance: that produced a detached rail below the final visible row.
+/// Keep this calculation separate from the row viewport height.
 fn management_table_scroll_track_geometry(
     bounds:Rect,scroll_height:f32,bottom_extension:f32
 )->Rect {
@@ -1833,22 +1834,22 @@ mod management_toolbar_geometry_tests {
             bounds,484.0,theme::SECTION_PADDING
         );
         assert_eq!(inset.top(),303.0);
-        assert_eq!(inset.bottom(),796.0); // 4pt above card outline
+        assert_eq!(inset.bottom(),800.0); // matches data-visible bottom
         assert_eq!(inset.left(),16.0);
         assert_eq!(inset.right(),816.0);
 
         // A footer/list that is not a full-card table cannot claim
-        // another 16pt. The rail ends 4pt BEFORE its data-viewport edge.
+        // another 16pt. Its rail ends at its own data-viewport edge.
         let with_footer=management_table_scroll_track_geometry(bounds,400.0,0.0);
         assert_eq!(with_footer.top(),303.0);
-        assert_eq!(with_footer.bottom(),696.0);
+        assert_eq!(with_footer.bottom(),700.0);
 
         // The card's current available rectangle still caps the ROWS,
         // even if the caller asks for more max_height than it can show.
         let clipped=management_table_scroll_track_geometry(
             bounds,1200.0,theme::SECTION_PADDING
         );
-        assert_eq!(clipped.bottom(),796.0);
+        assert_eq!(clipped.bottom(),800.0);
 
         // Very small panes must still produce a non-inverted rail Rect.
         let tiny=management_table_scroll_track_geometry(bounds,1.0,0.0);
