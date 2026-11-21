@@ -1370,7 +1370,7 @@ impl OrderHistoryManager {
             // master spec directs all spare space to the shipment/product
             // column and leaves expandable detail rows variable-height.
             let widths=theme::ORDER_HISTORY_MASTER_TABLE.widths_for(table_width);
-            let headings=["접수일","거래처","배송 건 / 상품","관리 상태",
+            let headings=["접수일","거래처","상품 목록","관리 상태",
                 "청구 합계","입금 확인","처리"];
             let mut header_origin=None;
             let mut pending_toggle=None;
