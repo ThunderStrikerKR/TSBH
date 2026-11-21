@@ -18,7 +18,7 @@ enum Command {
 
 #[derive(Debug)]
 pub enum SaveStatus {
-    Saved(u64),
+    Saved { revision:u64, active_id:Option<String>, raw:String },
     Failed(String),
 }
 
@@ -67,7 +67,11 @@ impl SourceAutosave {
                 let status = match gateway.save_working_source(&source) {
                     Ok(next) if next > revision => {
                         revision = next;
-                        SaveStatus::Saved(next)
+                        SaveStatus::Saved {
+                            revision:next,
+                            active_id:source.active_id.clone(),
+                            raw:source.raw.clone(),
+                        }
                     }
                     Ok(_) => SaveStatus::Failed(
                         "원문 저장 revision이 증가하지 않았습니다.".to_owned()
