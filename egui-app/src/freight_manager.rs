@@ -17,6 +17,10 @@ use std::sync::{
     Arc,
 };
 
+// Temporary presentation-only switch. Keep shipping.groups[*].history
+// writes and archived records intact until the user chooses the final UI.
+const SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY: bool = false;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FreightTab {
     Groups,
@@ -2628,9 +2632,13 @@ impl FreightManager {
             );
             section.spacing_mut().item_spacing.y=prior_gap;
         });
-        ui.add_space(theme::SPACE_12);
-        theme::section_frame().show(ui, |section| {
-            section.label(typography::section_heading("이전 그룹 운임 기준"));
+        // Hidden by user request; do not move the feature to group management
+        // or disable Rust history persistence. The 12pt gap is also conditional
+        // so no empty block remains below the combination table.
+        if SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY {
+            ui.add_space(theme::SPACE_12);
+            theme::section_frame().show(ui, |section| {
+                section.label(typography::section_heading("이전 그룹 운임 기준"));
             components::soft_divider(section);
             // Preserve the existing group-by-group expand/collapse behavior.
             // Expanded histories become one-row-per-version fixed tables,
@@ -2702,7 +2710,8 @@ impl FreightManager {
                         );
                     });
             }
-        });
+            });
+        }
     }
 }
 
@@ -3066,6 +3075,13 @@ mod rate_toolbar_tests{
             "deleting the history heading must not raise the table header");
         assert!((header.top()-guide.top()-theme::INPUT_HEIGHT-21.0).abs()<0.01);
         assert!((header.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01);
+    }
+
+    #[test]
+    fn prior_group_freight_history_is_hidden_without_disabling_persistence(){
+        // The UI flag must not be conflated with the Rust shipping history
+        // actions. Those continue to preserve old rules for later access.
+        assert!(!SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY);
     }
 
     #[test]
