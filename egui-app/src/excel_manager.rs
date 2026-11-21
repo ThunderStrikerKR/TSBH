@@ -1178,7 +1178,7 @@ mod table_state_tests {
         let start=source.find("let mut history=state.map")
             .expect("history table must still exist");
         let end=start+source[start..]
-            .find("}else{\n                let all=!visible.is_empty()")
+            .find("let all=!visible.is_empty()")
             .expect("history branch must end before queue actions");
         let history=&source[start..end];
         assert!(history.contains("ExcelTableHeightPolicy::FillCard{card_min_height}"));
@@ -1202,6 +1202,77 @@ mod table_state_tests {
         // Queue-level details remain a separate, unchanged workflow.
         assert!(source.contains("ExcelTableHeightPolicy::LegacyForExpandedDetails"));
         assert!(source.contains("pub fn take_open_order"));
+    }
+
+    #[test]
+    fn archive_filters_by_exported_korean_date_inclusive_and_all_dates(){
+        let entry=json!({
+            "id":"file1","at":"2026-11-21T16:30:00Z",
+            "orderIds":["o1"],"filename":"공장.xlsx",
+            "snapshots":[{"snapshot":{"recipient":{"items":[
+                {"name":"709 보면대","quantity":2}
+            ]}}}]
+        });
+        let state=json!({
+            "exports":[entry],
+            "orders":[{"id":"o1","clientSnapshot":{"name":"과거 거래처"}}]
+        });
+        // 16:30Z on Nov 21 is 01:30 on Nov 22 in Seoul.
+        assert_eq!(export_day("2026-11-21T16:30:00Z"),"2026-11-22");
+        assert_eq!(export_history(&state,"","2026-11-22","2026-11-22").len(),1);
+        assert!(export_history(&state,"","2026-11-21","2026-11-21").is_empty());
+        assert_eq!(export_history(&state,"","","").len(),1);
+        assert_eq!(export_history(&state,"","2026-11-23","").len(),0);
+        assert_eq!(export_history(&state,"","","2026-11-21").len(),0);
+    }
+
+    #[test]
+    fn archive_shows_all_clients_and_the_immutable_exported_items(){
+        let state=json!({
+            "exports":[{"id":"e1","at":"2026-11-21T07:00:00+09:00",
+                "filename":"출력_001.xlsx","savedPath":"C:/history/출력.xlsx",
+                "orderIds":["o1","o2"],
+                "snapshots":[
+                    {"snapshot":{"recipient":{"items":[
+                        {"name":"709 보면대","quantity":3},
+                        {"name":"GT-1","quantity":1}
+                    ]}}},
+                    {"snapshot":{"recipient":{"items":[
+                        {"name":"Desk TS","quantity":5}
+                    ]}}}
+                ]
+            }],
+            "orders":[
+                {"id":"o1","clientSnapshot":{"name":"변경된 거래처"},
+                    "confirmationSnapshot":{"client":{"name":"확정 당시 A"}},
+                    "recipients":[{"items":[{"name":"수정 후 상품","quantity":99}]}]},
+                {"id":"o2","clientSnapshot":{"name":"거래처 B"}}
+            ]
+        });
+        let rows=export_history(&state,"","","");
+        assert_eq!(rows.len(),1);
+        assert_eq!(rows[0].clients,"확정 당시 A / 거래처 B");
+        assert_eq!(rows[0].products,
+            "◆ 709 보면대 × 3  ◆ GT-1 × 1  ◆ Desk TS × 5");
+        assert!(!rows[0].products.contains("수정 후 상품"));
+        assert_eq!(export_history(&state,"gt-1","","").len(),1);
+        assert_eq!(export_history(&state,"거래처 b","","").len(),1);
+        assert_eq!(export_history(&state,"출력_001","","").len(),1);
+        assert!(export_history(&state,"없는 상품","","").is_empty());
+    }
+
+    #[test]
+    fn archive_without_frozen_item_snapshots_does_not_invent_products(){
+        let s=json!({
+            "exports":[{"id":"old","at":"2026-10-01",
+                "orderIds":["o1"],"snapshots":[],
+                "filename":"이전 파일.xlsx"}],
+            "orders":[{"id":"o1","clientSnapshot":{"name":"과거 거래처"},
+                "recipients":[{"items":[{"name":"현재 주문 품목","quantity":42}]}]}]
+        });
+        let rows=export_history(&s,"","","");
+        assert_eq!(rows[0].clients,"과거 거래처");
+        assert_eq!(rows[0].products,"출력 당시 상품 기록 없음");
     }
 
     #[test]
