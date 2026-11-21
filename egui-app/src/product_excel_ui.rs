@@ -315,7 +315,8 @@ impl ProductExcelUi {
                 if let Some(err)=&self.error{
                     ui.colored_label(theme::DANGER,err);
                 }
-                ui.with_layout(Layout::right_to_left(Align::Center),|buttons|{
+                ui.add_space(theme::SPACE_12);
+                components::modal_action_row(ui,|buttons|{
                     if theme::action(buttons,
                         "백업 후 상품 변경사항 반영",theme::ButtonRole::Primary,
                         self.can_apply()&&can_edit
