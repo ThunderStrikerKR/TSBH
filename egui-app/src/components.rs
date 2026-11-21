@@ -1863,6 +1863,24 @@ mod management_toolbar_geometry_tests {
     }
 
     #[test]
+    fn master_table_rows_and_scroll_track_share_one_bottom_boundary(){
+        // With zero master bottom padding the actual row viewport reaches
+        // the full inner card bottom. No 16pt rail-only extension.
+        let bounds=Rect::from_min_size(
+            egui::pos2(16.0,300.0),Vec2::new(800.0,484.0)
+        );
+        let painted_rows_bottom=bounds.bottom();
+        let track=management_table_scroll_track_geometry(
+            bounds,bounds.height(),theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
+        );
+        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING,0.0);
+        assert_eq!(track.top(),painted_rows_bottom-bounds.height()
+            +theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET);
+        assert_eq!(track.bottom(),painted_rows_bottom
+            -theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET);
+    }
+
+    #[test]
     fn management_scroll_track_uses_common_top_and_card_bottom_policy(){
         let bounds=Rect::from_min_size(
             egui::pos2(16.0,300.0),Vec2::new(800.0,484.0)
