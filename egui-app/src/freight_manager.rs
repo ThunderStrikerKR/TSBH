@@ -2530,7 +2530,7 @@ impl FreightManager {
                 [1.0,0.0,0.0,0.0,0.0],ordered.len(),Some(sort),
                 true,
                 if combinations.is_empty(){
-                    Some("실제 배송 완료 후 검증한 운임 조합이 없습니다.")
+                    Some("등록된 배송 조합이 없습니다.")
                 }else{None},
                 |row,cells,index|{
                     let record=ordered[index];
