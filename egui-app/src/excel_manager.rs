@@ -144,6 +144,19 @@ fn export_day(raw:&str)->String{
         NaiveDate::parse_from_str(day,"%Y-%m-%d").is_ok()
     ).unwrap_or("").to_owned()
 }
+fn apply_valid_export_date_range(
+    from:&mut String,to:&mut String,from_input:&str,to_input:&str
+)->bool {
+    if order_history_manager::date_range_error(from_input,to_input).is_some(){
+        return false;
+    }
+    let changed=from.as_str()!=from_input||to.as_str()!=to_input;
+    if changed{
+        *from=from_input.to_owned();
+        *to=to_input.to_owned();
+    }
+    changed
+}
 fn export_date_matches(raw:&str,from:&str,to:&str)->bool{
     if from.is_empty()&&to.is_empty(){return true;}
     let day=export_day(raw);
@@ -499,6 +512,8 @@ pub struct ExcelManager{
     sort_history:Option<Sort>,
     export_from:String,
     export_to:String,
+    export_from_input:String,
+    export_to_input:String,
     export_from_month:NaiveDate,
     export_to_month:NaiveDate,
     managed_queue:Option<String>,
@@ -517,6 +532,7 @@ impl ExcelManager{
             query:String::new(),selected:BTreeSet::new(),
             sort_queue:None,sort_history:None,
             export_from:String::new(),export_to:String::new(),
+            export_from_input:String::new(),export_to_input:String::new(),
             export_from_month:components::calendar_month_start(today),
             export_to_month:components::calendar_month_start(today),
             managed_queue:None,freight_drafts:HashMap::new(),
@@ -797,15 +813,21 @@ impl ExcelManager{
                     |dates|{
                         dates.set_width(dates_rect.width());
                         dates.set_height(dates_rect.height());
-                        order_history_manager::excel_export_date_controls(
-                            dates,&mut self.export_from,&mut self.export_to,
+                        if order_history_manager::excel_export_date_controls(
+                            dates,&mut self.export_from_input,
+                            &mut self.export_to_input,
                             &mut self.export_from_month,&mut self.export_to_month,
                             history_compact
-                        );
+                        ){
+                            apply_valid_export_date_range(
+                                &mut self.export_from,&mut self.export_to,
+                                &self.export_from_input,&self.export_to_input
+                            );
+                        }
                     }
                 );
                 let range_error=order_history_manager::date_range_error(
-                    &self.export_from,&self.export_to
+                    &self.export_from_input,&self.export_to_input
                 );
                 crate::floating_notice::sync(
                     section.ctx(),"excel.export-dates","excel.history-dates",
@@ -1209,6 +1231,29 @@ mod table_state_tests {
         // Queue-level details remain a separate, unchanged workflow.
         assert!(source.contains("ExcelTableHeightPolicy::LegacyForExpandedDetails"));
         assert!(source.contains("pub fn take_open_order"));
+    }
+
+    #[test]
+    fn invalid_manual_date_does_not_replace_applied_search_range(){
+        let mut from="2026-11-01".to_owned();
+        let mut to="2026-11-20".to_owned();
+        assert!(!apply_valid_export_date_range(
+            &mut from,&mut to,"2026-11-","2026-11-20"
+        ));
+        assert_eq!(from,"2026-11-01");
+        assert_eq!(to,"2026-11-20");
+        assert!(!apply_valid_export_date_range(
+            &mut from,&mut to,"2026-11-21","2026-11-20"
+        ));
+        assert_eq!(from,"2026-11-01");
+        assert!(apply_valid_export_date_range(
+            &mut from,&mut to,"2026-11-10","2026-11-20"
+        ));
+        assert_eq!(from,"2026-11-10");
+        assert!(apply_valid_export_date_range(
+            &mut from,&mut to,"",""
+        ));
+        assert!(from.is_empty()&&to.is_empty());
     }
 
     #[test]
