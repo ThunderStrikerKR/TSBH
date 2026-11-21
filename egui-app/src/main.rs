@@ -1549,7 +1549,7 @@ impl BandoEgui {
                 // A default width alone lets dynamic TextEdit/image content
                 // change the window's measured size between frames.
                 .fixed_size(Vec2::new(dialog_width,dialog_height))
-                .scroll2([false,false])
+                .scroll([false,false])
                 .show(ctx,|ui|{
                     let (bounds,_) = ui.allocate_exact_size(
                         Vec2::new(ui.available_width(),ui.available_height()),
