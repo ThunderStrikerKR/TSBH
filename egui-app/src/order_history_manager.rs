@@ -1305,7 +1305,7 @@ impl OrderHistoryManager {
                         ui.colored_label(theme::DANGER,message);
                     }
                     ui.add_space(theme::SPACE_12);
-                    ui.with_layout(egui::Layout::right_to_left(Align::Center),|bar|{
+                    components::modal_action_row(ui,|bar|{
                         if theme::action(bar,"저장",theme::ButtonRole::Primary,
                             !busy && writable &&
                             editor.draft!=editor.original &&
