@@ -370,13 +370,14 @@ pub fn modal_header_in_rect(
         )
     );
     let mut close=false;
+    let clip=content.intersect(ui.clip_rect());
     ui.scope_builder(
         egui::UiBuilder::new()
             .id_salt("modal-v2-heading")
             .max_rect(content)
             .layout(Layout::left_to_right(Align::Center)),
         |header|{
-            header.set_clip_rect(content.intersect(ui.clip_rect()));
+            header.set_clip_rect(clip);
             header.set_width(content.width());
             header.label(typography::modal_title(title));
             header.with_layout(Layout::right_to_left(Align::Center),|right|{
@@ -421,13 +422,14 @@ pub fn modal_footer_in_rect(
             theme::ACTION_STANDARD_HEIGHT
         )
     );
+    let clip=content.intersect(ui.clip_rect());
     ui.scope_builder(
         egui::UiBuilder::new()
             .id_salt("modal-v2-footer")
             .max_rect(content)
             .layout(Layout::right_to_left(Align::Center)),
         |footer|{
-            footer.set_clip_rect(content.intersect(ui.clip_rect()));
+            footer.set_clip_rect(clip);
             footer.set_width(content.width());
             actions(footer);
         },
