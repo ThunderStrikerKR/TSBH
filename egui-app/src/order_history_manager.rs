@@ -1274,10 +1274,7 @@ impl OrderHistoryManager {
         );
         theme::section_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
-            let mut table_scroll=theme::management_scroll_style();
-            table_scroll.bar_inner_margin=0.0;
-            table_scroll.bar_outer_margin=0.0;
-            section.spacing_mut().scroll=table_scroll;
+            section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Use the identical zero-implicit-gap toolbar-to-header
             // allocator as Freight Assignment. Do not inject extra space
             // or move the header independently on either screen.
@@ -1395,14 +1392,11 @@ impl OrderHistoryManager {
             let card_inner_bottom=section.min_rect().top()+card_min_height;
             let scroll_max_height=(card_inner_bottom-section.cursor().top())
                 .max(ROW_HEIGHT);
+            // Same 3pt top and card-bottom rail as Freight Assignment.
+            // The independently scrolling rows keep their original height.
             let scroll_bounds=section.available_rect_before_wrap();
-            let scroll_track_bottom=(scroll_bounds.top()+scroll_max_height)
-                .min(scroll_bounds.bottom());
-            let scroll_track_top=(scroll_bounds.top()+3.0)
-                .min(scroll_track_bottom-1.0);
-            let scroll_track=Rect::from_min_max(
-                egui::pos2(scroll_bounds.left(),scroll_track_top),
-                egui::pos2(scroll_bounds.right(),scroll_track_bottom)
+            let scroll_track=components::management_table_scroll_track_rect(
+                section,scroll_max_height,theme::SECTION_PADDING
             );
             // Mixed fixed parent rows and auto-height shipment details need
             // prefix offsets. A fixed-height virtual grid would clip wrapped
