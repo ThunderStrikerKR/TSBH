@@ -1709,7 +1709,7 @@ impl FreightManager {
             // The 2pt rule is INSIDE the 36pt header. Center every heading,
             // sort arrow and select-all checkbox in the remaining 34pt,
             // never in the full 36pt including its visible bottom border.
-            let header_outline_height=2.0_f32;
+            let header_outline_height=theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT;
             let header_text_rect=egui::Rect::from_min_max(
                 header_content_rect.min,
                 egui::pos2(header_content_rect.right(),
