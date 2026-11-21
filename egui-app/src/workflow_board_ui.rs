@@ -135,7 +135,7 @@ fn workflow_card<R>(
         ));
     let response=frame.show(ui,|card|{
         // The surrounding list has zero automatic vertical spacing so
-        // adjacent cards use the exact 4pt gap token. Restore normal
+        // adjacent cards use the exact 8pt gap token. Restore normal
         // spacing INSIDE each card (header/action/content rows).
         card.spacing_mut().item_spacing.y=theme::SPACING;
         card.set_min_width(
