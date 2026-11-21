@@ -1613,17 +1613,32 @@ impl BandoEgui {
         let dialog_height=(work_area.height()*0.88).clamp(450.0,960.0)
             .min(work_area.height().max(1.0));
         if let Some(review)=self.ocr_review.as_mut() {
+            // Fixed_size constrains the OUTER egui window; the body's
+            // available_height() is not a reliable content-size contract
+            // inside a scroll-disabled Window. Using it here could reserve
+            // the entire viewport, causing an enormous empty-looking dialog
+            // and clipping the OCR image, title and Apply control.
+            // Subtract the approved frame insets and stroke explicitly:
+            // every child rectangle is then derived from one finite body.
+            let body_width=(dialog_width
+                -2.0*theme::MODAL_PANEL_PADDING_X
+                -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
+            let body_height=(dialog_height
+                -2.0*theme::MODAL_PANEL_PADDING_Y
+                -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
+            let body_size=Vec2::new(body_width,body_height);
             components::modal_window(
                 "OCR 문자 인식 검토","egui-ocr-review",work_area
             )
-                // A default width alone lets dynamic TextEdit/image content
-                // change the window's measured size between frames.
                 .fixed_size(Vec2::new(dialog_width,dialog_height))
                 .scroll([false,false])
                 .show(ctx,|ui|{
+                    // Avoid ui.available_height() here: egui can expose
+                    // the remaining viewport rather than the fixed body.
+                    // This single exact allocation is the only OCR layout
+                    // owner; image and text use independent clipped slots.
                     let (bounds,_) = ui.allocate_exact_size(
-                        Vec2::new(ui.available_width(),ui.available_height()),
-                        Sense::hover(),
+                        body_size,Sense::hover()
                     );
                     // Fixed slots: 12pt on both sides of the explanation,
                     // 16pt between comparison cards and footer.
