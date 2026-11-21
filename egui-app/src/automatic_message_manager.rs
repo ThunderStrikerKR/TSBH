@@ -155,6 +155,7 @@ pub struct AutomaticMessageManager {
     clients_approved:bool,
     global_approved:bool,
     error:Option<String>,
+    notice:Option<String>,
 }
 fn message_map(settings:&Value,key:&str)->Map<String,Value>{
     settings.get(key).and_then(Value::as_object).cloned().unwrap_or_default()
@@ -236,7 +237,8 @@ impl AutomaticMessageManager {
             base_templates:Map::new(),draft_templates:Map::new(),
             base_notices:Map::new(),draft_notices:Map::new(),
             pending:None,after_save:None,
-            clients_approved:false,global_approved:false,error:None
+            clients_approved:false,global_approved:false,
+            error:None,notice:None
         }
     }
     pub fn poll(&mut self){
@@ -263,6 +265,7 @@ impl AutomaticMessageManager {
                 Ok(Ok(settings))=>{
                     self.set_saved(settings);
                     self.saving=None;self.error=None;
+                    self.notice=Some("자동 메시지 설정을 저장했습니다.".into());
                     if let Some(destination)=self.after_save.take(){
                         self.apply_destination(destination);
                     }
@@ -363,8 +366,9 @@ impl AutomaticMessageManager {
                 self.draft_templates.contains_key(def.id)
             ).map(|def|def.id).collect::<Vec<_>>()
         }else{Vec::new()};
+        crate::floating_notice::dispatch_pointer(&ctx,"clients.automatic.message");
         let (tx,rx)=mpsc::channel();
-        self.saving=Some(rx);self.error=None;
+        self.saving=Some(rx);self.error=None;self.notice=None;
         thread::spawn(move||{
             let result=(||{
                 if field=="automaticMessageTemplates"{
@@ -586,6 +590,15 @@ impl AutomaticMessageManager {
     }
     pub fn show(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,page_origin_y:f32){
         self.poll();
+        crate::floating_notice::sync(
+            ui.ctx(),"clients.auto.result","clients.automatic.message",
+            crate::floating_notice::Tone::Success,self.notice.as_deref()
+        );
+        crate::floating_notice::sync(
+            ui.ctx(),"clients.auto.error","clients.automatic.message",
+            crate::floating_notice::Tone::Error,
+            if self.loaded{self.error.as_deref()}else{None}
+        );
         // The nested message tabs follow the same guide as the client
         // page's main heading and tabs, without moving either editor card.
         let tab=components::management_top_content(ui,|top|
@@ -663,9 +676,8 @@ impl AutomaticMessageManager {
                                         &&self.dirty()).clicked();
                             });
                         });
-                        if let Some(error)=&self.error{
-                            body.label(typography::status(error,theme::DANGER));
-                        }
+                        // One-off save errors use the shared floating notice.
+                        // Initial-load errors above stay visible as page state.
                     });
                 }
             );
