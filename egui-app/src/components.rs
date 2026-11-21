@@ -1928,8 +1928,11 @@ pub fn management_master_register_header(
 }
 
 /// One 10pt / 1.8pt-stroke chevron for selectors, date stepping and
-/// expand/collapse affordances. Rotating the same vector keeps the glyphs
-/// identical at all orientations and avoids Windows font-dependent triangles.
+/// expand/collapse affordances. Rotate this same vector for every screen.
+/// Draw the TWO diagonal arms as ONE continuous path. Separate
+/// line_segment() calls blend anti-aliased coverage twice at their shared
+/// corner, making the arrow tip darker and giving inconsistent edge colors
+/// on Windows / fractional DPI. A single path has one joined stroke.
 #[derive(Clone,Copy)]
 pub(crate) enum ManagementChevronDirection { Down, Left, Right }
 
@@ -1948,8 +1951,11 @@ fn paint_chevron_at_angle(
     let a=rotated(-DEPTH,-HALF_SPAN);
     let tip=rotated(DEPTH,0.0);
     let b=rotated(-DEPTH,HALF_SPAN);
-    painter.line_segment([a,tip],Stroke::new(STROKE,ink));
-    painter.line_segment([tip,b],Stroke::new(STROKE,ink));
+    // One tessellated stroke owns the corner, diagonal edges and caps.
+    // Preserve the approved 10pt shape, rotation and 1.8pt thickness.
+    painter.add(egui::Shape::line(
+        vec![a,tip,b],Stroke::new(STROKE,ink)
+    ));
 }
 
 fn paint_management_chevron_with_color(
