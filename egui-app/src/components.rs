@@ -965,7 +965,9 @@ pub fn reception_recipient_fields(
 ) -> [Response; 5] {
     fn editor(value: &mut String, width: f32) -> egui::TextEdit<'_> {
         egui::TextEdit::singleline(value)
-            .font(egui::TextStyle::Body)
+            .font(egui::FontId::proportional(
+                typography::FONT_RECEPTION_RECIPIENT_TEXT
+            ))
             .vertical_align(Align::Center)
             .margin(egui::Margin::symmetric(8, 2))
             .desired_width(width)
