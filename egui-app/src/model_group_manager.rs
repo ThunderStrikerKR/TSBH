@@ -235,11 +235,16 @@ impl ModelGroupManager {
         let groups=self.draft.as_object().map(|m|
             m.iter().map(|(id,g)|(id.clone(),g.clone())).collect::<Vec<_>>())
             .unwrap_or_default();
-        let available=ui.available_width();
-        let left_width=theme::FAMILY_LIST_WIDTH.min(available*0.45);
-        let height=ui.available_height().max(theme::MANAGEMENT_TABLE_ROW_HEIGHT*6.0);
+        let card_min_height=components::management_master_table_card_min_inner_height(ui);
         let mut save=false;
-        theme::section_frame().show(ui,|outer|{
+        theme::management_master_table_frame().show(ui,|outer|{
+            components::fill_management_primary_card(outer,card_min_height);
+            outer.spacing_mut().scroll=theme::management_table_scroll_style();
+            let available=outer.available_width();
+            let left_width=theme::FAMILY_LIST_WIDTH.min(available*0.45);
+            let height=outer.available_height().max(
+                theme::MANAGEMENT_TABLE_ROW_HEIGHT*6.0
+            );
             outer.horizontal(|whole|{
                 whole.allocate_ui_with_layout(
                     Vec2::new(left_width,height),
@@ -276,8 +281,27 @@ impl ModelGroupManager {
                                 theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                                 "그룹 이름 또는 상품명 검색");
                         });
-                        components::soft_divider(left);
-                        egui::ScrollArea::vertical().id_salt("family-list").show(left,|list|{
+                        // Fixed register header and one local scroll
+                        // viewport, as in the Shipping Assignment master.
+                        left.spacing_mut().item_spacing.y=0.0;
+                        left.spacing_mut().scroll=theme::management_table_scroll_style();
+                        let header=components::management_master_register_header(
+                            left,"모델군","상품 수",104.0
+                        );
+                        let list_height=left.available_height().max(1.0);
+                        let scroll_track=components::management_table_scroll_track_rect(
+                            left,list_height
+                        );
+                        egui::ScrollArea::vertical()
+                            .id_salt("family-list")
+                            .scroll_bar_rect(scroll_track)
+                            .scroll_bar_visibility(
+                                egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                            )
+                            .max_height(list_height)
+                            .auto_shrink([false,false])
+                            .show(left,|list|{
+                            list.set_min_width(header.table_width);
                             for (id,g) in &groups{
                                 let names=items(&g["productIds"]).iter()
                                     .filter_map(Value::as_str).filter_map(|pid|product(catalog,pid))
