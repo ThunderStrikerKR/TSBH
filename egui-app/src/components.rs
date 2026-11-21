@@ -147,8 +147,12 @@ pub fn workflow_auxiliary_button(ui: &mut Ui, action: WorkflowAuxiliaryAction) -
             false,
             egui::Button::new("")
                 .min_size(Vec2::new(width, theme::WORKFLOW_AUX_CONTROL_HEIGHT))
-                .fill(theme::RAISED)
-                .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH, theme::BORDER))
+                // These controls are intentionally disabled; use the
+                // exact disabled Standard/TableSecondary master appearance.
+                .fill(theme::DISABLED_ACTION_BG)
+                .stroke(Stroke::new(
+                    theme::FRAME_STROKE_WIDTH,theme::DISABLED_ACTION_BORDER
+                ))
                 .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS)),
         )
     }).inner;
@@ -160,14 +164,16 @@ pub fn workflow_auxiliary_button(ui: &mut Ui, action: WorkflowAuxiliaryAction) -
                 egui::Align2::CENTER_CENTER,
                 "관리",
                 egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-                theme::MUTED,
+                theme::DISABLED_ACTION_TEXT,
             );
         }
         WorkflowAuxiliaryAction::Delete => paint_workflow_icon(
-            ui.painter(), response.rect.center(), WorkflowIcon::Trash, theme::MUTED,
+            ui.painter(), response.rect.center(), WorkflowIcon::Trash,
+            theme::DISABLED_ACTION_TEXT,
         ),
         WorkflowAuxiliaryAction::PreviousStage => paint_workflow_icon(
-            ui.painter(), response.rect.center(), WorkflowIcon::PreviousStage, theme::MUTED,
+            ui.painter(), response.rect.center(), WorkflowIcon::PreviousStage,
+            theme::DISABLED_ACTION_TEXT,
         ),
     }
     response
@@ -625,6 +631,19 @@ pub fn paint_source_document_surface(ui: &Ui, rect: Rect) {
         theme::CONTROL_RADIUS as f32,
         theme::INPUT,
         Stroke::new(theme::FRAME_STROKE_WIDTH, theme::BORDER),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// The 70pt client identification band is INFORMATION, not an editable
+/// source document. Keep its exact reserved Rect and use the management
+/// master's muted inner-row colors to establish a quieter visual tier.
+pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
+    ui.painter().rect(
+        rect,theme::CONTROL_RADIUS as f32,
+        theme::RECEPTION_CLIENT_SUMMARY_BG,
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,
+            theme::RECEPTION_CLIENT_SUMMARY_BORDER),
         egui::StrokeKind::Inside,
     );
 }
@@ -1814,6 +1833,10 @@ pub fn reception_items_header(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_HEADER_HEIGHT), Sense::hover()
     );
+    // The reception list has its own approved 32pt compact header, but
+    // follows the master's raised header surface and INSIDE bottom band.
+    // No extra layout height or clipped 1pt edge is introduced.
+    ui.painter().rect_filled(rect,0.0,theme::RAISED);
     let columns = reception_item_columns(rect);
     for (index, label) in ["품목", "수량", "금액"].iter().enumerate() {
         let cell = columns[index].shrink2(egui::vec2(theme::SPACE_4, 0.0));
@@ -1830,10 +1853,15 @@ pub fn reception_items_header(ui: &mut Ui) {
             galley, theme::SECONDARY,
         );
     }
-    ui.painter().line_segment(
-        [egui::pos2(rect.left(), rect.bottom()),
-         egui::pos2(rect.right(), rect.bottom())],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER)
+    ui.painter().rect_filled(
+        Rect::from_min_max(
+            egui::pos2(
+                rect.left(),
+                rect.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
+            ),
+            rect.right_bottom()
+        ),
+        0.0,theme::TABLE_HEADER_OUTLINE
     );
 }
 
