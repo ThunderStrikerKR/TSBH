@@ -2648,15 +2648,41 @@ impl BandoEgui {
                     new_clicked=true;
                 }
             },|body|{
-                egui::ScrollArea::vertical()
-                    .id_salt(("workflow-source-read-only",shipment.order_id.as_str()))
-                    .max_height(components::docked_section_body_height(height))
-                    .auto_shrink([false,false])
-                    .show(body,|content|{
-                        content.add(egui::Label::new(
-                            typography::body(&shipment.source_raw)
-                        ).selectable(true));
-                    });
+                // Read-only source and generated message are both documents.
+                // Reserve the same bordered INPUT canvas and 4pt inner inset;
+                // only the source's selectable content differs from a message.
+                body.spacing_mut().item_spacing.y=0.0;
+                let available=components::docked_section_body_height(height)
+                    .min(body.available_height().max(0.0));
+                let (document_rect,_)=body.allocate_exact_size(
+                    Vec2::new(body.available_width(),available),Sense::hover()
+                );
+                components::paint_source_document_surface(body,document_rect);
+                if available>0.0 {
+                    let inner=document_rect.shrink(theme::SPACE_4);
+                    body.scope_builder(
+                        UiBuilder::new()
+                            .id_salt(("workflow-source-read-only",shipment.order_id.as_str()))
+                            .max_rect(inner)
+                            .layout(Layout::top_down(Align::Min)),
+                        |canvas|{
+                            canvas.set_clip_rect(inner);
+                            canvas.set_width(inner.width());
+                            canvas.set_height(inner.height());
+                            egui::ScrollArea::vertical()
+                                .id_salt(("workflow-source-lines",shipment.order_id.as_str()))
+                                .max_height(inner.height())
+                                .auto_shrink([false,false])
+                                .show(canvas,|content|{
+                                    content.add(
+                                        egui::Label::new(typography::body(
+                                            &shipment.source_raw
+                                        )).selectable(true)
+                                    );
+                                });
+                        }
+                    );
+                }
             });
             if new_clicked{
                 self.workflow_ui.selection=None;
