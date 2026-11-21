@@ -29,7 +29,7 @@
 | 기본 컨트롤 | 텍스트 입력 36pt, 일반 선택·작업 버튼 34pt, 컨트롤 모서리 반경 6pt | `theme::INPUT_HEIGHT`, `ACTION_STANDARD_HEIGHT`, `CONTROL_RADIUS` |
 | 컨트롤 색상 | 활성 입력/드롭다운 `#292929`, 활성 일반 작업 버튼 `#303030`; 비활성 공통 컨트롤 `#1E1E1E`, 비활성 글씨 `#7C7C7C`, 테두리 `#373737` | `theme::INPUT`, `RAISED`, `MANAGEMENT_DROPDOWN_DISABLED_BG`, `DISABLED_ACTION_*` |
 | 공통 드롭다운 | 34pt 버튼, 왼쪽 캡션 패딩 12pt, 오른쪽 화살표 슬롯 30pt, 공통 V 도형(너비 10pt, 굵기 1.8pt) | `components::management_dropdown`, `paint_management_chevron`, `typography::MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y` |
-| 주문 내역 날짜 도구줄 | 36pt 도구줄·날짜 그룹, 이전/다음 28pt 대칭 슬롯, 달력 36pt 슬롯, `~` 16pt 중앙 슬롯, 바깥 요소 간격 8pt. 34pt 드롭다운·이동 버튼·일반 작업 버튼은 36pt 행 중심에 배치 | `theme::MANAGEMENT_DATE_*` / `order_history_manager::range_date_picker_rtl`, `history_date_controls` |
+| 주문 내역 날짜 도구줄 | 36pt 도구줄·날짜 그룹, 이전/다음 28pt 대칭 슬롯, 달력 36pt 슬롯, `~` 16pt 중앙 슬롯, 바깥 요소 간격 8pt. 34pt 드롭다운·이동 버튼·일반 작업 버튼은 36pt 행 중심에 배치. 날짜 `TextEdit` 글리프만 화면에서 확인한 약 1.5px 하향 편차에 따라 위쪽 2pt 광학 보정(마진 위 0/아래 4, 좌우 2)하며 입력·커서·힌트를 함께 이동 | `theme::MANAGEMENT_DATE_*` / `typography::management_date_text_margin` / `order_history_manager::range_date_picker_rtl`, `history_date_controls` |
 | 테이블 헤더 | 높이 36pt, 하단 윤곽선 2pt를 **내부**에 포함, 헤더·본문 가로 경계 동일 | `theme::MANAGEMENT_TABLE_HEADER_HEIGHT`, `components::management_sticky_table_header` |
 | 단일행 목록 | 높이 **42pt**. 같은 역할의 상품 목록·거래처 목록·배송그룹 편성·주문 대표행은 공통 토큰 참조 | `theme::MANAGEMENT_COMPACT_ROW_HEIGHT`, 관련 기존 상수는 **별칭** |
 | **단일 목록 스크롤 높이 (CONFLICT-004=A)** | 카드 아래 경계 − 표 본문 시작 위치 − 하단 필수 영역 예약 높이. 화면 전체 60% 일괄 제한 금지. 복수 표·펼침 상세·편집 패널은 예외 | `components::management_single_list_scroll_height`; `ExcelTableHeightPolicy` |
