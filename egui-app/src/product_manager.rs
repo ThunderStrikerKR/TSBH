@@ -816,7 +816,13 @@ impl ProductManager {
                     status.label(typography::caption("상품 가격표 조회 중…"));
                 });
             }
-            components::soft_divider(panel);
+            // Only a DIRECT filter-to-table transition uses the approved
+            // 21pt strip. Inline saving/loading notices are separate
+            // information blocks, so preserve their original divider.
+            let direct_filter_to_header=!saving&&!self.result.pending();
+            if !direct_filter_to_header{
+                components::soft_divider(panel);
+            }
             let original_spacing=panel.spacing().item_spacing.y;
             panel.spacing_mut().item_spacing.y=0.0;
             panel.spacing_mut().scroll=theme::management_scroll_style();
@@ -831,9 +837,15 @@ impl ProductManager {
             let min_width=base.iter().sum::<f32>()+5.0*gap;
             // Preserve the actual price-editing minimum and existing
             // native scrollbar allocation while using the shared table calculator.
-            let layout=components::management_list_table_header(
-                panel,theme::PRODUCT_TABLE_MIN_WIDTH.max(min_width)
-            );
+            let min_table_width=theme::PRODUCT_TABLE_MIN_WIDTH.max(min_width);
+            let layout=if direct_filter_to_header{
+                // Filter strip already contributes 8pt of bottom padding.
+                components::management_sticky_table_header_after_inset(
+                    panel,min_table_width,theme::SPACE_8
+                )
+            }else{
+                components::management_list_table_header(panel,min_table_width)
+            };
             let table_width=layout.table_width;
             let widths=theme::management_single_stretch_columns(
                 base,table_width,gap,0
