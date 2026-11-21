@@ -291,6 +291,7 @@ fn report_table<const N:usize>(
     align:[Align2;N],stretch_column:usize,indices:&[usize],
     sort:&mut Option<Sort>,format_row:impl Fn(usize)->[String;N],
 ){
+    ui.spacing_mut().scroll=theme::management_table_scroll_style();
     let previous_gap=ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y=0.0;
     let minimum=base.iter().sum::<f32>()+(N.saturating_sub(1)) as f32*COL_GAP;
@@ -302,14 +303,20 @@ fn report_table<const N:usize>(
         base,width,COL_GAP,stretch_column
     );
     let header=layout.header_rect;
+    // This report has multiple tables below each other: the track ends
+    // at its OWN row viewport and cannot extend into later sections.
+    let scroll_max_height=ui.ctx().content_rect().height()
+        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
+    let scroll_track=components::management_table_scroll_track_rect(
+        ui,scroll_max_height,0.0
+    );
     let mut first_x=None;
     let scroll=components::virtual_fixed_rows(
-        egui::ScrollArea::both().id_salt(id)
+        egui::ScrollArea::both().scroll_bar_rect(scroll_track).id_salt(id)
             .scroll_bar_visibility(
                 egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
             )
-            .max_height(ui.ctx().content_rect().height()
-                *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+            .max_height(scroll_max_height)
             .auto_shrink([false,false]),
         ui,width,ROW_HEIGHT,indices.len(),
         |list,visible_rows|{
