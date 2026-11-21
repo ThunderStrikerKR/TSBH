@@ -844,22 +844,29 @@ pub fn reception_message_footer_gap(ui:&mut Ui){
     );
 }
 
-/// Copy actions belong to the same fixed footer width as the document.
-/// Keep existing disabled behavior and actions, only align to master right.
-pub fn reception_message_copy_actions(ui:&mut Ui){
+/// One shared action layout for preview and working states. Button clicks
+/// return the requested Rust copy variant (false=unchanged, true=greeting);
+/// the caller alone owns clipboard writes and workflow-safe enablement.
+pub fn reception_message_copy_actions(ui:&mut Ui,enabled:bool)->Option<bool>{
+    let mut greeting=None;
     if ui.available_width()<280.0 {
         ui.with_layout(Layout::top_down(Align::Max),|actions|{
             actions.spacing_mut().item_spacing.y=theme::SPACE_8;
-            theme::action(actions,"그대로 복사",theme::ButtonRole::Standard,false);
-            theme::action(actions,"인사말 포함 복사",theme::ButtonRole::Standard,false);
+            if theme::action(actions,"그대로 복사",theme::ButtonRole::Standard,enabled)
+                .clicked(){greeting=Some(false);}
+            if theme::action(actions,"인사말 포함 복사",
+                theme::ButtonRole::Standard,enabled).clicked(){greeting=Some(true);}
         });
     }else{
         ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
             actions.spacing_mut().item_spacing.x=theme::SPACE_8;
-            theme::action(actions,"인사말 포함 복사",theme::ButtonRole::Standard,false);
-            theme::action(actions,"그대로 복사",theme::ButtonRole::Standard,false);
+            if theme::action(actions,"인사말 포함 복사",
+                theme::ButtonRole::Standard,enabled).clicked(){greeting=Some(true);}
+            if theme::action(actions,"그대로 복사",theme::ButtonRole::Standard,enabled)
+                .clicked(){greeting=Some(false);}
         });
     }
+    greeting
 }
 
 /// A subtle separation between data belonging to the same record.
