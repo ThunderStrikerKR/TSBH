@@ -19,6 +19,8 @@ pub const FONT_BRAND: f32 = 28.0;
 /// Compensate in this one typography token without moving the header row.
 pub const BRAND_OPTICAL_CENTER_Y: f32 = 5.0;
 pub const FONT_PAGE_HEADING: f32 = 20.0;
+// Centered, full-pane native OCR blocking state in Reception.
+pub const FONT_OCR_PROGRESS_TITLE: f32 = 28.0;
 pub const FONT_MODAL_TITLE: f32 = 18.0;
 pub const FONT_SECTION_HEADING: f32 = 16.0;
 pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
