@@ -1624,6 +1624,9 @@ impl BandoEgui {
         let feedback=ocr_original.map(|original_text|OcrFeedback {
             id:uuid::Uuid::new_v4().to_string(),
             order_id:receipt_id,
+            // Set from staff-confirmed dealer association by the serialized
+            // source-save worker; never infer the dealer from fragmented OCR.
+            client_id:None,
             original_text,
             corrected_text:text.clone(),
             learning_used,
