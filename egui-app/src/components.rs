@@ -53,6 +53,22 @@ pub fn virtual_fixed_rows<R>(
 
 pub const TABLE_HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 
+/// Semantic labels for management table columns. A screen selects the
+/// column role; the shared component owns the displayed header wording.
+/// This does not change the underlying product description or column size.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManagementTableColumnLabel {
+    ProductName,
+}
+
+impl ManagementTableColumnLabel {
+    pub const fn text(self) -> &'static str {
+        match self {
+            Self::ProductName => "상품명",
+        }
+    }
+}
+
 /**
  * Shared management-table checkbox placement.
  *
@@ -1902,6 +1918,13 @@ mod management_toolbar_geometry_tests {
             +theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING;
         assert_eq!(regular_outer,outer_height);
         assert_eq!(master_outer,outer_height);
+    }
+
+    #[test]
+    fn product_name_column_header_has_one_short_shared_label(){
+        // Freight Assignment and Product List must both use this semantic
+        // column label; the product-description value stays in the row.
+        assert_eq!(ManagementTableColumnLabel::ProductName.text(),"상품명");
     }
 
     #[test]
