@@ -17,7 +17,16 @@
 | **주문내역 마스터** | 고정 대표행에서 freight 전용 별칭 대신 의미 기반 `MANAGEMENT_COMPACT_ROW_HEIGHT` 사용. 필터 148pt 토큰 공유 | 7열과 가변 상세행, 날짜 줄바꿈, 마스터 헤더·표 레일 |
 | **배송그룹 편성 마스터** | 기존 148pt 필터를 `MANAGEMENT_FILTER_DROPDOWN_WIDTH`에 연결 | 6열, 64/36 잉여 폭, 고정행, 최종 승인 화면 |
 
-## 1.1. 스크롤바 하단 좌표를 공통 컴포넌트로 통합 (2026-11-21)
+## 최신 정정 — 모든 관리 표 스크롤바 연장값 7pt 단일화 (2026-11-21)
+
+- **사용자 실제 화면 검수 결과:** 배송 그룹 관리, 거래처 관리, 조합/기준 이력, 일일 결산에서 7pt를 적용해도 문제가 없으며 현재 화면들을 완성된 예외의 근거로 취급하면 안 된다.
+- **현재 유효 소스:** `theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION = 7pt` 및 `components::management_table_scroll_track_rect(ui,scroll_height)`. 모든 사용 화면은 숫자/역할 인자를 제거했다. 스크롤바 트랙 시작은 본문 시작, 끝은 본문 종료 Y + 4pt(7pt 연장 - 3pt 광학 보정)이다.
+- **분리 원칙:** 카드·본문의 높이와 푸터 예약은 화면 업무에 따라 유지하되, *스크롤바 하단 연장값*을 화면별로 구분하지 않는다. Excel의 편집 상세와 파일 작성 푸터도 높이 예약값을 보존한다.
+- 아래 과거 기록의 `0/1/16pt` 및 `ManagementTableScrollRole` 정책은 **이전 시도 기록**이며 더 이상 현재 구현을 설명하지 않는다. 다른 관리 화면들의 레이아웃은 아직 완성 판정이 아니다. 코드 반영과 Windows 실화면·배율 검수는 별도 판정한다.
+
+---
+
+## 1.1. 과거 스크롤바 정책 변경 기록 (폐기된 값 포함)
 
 - **원인:** 배송그룹 편성만 카드 하단 패딩 16pt를 트랙에 더하고, 주문내역은 트랙을 표 본문에서 끝냈으며, 다른 목록은 자체 `ScrollArea` 기본값에 맡겨져 있었다. 같은 SSOT 토큰을 공유해도 표 하단 테두리와 레일의 길이가 달랐다.
 - **수정 후 단일 소유자:** `components::management_table_scroll_track_rect(ui,scroll_height,bottom_extension)`가 모든 관리 표의 트랙 상단 +3pt 및 하단 좌표를 계산한다. `theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET=3pt`가 상단 규칙을 소유한다.
