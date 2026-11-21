@@ -1367,7 +1367,7 @@ impl FreightManager {
                 section,card_min_height,0.0
             );
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION
+                section,scroll_max_height,components::ManagementTableScrollRole::Master
             );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
@@ -1958,13 +1958,13 @@ impl FreightManager {
             let scroll_max_height=components::management_single_list_scroll_height(
                 section,card_min_height,footer_reserve
             );
-            // Empty-state caption follows the table: reserve its space.
-            // Other cases can extend the rail to the section-card edge.
-            let bottom_extension=if footer_reserve>0.0{
-                0.0
-            }else{theme::SECTION_PADDING};
+            // The common Section role owns the rail's end coordinate.
+            // Preserve the empty-state caption below it when present.
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,bottom_extension
+                section,scroll_max_height,
+                components::ManagementTableScrollRole::Section{
+                    content_below:footer_reserve>0.0
+                }
             );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
@@ -2574,7 +2574,7 @@ fn freight_history_table(
         *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
     // Multi-section history: never extend a rail through the next card.
     let scroll_track=components::management_table_scroll_track_rect(
-        ui,scroll_max_height,0.0
+        ui,scroll_max_height,components::ManagementTableScrollRole::Embedded
     );
     let mut first_row_left=None;
     let scroll=components::virtual_fixed_rows(
