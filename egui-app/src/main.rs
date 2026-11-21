@@ -2912,6 +2912,7 @@ impl BandoEgui {
         let mut begin_input = false;
         let mut begin_new_order = false;
         let mut start_clipboard = None;
+        let mut start_region_capture=false;
         let mut open_client_chooser = false;
         let mut open_manual_workspace = false;
         let mut request_source_clear = false;
@@ -3266,7 +3267,8 @@ impl BandoEgui {
                 // Existing internal 8pt rhythms stay unchanged. When the
                 // pane is short, the minimum gap triggers LOCAL scrolling.
                 let clipboard_group_height = typography::SUBSECTION_LINE_HEIGHT
-                    + 2.0 * typography::METADATA_LINE_HEIGHT
+                    + typography::METADATA_LINE_HEIGHT
+                    + theme::RECEPTION_SHORTCUT_ROW_HEIGHT
                     + theme::ACTION_EMPHASIZED_HEIGHT
                     + 3.0 * theme::SPACE_8;
                 let manual_group_height = typography::SUBSECTION_LINE_HEIGHT
@@ -3311,21 +3313,25 @@ impl BandoEgui {
                             start_clipboard = Some(OrderType::Dealer);
                         }
                         intake.add_space(theme::SPACE_8);
-                        intake.label(typography::caption(
-                            "이미지 캡처는 Ctrl + Shift + S 또는 Print Screen으로 복사하세요."
-                        ));
+                        components::reception_capture_shortcut_hint(intake);
                         intake.add_space(balanced_gap / 2.0);
                         components::soft_divider(intake);
                         intake.add_space(balanced_gap / 2.0);
                         intake.label(typography::subsection_heading("다른 방법으로 접수"));
                         intake.add_space(theme::SPACE_8);
-                        let (direct, _) = components::paired_actions(
+                        let (direct,capture) = components::paired_actions(
                             intake,
                             ("직접 입력", ButtonRole::Emphasized, true),
-                            ("캡처 범위 지정", ButtonRole::Emphasized, false),
+                            // A new region can be captured even if the clipboard
+                            // starts empty. Disable only during an ongoing OCR.
+                            ("캡처 범위 지정", ButtonRole::Emphasized,
+                                !self.clipboard_busy),
                         );
                         if direct.clicked() {
                             begin_input = true;
+                        }
+                        if capture.clicked(){
+                            start_region_capture=true;
                         }
                         intake.add_space(balanced_gap / 2.0);
                         components::soft_divider(intake);
@@ -3420,6 +3426,9 @@ impl BandoEgui {
         }
         if let Some(kind) = start_clipboard {
             self.begin_clipboard_intake(kind, ui.ctx().clone());
+        }
+        if start_region_capture{
+            self.begin_region_capture(self.order_type,ui.ctx().clone());
         }
     }
 
