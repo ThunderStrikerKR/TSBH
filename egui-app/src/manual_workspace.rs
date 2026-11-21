@@ -620,18 +620,23 @@ impl ManualWorkspace {
                     );
                         });
                     });
-                ui.separator();
-                ui.horizontal(|footer|{
-                    // React manual footer: status stays left; close, then
-                    // primary apply stay together at the right edge.
-                    footer.label(typography::caption(
-                        "정식 접수는 주문 확인 완료"
-                    ));
+                ui.add_space(theme::SPACE_12);
+                components::modal_action_row(ui,|footer|{
                     footer.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |actions|{
-                            if theme::action(actions,"초안에 적용",ButtonRole::Primary,!busy)
-                                .clicked(){apply=true;}
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |row|{
+                            // Keep status LEFT and primary apply RIGHT.
+                            row.label(typography::caption(
+                                "정식 접수는 주문 확인 완료"
+                            ));
+                            row.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |actions|{
+                                    if theme::action(actions,"초안에 적용",
+                                        ButtonRole::Primary,!busy
+                                    ).clicked(){apply=true;}
+                                }
+                            );
                         }
                     );
                 });
