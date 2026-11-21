@@ -891,10 +891,9 @@ pub fn management_table_scroll_track_rect(
 }
 
 /// The only place that computes top/bottom of a management table rail.
-/// The rail starts exactly at the fixed header's lower edge (0pt top gap)
-/// and stops 3pt before its requested bottom. This avoids the broken
-/// header-to-scrollbar join while retaining bottom clearance. The row
-/// viewport and the data columns are never extended by this function.
+/// The rail starts exactly below its fixed header (0pt gap); 7pt of common
+/// extension minus 3pt optical shortening puts its end 4pt past the body.
+/// The row viewport, data columns and any reserved footer stay unchanged.
 fn management_table_scroll_track_geometry(
     bounds:Rect,scroll_height:f32
 )->Rect {
