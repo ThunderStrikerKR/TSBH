@@ -397,18 +397,21 @@ pub fn layout(
     job
 }
 
-/// Rounded token rectangles are inserted BEFORE TextEdit paints its glyphs.
-/// Use the actual galley rows rather than guessed fixed character widths:
-/// Korean text, emoji, wrapped addresses and DPI all share native coordinates.
+/// Rounded blocks are painted beneath the editor glyphs, but the blue focus
+/// border is painted over all blocks. In particular, a later gray token must
+/// never hide the active blue field when adjacent token padding overlaps.
+/// Glyph positions come from egui; source bytes and character cursors stay
+/// untouched, including Korean text and wrapped addresses.
 pub fn block_shapes(
     raw:&str,galley:&egui::Galley,galley_pos:egui::Pos2,
     spans:&[LinkedSpan],selected_recipient:Option<&str>,
     active:Option<&LinkKey>,clip:egui::Rect,
-)->Vec<egui::Shape> {
+)->(Vec<egui::Shape>,Vec<egui::Shape>) {
     let blocks=visual_blocks(raw,spans,selected_recipient,active);
-    if blocks.is_empty() {return Vec::new();}
     let characters:Vec<char>=raw.chars().collect();
-    let mut shapes=Vec::new();
+    let mut normal=Vec::new();
+    let mut focused=Vec::new();
+    let mut outlines=Vec::new();
     let mut row_start=0usize;
     for (row_index,placed) in galley.rows.iter().enumerate() {
         let glyphs=&placed.row.glyphs;
@@ -423,38 +426,43 @@ pub fn block_shapes(
                 let first=start-row_start;
                 let last=end-row_start-1;
                 if first>=glyphs.len() || last>=glyphs.len() {continue;}
-                // Exclude a newline control glyph if present in this egui build.
                 let end_x=if glyphs[last].chr=='\n' && last>first {
                     glyphs[last-1].pos.x+glyphs[last-1].advance_width
                 } else {
                     glyphs[last].pos.x+glyphs[last].advance_width
                 };
-                let left=galley_pos.x+placed.pos.x+glyphs[first].pos.x-3.0;
-                let right=galley_pos.x+placed.pos.x+end_x+3.0;
+                // Active outlines get a small amount of breathing room while
+                // normal gray tokens do not intrude into neighbouring fields.
+                let hpad=if block.focused {2.0} else {0.5};
+                let left=galley_pos.x+placed.pos.x+glyphs[first].pos.x-hpad;
+                let right=galley_pos.x+placed.pos.x+end_x+hpad;
                 if right<=left {continue;}
                 let rect=egui::Rect::from_min_max(
                     egui::pos2(left,y-1.0),
                     egui::pos2(right,y+height+1.0)
                 );
                 if !rect.intersects(clip) {continue;}
-                shapes.push(egui::Shape::rect_filled(rect,4.0,block.fill));
+                let background=egui::Shape::rect_filled(rect,4.0,block.fill);
                 if block.focused {
-                    shapes.push(egui::Shape::rect_stroke(
+                    focused.push(background);
+                    outlines.push(egui::Shape::rect_stroke(
                         rect,4.0,egui::Stroke::new(2.0,SOURCE_ACTIVE_BORDER),
                         egui::StrokeKind::Inside
                     ));
+                } else {
+                    normal.push(background);
                 }
             }
         }
         row_start=row_end;
-        // 0.33's rendered row omits the paragraph newline from glyphs.
-        // Wrapped rows have no newline, so never skip a real text character.
         if row_index+1<galley.rows.len() &&
            characters.get(row_start)==Some(&'\n') {
             row_start+=1;
         }
     }
-    shapes
+    // The focus fill MUST paint after gray fills, regardless of token order.
+    normal.extend(focused);
+    (normal,outlines)
 }
 
 #[cfg(test)]
