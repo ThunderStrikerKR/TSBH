@@ -450,12 +450,17 @@ pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
 pub fn modal_section<R>(
     ui:&mut Ui,title:&str,contents:impl FnOnce(&mut Ui)->R
 )->R {
+    // Frame::show is otherwise content-sized and the section border can
+    // become narrower when a list is empty or an error message disappears.
+    let inner_width=(ui.available_width()-2.0*theme::MODAL_SECTION_PADDING
+        -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
     Frame::new()
         .fill(theme::MODAL_SECTION_BG)
         .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER))
         .corner_radius(egui::CornerRadius::same(theme::MODAL_SECTION_RADIUS))
         .inner_margin(theme::MODAL_SECTION_PADDING)
         .show(ui,|section|{
+            section.set_min_width(inner_width);
             section.label(typography::section_heading(title));
             theme::divider(section);
             contents(section)
