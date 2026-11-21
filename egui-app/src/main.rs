@@ -4097,6 +4097,15 @@ impl BandoEgui {
         }
 
         let mut next_recipient = None;
+        let recipient_nav=self.analysis.as_ref()
+            .map(reception_service::recipients)
+            .filter(|recipients|recipients.len()>1)
+            .map(|recipients|{
+                let index=self.selected_recipient.min(recipients.len()-1);
+                let name=reception_service::text(&recipients[index],"name")
+                    .to_owned();
+                (name,index,recipients.len())
+            });
         ui.scope_builder(
             UiBuilder::new().id_salt("details-recipient")
                 .max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
@@ -4104,34 +4113,17 @@ impl BandoEgui {
                 pane.set_clip_rect(recipient_rect);
                 pane.set_width(recipient_rect.width());
                 pane.set_height(recipient_rect.height());
-                Self::section(pane, "수취인별 주문 정보", recipient_height, |ui| {
+                Self::section_with_header(
+                    pane,"수취인별 주문 정보",recipient_height,
+                    |header|{
+                        if let Some((name,index,total))=recipient_nav.as_ref(){
+                            next_recipient=components::reception_recipient_navigator(
+                                header,name,*index,*total
+                            );
+                        }
+                    },|ui|{
                     if let Some(analysis) = &self.analysis {
                         let recipients = reception_service::recipients(analysis);
-                        if recipients.len() > 1 {
-                            egui::ScrollArea::horizontal()
-                                .id_salt("analyzed-recipients")
-                                .drag_to_scroll(false)
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        for (index, recipient) in recipients.iter().enumerate() {
-                                            let name = reception_service::text(recipient, "name");
-                                            let label = if name.is_empty() {
-                                                format!("수취인 {}", index + 1)
-                                            } else {
-                                                format!("{} · {}", index + 1, name)
-                                            };
-                                            let role = if index == self.selected_recipient {
-                                                ButtonRole::ActiveNavigation
-                                            } else {
-                                                ButtonRole::Quiet
-                                            };
-                                            if theme::action(ui, &label, role, true).clicked() {
-                                                next_recipient = Some(index);
-                                            }
-                                        }
-                                    });
-                                });
-                        }
                         if let Some(recipient) = recipients.get(self.selected_recipient) {
                             let mut name = reception_service::text(recipient, "name").to_owned();
                             let mut address = reception_service::text(recipient, "address").to_owned();
