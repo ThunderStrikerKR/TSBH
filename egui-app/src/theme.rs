@@ -454,6 +454,11 @@ pub const MANAGEMENT_CLIENT_SEARCH_MAX_WIDTH: f32 = 680.0;
 // Reserve enough width for a single search field and two unchanged
 // right-aligned actions; in a narrow split-pane they stack on two lines.
 pub const MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH: f32 = 700.0;
+/// Two Excel queue actions occupy one trailing slot of the shared 36pt
+/// management toolbar. Stack below search only in genuinely narrow panes.
+pub const MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH: f32 = 330.0;
+/// Draw the fixed-table header outline *inside* its 36pt rectangle.
+pub const MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT: f32 = 2.0;
 // Existing React TierBadge palette; color is display-only, never a pricing rule.
 pub const CLIENT_TIER_WHOLESALE_BG: Color32 = Color32::from_rgb(35,76,55);
 pub const CLIENT_TIER_WHOLESALE_TEXT: Color32 = Color32::from_rgb(166,237,192);
