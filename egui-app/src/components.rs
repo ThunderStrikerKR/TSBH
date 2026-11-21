@@ -1117,6 +1117,68 @@ pub fn management_list_table_header(
     }
 }
 
+/// A history overview without interactive toolbar controls still has the
+/// same fixed-header origin as the assignment master: 36pt toolbar role plus
+/// the approved 21pt transition. Reserve those 57pt as ONE separator area,
+/// not a phantom interactive toolbar widget with its own implicit spacing.
+/// This keeps the first row and the 1pt divider on the master coordinates.
+pub fn management_sticky_table_header_without_toolbar(
+    ui:&mut Ui,min_table_width:f32
+)->ManagementTableHeader {
+    management_sticky_table_header_with_top_gap(
+        ui,min_table_width,
+        theme::INPUT_HEIGHT+theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
+    )
+}
+
+/// Paint a freight master header's background and return its 34pt text area.
+/// Shared by assignment, group management and combination history so text,
+/// arrow centers and sort hit rects never use the lower 2pt outline.
+pub fn management_master_header_begin(
+    ui:&Ui,header_rect:Rect,header_content_rect:Rect
+)->Rect {
+    debug_assert!((header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT)
+        .abs()<0.01);
+    let text_rect=Rect::from_min_max(
+        header_content_rect.min,
+        egui::pos2(
+            header_content_rect.right(),
+            header_content_rect.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
+        )
+    );
+    debug_assert!((text_rect.height()-
+        (theme::MANAGEMENT_TABLE_HEADER_HEIGHT-
+            theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT)).abs()<0.01);
+    ui.painter().with_clip_rect(header_rect)
+        .rect_filled(header_rect,0.0,theme::RAISED);
+    text_rect
+}
+
+/// Draw the master header's solid 2pt bottom band AFTER labels, separators
+/// and hover chrome. A centered 1pt line at bottom() is half clipped.
+pub fn management_master_header_finish(ui:&Ui,header_rect:Rect){
+    ui.painter().with_clip_rect(header_rect).rect_filled(
+        Rect::from_min_max(
+            egui::pos2(
+                header_rect.left(),
+                header_rect.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
+            ),header_rect.right_bottom()
+        ),0.0,theme::TABLE_HEADER_OUTLINE
+    );
+}
+
+/// Identical sort-hover outline for all freight management list headers.
+/// The caller supplies the column intersected with the 34pt text area.
+pub fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
+    if hit.width()>0.0 && hit.height()>0.0 {
+        ui.painter().with_clip_rect(hit).rect_stroke(
+            hit.shrink(1.0),2.0,
+            Stroke::new(1.0,theme::BORDER),
+            egui::StrokeKind::Inside
+        );
+    }
+}
+
 /// One 10pt / 1.8pt-stroke chevron for selectors, date stepping and
 /// expand/collapse affordances. Rotating the same vector keeps the glyphs
 /// identical at all orientations and avoids Windows font-dependent triangles.
