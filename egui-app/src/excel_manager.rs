@@ -241,15 +241,17 @@ fn table<const N:usize>(
             ui.ctx().content_rect().height()*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION,
     };
     // Queue has its export footer below; expanded details and capped
-    // reports retain their own space. Only a full-card history with no
-    // trailing controls may let its rail reach the 1pt card edge.
-    let bottom_extension=match height_policy{
-        ExcelTableHeightPolicy::FillCard{reserve_below,..}
-            if reserve_below<=0.0=>theme::FRAME_STROKE_WIDTH,
-        _=>0.0,
+    // reports retain their own space. A full-card history without trailing
+    // content can use the List rail role; the common helper owns its extent.
+    let rail_role=match height_policy{
+        ExcelTableHeightPolicy::FillCard{reserve_below,..}=>
+            components::ManagementTableScrollRole::List{
+                content_below:reserve_below>0.0
+            },
+        _=>components::ManagementTableScrollRole::Embedded,
     };
     let scroll_track=components::management_table_scroll_track_rect(
-        ui,scroll_max_height,bottom_extension
+        ui,scroll_max_height,rail_role
     );
     let mut left=None;
     let output=components::virtual_fixed_rows(
