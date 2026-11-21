@@ -1865,9 +1865,9 @@ mod management_toolbar_geometry_tests {
     }
 
     #[test]
-    fn master_table_scroll_rail_centers_in_bottom_inset_without_moving_rows(){
-        // The viewport ends 16pt above the outer border, but the native
-        // rail finishes 8pt above it, without protruding into the outline.
+    fn master_table_scroll_rail_ends_at_row_viewport_without_moving_rows(){
+        // Both the rows and the native rail finish on the same measured
+        // bottom edge, preserving 16pt of lower card padding.
         let bounds=Rect::from_min_size(
             egui::pos2(16.0,300.0),Vec2::new(800.0,484.0)
         );
@@ -1882,13 +1882,11 @@ mod management_toolbar_geometry_tests {
         assert_eq!(track.top(),bounds.top()); // joins fixed header
         assert_eq!(painted_rows_bottom,784.0); // unchanged row viewport
         assert_eq!(outer_card_bottom,800.0); // unchanged outer card
-        assert_eq!(track.bottom(),outer_card_bottom
-            -theme::MANAGEMENT_MASTER_TABLE_SCROLL_BOTTOM_CLEARANCE);
-        assert_eq!(track.bottom(),792.0); // 8pt from outer border
-        assert_eq!(track.bottom()-painted_rows_bottom,
-            theme::SECTION_PADDING
-                -theme::MANAGEMENT_MASTER_TABLE_SCROLL_BOTTOM_CLEARANCE);
-        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION,11.0);
+        assert_eq!(track.bottom(),painted_rows_bottom);
+        assert_eq!(track.bottom(),784.0);
+        assert_eq!(outer_card_bottom-track.bottom(),theme::SECTION_PADDING);
+        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION,
+            theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET);
     }
 
     #[test]
