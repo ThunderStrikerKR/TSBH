@@ -14,6 +14,11 @@ pub struct WorkingReception {
     pub id: String,
     pub raw: String,
     pub order_type: String,
+    /// Route of the FIRST source content; None means legacy/unknown.
+    /// Adding OCR later never overwrites the original route.
+    pub source_input_method: Option<String>,
+    /// Most recent imported input route, even when sources were appended.
+    pub last_input_method: Option<String>,
     /// Rust evidence is valid only for this exact source string.
     pub analysis_raw: Option<String>,
     pub analysis_evidence: Option<Value>,
@@ -233,6 +238,8 @@ impl PreviewStore {
                 .filter(|value| !value.is_null()).cloned();
             drafts.push(WorkingReception {
                 id: id.to_owned(), raw: source.to_owned(), order_type: kind.to_owned(),
+                source_input_method: row.get("sourceInputMethod").and_then(Value::as_str).map(str::to_owned),
+                last_input_method: row.get("lastInputMethod").and_then(Value::as_str).map(str::to_owned),
                 analysis_raw, analysis_evidence, client_match,
                 chat_handle: row.get("chatHandle").and_then(Value::as_str).map(str::to_owned),
                 chat_title: row.get("chatTitle").and_then(Value::as_str).map(str::to_owned),
@@ -250,6 +257,7 @@ impl PreviewStore {
             drafts.push(WorkingReception {
                 id: "legacy-working-source".into(),
                 raw: raw.clone(), order_type: order_type.clone(),
+                source_input_method: None, last_input_method: None,
                 analysis_raw: None, analysis_evidence: None, client_match: None,
                 chat_handle: None, chat_title: None,
                 client_id: None, client_selection: None, pricing_preview: None,
@@ -277,6 +285,8 @@ impl PreviewStore {
             "id": item.id,
             "raw": item.raw,
             "orderType": item.order_type,
+            "sourceInputMethod": item.source_input_method,
+            "lastInputMethod": item.last_input_method,
             "analysisRaw": item.analysis_raw,
             "analysisEvidence": item.analysis_evidence,
             "clientMatch": item.client_match,
@@ -327,6 +337,20 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
         }
         if !matches!(draft.order_type.as_str(), "AGENCY" | "DEALER") {
             return Err("저장할 접수 유형이 잘못되었습니다.".into());
+        }
+        // Imported legacy drafts have unknown provenance. Never silently
+        // reinterpret their input as typed text or OCR.
+        for method in [
+            draft.source_input_method.as_deref(),
+            draft.last_input_method.as_deref(),
+        ].into_iter().flatten() {
+            if !matches!(method, "TEXT_PASTE" | "OCR" | "DIRECT") {
+                return Err("발주원문 접수 경로 정보가 잘못되었습니다.".into());
+            }
+        }
+        if draft.last_input_method.is_some() && draft.source_input_method.is_none()
+            && draft.raw.trim().is_empty() {
+            return Err("빈 발주서에는 마지막 접수 경로를 기록할 수 없습니다.".into());
         }
         bytes = bytes.checked_add(draft.raw.len())
             .ok_or("접수 원문 총 크기가 너무 큽니다.")?;
