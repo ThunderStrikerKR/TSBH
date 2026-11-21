@@ -1762,6 +1762,14 @@ impl BandoEgui {
         let mut apply:Option<(
             String,OrderType,Option<ChatWindow>,Option<u32>,String,bool,Option<String>
         )>=None;
+        // Never guess dealer identity from fragmented table OCR. If an
+        // employee already verified a dealer, use that exact template cohort.
+        // Otherwise the experimental learner requires a unique matching
+        // layout signature before offering any structural changes.
+        let verified_template_client=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+            .filter(|row|row.client_selection.as_deref()==Some("MANUAL"))
+            .and_then(|row|row.client_id.clone());
         // Receive optional model suggestions without reading SQLite or
         // running pattern learning on the egui UI thread.
         if let Some(review)=self.ocr_review.as_mut(){
@@ -1931,13 +1939,21 @@ impl BandoEgui {
                                 review.model_error=None;
                                 if review.learning_enabled {
                                     let initial=review.original_text.clone();
+                                    let template_client=verified_template_client.clone();
                                     let (tx,rx)=mpsc::channel();
                                     review.model_receiver=Some(rx);
                                     let repaint=toolbar.ctx().clone();
                                     std::thread::spawn(move||{
-                                        let outcome=preview_store::PreviewStore
-                                            ::list_ocr_feedback(1000)
-                                            .map(|rows|ocr_learning::suggest(&initial,&rows));
+                                        let outcome=(||{
+                                            let spellings=preview_store::PreviewStore
+                                                ::list_ocr_feedback(1000)?;
+                                            let layouts=preview_store::PreviewStore
+                                                ::list_ocr_layout_examples(1000)?;
+                                            Ok::<_,String>(ocr_learning::suggest_with_layout(
+                                                &initial,&spellings,&layouts,
+                                                template_client.as_deref()
+                                            ))
+                                        })();
                                         let _=tx.send(outcome);
                                         repaint.request_repaint();
                                     });
