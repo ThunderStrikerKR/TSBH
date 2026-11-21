@@ -16,6 +16,11 @@ on:
       - egui-app/src/gateway.rs
       - egui-app/src/developer_ui_samples.rs
       - egui-app/src/main.rs
+      - egui-app/src/floating_notice.rs
+      - egui-app/src/settings_view.rs
+      - egui-app/src/client_manager.rs
+      - egui-app/src/automatic_message_manager.rs
+      - egui-app/src/product_excel_ui.rs
       - egui-app/src/business_state.rs
       - DEV_WINDOWS_EGUI.cmd
       - egui-app/src/category_manager.rs
@@ -57,6 +62,8 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify floating notice placement at screen edges and caret anchors
+        run: cargo test --manifest-path egui-app/Cargo.toml floating_notice::tests -- --nocapture
       - name: Verify shared Freight and Excel table-checkbox centered geometry
         run: cargo test --manifest-path egui-app/Cargo.toml components::management_toolbar_geometry_tests::table_checkbox -- --nocapture
       - name: Verify shared concise product-name table header
