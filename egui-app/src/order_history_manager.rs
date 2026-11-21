@@ -1386,9 +1386,9 @@ impl OrderHistoryManager {
                     "저장된 주문이 없습니다."
                 }else{"조건에 맞는 주문이 없습니다."},theme::MUTED))
             }else{None};
-            // Keep the body viewport above the 16pt bottom inset; extend
-            // only the rail through that inset to 3pt before the card border.
-            // This matches Freight Assignment without changing visible rows.
+            // Keep body and rail endpoints aligned above the card's
+            // 16pt bottom inset. The 3pt extension only neutralizes the
+            // shared rail's 3pt optical shortening, without moving rows.
             let scroll_max_height=components::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
