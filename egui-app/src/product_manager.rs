@@ -118,10 +118,11 @@ fn product_table_cells(origin:Pos2,widths:&[f32;6],height:f32)->[Rect;6]{
         rect
     })
 }
-fn product_table_text(ui:&mut Ui,rect:Rect,text:&str,emphasized:bool,unique:impl std::hash::Hash){
+fn product_table_text(ui:&mut Ui,rect:Rect,text:&str,
+    role:typography::ManagementTableCellRole,unique:impl std::hash::Hash){
     let content=rect.shrink2(Vec2::new(theme::SPACE_8,0.0));
-    let color=if emphasized{theme::TEXT}else{theme::SECONDARY};
-    let galley=typography::freight_table_cell_galley(ui,text,emphasized,color);
+    let color=typography::management_table_cell_color(role);
+    let galley=typography::management_table_cell_galley(ui,text,role);
     ui.painter().with_clip_rect(content.intersect(ui.clip_rect())).galley(
         egui::pos2(content.left(),content.center().y-galley.size().y/2.0),
         galley,color,
@@ -137,7 +138,8 @@ fn product_price_text(ui:&mut Ui,rect:Rect,value:&Value) {
     ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).text(
         egui::pos2(rect.right()-theme::SPACE_8,rect.center().y),
         egui::Align2::RIGHT_CENTER,text,
-        typography::numeric_editor_font(),theme::TEXT
+        typography::management_table_money_font(),
+        typography::management_table_cell_color(typography::ManagementTableCellRole::Money)
     );
 }
 fn displayed_variant<'a>(
@@ -931,7 +933,7 @@ impl ProductManager {
                                 let display=if subtitle.is_empty(){name.to_owned()}
                                     else{format!("{name} / {subtitle}")};
                                 product_table_text(
-                                    row,cells[0],&display,true,(product_id,0)
+                                    row,cells[0],&display,typography::ManagementTableCellRole::ProductName,(product_id,0)
                                 );
                                 let variants=rows(&product["variants"]);
                                 let mut selected_id=self.selected_variants
@@ -982,9 +984,9 @@ impl ProductManager {
                                     let label=option_text(product,variant);
                                     product_table_text(row,cells[1],
                                         if label.is_empty(){"—"}else{&label},
-                                        false,(product_id,1));
+                                        typography::ManagementTableCellRole::Option,(product_id,1));
                                 }else{
-                                    product_table_text(row,cells[1],"—",false,(product_id,1));
+                                    product_table_text(row,cells[1],"—",typography::ManagementTableCellRole::Option,(product_id,1));
                                 }
                                 self.selected_variants.insert(
                                     product_id.to_owned(),selected_id.clone()
@@ -1072,7 +1074,7 @@ impl ProductManager {
                                         }
                                     }else{
                                         product_table_text(row,cells[offset+2],"—",
-                                            false,(product_id,offset+2));
+                                            typography::ManagementTableCellRole::Money,(product_id,offset+2));
                                     }
                                 }
                                 let action_rect=Rect::from_center_size(
