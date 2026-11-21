@@ -1874,6 +1874,7 @@ impl FreightManager {
         let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
         theme::section_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
+            section.spacing_mut().scroll=theme::management_table_scroll_style();
             section.horizontal(|heading|{
                 heading.label(typography::section_heading("그룹 운임표"));
                 settings_help::icon(heading,"그룹 운임표");
@@ -1954,9 +1955,18 @@ impl FreightManager {
             let scroll_max_height=components::management_single_list_scroll_height(
                 section,card_min_height,footer_reserve
             );
+            // Empty-state caption follows the table: reserve its space.
+            // Other cases can extend the rail to the section-card edge.
+            let bottom_extension=if footer_reserve>0.0{
+                0.0
+            }else{theme::SECTION_PADDING};
+            let scroll_track=components::management_table_scroll_track_rect(
+                section,scroll_max_height,bottom_extension
+            );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
+                    .scroll_bar_rect(scroll_track)
                     .id_salt("freight-group-rates-rows")
                     .scroll_bar_visibility(
                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
@@ -2546,6 +2556,7 @@ fn freight_history_table(
     total_rows:usize,mut sort:Option<&mut Option<HistorySort>>,
     mut render_row:impl FnMut(&mut Ui,&[egui::Rect;6],usize),
 ){
+    ui.spacing_mut().scroll=theme::management_table_scroll_style();
     let old_spacing=ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y=0.0;
     let minimum=bases.iter().sum::<f32>()
@@ -2556,15 +2567,21 @@ fn freight_history_table(
         bases,shares,width,theme::FREIGHT_ASSIGNMENT_COL_GAP
     );
     let header_rect=layout.header_rect;
+    let scroll_max_height=ui.ctx().content_rect().height()
+        *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
+    // Multi-section history: never extend a rail through the next card.
+    let scroll_track=components::management_table_scroll_track_rect(
+        ui,scroll_max_height,0.0
+    );
     let mut first_row_left=None;
     let scroll=components::virtual_fixed_rows(
         egui::ScrollArea::both()
+            .scroll_bar_rect(scroll_track)
             .id_salt(id)
             .scroll_bar_visibility(
                 egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
             )
-            .max_height(ui.ctx().content_rect().height()
-                *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+            .max_height(scroll_max_height)
             .auto_shrink([false,false]),
         ui,width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,total_rows,
         |table,visible_rows|{
