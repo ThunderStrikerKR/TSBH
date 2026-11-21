@@ -611,9 +611,9 @@
 
 ### 65차 — 공통 팝업 테마 1차 시범 적용 (2026-11-22)
 
-- **마스터**: 운임 관리 → 배송 그룹 편성의 표면 역할, 1pt 구분선, 12/16pt 간격 및 기존 13~18pt 타이포그래피 위계를 따른다. 팝업에 배송 그룹 표의 36pt 헤더·42pt 행을 획일적으로 복제하지 않는다.
+- **기존 팔레트 출처**: 운임 관리 → 배송 그룹 편성의 표면 역할, 1pt 구분선, 12/16pt 간격 및 기존 타이포그래피 위계를 따른다. 2026-11-22에 승인한 **OCR 검토 팝업의 최종 헤더·단일 본문·푸터 구성**이 이후 팝업의 상위 구조 마스터다. 배송 그룹 표의 36pt 헤더·42pt 행이나 OCR 2열 콘텐츠를 모든 팝업에 강제하지 않는다.
 - **단일 토큰 소유**: `egui-app/src/theme.rs`의 `MODAL_CHROME_BG = TABLE_ROW_ALT_BG`, `MODAL_SECTION_BG = TABLE_ROW_ALT_BG`, `MODAL_SECTION_HEADER_BG = INPUT`, `MODAL_HEADER_HEIGHT = 56`, `MODAL_FOOTER_HEIGHT = 58`과 기존 `DIVIDER`, `BORDER`, `PANEL`, `SPACE_12`를 사용한다. 독립적인 RGB 팝업 팔레트를 만들지 않는다.
-- **컴포넌트**: `egui-app/src/components.rs`의 `modal_header_chrome`/`modal_header_in_rect`(제목과 취소·닫기, 하단선), `modal_section`/`modal_section_surface`(업무별 배경·제목·단일 구분), `modal_footer_chrome`/`modal_footer_in_rect`(상단선과 최종 실행 버튼)을 사용한다. 각 화면에서 동일한 배경·여백·구분선을 임의로 다시 만들지 않는다.
+- **컴포넌트**: OCR에서 검증한 `modal_master_layout`(헤더·본문·푸터 고정 영역), `modal_master_header_in_rect`(제목·설명·우상단 닫기), `modal_master_workspace_surface`(한 겹의 본문 표면·선택적 제목줄 및 분할선), `modal_master_footer_in_rect`(상단 구분선·우하단 실행)을 새 팝업의 우선 규격으로 사용한다. 레거시 `modal_header_chrome`/`modal_section`/`modal_footer_chrome`은 검수 전 기존 화면과의 호환을 위해 유지한다.
 - **1차 적용 대상**: `egui-app/src/main.rs`의 OCR 검토(원본 2 : 인식 텍스트 1, 단일 비교 작업면과 국소 스크롤), `egui-app/src/client_chooser.rs`의 거래처 변경(검색 그룹/결과 그룹), `egui-app/src/freight_manager.rs`의 배송 그룹 삭제 확인(대상 그룹/하단 위험 작업). 다른 팝업은 사용자 시각 검수 이후 점진적으로 이전한다.
 - **시각·동작 불변식**: 상태·텍스트 길이·이미지 확대가 팝업 제목·본문 경계·하단 작업 버튼을 움직이지 않아야 한다. 우상단 `취소/닫기`, 우하단 확인/적용/삭제, 카카오톡 제외 작업영역 기준 배치와 움직임/크기 조절 금지, 기존 Rust 명령·경고·미저장 확인 및 실패 처리 흐름을 유지한다. 간단한 확인창에 업무 카드 두 개를 무조건 만들지 않는다.
 - **검수**: 100/125/150% DPI에서 OCR 긴 원문·400% 확대, 거래처 검색 0/수백 건과 비동기 오류, 배송 그룹 연결 상품 0/다수 및 좁은 창의 하단 작업영역을 확인한다. UI 정적 확인·Windows CI·실제 화면 검증은 각각 별도로 기록한다.
@@ -621,11 +621,20 @@
 
 #### OCR 검토 팝업 1차 검수 후 구조 수정 (2026-11-22)
 
-- **단일 작업면**: 기존 OCR 팝업의 왼쪽/오른쪽 개별 카드 외곽선과 별도 제목 바탕을 제거한다. 두 콘텐츠는 단 하나의 `PANEL` 작업면 안에서 얇은 `DIVIDER`로 구분한다. 이 변경은 OCR 검토에만 적용되며, 거래처 변경·배송그룹 삭제 등의 독립 업무 섹션 카드는 유지한다.
-- **헤더/푸터**: 제목·우상단 취소·설명을 하나의 `modal_review_header_in_rect`에 묶고 하단 경계선은 한 번만 표시한다. `modal_review_footer_in_rect`는 `PANEL` 배경과 상단 경계선 하나로 구성하며 적용 버튼은 우측에 고정한다. 다른 팝업의 기존 `modal_header_chrome`/`modal_footer_chrome` 규격을 건드리지 않는다.
+- **단일 작업면**: 기존 OCR 팝업의 왼쪽/오른쪽 개별 카드 외곽선과 별도 제목 바탕을 제거한다. 두 콘텐츠는 단 하나의 `PANEL` 작업면 안에서 얇은 `DIVIDER`로 구분한다. 본문 프레임·경계선의 **구조는 공통 팝업 마스터**로 재사용하고, OCR 전용 2열 분할과 문서 뷰어는 다른 화면에 강제하지 않는다.
+- **헤더/푸터**: 제목·우상단 취소·설명을 한 헤더에 묶고 하단 구분선은 한 번만 표시한다. 푸터는 `PANEL` 배경과 상단 구분선 하나로 구성하고 실행 버튼은 우측에 고정한다. 해당 구조를 `modal_master_header_in_rect`/`modal_master_footer_in_rect`로 승격했다. 다른 팝업의 기존 `modal_header_chrome`/`modal_footer_chrome` 구현은 일괄 변경하지 않는다.
 - **원본 이미지**: 왼쪽은 `CANVAS` 배경의 문서 뷰어다. 원본 픽셀·색상은 변경하지 않고, **스크롤 뷰포트 바깥쪽에 상하좌우 12pt 고정 작업면 여백**을 둔다. 실제 이미지 경계에만 얇은 1pt 선을 그리고, 축소 시 가로 중앙 정렬한다. 여백은 스크롤 콘텐츠에 넣지 않아 50~400% 확대·드래그·끝까지 스크롤할 때도 사라지지 않는다. 별도의 카드나 중복 테두리는 추가하지 않는다.
 - **OCR 텍스트**: 오른쪽의 `INPUT` 텍스트 편집면은 OCR 전용 16pt 글꼴·12pt 내부 여백을 사용한다. 텍스트가 길어져도 해당 입력창에서만 스크롤하고 외부 팝업·헤더·푸터의 좌표는 움직이지 않는다.
 - **업무 상태 불변**: 실제 적용 전 OCR 검토/수정 가능, 단일 `적용` 버튼, 기존 원문 교체 확인, 취소·오류 시 원문 보존, `OCR` 접수 경로 기록을 그대로 유지한다. 시각 검수는 코드 검증 및 CI와 별개다.
+
+### 66차 — OCR 확정 팝업을 전체 팝업의 공통 마스터로 승격 (2026-11-22)
+
+- **승인 기준**: 12pt 고정 문서 뷰어 여백까지 확정된 OCR 검토 팝업의 **상단 제목·보조 설명·우상단 취소 / 가운데 단일 연속 작업면 / 하단 단일 구분선·우하단 최종 실행** 구조를 신설·이전 팝업의 표준으로 한다. `PANEL`·`DIVIDER`·중복 없는 테두리, 12/16pt 정렬 원칙을 유지한다.
+- **공통 Rust API**: `components::modal_master_layout(bounds, header_height, footer_height, gap)`로 팝업 영역을 고정한다. `modal_master_header_in_rect`, `modal_master_workspace_surface(ui, rect, toolbar_height, split_ratio)`, `modal_master_footer_in_rect`가 한 번씩만 배경과 구분선을 그린다. 기존 `modal_window`의 카카오톡 제외 영역 중앙 배치·고정 크기·전체 Dim 제약은 그대로 따른다.
+- **공통 토큰**: `theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT` 84pt, `MODAL_MASTER_WORKSPACE_GAP` 16pt, `MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT` 40pt, `MODAL_MASTER_CONTENT_INSET` 16pt를 마스터 소유로 관리한다. 설명 없는 단순 확인 팝업은 내용에 맞는 작은 헤더를 사용하며 OCR의 84pt를 강제하지 않는다. 기존 `MODAL_REVIEW_*` 이름은 호환 별칭이다.
+- **업무별 예외/변경 금지**: OCR 2:1 분할·이미지 배율·문서 작업면 12pt, 거래처 선택 검색·결과 스크롤, 삭제 경고 및 위험 동작은 **콘텐츠 전용**이다. 공통 마스터가 업무 로직·표 높이·팝업 크기·버튼 종류를 대신 결정하지 않는다. 이중 카드 테두리, 헤더와 푸터에 중복된 취소/닫기, 화면 전체 스크롤은 금지한다.
+- **실제 적용 범위**: 이 승격에서는 `main.rs`의 OCR 검토창이 새 공통 마스터를 직접 사용하도록 리팩터링한다. 아직 전환하지 않은 팝업 36여 곳은 외관·기능 보존을 위해 기존 API를 유지하며 화면별 검수 후 단계적으로 이관한다. **공통 컴포넌트를 확정하는 것과 모든 팝업 이전 완료는 별개**다.
+- **검증**: OCR 위치·폭·단일 본문 경계·이미지 확대와 스크롤·텍스트 수정 및 학습 체크박스·취소·적용이 이전과 시각적·기능적으로 동일한지 확인한다. Windows CI 컴파일과 실제 DPI별 팝업 화면 검수는 별도 기록한다.
 
 ### 65차 OCR 정정 이력·선택적 학습 모델 (2026-11-22)
 
