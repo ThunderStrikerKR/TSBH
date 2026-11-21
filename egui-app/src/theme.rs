@@ -573,10 +573,12 @@ pub fn freight_summary_frame() -> Frame {
 /// Shared Y inset between the first table row and the start of the
 /// visible scrollbar track. The bottom extension is measured separately.
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=3.0;
-/// The table's rail ends at the same painted lower data boundary.
-/// The card's 1pt outline lies outside that boundary; do not introduce
-/// a second, artificial 4pt gap below the rail (2026-11-21 screenshot).
-pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=0.0;
+/// Apply the SAME optical inset at both ends of the table rail.
+/// When this was 0pt, the scrollbar thumb touched the card's 1pt bottom
+/// outline (2026-11-21 image, thumb y=750 / border y=751).
+/// This is a visual rail inset only: the table row viewport is unchanged.
+pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=
+    MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET;
 
 pub fn management_scroll_style() -> egui::style::ScrollStyle {
     let mut style=egui::style::ScrollStyle::solid();
