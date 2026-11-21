@@ -530,6 +530,7 @@ impl ExcelManager{
     fn task(&mut self,action:&str,ctx:egui::Context,
         work:impl FnOnce(Arc<dyn BandoGateway>)->Result<Value,String>+Send+'static){
         if self.operation.is_some(){return}
+        crate::floating_notice::dispatch_pointer(&ctx,"excel.action");
         let (sender,receiver)=mpsc::channel();
         self.operation=Some(receiver);self.operation_name=Some(action.into());
         self.error=None;self.notice=None;
@@ -544,6 +545,14 @@ impl ExcelManager{
         let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=theme::management_scroll_style();
         self.poll();
+        crate::floating_notice::sync(
+            ui.ctx(),"excel.result","excel.action",
+            crate::floating_notice::Tone::Success,self.notice.as_deref()
+        );
+        crate::floating_notice::sync(
+            ui.ctx(),"excel.error","excel.action",
+            crate::floating_notice::Tone::Error,self.error.as_deref()
+        );
         components::management_page_title_top_gap(ui);
         components::management_top_content(ui,|top|{
             top.horizontal(|title|{
@@ -686,19 +695,12 @@ impl ExcelManager{
                     }
                 );
             }
-            if let Some(error)=self.error.as_deref(){
-                section.label(typography::status(error,theme::DANGER));
-            }
-            if let Some(message)=self.notice.as_deref(){
-                section.label(typography::caption(message));
-            }
+            // Results and failures are anchored overlays, not rows between the
+            // toolbar and the sticky header. Preserve only the actual busy state.
             if busy{
                 section.label(typography::caption("Excel 자료를 확인 중입니다."));
             }
-            // The 21pt toolbar transition is only valid for a directly
-            // adjacent search strip. Preserve error/notice/loading blocks.
-            let direct_toolbar_to_header=self.error.is_none()
-                && self.notice.is_none()&&!busy;
+            let direct_toolbar_to_header=!busy;
             if !direct_toolbar_to_header{
                 components::soft_divider(section);
             }
@@ -999,7 +1001,11 @@ impl ExcelManager{
                 Ok(json!({}))
             });
         }
-        if let Some(path)=copy_path{ui.ctx().copy_text(path);self.notice=Some("저장 경로를 복사했습니다.".into());}
+        if let Some(path)=copy_path{
+            crate::floating_notice::dispatch_pointer(ui.ctx(),"excel.action");
+            ui.ctx().copy_text(path);
+            self.notice=Some("저장 경로를 복사했습니다.".into());
+        }
         if open_daily{
             let origin=self.tab.origin().to_owned();
             self.task("folder",ui.ctx().clone(),move|g|{
@@ -1133,5 +1139,13 @@ impl ExcelManager{
                 });
             }
         }
+        crate::floating_notice::sync(
+            ui.ctx(),"excel.result","excel.action",
+            crate::floating_notice::Tone::Success,self.notice.as_deref()
+        );
+        crate::floating_notice::sync(
+            ui.ctx(),"excel.error","excel.action",
+            crate::floating_notice::Tone::Error,self.error.as_deref()
+        );
     }
 }
