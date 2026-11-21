@@ -1867,6 +1867,37 @@ impl FreightManager {
         });
     }
 
+    /// The rate-management master toolbar owns exactly one 36pt row.
+    /// Return the actual painted button rectangles for geometry regression
+    /// tests; callers preserve the existing Rust command/dialog ownership.
+    fn rate_toolbar(
+        section:&mut Ui,enabled:bool
+    )->(egui::Response,egui::Response,egui::Rect){
+        let width=section.available_width().max(1.0);
+        let (toolbar_rect,_)=section.allocate_exact_size(
+            egui::vec2(width,theme::INPUT_HEIGHT),egui::Sense::hover()
+        );
+        let (create,basis)=section.scope_builder(
+            egui::UiBuilder::new()
+                .id_salt("freight-rate-toolbar")
+                .max_rect(toolbar_rect)
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+            |tools|{
+                tools.set_width(toolbar_rect.width());
+                tools.set_height(toolbar_rect.height());
+                tools.spacing_mut().item_spacing.x=theme::SPACE_8;
+                let create=theme::action(
+                    tools,"배송 그룹 추가",theme::ButtonRole::Primary,enabled
+                );
+                let basis=theme::action(
+                    tools,"전체 운임 기준 변경",theme::ButtonRole::Danger,enabled
+                );
+                (create,basis)
+            }
+        ).inner;
+        (create,basis,toolbar_rect)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn show_rates(
         ui: &mut Ui, groups: &[Value], products: &[&Value], projection: &Value,
@@ -1892,31 +1923,9 @@ impl FreightManager {
             // Creating a name is deferred to the existing modal layer.
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
-            let (toolbar_rect,_)=section.allocate_exact_size(
-                egui::vec2(section.available_width(),theme::INPUT_HEIGHT),
-                egui::Sense::hover()
-            );
-            section.scope_builder(
-                egui::UiBuilder::new()
-                    .id_salt("freight-rate-toolbar")
-                    .max_rect(toolbar_rect)
-                    .layout(egui::Layout::right_to_left(egui::Align::Center)),
-                |tools|{
-                    tools.set_width(toolbar_rect.width());
-                    tools.set_height(toolbar_rect.height());
-                    tools.spacing_mut().item_spacing.x=theme::SPACE_8;
-                    if theme::action(
-                        tools,"배송 그룹 추가",theme::ButtonRole::Primary,enabled
-                    ).clicked(){
-                        *create_group_open=true;
-                    }
-                    if theme::action(
-                        tools,"전체 운임 기준 변경",theme::ButtonRole::Danger,enabled
-                    ).clicked(){
-                        *basis=Some(None);
-                    }
-                }
-            );
+            let (create,basis_change,_toolbar)=Self::rate_toolbar(section,enabled);
+            if create.clicked(){*create_group_open=true;}
+            if basis_change.clicked(){*basis=Some(None);}
             // Shared master: exactly 16pt + 1pt divider + 4pt before
             // the fixed 36pt rate-table header, irrespective of modal state.
             let rate_layout=components::management_sticky_table_header(
@@ -2785,4 +2794,36 @@ fn summary(ui: &mut Ui, label: &str, count: usize) {
             });
         }
     );
+}
+
+
+#[cfg(test)]
+mod rate_toolbar_tests{
+    use super::*;
+
+    #[test]
+    fn group_add_and_global_basis_share_one_centered_master_toolbar(){
+        let ctx=egui::Context::default();
+        let mut input=egui::RawInput::default();
+        input.screen_rect=Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,egui::vec2(1160.0,800.0)
+        ));
+        let mut measured=None;
+        let _=ctx.run(input,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let (add,basis,toolbar)=FreightManager::rate_toolbar(ui,true);
+                measured=Some((add.rect,basis.rect,toolbar));
+            });
+        });
+        let (add,basis,toolbar)=measured.expect("rate toolbar rendered");
+        assert!((toolbar.height()-theme::INPUT_HEIGHT).abs()<0.01);
+        assert!((add.center().y-basis.center().y).abs()<0.01,
+            "both actions must be visually centered on the same row");
+        assert!((add.center().y-toolbar.center().y).abs()<0.01);
+        assert!((basis.center().y-toolbar.center().y).abs()<0.01);
+        assert!(basis.right()<=add.left()-theme::SPACE_8+0.01,
+            "primary action should be at the far right with an 8pt gap");
+        assert!((add.right()-toolbar.right()).abs()<0.01,
+            "primary action should end at the card inner right boundary");
+    }
 }
