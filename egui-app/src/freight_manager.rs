@@ -1367,7 +1367,7 @@ impl FreightManager {
                 section,card_min_height,0.0
             );
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,components::ManagementTableScrollRole::Master
+                section,scroll_max_height
             );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
@@ -1958,13 +1958,10 @@ impl FreightManager {
             let scroll_max_height=components::management_single_list_scroll_height(
                 section,card_min_height,footer_reserve
             );
-            // The common Section role owns the rail's end coordinate.
-            // Preserve the empty-state caption below it when present.
+            // Footer reservation determines viewport height, not rail offset.
+            // Every management table uses the same 7pt extension.
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,
-                components::ManagementTableScrollRole::Section{
-                    content_below:footer_reserve>0.0
-                }
+                section,scroll_max_height
             );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
@@ -2574,7 +2571,7 @@ fn freight_history_table(
         *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
     // Multi-section history: never extend a rail through the next card.
     let scroll_track=components::management_table_scroll_track_rect(
-        ui,scroll_max_height,components::ManagementTableScrollRole::Embedded
+        ui,scroll_max_height
     );
     let mut first_row_left=None;
     let scroll=components::virtual_fixed_rows(
