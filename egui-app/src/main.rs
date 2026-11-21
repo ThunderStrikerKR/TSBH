@@ -1640,7 +1640,7 @@ impl BandoEgui {
     /// 400% zoom must never move the title, pane borders or Apply button.
     fn show_ocr_review(&mut self, ctx: &egui::Context, work_area:Rect) {
         let mut close=false;
-        let mut apply:Option<(String,OrderType,Option<ChatWindow>)>=None;
+        let mut apply:Option<(String,OrderType,Option<ChatWindow>,Option<u32>)>=None;
         let dialog_width=(work_area.width()*0.94).clamp(560.0,1480.0)
             .min(work_area.width().max(1.0));
         let dialog_height=(work_area.height()*0.88).clamp(450.0,960.0)
@@ -1893,7 +1893,8 @@ impl BandoEgui {
                                 apply=Some((
                                     edited.to_owned(),
                                     review.order_type,
-                                    review.chat.clone()
+                                    review.chat.clone(),
+                                    review.clipboard_sequence
                                 ));
                             }
                         }
@@ -1919,15 +1920,18 @@ impl BandoEgui {
                     }
                 });
         }
-        if let Some((raw,kind,chat))=apply {
+        if let Some((raw,kind,chat,sequence))=apply {
             self.ocr_review=None;
             self.discard_ocr_confirm=false;
             if !self.raw_source.trim().is_empty() && self.raw_source!=raw {
                 self.pending_replace=Some(PendingReplace {
-                    text:raw,order_type:kind,chat,input_method:"OCR"
+                    text:raw,order_type:kind,chat,input_method:"OCR",
+                    clipboard_sequence:sequence,
                 });
             } else {
-                self.apply_intake_text(raw,kind,chat,ctx,"OCR",true);
+                self.apply_intake_text(
+                    raw,kind,chat,ctx,"OCR",true,sequence
+                );
             }
         } else if close {
             if self.ocr_review.as_ref().is_some_and(|review|
@@ -1987,7 +1991,8 @@ impl BandoEgui {
                 // Explicit replacement starts a new original-source route;
                 // OCR appended later still preserves this first method.
                 self.apply_intake_text(
-                    next.text, next.order_type, next.chat, ctx, next.input_method, true
+                    next.text,next.order_type,next.chat,ctx,
+                    next.input_method,true,next.clipboard_sequence
                 );
             }
         } else if cancel {
