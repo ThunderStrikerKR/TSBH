@@ -1394,7 +1394,7 @@ impl OrderHistoryManager {
             );
             let scroll_bounds=section.available_rect_before_wrap();
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
+                section,scroll_max_height,theme::MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION
             );
             // Mixed fixed parent rows and auto-height shipment details need
             // prefix offsets. A fixed-height virtual grid would clip wrapped
