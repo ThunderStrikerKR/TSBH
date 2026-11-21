@@ -308,7 +308,7 @@ fn report_table<const N:usize>(
     let scroll_max_height=ui.ctx().content_rect().height()
         *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
     let scroll_track=components::management_table_scroll_track_rect(
-        ui,scroll_max_height,0.0
+        ui,scroll_max_height,components::ManagementTableScrollRole::Embedded
     );
     let mut first_x=None;
     let scroll=components::virtual_fixed_rows(
