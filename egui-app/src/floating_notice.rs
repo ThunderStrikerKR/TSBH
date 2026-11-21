@@ -217,8 +217,11 @@ pub fn sync(
             }
             None => {
                 state.seen.remove(signal);
+                // A resolved validation or recovered backend failure must
+                // not leave an obsolete sticky error in the overlay.
                 if state.active.as_ref().is_some_and(|n|
-                    n.source==source && n.tone==Tone::Validation
+                    n.source==source &&
+                    matches!(n.tone,Tone::Validation|Tone::Error)
                 ) {
                     state.active=None;
                 }
