@@ -1792,18 +1792,11 @@ impl FreightManager {
             // Paint the header background through the complete table viewport,
             // including the scrollbar rail. Only text/checkbox interaction
             // stays inside the column content rect, not the scrollbar.
-            let header_painter=section.painter().with_clip_rect(header_rect);
-            header_painter.rect_filled(header_rect,0.0,theme::RAISED);
-            // The 2pt rule is INSIDE the 36pt header. Center every heading,
-            // sort arrow and select-all checkbox in the remaining 34pt,
-            // never in the full 36pt including its visible bottom border.
-            let header_outline_height=theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT;
-            let header_text_rect=egui::Rect::from_min_max(
-                header_content_rect.min,
-                egui::pos2(header_content_rect.right(),
-                    header_content_rect.bottom()-header_outline_height),
+            let header_text_rect=components::management_master_header_begin(
+                section,header_rect,header_content_rect
             );
             let header_text_center_y=header_text_rect.center().y;
+            let header_painter=section.painter().with_clip_rect(header_rect);
             for (i,title) in titles.iter().enumerate(){
                 if !title.is_empty(){
                     let region=header_cells[i];
@@ -1836,10 +1829,8 @@ impl FreightManager {
                                 section.ctx().request_repaint();
                             }
                             if response.hovered(){
-                                header_painter.rect_stroke(
-                                    visible.shrink(1.0),2.0,
-                                    egui::Stroke::new(1.0,theme::BORDER),
-                                    egui::StrokeKind::Inside,
+                                components::management_master_header_sort_hover(
+                                    section,visible
                                 );
                             }
                         }
@@ -1885,22 +1876,8 @@ impl FreightManager {
                     );
                 }
             }
-            // Paint one solid 2pt rule entirely INSIDE the header rectangle.
-            // A 1pt stroke centered exactly on bottom() was half-clipped by
-            // the header clip, then visually lost against the next dark row.
-            // A filled band stays visible at 100%/125% DPI without moving
-            // the fixed header, introducing a layout gap or extra row height.
-            header_painter.rect_filled(
-                egui::Rect::from_min_max(
-                    egui::pos2(
-                        header_rect.left(),
-                        header_rect.bottom()-header_outline_height
-                    ),
-                    header_rect.right_bottom(),
-                ),
-                0.0,
-                theme::TABLE_HEADER_OUTLINE,
-            );
+            // This shared painter preserves the exact master 2pt bottom band.
+            components::management_master_header_finish(section,header_rect);
 
             // This is the single "select all" control for the currently
             // filtered product list (not only the virtualized visible rows).
@@ -2001,8 +1978,8 @@ impl FreightManager {
         let group_rules=&projection["editableRules"];
         // A single group table replaces the duplicate group cards + audit grid.
         // Its actions still use the original Rust write paths and modal editors.
-        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
-        theme::section_frame().show(ui, |section| {
+        let card_min_height=components::management_master_table_card_min_inner_height(ui);
+        theme::management_master_table_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Search and group creation share one fixed 36pt toolbar.
@@ -2238,8 +2215,10 @@ impl FreightManager {
             let header_cells=freight_table_cells(
                 egui::pos2(left,header_rect.top()),&widths,header_rect.height()
             );
+            let header_text_rect=components::management_master_header_begin(
+                section,header_rect,rate_layout.header_content_rect
+            );
             let painter=section.painter().with_clip_rect(header_rect);
-            painter.rect_filled(header_rect,0.0,theme::RAISED);
             for (index,title) in titles.iter().enumerate(){
                 let cell=header_cells[index];
                 let galley=typography::freight_table_header_galley(section,title);
@@ -2251,7 +2230,7 @@ impl FreightManager {
                         Some(FreightSortDirection::Descending)=>("▼",theme::SELECTION),
                         None=>("↕",theme::MUTED),
                     };
-                    let hit=cell.intersect(header_rect);
+                    let hit=cell.intersect(header_text_rect);
                     if hit.width()>0.0 && hit.height()>0.0{
                         let next=RateSort::next(*sort,column);
                         let tooltip=match next.map(|value|value.direction){
@@ -2259,12 +2238,18 @@ impl FreightManager {
                             Some(FreightSortDirection::Descending)=>"내림차순 정렬",
                             None=>"기본 순서로 복귀",
                         };
-                        if section.interact(
+                        let response=section.interact(
                             hit,section.make_persistent_id(("freight-rate-sort",index)),
                             egui::Sense::click()
-                        ).on_hover_text(tooltip).clicked(){
+                        ).on_hover_text(tooltip);
+                        if response.clicked(){
                             *sort=next;
                             section.ctx().request_repaint();
+                        }
+                        if response.hovered(){
+                            components::management_master_header_sort_hover(
+                                section,hit
+                            );
                         }
                     }
                     (typography::freight_table_header_galley(section,label),color)
@@ -2277,15 +2262,15 @@ impl FreightManager {
                     3=>cell.center().x-total/2.0,
                     _=>cell.left()+6.0,
                 };
-                let ink=painter.with_clip_rect(cell.intersect(header_rect));
+                let ink=painter.with_clip_rect(cell.intersect(header_text_rect));
                 ink.galley(
-                    egui::pos2(x,cell.center().y-galley.size().y/2.0),
+                    egui::pos2(x,header_text_rect.center().y-galley.size().y/2.0),
                     galley,theme::SECONDARY
                 );
                 if let Some((arrow,color))=indicator{
                     ink.galley(
                         egui::pos2(x+total-arrow.size().x,
-                            cell.center().y-arrow.size().y/2.0),
+                            header_text_rect.center().y-arrow.size().y/2.0),
                         arrow,color
                     );
                 }
@@ -2300,10 +2285,7 @@ impl FreightManager {
                     );
                 }
             }
-            painter.line_segment(
-                [header_rect.left_bottom(),header_rect.right_bottom()],
-                egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-            );
+            components::management_master_header_finish(section,header_rect);
             if ordered.is_empty(){
                 let caption=if groups.is_empty(){
                     "등록된 배송 그룹이 없습니다."
