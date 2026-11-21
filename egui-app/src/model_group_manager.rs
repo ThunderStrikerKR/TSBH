@@ -252,9 +252,16 @@ impl ModelGroupManager {
                         left.label(typography::field_label("새 그룹 이름"));
                         left.horizontal(|form|{
                             form.add_enabled_ui(writable&&!busy,|entry|{
-                                components::flexible_text_field(entry,&mut self.new_name,
+                                let edit=components::flexible_text_field(
+                                    entry,&mut self.new_name,
                                     theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                                    "직원이 알아보기 쉬운 이름");
+                                    "직원이 알아보기 쉬운 이름"
+                                );
+                                crate::floating_notice::sized_text_caret(
+                                    entry,"products.model.input",&edit,&self.new_name,
+                                    egui::FontId::proportional(typography::FONT_BODY),
+                                    false,8.0
+                                );
                             });
                             if theme::action(form,"그룹 생성",theme::ButtonRole::Standard,
                                 writable&&!busy).clicked(){
@@ -470,10 +477,15 @@ impl ModelGroupManager {
             });
         });
         if save{self.save(gateway,ui.ctx().clone());}
+        let input_error=self.status.contains("그룹 이름") ||
+            self.status.contains("같은 이름");
         crate::floating_notice::sync(
-            ui.ctx(),"products.model.status","products.model",
+            ui.ctx(),"products.model.status",
+            if input_error{"products.model.input"}else{"products.model"},
             if self.status.contains("저장했습니다"){
                 crate::floating_notice::Tone::Success
+            }else if input_error{
+                crate::floating_notice::Tone::Validation
             }else{
                 crate::floating_notice::Tone::Error
             },
