@@ -216,12 +216,14 @@ pub fn sync(
                 true
             }
             None => {
-                state.seen.remove(signal);
-                // A resolved validation or recovered backend failure must
-                // not leave an obsolete sticky error in the overlay.
+                let cleared = state.seen.remove(signal);
+                // Different signals may share one action anchor (e.g. Excel
+                // result and error). Clear only the error issued by THIS
+                // signal, never a newer failure from a different signal.
                 if state.active.as_ref().is_some_and(|n|
                     n.source==source &&
-                    matches!(n.tone,Tone::Validation|Tone::Error)
+                    matches!(n.tone,Tone::Validation|Tone::Error) &&
+                    cleared.as_deref()==Some(n.message.as_str())
                 ) {
                     state.active=None;
                 }
