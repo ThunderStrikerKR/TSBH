@@ -74,6 +74,9 @@ pub const WORKFLOW_SELECTED_STRIPE: f32 = 2.0;
 // the fixed-size signal lamps, buttons or individual order row geometry.
 pub const WORKFLOW_CARD_GAP: f32 = SPACE_8;
 pub const WORKFLOW_TITLE_HEIGHT: f32 = 34.0;
+// At minimum dock width, move Manage/Delete to their own trailing row
+// instead of clipping a ten-Hangul-character dealer name.
+pub const WORKFLOW_TITLE_MIN_WIDTH: f32 = 184.0;
 pub const WORKFLOW_SIGNAL_WIDTH: f32 = 82.0;
 pub const WORKFLOW_SIGNAL_SIZE: f32 = 18.0;
 pub const WORKFLOW_SIGNAL_GAP: f32 = 3.0;
@@ -88,7 +91,9 @@ pub const WORKFLOW_FREIGHT_COL: f32 = 68.0;
 pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
 // Product chips are metadata within a workflow card: match the subdued
 // alternate-row surface and divider, not the brighter input/button tier.
-pub const WORKFLOW_CHIP_FILL: Color32 = TABLE_ROW_ALT_BG;
+// A chip must remain discernible on BOTH the base (#292929) and
+// alternate (#303030) row. Reuse the existing muted control-border tier.
+pub const WORKFLOW_CHIP_FILL: Color32 = DISABLED_ACTION_BORDER;
 pub const WORKFLOW_CHIP_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_CHIP_RADIUS: u8 = 4;
 pub const WORKFLOW_CHIP_HEIGHT: f32 = 24.0;
@@ -105,7 +110,10 @@ pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
 pub const WORKFLOW_SUMMARY_LINE_HEIGHT: f32 = 18.0;
 // Workflow details use the same subdued, borderless zebra roles as master lists.
 pub const WORKFLOW_DETAIL_HEADER_BG: Color32 = RAISED;
-pub const WORKFLOW_DETAIL_ALT_BG: Color32 = TABLE_ROW_ALT_BG;
+// The nested card's base is INPUT (#292929); alternate must be lighter
+// just as PANEL -> TABLE_ROW_ALT_BG is lighter in the management master.
+pub const WORKFLOW_DETAIL_ALT_BG: Color32 = RAISED;
+pub const WORKFLOW_DETAIL_HEADER_HEIGHT: f32 = 28.0;
 pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
 pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const BRIGHT: Color32 = Color32::WHITE;
@@ -157,6 +165,8 @@ pub const SECTION_HEADER_HEIGHT: f32 = 34.0;
 // Reception titles need the same breathing room as other management headings.
 // Body-height accounting consumes this shared token; split rectangles stay put.
 pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
+// Canvas/footer clearance must be counted in the message editor's height.
+pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 // React recipient detail grid: full-width rows and paired contact cells.
@@ -164,8 +174,8 @@ pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 // All recipient rows share this left-aligned label width.
 pub const RECIPIENT_LABEL_WIDTH: f32 = 56.0;
 pub const RECIPIENT_PHONE_LABEL_WIDTH: f32 = 32.0;
-pub const RECIPIENT_LABEL_GAP: f32 = 6.0;
-pub const RECIPIENT_ROW_GAP: f32 = 6.0;
+pub const RECIPIENT_LABEL_GAP: f32 = SPACE_8;
+pub const RECIPIENT_ROW_GAP: f32 = SPACE_8;
 pub const RECIPIENT_PHONE_COLUMN_GAP: f32 = 8.0;
 // Minimum phone widths accommodate an 11-digit mobile and shorter landline.
 // Both fields grow proportionally to fill the available row instead of leaving
