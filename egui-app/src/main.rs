@@ -3270,13 +3270,19 @@ impl BandoEgui {
                                     .desired_width(scroll_ui.available_width())
                                     .layouter(&mut layouter)
                                     .show(scroll_ui);
-                                let block_shapes=source_highlight::block_shapes(
-                                    &self.raw_source,&output.galley,output.galley_pos,
-                                    &spans,selected_id.as_deref(),active_link.as_ref(),
-                                    scroll_ui.clip_rect().intersect(output.text_clip_rect),
-                                );
+                                let (block_fills,active_outlines)=
+                                    source_highlight::block_shapes(
+                                        &self.raw_source,&output.galley,output.galley_pos,
+                                        &spans,selected_id.as_deref(),active_link.as_ref(),
+                                        scroll_ui.clip_rect().intersect(output.text_clip_rect),
+                                    );
+                                // Gray fills remain below glyphs; the active outline
+                                // stays above neighboring fills and the editor text.
                                 scroll_ui.painter().set(
-                                    block_slot,egui::Shape::Vec(block_shapes)
+                                    block_slot,egui::Shape::Vec(block_fills)
+                                );
+                                scroll_ui.painter().add(
+                                    egui::Shape::Vec(active_outlines)
                                 );
                                 if output.response.hovered() {
                                     if let Some(pointer)=scroll_ui.input(|i|i.pointer.hover_pos()) {
