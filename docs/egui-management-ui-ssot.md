@@ -40,6 +40,7 @@
 | **표 스크롤 레일 — 단일 공통 정책** | **모든 관리 표 하단 연장 입력값 7pt** (광학 보정 3pt, 본문 종료점 아래 실제 4pt). 전용 solid 스크롤바 10pt·핸들 최소 44pt·좌우 추가 여백 0pt, 헤더 아래 시작 간격 0pt. `management_table_scroll_track_rect(ui,scroll_height)`가 **화면 역할과 무관하게** 단일 토큰 `MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION`을 사용한다. 페이지별 `Master / Section / List / Embedded` 스크롤 연장값 분기는 폐지. **푸터·상세·복수 표는 본문 높이와 예약 공간만 별도로 관리**하며 스크롤바 연장값을 달리하지 않는다. 표 행 높이와 가상 스크롤 범위는 불변 | `theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION`, `theme::management_table_scroll_style()`, `components::management_table_scroll_track_rect()` |
 | **표의 데이터 오른쪽 끝** | **헤더 외곽 오른쪽 끝 − 표 스크롤바 할당폭**, 도구줄의 우측 끝과 동일하게 강제하지 않음 | `components::management_sticky_table_header` |
 | 폰트 역할 | 페이지 20pt, 섹션 16pt, 표 헤더/본문 14pt, 표준 작업 버튼 13pt | `typography.rs`의 역할별 토큰·spec |
+| **관리 표 데이터 굵기·명도** | **헤더=기존 Bold/Emphasis**, **일반 상품명·거래처명·옵션·금액=Regular 400, 본문색 `TEXT`**, **수량·카테고리·상태·보조 설명=Regular 400, `SECONDARY`**, 경로 조상=Regular 400, `MUTED`. **명시적 최종 청구 합계만 Emphasis(Bold)**. 중요 수치 KPI/카드와 오류 상태의 독립 역할은 유지하며 일반 행·수량·일반 금액에 무조건 Bold 금지. 14pt/42pt/열폭/정렬/업무 규칙은 변경하지 않음 | `typography::ManagementTableCellRole`, `management_table_cell_galley`, `management_table_cell_color`, `management_table_money_font`; `management_table_type_roles_tests` |
 
 ## 3. 마스터 테이블 수치: 코드가 강제하는 원본
 
