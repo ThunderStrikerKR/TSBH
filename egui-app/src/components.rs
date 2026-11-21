@@ -815,10 +815,9 @@ fn management_card_min_height_for_insets(
         -2.0*theme::FRAME_STROKE_WIDTH).max(0.0)
 }
 
-/// Both master tables use a full-bleed lower DATA viewport. The prior 16pt
-/// bottom frame padding left a blank strip after rows while the rail alone
-/// continued to the card outline. This computes the matching inner minimum
-/// for management_master_table_frame() without moving the OUTER border.
+/// Both master tables preserve 16pt padding on all four inner edges.
+/// Compute their inner minimum from the matching frame insets without
+/// changing the outer card bounds or the shared row/scroll viewport edge.
 pub fn management_master_table_card_min_inner_height(ui:&Ui)->f32{
     management_card_min_height_for_insets(
         ui.available_height(),theme::SECTION_PADDING,
@@ -882,10 +881,10 @@ pub fn management_toolbar_trailing_rect(
 /// SSOT scroll-track geometry for all native management tables.
 ///
 /// The row viewport is ALWAYS limited by `scroll_height`; only the native
-/// scrollbar track may extend into the card's non-scrolling bottom inset.
-/// Use `theme::SECTION_PADDING` for a 16pt-inset full-card list and 0pt
-/// for lists followed by a footer, details or another table. Never extend
-/// through a footer or increase ScrollArea::max_height to move the rail.
+/// scrollbar track may extend into a card's non-scrolling bottom inset.
+/// The two single-table masters pass 0pt so BOTH rows and rail finish above
+/// their 16pt bottom padding. Other lists can pass SECTION_PADDING if their
+/// independent design requires a longer rail. Never extend through a footer.
 pub fn management_table_scroll_track_rect(
     ui:&Ui,scroll_height:f32,bottom_extension:f32
 )->Rect {
@@ -895,10 +894,10 @@ pub fn management_table_scroll_track_rect(
 }
 
 /// The only place that computes top/bottom of a management table rail.
-/// The track can extend into a card's bottom padding, but uses the SAME
-/// optical inset at both ends (3pt / 3pt), keeping the thumb visibly
-/// separate from the card border. This is rail geometry only; row viewport
-/// height and table data columns do not change.
+/// The rail starts exactly at the fixed header's lower edge (0pt top gap)
+/// and stops 3pt before its requested bottom. This avoids the broken
+/// header-to-scrollbar join while retaining bottom clearance. The row
+/// viewport and the data columns are never extended by this function.
 fn management_table_scroll_track_geometry(
     bounds:Rect,scroll_height:f32,bottom_extension:f32
 )->Rect {
@@ -1843,7 +1842,7 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
 mod management_toolbar_geometry_tests {
     use super::*;
     #[test]
-    fn master_table_bottom_padding_converts_to_rows_without_moving_card_border(){
+    fn master_table_keeps_symmetric_padding_without_moving_card_border(){
         let outer_height=800.0;
         let regular=management_card_min_height_for_insets(
             outer_height,theme::SECTION_PADDING,theme::SECTION_PADDING
@@ -1852,7 +1851,9 @@ mod management_toolbar_geometry_tests {
             outer_height,theme::SECTION_PADDING,
             theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
         );
-        assert_eq!(master-regular,theme::SECTION_PADDING);
+        assert_eq!(master,regular);
+        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING,
+            theme::SECTION_PADDING);
         let regular_outer=regular+2.0*theme::FRAME_STROKE_WIDTH
             +2.0*theme::SECTION_PADDING;
         let master_outer=master+2.0*theme::FRAME_STROKE_WIDTH
@@ -1864,20 +1865,23 @@ mod management_toolbar_geometry_tests {
 
     #[test]
     fn master_table_rows_and_scroll_track_share_one_bottom_boundary(){
-        // With zero master bottom padding the actual row viewport reaches
-        // the full inner card bottom. No 16pt rail-only extension.
+        // With symmetric padding the viewport ends 16pt above the outer
+        // bottom border. The rail is not extended into that padding.
         let bounds=Rect::from_min_size(
             egui::pos2(16.0,300.0),Vec2::new(800.0,484.0)
         );
         let painted_rows_bottom=bounds.bottom();
+        let outer_card_bottom=painted_rows_bottom
+            +theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING;
         let track=management_table_scroll_track_geometry(
-            bounds,bounds.height(),theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
+            bounds,bounds.height(),0.0
         );
-        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING,0.0);
-        assert_eq!(track.top(),painted_rows_bottom-bounds.height()
-            +theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET);
+        assert_eq!(outer_card_bottom-painted_rows_bottom,
+            theme::SECTION_PADDING);
+        assert_eq!(track.top(),bounds.top());
         assert_eq!(track.bottom(),painted_rows_bottom
             -theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET);
+        assert!(track.bottom()<outer_card_bottom);
     }
 
     #[test]
@@ -1888,19 +1892,17 @@ mod management_toolbar_geometry_tests {
         let inset=management_table_scroll_track_geometry(
             bounds,484.0,theme::SECTION_PADDING
         );
-        assert_eq!(inset.top(),303.0);
+        assert_eq!(inset.top(),300.0);
         assert_eq!(inset.bottom(),797.0); // 3pt before card bottom
         assert_eq!(inset.left(),16.0);
         assert_eq!(inset.right(),816.0);
-        assert_eq!(
-            theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET,
-            theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET
-        );
+        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET,0.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET,3.0);
 
-        // When a footer follows the table, no card-padding extension is
-        // allowed, and the same 3pt visual clearance applies to its rail.
+        // When a footer follows the table, the rail remains limited to its
+        // viewport and only the bottom 3pt clearance remains.
         let with_footer=management_table_scroll_track_geometry(bounds,400.0,0.0);
-        assert_eq!(with_footer.top(),303.0);
+        assert_eq!(with_footer.top(),300.0);
         assert_eq!(with_footer.bottom(),697.0);
 
         // The rows remain capped by the available data-viewport bounds.
