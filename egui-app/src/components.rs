@@ -1975,6 +1975,33 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
 mod management_toolbar_geometry_tests {
     use super::*;
     #[test]
+    fn all_freight_headers_share_34pt_text_area_and_2pt_bottom_rule(){
+        let ctx=egui::Context::default();
+        let mut observed=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let header=Rect::from_min_size(
+                    egui::pos2(16.0,216.0),Vec2::new(900.0,36.0)
+                );
+                let content=Rect::from_min_max(
+                    header.min,egui::pos2(header.right()-10.0,header.bottom())
+                );
+                let text=management_master_header_begin(ui,header,content);
+                management_master_header_finish(ui,header);
+                observed=Some((header,content,text));
+            });
+        });
+        let (header,content,text)=observed.expect("header geometry");
+        assert_eq!(text.top(),header.top());
+        assert_eq!(text.bottom(),header.bottom()-2.0);
+        assert_eq!(text.height(),34.0);
+        assert_eq!(text.right(),content.right());
+        assert_eq!(header.center().y-text.center().y,1.0,
+            "full-height centering must not be reused");
+        assert_eq!(theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT,2.0);
+    }
+
+    #[test]
     fn master_table_keeps_symmetric_padding_without_moving_card_border(){
         let outer_height=800.0;
         let regular=management_card_min_height_for_insets(
