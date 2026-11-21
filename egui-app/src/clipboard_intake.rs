@@ -119,7 +119,8 @@ pub fn read() -> Result<ClipboardPayload, String> {
     Err("클립보드에 접수할 텍스트 또는 이미지가 없습니다.".into())
 }
 
-/// Returns text for an existing React-compatible OCR *review* step.
+/// Returns recognized text for direct insertion into the editable source.
+/// The egui caller retains intake-route provenance and shows no review popup.
 /// The image stays in the caller's buffer, never in the DB.
 #[cfg(windows)]
 pub fn recognize_image(image: &ClipboardImage, cancelled: &AtomicBool) -> Result<String, String> {
