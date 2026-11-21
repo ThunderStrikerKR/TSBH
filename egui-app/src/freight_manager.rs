@@ -990,7 +990,9 @@ impl FreightManager {
                             modal,"배송 그룹 삭제","취소",enabled
                         ){close_delete=true;}
                         modal.add_space(theme::SPACE_12);
-                        components::modal_section(modal,"삭제 대상",|details|{
+                        components::modal_master_body(modal,|workspace|{
+                        components::modal_master_body_section(
+                            workspace,"삭제 대상",|details|{
                             details.label(typography::section_heading(name));
                             if !affected.is_empty(){
                                 details.label(typography::status(
@@ -1019,6 +1021,7 @@ impl FreightManager {
                                     "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
                                 ));
                             }
+                        });
                         });
                         modal.add_space(theme::SPACE_12);
                         components::modal_footer_chrome(modal,|controls|{
