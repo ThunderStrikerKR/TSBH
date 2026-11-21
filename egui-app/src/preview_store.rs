@@ -591,8 +591,10 @@ impl PreviewStore {
     /// its origin from OCR text or an unconfirmed client suggestion.
     pub fn bind_verified_ocr_clients(source:&WorkingSource)->Result<(),String>{
         let verified=source.drafts.iter().filter_map(|row|{
-            (row.client_selection.as_deref()==Some("MANUAL"))
-                .then(||(row.id.as_str(),row.client_id.as_deref()?))
+            if row.client_selection.as_deref()!=Some("MANUAL"){
+                return None;
+            }
+            Some((row.id.as_str(),row.client_id.as_deref()?))
         }).collect::<Vec<_>>();
         if verified.is_empty(){return Ok(());}
         let store=Self::initialize()?;
