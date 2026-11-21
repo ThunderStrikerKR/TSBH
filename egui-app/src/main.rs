@@ -1575,6 +1575,10 @@ impl BandoEgui {
                             texture,width:image.width,height:image.height,
                             zoom:1.0,chat:intake_chat,
                         });
+                        // The decoded texture was uploaded on this UI frame.
+                        // Request another frame explicitly so the first OCR
+                        // comparison cannot remain a blank, stale surface.
+                        ctx.request_repaint();
                     }
                     Err(error) if error == "OCR_CANCELLED" => {}
                     Err(error) => {
