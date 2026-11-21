@@ -1972,7 +1972,7 @@ impl FreightManager {
                                 let identity=format!("{} · {count}개 상품",text(group,"name"));
                                 freight_rate_cell(
                                     row,cells[0],&identity,egui::Align2::LEFT_CENTER,
-                                    typography::ManagementTableCellRole::ClientName,(id,0)
+                                    typography::ManagementTableCellRole::Text,(id,0)
                                 );
                                 let current=&group["current"];
                                 freight_rate_cell(
