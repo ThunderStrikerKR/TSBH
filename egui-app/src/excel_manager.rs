@@ -181,7 +181,14 @@ fn geometry<const N:usize>(
     })
 }
 fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,id:impl std::hash::Hash){
-    let padded=rect.shrink2(Vec2::new(theme::SPACE_8,0.0));
+    let padded=if align==Align2::LEFT_CENTER{
+        Rect::from_min_max(
+            egui::pos2(rect.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,rect.top()),
+            egui::pos2(rect.right()-theme::SPACE_8,rect.bottom())
+        )
+    }else{
+        rect.shrink2(Vec2::new(theme::SPACE_8,0.0))
+    };
     let clip=padded.intersect(ui.clip_rect());
     if clip.width()<=0.0||clip.height()<=0.0{return}
     let label=typography::freight_table_cell_galley(ui,visible,false,theme::TEXT);
@@ -198,9 +205,9 @@ fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,id:impl std::hash::Hash){
             .on_hover_text(visible);
     }
 }
-/// The two Excel tabs show one table at a time. Only use full-card
-/// height when no inline details are expanded below the table; a queue
-/// footer or empty-status line still needs protected vertical space.
+/// Each Excel tab shows one table at a time. Use the full master-card height
+/// unless inline details are expanded; an empty-state caption still needs
+/// a reserved row below its table.
 #[derive(Clone,Copy)]
 enum ExcelTableHeightPolicy {
     FillCard { card_min_height:f32, reserve_below:f32 },
@@ -293,24 +300,39 @@ fn table<const N:usize>(
     let mut clicked=None;
     for (i,title) in titles.iter().enumerate(){
         let h=heads[i];
-        let suffix=if sort_enabled[i] {
-            match (*sort).filter(|s|s.column==i).map(|s|s.direction){
-                Some(Direction::Up)=>" ▲",Some(Direction::Down)=>" ▼",None=>" ↕"
-            }
-        }else{""};
         let title=if i==0&&header_selection.is_some(){""}else{title};
-        let galley=typography::freight_table_header_galley(ui,&format!("{title}{suffix}"));
+        let label=typography::freight_table_header_galley(ui,title);
+        let arrow=if sort_enabled[i]{
+            let (glyph,color)=match (*sort).filter(|s|s.column==i)
+                .map(|s|s.direction){
+                Some(Direction::Up)=>("▲",theme::SELECTION),
+                Some(Direction::Down)=>("▼",theme::SELECTION),
+                None=>("↕",theme::MUTED)
+            };
+            Some((typography::freight_table_header_galley(ui,glyph),color))
+        }else{None};
+        let gap=if arrow.is_some(){theme::SPACE_4}else{0.0};
+        let arrow_width=arrow.as_ref().map_or(0.0,|(g,_)|g.size().x);
+        let total_width=label.size().x+gap+arrow_width;
         let x=if align[i]==Align2::RIGHT_CENTER{
-            h.right()-theme::SPACE_8-galley.size().x
+            h.right()-theme::SPACE_8-total_width
         }else if align[i]==Align2::CENTER_CENTER{
-            h.center().x-galley.size().x/2.0
-        }else{h.left()+theme::SPACE_8};
+            h.center().x-total_width/2.0
+        }else{h.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET};
         let visible=h.intersect(header_text_rect);
         if visible.width()>0.0 && visible.height()>0.0 {
-            painter.with_clip_rect(visible).galley(
-                egui::pos2(x,header_text_rect.center().y-galley.size().y/2.0),
-                galley,theme::SECONDARY
+            let ink=painter.with_clip_rect(visible);
+            ink.galley(
+                egui::pos2(x,header_text_rect.center().y-label.size().y/2.0),
+                label.clone(),theme::SECONDARY
             );
+            if let Some((glyph,color))=arrow{
+                ink.galley(
+                    egui::pos2(x+label.size().x+gap,
+                        header_text_rect.center().y-glyph.size().y/2.0),
+                    glyph,color
+                );
+            }
         }
         if sort_enabled[i]{
             let hit=h.intersect(header_text_rect);
@@ -651,19 +673,13 @@ impl ExcelManager{
                 );
             }
             if let Some(error)=self.error.as_deref(){
-                theme::management_list_strip_frame().show(section,|line|{
-                    line.label(typography::status(error,theme::DANGER));
-                });
+                section.label(typography::status(error,theme::DANGER));
             }
             if let Some(message)=self.notice.as_deref(){
-                theme::management_list_strip_frame().show(section,|line|{
-                    line.label(typography::caption(message));
-                });
+                section.label(typography::caption(message));
             }
             if busy{
-                theme::management_list_strip_frame().show(section,|line|{
-                    line.label(typography::caption("Excel 자료를 확인 중입니다."));
-                });
+                section.label(typography::caption("Excel 자료를 확인 중입니다."));
             }
             // The 21pt toolbar transition is only valid for a directly
             // adjacent search strip. Preserve error/notice/loading blocks.
@@ -739,7 +755,7 @@ impl ExcelManager{
                 }
                 if let Some(id)=self.history_detail.as_deref(){
                     if let Some(record)=history.iter().find(|r|text(r,"id")==id){
-                        theme::management_list_strip_frame().show(section,|details|{
+                        section.scope(|details|{
                             details.label(typography::subsection_heading("관련 주문"));
                             details.horizontal_wrapped(|bar|{
                                 for order in rows(&record["orderIds"]){
@@ -879,7 +895,7 @@ impl ExcelManager{
                 }
                 if let Some(id)=self.managed_queue.as_deref(){
                     if let Some(entry)=records.iter().find(|r|!r.legacy&&r.id()==id){
-                        theme::management_list_strip_frame().show(section,|details|{
+                        section.scope(|details|{
                             details.horizontal(|line|{
                                 line.label(typography::subsection_heading("관리"));
                                 // Actual-freight edits remain local until the
