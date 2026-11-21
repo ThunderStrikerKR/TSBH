@@ -347,6 +347,148 @@ pub fn modal_header(ui:&mut Ui,title:&str,close_label:&str,enabled:bool)->bool{
     close
 }
 
+/// Fixed popup title region with its own background and a single
+/// Freight-master DIVIDER at the bottom. This is an opt-in popup v2
+/// component during the three-screen rollout: old dialogs keep their
+/// approved geometry until explicitly migrated.
+pub fn modal_header_in_rect(
+    ui:&mut Ui, rect:Rect, title:&str, close_label:&str, enabled:bool
+)->bool {
+    ui.painter().rect_filled(rect,0.0,theme::MODAL_CHROME_BG);
+    ui.painter().line_segment(
+        [rect.left_bottom(),rect.right_bottom()],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    let content=Rect::from_min_size(
+        egui::pos2(
+            rect.left()+theme::SPACE_8,
+            rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0).max(0.0)
+        ),
+        Vec2::new(
+            (rect.width()-2.0*theme::SPACE_8).max(1.0),
+            theme::ACTION_STANDARD_HEIGHT
+        )
+    );
+    let mut close=false;
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .id_salt("modal-v2-heading")
+            .max_rect(content)
+            .layout(Layout::left_to_right(Align::Center)),
+        |header|{
+            header.set_clip_rect(content.intersect(ui.clip_rect()));
+            header.set_width(content.width());
+            header.label(typography::modal_title(title));
+            header.with_layout(Layout::right_to_left(Align::Center),|right|{
+                close=theme::action(
+                    right,close_label,theme::ButtonRole::Standard,enabled
+                ).clicked();
+            });
+        },
+    );
+    close
+}
+
+/// Standard 56pt title slot. The returned event is still the original
+/// user-supplied cancel/close action; this component changes appearance only.
+pub fn modal_header_chrome(
+    ui:&mut Ui,title:&str,close_label:&str,enabled:bool
+)->bool {
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),theme::MODAL_HEADER_HEIGHT),
+        Sense::hover()
+    );
+    modal_header_in_rect(ui,rect,title,close_label,enabled)
+}
+
+/// Footer has a stable height, a subtle background and ONE upper divider.
+/// Do not create extra cancel buttons inside it.
+pub fn modal_footer_in_rect(
+    ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
+) {
+    ui.painter().rect_filled(rect,0.0,theme::MODAL_CHROME_BG);
+    ui.painter().line_segment(
+        [rect.left_top(),rect.right_top()],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    let content=Rect::from_min_size(
+        egui::pos2(
+            rect.left()+theme::SPACE_8,
+            rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0).max(0.0)
+        ),
+        Vec2::new(
+            (rect.width()-2.0*theme::SPACE_8).max(1.0),
+            theme::ACTION_STANDARD_HEIGHT
+        )
+    );
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .id_salt("modal-v2-footer")
+            .max_rect(content)
+            .layout(Layout::right_to_left(Align::Center)),
+        |footer|{
+            footer.set_clip_rect(content.intersect(ui.clip_rect()));
+            footer.set_width(content.width());
+            actions(footer);
+        },
+    );
+}
+
+pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),theme::MODAL_FOOTER_HEIGHT),
+        Sense::hover()
+    );
+    modal_footer_in_rect(ui,rect,actions);
+}
+
+/// One coherent nested information section, visually related to Freight
+/// Shipping-Group Assignment's PANEL/DIVIDER hierarchy. Continuous fields
+/// share the same frame rather than each receiving a redundant border.
+pub fn modal_section<R>(
+    ui:&mut Ui,title:&str,contents:impl FnOnce(&mut Ui)->R
+)->R {
+    Frame::new()
+        .fill(theme::MODAL_SECTION_BG)
+        .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER))
+        .corner_radius(egui::CornerRadius::same(theme::MODAL_SECTION_RADIUS))
+        .inner_margin(theme::MODAL_SECTION_PADDING)
+        .show(ui,|section|{
+            section.label(typography::section_heading(title));
+            theme::divider(section);
+            contents(section)
+        }).inner
+}
+
+/// Same nested-section surface for absolute-layout dialogs such as OCR.
+/// Caller is responsible for fixed content hit areas and clipping.
+pub fn modal_section_surface(ui:&Ui,rect:Rect,header_height:f32) {
+    let painter=ui.painter();
+    painter.rect_filled(
+        rect,theme::MODAL_SECTION_RADIUS,theme::MODAL_SECTION_BG
+    );
+    let band=Rect::from_min_max(
+        rect.min+Vec2::splat(1.0),
+        egui::pos2(
+            (rect.right()-1.0).max(rect.left()+1.0),
+            (rect.top()+header_height).min(rect.bottom()).max(rect.top()+1.0)
+        )
+    );
+    painter.rect_filled(
+        band,theme::MODAL_SECTION_RADIUS,theme::MODAL_SECTION_HEADER_BG
+    );
+    let y=(rect.top()+header_height).min(rect.bottom());
+    painter.line_segment(
+        [egui::pos2(rect.left()+1.0,y),egui::pos2(rect.right()-1.0,y)],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    painter.rect_stroke(
+        rect,theme::MODAL_SECTION_RADIUS,
+        Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER),
+        egui::StrokeKind::Inside
+    );
+}
+
 pub fn decision_window(
     title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
