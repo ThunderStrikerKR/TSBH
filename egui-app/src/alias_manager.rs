@@ -525,8 +525,7 @@ impl AliasManager {
                     dialog,"상품 별칭","취소",!busy
                 );
                 dialog.label(typography::body("상품 별칭 변경사항을 저장할까요?"));
-                dialog.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                components::modal_action_row(dialog,|actions|{
                         save_now=theme::action(actions,"저장",
                             theme::ButtonRole::Primary,editable&&!busy).clicked();
                         discard=theme::action(actions,"저장 안 함",
