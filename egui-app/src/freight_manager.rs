@@ -186,7 +186,7 @@ fn freight_assignment_text(
     ui:&mut Ui,rect:egui::Rect,value:&str,full_text:&str,
     role:FreightCellRole,id:impl std::hash::Hash
 ) {
-    let clipped=rect.shrink2(egui::vec2(6.0,0.0));
+    let clipped=rect.shrink2(egui::vec2(theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,0.0));
     let painter=ui.painter().with_clip_rect(clipped);
     match role {
         FreightCellRole::Category=>{
@@ -1764,7 +1764,7 @@ impl FreightManager {
                     // freight_assignment_text() in each body cell. The
                     // group selector and action columns remain centered.
                     let left=if matches!(i,1|2|3) {
-                        region.left()+6.0
+                        region.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET
                     }else{
                         region.center().x-total_width/2.0
                     };
