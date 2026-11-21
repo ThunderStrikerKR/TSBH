@@ -888,8 +888,34 @@ fn management_table_data_width(
     (viewport_width-scrollbar_gutter).max(min_table_width)
 }
 
+/// Standard 21pt transition for a toolbar that touches the card cursor.
+/// Existing inset panels can consume part of the 16pt pre-divider margin.
 pub fn management_sticky_table_header(
     ui:&mut Ui,min_table_width:f32
+)->ManagementTableHeader{
+    management_sticky_table_header_with_top_gap(
+        ui,min_table_width,theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
+    )
+}
+
+/// CONFLICT-005 (approved): the parent toolbar/strip may already contain an
+/// 8pt bottom inner margin. Subtract that existing inset from the 16pt
+/// pre-divider breathing room instead of adding another full 21pt strip.
+/// Call only for a directly adjacent toolbar and fixed table header.
+pub fn management_sticky_table_header_after_inset(
+    ui:&mut Ui,min_table_width:f32,consumed_bottom_inset:f32
+)->ManagementTableHeader{
+    debug_assert!(consumed_bottom_inset>=0.0
+        && consumed_bottom_inset<=theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP,
+        "toolbar bottom inset must fit inside the standard top gap");
+    management_sticky_table_header_with_top_gap(
+        ui,min_table_width,
+        (theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP-consumed_bottom_inset).max(0.0)
+    )
+}
+
+fn management_sticky_table_header_with_top_gap(
+    ui:&mut Ui,min_table_width:f32,top_gap:f32
 )->ManagementTableHeader{
     debug_assert!(ui.spacing().item_spacing.y.abs()<0.01,
         "table toolbar and header must use zero implicit vertical spacing");
@@ -902,8 +928,7 @@ pub fn management_sticky_table_header(
     // One allocation for the full toolbar-to-header separator strip.
     // Keeping it in a single Ui layout operation also avoids a fractional
     // pixel difference between manual add_space and automatic item gaps.
-    let transition_height=theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
-        +theme::SOFT_DIVIDER_WIDTH
+    let transition_height=top_gap+theme::SOFT_DIVIDER_WIDTH
         +theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP;
     let (transition,_)=ui.allocate_exact_size(
         Vec2::new(viewport_width,transition_height),Sense::hover()
@@ -911,7 +936,7 @@ pub fn management_sticky_table_header(
     ui.painter().rect_filled(
         Rect::from_min_size(
             egui::pos2(transition.left(),
-                transition.top()+theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP),
+                transition.top()+top_gap),
             Vec2::new(viewport_width,theme::SOFT_DIVIDER_WIDTH)
         ),0.0,theme::DIVIDER
     );
@@ -944,12 +969,11 @@ pub fn management_sticky_table_header(
     }
 }
 
-/// CONFLICT-003=A (approved): list-table data width reserves ONLY the
-/// actual scrollbar allocation; no independent 4pt extra gap. The table
-/// header and virtual rows use the same right edge as the two master tables.
-/// Unlike the masters' sticky header, this does not inject a 17pt
-/// toolbar-to-header transition: legacy section rhythm stays unchanged
-/// pending a separate CONFLICT-005 decision.
+/// CONFLICT-003=A: list-table data width reserves only the native
+/// scrollbar allocation. CONFLICT-005: this *bare-header* variant is still
+/// required when status messages, nested editor controls, or independent
+/// section headings intervene between a toolbar and its table. For adjacent
+/// toolbars use management_sticky_table_header[_after_inset] instead.
 pub fn management_list_table_header(
     ui:&mut Ui,min_table_width:f32
 )->ManagementTableHeader{
@@ -1776,6 +1800,17 @@ mod management_toolbar_geometry_tests {
                 assert!((data_width-minimum).abs()<0.01);
             }
         }
+    }
+
+    #[test]
+    fn toolbar_to_header_transition_remains_21pt_with_preexisting_inset() {
+        let top=theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP;
+        let rule=theme::SOFT_DIVIDER_WIDTH;
+        let bottom=theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP;
+        assert_eq!(top+rule+bottom,21.0);
+        let existing_toolbar_inset=theme::SPACE_8;
+        assert_eq!(existing_toolbar_inset
+            +(top-existing_toolbar_inset)+rule+bottom,21.0);
     }
 
     #[test]
