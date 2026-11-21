@@ -1290,7 +1290,12 @@ pub fn management_master_register_header(
     let left=typography::freight_table_header_galley(ui,primary);
     let right=typography::freight_table_header_galley(ui,action);
     let painter=ui.painter().with_clip_rect(text_rect);
-    painter.galley(
+    // Long alias/brand titles must not run under the right-hand
+    // management column on a narrow workspace.
+    let primary_rect=Rect::from_min_max(
+        text_rect.min,egui::pos2(x,text_rect.bottom())
+    );
+    painter.with_clip_rect(primary_rect).galley(
         egui::pos2(text_rect.left()+theme::SPACE_8,
             text_rect.center().y-left.size().y/2.0),
         left,theme::SECONDARY
