@@ -263,15 +263,38 @@ pub fn paired_actions(
 }
 
 
-/// Passive *illustrations* of keyboard keys, never action buttons.
-/// Draw the lower shell first, then the raised face, subtle rim and a
-/// one-pixel highlight. No hover, pressed, focus, or click behavior is added.
+/// Four distinct panes replace the word "Win". This is a static glyph
+/// inside an explanatory keyboard illustration, not a clickable icon.
+fn paint_windows_key_glyph(painter:&egui::Painter,face:Rect){
+    let size=12.5;
+    let gap=1.5;
+    let pane=(size-gap)*0.5;
+    let left=face.center().x-size*0.5;
+    let top=face.center().y-size*0.5;
+    for row in 0..2{
+        for col in 0..2{
+            let x=left+col as f32*(pane+gap);
+            let y=top+row as f32*(pane+gap);
+            painter.rect_filled(
+                Rect::from_min_size(egui::pos2(x,y),Vec2::splat(pane)),
+                0.5,theme::TEXT
+            );
+        }
+    }
+}
+
+/// Low-angle keycap illustration: the bottom side slopes outward toward
+/// the viewer. Distinct top face, tapered side, rim and lip highlight make
+/// it three-dimensional without click, hover or pressed button styling.
 fn reception_keycap(ui:&mut Ui,key:&str){
     let font=egui::FontId::proportional(typography::FONT_FIELD_LABEL);
     let galley=ui.painter().layout_no_wrap(
-        key.to_owned(),font,theme::TEXT
+        if key=="Win"{String::new()}else{key.to_owned()},
+        font,theme::TEXT
     );
-    let width=(galley.size().x+2.0*theme::SPACE_8).ceil().max(26.0);
+    let width=if key=="Win"{30.0}else{
+        (galley.size().x+2.0*theme::SPACE_8).ceil().max(26.0)
+    };
     let height=theme::RECEPTION_KEYCAP_HEIGHT;
     let depth=theme::RECEPTION_KEYCAP_DEPTH;
     let (rect,_)=ui.allocate_exact_size(
@@ -279,38 +302,58 @@ fn reception_keycap(ui:&mut Ui,key:&str){
     );
     let radius=theme::RECEPTION_KEYCAP_RADIUS;
     let face=Rect::from_min_max(
-        rect.min,egui::pos2(rect.right(),rect.bottom()-depth)
+        egui::pos2(rect.left()+2.0,rect.top()+1.0),
+        egui::pos2(rect.right()-2.0,rect.bottom()-depth)
     );
-    let shell=face.translate(egui::vec2(0.0,depth));
     let painter=ui.painter();
-    // The exposed bottom three points provide depth even without a
-    // drop-shadow and remain visible on the dark reception panel.
-    painter.rect_filled(shell,radius,theme::RECEPTION_KEYCAP_SIDE);
+
+    // Silhouette and angled lower wall, visible from slightly below.
+    painter.rect_filled(rect,radius,theme::RECEPTION_KEYCAP_SIDE);
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(face.left(),face.bottom()-0.5),
+            egui::pos2(face.right(),face.bottom()-0.5),
+            egui::pos2(rect.right()-1.0,rect.bottom()-1.0),
+            egui::pos2(rect.left()+1.0,rect.bottom()-1.0)
+        ],
+        theme::RECEPTION_KEYCAP_SIDE,
+        Stroke::NONE
+    ));
     painter.rect_stroke(
-        shell,radius,Stroke::new(1.0,theme::BORDER),
+        rect,radius,Stroke::new(1.0,theme::BORDER),
         egui::StrokeKind::Inside
     );
+    // Recessed upper rim and light-catching front face.
     painter.rect_filled(face,radius,theme::RECEPTION_KEYCAP_FACE);
     painter.rect_stroke(
         face,radius,Stroke::new(1.0,theme::RECEPTION_KEYCAP_EDGE),
         egui::StrokeKind::Inside
     );
-    // An inset highlight reads as a raised top plane rather than the
-    // interactive border of a standard flat action button.
     painter.line_segment(
         [
-            egui::pos2(face.left()+6.0,face.top()+1.5),
-            egui::pos2(face.right()-6.0,face.top()+1.5)
+            egui::pos2(face.left()+5.0,face.top()+1.5),
+            egui::pos2(face.right()-5.0,face.top()+1.5)
         ],
         Stroke::new(1.0,theme::RECEPTION_KEYCAP_HIGHLIGHT)
     );
-    painter.galley(
-        egui::pos2(
-            (face.center().x-galley.size().x*0.5).round(),
-            (face.center().y-galley.size().y*0.5).round()
-        ),
-        galley,theme::TEXT
+    painter.line_segment(
+        [
+            egui::pos2(rect.left()+4.0,rect.bottom()-1.7),
+            egui::pos2(rect.right()-4.0,rect.bottom()-1.7)
+        ],
+        Stroke::new(1.0,theme::RECEPTION_KEYCAP_BOTTOM_HIGHLIGHT)
     );
+    if key=="Win"{
+        paint_windows_key_glyph(painter,face);
+    }else{
+        painter.galley(
+            egui::pos2(
+                (face.center().x-galley.size().x*0.5).round(),
+                (face.center().y-galley.size().y*0.5).round()
+            ),
+            galley,theme::TEXT
+        );
+    }
 }
 
 /// Reuse the same 4pt key grouping on every reception layout. Unlike plain
