@@ -63,7 +63,8 @@ pub fn begin_page(ctx: &Context, page: &'static str) {
         if state.page != page {
             state.page = page;
             state.anchors.clear();
-            state.seen.clear();
+            // Keep per-signal dedupe state when navigating. Managers may retain
+            // their last success String; revisiting a page must not replay it.
             state.active = None;
         }
     });
@@ -75,7 +76,8 @@ fn record(ctx: &Context, source: &'static str, at: Pos2, kind: AnchorKind) {
             at, page: state.page, created: Instant::now(), kind,
         });
         // A new explicit action can replace a prior, persistent failure.
-        if state.active.as_ref().is_some_and(|n| n.source == source) {
+        if kind != AnchorKind::Caret &&
+            state.active.as_ref().is_some_and(|n| n.source == source) {
             state.active = None;
         }
     });
@@ -105,6 +107,13 @@ pub fn input(ctx: &Context, source: &'static str, response: &Response) {
         let position = ctx.input(|i| i.pointer.latest_pos())
             .filter(|pos| response.rect.contains(*pos))
             .unwrap_or(response.rect.center_top());
+        if response.changed() {
+            with_state(ctx, |state| {
+                if state.active.as_ref().is_some_and(|n| n.source==source) {
+                    state.active = None;
+                }
+            });
+        }
         record(ctx, source, position, AnchorKind::Caret);
     }
 }
