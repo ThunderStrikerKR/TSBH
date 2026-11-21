@@ -167,6 +167,7 @@ impl ModelGroupManager {
         if !gateway.model_group_write_enabled(){
             self.status="모델군 변경 저장 권한이 없습니다.".into();return;
         }
+        crate::floating_notice::dispatch_pointer(&ctx,"products.model");
         let groups=self.draft.clone();
         let expected=self.baseline.clone();
         let (tx,rx)=mpsc::channel();
@@ -256,7 +257,10 @@ impl ModelGroupManager {
                                     "직원이 알아보기 쉬운 이름");
                             });
                             if theme::action(form,"그룹 생성",theme::ButtonRole::Standard,
-                                writable&&!busy).clicked(){self.create();}
+                                writable&&!busy).clicked(){
+                                crate::floating_notice::dispatch_pointer(form.ctx(),"products.model");
+                                self.create();
+                            }
                         });
                         components::soft_divider(left);
                         left.horizontal(|search|{
@@ -466,6 +470,15 @@ impl ModelGroupManager {
             });
         });
         if save{self.save(gateway,ui.ctx().clone());}
+        crate::floating_notice::sync(
+            ui.ctx(),"products.model.status","products.model",
+            if self.status.contains("저장했습니다"){
+                crate::floating_notice::Tone::Success
+            }else{
+                crate::floating_notice::Tone::Error
+            },
+            if self.status.is_empty(){None}else{Some(self.status.as_str())}
+        );
     }
     pub fn show_dialogs(&mut self,ctx:&Context,rect:Rect,
         gateway:Arc<dyn BandoGateway>){
