@@ -117,8 +117,8 @@ impl BrandManager {
         ->Option<Value>{
         let mut save=false;
         let mut select=None;
-        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
-        theme::section_frame().show(ui,|card|{
+        let card_min_height=components::management_master_table_card_min_inner_height(ui);
+        theme::management_master_table_frame().show(ui,|card|{
             components::fill_management_primary_card(card,card_min_height);
             card.label(typography::section_heading("브랜드 관리"));
             card.add_space(theme::SPACE_8);
@@ -170,12 +170,29 @@ impl BrandManager {
                     });
                 });
             });
-            card.add_space(theme::SPACE_16);
-            components::soft_divider(card);
+            // Shared Freight master: toolbar-to-header transition,
+            // fixed 36pt register header and 10pt solid scroll rail.
+            card.spacing_mut().item_spacing.y=0.0;
+            card.spacing_mut().scroll=theme::management_table_scroll_style();
+            let header=components::management_master_register_header(
+                card,"브랜드명 / 한글 표기 / 검색 별칭","관리",132.0
+            );
+            let scroll_height=components::management_single_list_scroll_height(
+                card,card_min_height,0.0
+            );
+            let scroll_track=components::management_table_scroll_track_rect(
+                card,scroll_height
+            );
             egui::ScrollArea::vertical()
                 .id_salt("brand-registry-list")
+                .scroll_bar_rect(scroll_track)
+                .scroll_bar_visibility(
+                    egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                )
+                .max_height(scroll_height)
                 .auto_shrink([false,false])
                 .show(card,|list|{
+                    list.set_min_width(header.table_width);
                     for brand in rows(&catalog["brands"]){
                         let id=field(brand,"id");
                         list.horizontal(|line|{
