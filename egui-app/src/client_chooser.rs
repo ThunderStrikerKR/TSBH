@@ -170,7 +170,7 @@ impl ClientChooser {
                 let response=search_panel.add_enabled(!busy,
                     egui::TextEdit::singleline(&mut self.query)
                         .hint_text("상호 / 별칭 / 주소 / 전화번호 검색")
-                        .desired_width(ui.available_width())
+                        .desired_width(search_panel.available_width())
                 );
                 if response.changed()&&self.loaded {
                     self.search(Arc::clone(&gateway),ctx.clone());
