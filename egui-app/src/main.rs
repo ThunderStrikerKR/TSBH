@@ -1558,10 +1558,14 @@ impl BandoEgui {
                     let pane_height=(dialog_height-170.0).max(230.0);
                     ui.horizontal(|row|{
                         row.spacing_mut().item_spacing.x=theme::SPACE_16;
-                        let pane_width=((row.available_width()-theme::SPACE_16)
-                            /2.0).max(175.0);
+                        // The recognized-text pane is 2/3 of its old 50%
+                        // share: image 2/3, text 1/3 of usable width.
+                        let comparison_width=
+                            (row.available_width()-theme::SPACE_16).max(0.0);
+                        let text_width=comparison_width/3.0;
+                        let image_width=comparison_width-text_width;
                         row.allocate_ui_with_layout(
-                            Vec2::new(pane_width,pane_height),
+                            Vec2::new(image_width,pane_height),
                             Layout::top_down(Align::Min),
                             |original|{
                                 original.label(
@@ -1569,16 +1573,23 @@ impl BandoEgui {
                                 );
                                 original.add(
                                     egui::Slider::new(&mut review.zoom,0.5..=4.0)
-                                        .text("확대 배율")
+                                        .text("확대 배율 · 마우스 휠")
                                 );
-                                egui::ScrollArea::both()
+                                let image_view=egui::ScrollArea::both()
                                     .id_salt("ocr-original-image-scroll")
                                     .max_height((pane_height-75.0).max(100.0))
                                     .auto_shrink([false,false])
+                                    // Keep scrollbar/pan controls, but give
+                                    // mouse wheel to image zoom rather than
+                                    // vertical scrolling in the image.
+                                    .scroll_source(
+                                        egui::scroll_area::ScrollSource::SCROLL_BAR
+                                        | egui::scroll_area::ScrollSource::DRAG
+                                    )
                                     .show(original,|image_ui|{
                                         // 100% means fit-to-pane; zooming
                                         // reveals pixels via local pan/scroll.
-                                        let fit=((pane_width-12.0)/review.width as f32)
+                                        let fit=((image_width-12.0)/review.width as f32)
                                             .min(1.0).max(0.01);
                                         let scale=fit*review.zoom;
                                         image_ui.image((
@@ -1589,10 +1600,25 @@ impl BandoEgui {
                                             ),
                                         ));
                                     });
+                                // Check the image viewport only: wheel events
+                                // over the text editor or the zoom slider
+                                // retain their own input behavior.
+                                let wheel=original.input(|input|{
+                                    if input.pointer.hover_pos().is_some_and(|pos|
+                                        image_view.inner_rect.contains(pos)
+                                    ) {
+                                        input.raw_scroll_delta.y
+                                    } else {0.0}
+                                });
+                                if wheel!=0.0 {
+                                    let factor=(wheel*0.0018_f32).exp();
+                                    review.zoom=(review.zoom*factor).clamp(0.5,4.0);
+                                    original.ctx().request_repaint();
+                                }
                             },
                         );
                         row.allocate_ui_with_layout(
-                            Vec2::new(pane_width,pane_height),
+                            Vec2::new(text_width,pane_height),
                             Layout::top_down(Align::Min),
                             |recognized|{
                                 recognized.label(
@@ -1602,10 +1628,10 @@ impl BandoEgui {
                                 );
                                 recognized.add_space(theme::SPACE_8);
                                 recognized.add_sized(
-                                    Vec2::new(pane_width,(pane_height-55.0).max(100.0)),
+                                    Vec2::new(text_width,(pane_height-55.0).max(100.0)),
                                     egui::TextEdit::multiline(&mut review.edited_text)
                                         .font(egui::TextStyle::Body)
-                                        .desired_width(pane_width)
+                                        .desired_width(text_width)
                                         .desired_rows(28),
                                 );
                             },
