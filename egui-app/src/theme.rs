@@ -168,6 +168,13 @@ pub const SECTION_HEADER_HEIGHT: f32 = 34.0;
 pub const RECEPTION_RECIPIENT_NAV_ARROW_WIDTH:f32 = MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
 pub const RECEPTION_RECIPIENT_NAV_NAME_WIDTH:f32 = 116.0;
 pub const RECEPTION_RECIPIENT_NAV_COUNT_WIDTH:f32 = 38.0;
+// Clear non-interactive end stops. Their darker face and near-background
+// vector chevrons are deliberately lower contrast than active arrows.
+pub const RECEPTION_RECIPIENT_NAV_DISABLED_BG:Color32 =
+    Color32::from_rgb(27,27,27);
+pub const RECEPTION_RECIPIENT_NAV_DISABLED_ICON:Color32 =
+    Color32::from_rgb(72,72,72);
+pub const RECEPTION_RECIPIENT_NAV_ACTIVE_ICON:Color32 = SECONDARY;
 pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     2.0*RECEPTION_RECIPIENT_NAV_ARROW_WIDTH
     +RECEPTION_RECIPIENT_NAV_NAME_WIDTH
