@@ -736,6 +736,35 @@ mod management_table_type_roles_tests {
         assert_eq!(spec(Role::Body).weight as u8, Weight::Regular as u8);
     }
     #[test]
+    fn billable_row_totals_are_not_kpi_totals_at_call_sites(){
+        // The same billed amount can appear in an order row and in a
+        // settlement row. Both are repeated data, not a standalone KPI.
+        let history=include_str!("order_history_manager.rs");
+        let settlement=include_str!("daily_settlement_manager.rs");
+        assert_eq!(history.matches("ManagementTableCellRole::RowTotal").count(),2);
+        assert_eq!(settlement.matches("ManagementTableCellRole::RowTotal").count(),1);
+        assert!(!ManagementTableCellRole::RowTotal.emphasized());
+    }
+
+    #[test]
+    fn management_tables_do_not_reintroduce_bool_emphasis_renderers(){
+        for (name,source) in [
+            ("freight",include_str!("freight_manager.rs")),
+            ("order-history",include_str!("order_history_manager.rs")),
+            ("product",include_str!("product_manager.rs")),
+            ("excel",include_str!("excel_manager.rs")),
+            ("client",include_str!("client_manager.rs")),
+            ("daily-settlement",include_str!("daily_settlement_manager.rs")),
+            ("common-components",include_str!("components.rs")),
+        ] {
+            assert!(!source.contains("freight_table_cell_galley("),
+                "{name}: old bool-emphasis rendering has returned");
+            assert!(!source.contains("client_table_cell_galley("),
+                "{name}: old bool-emphasis rendering has returned");
+        }
+    }
+
+    #[test]
     fn money_quantity_and_row_total_have_shared_contrast(){
         assert_eq!(management_table_cell_color(ManagementTableCellRole::Money),TEXT);
         assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),SECONDARY);
