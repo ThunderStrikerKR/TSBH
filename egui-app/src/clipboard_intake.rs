@@ -174,6 +174,73 @@ pub fn read() -> Result<ClipboardPayload, String> {
     Err("클립보드에 접수할 텍스트 또는 이미지가 없습니다.".into())
 }
 
+/// Start Windows' native region selector (Win+Shift+S), and accept ONLY
+/// an image produced after this request. Unlike clipboard paste, this
+/// operation is available even when the clipboard starts completely empty.
+/// Escape, the explicit OCR cancel button, and a 75-second timeout leave the
+/// order untouched. The caller minimizes/restores the HUB around selection.
+#[cfg(windows)]
+pub fn capture_screen_region(
+    cancelled:&AtomicBool
+)->Result<(ClipboardImage,Option<u32>),String>{
+    #[link(name="user32")]
+    unsafe extern "system" {
+        fn keybd_event(key:u8,scan:u8,flags:u32,extra:usize);
+        fn GetAsyncKeyState(key:i32)->i16;
+    }
+    const RELEASE:u32=0x0002;
+    const VK_WIN:u8=0x5B;
+    const VK_SHIFT:u8=0x10;
+    const VK_S:u8=0x53;
+    const VK_ESCAPE:i32=0x1B;
+    let original=clipboard_sequence()
+        .ok_or("Windows 클립보드 변경 상태를 확인할 수 없습니다.")?;
+    if cancelled.load(Ordering::Acquire){return Err("OCR_CANCELLED".into());}
+    unsafe {
+        keybd_event(VK_WIN,0,0,0);
+        keybd_event(VK_SHIFT,0,0,0);
+        keybd_event(VK_S,0,0,0);
+        keybd_event(VK_S,0,RELEASE,0);
+        keybd_event(VK_SHIFT,0,RELEASE,0);
+        keybd_event(VK_WIN,0,RELEASE,0);
+    }
+    let started=Instant::now();
+    let mut esc_released=unsafe{
+        (GetAsyncKeyState(VK_ESCAPE) as u16&0x8000)==0
+    };
+    while started.elapsed()<Duration::from_secs(75){
+        if cancelled.load(Ordering::Acquire){
+            return Err("OCR_CANCELLED".into());
+        }
+        let state=unsafe{GetAsyncKeyState(VK_ESCAPE) as u16};
+        let down=state&0x8000!=0;
+        if !down{esc_released=true;}
+        if esc_released && (down || state&1!=0){
+            return Err("OCR_CANCELLED".into());
+        }
+        if clipboard_sequence()!=Some(original){
+            match read_with_sequence(){
+                Ok((ClipboardPayload::Image(image),sequence))=>{
+                    return Ok((image,sequence));
+                }
+                Ok((ClipboardPayload::Text(_),_))=>{
+                    return Err("캡처 도중 다른 텍스트가 복사되었습니다. 다시 시도해 주세요.".into());
+                }
+                Err(_)=>{ /* Native snip can publish the image asynchronously. */ }
+            }
+        }
+        std::thread::sleep(Duration::from_millis(35));
+    }
+    Err("화면 캡처가 완료되지 않았습니다. 범위를 선택하거나 Esc로 취소해 주세요.".into())
+}
+
+#[cfg(not(windows))]
+pub fn capture_screen_region(
+    _cancelled:&AtomicBool
+)->Result<(ClipboardImage,Option<u32>),String>{
+    Err("캡처 범위 지정은 Windows에서만 지원합니다.".into())
+}
+
 /// Returns recognized text for employee verification beside the source image.
 /// Approval in the caller preserves the original input route as OCR.
 /// The image stays in the caller's buffer, never in the DB.
