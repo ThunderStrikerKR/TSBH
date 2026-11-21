@@ -868,13 +868,12 @@ impl ProductManager {
                 panel,card_min_height,empty_reserve
             );
             // Leave the empty-state caption in the reserved footer.
-            // Otherwise extend the rail through the one-point list-frame
-            // inset, never by the freight master's 16pt section inset.
-            let bottom_extension=if empty_reserve>0.0{
-                0.0
-            }else{theme::FRAME_STROKE_WIDTH};
+            // Common List role decides the rail extension for this card.
             let scroll_track=components::management_table_scroll_track_rect(
-                panel,scroll_max_height,bottom_extension
+                panel,scroll_max_height,
+                components::ManagementTableScrollRole::List{
+                    content_below:empty_reserve>0.0
+                }
             );
             let mut row_left=None;
             let scroll_output=components::virtual_fixed_rows(
