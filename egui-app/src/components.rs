@@ -441,64 +441,27 @@ pub fn modal_window(
         .frame(theme::modal_frame())
 }
 
-/// The single shared title row for all native egui dialogs.
-/// Close/Cancel belongs in the TOP-RIGHT, never repeated beside the
-/// bottom-right confirmation action. Views use "닫기"; editable dialogs
-/// and decisions use "취소". The caller retains its original close guard.
+/// Backward-compatible title entry point. All ordinary dialogs now use
+/// the approved OCR master header: one PANEL surface, one divider, title
+/// LEFT and Cancel/Close RIGHT. Compact dialogs omit the second subtitle
+/// row; they do not inherit the large OCR dialog's 84pt header.
 pub fn modal_header(ui:&mut Ui,title:&str,close_label:&str,enabled:bool)->bool{
-    let mut close=false;
-    ui.horizontal(|bar|{
-        bar.label(typography::modal_title(title));
-        bar.with_layout(Layout::right_to_left(Align::Center),|right|{
-            close=theme::action(right,close_label,theme::ButtonRole::Standard,
-                enabled).clicked();
-        });
-    });
-    ui.add_space(theme::SPACE_8);
-    close
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),theme::MODAL_HEADER_HEIGHT),
+        Sense::hover()
+    );
+    modal_master_header_in_rect(ui,rect,title,"",close_label,enabled)
 }
 
 /// Fixed popup title region with its own background and a single
 /// Freight-master DIVIDER at the bottom. This is an opt-in popup v2
 /// component during the three-screen rollout: old dialogs keep their
 /// approved geometry until explicitly migrated.
+/// Compatibility for fixed-position compact headers during migration.
 pub fn modal_header_in_rect(
-    ui:&mut Ui, rect:Rect, title:&str, close_label:&str, enabled:bool
+    ui:&mut Ui,rect:Rect,title:&str,close_label:&str,enabled:bool
 )->bool {
-    ui.painter().rect_filled(rect,0.0,theme::MODAL_CHROME_BG);
-    ui.painter().line_segment(
-        [rect.left_bottom(),rect.right_bottom()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
-    let content=Rect::from_min_size(
-        egui::pos2(
-            rect.left()+theme::SPACE_8,
-            rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0).max(0.0)
-        ),
-        Vec2::new(
-            (rect.width()-2.0*theme::SPACE_8).max(1.0),
-            theme::ACTION_STANDARD_HEIGHT
-        )
-    );
-    let mut close=false;
-    let clip=content.intersect(ui.clip_rect());
-    ui.scope_builder(
-        egui::UiBuilder::new()
-            .id_salt("modal-v2-heading")
-            .max_rect(content)
-            .layout(Layout::left_to_right(Align::Center)),
-        |header|{
-            header.set_clip_rect(clip);
-            header.set_width(content.width());
-            header.label(typography::modal_title(title));
-            header.with_layout(Layout::right_to_left(Align::Center),|right|{
-                close=theme::action(
-                    right,close_label,theme::ButtonRole::Standard,enabled
-                ).clicked();
-            });
-        },
-    );
-    close
+    modal_master_header_in_rect(ui,rect,title,"",close_label,enabled)
 }
 
 /// Standard 56pt title slot. The returned event is still the original
@@ -515,36 +478,12 @@ pub fn modal_header_chrome(
 
 /// Footer has a stable height, a subtle background and ONE upper divider.
 /// Do not create extra cancel buttons inside it.
+/// Backward-compatible master footer; reserve the full 36pt primary
+/// button height and render a single PANEL upper rule in every dialog.
 pub fn modal_footer_in_rect(
     ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
 ) {
-    ui.painter().rect_filled(rect,0.0,theme::MODAL_CHROME_BG);
-    ui.painter().line_segment(
-        [rect.left_top(),rect.right_top()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
-    let content=Rect::from_min_size(
-        egui::pos2(
-            rect.left()+theme::SPACE_8,
-            rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0).max(0.0)
-        ),
-        Vec2::new(
-            (rect.width()-2.0*theme::SPACE_8).max(1.0),
-            theme::ACTION_STANDARD_HEIGHT
-        )
-    );
-    let clip=content.intersect(ui.clip_rect());
-    ui.scope_builder(
-        egui::UiBuilder::new()
-            .id_salt("modal-v2-footer")
-            .max_rect(content)
-            .layout(Layout::right_to_left(Align::Center)),
-        |footer|{
-            footer.set_clip_rect(clip);
-            footer.set_width(content.width());
-            actions(footer);
-        },
-    );
+    modal_master_footer_in_rect(ui,rect,actions)
 }
 
 /// Approved OCR modal geometry, now the default structural baseline for
