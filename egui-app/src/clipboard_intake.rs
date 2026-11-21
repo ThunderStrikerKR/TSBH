@@ -70,12 +70,17 @@ impl ClipboardMonitor {
     /// guards costly get_image operations, and the 400ms interval bounds the
     /// fallback cost when the Win32 sequence API cannot be used.
     pub fn refresh(&mut self) {
-        if self.last_probe.is_some_and(|time| time.elapsed() < Duration::from_millis(400)) {
+        // Windows exposes a cheap change counter. Check it BEFORE the
+        // 400ms fallback throttle, otherwise clearing the clipboard can
+        // leave the Paste actions enabled with a stale cached kind.
+        let sequence = clipboard_sequence();
+        if sequence.is_some() && sequence == self.last_sequence { return; }
+        // Only non-Windows / unavailable-sequence polling needs a throttle.
+        if sequence.is_none() && self.last_probe.is_some_and(|time|
+            time.elapsed() < Duration::from_millis(400)) {
             return;
         }
         self.last_probe = Some(Instant::now());
-        let sequence = clipboard_sequence();
-        if sequence.is_some() && sequence == self.last_sequence { return; }
         self.last_sequence = sequence;
         self.kind = match read() {
             Ok(ClipboardPayload::Text(_)) => ClipboardKind::Text,
