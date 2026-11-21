@@ -545,12 +545,12 @@ pub fn reception_recipient_fields(
             line.spacing_mut().item_spacing.x = theme::RECIPIENT_LABEL_GAP;
             let title = label_cell(line, label, theme::RECIPIENT_LABEL_WIDTH);
             let width = line.available_width().max(1.0);
-            let input = line.add_enabled_ui(false, |cell| {
-                cell.add_sized(
-                    Vec2::new(width, theme::INPUT_HEIGHT),
-                    editor(value, width),
-                )
-            }).inner;
+            // Read-only is not disabled: keep 36pt management INPUT
+            // contrast while preventing all user edits and preserving hover.
+            let input = line.add_sized(
+                Vec2::new(width, theme::INPUT_HEIGHT),
+                editor(value, width).interactive(false),
+            );
             title.union(input)
         }).inner
     }
@@ -588,12 +588,10 @@ pub fn reception_recipient_fields(
                     let mobile_label = label_cell(
                         line, "휴대폰", theme::RECIPIENT_LABEL_WIDTH,
                     );
-                    let mobile_input = line.add_enabled_ui(false, |cell| {
-                        cell.add_sized(
-                            Vec2::new(mobile_width, theme::INPUT_HEIGHT),
-                            editor(mobile, mobile_width),
-                        )
-                    }).inner;
+                    let mobile_input = line.add_sized(
+                        Vec2::new(mobile_width, theme::INPUT_HEIGHT),
+                        editor(mobile, mobile_width).interactive(false),
+                    );
                     // Only the gap between the TWO contact groups is 8pt.
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_PHONE_COLUMN_GAP;
@@ -602,12 +600,10 @@ pub fn reception_recipient_fields(
                     );
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
-                    let phone_input = line.add_enabled_ui(false, |cell| {
-                        cell.add_sized(
-                            Vec2::new(phone_width, theme::INPUT_HEIGHT),
-                            editor(phone, phone_width),
-                        )
-                    }).inner;
+                    let phone_input = line.add_sized(
+                        Vec2::new(phone_width, theme::INPUT_HEIGHT),
+                        editor(phone, phone_width).interactive(false),
+                    );
                     (
                         mobile_label.union(mobile_input),
                         phone_label.union(phone_input),
@@ -646,6 +642,60 @@ pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
             theme::RECEPTION_CLIENT_SUMMARY_BORDER),
         egui::StrokeKind::Inside,
     );
+}
+
+/// Reception title rule: an independent section uses the master's
+/// stronger header edge, not the faint intra-record list divider.
+/// Preserve the existing one-point slot and all dock splitter coordinates.
+pub fn reception_section_divider(ui:&mut Ui){
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),theme::SOFT_DIVIDER_WIDTH),Sense::hover()
+    );
+    ui.painter().rect_filled(rect,0.0,theme::TABLE_HEADER_OUTLINE);
+}
+
+/// Readability for actionable recognition/workflow issues. Full-width
+/// variable-height rows wrap long content without clipping or creating
+/// another bordered card inside the Reception docked pane.
+pub fn reception_review_status(ui:&mut Ui,message:&str){
+    let width=ui.available_width();
+    let output=Frame::new()
+        .fill(theme::TABLE_ROW_ALT_BG)
+        .corner_radius(theme::CONTROL_RADIUS)
+        .inner_margin(egui::Margin::symmetric(
+            theme::SPACE_8 as i8,theme::SPACE_4 as i8
+        ))
+        .show(ui,|content|{
+            content.set_min_width((width-2.0*theme::SPACE_8).max(1.0));
+            content.add(
+                egui::Label::new(typography::status(message,theme::SELECTED_ORDER))
+                    .wrap()
+            );
+        });
+    let rect=output.response.rect;
+    ui.painter().rect_filled(
+        Rect::from_min_max(
+            rect.left_top(),
+            egui::pos2(rect.left()+theme::WORKFLOW_SELECTED_STRIPE,rect.bottom())
+        ),0.0,theme::SELECTED_ORDER
+    );
+}
+
+/// Copy actions belong to the same fixed footer width as the document.
+/// Keep existing disabled behavior and actions, only align to master right.
+pub fn reception_message_copy_actions(ui:&mut Ui){
+    if ui.available_width()<280.0 {
+        ui.with_layout(Layout::top_down(Align::Max),|actions|{
+            theme::action(actions,"그대로 복사",theme::ButtonRole::Standard,false);
+            theme::action(actions,"인사말 포함 복사",theme::ButtonRole::Standard,false);
+        });
+    }else{
+        ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
+            actions.spacing_mut().item_spacing.x=theme::SPACE_8;
+            theme::action(actions,"인사말 포함 복사",theme::ButtonRole::Standard,false);
+            theme::action(actions,"그대로 복사",theme::ButtonRole::Standard,false);
+        });
+    }
 }
 
 /// A subtle separation between data belonging to the same record.
