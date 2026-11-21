@@ -1918,7 +1918,7 @@ impl BandoEgui {
                             let help=review.model_error.as_deref()
                                 .unwrap_or("반복 정정 패턴을 적용하되 최종 판단은 직원이 합니다.");
                             let changed=toolbar.checkbox(
-                                &mut review.learning_enabled,"학습 모델 사용"
+                                &mut review.learning_enabled,"학습 모델 사용 (시험 기능)"
                             ).on_hover_text(help).changed();
                             toolbar.add_space(theme::SPACE_8);
                             toolbar.add(egui::Label::new(
