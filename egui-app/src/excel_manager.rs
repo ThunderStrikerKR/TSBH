@@ -1067,8 +1067,8 @@ mod table_state_tests {
             concat!("실제 공장", " 전달 확인"),
             concat!("전달 전 정정", " / 재출력"),
             concat!("매장 발송", " 확인"),
-            "history_detail",
-            "pending_confirmation",
+            concat!("history", "_detail"),
+            concat!("pending", "_confirmation"),
             "LegacyForExpandedDetails",
         ] {
             assert!(!history.contains(obsolete),
