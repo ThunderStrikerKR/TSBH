@@ -573,6 +573,9 @@ pub fn freight_summary_frame() -> Frame {
 /// Shared Y inset between the first table row and the start of the
 /// visible scrollbar track. The bottom extension is measured separately.
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=3.0;
+/// The scrollbar thumb must not touch or be clipped by the card's
+/// lower outline. This space belongs to the rail, not to data rows.
+pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=SPACE_4;
 
 pub fn management_scroll_style() -> egui::style::ScrollStyle {
     let mut style=egui::style::ScrollStyle::solid();
