@@ -823,7 +823,7 @@ fn history_date_segment(
 /// one normal, sequential left-to-right layout; the parent cursor advances
 /// only for its explicitly reserved 36pt rectangle.
 fn range_date_picker_rtl(
-    ui:&mut Ui,label:&str,date:&mut String,month:&mut NaiveDate,
+    ui:&mut Ui,label:&str,all_dates:bool,date:&mut String,month:&mut NaiveDate,
     id:&'static str
 )->bool{
     const PREV:f32=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
@@ -871,7 +871,7 @@ fn range_date_picker_rtl(
                     // Match the *visible* digit center, not only the
                     // TextEdit's glyph line box; keep caret and hint aligned.
                     .margin(typography::management_date_text_margin())
-                    .hint_text("YYYY-MM-DD")
+                    .hint_text(if all_dates{"전체"}else{"YYYY-MM-DD"})
                     .desired_width(HISTORY_DATE_FIELD_WIDTH)
             ).on_hover_text(&format!("{label} 직접 입력"));
             crate::floating_notice::sized_text_caret(
@@ -938,11 +938,12 @@ fn history_basis_dropdown(ui:&mut Ui,basis:&mut HistoryDateBasis)->bool{
 /// always render left-to-right; do not nest an RTL layout into date groups.
 fn history_date_range_start(
     ui:&mut Ui,basis:&mut HistoryDateBasis,
-    from:&mut String,from_month:&mut NaiveDate
+    from:&mut String,to:&str,from_month:&mut NaiveDate
 )->bool{
     let mut changed=history_basis_dropdown(ui,basis);
+    let all_dates=from.is_empty()&&to.is_empty();
     changed|=range_date_picker_rtl(
-        ui,"시작일",from,from_month,"order-history-date-from-calendar"
+        ui,"시작일",all_dates,from,from_month,"order-history-date-from-calendar"
     );
     changed
 }
@@ -962,10 +963,11 @@ fn history_date_range_end(
         egui::FontId::proportional(typography::FONT_METADATA),
         theme::MUTED
     );
+    let all_dates=from.is_empty()&&to.is_empty();
     let mut changed=range_date_picker_rtl(
-        ui,"종료일",to,to_month,"order-history-date-to-calendar"
+        ui,"종료일",all_dates,to,to_month,"order-history-date-to-calendar"
     );
-    if theme::action(ui,"전체 날짜",theme::ButtonRole::Standard,
+    if theme::action(ui,"기간 전체",theme::ButtonRole::Standard,
         !from.is_empty()||!to.is_empty()).clicked(){
         from.clear();to.clear();changed=true;
     }
@@ -1005,7 +1007,8 @@ pub(crate) fn excel_export_date_controls(
                 .with_main_align(Align::Max)),|line|{
                 line.set_width(first.width());
                 line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
-                changed|=range_date_picker_rtl(line,"시작일",from,from_month,
+                let all_dates=from.is_empty()&&to.is_empty();
+                changed|=range_date_picker_rtl(line,"시작일",all_dates,from,from_month,
                     "excel-export-from-calendar");
             });
         ui.scope_builder(UiBuilder::new().id_salt("excel-export-to-line")
@@ -1017,8 +1020,9 @@ pub(crate) fn excel_export_date_controls(
                 changed|=excel_export_date_end(line,from,to,to_month);
             });
     }else{
+        let all_dates=from.is_empty()&&to.is_empty();
         changed|=range_date_picker_rtl(
-            ui,"시작일",from,from_month,"excel-export-from-calendar");
+            ui,"시작일",all_dates,from,from_month,"excel-export-from-calendar");
         changed|=excel_export_date_end(ui,from,to,to_month);
     }
     if changed{
@@ -1043,10 +1047,11 @@ fn excel_export_date_end(
         separator.center(),Align2::CENTER_CENTER,"~",
         egui::FontId::proportional(typography::FONT_METADATA),theme::MUTED
     );
+    let all_dates=from.is_empty()&&to.is_empty();
     let mut changed=range_date_picker_rtl(
-        ui,"종료일",to,to_month,"excel-export-to-calendar"
+        ui,"종료일",all_dates,to,to_month,"excel-export-to-calendar"
     );
-    if theme::action(ui,"전체 날짜",theme::ButtonRole::Standard,
+    if theme::action(ui,"기간 전체",theme::ButtonRole::Standard,
         !from.is_empty()||!to.is_empty()).clicked(){
         from.clear();to.clear();changed=true;
     }
@@ -1093,7 +1098,7 @@ fn history_date_controls(
                 line.set_height(first.height());
                 line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
                 changed|=history_date_range_start(
-                    line,basis,from,from_month
+                    line,basis,from,to,from_month
                 );
             });
         ui.scope_builder(UiBuilder::new()
@@ -1110,7 +1115,7 @@ fn history_date_controls(
                 );
             });
     }else{
-        changed|=history_date_range_start(ui,basis,from,from_month);
+        changed|=history_date_range_start(ui,basis,from,to,from_month);
         changed|=history_date_range_end(ui,from,to,to_month);
     }
     if changed{
