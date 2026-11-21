@@ -295,6 +295,15 @@ pub const MANUAL_SEARCH_RESULTS_HEIGHT: f32 = 420.0;
 pub const MANUAL_INPUT_WIDTH: f32 = 250.0;
 // Shared native modal/table roles. Manual source and spreadsheet-like rows
 // inherit these values instead of locally painted one-off geometry.
+// Popup chrome uses the same neutral surface hierarchy as the Freight
+// Shipping-Group Assignment master. No independent popup color palette.
+pub const MODAL_CHROME_BG: Color32 = TABLE_ROW_ALT_BG;
+pub const MODAL_SECTION_BG: Color32 = TABLE_ROW_ALT_BG;
+pub const MODAL_SECTION_HEADER_BG: Color32 = INPUT;
+pub const MODAL_HEADER_HEIGHT: f32 = 56.0;
+pub const MODAL_FOOTER_HEIGHT: f32 = 58.0;
+pub const MODAL_SECTION_PADDING: f32 = SPACE_12;
+pub const MODAL_SECTION_RADIUS: u8 = CONTROL_RADIUS;
 pub const MODAL_PANEL_PADDING_X: f32 = 18.0;
 pub const MODAL_PANEL_PADDING_Y: f32 = 16.0;
 pub const MODAL_DECISION_MAX_WIDTH: f32 = 560.0;
