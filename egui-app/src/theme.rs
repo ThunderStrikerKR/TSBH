@@ -167,6 +167,10 @@ pub const SECTION_HEADER_HEIGHT: f32 = 34.0;
 pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
 // Canvas/footer clearance must be counted in the message editor's height.
 pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
+// One 13pt shortcut label with 3pt keycap top/bottom padding and border.
+// The reception intake free-space calculator uses this instead of a plain
+// metadata text line, keeping three section groups vertically balanced.
+pub const RECEPTION_SHORTCUT_ROW_HEIGHT:f32 = 28.0;
 pub const CARD_PADDING: f32 = SPACE_12;
 pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 // React recipient detail grid: full-width rows and paired contact cells.
