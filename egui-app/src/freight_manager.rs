@@ -1086,10 +1086,24 @@ impl FreightManager {
                             .id_salt("freight-rate-editor-scroll")
                             .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
                             .show(modal,|body|{
-                                Self::rate_dialog(
-                                    body,editor,enabled,&mut action
-                                );
+                                Self::rate_dialog(body,editor,enabled);
                             });
+                        // The save action stays anchored in the OCR-master
+                        // footer while the rate fields alone may scroll.
+                        modal.add_space(theme::SPACE_12);
+                        components::modal_action_row(modal,|bar|{
+                            if theme::action(bar,"확인한 운임 저장",
+                                theme::ButtonRole::Primary,
+                                enabled&&editor.dirty()).clicked(){
+                                match editor.write_action(){
+                                    Ok(command)=>{
+                                        editor.error=None;
+                                        action=Some(command);
+                                    }
+                                    Err(message)=>editor.error=Some(message),
+                                }
+                            }
+                        });
                     });
                 if editor.ask_discard {
                     components::modal_backdrop(ctx,"freight-discard-backdrop",true);
@@ -2332,7 +2346,6 @@ impl FreightManager {
 
     fn rate_dialog(
         ui:&mut Ui,editor:&mut RateEditor,enabled:bool,
-        event:&mut Option<(String,Value)>,
     ){
         ui.horizontal(|title|{
             title.label(typography::subsection_heading(&format!("{} 운임",editor.name)));
@@ -2419,19 +2432,6 @@ impl FreightManager {
                 input,&mut editor.notes,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                 "포장할 때 참고할 사항 (선택)"
             );
-        });
-        ui.add_space(theme::SPACE_12);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|bar|{
-            if theme::action(bar,"확인한 운임 저장",theme::ButtonRole::Primary,
-                enabled&&editor.dirty()).clicked(){
-                match editor.write_action(){
-                    Ok(command)=>{
-                        editor.error=None;
-                        *event=Some(command);
-                    }
-                    Err(message)=>editor.error=Some(message)
-                }
-            }
         });
     }
 
