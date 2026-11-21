@@ -751,9 +751,11 @@ impl ExcelManager{
             let (toolbar_rect,_)=section.allocate_exact_size(
                 Vec2::new(toolbar_width,toolbar_height),Sense::hover()
             );
-            let search_width=if history_one_row{
-                (toolbar_width-history_range_width-theme::SPACE_16).max(1.0)
-            }else if stacked||history_tab{
+            let search_width=if history_tab{
+                // The Order History reference uses a fixed 280pt search
+                // control even when the date group wraps onto a new row.
+                theme::MANAGEMENT_SEARCH_MIN_WIDTH.min(toolbar_width)
+            }else if stacked{
                 toolbar_width
             }else{
                 (toolbar_width-theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH
