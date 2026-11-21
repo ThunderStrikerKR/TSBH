@@ -359,21 +359,36 @@ fn group_product_labels(products:&[&Value])->BTreeMap<String,Vec<String>>{
 /// 14pt management-cell glyph metrics, never character counts.
 fn group_product_preview(ui:&Ui,names:&[String],available_width:f32)->String{
     if names.is_empty(){return "소속 상품 없음".to_owned();}
+    let fits=|value:&str|{
+        typography::management_table_cell_galley(
+            ui,value,typography::ManagementTableCellRole::Text
+        ).size().x<=available_width
+    };
     let mut visible=names[0].clone();
     for shown in 1..=names.len(){
         let mut candidate=names[..shown].join(" · ");
         if shown<names.len(){
             candidate.push_str(&format!(" · 외 {}개",names.len()-shown));
         }
-        let galley=typography::management_table_cell_galley(
-            ui,&candidate,typography::ManagementTableCellRole::Text
-        );
-        if galley.size().x<=available_width{
+        if fits(&candidate){
             visible=candidate;
         }else if shown==1 {
-            // Preserve a real product name even in a narrow viewport.
-            // The complete list remains available on hover.
-            visible=candidate;
+            // Even an unusually long first name cannot hide the remaining
+            // member count outside the clipping rectangle.
+            let suffix=if names.len()>1 {
+                format!(" · 외 {}개",names.len()-1)
+            }else{String::new()};
+            let mut first=names[0].clone();
+            let shortened=loop {
+                let option=format!("{first}…{suffix}");
+                if fits(&option){break option;}
+                if first.pop().is_none(){
+                    break if fits(&format!("외 {}개",names.len())) {
+                        format!("외 {}개",names.len())
+                    }else{String::new()};
+                }
+            };
+            visible=shortened;
             break;
         }else{break;}
     }
@@ -3122,6 +3137,34 @@ mod rate_toolbar_tests{
         assert!(narrow.contains("709 민판"));
         assert!(narrow.contains("외 "));
         assert_eq!(empty,"소속 상품 없음");
+    }
+
+    #[test]
+    fn overlong_first_product_keeps_remaining_count_inside_cell(){
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        let mut result=None;
+        let mut input=egui::RawInput::default();
+        input.screen_rect=Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,egui::vec2(1250.0,800.0)
+        ));
+        let _=ctx.run(input,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let names=vec![
+                    "매우긴상품이름".repeat(30),
+                    "GT-1".to_owned(),
+                    "709".to_owned(),
+                ];
+                let preview=group_product_preview(ui,&names,220.0);
+                let measured=typography::management_table_cell_galley(
+                    ui,&preview,typography::ManagementTableCellRole::Text
+                ).size().x;
+                result=Some((preview,measured));
+            });
+        });
+        let (preview,measured)=result.expect("preview measured");
+        assert!(preview.contains("외 2개"),"{preview}");
+        assert!(measured<=220.0,"{preview} exceeds 220pt: {measured}");
     }
 
     #[test]
