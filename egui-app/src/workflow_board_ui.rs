@@ -257,18 +257,25 @@ fn workflow_header(
     )
 }
 
-/// Preserve both auxiliary controls at the same 52/34pt widths when a
-/// narrow reception column cannot also fit a readable dealer title.
+/// Preserve both auxiliary controls at their approved 52/34pt widths
+/// without allowing a right-to-left child Ui to inherit the remaining
+/// vertical ScrollArea viewport as its height. An unbounded with_layout()
+/// here made each collapsed order card expand almost to the pane bottom.
 fn workflow_wrapped_header_actions(ui:&mut Ui){
-    ui.with_layout(Layout::right_to_left(Align::Center),|right|{
-        right.spacing_mut().item_spacing.x=theme::SPACE_4;
-        components::workflow_auxiliary_button(
-            right,components::WorkflowAuxiliaryAction::Delete
-        );
-        components::workflow_auxiliary_button(
-            right,components::WorkflowAuxiliaryAction::Manage
-        );
-    });
+    let width=ui.available_width();
+    ui.allocate_ui_with_layout(
+        Vec2::new(width,theme::WORKFLOW_AUX_CONTROL_HEIGHT),
+        Layout::right_to_left(Align::Center),
+        |right|{
+            right.spacing_mut().item_spacing.x=theme::SPACE_4;
+            components::workflow_auxiliary_button(
+                right,components::WorkflowAuxiliaryAction::Delete
+            );
+            components::workflow_auxiliary_button(
+                right,components::WorkflowAuxiliaryAction::Manage
+            );
+        }
+    );
 }
 fn stage_name(step:usize,notice:bool)->&'static str{
     if notice && step>=2 {"계좌 재안내 완료"}
