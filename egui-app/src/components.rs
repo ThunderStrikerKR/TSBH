@@ -706,6 +706,27 @@ pub fn modal_action_row<R>(
     )
 }
 
+/// One canonical two-ended footer for edit dialogs. Contextual/danger
+/// actions remain at the LEFT edge; the final Save/Apply action stays
+/// at the RIGHT edge. Independent columns prevent trailing controls from
+/// moving when the leading label or action width changes.
+pub fn modal_action_row_split(
+    ui:&mut Ui,
+    leading:impl FnOnce(&mut Ui),
+    trailing:impl FnOnce(&mut Ui),
+) {
+    modal_action_row(ui,|footer|{
+        footer.columns(2,|columns|{
+            columns[0].with_layout(
+                Layout::left_to_right(Align::Center),leading
+            );
+            columns[1].with_layout(
+                Layout::right_to_left(Align::Center),trailing
+            );
+        });
+    });
+}
+
 pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
     let (rect,_)=ui.allocate_exact_size(
         Vec2::new(ui.available_width(),theme::MODAL_FOOTER_HEIGHT),
