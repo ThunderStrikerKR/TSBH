@@ -1927,13 +1927,13 @@ impl FreightManager {
                     }
                 );
             });
-            components::soft_divider(section);
-
-            // Same fixed header / 42pt virtual row contract as the
-            // '배송 그룹 편성' reference. Only row contents differ.
+            // Direct new-group toolbar -> pinned rate-table header:
+            // use the shared 21pt breathing room (16 + 1pt rule + 4).
+            // Reset implicit item spacing before the shared allocation
+            // so the old free-standing divider is not counted twice.
             let old_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
-            let rate_layout=components::management_list_table_header(
+            let rate_layout=components::management_sticky_table_header(
                 section,theme::FREIGHT_RATE_TABLE_MIN_WIDTH
             );
             let table_width=rate_layout.table_width;
