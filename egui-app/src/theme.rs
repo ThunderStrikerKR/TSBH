@@ -189,6 +189,12 @@ pub const MANAGEMENT_DATE_NAV_BUTTON_WIDTH: f32 = 28.0;
 pub const MANAGEMENT_DATE_CALENDAR_BUTTON_WIDTH: f32 = INPUT_HEIGHT;
 pub const MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH: f32 = SPACE_16;
 pub const MANAGEMENT_DATE_CONTROL_GAP: f32 = SPACE_8;
+// One geometry source for the shared Order History / Excel calendar popup.
+// Its four arrow controls align with the seven equal-sized date columns.
+pub const CALENDAR_NAV_SIZE: f32 = MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
+pub const CALENDAR_DAY_SIZE: f32 = ACTION_STANDARD_HEIGHT;
+pub const CALENDAR_GRID_GAP: f32 = SPACE_4;
+pub const CALENDAR_GRID_WIDTH: f32 = 7.0*CALENDAR_DAY_SIZE+6.0*CALENDAR_GRID_GAP;
 pub const ACTION_PRIMARY_HEIGHT: f32 = 36.0;
 pub const ACTION_STANDARD_HEIGHT: f32 = 34.0;
 pub const ACTION_EMPHASIZED_HEIGHT: f32 = 34.0;
