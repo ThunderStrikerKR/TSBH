@@ -198,9 +198,18 @@ fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,id:impl std::hash::Hash){
             .on_hover_text(visible);
     }
 }
+/// The two Excel tabs show one table at a time. Only use full-card
+/// height when no inline details are expanded below the table; a queue
+/// footer or empty-status line still needs protected vertical space.
+#[derive(Clone,Copy)]
+enum ExcelTableHeightPolicy {
+    FillCard { card_min_height:f32, reserve_below:f32 },
+    LegacyForExpandedDetails,
+}
 fn table<const N:usize>(
     ui:&mut Ui,id:&str,titles:[&str;N],base:[f32;N],
     align:[Align2;N],stretch:usize,rows:usize,
+    height_policy:ExcelTableHeightPolicy,
     sort:&mut Option<Sort>,sort_enabled:[bool;N],
     header_selection:Option<(bool,bool)>,
     mut render:impl FnMut(&mut Ui,[Rect;N],usize)
@@ -208,19 +217,24 @@ fn table<const N:usize>(
     let old_gap=ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y=0.0;
     let minimum=base.iter().sum::<f32>()+(N-1) as f32*GAP;
-    // The pre-existing 4pt rail inset stays intact until the user
-    // resolves that difference from the two approved master tables.
     let layout=components::management_list_table_header(ui,minimum);
     let width=layout.table_width;
     let widths=theme::management_single_stretch_columns(base,width,GAP,stretch);
     let header=layout.header_rect;
+    let scroll_max_height=match height_policy {
+        ExcelTableHeightPolicy::FillCard{card_min_height,reserve_below}=>
+            components::management_single_list_scroll_height(
+                ui,card_min_height,reserve_below
+            ),
+        ExcelTableHeightPolicy::LegacyForExpandedDetails=>
+            ui.ctx().content_rect().height()*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION,
+    };
     let mut left=None;
     let output=components::virtual_fixed_rows(
         egui::ScrollArea::both().id_salt(id)
             .scroll_bar_visibility(
                 egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-            .max_height(ui.ctx().content_rect().height()
-                *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION)
+            .max_height(scroll_max_height)
             .auto_shrink([false,false]),
         ui,width,HEIGHT,rows,|body,range|{
             let first=range.start;
@@ -532,11 +546,24 @@ impl ExcelManager{
                 sort_history(&mut history,self.sort_history);
                 let indexes=0..history.len();
                 let order_list=history.clone();
+                // Related-order details can be arbitrarily tall. When
+                // expanded, keep the original 60% table cap and let the
+                // details remain reachable below it; never cover them.
+                let history_height_policy=if self.history_detail.is_some(){
+                    ExcelTableHeightPolicy::LegacyForExpandedDetails
+                }else{
+                    ExcelTableHeightPolicy::FillCard {
+                        card_min_height,
+                        reserve_below:if history.is_empty()&&self.receiver.is_none(){
+                            theme::INPUT_HEIGHT
+                        }else{0.0},
+                    }
+                };
                 let _=table(section,"excel-history-table",
                     ["작성 날짜","작성 건수","파일 / 주문","조회"],
                     HISTORY,[Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
                         Align2::LEFT_CENTER,Align2::CENTER_CENTER],
-                    2,indexes.len(),&mut self.sort_history,
+                    2,indexes.len(),history_height_policy,&mut self.sort_history,
                     [true,true,true,false],None,|row,cells,i|{
                         let entry=&order_list[i];
                         let id=text(entry,"id");
@@ -644,12 +671,27 @@ impl ExcelManager{
                 let chosen=self.selected.len();
                 let all=!visible.is_empty()&&chosen==visible.len();
                 let records=queued.clone();
+                // Always protect the Excel-export / folder footer. Extra
+                // text for an empty queue also sits below the table.
+                // The expanded per-shipment management editor has dynamic
+                // height and retains the prior conservative table cap.
+                let queue_height_policy=if self.managed_queue.is_some(){
+                    ExcelTableHeightPolicy::LegacyForExpandedDetails
+                }else{
+                    ExcelTableHeightPolicy::FillCard {
+                        card_min_height,
+                        reserve_below:theme::INPUT_HEIGHT+theme::SPACE_24
+                            +if records.is_empty()&&self.receiver.is_none(){
+                                theme::INPUT_HEIGHT
+                            }else{0.0},
+                    }
+                };
                 let toggle_all=table(section,"excel-queue-table",
                     ["선택","거래처 / 발주","수취인 / 배송 품목","금액","처리"],
                     QUEUE,[Align2::CENTER_CENTER,Align2::LEFT_CENTER,
                         Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
                         Align2::CENTER_CENTER],
-                    2,records.len(),&mut self.sort_queue,
+                    2,records.len(),queue_height_policy,&mut self.sort_queue,
                     [false,true,true,true,false],Some((all,!visible.is_empty())),
                     |row,cells,index|{
                         let entry=&records[index];
