@@ -70,7 +70,9 @@ pub const WORKFLOW_CARD_RADIUS: u8 = 7;
 pub const WORKFLOW_SELECTED_STRIPE: f32 = 2.0;
 // Actual vertical gap between adjacent order-group cards, not an
 // additional gap layered over egui's implicit vertical item spacing.
-pub const WORKFLOW_CARD_GAP: f32 = SPACE_4;
+// Match the 8pt rhythm between independent master cards without enlarging
+// the fixed-size signal lamps, buttons or individual order row geometry.
+pub const WORKFLOW_CARD_GAP: f32 = SPACE_8;
 pub const WORKFLOW_TITLE_HEIGHT: f32 = 34.0;
 pub const WORKFLOW_SIGNAL_WIDTH: f32 = 82.0;
 pub const WORKFLOW_SIGNAL_SIZE: f32 = 18.0;
@@ -798,7 +800,9 @@ pub fn action_with_min_width(
     // Respect disabled parent Ui scopes as well as the local enabled flag.
     let effective_enabled=enabled && ui.is_enabled();
     let (fill,color,stroke)=if !effective_enabled
-        && matches!(role,ButtonRole::Standard | ButtonRole::TableSecondary)
+        && matches!(role,
+            ButtonRole::Standard | ButtonRole::TableSecondary | ButtonRole::Emphasized
+        )
     {
         (DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
          Stroke::new(1.0,DISABLED_ACTION_BORDER))
