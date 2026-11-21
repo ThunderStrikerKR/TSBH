@@ -240,9 +240,20 @@ fn table<const N:usize>(
         ExcelTableHeightPolicy::LegacyForExpandedDetails=>
             ui.ctx().content_rect().height()*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION,
     };
+    // Queue has its export footer below; expanded details and capped
+    // reports retain their own space. Only a full-card history with no
+    // trailing controls may let its rail reach the 1pt card edge.
+    let bottom_extension=match height_policy{
+        ExcelTableHeightPolicy::FillCard{reserve_below,..}
+            if reserve_below<=0.0=>theme::FRAME_STROKE_WIDTH,
+        _=>0.0,
+    };
+    let scroll_track=components::management_table_scroll_track_rect(
+        ui,scroll_max_height,bottom_extension
+    );
     let mut left=None;
     let output=components::virtual_fixed_rows(
-        egui::ScrollArea::both().id_salt(id)
+        egui::ScrollArea::both().scroll_bar_rect(scroll_track).id_salt(id)
             .scroll_bar_visibility(
                 egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
             .max_height(scroll_max_height)
@@ -523,6 +534,7 @@ impl ExcelManager{
         let card_min_height=components::management_primary_card_min_inner_height(ui,theme::FRAME_STROKE_WIDTH);
         theme::management_list_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
+            section.spacing_mut().scroll=theme::management_table_scroll_style();
             theme::management_list_strip_frame().show(section,|toolbar|{
                 toolbar.horizontal(|line|{
                     if components::flexible_text_field(
