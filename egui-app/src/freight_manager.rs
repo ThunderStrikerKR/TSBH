@@ -1360,9 +1360,9 @@ impl FreightManager {
                 "","상품명 / 상품설명","색상/옵션","카테고리",
                 "배송 그룹","설정"
             ];
-            // Preserve the 16pt card inset for ROWS. Only the native rail
-            // uses that inset: it starts flush with the fixed header and
-            // continues down to 3pt above the card's bottom border.
+            // Preserve the card's 16pt bottom padding. The rail starts
+            // flush beneath the header and stops at the same actual Y as
+            // the painted body viewport, not inside the bottom padding.
             let scroll_max_height=components::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
