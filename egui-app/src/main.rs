@@ -1948,8 +1948,11 @@ impl BandoEgui {
                                     // The unified workspace paints INPUT;
                                     // remove TextEdit's own second outline.
                                     .frame(false)
+                                    // Larger, dedicated OCR-review typography:
+                                    // compare misread model codes, numbers and
+                                    // addresses without changing other screens.
                                     .font(egui::FontId::proportional(
-                                        typography::FONT_BODY
+                                        typography::FONT_OCR_REVIEW_TEXT
                                     ))
                                     .margin(egui::Margin::same(
                                         theme::SPACE_12 as i8
