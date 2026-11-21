@@ -111,7 +111,7 @@ pub fn input(ctx: &Context, source: &'static str, response: &Response) {
 
 /// Exact caret location, from TextEditOutput::galley/galley_pos/cursor_range.
 pub fn text_edit_caret(
-    ctx: &Context, source: &'static str, output: &egui::text_edit::TextEditOutput,
+    ctx: &Context, source: &'static str, output: &egui::widgets::text_edit::TextEditOutput,
 ) {
     if !output.response.has_focus() { return; }
     let caret = output.cursor_range.map(|range|
@@ -137,6 +137,7 @@ fn fallback(ctx: &Context) -> Pos2 {
 pub fn publish(ctx: &Context, source: &'static str, tone: Tone, message: impl Into<String>) {
     let message = message.into();
     if message.trim().is_empty() { return; }
+    let fallback_anchor = fallback(ctx);
     with_state(ctx, |state| {
         if state.active.as_ref().is_some_and(|n|
             n.source == source && n.tone == tone && n.message == message
@@ -147,7 +148,7 @@ pub fn publish(ctx: &Context, source: &'static str, tone: Tone, message: impl In
             a.page == state.page && a.created.elapsed() <= ANCHOR_VALID_FOR
         );
         let (at, kind) = anchor.map(|a| (a.at, a.kind))
-            .unwrap_or((fallback(ctx), AnchorKind::Section));
+            .unwrap_or((fallback_anchor, AnchorKind::Section));
         state.active = Some(Notice {
             message, tone, source, at, kind, created: Instant::now(),
         });
