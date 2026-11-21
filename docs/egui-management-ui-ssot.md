@@ -35,7 +35,7 @@
 | **단일 목록 스크롤 높이 (CONFLICT-004=A)** | 카드 아래 경계 − 표 본문 시작 위치 − 하단 필수 영역 예약 높이. 화면 전체 60% 일괄 제한 금지. 복수 표·펼침 상세·편집 패널은 예외 | `components::management_single_list_scroll_height`; `ExcelTableHeightPolicy` |
 | 두 줄·상세형 목록 | 길이와 정보 구조에 따른 **별도 역할**, 단일행 42pt로 억지 통일 금지 | 예: `theme::MANAGEMENT_TABLE_ROW_HEIGHT`(58pt); 아래 예외 표 |
 | 도구줄→고정 헤더 (CONFLICT-005) | **총 21pt = 16pt 상단 여백 + 1pt 구분선 + 4pt 아래 여백**. 도구줄 프레임이 이미 8pt 하단 패딩을 제공하면 **기존 8pt + 추가 8pt + 1pt + 4pt**로 계산. 자동 세로 간격 중첩 금지. **마지막 도구줄과 표 헤더가 직접 연결되는 동일 역할에만 적용** | `theme::MANAGEMENT_TOOLBAR_DIVIDER_*_GAP`, `components::management_sticky_table_header`, `management_sticky_table_header_after_inset` |
-| 표 스크롤 레일 | solid, 너비 10pt, 핸들 최소 길이 44pt. **CONFLICT-003=A:** 관리 목록표 데이터 폭 계산의 추가 여백 0pt. **배송그룹 편성의 트랙은 행 시작 +3pt에서 시작하고, 아래쪽은 카드 16pt 내부 하단 패딩을 통과해 하단 테두리 안쪽까지 연장한다.** 데이터 행 스크롤 영역 자체는 늘리지 않는다. | `theme::management_scroll_style`, `components::management_table_data_width`(내부 공통 계산), `freight_manager::show_groups`의 `scroll_bar_rect` |
+| **표 스크롤 레일 — 공통 컴포넌트** | **CONFLICT-003=A:** 표 전용 solid 스크롤바 10pt, 최소 핸들 44pt, 양쪽 추가 여백 **0pt**. 트랙 상단은 표 본문 시작 +**3pt**. 전체 카드의 마지막 목록이면 **기존 하단 패딩(마스터 16pt, 1pt 목록 카드 1pt)**만큼 레일을 연장하며, Excel 작성 푸터·상세·복수 표가 뒤에 있으면 **0pt 연장**한다. **행 스크롤 영역 높이는 바꾸지 않는다.** | `theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET`, `theme::management_table_scroll_style()`, `components::management_table_scroll_track_rect()` 및 공통 헤더 데이터 폭 계산 |
 | **표의 데이터 오른쪽 끝** | **헤더 외곽 오른쪽 끝 − 표 스크롤바 할당폭**, 도구줄의 우측 끝과 동일하게 강제하지 않음 | `components::management_sticky_table_header` |
 | 폰트 역할 | 페이지 20pt, 섹션 16pt, 표 헤더/본문 14pt, 표준 작업 버튼 13pt | `typography.rs`의 역할별 토큰·spec |
 
