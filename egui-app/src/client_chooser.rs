@@ -176,6 +176,11 @@ impl ClientChooser {
                 if busy {
                     ui.label(typography::caption("거래처 적용 중…"));
                 }
+                // Native selection errors must remain visible in the chooser.
+                // Otherwise a failed Rust repricing looks like a dead button.
+                if let Some(error)=self.error.as_deref() {
+                    ui.label(egui::RichText::new(error).color(theme::DANGER));
+                }
                 if !self.loaded||self.searching {
                     ui.label(typography::caption("검색 중"));
                 } else {
@@ -197,20 +202,44 @@ impl ClientChooser {
                                         text(row,"phone")
                                     } else { text(row,"mobile") };
                                     let selected=current_id==Some(id);
-                                    let title=if selected {
-                                        format!("{name} / 현재 거래처")
-                                    } else { name.to_owned() };
-                                    if theme::action(ui,&title,
-                                        if selected {ButtonRole::ActiveNavigation}
-                                        else {ButtonRole::Quiet},!busy).clicked() {
-                                        chosen=Some(id.to_owned());
-                                    }
-                                    ui.label(typography::caption(
-                                        &format!("{} / {}",
-                                            if address.is_empty(){"주소 미등록"}else{address},
-                                            if phone.is_empty(){"전화 미등록"}else{phone}
-                                        )
-                                    ));
+                                    // A transparent text-only Quiet action
+                                    // looked like static data in the old chooser.
+                                    // Keep details as labels and provide a
+                                    // visible, standard action on EVERY row.
+                                    let info_width=(ui.available_width()-110.0).max(150.0);
+                                    ui.horizontal(|line|{
+                                        line.allocate_ui_with_layout(
+                                            egui::vec2(info_width,
+                                                theme::MANAGEMENT_CHOOSER_ROW_HEIGHT),
+                                            egui::Layout::top_down(egui::Align::Min),
+                                            |details|{
+                                                details.spacing_mut().item_spacing.y=
+                                                    theme::SPACE_4;
+                                                details.add(egui::Label::new(
+                                                    typography::body(name)).truncate());
+                                                let contact=format!("{} / {}",
+                                                    if address.is_empty(){"주소 미등록"}
+                                                    else{address},
+                                                    if phone.is_empty(){"전화 미등록"}
+                                                    else{phone});
+                                                details.add(egui::Label::new(
+                                                    typography::caption(&contact)).truncate())
+                                                    .on_hover_text(contact);
+                                            },
+                                        );
+                                        line.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |actions|{
+                                                let label=if selected {"선택됨"}else{"선택"};
+                                                if theme::action_with_min_width(
+                                                    actions,label,ButtonRole::Standard,
+                                                    !busy && !selected,76.0
+                                                ).clicked(){
+                                                    chosen=Some(id.to_owned());
+                                                }
+                                            },
+                                        );
+                                    });
                                     ui.separator();
                                 }
                             }
