@@ -135,6 +135,12 @@ struct HistoryRow{
     clients:String,
     products:String,
 }
+/// The Excel archive opens on the current Seoul calendar day, with an
+/// inclusive start/end range. "전체 날짜" can still clear both values.
+fn default_export_date_range(today:NaiveDate)->(String,String){
+    let day=today.format("%Y-%m-%d").to_string();
+    (day.clone(),day)
+}
 fn export_day(raw:&str)->String{
     if let Ok(dt)=DateTime::parse_from_rfc3339(raw){
         return dt.with_timezone(&FixedOffset::east_opt(9*3600).unwrap())
@@ -526,13 +532,14 @@ impl ExcelManager{
         let today=Utc::now().with_timezone(
             &FixedOffset::east_opt(9*3600).expect("Seoul offset")
         ).date_naive();
+        let (export_from,export_to)=default_export_date_range(today);
         let mut manager=Self{
             gateway,receiver:None,result:None,operation:None,operation_name:None,
             preview:None,error:None,notice:None,tab:Tab::Factory,
             query:String::new(),selected:BTreeSet::new(),
             sort_queue:None,sort_history:None,
-            export_from:String::new(),export_to:String::new(),
-            export_from_input:String::new(),export_to_input:String::new(),
+            export_from:export_from.clone(),export_to:export_to.clone(),
+            export_from_input:export_from,export_to_input:export_to,
             export_from_month:components::calendar_month_start(today),
             export_to_month:components::calendar_month_start(today),
             managed_queue:None,freight_drafts:HashMap::new(),
@@ -894,7 +901,7 @@ impl ExcelManager{
                     self.error.is_some()
                 );
                 let _=table(section,"excel-history-table",
-                    ["작성 날짜","거래처","상품 목록","조회"],
+                    ["작성 일시","거래처","상품 목록","조회"],
                     HISTORY,[Align2::LEFT_CENTER,Align2::LEFT_CENTER,
                         Align2::LEFT_CENTER,Align2::CENTER_CENTER],
                     2,indexes.len(),
@@ -1233,6 +1240,17 @@ mod table_state_tests {
         // Queue-level details remain a separate, unchanged workflow.
         assert!(source.contains("ExcelTableHeightPolicy::LegacyForExpandedDetails"));
         assert!(source.contains("pub fn take_open_order"));
+    }
+
+    #[test]
+    fn excel_history_defaults_to_today_for_both_date_fields(){
+        let today=NaiveDate::from_ymd_opt(2026,11,22).unwrap();
+        let (from,to)=default_export_date_range(today);
+        assert_eq!(from,"2026-11-22");
+        assert_eq!(to,"2026-11-22");
+        assert!(export_date_matches("2026-11-22T12:30:00+09:00",&from,&to));
+        assert!(!export_date_matches("2026-11-21T23:59:59+09:00",&from,&to));
+        assert!(export_date_matches("2026-11-21T23:59:59+09:00","",""));
     }
 
     #[test]
