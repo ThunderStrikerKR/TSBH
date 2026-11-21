@@ -54,7 +54,7 @@ mod developer_ui_samples;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
-use clipboard_intake::{ClipboardMonitor, ClipboardPayload, OrderType};
+use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
 use preview_store::{WorkingReception, WorkingSource};
 use kakao_context::{ChatWindow, KakaoTracker};
 use client_chooser::{ClientChooser, Choice};
@@ -103,16 +103,26 @@ impl Page {
     }
 }
 
-// Successful OCR text enters the editable source directly.
-// Clipboard images no longer persist in a review dialog.
+// Keep OCR image in memory until an employee approves recognized text.
 enum ClipboardReceipt {
     Text(String),
-    Ocr(String),
+    Ocr { text: String, image: ClipboardImage },
+}
+struct OcrReview {
+    order_type: OrderType,
+    original_text: String,
+    edited_text: String,
+    texture: egui::TextureHandle,
+    width: usize,
+    height: usize,
+    zoom: f32,
+    chat: Option<ChatWindow>,
 }
 struct PendingReplace {
     text: String,
     order_type: OrderType,
     chat: Option<ChatWindow>,
+    input_method: &'static str,
 }
 
 // Keep deletion bound to the exact unconfirmed receipt and raw text. The
@@ -205,6 +215,8 @@ struct BandoEgui {
     clipboard_cancel: Arc<AtomicBool>,
     clipboard_receiver: Option<Receiver<(OrderType, Result<ClipboardReceipt, String>)>>,
     clipboard_error: Option<String>,
+    ocr_review: Option<OcrReview>,
+    discard_ocr_confirm: bool,
     pending_replace: Option<PendingReplace>,
     source_clear_confirm: Option<SourceClearRequest>,
     source_clear_job: Option<PendingSourceClear>,
@@ -278,6 +290,8 @@ impl Default for BandoEgui {
             clipboard_cancel: Arc::new(AtomicBool::new(false)),
             clipboard_receiver: None,
             clipboard_error: None,
+            ocr_review: None,
+            discard_ocr_confirm: false,
             pending_replace: None,
             source_clear_confirm: None,
             source_clear_job: None,
@@ -1387,7 +1401,7 @@ impl BandoEgui {
                 ClipboardPayload::Text(text) => Ok(ClipboardReceipt::Text(text)),
                 ClipboardPayload::Image(image) => {
                     let text = clipboard_intake::recognize_image(&image, &cancelled)?;
-                    Ok(ClipboardReceipt::Ocr(text))
+                    Ok(ClipboardReceipt::Ocr { text, image })
                 }
             });
             let _ = tx.send((order_type, result));
@@ -1403,7 +1417,9 @@ impl BandoEgui {
         }
         if self.raw_source != text && !self.raw_source.trim().is_empty() {
             // Exact replacement confirmation from the existing React intake.
-            self.pending_replace = Some(PendingReplace { text, order_type, chat });
+            self.pending_replace = Some(PendingReplace {
+                text, order_type, chat, input_method: "TEXT_PASTE"
+            });
             return;
         }
         self.apply_intake_text(text, order_type, chat, ctx, "TEXT_PASTE", false);
@@ -1461,29 +1477,34 @@ impl BandoEgui {
                     Ok(ClipboardReceipt::Text(text)) => {
                         self.accept_clipboard_text(text, order_type, intake_chat, ctx);
                     }
-                    Ok(ClipboardReceipt::Ocr(text)) => {
-                        // Image recognition and original-document editing are
-                        // separate stages; a successful OCR result now skips
-                        // review entirely and enters the editable source.
-                        let recognized = text.trim();
-                        if recognized.is_empty() {
-                            self.clipboard_error = Some(
+                    Ok(ClipboardReceipt::Ocr { text, image }) => {
+                        if text.trim().is_empty() {
+                            self.clipboard_error=Some(
                                 "이미지에서 문자를 인식하지 못했습니다.".into()
                             );
                             return;
                         }
-                        let joined = if self.raw_source.trim().is_empty() {
-                            recognized.to_owned()
-                        } else {
-                            format!("{}\n{}", self.raw_source.trim_end(), recognized)
-                        };
-                        if joined.chars().count() > 20_000 {
-                            self.clipboard_error = Some(
+                        if text.chars().count()>20_000 {
+                            self.clipboard_error=Some(
                                 "발주 원문은 최대 20,000자까지 입력할 수 있습니다.".into()
                             );
                             return;
                         }
-                        self.apply_intake_text(joined, order_type, intake_chat, ctx, "OCR", false);
+                        // Wait for manual comparison and approval. No write yet.
+                        let texture=ctx.load_texture(
+                            "clipboard-ocr-review-preview",
+                            egui::ColorImage::from_rgba_unmultiplied(
+                                [image.width,image.height],&image.rgba
+                            ),
+                            egui::TextureOptions::LINEAR
+                        );
+                        self.ocr_review=Some(OcrReview {
+                            order_type,
+                            original_text:text.clone(),
+                            edited_text:text,
+                            texture,width:image.width,height:image.height,
+                            zoom:1.0,chat:intake_chat,
+                        });
                     }
                     Err(error) if error == "OCR_CANCELLED" => {}
                     Err(error) => {
@@ -1532,7 +1553,7 @@ impl BandoEgui {
                 // Explicit replacement starts a new original-source route;
                 // OCR appended later still preserves this first method.
                 self.apply_intake_text(
-                    next.text, next.order_type, next.chat, ctx, "TEXT_PASTE", true
+                    next.text, next.order_type, next.chat, ctx, next.input_method, true
                 );
             }
         } else if cancel {
@@ -1545,7 +1566,7 @@ impl BandoEgui {
     fn request_source_clear(&mut self) {
         if self.source_clear_job.is_some() || self.client_change.is_some() ||
            self.working_sync.is_some() || self.manual_workspace.is_some() ||
-           self.clipboard_busy || self.pending_replace.is_some() {
+           self.clipboard_busy || self.ocr_review.is_some() || self.pending_replace.is_some() {
             return;
         }
         let Some(row)=self.active_id.as_deref()
@@ -3953,13 +3974,14 @@ impl eframe::App for BandoEgui {
             self.other_page(ctx);
         }
         let work_area=self.modal_work_area(ctx);
-        if self.pending_replace.is_some() || self.source_clear_confirm.is_some() ||
+        if self.ocr_review.is_some() || self.pending_replace.is_some() || self.source_clear_confirm.is_some() ||
             (self.page==Page::Reception &&
                 (self.client_chooser.is_some() || self.manual_workspace.is_some())) {
             components::modal_backdrop(
                 ctx,"bando-workspace-modal-backdrop",false
             );
         }
+        self.show_ocr_review(ctx,work_area);
         self.show_replacement_confirmation(ctx,work_area);
         self.show_source_clear_confirmation(ctx,work_area);
         if self.page == Page::Reception {
