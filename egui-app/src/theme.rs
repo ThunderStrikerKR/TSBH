@@ -592,16 +592,12 @@ pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=0.0;
 /// viewport. This does not alter row clipping or the card's 16pt padding.
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=3.0;
 
-/// A single-master rail may occupy the center of the card's 16pt lower
-/// whitespace without touching its outer border. Keep 8pt clear below
-/// the rail and keep row viewport height completely unchanged.
-/// `management_table_scroll_track_geometry` subtracts its 3pt inset, so
-/// include that inset when computing the native rail extension.
-pub const MANAGEMENT_MASTER_TABLE_SCROLL_BOTTOM_CLEARANCE:f32=SPACE_8;
+/// Both master tables stop the scrollbar rail at the exact last painted
+/// row viewport boundary. The generic track helper already subtracts the
+/// 3pt bottom optical inset, so supplying that same 3pt restores the row
+/// edge exactly. Do not extend into the card's remaining 16pt padding.
 pub const MANAGEMENT_MASTER_TABLE_SCROLL_RAIL_EXTENSION:f32=
-    MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
-    -MANAGEMENT_MASTER_TABLE_SCROLL_BOTTOM_CLEARANCE
-    +MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET;
+    MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET;
 
 pub fn management_scroll_style() -> egui::style::ScrollStyle {
     let mut style=egui::style::ScrollStyle::solid();
