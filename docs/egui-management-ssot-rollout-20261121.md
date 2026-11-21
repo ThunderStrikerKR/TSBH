@@ -22,7 +22,7 @@
 - **원인:** 배송그룹 편성만 카드 하단 패딩 16pt를 트랙에 더하고, 주문내역은 트랙을 표 본문에서 끝냈으며, 다른 목록은 자체 `ScrollArea` 기본값에 맡겨져 있었다. 같은 SSOT 토큰을 공유해도 표 하단 테두리와 레일의 길이가 달랐다.
 - **수정 후 단일 소유자:** `components::management_table_scroll_track_rect(ui,scroll_height,bottom_extension)`가 모든 관리 표의 트랙 상단 +3pt 및 하단 좌표를 계산한다. `theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET=3pt`가 상단 규칙을 소유한다.
 - **표 전용 공통 스타일:** `theme::management_table_scroll_style()`은 solid 10pt 레일·핸들 최소 44pt를 유지하고 내·외측 추가 여백을 각각 0pt로 설정한다. 페이지 전체나 일반 패널용 `management_scroll_style()`은 변경하지 않는다.
-- **마스터:** 배송그룹 편성과 주문내역은 같은 공통 함수에 `theme::SECTION_PADDING`(16pt)을 전달한다. 표 본문 높이는 그대로 유지하고 트랙만 아래쪽 카드 패딩까지 확장한다.
+- **마스터 최종 정정(2026-11-21):** 기존에는 배송그룹 편성·주문내역이 스크롤바만 카드의 하단 16pt 패딩으로 연장했으나, 스크린샷에서 실제 행은 위에서 끝나고 레일만 아래로 이어지는 오류가 드러났다. **두 마스터 모두 `management_master_table_frame()`으로 상단·좌우 16pt, 하단 0pt를 적용하고 `management_master_table_card_min_inner_height()`로 표 본문 자체를 16pt 확장한다.** 공통 `management_table_scroll_track_rect()`에는 연장값 **0pt**를 넘긴다. 카드 외곽 크기는 유지한다.
 - **일반 단일 목록:** 거래처 목록은 카드 1pt 내부 경계를 연장값으로 전달한다. 상품 목록은 빈 상태 안내를 위해 공간을 예약한 경우 0pt, 그 외에는 1pt를 전달한다.
 - **Excel 관리:** 공장/매장 발송 대기 목록은 작성/폴더열기 푸터를 보호하므로 0pt, 이력의 상세/상태 메시지 또한 0pt를 사용한다. 하단에 다른 영역이 없는 이력 목록만 1pt를 사용한다.
 - **운임관리 다른 표:** 그룹 운임표는 하단 빈 상태 메시지가 없는 경우 16pt, 메시지가 있으면 0pt. 조합·기준 이력은 복수 표이므로 0pt를 사용하고 기존 60% 스크롤 높이 제한을 유지한다.
