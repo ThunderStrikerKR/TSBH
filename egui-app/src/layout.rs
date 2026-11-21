@@ -202,17 +202,15 @@ impl LayoutState {
             DETAIL_MIN_HEIGHTS[0],
             space - DETAIL_MIN_HEIGHTS[1] - DETAIL_MIN_HEIGHTS[2],
         );
-        // Both saved default ratios are 0.5, but the source column has
-        // ONE horizontal gutter and this column has TWO. Computing both
-        // from their interior heights offsets the visible lower rule by
-        // SPLITTER / 2 (3pt). Align the two default rule centerlines in
-        // actual pane coordinates, without coupling independently dragged
-        // separators or modifying saved custom ratios.
-        let default_shared_axis =
-            (self.source_ratio - VERTICAL_DEFAULT).abs() < 0.00001 &&
+        // The source column has ONE horizontal gutter; this column has
+        // TWO. Align their DEFAULT divider centerlines by geometry alone.
+        // Never inspect self.source_ratio here: even a 1pt drag of the
+        // source/message divider must not move the independent recipient/
+        // items boundary. Preserve custom saved middle-column positions.
+        let default_second_axis =
             (self.detail_second_ratio - DETAIL_SECOND_RATIO).abs() < 0.00001;
-        let requested_second_end = if default_shared_axis {
-            self.vertical_heights(available).0 - SPLITTER
+        let requested_second_end = if default_second_axis {
+            Self::default().vertical_heights(available).0 - SPLITTER
         } else {
             space * self.detail_second_ratio
         };
@@ -334,6 +332,45 @@ mod geometry_contract {
         let expected_axis = (height - 2.0 * SPLITTER) * 0.60
             + 1.5 * SPLITTER;
         assert!((items_axis - expected_axis).abs() < 0.01);
+    }
+
+    #[test]
+    fn dragging_source_divider_never_moves_middle_column_boundaries() {
+        // Previously, the first tiny movement away from source_ratio=0.5
+        // disabled the shared-axis correction and shifted items by 3pt.
+        // Both central splitters must stay at their saved coordinates.
+        for height in [700.0, 800.0, 1000.0, 1200.0] {
+            for second_ratio in [DETAIL_SECOND_RATIO, 0.60] {
+                let mut layout = LayoutState::default();
+                layout.detail_second_ratio = second_ratio;
+                let expected = layout.detail_heights(height);
+                let original_first = layout.vertical_heights(height).0;
+                for delta in [0.2, 1.0, 3.0, 40.0, -55.0] {
+                    layout.resize_vertical(original_first, delta, height);
+                    let actual = layout.detail_heights(height);
+                    for index in 0..3 {
+                        assert!(
+                            (actual[index] - expected[index]).abs() < 0.001,
+                            "height={height}, ratio={second_ratio}, delta={delta}, pane={index}: {} vs {}",
+                            actual[index], expected[index],
+                        );
+                    }
+                }
+                layout.reset_vertical();
+                assert_eq!(layout.detail_heights(height), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn middle_divider_drag_does_not_move_source_message_boundary() {
+        let mut layout = LayoutState::default();
+        for height in [700.0, 1000.0] {
+            let expected = layout.vertical_heights(height);
+            let initial = layout.detail_heights(height);
+            layout.resize_detail_pair(initial, 1, 12.0);
+            assert_eq!(layout.vertical_heights(height), expected);
+        }
     }
 
     #[test]
