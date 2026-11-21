@@ -246,7 +246,7 @@ fn table<const N:usize>(
         ExcelTableHeightPolicy::LegacyForExpandedDetails=>
             ui.ctx().content_rect().height()*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION,
     };
-    // Queue footers and expanded detail space remain reserved in
+    // Empty-state notices and expanded detail space remain reserved in
     // scroll_max_height. Rail extension itself is shared across all tables.
     let scroll_track=components::management_table_scroll_track_rect(
         ui,scroll_max_height
@@ -587,7 +587,7 @@ impl ExcelManager{
             records(&snapshot.state,&snapshot.shipments,self.tab,&self.query)
         }else{Vec::new()};
         sort_queue(&mut queued,self.sort_queue);
-        let visible:BTreeSet<String>=queued.iter().filter(|r|!r.legacy)
+        let mut visible:BTreeSet<String>=queued.iter().filter(|r|!r.legacy)
             .map(|r|r.id().to_owned()).collect();
         if self.tab!=Tab::History{
             self.selected.retain(|id|visible.contains(id));
@@ -634,6 +634,18 @@ impl ExcelManager{
                         "거래처 / 수취인 / 상품 검색"
                     ).changed(){
                         self.selected.clear();
+                        // Rebuild rows in this SAME frame, so changing the
+                        // query cannot leave an out-of-date table beneath
+                        // the master toolbar until the next repaint.
+                        if self.tab!=Tab::History{
+                            queued=if let Some(snapshot)=self.result.as_ref(){
+                                records(&snapshot.state,&snapshot.shipments,
+                                    self.tab,&self.query)
+                            }else{Vec::new()};
+                            sort_queue(&mut queued,self.sort_queue);
+                            visible=queued.iter().filter(|r|!r.legacy)
+                                .map(|r|r.id().to_owned()).collect();
+                        }
                         search.ctx().request_repaint();
                     }
                 }
