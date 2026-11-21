@@ -210,6 +210,7 @@ fn table<const N:usize>(
     ui:&mut Ui,id:&str,titles:[&str;N],base:[f32;N],
     align:[Align2;N],stretch:usize,rows:usize,
     height_policy:ExcelTableHeightPolicy,
+    direct_toolbar_to_header:bool,
     sort:&mut Option<Sort>,sort_enabled:[bool;N],
     header_selection:Option<(bool,bool)>,
     mut render:impl FnMut(&mut Ui,[Rect;N],usize)
@@ -217,7 +218,17 @@ fn table<const N:usize>(
     let old_gap=ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y=0.0;
     let minimum=base.iter().sum::<f32>()+(N-1) as f32*GAP;
-    let layout=components::management_list_table_header(ui,minimum);
+    let layout=if direct_toolbar_to_header{
+        // The standard filter strip already contains 8pt bottom padding;
+        // share the remaining 8 + 1 + 4pt of the approved 21pt transition.
+        components::management_sticky_table_header_after_inset(
+            ui,minimum,theme::SPACE_8
+        )
+    }else{
+        // Status text intervenes between toolbar and header: retain
+        // its original divider and don't add a second 21pt transition.
+        components::management_list_table_header(ui,minimum)
+    };
     let width=layout.table_width;
     let widths=theme::management_single_stretch_columns(base,width,GAP,stretch);
     let header=layout.header_rect;
@@ -538,7 +549,13 @@ impl ExcelManager{
                     line.label(typography::caption("Excel 자료를 확인 중입니다."));
                 });
             }
-            components::soft_divider(section);
+            // The 21pt toolbar transition is only valid for a directly
+            // adjacent search strip. Preserve error/notice/loading blocks.
+            let direct_toolbar_to_header=self.error.is_none()
+                && self.notice.is_none()&&!busy;
+            if !direct_toolbar_to_header{
+                components::soft_divider(section);
+            }
             let state=self.result.as_ref().map(|r|&r.state);
             let native=self.result.as_ref().map(|r|&r.shipments);
             if self.tab==Tab::History{
@@ -563,7 +580,8 @@ impl ExcelManager{
                     ["작성 날짜","작성 건수","파일 / 주문","조회"],
                     HISTORY,[Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
                         Align2::LEFT_CENTER,Align2::CENTER_CENTER],
-                    2,indexes.len(),history_height_policy,&mut self.sort_history,
+                    2,indexes.len(),history_height_policy,
+                    direct_toolbar_to_header,&mut self.sort_history,
                     [true,true,true,false],None,|row,cells,i|{
                         let entry=&order_list[i];
                         let id=text(entry,"id");
@@ -691,7 +709,8 @@ impl ExcelManager{
                     QUEUE,[Align2::CENTER_CENTER,Align2::LEFT_CENTER,
                         Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
                         Align2::CENTER_CENTER],
-                    2,records.len(),queue_height_policy,&mut self.sort_queue,
+                    2,records.len(),queue_height_policy,
+                    direct_toolbar_to_header,&mut self.sort_queue,
                     [false,true,true,true,false],Some((all,!visible.is_empty())),
                     |row,cells,index|{
                         let entry=&records[index];
