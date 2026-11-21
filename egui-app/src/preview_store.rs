@@ -9,6 +9,59 @@ use std::{collections::HashSet, fs, path::PathBuf, time::Duration};
 const SIGNATURE: &str = "bando-hub-egui-preview-v1";
 const SOURCE_LIMIT_BYTES: usize = 2 * 1024 * 1024;
 
+/// Full OCR recognition and employee-approved correction, retained locally
+/// for an auditable future pattern-review process. Not an auto-learning rule.
+#[derive(Clone, Debug)]
+pub struct OcrFeedback {
+    pub id: String,
+    pub order_id: String,
+    pub original_text: String,
+    pub corrected_text: String,
+}
+
+/// Compute reproducible, candidate line changes. The two full documents are
+/// authoritative: this digest is never treated as an automatic correction.
+/// LCS is bounded so pasted 20k-character documents cannot force an
+/// unbounded allocation. Large documents retain full text + a fallback digest.
+fn correction_changes(before: &str, after: &str) -> Value {
+    let old: Vec<&str> = before.split('\n').collect();
+    let new: Vec<&str> = after.split('\n').collect();
+    let n = old.len();
+    let m = new.len();
+    if n.saturating_mul(m) > 40_000 {
+        return json!({
+            "algorithm":"line-lcs-v1", "truncated":true,
+            "originalLines":n, "correctedLines":m,
+            "same":before==after,
+        });
+    }
+    let mut dp = vec![vec![0usize; m+1]; n+1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            dp[i][j] = if old[i]==new[j] {
+                dp[i+1][j+1]+1
+            } else {dp[i+1][j].max(dp[i][j+1])};
+        }
+    }
+    let (mut i,mut j)=(0usize,0usize);
+    let mut changes=Vec::new();
+    while i<n || j<m {
+        if i<n && j<m && old[i]==new[j] {
+            i+=1; j+=1;
+        } else if i<n && (j==m || dp[i+1][j]>=dp[i][j+1]) {
+            changes.push(json!({"kind":"delete","originalLine":i+1,
+                "before":old[i]}));
+            i+=1;
+        } else if j<m {
+            changes.push(json!({"kind":"insert","correctedLine":j+1,
+                "after":new[j]}));
+            j+=1;
+        }
+    }
+    json!({"algorithm":"line-lcs-v1","truncated":false,
+        "same":before==after,"changes":changes})
+}
+
 #[derive(Clone, Debug)]
 pub struct WorkingReception {
     pub id: String,
@@ -147,6 +200,22 @@ impl PreviewStore {
                 return Err(error);
             }
         }
+        // Private, append-only OCR verification corpus. Retain BOTH full
+        // texts so false correction rules can be independently re-audited.
+        // No screenshot, external upload, or runtime model training is stored.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS ocr_feedback (
+                id TEXT PRIMARY KEY,
+                order_id TEXT NOT NULL,
+                original_text TEXT NOT NULL,
+                corrected_text TEXT NOT NULL,
+                changes_json TEXT NOT NULL CHECK(json_valid(changes_json)),
+                recorded_at TEXT NOT NULL DEFAULT
+                    (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_ocr_feedback_order
+                ON ocr_feedback(order_id,recorded_at);"
+        ).map_err(|e| format!("OCR 정정 이력 테이블 준비 실패: {e}"))?;
         // Non-destructive migration of the isolated egui preview database.
         // Never touch Tauri operational tables or truncate an existing source.
         let mut stmt = conn.prepare("PRAGMA table_info(working_source)")
@@ -316,6 +385,50 @@ impl PreviewStore {
         }
         tx.commit().map_err(|e| format!("egui 접수 목록 저장 확정 실패: {e}"))?;
         Ok(next as u64)
+    }
+
+    /// Commit approved OCR comparisons only AFTER the reception source was
+    /// successfully persisted. A stable UUID makes worker retries idempotent.
+    pub fn append_ocr_feedback(samples: &[OcrFeedback]) -> Result<(), String> {
+        if samples.is_empty() {return Ok(());}
+        let store = Self::initialize()?;
+        let mut conn = store.open_connection()?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        for sample in samples {
+            if sample.id.trim().is_empty() || sample.order_id.trim().is_empty() ||
+                sample.original_text.trim().is_empty() ||
+                sample.corrected_text.trim().is_empty() ||
+                sample.original_text.chars().count()>20_000 ||
+                sample.corrected_text.chars().count()>20_000 {
+                return Err("OCR 학습용 원문·정정문 자료가 유효하지 않습니다.".into());
+            }
+            let changes=correction_changes(
+                &sample.original_text,&sample.corrected_text
+            ).to_string();
+            tx.execute(
+                "INSERT OR IGNORE INTO ocr_feedback
+                 (id,order_id,original_text,corrected_text,changes_json)
+                 VALUES (?1,?2,?3,?4,?5)",
+                params![sample.id,sample.order_id,sample.original_text,
+                    sample.corrected_text,changes],
+            ).map_err(|e| format!("OCR 정정 이력 저장 실패: {e}"))?;
+        }
+        tx.commit().map_err(|e| format!("OCR 정정 이력 확정 실패: {e}"))
+    }
+
+    /// Read-back for later audit and candidate-rule review. No learning
+    /// model is trained or enabled by collecting these records.
+    pub fn list_ocr_feedback(limit: usize) -> Result<Vec<(String,String,String,String)>,String> {
+        let store=Self::initialize()?;
+        let conn=store.open_connection()?;
+        let mut stmt=conn.prepare(
+            "SELECT id,order_id,original_text,corrected_text
+             FROM ocr_feedback ORDER BY recorded_at DESC,id DESC LIMIT ?1"
+        ).map_err(|e|e.to_string())?;
+        let rows=stmt.query_map([limit.min(1000) as i64],|row|Ok((
+            row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?
+        ))).map_err(|e|e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
     }
 
     pub fn path(&self) -> &std::path::Path { &self.path }
