@@ -288,7 +288,8 @@ fn as_fee(value: &Value) -> String {
  // Text, numeric, status and metadata share one fixed-height cell geometry.
 fn freight_rate_cell(
     ui:&mut Ui,rect:egui::Rect,value:&str,align:egui::Align2,
-    role:typography::ManagementTableCellRole,id:impl std::hash::Hash
+    role:typography::ManagementTableCellRole,id:impl std::hash::Hash,
+    full_tooltip:Option<&str>
 ){
     let cell=rect.shrink2(egui::vec2(6.0,0.0));
     let color=typography::management_table_cell_color(role);
@@ -305,7 +306,7 @@ fn freight_rate_cell(
     );
     if !value.is_empty(){
         ui.interact(cell,ui.make_persistent_id(("freight-rate-cell",id)),
-            egui::Sense::hover()).on_hover_text(value);
+            egui::Sense::hover()).on_hover_text(full_tooltip.unwrap_or(value));
     }
 }
 
@@ -325,18 +326,58 @@ fn group_bundle_summary(rule: &Value) -> String {
         "확인 필요".to_owned()
     }
 }
-fn group_fee_summary(rule: &Value) -> String {
-    let known=(1..=6).filter_map(|n|
-        rule["fees"].get(n.to_string()).and_then(Value::as_i64)
-            .map(|amount|format!("{n}개 {}",components::display_won(amount)))
-    ).collect::<Vec<_>>();
-    if !known.is_empty() {
-        known.join(" · ")
-    } else if let Some(legacy)=rule["perItem"].as_i64() {
-        format!("기존 개당 기준 {}",components::display_won(legacy))
-    } else {
-        "수량별 배송비 미등록".to_owned()
+/// Read-only membership projection from the SAME registered product records
+/// used by 배송 그룹 편성. Never infer membership from tariff data or the
+/// previous group version. The join key is the persisted shippingGroupId.
+fn group_product_labels(products:&[&Value])->BTreeMap<String,Vec<String>>{
+    let mut result:BTreeMap<String,Vec<String>>=BTreeMap::new();
+    for product in products {
+        let group_id=text(product,"shippingGroupId");
+        if group_id.is_empty(){continue;}
+        let model=model_label(text(product,"name"));
+        let subtitle=text(product,"subtitle").trim();
+        let name=if subtitle.is_empty()||subtitle==text(product,"name"){
+            model.to_owned()
+        }else{
+            format!("{model} / {subtitle}")
+        };
+        let label=if name.trim().is_empty(){
+            text(product,"code").to_owned()
+        }else{name};
+        if label.trim().is_empty(){continue;}
+        result.entry(group_id.to_owned()).or_default().push(label);
     }
+    for names in result.values_mut(){
+        names.sort_by_cached_key(|name|name.to_lowercase());
+    }
+    result
+}
+
+/// Fit as many actual product names as possible on the unwrapped table row.
+/// Any remainder is explicitly counted. Hover shows the COMPLETE membership
+/// list rather than a truncated cell string. The estimate uses egui's exact
+/// 14pt management-cell glyph metrics, never character counts.
+fn group_product_preview(ui:&Ui,names:&[String],available_width:f32)->String{
+    if names.is_empty(){return "소속 상품 없음".to_owned();}
+    let mut visible=names[0].clone();
+    for shown in 1..=names.len(){
+        let mut candidate=names[..shown].join(" · ");
+        if shown<names.len(){
+            candidate.push_str(&format!(" · 외 {}개",names.len()-shown));
+        }
+        let galley=typography::management_table_cell_galley(
+            ui,&candidate,typography::ManagementTableCellRole::Text
+        );
+        if galley.size().x<=available_width{
+            visible=candidate;
+        }else if shown==1 {
+            // Preserve a real product name even in a narrow viewport.
+            // The complete list remains available on hover.
+            visible=candidate;
+            break;
+        }else{break;}
+    }
+    visible
 }
 
 struct RateEditor {
@@ -1965,7 +2006,7 @@ impl FreightManager {
                 table_width,theme::FREIGHT_ASSIGNMENT_COL_GAP
             );
             let titles=[
-                "그룹명","최대 묶음 수량","수량별 배송비","관리"
+                "그룹명","묶음 한도","소속 상품","관리"
             ];
             let mut ordered=Self::filtered_rate_groups(groups,search);
             if let Some(active)=*sort {
@@ -1993,6 +2034,7 @@ impl FreightManager {
             let scroll_track=components::management_table_scroll_track_rect(
                 section,scroll_max_height
             );
+            let by_group=group_product_labels(products);
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
                 egui::ScrollArea::both()
@@ -2043,23 +2085,38 @@ impl FreightManager {
                                     if index%2==0 {theme::PANEL}
                                     else {theme::TABLE_ROW_ALT_BG}
                                 );
-                                let count=products.iter().filter(|p|
-                                    text(p,"shippingGroupId")==id
-                                ).count();
-                                let identity=format!("{} · {count}개 상품",text(group,"name"));
+                                // Name owns its own column. Membership is
+                                // shown separately from the rate rule and
+                                // matches the registered product assignments.
                                 freight_rate_cell(
-                                    row,cells[0],&identity,egui::Align2::LEFT_CENTER,
-                                    typography::ManagementTableCellRole::Text,(id,0)
+                                    row,cells[0],text(group,"name"),
+                                    egui::Align2::LEFT_CENTER,
+                                    typography::ManagementTableCellRole::Text,
+                                    (id,0),None
                                 );
                                 let current=&group["current"];
                                 freight_rate_cell(
                                     row,cells[1],&group_bundle_summary(current),
-                                    egui::Align2::RIGHT_CENTER,typography::ManagementTableCellRole::Quantity,(id,1)
+                                    egui::Align2::RIGHT_CENTER,
+                                    typography::ManagementTableCellRole::Quantity,
+                                    (id,1),None
                                 );
-                                let fees=group_fee_summary(current);
+                                let names=by_group.get(id).map(Vec::as_slice)
+                                    .unwrap_or(&[]);
+                                let preview=group_product_preview(
+                                    row,names,(cells[2].width()-12.0).max(0.0)
+                                );
+                                let full=names.iter().enumerate()
+                                    .map(|(index,name)|format!("{}. {name}",index+1))
+                                    .collect::<Vec<_>>().join("\n");
                                 freight_rate_cell(
-                                    row,cells[2],&fees,egui::Align2::LEFT_CENTER,
-                                    typography::ManagementTableCellRole::Money,(id,2)
+                                    row,cells[2],&preview,egui::Align2::LEFT_CENTER,
+                                    if names.is_empty(){
+                                        typography::ManagementTableCellRole::Muted
+                                    }else{
+                                        typography::ManagementTableCellRole::Text
+                                    },(id,2),
+                                    if names.is_empty(){None}else{Some(&full)}
                                 );
                                 // Group operations are one compact trigger.
                                 // The popup is an independent overlay and never
@@ -3010,28 +3067,75 @@ mod rate_toolbar_tests{
     }
 
     #[test]
-    fn rate_summary_keeps_all_six_quantity_prices_in_one_string(){
-        let rule=serde_json::json!({
-            "fees":{"1":3000,"2":4500,"3":6000,
-                    "4":7500,"5":9000,"6":10500}
-        });
-        let summary=group_fee_summary(&rule);
-        for n in 1..=6 {
-            assert!(summary.contains(&format!("{n}개")),
-                "missing quantity {n}: {summary}");
-        }
-        assert_eq!(summary.matches(" · ").count(),5);
+    fn registered_product_membership_uses_persisted_group_id(){
+        let data=vec![
+            serde_json::json!({
+                "id":"p1","name":"709","subtitle":"민판",
+                "shippingGroupId":"group-a"
+            }),
+            serde_json::json!({
+                "id":"p2","name":"GT-1","shippingGroupId":"group-a"
+            }),
+            serde_json::json!({
+                "id":"p3","name":"TS","shippingGroupId":"group-b"
+            }),
+            serde_json::json!({
+                "id":"p4","name":"미지정"
+            }),
+        ];
+        let products=data.iter().collect::<Vec<_>>();
+        let indexed=group_product_labels(&products);
+        assert_eq!(indexed["group-a"],vec!["709 / 민판","GT-1"]);
+        assert_eq!(indexed["group-b"],vec!["TS"]);
+        assert_eq!(indexed.len(),2);
+        assert!(!indexed.contains_key(""));
     }
 
     #[test]
-    fn four_column_rate_table_gives_long_tariffs_priority(){
+    fn rate_summary_uses_real_font_width_and_reports_hidden_count(){
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        let mut output=None;
+        let mut input=egui::RawInput::default();
+        input.screen_rect=Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,egui::vec2(1250.0,800.0)
+        ));
+        let _=ctx.run(input,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let names=vec![
+                    "709 민판".to_owned(),
+                    "GT-1 보면대".to_owned(),
+                    "IS 자바라 모델".to_owned(),
+                    "SS 일반".to_owned()
+                ];
+                output=Some((
+                    group_product_preview(ui,&names,1000.0),
+                    group_product_preview(ui,&names,200.0),
+                    group_product_preview(ui,&[],500.0)
+                ));
+            });
+        });
+        let (wide,narrow,empty)=output.expect("preview measured");
+        assert!(wide.contains("709 민판"));
+        assert!(wide.contains("SS 일반"));
+        assert!(!wide.contains("외 "));
+        assert!(narrow.contains("709 민판"));
+        assert!(narrow.contains("외 "));
+        assert_eq!(empty,"소속 상품 없음");
+    }
+
+    #[test]
+    fn four_column_rate_table_prioritizes_group_name_and_membership(){
         let base=theme::FREIGHT_RATE_COL_WIDTHS;
         let gap=theme::FREIGHT_ASSIGNMENT_COL_GAP;
         assert_eq!(base.len(),4);
         assert!((base.iter().sum::<f32>()+3.0*gap-
             theme::FREIGHT_RATE_TABLE_MIN_WIDTH).abs()<0.01);
-        assert!(base[2]>=740.0,"all six tariff amounts need a wide column");
-        assert!(base[3]<=148.0,"one Manage trigger must not reserve four buttons");
+        assert_eq!(base,[450.0,112.0,551.0,128.0]);
+        assert!(base[0]>=450.0,"group name must be nearly twice as wide");
+        assert!(base[1]<=120.0,"bundle limit needs only a compact column");
+        assert!(base[2]>=500.0,"membership should display multiple names");
+        assert!(base[3]<=148.0,"one Manage trigger does not need four buttons");
         let wide=theme::management_weighted_columns(
             base,[0.0,0.0,1.0,0.0],
             theme::FREIGHT_RATE_TABLE_MIN_WIDTH+120.0,gap
