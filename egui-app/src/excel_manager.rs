@@ -180,7 +180,8 @@ fn geometry<const N:usize>(
         cell
     })
 }
-fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,id:impl std::hash::Hash){
+fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,
+    role:typography::ManagementTableCellRole,id:impl std::hash::Hash){
     let padded=if align==Align2::LEFT_CENTER{
         Rect::from_min_max(
             egui::pos2(rect.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,rect.top()),
@@ -191,14 +192,15 @@ fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,id:impl std::hash::Hash){
     };
     let clip=padded.intersect(ui.clip_rect());
     if clip.width()<=0.0||clip.height()<=0.0{return}
-    let label=typography::freight_table_cell_galley(ui,visible,false,theme::TEXT);
+    let color=typography::management_table_cell_color(role);
+    let label=typography::management_table_cell_galley(ui,visible,role);
     let x=if align==Align2::RIGHT_CENTER{
         padded.right()-label.size().x
     }else if align==Align2::CENTER_CENTER{
         padded.center().x-label.size().x/2.0
     }else{padded.left()};
     ui.painter().with_clip_rect(clip).galley(
-        egui::pos2(x,padded.center().y-label.size().y/2.0),label,theme::TEXT
+        egui::pos2(x,padded.center().y-label.size().y/2.0),label,color
     );
     if !visible.is_empty(){
         ui.interact(clip,ui.make_persistent_id(("excel-table-cell",id)),Sense::hover())
@@ -730,14 +732,14 @@ impl ExcelManager{
                         let entry=&order_list[i];
                         let id=text(entry,"id");
                         cell(row,cells[0],&datetime(text(entry,"at")),
-                            Align2::LEFT_CENTER,(id,0));
+                            Align2::LEFT_CENTER,typography::ManagementTableCellRole::Text,(id,0));
                         let count=rows(&entry["queueEntryIds"]).len().max(
                             rows(&entry["orderIds"]).len()
                         );
                         cell(row,cells[1],&format!("{count}건"),
-                            Align2::RIGHT_CENTER,(id,1));
+                            Align2::RIGHT_CENTER,typography::ManagementTableCellRole::Quantity,(id,1));
                         cell(row,cells[2],text(entry,"filename"),
-                            Align2::LEFT_CENTER,(id,2));
+                            Align2::LEFT_CENTER,typography::ManagementTableCellRole::Text,(id,2));
                         row.scope_builder(UiBuilder::new()
                             .id_salt(("excel-history-actions",id))
                             .max_rect(cells[3].shrink2(Vec2::new(theme::SPACE_8,0.0)))
@@ -866,15 +868,15 @@ impl ExcelManager{
                             );
                         }
                         cell(row,cells[1],&entry.customer(),
-                            Align2::LEFT_CENTER,(id.clone(),1));
+                            Align2::LEFT_CENTER,typography::ManagementTableCellRole::ClientName,(id.clone(),1));
                         cell(row,cells[2],&entry.recipient_summary(),
-                            Align2::LEFT_CENTER,(id.clone(),2));
+                            Align2::LEFT_CENTER,typography::ManagementTableCellRole::Description,(id.clone(),2));
                         let price=if entry.legacy{"기존 확정 금액 유지".to_owned()}
                             else if text(&entry.order,"orderType")=="RETAIL"{
                                 "결제 완료 주문".into()
                             }else{amount(&entry.queue["snapshot"]["total"])};
                         cell(row,cells[3],&price,
-                            Align2::RIGHT_CENTER,(id.clone(),3));
+                            Align2::RIGHT_CENTER,typography::ManagementTableCellRole::Money,(id.clone(),3));
                         row.scope_builder(UiBuilder::new()
                             .id_salt(("excel-queue-action",id.clone()))
                             .max_rect(cells[4].shrink2(Vec2::new(theme::SPACE_8,0.0)))
