@@ -15,6 +15,7 @@ mod http_gateway;
 mod preview_store;
 mod source_autosave;
 mod clipboard_intake;
+mod ocr_learning;
 mod client_directory;
 mod client_master;
 mod client_manager;
@@ -131,6 +132,11 @@ struct OcrReview {
     zoom: f32,
     chat: Option<ChatWindow>,
     clipboard_sequence: Option<u32>,
+    /// Entirely optional: disabled starts with unmodified OCR output.
+    learning_enabled: bool,
+    model_receiver: Option<Receiver<Result<ocr_learning::Suggestion,String>>>,
+    model_suggestion: Option<String>,
+    model_error: Option<String>,
 }
 struct PendingReplace {
     text: String,
@@ -141,6 +147,8 @@ struct PendingReplace {
     // Present only for manually approved OCR. Kept through the second
     // replacement confirmation and never captured on cancel.
     ocr_original: Option<String>,
+    ocr_learning_used: bool,
+    ocr_model_suggestion: Option<String>,
 }
 // Do not clear a copied source until its exact order ID and raw text are
 // acknowledged by the serialized Rust autosave worker.
@@ -1588,18 +1596,21 @@ impl BandoEgui {
             self.pending_replace = Some(PendingReplace {
                 text, order_type, chat, input_method: "TEXT_PASTE",
                 clipboard_sequence:sequence, ocr_original:None,
+                ocr_learning_used:false, ocr_model_suggestion:None,
             });
             return;
         }
         self.apply_intake_text(
-            text,order_type,chat,ctx,"TEXT_PASTE",false,sequence,None
+            text,order_type,chat,ctx,"TEXT_PASTE",false,sequence,
+            None,false,None
         );
     }
 
     fn apply_intake_text(&mut self, text: String, order_type: OrderType,
         chat: Option<ChatWindow>, ctx: &egui::Context,
         input_method: &str, replace_original: bool,
-        clipboard_sequence:Option<u32>,ocr_original:Option<String>) {
+        clipboard_sequence:Option<u32>,ocr_original:Option<String>,
+        learning_used:bool,model_suggestion:Option<String>) {
         if text.trim().is_empty() { return; }
         if self.active_id.is_none() {
             self.new_reception(ctx);
@@ -1615,6 +1626,8 @@ impl BandoEgui {
             order_id:receipt_id,
             original_text,
             corrected_text:text.clone(),
+            learning_used,
+            model_suggestion,
         });
         let first_content = self.raw_source.trim().is_empty();
         let changed = self.raw_source != text;
@@ -1702,6 +1715,10 @@ impl BandoEgui {
                             texture,width:image.width,height:image.height,
                             zoom:1.0,chat:intake_chat,
                             clipboard_sequence:sequence,
+                            learning_enabled:false,
+                            model_receiver:None,
+                            model_suggestion:None,
+                            model_error:None,
                         });
                         // The decoded texture was uploaded on this UI frame.
                         // Request another frame explicitly so the first OCR
