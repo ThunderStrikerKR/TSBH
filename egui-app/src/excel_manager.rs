@@ -1148,6 +1148,9 @@ impl ExcelManager{
             components::decision_window(
                 "Excel 작성 확인","excel-export-confirm",ui.max_rect()
             ).show(ui.ctx(),|dialog|{
+                if components::modal_header(
+                    dialog,"Excel 작성 확인","취소",true
+                ){self.preview=None;}
                 dialog.label(typography::body(&format!(
                     "{} {}건의 로젠택배 Excel을 작성할까요?",
                     if origin=="FACTORY"{"공장 발송"}else{"매장 발송"},count
@@ -1164,10 +1167,7 @@ impl ExcelManager{
                         go_settings=true;
                     }
                 }
-                dialog.horizontal(|bar|{
-                    if theme::action(bar,"취소",theme::ButtonRole::Standard,true).clicked(){
-                        self.preview=None;
-                    }
+                components::modal_action_row(dialog,|bar|{
                     if theme::action(bar,"Excel 작성",theme::ButtonRole::Primary,
                         !busy&&self.gateway.excel_write_enabled()).clicked(){
                         self.preview=None;
