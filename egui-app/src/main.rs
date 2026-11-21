@@ -109,6 +109,18 @@ enum ClipboardReceipt {
     Text { text:String, sequence:Option<u32> },
     Ocr { text:String, image:ClipboardImage, sequence:Option<u32> },
 }
+
+// Region capture temporarily hides the HUB so the native Windows overlay
+// captures the actual desktop, not our reception panel. Restoration is RAII:
+// Esc, an OCR cancel, timeout, and errors all return the HUB to the front.
+struct RegionCaptureRestore(egui::Context);
+impl Drop for RegionCaptureRestore {
+    fn drop(&mut self){
+        self.0.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        self.0.send_viewport_cmd(egui::ViewportCommand::Focus);
+        self.0.request_repaint();
+    }
+}
 struct OcrReview {
     order_type: OrderType,
     original_text: String,
@@ -1473,23 +1485,58 @@ impl BandoEgui {
         }
     }
 
+    fn current_intake_chat(&self)->Option<ChatWindow>{
+        if !self.kakao_dock.connected(){return None;}
+        // Resolve before minimizing, while the original Kakao focus
+        // association is still available; never guess among multiple chats.
+        let focused=self.kakao_tracker.recent_focus()
+            .and_then(|handle|self.kakao_tracker.verified(handle)).cloned();
+        focused.or_else(||{
+            let chats=self.kakao_tracker.chats();
+            if chats.len()==1{chats.first().cloned()}else{None}
+        })
+    }
+
+    /// The capture action does NOT depend on ClipboardMonitor::kind().
+    /// Select a new desktop rectangle first, then route the captured RGBA
+    /// through the same PP-OCRv5 and employee approval flow as pasted images.
+    fn begin_region_capture(&mut self, order_type:OrderType,ctx:egui::Context){
+        if self.clipboard_busy{return;}
+        self.clipboard_chat=self.current_intake_chat();
+        self.clipboard_busy=true;
+        self.ocr_processing=true;
+        self.clipboard_error=None;
+        self.clipboard_cancel.store(false,Ordering::Release);
+        let cancelled=Arc::clone(&self.clipboard_cancel);
+        let (tx,rx)=mpsc::channel();
+        self.clipboard_receiver=Some(rx);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+        let worker_context=ctx.clone();
+        std::thread::spawn(move||{
+            let capture={
+                let _restore=RegionCaptureRestore(worker_context.clone());
+                // The app's minimize command is applied asynchronously.
+                // Do not start the Windows snip overlay before it is hidden.
+                std::thread::sleep(Duration::from_millis(250));
+                clipboard_intake::capture_screen_region(&cancelled)
+            };
+            let result=capture.and_then(|(image,sequence)|{
+                if cancelled.load(Ordering::Acquire){
+                    return Err("OCR_CANCELLED".into());
+                }
+                let text=clipboard_intake::recognize_image(&image,&cancelled)?;
+                Ok(ClipboardReceipt::Ocr{text,image,sequence})
+            });
+            let _=tx.send((order_type,result));
+            worker_context.request_repaint();
+        });
+    }
+
     fn begin_clipboard_intake(&mut self, order_type: OrderType, ctx: egui::Context) {
         if self.clipboard_busy || !self.clipboard_monitor.kind().has_intake() {
             return;
         }
-        self.clipboard_chat = if self.kakao_dock.connected() {
-            // Existing contract: observe the actual KakaoTalk conversation
-            // when an order is pasted, not when a user presses Connect.
-            // A recently focused, OS-verified chat is the strongest source.
-            // When there is exactly one chat, it is unambiguous even if
-            // foreground focus has already moved to BANDO HUB.
-            let focused = self.kakao_tracker.recent_focus()
-                .and_then(|handle| self.kakao_tracker.verified(handle)).cloned();
-            focused.or_else(|| {
-                let chats=self.kakao_tracker.chats();
-                if chats.len()==1 {chats.first().cloned()} else {None}
-            })
-        } else { None };
+        self.clipboard_chat=self.current_intake_chat();
         self.clipboard_busy = true;
         self.ocr_processing =
             self.clipboard_monitor.kind() == clipboard_intake::ClipboardKind::Image;
