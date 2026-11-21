@@ -1534,7 +1534,7 @@ impl BandoEgui {
     /// image against the editable recognition result and explicitly applies.
     fn show_ocr_review(&mut self, ctx: &egui::Context, work_area:Rect) {
         let mut close=false;
-        let mut apply:Option<(String,OrderType,bool,Option<ChatWindow>)>=None;
+        let mut apply:Option<(String,OrderType,Option<ChatWindow>)>=None;
         let dialog_width=(work_area.width()*0.94).clamp(560.0,1480.0)
             .min(work_area.width().max(1.0));
         let dialog_height=(work_area.height()*0.88).clamp(450.0,960.0)
@@ -1640,54 +1640,33 @@ impl BandoEgui {
                     ui.add_space(theme::SPACE_12);
                     let edited=review.edited_text.trim();
                     let valid=!edited.is_empty() && edited.chars().count()<=20_000;
-                    let appended_length=self.raw_source.trim_end().chars().count()
-                        +usize::from(!self.raw_source.trim().is_empty())
-                        +edited.chars().count();
-                    let can_append=valid && appended_length<=20_000;
-                    if valid && !can_append {
-                        ui.label(egui::RichText::new(
-                            "기존 원문에 추가하면 20,000자를 초과합니다. 교체만 가능합니다."
-                        ).color(theme::DANGER));
-                    } else if !valid {
+                    if !valid {
                         ui.label(egui::RichText::new(
                             "인식된 텍스트는 1~20,000자로 수정해 주세요."
                         ).color(theme::DANGER));
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center),|buttons|{
                         if theme::action(
-                            buttons,"원문 교체",ButtonRole::Primary,valid
+                            buttons,"적용",ButtonRole::Primary,valid
                         ).clicked() {
                             apply=Some((
-                                edited.to_owned(),review.order_type,true,review.chat.clone()
-                            ));
-                        }
-                        if theme::action(
-                            buttons,"원문에 추가",ButtonRole::Standard,can_append
-                        ).clicked() {
-                            let added=if self.raw_source.trim().is_empty() {
-                                edited.to_owned()
-                            } else {
-                                format!("{}\n{}",self.raw_source.trim_end(),edited)
-                            };
-                            apply=Some((
-                                added,review.order_type,false,review.chat.clone()
+                                edited.to_owned(),review.order_type,review.chat.clone()
                             ));
                         }
                     });
                 });
         }
-        if let Some((raw,kind,replacing,chat))=apply {
+        if let Some((raw,kind,chat))=apply {
             self.ocr_review=None;
             self.discard_ocr_confirm=false;
-            if replacing && !self.raw_source.trim().is_empty()
-                && self.raw_source!=raw
+            if !self.raw_source.trim().is_empty() && self.raw_source!=raw
             {
                 // Preserve the existing source until replacement is confirmed.
                 self.pending_replace=Some(PendingReplace {
                     text:raw,order_type:kind,chat,input_method:"OCR"
                 });
             } else {
-                self.apply_intake_text(raw,kind,chat,ctx,"OCR",replacing);
+                self.apply_intake_text(raw,kind,chat,ctx,"OCR",true);
             }
         } else if close {
             if self.ocr_review.as_ref().is_some_and(|review|
