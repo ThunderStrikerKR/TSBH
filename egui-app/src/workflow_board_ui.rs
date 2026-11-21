@@ -3,6 +3,7 @@
 use eframe::egui::{self, Align, Frame, Id, Layout, Pos2, Rect, Ui, Vec2};
 use std::time::{Duration, Instant};
 use crate::{components, preview_store::WorkingReception, theme, typography};
+use std::collections::HashMap;
 use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
 
 const HOVER_ENTER:Duration=Duration::from_millis(250);
@@ -605,17 +606,45 @@ fn group_frame(
     });
     event
 }
-fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Option<Event>{
+/// A selected client ID is the source of truth. The automatic-match
+/// projection may be cleared after a MANUAL native client change, so never
+/// derive the card title solely from client_match.name. Name lookup is a
+/// transient read-only directory projection and never affects billing.
+fn pending_dealer_title(
+    draft:&WorkingReception,names:&HashMap<String,String>,
+    active_selection:Option<(&str,&str)>
+)->String{
+    let Some(client_id)=draft.client_id.as_deref() else{
+        return "미확인 거래처".to_owned();
+    };
+    // For the active order prefer its already verified Rust analysis, which
+    // is the same selected name rendered in the source document band.
+    let verified_active=active_selection.and_then(|(id,name)|
+        (id==client_id && !name.trim().is_empty()).then_some(name)
+    );
+    verified_active
+        .or_else(||names.get(client_id).map(String::as_str))
+        .or_else(||draft.client_match.as_ref().and_then(|matched|{
+            (draft.analysis_raw.as_deref()==Some(draft.raw.as_str()) &&
+                matched.get("clientId").and_then(serde_json::Value::as_str)
+                    ==Some(client_id))
+                .then(||matched.get("name").and_then(serde_json::Value::as_str))
+                .flatten()
+        }))
+        .filter(|name|!name.trim().is_empty())
+        .unwrap_or("거래처 이름 확인 필요")
+        .to_owned()
+}
+
+fn pending_frame(
+    ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,
+    dealer_name:&str
+)->Option<Event>{
     let mut event=None;
     workflow_card(ui,selected,false,|ui|{
-        let title=if draft.client_id.is_none(){
-            "미확인 거래처".to_owned()
-        }else {
-            draft.client_match.as_ref()
-                .and_then(|m|m.get("name")).and_then(|n|n.as_str())
-                .filter(|n|!n.trim().is_empty()).unwrap_or("거래처 확인").to_owned()
-        };
-        let (header,wrapped_actions)=workflow_header(ui,&draft.id,&title,open,0,false);
+        let (header,wrapped_actions)=workflow_header(
+            ui,&draft.id,dealer_name,open,0,false
+        );
         if header.clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
                 else{Event::SelectPending(draft.id.clone())});
@@ -677,7 +706,10 @@ fn pending_frame(ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool)->Op
 pub fn show(
     ui:&mut Ui,
     snapshot:Option<&BoardSnapshot>,
-    drafts:&[WorkingReception],active_id:Option<&str>,state:&mut BoardUi
+    drafts:&[WorkingReception],active_id:Option<&str>,
+    client_names:&HashMap<String,String>,
+    active_selected_client:Option<(&str,&str)>,
+    state:&mut BoardUi
 )->Option<Event>{
     // Prevent implicit vertical item spacing from doubling the explicit
     // WORKFLOW_CARD_GAP between order bundles. This is scoped to the list
@@ -722,7 +754,11 @@ pub fn show(
         let selected=state.selection.is_none() && active_id==Some(draft.id.as_str());
         let key=format!("pending:{}",draft.id);
         let open=selected && state.folded.as_deref()!=Some(key.as_str());
-        if let Some(value)=pending_frame(ui,draft,selected,open){
+        let name=pending_dealer_title(
+            draft,client_names,
+            if selected{active_selected_client}else{None}
+        );
+        if let Some(value)=pending_frame(ui,draft,selected,open,&name){
             match value{
                 Event::TogglePending(_)=>{
                     state.folded=if open{Some(key)}else{None};
