@@ -1120,10 +1120,9 @@ impl FreightManager {
         product_views: &Value, enabled:bool,
         action:&mut Option<(String,Value)>,
     ) {
-        // Full-height SINGLE table: the old symmetric frame reserved 16pt
-        // below the rows even while the scrollbar continued to the outline.
-        // Preserve the outer card, toolbar and side/top 16pt padding but
-        // assign that bottom 16pt to the actual row viewport instead.
+        // Full-height SINGLE table: preserve 16pt padding on all four sides.
+        // The data viewport AND the scrollbar rail stop above the same
+        // bottom inset. Neither may reach the card's outer border.
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
         theme::management_master_table_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
@@ -1361,10 +1360,10 @@ impl FreightManager {
                 "","상품명 / 상품설명","색상/옵션","카테고리",
                 "배송 그룹","설정"
             ];
-            // The row viewport NOW occupies the former 16pt bottom gap.
-            // The scrollbar uses that same measured viewport end; only
-            // the common 3pt optical inset shortens the visible rail.
-            // Never extend the rail independently past the painted rows.
+            // The row viewport ends above the card's restored 16pt bottom
+            // padding. The rail shares its measured start/end, starts flush
+            // beneath the fixed header and stops 3pt before the rows' end.
+            // Never extend the rail independently past painted rows.
             let scroll_max_height=components::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
