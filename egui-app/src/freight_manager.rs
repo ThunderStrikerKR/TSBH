@@ -1120,8 +1120,12 @@ impl FreightManager {
         product_views: &Value, enabled:bool,
         action:&mut Option<(String,Value)>,
     ) {
-        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
-        theme::section_frame().show(ui, |section| {
+        // Full-height SINGLE table: the old symmetric frame reserved 16pt
+        // below the rows even while the scrollbar continued to the outline.
+        // Preserve the outer card, toolbar and side/top 16pt padding but
+        // assign that bottom 16pt to the actual row viewport instead.
+        let card_min_height=components::management_master_table_card_min_inner_height(ui);
+        theme::management_master_table_frame().show(ui, |section| {
             components::fill_management_primary_card(section,card_min_height);
             // Assignment is one continuous zebra table. The standard solid
             // scrollbar reserves 4pt of margin on EACH side of its rail,
@@ -1357,14 +1361,15 @@ impl FreightManager {
                 "","상품명 / 상품설명","색상/옵션","카테고리",
                 "배송 그룹","설정"
             ];
-            // Match the shared scroll track to the full-card section:
-            // 3pt top inset, bottom extended through existing 16pt padding.
-            // Row viewport stays within the card's original inner height.
-            let card_inner_bottom=section.min_rect().top()+card_min_height;
-            let scroll_max_height=(card_inner_bottom-section.cursor().top())
-                .max(theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
+            // The row viewport NOW occupies the former 16pt bottom gap.
+            // The scrollbar uses that same measured viewport end; only
+            // the common 3pt optical inset shortens the visible rail.
+            // Never extend the rail independently past the painted rows.
+            let scroll_max_height=components::management_single_list_scroll_height(
+                section,card_min_height,0.0
+            );
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,theme::SECTION_PADDING
+                section,scroll_max_height,0.0
             );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
