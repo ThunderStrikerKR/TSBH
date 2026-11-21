@@ -755,45 +755,95 @@ pub fn calendar_dates(month:NaiveDate)->Vec<Option<NaiveDate>>{
             .flatten()
     }).collect()
 }
+/// Shared calendar navigation: identical 28pt hit targets, border, radius,
+/// and vector chevrons for year/month movement in either direction.
+fn calendar_nav_button(
+    ui:&mut Ui,direction:ManagementChevronDirection,
+    year:bool,tooltip:&str
+)->bool{
+    let response=ui.add_sized(
+        Vec2::splat(theme::CALENDAR_NAV_SIZE),
+        egui::Button::new("")
+            .fill(theme::INPUT)
+            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
+            .corner_radius(theme::CONTROL_RADIUS)
+    ).on_hover_text(tooltip);
+    let ink=if response.hovered(){theme::TEXT}else{theme::SECONDARY};
+    let painter=ui.painter().with_clip_rect(response.rect);
+    if year{
+        for offset in [-3.8,3.8]{
+            paint_management_chevron_with_color(
+                &painter,response.rect.center()+egui::vec2(offset,0.0),
+                direction,ink
+            );
+        }
+    }else{
+        paint_management_chevron_with_color(
+            &painter,response.rect.center(),direction,ink
+        );
+    }
+    response.clicked()
+}
+
+/// A single popup for Order History and Excel export history. The header
+/// has the exact width of the seven-column date grid, so the month label
+/// and four navigation buttons remain aligned at every month length.
 pub fn date_calendar(
     trigger:&egui::Response,month:&mut NaiveDate,selected:&str,
     grid_id:&'static str
 )->Option<NaiveDate>{
     let mut chosen=None;
     let selected_date=NaiveDate::parse_from_str(selected,"%Y-%m-%d").ok();
+    let today=(chrono::Utc::now()+Days::hours(9)).date_naive();
     egui::Popup::menu(trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|calendar|{
             calendar.spacing_mut().item_spacing=egui::vec2(
-                theme::SPACE_4,theme::SPACE_4
+                theme::CALENDAR_GRID_GAP,theme::CALENDAR_GRID_GAP
             );
+            calendar.set_min_width(theme::CALENDAR_GRID_WIDTH);
             calendar.horizontal(|nav|{
-                if theme::action(nav,"«",theme::ButtonRole::Standard,true)
-                    .on_hover_text("이전 연도").clicked(){
+                nav.spacing_mut().item_spacing.x=theme::CALENDAR_GRID_GAP;
+                if calendar_nav_button(
+                    nav,ManagementChevronDirection::Left,true,"이전 연도"
+                ){
                     *month=shift_calendar_month(*month,-12);
                 }
-                if theme::action(nav,"‹",theme::ButtonRole::Standard,true)
-                    .on_hover_text("이전 달").clicked(){
+                if calendar_nav_button(
+                    nav,ManagementChevronDirection::Left,false,"이전 달"
+                ){
                     *month=shift_calendar_month(*month,-1);
                 }
-                nav.label(typography::field_label(&format!(
-                    "{}년 {}월",month.year(),month.month()
-                )));
-                if theme::action(nav,"›",theme::ButtonRole::Standard,true)
-                    .on_hover_text("다음 달").clicked(){
+                let title_width=theme::CALENDAR_GRID_WIDTH
+                    -4.0*theme::CALENDAR_NAV_SIZE
+                    -4.0*theme::CALENDAR_GRID_GAP;
+                nav.add_sized(
+                    egui::vec2(title_width,theme::CALENDAR_NAV_SIZE),
+                    egui::Label::new(typography::field_label(&format!(
+                        "{}년 {}월",month.year(),month.month()
+                    ))).halign(Align::Center)
+                );
+                if calendar_nav_button(
+                    nav,ManagementChevronDirection::Right,false,"다음 달"
+                ){
                     *month=shift_calendar_month(*month,1);
                 }
-                if theme::action(nav,"»",theme::ButtonRole::Standard,true)
-                    .on_hover_text("다음 연도").clicked(){
+                if calendar_nav_button(
+                    nav,ManagementChevronDirection::Right,true,"다음 연도"
+                ){
                     *month=shift_calendar_month(*month,12);
                 }
             });
             calendar.add_space(theme::SPACE_8);
-            let width=theme::ACTION_STANDARD_HEIGHT;
+            calendar.separator();
+            calendar.add_space(theme::SPACE_4);
+            let width=theme::CALENDAR_DAY_SIZE;
             let dates=calendar_dates(*month);
             egui::Grid::new(grid_id)
                 .num_columns(7)
-                .spacing(egui::vec2(theme::SPACE_4,theme::SPACE_4))
+                .spacing(egui::vec2(
+                    theme::CALENDAR_GRID_GAP,theme::CALENDAR_GRID_GAP
+                ))
                 .show(calendar,|grid|{
                     for day in ["월","화","수","목","금","토","일"]{
                         grid.add_sized(
@@ -807,10 +857,12 @@ pub fn date_calendar(
                         if let Some(date)=day{
                             let mut button=egui::Button::new(typography::body(
                                 &date.day().to_string()
-                            ));
+                            )).corner_radius(theme::CONTROL_RADIUS);
                             if selected_date==Some(*date){
                                 button=button.fill(theme::WORKFLOW_SELECTED_BG)
                                     .stroke(Stroke::new(1.0,theme::SELECTION));
+                            }else if *date==today{
+                                button=button.stroke(Stroke::new(1.0,theme::BORDER));
                             }
                             if grid.add_sized(egui::vec2(width,width),button).clicked(){
                                 chosen=Some(*date);
