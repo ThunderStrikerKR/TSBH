@@ -1275,6 +1275,40 @@ pub fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
     }
 }
 
+/// Plain management-register header for two-column editor/list pages.
+/// The same master allocates the 21pt toolbar transition, 36pt fixed header,
+/// native scrollbar gutter and inner 2pt bottom rule. Only the row content
+/// is allowed to be taller than a compact 42pt product row.
+pub fn management_master_register_header(
+    ui:&mut Ui,primary:&str,action:&str,action_width:f32
+)->ManagementTableHeader{
+    let layout=management_sticky_table_header(ui,0.0);
+    let text_rect=management_master_header_begin(
+        ui,layout.header_rect,layout.header_content_rect
+    );
+    let x=(text_rect.right()-action_width).max(text_rect.left());
+    let left=typography::freight_table_header_galley(ui,primary);
+    let right=typography::freight_table_header_galley(ui,action);
+    let painter=ui.painter().with_clip_rect(text_rect);
+    painter.galley(
+        egui::pos2(text_rect.left()+theme::SPACE_8,
+            text_rect.center().y-left.size().y/2.0),
+        left,theme::SECONDARY
+    );
+    painter.galley(
+        egui::pos2((x+(action_width-right.size().x)/2.0)
+            .max(x).min(text_rect.right()),
+            text_rect.center().y-right.size().y/2.0),
+        right,theme::SECONDARY
+    );
+    painter.line_segment(
+        [egui::pos2(x,text_rect.top()),egui::pos2(x,text_rect.bottom())],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    );
+    management_master_header_finish(ui,layout.header_rect);
+    layout
+}
+
 /// One 10pt / 1.8pt-stroke chevron for selectors, date stepping and
 /// expand/collapse affordances. Rotating the same vector keeps the glyphs
 /// identical at all orientations and avoids Windows font-dependent triangles.
