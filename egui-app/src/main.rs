@@ -1822,9 +1822,9 @@ impl BandoEgui {
                     );
                     let master=components::modal_master_layout(
                         bounds,
-                        theme::MODAL_REVIEW_HEADER_HEIGHT,
+                        theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT,
                         theme::MODAL_FOOTER_HEIGHT,
-                        theme::MODAL_REVIEW_GAP
+                        theme::MODAL_MASTER_WORKSPACE_GAP
                     );
                     let header_rect=master.header;
                     let footer_rect=master.footer;
@@ -1838,14 +1838,14 @@ impl BandoEgui {
                     // Common popup master owns the ONE workspace frame and
                     // both divider lines. The OCR pane ratio is content-specific.
                     let frame=components::modal_master_workspace_surface(
-                        ui,compare_rect,theme::MODAL_COMPARISON_HEADER_HEIGHT,
+                        ui,compare_rect,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT,
                         Some(2.0/3.0)
                     );
                     let divider_x=frame.divider_x.expect("OCR has two panes");
                     let toolbar_bottom=frame.toolbar_bottom;
                     let edge=theme::DIVIDER;
 
-                    let inset=theme::MODAL_REVIEW_CONTENT_INSET;
+                    let inset=theme::MODAL_MASTER_CONTENT_INSET;
                     let left_header=Rect::from_min_size(
                         egui::pos2(compare_rect.left()+inset,
                             compare_rect.top()+theme::SPACE_4),
