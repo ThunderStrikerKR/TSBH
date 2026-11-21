@@ -811,6 +811,13 @@ impl ExcelManager{
                     section.ctx(),"excel.export-dates","excel.history-dates",
                     crate::floating_notice::Tone::Error,range_error
                 );
+            }else{
+                // Closing the archive tab also closes any invalid-date
+                // notice; it must not leak into factory/store queue tabs.
+                crate::floating_notice::sync(
+                    section.ctx(),"excel.export-dates","excel.history-dates",
+                    crate::floating_notice::Tone::Error,None
+                );
             }
             if has_actions{
                 let actions_y=if stacked{
