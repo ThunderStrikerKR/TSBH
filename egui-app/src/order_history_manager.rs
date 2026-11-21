@@ -1386,14 +1386,15 @@ impl OrderHistoryManager {
                     "저장된 주문이 없습니다."
                 }else{"조건에 맞는 주문이 없습니다."},theme::MUTED))
             }else{None};
-            // Keep the 16pt inner bottom clearance below BOTH painted rows
-            // and native rail. The rail stops 3pt before the row viewport end.
+            // Keep the body viewport above the 16pt bottom inset; extend
+            // only the rail through that inset to 3pt before the card border.
+            // This matches Freight Assignment without changing visible rows.
             let scroll_max_height=components::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
             let scroll_bounds=section.available_rect_before_wrap();
             let scroll_track=components::management_table_scroll_track_rect(
-                section,scroll_max_height,0.0
+                section,scroll_max_height,theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING
             );
             // Mixed fixed parent rows and auto-height shipment details need
             // prefix offsets. A fixed-height virtual grid would clip wrapped
