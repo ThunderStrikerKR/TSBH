@@ -858,8 +858,7 @@ impl CategoryManager {
                 modal.label(typography::body(
                     "카테고리 변경사항을 저장할까요?"
                 ));
-                modal.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                components::modal_action_row(modal,|actions|{
                         save=theme::action(actions,"저장하고 이동",
                             theme::ButtonRole::Primary,editable&&!busy).clicked();
                         discard=theme::action(actions,"저장 안 함",
