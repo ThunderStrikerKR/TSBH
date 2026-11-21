@@ -2610,16 +2610,22 @@ impl BandoEgui {
                         }
                     }
                     if editor.changed() {
-                        // Direct typing counts as the FIRST input method only
-                        // when there was no imported clipboard/OCR source.
+                        // Ctrl+V into the editable document is text paste,
+                        // not manual typing. Clipboard image OCR is recorded
+                        // separately by the worker's OCR result branch.
+                        let typed_method = if ui.ctx().input(|input|
+                            input.events.iter().any(|event|
+                                matches!(event, egui::Event::Paste(_))
+                            )
+                        ) {"TEXT_PASTE"} else {"DIRECT"};
                         if let Some(row)=self.active_id.as_deref().and_then(|id|
                             self.drafts.iter_mut().find(|row|row.id==id)
                         ) {
                             if !self.raw_source.trim().is_empty() {
                                 if row.source_input_method.is_none() && row.raw.trim().is_empty() {
-                                    row.source_input_method=Some("DIRECT".into());
+                                    row.source_input_method=Some(typed_method.into());
                                 }
-                                row.last_input_method=Some("DIRECT".into());
+                                row.last_input_method=Some(typed_method.into());
                             } else {
                                 row.source_input_method=None;
                                 row.last_input_method=None;
