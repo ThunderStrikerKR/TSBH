@@ -526,8 +526,7 @@ impl ModelGroupManager {
                     cancel=components::modal_header(dialog,"그룹 삭제","취소",true);
                     dialog.label(typography::body(
                         "이 그룹을 삭제할까요? 기존 주문과 상품은 유지됩니다."));
-                    dialog.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                    components::modal_action_row(dialog,|actions|{
                             delete=theme::action(actions,"삭제",
                                 theme::ButtonRole::Danger,true).clicked();
                         }
@@ -550,8 +549,7 @@ impl ModelGroupManager {
                         dialog,"모델군 관리","취소",!self.busy()
                     );
                     dialog.label(typography::body("모델군 관리의 변경사항을 저장할까요?"));
-                    dialog.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                    components::modal_action_row(dialog,|actions|{
                             save=theme::action(actions,"저장",
                                 theme::ButtonRole::Primary,
                                 gateway.model_group_write_enabled()&&!self.busy()&&self.dirty()
