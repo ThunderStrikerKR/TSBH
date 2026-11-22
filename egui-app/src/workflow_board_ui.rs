@@ -1118,6 +1118,7 @@ mod pending_matching_tests {
             last_input_method:None,
             analysis_raw:None,
             analysis_evidence:None,
+            analysis_view:None,
             client_match:None,
             chat_handle:None,
             chat_title:None,
