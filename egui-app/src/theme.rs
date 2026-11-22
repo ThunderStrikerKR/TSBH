@@ -1006,9 +1006,9 @@ pub fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
                 .min_size(Vec2::splat(ACTION_QUIET_HEIGHT))
         )
     }).inner;
-    if response.hovered() {
-        ui.painter().rect_filled(response.rect, 4.0, RAISED);
-    }
+    // Window chrome uses the same hover outline as every other actionable
+    // control, without shifting the 32pt hit rectangle or painted glyph.
+    paint_button_hover(ui,&response,4.0);
     let center = response.rect.center();
     let ink = if response.hovered() { TEXT } else { SECONDARY };
     let line = Stroke::new(1.35, ink);
