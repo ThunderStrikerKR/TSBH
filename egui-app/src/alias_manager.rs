@@ -395,7 +395,7 @@ impl AliasManager {
                         close=true;
                     }
                     let width=modal.available_width();
-                    components::flexible_text_field(modal,&mut self.query,
+                    components::management_search_field(modal,&mut self.query,
                         width,"브랜드 / 상품명 / 모델 / 별칭 검색");
                     modal.horizontal_wrapped(|filters|{
                         for (depth,(parent,selected,children)) in
