@@ -4585,6 +4585,8 @@ impl BandoEgui {
                     let targets=self.workflow_snapshot.as_ref()
                         .map(|board|board.groups.iter().filter(|other|
                             other.id!=id && !other.transferred &&
+                            !group.source_id.is_empty() &&
+                            !group.dealer_id.is_empty() &&
                             other.source_id==group.source_id &&
                             other.dealer_id==group.dealer_id
                         ).cloned().collect::<Vec<_>>()).unwrap_or_default();
@@ -4753,7 +4755,8 @@ impl BandoEgui {
                         components::modal_action_row(ui,|buttons|{
                             if theme::action(
                                 buttons,"발주서 삭제",ButtonRole::Danger,
-                                !busy && draft.working_version.is_none()
+                                !busy && draft.working_version.is_none() &&
+                                !draft.working_synced
                             ).clicked(){
                                 delete_pending=Some(id.clone());
                             }
