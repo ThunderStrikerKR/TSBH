@@ -4226,6 +4226,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let active=selected_id.as_ref().map(|id|
                 source_highlight::key(id,id,"name"));
             let mut new_clicked=false;
+            let mut clicked_source=None;
             Self::section_with_header(ui,"발주 원문",height,|header|{
                 if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,true).clicked(){
                     new_clicked=true;
@@ -4282,11 +4283,32 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         paint_slot,egui::Shape::Vec(normal)
                                     );
                                     text_ui.painter().add(egui::Shape::Vec(focused));
+                                    if display.response.hovered() &&
+                                        display.response.clicked(){
+                                        if let Some(pointer)=text_ui.input(|i|
+                                            i.pointer.hover_pos()){
+                                            clicked_source=source_highlight::hovered_key_at_pointer(
+                                                &draft.raw,&spans,&display.galley,
+                                                display.galley_pos,pointer
+                                            );
+                                        }
+                                    }
                                 });
                         }
                     );
                 }
             });
+            if let Some(clicked)=clicked_source{
+                self.workflow_ui.selection=None;
+                self.workflow_ui.folded=None;
+                self.workflow_ui.stop_preview();
+                self.link_hover.clear();
+                self.source_hover=None;
+                self.focus_pending_recipient(&workflow_board_ui::PendingTarget{
+                    order_id:draft.id.clone(),
+                    recipient_id:Some(clicked.recipient_id)
+                },ui.ctx());
+            }
             if new_clicked{
                 self.workflow_ui.selection=None;
                 self.workflow_ui.folded=None;
