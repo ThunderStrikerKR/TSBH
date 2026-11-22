@@ -47,13 +47,21 @@ pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
 
 /// Business data typography is classified by semantic value, never by the
-/// screen that happens to contain it. All four kinds use the same Korean UI
-/// family so mixed strings like "30개" and "62,000원" retain one baseline.
+/// screen that happens to contain it. Digits use Consolas (monospace) for
+/// stable columns, while Korean units fall back to the regular Korean UI
+/// family. Calibrate their optical baseline at font registration, not by
+/// shifting the text or resizing individual controls.
 /// Sizes follow the approved presentation context, not digit count.
 #[derive(Clone,Copy,Debug,Eq,PartialEq)]
 pub enum DataValueKind { Money, Quantity, Date, Phone }
 #[derive(Clone,Copy,Debug,Eq,PartialEq)]
 pub enum DataValueContext { Table, Form, Reception, CompactCard, Summary }
+
+/// Pixel-level optical correction for Consolas against Korean unit glyphs.
+/// epaint::FontTweak changes only glyph placement, not line boxes, editor
+/// carets, button positions or the fixed item-table column rectangles.
+/// Start with a 1pt upward adjustment; verify it on the Windows UI capture.
+pub const DATA_NUMERIC_GLYPH_OFFSET_Y: f32 = -1.0;
 
 pub fn data_value_font(_kind:DataValueKind,context:DataValueContext)->FontId {
     let size=match context {
@@ -62,7 +70,7 @@ pub fn data_value_font(_kind:DataValueKind,context:DataValueContext)->FontId {
         DataValueContext::Reception=>FONT_RECEPTION_ITEM_TEXT,
         DataValueContext::Summary=>FONT_SECTION_HEADING,
     };
-    FontId::proportional(size)
+    FontId::monospace(size)
 }
 
 /// A fixed numeric slot right-aligns even the unknown em dash; dates and
@@ -201,11 +209,11 @@ fn spec(role: Role) -> TypeSpec {
         },
         Role::SummaryValue => TypeSpec {
             size: FONT_SECTION_HEADING, line: 23.0, tracking: 0.0,
-            color: TEXT, weight: Weight::Regular,
+            color: TEXT, weight: Weight::Monospace,
         },
         Role::Quantity => TypeSpec {
             size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
-            color: SECONDARY, weight: Weight::Regular,
+            color: SECONDARY, weight: Weight::Monospace,
         },
         Role::Status => TypeSpec {
             size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
@@ -740,7 +748,14 @@ pub fn install(ctx: &egui::Context) {
         .find_map(|path| std::fs::read(path).ok().map(|bytes| (*path, bytes)));
     if let Some((_, bytes)) = &numeric {
         let key = "bando-numeric-mono";
-        fonts.font_data.insert(key.into(), FontData::from_owned(bytes.clone()).into());
+        // Tune glyphs at the font level. A visual offset leaves row geometry
+        // and selection/caret placement intact across money, quantity, date,
+        // phone and compact workflow cards.
+        let adjusted=FontData::from_owned(bytes.clone()).tweak(egui::FontTweak {
+            y_offset: DATA_NUMERIC_GLYPH_OFFSET_Y,
+            ..Default::default()
+        });
+        fonts.font_data.insert(key.into(), adjusted.into());
         fonts.families.entry(FontFamily::Monospace).or_default().insert(0, key.into());
     }
     ctx.set_fonts(fonts);
@@ -773,33 +788,34 @@ mod management_table_type_roles_tests {
         ] {
             assert_eq!(
                 data_value_font(kind,DataValueContext::Table),
-                FontId::proportional(FONT_BODY)
+                FontId::monospace(FONT_BODY)
             );
             assert_eq!(
                 data_value_font(kind,DataValueContext::Form),
-                FontId::proportional(FONT_BODY)
+                FontId::monospace(FONT_BODY)
             );
             assert_eq!(
                 data_value_font(kind,DataValueContext::Reception),
-                FontId::proportional(FONT_RECEPTION_ITEM_TEXT)
+                FontId::monospace(FONT_RECEPTION_ITEM_TEXT)
             );
             assert_eq!(
                 data_value_font(kind,DataValueContext::CompactCard),
-                FontId::proportional(FONT_BODY)
+                FontId::monospace(FONT_BODY)
             );
         }
         assert_eq!(data_value_align(DataValueKind::Money),egui::Align::RIGHT);
         assert_eq!(data_value_align(DataValueKind::Quantity),egui::Align::RIGHT);
         assert_eq!(data_value_align(DataValueKind::Date),egui::Align::LEFT);
         assert_eq!(data_value_align(DataValueKind::Phone),egui::Align::LEFT);
+        assert_eq!(DATA_NUMERIC_GLYPH_OFFSET_Y,-1.0);
         assert_eq!(numeric_editor_font(),
             data_value_font(DataValueKind::Money,DataValueContext::Form));
         assert_eq!(management_table_money_font(),
             data_value_font(DataValueKind::Money,DataValueContext::Table));
         assert_eq!(spec(Role::SummaryValue).weight as u8,
-            Weight::Regular as u8);
+            Weight::Monospace as u8);
         assert_eq!(spec(Role::Quantity).weight as u8,
-            Weight::Regular as u8);
+            Weight::Monospace as u8);
     }
 
     #[test]
