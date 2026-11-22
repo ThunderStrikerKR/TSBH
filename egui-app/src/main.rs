@@ -5364,6 +5364,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
 
         if let Some((group,ship))=self.visible_workflow_group(){
+            let linked_active=self.link_hover.active_for(&ship.order_id).cloned();
             let mut hovered_detail:Option<source_highlight::LinkKey>=None;
             // The same preallocated review/recipient/items rectangles are
             // used for real workflow rows. No source replacement, false
@@ -5418,7 +5419,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 let id=ship.recipient_id.as_str();
                                 let fields=["name","address","mobile","phone","note"];
                                 let highlighted=fields.map(|field|source_highlight::is_active(
-                                    self.link_hover.active.as_ref(),
+                                    linked_active.as_ref(),
                                     &source_highlight::key(id,id,field)
                                 ));
                                 let responses=components::reception_recipient_fields(
@@ -5431,7 +5432,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         hovered_detail=Some(key.clone());
                                     }
                                     source_highlight::paint_active(
-                                        contents,response,&key,self.link_hover.active.as_ref()
+                                        contents,response,&key,linked_active.as_ref()
                                     );
                                 }
                             });
@@ -5516,7 +5517,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 let fields=["product","quantity","price"];
                                                 let highlighted=fields.map(|field|
                                                     source_highlight::is_active(
-                                                        self.link_hover.active.as_ref(),
+                                                        linked_active.as_ref(),
                                                         &source_highlight::key(
                                                             &ship.recipient_id,item_id,field
                                                         )
@@ -5538,7 +5539,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     if response.hovered(){hovered_detail=Some(key.clone());}
                                                     source_highlight::paint_active(
                                                         contents,response,&key,
-                                                        self.link_hover.active.as_ref()
+                                                        linked_active.as_ref()
                                                     );
                                                 }
                                             }
@@ -5595,7 +5596,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     );
                 }
             );
-            self.link_hover.update(
+            self.link_hover.update_for(
+                &ship.order_id,
                 hovered_detail.or_else(||self.source_hover.clone()),ui.ctx()
             );
             return;
@@ -5605,6 +5607,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // pending card may point to another order/recipient; do not swap
         // this projection into the employee's active editable draft.
         if let Some((draft,recognition,index))=self.visible_pending_other(){
+            self.workflow_ui.note_pending_content_hover(
+                &draft.id,ui.ctx().input(|input|input.pointer.hover_pos()
+                    .is_some_and(|point|ui.clip_rect().contains(point)))
+            );
+            let spans=source_highlight::collect(&draft.raw,&recognition);
+            let linked_active=self.link_hover.active_for(&draft.id).cloned()
+                .filter(|key|spans.iter().any(|span|span.key==*key));
+            let mut hovered_detail=None;
             let recipients=reception_service::recipients(&recognition);
             let recipient=recipients.get(index);
             let preview=draft.pricing_preview.as_ref()
@@ -5666,10 +5676,24 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         let mut mobile=reception_service::text(row,"mobile").to_owned();
                                         let mut phone=reception_service::text(row,"phone").to_owned();
                                         let mut note=reception_service::text(row,"note").to_owned();
-                                        components::reception_recipient_fields(
-                                            contents,&mut name,&mut address,&mut mobile,
-                                            &mut phone,&mut note,[true,false,false,false,false]
+                                        let recipient_id=reception_service::text(row,"id");
+                                        let fields=["name","address","mobile","phone","note"];
+                                        let active_fields=fields.map(|field|
+                                            (linked_active.is_none() && field=="name") ||
+                                            source_highlight::is_active(linked_active.as_ref(),
+                                                &source_highlight::key(recipient_id,recipient_id,field))
                                         );
+                                        let responses=components::reception_recipient_fields(
+                                            contents,&mut name,&mut address,&mut mobile,
+                                            &mut phone,&mut note,active_fields
+                                        );
+                                        for (response,field) in responses.iter().zip(fields){
+                                            let key=source_highlight::key(recipient_id,recipient_id,field);
+                                            if response.hovered(){hovered_detail=Some(key.clone());}
+                                            source_highlight::paint_active(
+                                                contents,response,&key,linked_active.as_ref()
+                                            );
+                                        }
                                     });
                             }
                         }
@@ -5720,11 +5744,33 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             .and_then(|line|line["amount"].as_i64())
                                                             .map(components::display_won)
                                                             .unwrap_or_else(||"—".into());
-                                                        components::reception_item_row(
+                                                        let recipient_id=reception_service::text(row,"id");
+                                                        let fields=["product","quantity","price"];
+                                                        let active_fields=fields.map(|field|
+                                                            (linked_active.is_none() && field=="product") ||
+                                                            source_highlight::is_active(
+                                                                linked_active.as_ref(),
+                                                                &source_highlight::key(recipient_id,item_id,field)
+                                                            )
+                                                        );
+                                                        let cells=components::reception_item_row(
                                                             contents,
                                                             &reception_service::item_title(item),
-                                                            &quantity,&amount,[true,false,false]
+                                                            &quantity,&amount,active_fields
                                                         );
+                                                        for (response,field) in [
+                                                            (&cells.product,"product"),
+                                                            (&cells.quantity,"quantity"),
+                                                            (&cells.amount,"price")
+                                                        ]{
+                                                            let key=source_highlight::key(
+                                                                recipient_id,item_id,field
+                                                            );
+                                                            if response.hovered(){hovered_detail=Some(key.clone());}
+                                                            source_highlight::paint_active(
+                                                                contents,response,&key,linked_active.as_ref()
+                                                            );
+                                                        }
                                                     }
                                                 }
                                                 contents.add_space(theme::SPACE_8);
@@ -5783,12 +5829,22 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             if let Some(target)=next_target{
                 self.workflow_ui.stop_preview();
                 self.workflow_ui.selection=None;
+                self.link_hover.clear();
+                self.source_hover=None;
                 self.focus_pending_recipient(&target,ui.ctx());
+            }else{
+                // The read-only projection never changes the working draft.
+                // Evidence must exist in this order's authoritative spans.
+                let hovered=hovered_detail.or_else(||self.source_hover.clone())
+                    .filter(|key|spans.iter().any(|span|span.key==*key));
+                self.link_hover.update_for(&draft.id,hovered,ui.ctx());
             }
             return;
         }
         let mut client_choice: Option<String> = None;
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
+        let linked_active=self.active_id.as_deref()
+            .and_then(|id|self.link_hover.active_for(id)).cloned();
         let mut sync_clicked=false;
         let mut refresh_price:Option<String>=None;
         ui.scope_builder(
@@ -6007,7 +6063,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         "name","address","mobile","phone","note"
                                     ].map(|field|(board_preview && field=="name") ||
                                         source_highlight::is_active(
-                                            self.link_hover.active.as_ref(),
+                                            linked_active.as_ref(),
                                             &source_highlight::key(recipient_id,recipient_id,field)
                                         ));
                                     let responses = components::reception_recipient_fields(
@@ -6042,7 +6098,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         );
                                         if response.hovered(){hovered_detail=Some(key.clone());}
                                         source_highlight::paint_active(
-                                            fields,&response,&key,self.link_hover.active.as_ref()
+                                            fields,&response,&key,linked_active.as_ref()
                                         );
                                         if let Some(editor)=self.inline_editor.as_mut()
                                             .filter(|edit|edit.target==target) {
@@ -6052,7 +6108,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 editor.click_at.take(),
                                                 matches!(field,"mobile"|"phone"),
                                                 source_highlight::is_active(
-                                                    self.link_hover.active.as_ref(),&key
+                                                    linked_active.as_ref(),&key
                                                 )
                                             );
                                             editor.focus_next=false;
@@ -6163,7 +6219,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     "product","quantity","price"
                                                 ].map(|field|(board_preview && field=="product") ||
                                                     source_highlight::is_active(
-                                                        self.link_hover.active.as_ref(),
+                                                        linked_active.as_ref(),
                                                         &source_highlight::key(recipient_id,item_id,field)
                                                     ));
                                                 let cells=if editable{
@@ -6220,7 +6276,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     }
                                                     source_highlight::paint_active(
                                                         items_ui,response,&key,
-                                                        self.link_hover.active.as_ref(),
+                                                        linked_active.as_ref(),
                                                     );
                                                     if let Some(editor)=self.inline_editor.as_mut()
                                                         .filter(|editor|editor.target==target) {
@@ -6452,7 +6508,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .filter(|key|source_matches && self.analysis.as_ref()
                 .is_some_and(|analysis|analysis.linked_spans.iter()
                     .any(|span|span.key==*key)));
-        self.link_hover.update(linked,ui.ctx());
+        self.link_hover.update_for(
+            self.active_id.as_deref().unwrap_or(""),linked,ui.ctx()
+        );
         // React parity: hovering linked source evidence only changes the
         // visible projection; it must not replace the clicked recipient.
         if self.source_hover.is_some() && self.link_hover.active.is_some(){
@@ -6922,7 +6980,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             self.client_change.is_none() && self.working_sync.is_none() &&
                             self.workflow_dialog.is_none() && !self.ocr_processing,
                         active_recipient,
-                        self.link_hover.active.as_ref().map(|key|key.recipient_id.as_str())
+                        self.link_hover.scoped_active().map(|(order,key)|
+                            (order,key.recipient_id.as_str()))
                     );
                 });
         });
