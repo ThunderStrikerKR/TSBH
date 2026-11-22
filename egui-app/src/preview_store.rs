@@ -205,6 +205,9 @@ pub struct WorkingReception {
     /// Rust evidence is valid only for this exact source string.
     pub analysis_raw: Option<String>,
     pub analysis_evidence: Option<Value>,
+    /// Display-only native analysis projection; rebuild linked spans from the
+    /// exact saved source on restore. No full Order or live catalog is stored.
+    pub analysis_view: Option<Value>,
     /// Advisory Rust dealer decision, never a confirmed client assignment.
     pub client_match: Option<Value>,
     /// Verified on each use against the current native chat list.
@@ -535,7 +538,9 @@ impl PreviewStore {
                 id: id.to_owned(), raw: source.to_owned(), order_type: kind.to_owned(),
                 source_input_method: row.get("sourceInputMethod").and_then(Value::as_str).map(str::to_owned),
                 last_input_method: row.get("lastInputMethod").and_then(Value::as_str).map(str::to_owned),
-                analysis_raw, analysis_evidence, client_match,
+                analysis_raw, analysis_evidence,
+                analysis_view: row.get("analysisView").filter(|v|!v.is_null()).cloned(),
+                client_match,
                 chat_handle: row.get("chatHandle").and_then(Value::as_str).map(str::to_owned),
                 chat_title: row.get("chatTitle").and_then(Value::as_str).map(str::to_owned),
                 client_id: row.get("clientId").and_then(Value::as_str).map(str::to_owned),
@@ -555,7 +560,8 @@ impl PreviewStore {
                 id: "legacy-working-source".into(),
                 raw: raw.clone(), order_type: order_type.clone(),
                 source_input_method: None, last_input_method: None,
-                analysis_raw: None, analysis_evidence: None, client_match: None,
+                analysis_raw: None, analysis_evidence: None, analysis_view:None,
+                client_match: None,
                 chat_handle: None, chat_title: None,
                 client_id: None, client_selection: None, pricing_preview: None,
                 working_version: None, working_synced: false, manual_model: None,
@@ -587,6 +593,7 @@ impl PreviewStore {
             "lastInputMethod": item.last_input_method,
             "analysisRaw": item.analysis_raw,
             "analysisEvidence": item.analysis_evidence,
+            "analysisView": item.analysis_view,
             "clientMatch": item.client_match,
             "chatHandle": item.chat_handle,
             "chatTitle": item.chat_title,
@@ -967,6 +974,19 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
             analysis_bytes=analysis_bytes.checked_add(price.to_string().len())
                 .ok_or("Rust 계산 결과 총 크기 초과")?;
         }
+        if let Some(view)=draft.analysis_view.as_ref(){
+            if draft.analysis_raw.as_deref()!=Some(draft.raw.as_str()) ||
+               draft.analysis_evidence.is_none() ||
+               draft.client_match.is_none() ||
+               !view.is_object() ||
+               !view["reference"].is_array() ||
+               !view["clientCandidates"].is_array() ||
+               !view["directoryCount"].is_u64() {
+                return Err("저장된 발주서 인식 화면의 기준이 맞지 않습니다.".into());
+            }
+            analysis_bytes=analysis_bytes.checked_add(view.to_string().len())
+                .ok_or("접수 인식 화면 기록 크기 초과")?;
+        }
         match (&draft.analysis_raw, &draft.analysis_evidence, &draft.client_match) {
             (None, None, None) => {}
             (Some(raw), Some(evidence), Some(match_result)) if raw == &draft.raw &&
@@ -1068,7 +1088,8 @@ mod reception_edit_audit_tests {
             id:"order-1".into(),raw:"원문".into(),order_type:"AGENCY".into(),
             source_input_method:None,last_input_method:None,
             analysis_raw:Some("원문".into()),
-            analysis_evidence:Some(initial.clone()),client_match:Some(json!({})),
+            analysis_evidence:Some(initial.clone()),analysis_view:None,
+            client_match:Some(json!({})),
             chat_handle:None,chat_title:None,client_id:None,
             client_selection:None,pricing_preview:None,
             working_version:None,working_synced:false,manual_model:None,
