@@ -4412,6 +4412,155 @@ impl BandoEgui {
         self.link_hover.update(linked,ui.ctx());
     }
 
+    /// Run an approved group mutation off the egui frame. The gateway calls
+    /// native Rust rules, writes v2 SQLite under revision CAS and rereads it.
+    /// No preview receipt or copied UI state is ever used as a write source.
+    fn start_workflow_action(
+        &mut self,action:&str,group_id:&str,shipment_id:Option<&str>,
+        target_group_id:Option<&str>,ack:bool,ctx:&egui::Context
+    ){
+        if self.workflow_action.is_some(){
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "이전 주문 작업이 완료된 뒤 다시 진행하세요."
+            );
+            return;
+        }
+        if !self.gateway.workflow_write_enabled(){
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "주문 변경을 허용한 기존 Tauri 업무 DB가 필요합니다."
+            );
+            return;
+        }
+        let Some(revision)=self.workflow_snapshot.as_ref()
+            .and_then(|snapshot|snapshot.revision) else{
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "주문 상태를 다시 읽은 후 진행하세요."
+            );
+            return;
+        };
+        let mut args=serde_json::json!({"groupId":group_id});
+        if let Some(shipment_id)=shipment_id{
+            args["shipmentId"]=serde_json::json!(shipment_id);
+        }
+        if let Some(target_group_id)=target_group_id{
+            args["targetGroupId"]=serde_json::json!(target_group_id);
+        }
+        if ack{args["ack"]=serde_json::json!(true);}
+        let gateway=Arc::clone(&self.gateway);
+        let (sender,receiver)=mpsc::channel();
+        let context=ctx.clone();
+        let operation=action.to_owned();
+        self.workflow_action=Some(PendingWorkflowAction{
+            group_id:group_id.to_owned(),action:operation.clone(),receiver
+        });
+        std::thread::spawn(move||{
+            let result=gateway.mutate_workflow(revision,&operation,args);
+            let _=sender.send(result);
+            context.request_repaint();
+        });
+    }
+
+    fn poll_workflow_action(&mut self,ctx:&egui::Context){
+        let outcome=self.workflow_action.as_ref().map(|task|(
+            task.group_id.clone(),task.action.clone(),task.receiver.try_recv()
+        ));
+        let Some((group_id,action,result))=outcome else{return;};
+        match result{
+            Ok(Ok(_saved))=>{
+                self.workflow_action=None;
+                if action=="delete_group" ||
+                    matches!(action.as_str(),"detach_shipment"|"regroup_shipment")
+                {
+                    if self.workflow_ui.selection.as_ref()
+                        .is_some_and(|s|s.group_id==group_id){
+                        self.workflow_ui.selection=None;
+                        self.workflow_ui.folded=None;
+                    }
+                }
+                self.workflow_ui.stop_preview();
+                self.workflow_snapshot=None;
+                self.workflow_receiver=None;
+                self.workflow_last_fetch=None;
+                self.workflow_error=None;
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Success,
+                    match action.as_str(){
+                        "advance_group"=>"업무 단계를 진행했습니다.",
+                        "confirm_group_payment"=>"입금 확인 단계를 완료했습니다.",
+                        "undo_group"=>"이전 단계로 변경했습니다.",
+                        "process_group"=>"Excel 관리 대기열로 이관했습니다.",
+                        "delete_group"=>"주문 묶음을 삭제했습니다. 업무 이력은 보존됩니다.",
+                        "detach_shipment"=>"선택한 배송 건을 분리했습니다.",
+                        "regroup_shipment"=>"선택한 배송 건을 다시 묶었습니다.",
+                        _=>"주문 변경 내용을 저장했습니다."
+                    }
+                );
+                ctx.request_repaint();
+            }
+            Ok(Err(error))=>{
+                self.workflow_action=None;
+                self.workflow_last_fetch=None;
+                self.workflow_error=Some(error.clone());
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Error,error
+                );
+            }
+            Err(mpsc::TryRecvError::Disconnected)=>{
+                self.workflow_action=None;
+                self.workflow_error=Some("주문 변경 처리 도중 작업이 중단되었습니다.".into());
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Error,
+                    "주문 변경 처리 도중 작업이 중단되었습니다."
+                );
+            }
+            Err(mpsc::TryRecvError::Empty)=>{}
+        }
+    }
+
+    /// A pending receipt is only an isolated unconfirmed workspace record.
+    /// Never pretend this deletes an already persisted operational order.
+    fn delete_pending_reception(&mut self,id:&str,ctx:&egui::Context){
+        let Some(row)=self.drafts.iter().find(|row|row.id==id) else{return;};
+        if row.working_synced || row.working_version.is_some(){
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "운영 작업본으로 저장한 주문은 주문 변경·취소 절차에서 처리하세요."
+            );
+            return;
+        }
+        if self.working_sync.is_some() || self.client_change.is_some() ||
+            self.auto_client_change.is_some() || self.source_clear_job.is_some(){
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "진행 중인 접수 작업이 완료된 뒤 삭제하세요."
+            );
+            return;
+        }
+        let was_active=self.active_id.as_deref()==Some(id);
+        self.drafts.retain(|row|row.id!=id);
+        if was_active{
+            self.active_id=None;
+            self.raw_source.clear();
+            self.source_editing=false;
+            self.clear_source_analysis();
+            if let Some(next)=self.drafts.last().map(|row|row.id.clone()){
+                self.select_reception(&next,ctx);
+            }else{
+                self.queue_source_save();
+            }
+        }else{
+            self.queue_source_save();
+        }
+        self.workflow_ui.stop_preview();
+        floating_notice::publish(
+            ctx,"reception.workflow",floating_notice::Tone::Success,
+            "미확정 발주서를 삭제했습니다."
+        );
+    }
+
     fn orders_pane(&mut self, ui: &mut Ui) {
         let height=ui.available_height();
         let mut event=None;
