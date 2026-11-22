@@ -279,7 +279,8 @@ pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 =
 pub const RECEPTION_ITEMS_HEADER_HEIGHT: f32 = 32.0;
 pub const RECEPTION_ITEMS_ROW_HEIGHT: f32 = 42.0;
 // Extra numeric room is necessary for 16pt amounts without clipping.
-pub const RECEPTION_ITEMS_QTY_MAX_WIDTH: f32 = 88.0;
+// Fits `999개` at 16pt with value padding; larger quantities use compact UI display.
+pub const RECEPTION_ITEMS_QTY_WIDTH: f32 = 76.0;
 pub const RECEPTION_ITEMS_AMOUNT_MAX_WIDTH: f32 = 136.0;
 pub const RECEPTION_VAT_ROW_HEIGHT: f32 = 32.0;
 pub const RECEPTION_TOTAL_HEIGHT: f32 = 56.0;
