@@ -354,23 +354,9 @@ impl ManualWorkspace {
                 let busy=self.busy();
                 let unassigned=blocks.iter().filter(|b|
                     assignments.get(text(b,"id")).is_none()).count();
-                ui.horizontal(|toolbar|{
-                    toolbar.label(typography::caption(
-                        &format!("미배정됨: {unassigned}개")
-                    ));
-                    toolbar.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |actions|{
-                            if theme::action(actions,"초기화",ButtonRole::Quiet,!busy).clicked(){
-                                if self.edit_text!=self.current_value(){
-                                    self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
-                                }else{
-                                    self.reset_pending=true;
-                                }
-                            }
-                        }
-                    );
-                });
+                ui.label(typography::caption(
+                    &format!("미배정됨: {unassigned}개")
+                ));
                 ui.separator();
                 // Match React's 34:66 columns. On narrow windows keep
                 // both minimum widths and scroll the workspace horizontally
@@ -621,25 +607,29 @@ impl ManualWorkspace {
                         });
                     });
                 ui.add_space(theme::SPACE_12);
-                components::modal_action_row(ui,|footer|{
-                    footer.with_layout(
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |row|{
-                            // Keep status LEFT and primary apply RIGHT.
-                            row.label(typography::caption(
-                                "정식 접수는 주문 확인 완료"
-                            ));
-                            row.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |actions|{
-                                    if theme::action(actions,"초안에 적용",
-                                        ButtonRole::Primary,!busy
-                                    ).clicked(){apply=true;}
-                                }
-                            );
+                components::modal_action_row_split(
+                    ui,
+                    |left|{
+                        // Reset is a destructive worksheet operation with its
+                        // existing confirmation, not a toolbar filter.
+                        if theme::action(left,"초기화",ButtonRole::Danger,!busy)
+                            .clicked(){
+                            if self.edit_text!=self.current_value(){
+                                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
+                            }else{
+                                self.reset_pending=true;
+                            }
                         }
-                    );
-                });
+                        left.label(typography::caption(
+                            "정식 접수는 주문 확인 완료"
+                        ));
+                    },
+                    |right|{
+                        if theme::action(right,"초안에 적용",
+                            ButtonRole::Primary,!busy
+                        ).clicked(){apply=true;}
+                    }
+                );
             });
         // Search opens only for the current native recipient/item identity.
         // The underlying worksheet is disabled while a chooser is open.
