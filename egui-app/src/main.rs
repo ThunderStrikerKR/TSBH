@@ -268,7 +268,13 @@ struct InlineReceptionEditor {
 struct PendingRemoteRecheck{
     order_id:String,
     source_raw:String,
+    order_type:String,
+    recipients:Vec<(String,String)>,
+    cancel:Arc<AtomicBool>,
     receiver:Receiver<Vec<(String,String,Result<serde_json::Value,String>)>>,
+}
+impl Drop for PendingRemoteRecheck{
+    fn drop(&mut self){ self.cancel.store(true,Ordering::Release); }
 }
 struct PendingInlineChange {
     order_id:String,
@@ -584,6 +590,7 @@ struct BandoEgui {
     vat_dialog:Option<VatDialog>,
     vat_change:Option<PendingVatChange>,
     remote_recheck:Option<PendingRemoteRecheck>,
+    remote_recheck_due:bool,
     edit_history_open: bool,
     client_change: Option<PendingClientChange>,
     auto_client_change: Option<PendingAutomaticClient>,
@@ -685,6 +692,7 @@ impl Default for BandoEgui {
             vat_dialog:None,
             vat_change:None,
             remote_recheck:None,
+            remote_recheck_due:false,
             edit_history_open: false,
             client_change: None,
             auto_client_change: None,
@@ -721,11 +729,11 @@ impl Default for BandoEgui {
 }
 
 impl BandoEgui {
-    /// The only admission snapshot for worker jobs operating on a reception.
-    /// A read-only price-basis check and an advisory auto-match can be
-    /// superseded by an explicit employee choice; all writes are exclusive.
+    /// Single admission snapshot for native workers, source input/review
+    /// and operational group mutations. The CAS-serialized autosave sidecar
+    /// deliberately remains independent of user-request admission.
     fn active_reception_jobs(&self,request:ReceptionJob)->Vec<ReceptionJob>{
-        let mut active=Vec::with_capacity(9);
+        let mut active=Vec::with_capacity(18);
         if self.client_change.is_some(){active.push(ReceptionJob::ManualClient);}
         if self.auto_client_change.is_some(){active.push(ReceptionJob::AutomaticClient);}
         if self.pricing_basis_check.is_some(){active.push(ReceptionJob::PricingBasis);}
@@ -739,6 +747,13 @@ impl BandoEgui {
             active.push(ReceptionJob::InlineEditor);
         }
         if self.analysis_pending {active.push(ReceptionJob::Analysis);}
+        if self.remote_recheck.is_some(){active.push(ReceptionJob::RemoteRecheck);}
+        if self.clipboard_busy{active.push(ReceptionJob::SourceIntake);}
+        if self.ocr_review.is_some() || self.pending_replace.is_some(){
+            active.push(ReceptionJob::SourceReview);
+        }
+        if self.direct_source_entry{active.push(ReceptionJob::SourceEntry);}
+        if self.workflow_action.is_some(){active.push(ReceptionJob::WorkflowAction);}
         active
     }
 
@@ -1250,6 +1265,13 @@ impl BandoEgui {
     }
 
     fn select_reception(&mut self, id: &str, ctx: &egui::Context) {
+        if self.active_id.as_deref()==Some(id){return;}
+        if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
+            ReceptionJob::NavigateReception,false
+        ){
+            self.reception_job_conflict(ReceptionJob::NavigateReception,blocker);
+            return;
+        }
         let Some(item) = self.drafts.iter().find(|item| item.id == id).cloned() else {
             self.source_save_error = Some("선택한 발주서를 찾을 수 없습니다.".to_owned());
             return;
@@ -1257,6 +1279,9 @@ impl BandoEgui {
         if self.active_id.as_deref() == Some(id) {
             return;
         }
+        // Navigation is allowed to abandon a read-only manual dealer quote;
+        // dropping its receiver ensures it cannot publish into the next order.
+        self.client_change=None;
         self.active_id = Some(item.id);
         self.requested_recipient_focus=None;
         self.raw_source = item.raw;
@@ -1384,6 +1409,8 @@ impl BandoEgui {
         // Dropping its receiver prevents a late auto quote from taking over.
         self.auto_client_change=None;
         self.pricing_basis_check=None;
+        self.remote_recheck=None;
+        self.remote_recheck_due=false;
         let target=client_id.to_owned();
         let order_id=row.id.clone();
         let source_raw=row.raw.clone();
@@ -1508,6 +1535,7 @@ impl BandoEgui {
                         }
                     }
                     self.queue_source_save();
+                    self.start_remote_recheck(ctx);
                 }
                 Err(error)=>{
                     // A failure is a reception-level, non-modal error. Keep
@@ -2523,6 +2551,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn new_reception(&mut self, ctx: &egui::Context) {
+        if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
+            ReceptionJob::NavigateReception,false
+        ){
+            self.reception_job_conflict(ReceptionJob::NavigateReception,blocker);
+            return;
+        }
         // An already-open empty receipt is the new order. Do not multiply
         // empty records when the user clicks "+ 새 주문" repeatedly.
         if self.active_id.as_deref().and_then(|id|
@@ -2698,6 +2732,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     fn clear_source_analysis(&mut self) {
         self.auto_client_change=None;
         self.pricing_basis_check=None;
+        self.remote_recheck=None;
+        self.remote_recheck_due=false;
         self.analysis_request = self.analysis_request.wrapping_add(1);
         self.analysis_receiver = None;
         self.analysis_running_key=None;
@@ -2965,7 +3001,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// Select a new desktop rectangle first, then route the captured RGBA
     /// through the same PP-OCRv5 and employee approval flow as pasted images.
     fn begin_region_capture(&mut self, order_type:OrderType,ctx:egui::Context){
-        if self.clipboard_busy{return;}
+        match self.reception_job_admission(
+            ReceptionJob::SourceIntake,self.clipboard_busy
+        ){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::SourceIntake,blocker);
+                return;
+            }
+        }
         self.clipboard_chat=self.current_intake_chat();
         self.clipboard_busy=true;
         self.ocr_processing=true;
@@ -3003,8 +3048,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn begin_clipboard_intake(&mut self, order_type: OrderType, ctx: egui::Context) {
-        if self.clipboard_busy || !self.clipboard_monitor.kind().has_intake() {
-            return;
+        if !self.clipboard_monitor.kind().has_intake(){return;}
+        match self.reception_job_admission(
+            ReceptionJob::SourceIntake,self.clipboard_busy
+        ){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::SourceIntake,blocker);
+                return;
+            }
         }
         self.clipboard_chat=self.current_intake_chat();
         self.clipboard_busy = true;
@@ -3066,6 +3119,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         clipboard_sequence:Option<u32>,ocr_original:Option<String>,
         learning_used:bool,model_suggestion:Option<String>) {
         if text.trim().is_empty() { return; }
+        if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
+            ReceptionJob::SourceReplace,false
+        ){
+            self.reception_job_conflict(ReceptionJob::SourceReplace,blocker);
+            return;
+        }
         if self.active_id.is_none() {
             self.new_reception(ctx);
         }
@@ -3089,7 +3148,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             model_suggestion,
         });
         let first_content = self.raw_source.trim().is_empty();
-        let changed = self.raw_source != text;
+        let changed = self.raw_source != text || self.order_type != order_type;
         if changed {
             if let Some(active)=self.active_id.as_deref()
                 .and_then(|id|self.drafts.iter_mut().find(|row|row.id==id))
@@ -5207,11 +5266,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.open_manual_workspace(ui.ctx());
         }
         if begin_input {
-            if self.active_id.is_none() {
-                self.new_reception(ui.ctx());
+            match self.reception_job_admission(ReceptionJob::SourceEntry,false){
+                JobAdmission::Start=>{
+                    if self.active_id.is_none(){self.new_reception(ui.ctx());}
+                    if self.active_id.is_some(){
+                        self.source_editing=true;
+                        self.direct_source_entry=true;
+                    }
+                }
+                JobAdmission::Conflict(blocker)=>{
+                    self.reception_job_conflict(ReceptionJob::SourceEntry,blocker);
+                }
+                JobAdmission::Duplicate=>{}
             }
-            self.source_editing = true;
-            self.direct_source_entry = true;
         }
         if let Some(kind) = start_clipboard {
             self.begin_clipboard_intake(kind, ui.ctx().clone());
@@ -6617,10 +6684,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         &mut self,action:&str,group_id:&str,shipment_id:Option<&str>,
         target_group_id:Option<&str>,ack:bool,ctx:&egui::Context
     ){
-        if self.workflow_action.is_some(){
+        if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
+            ReceptionJob::WorkflowAction,false
+        ){
             floating_notice::publish(
                 ctx,"reception.workflow",floating_notice::Tone::Error,
-                "이전 주문 작업이 완료된 뒤 다시 진행하세요."
+                format!("{} 중에는 주문 업무를 변경할 수 없습니다.",blocker.label())
             );
             return;
         }
@@ -6746,13 +6815,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             return;
         }
-        if self.working_sync.is_some() || self.client_change.is_some() ||
-            self.auto_client_change.is_some() ||
-            self.manual_workspace.is_some() || self.ocr_review.is_some() ||
-            self.clipboard_busy || self.pending_replace.is_some(){
+        if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
+            ReceptionJob::DeleteReception,false
+        ){
             floating_notice::publish(
                 ctx,"reception.workflow",floating_notice::Tone::Error,
-                "진행 중인 접수 작업이 완료된 뒤 삭제하세요."
+                format!("{} 중에는 발주서를 삭제할 수 없습니다.",blocker.label())
             );
             return;
         }
@@ -7494,6 +7562,10 @@ impl eframe::App for BandoEgui {
         self.poll_inline_change(ctx);
         self.poll_vat_change(ctx);
         self.poll_remote_recheck(ctx);
+        if self.remote_recheck_due && self.remote_recheck.is_none() &&
+            self.analysis.is_some(){
+            self.start_remote_recheck(ctx);
+        }
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
         // HWND ownership now handles HUB activation. Only the 350ms
