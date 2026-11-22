@@ -16,6 +16,7 @@ on:
       - egui-app/src/gateway.rs
       - egui-app/src/developer_ui_samples.rs
       - egui-app/src/main.rs
+      - egui-app/src/native_order_change.rs
       - egui-app/src/workflow_board_ui.rs
       - egui-app/src/manual_workspace.rs
       - src-tauri/src/business_core/rules/pricing.rs
@@ -65,6 +66,8 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify dealer reassignment retains native manual-correction rows and links
+        run: cargo test --manifest-path egui-app/Cargo.toml native_order_change::manual_rebind_tests -- --nocapture
       - name: Verify editable Rust order lines, manual price overrides and remote freight totals
         run: cargo test --manifest-path egui-app/Cargo.toml pricing::migration_tests -- --nocapture
       - name: Verify complete multi-recipient receipt totals with VAT and doubled freight
