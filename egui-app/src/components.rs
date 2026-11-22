@@ -3282,7 +3282,9 @@ pub fn reception_freight_row_editable(
                     )
                 }).inner;
                 amount_rect=Some(displayed.rect);
-                if editable && price.interact(
+                // React disallows editing the freight amount for COD.
+                // Keep COD and remote controls independent and editable.
+                if editable && collect!=Some(true) && price.interact(
                     displayed.rect,
                     price.make_persistent_id(("edit-applied-freight",label)),
                     Sense::click()

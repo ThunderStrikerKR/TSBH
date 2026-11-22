@@ -60,9 +60,34 @@ pub fn native_order(
     Ok(order)
 }
 
+/// Each decision is computed by native Rust off the egui frame and is
+/// paired with both recipient ID and exact address to reject stale matches.
+type RemoteRow=(String,String,Result<Value,String>);
+fn resolve_remote_rows(gateway:&dyn BandoGateway,model:&Value)->Vec<RemoteRow>{
+    list(model,"rows").iter().map(|row|{
+        let id=text(row,"id").to_owned();
+        let address=text(row,"address").to_owned();
+        let decision=if address.trim().is_empty(){Ok(Value::Null)}
+        else{gateway.execute(ReadOperation::ResolveRemoteDeliveryArea,json!({
+            "recipient":row
+        }))};
+        (id,address,decision)
+    }).collect()
+}
+fn remote_for<'a>(rows:&'a [RemoteRow],recipient:&Value)
+    ->Option<&'a Result<Value,String>>
+{
+    let id=text(recipient,"id");
+    let address=text(recipient,"address");
+    rows.iter().find(|(key,source,_)|key==id && source==address)
+        .map(|(_,_,decision)|decision)
+}
+
 enum Outcome {
-    Initial { order:Value, model:Value, assignment_order:Vec<String> },
-    Updated { model:Value, assignment_order:Vec<String> },
+    Initial { order:Value, model:Value, assignment_order:Vec<String>,
+        remote_rows:Vec<RemoteRow> },
+    Updated { model:Value, assignment_order:Vec<String>,
+        remote_rows:Vec<RemoteRow> },
     Applied { order:Value, model:Value, assignment_order:Vec<String>,
         quote:Option<Value>,quote_error:Option<String> },
 }
@@ -201,6 +226,7 @@ pub struct ManualWorkspace {
     base_order:Option<Value>,
     model:Option<Value>,
     assignment_order:Vec<String>,
+    remote_rows:Vec<RemoteRow>,
     selected_recipient:usize,
     selected_item:Option<String>,
     selected_field:String,
@@ -238,7 +264,10 @@ impl ManualWorkspace {
                     .ok_or("Rust 배정 순서가 없습니다.")?.iter()
                     .map(|v|v.as_str().map(str::to_owned).ok_or("Rust 배정 ID 오류".to_owned()))
                     .collect::<Result<Vec<_>,_>>()?;
-                Ok(Outcome::Initial{order,model,assignment_order:keys})
+                let remote_rows=resolve_remote_rows(service.as_ref(),&model);
+                Ok(Outcome::Initial{
+                    order,model,assignment_order:keys,remote_rows
+                })
             })();
             let _=tx.send(result);
             ctx.request_repaint();
@@ -246,7 +275,8 @@ impl ManualWorkspace {
         Self {
             order_id:source.id,raw:source.raw,order_type:source.order_type,
             client_id:source.client_id,gateway,base_order:None,model:None,
-            assignment_order:Vec::new(),selected_recipient:0,
+            assignment_order:Vec::new(),remote_rows:Vec::new(),
+            selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
             edit_text:String::new(),confirm_discard:false,
             product_search:None,remove_recipient_pending:None,
@@ -270,8 +300,11 @@ impl ManualWorkspace {
     fn poll(&mut self) {
         let received=self.receiver.as_ref().map(|r|r.try_recv());
         match received {
-            Some(Ok(Ok(Outcome::Initial{order,model,assignment_order})))=>{
+            Some(Ok(Ok(Outcome::Initial{
+                order,model,assignment_order,remote_rows
+            })))=>{
                 self.base_order=Some(order);
+                self.remote_rows=remote_rows;
                 let count=list(&model,"rows").len();
                 self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
                 self.model=Some(model);
@@ -279,7 +312,10 @@ impl ManualWorkspace {
                 self.receiver=None;
                 self.edit_text=self.current_value();
             }
-            Some(Ok(Ok(Outcome::Updated{model,assignment_order})))=>{
+            Some(Ok(Ok(Outcome::Updated{
+                model,assignment_order,remote_rows
+            })))=>{
+                self.remote_rows=remote_rows;
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
                 let count=self.model.as_ref().map(|m|list(m,"rows").len()).unwrap_or(0);
@@ -413,7 +449,10 @@ impl ManualWorkspace {
                 let assignment_order=result.get("assignmentOrder")
                     .and_then(Value::as_array).map(|v|v.iter().filter_map(|s|s.as_str()
                         .map(str::to_owned)).collect()).unwrap_or_else(||keys.clone());
-                Ok(Outcome::Updated{model:next,assignment_order})
+                let remote_rows=resolve_remote_rows(service.as_ref(),&next);
+                Ok(Outcome::Updated{
+                    model:next,assignment_order,remote_rows
+                })
             })();
             let _=tx.send(result);
             ctx.request_repaint();
@@ -799,9 +838,31 @@ impl ManualWorkspace {
                                             let origin=if origin=="STORE"{"STORE"}else{"FACTORY"};
                                             let code=text(row,"freightCode");
                                             let code=if code=="020"{"020"}else{"010"};
-                                            let remote=row.get("remoteDelivery")
-                                                .and_then(|v|v.get("checked"))
-                                                .and_then(Value::as_bool).unwrap_or(false);
+                                            // A missing staff override does not mean
+                                            // an automatically detected area is unchecked.
+                                            let remote_result=remote_for(&self.remote_rows,row)
+                                                .cloned();
+                                            let remote_value=remote_result.as_ref()
+                                                .and_then(|result|result.as_ref().ok())
+                                                .filter(|value|value.is_object());
+                                            let remote=remote_value.and_then(|decision|
+                                                decision["checked"].as_bool()
+                                            ).unwrap_or(false);
+                                            let remote_ready=remote_value.is_some();
+                                            if let Some(decision)=remote_value {
+                                                if let Some(message)=
+                                                    crate::reception_service::remote_delivery_notice(decision)
+                                                {
+                                                    ui.label(typography::status(
+                                                        &message,theme::SELECTED_ORDER
+                                                    ));
+                                                }
+                                            }else if let Some(Err(error))=remote_result.as_ref(){
+                                                ui.label(typography::status(
+                                                    &format!("도서/산간 판정 실패 · {error}"),
+                                                    theme::SELECTED_ORDER
+                                                ));
+                                            }
                                             let vat=row.get("vatOverride")
                                                 .and_then(Value::as_bool).unwrap_or(false);
                                             ui.horizontal_wrapped(|options|{
@@ -842,7 +903,7 @@ impl ManualWorkspace {
                                                 options.spacing_mut().item_spacing.x=theme::SPACE_8;
                                                 if theme::action(options,
                                                     if remote{"도서산간 적용"}else{"도서산간 미적용"},
-                                                    ButtonRole::Standard,!busy
+                                                    ButtonRole::Standard,!busy && remote_ready
                                                 ).clicked(){
                                                     chosen=Some((
                                                         "set_manual_delivery_option".into(),
@@ -863,7 +924,8 @@ impl ManualWorkspace {
                                                     ));
                                                 }
                                                 if theme::action(options,
-                                                    "운임 수정",ButtonRole::Standard,!busy
+                                                    "운임 수정",ButtonRole::Standard,
+                                                    !busy && code!="020"
                                                 ).clicked(){
                                                     self.select_cell(index,None,"shippingCharge");
                                                 }
@@ -998,6 +1060,13 @@ impl ManualWorkspace {
                     }
                     "set_manual_unit_price"
                 }else if self.selected_field=="shippingCharge"{
+                    let collect=self.model.as_ref().and_then(|model|
+                        list(model,"rows").get(self.selected_recipient)
+                    ).is_some_and(|row|text(row,"freightCode")=="020");
+                    if collect {
+                        self.error=Some("착불인 주문은 운임을 수정할 수 없습니다.".into());
+                        return None;
+                    }
                     // The UI only parses an entered integer. The existing
                     // Rust rule is the sole authority for 2x normalization,
                     // COD and allowed base freight.
@@ -1122,5 +1191,24 @@ impl ManualWorkspace {
             if !confirm {self.confirm_discard=false;}
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod manual_remote_row_tests {
+    use super::*;
+    #[test]
+    fn decision_is_bound_to_both_recipient_and_exact_address(){
+        let row=json!({"id":"r1","address":"제주특별자치도 제주시 1"});
+        let reference=vec![("r1".to_owned(),"제주특별자치도 제주시 1".to_owned(),
+            Ok(json!({"status":"auto","checked":true})))];
+        let decision=remote_for(&reference,&row)
+            .and_then(|result|result.as_ref().ok()).unwrap();
+        assert_eq!(decision["checked"],true);
+        assert!(remote_for(&reference,&json!({"id":"r1","address":"서울특별시 1"}))
+            .is_none());
+        assert!(remote_for(&reference,&json!({
+            "id":"r2","address":"제주특별자치도 제주시 1"
+        })).is_none());
     }
 }
