@@ -2925,6 +2925,15 @@ pub fn reception_freight_row(
     ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
     remote: Option<bool>, inquiry_visible: bool,
 ) {
+    let _=reception_freight_row_editable(
+        ui,label,amount,collect,remote,inquiry_visible,false
+    );
+}
+pub fn reception_freight_row_editable(
+    ui:&mut Ui,label:&str,amount:Option<i64>,collect:Option<bool>,
+    remote:Option<bool>,inquiry_visible:bool,editable:bool
+)->bool{
+    let mut clicked=false;
     let mut amount_text=amount
         .map(|value|display_won(value).trim_end_matches('원').to_owned())
         .unwrap_or_else(||"—".to_owned());
@@ -2956,7 +2965,7 @@ pub fn reception_freight_row(
                 );
                 // The exact amount (including the unknown '—') is
                 // right-aligned. It remains a disabled, native 36pt input.
-                price.add_enabled_ui(false,|cell|{
+                let displayed=price.add_enabled_ui(false,|cell|{
                     cell.add_sized(
                         Vec2::new(84.0,theme::INPUT_HEIGHT),
                         egui::TextEdit::singleline(&mut amount_text)
@@ -2971,7 +2980,12 @@ pub fn reception_freight_row(
                             .margin(egui::Margin::symmetric(8,2))
                             .desired_width(84.0),
                     )
-                });
+                }).inner;
+                if editable && price.interact(
+                    displayed.rect,
+                    price.make_persistent_id(("edit-applied-freight",label)),
+                    Sense::click()
+                ).clicked(){clicked=true;}
                 price.label(typography::body("원")
                     .size(typography::FONT_RECEPTION_ITEM_TEXT));
             }
@@ -2983,9 +2997,13 @@ pub fn reception_freight_row(
         }
         if let Some(checked)=remote {
             let mut read_only=checked;
-            line.add_enabled(false,egui::Checkbox::new(
+            let display=line.add_enabled(false,egui::Checkbox::new(
                 &mut read_only,"도서/산간"
             ));
+            if editable && line.interact(
+                display.rect,line.make_persistent_id("edit-remote-delivery"),
+                Sense::click()
+            ).clicked(){clicked=true;}
         }
         if inquiry_visible {
             theme::action(
@@ -2993,6 +3011,7 @@ pub fn reception_freight_row(
             );
         }
     });
+    clicked
 }
 
 /// Original React lower action row. Keep its already-approved actions
@@ -3036,20 +3055,35 @@ pub fn reception_item_actions_editable(
 }
 
 pub fn reception_vat_row(ui: &mut Ui, vat_included: Option<bool>) {
+    let _=reception_vat_row_editable(ui,vat_included,false);
+}
+pub fn reception_vat_row_editable(
+    ui:&mut Ui,vat_included:Option<bool>,editable:bool
+)->bool {
+    let mut clicked=false;
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         Vec2::new(width, theme::RECEPTION_VAT_ROW_HEIGHT),
         Layout::left_to_right(Align::Center), |line| {
             if let Some(included) = vat_included {
                 let mut readonly = included;
-                line.add_enabled(false,
+                let display=line.add_enabled(false,
                     egui::Checkbox::new(&mut readonly, "부가세 포함")
                 );
+                if editable && line.interact(
+                    display.rect,line.make_persistent_id("edit-vat-toggle"),
+                    Sense::click()
+                ).clicked(){clicked=true;}
+            } else if editable {
+                if theme::action(
+                    line,"부가세 설정",theme::ButtonRole::TableSecondary,true
+                ).clicked(){clicked=true;}
             } else {
                 line.label(typography::caption("부가세 확인 전"));
             }
         }
     );
+    clicked
 }
 
 /// React's pinned 56px total: first line is title / fixed right amount,
