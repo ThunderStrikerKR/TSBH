@@ -178,26 +178,43 @@ mod tests{
         std::fs::create_dir_all(&base).unwrap();
         let path=base.join("business.sqlite");
         let mut conn=Connection::open(&path).unwrap();
-        // Build an actual v2 schema from the same legacy-to-relational
-        // migration used by production, never a partial hand-made table.
+        // Reuse the production schema DDL, but do not rerun an unrelated
+        // historical product transform that requires the entire seeded
+        // product catalog. This fixture is already a valid v2 database.
         conn.execute_batch(r#"
             CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
             CREATE TABLE product_index(id TEXT,code TEXT,name TEXT,payload TEXT);
             CREATE TABLE order_index(id TEXT,client_id TEXT,created_at TEXT,confirmed_at TEXT,status TEXT);
             CREATE TABLE receipt_archive(id TEXT,order_id TEXT,record TEXT);
         "#).unwrap();
-        let initial=json!({
-            "revision":7,"products":[],"aliases":[],"queue":[],"exports":[],
-            "settings":{"accounts":[]},
-            "clients":[{"id":"c","name":"테스트상사","displayName":"내부상호",
-                "tier":"wholesale","address":"서울","phone":"02-1234",
-                "shortNames":"기존태그","identifiers":"식별코드"}],
-            "orders":[{"id":"o","clientId":"c","status":"REVIEW",
-                "createdAt":"2026-11-20T00:00:00","recipients":[]}]
-        });
+        crate::recovery::create_v2_schema_for_tests(&conn).unwrap();
+        conn.execute("INSERT INTO core_schema(key,version) VALUES('business-core',2)",
+            []).unwrap();
         conn.execute("INSERT INTO app_state VALUES (1,?1)",
-            [initial.to_string()]).unwrap();
-        crate::recovery::migrate(&mut conn).unwrap();
+            [json!({"revision":7,"aliases":[],"queue":[],"exports":[],
+                "settings":{"accounts":[]}}).to_string()]).unwrap();
+        let original_client=json!({
+            "id":"c","name":"테스트상사","displayName":"내부상호",
+            "tier":"wholesale","address":"서울","phone":"02-1234",
+            "shortNames":"기존태그","identifiers":"식별코드"
+        }).to_string();
+        conn.execute(
+            "INSERT INTO core_clients(id,position,name,tier,address,payload)
+             VALUES('c',0,'테스트상사','wholesale','서울',?1)",
+            [&original_client]
+        ).unwrap();
+        let original_order=json!({
+            "id":"o","clientId":"c","status":"REVIEW",
+            "createdAt":"2026-11-20T00:00:00","recipients":[],
+            "clientSnapshot":{"name":"테스트상사",
+                "displayName":"역사적 송장 상호"}
+        }).to_string();
+        conn.execute(
+            "INSERT INTO core_orders(
+                id,position,client_id,created_at,confirmed_at,status,payload
+            ) VALUES('o',0,'c','2026-11-20T00:00:00',NULL,'REVIEW',?1)",
+            [&original_order]
+        ).unwrap();
         let historical_text:String=conn.query_row(
             "SELECT payload FROM core_orders WHERE id='o'",[],
             |r|r.get(0)).unwrap();
