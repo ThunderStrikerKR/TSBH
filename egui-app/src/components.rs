@@ -1337,9 +1337,25 @@ fn reception_recipient_text_edit(
         .margin(egui::Margin::symmetric(8,2))
         .desired_width(width);
     if active {
-        input.background_color(source_highlight::ACTIVE_FILL)
-            .text_color(source_highlight::ACTIVE_TEXT)
+        // TextEdit's native background uses a different square/filled
+        // geometry. Let the shared evidence surface own the rounded fill
+        // and the outer caller own the common 2pt border instead.
+        input.frame(false).text_color(source_highlight::ACTIVE_TEXT)
     }else{input}
+}
+
+/// Draw BEFORE TextEdit renders its glyphs: egui's normal TextEdit background
+/// is disabled only for linked fields, so the same fill/radius used by
+/// source evidence and item cells remains visible without obscuring text.
+fn reception_recipient_linked_background(
+    ui:&Ui,width:f32,active:bool
+){
+    if !active {return;}
+    let rect=Rect::from_min_size(
+        ui.cursor().min,
+        Vec2::new(width,theme::INPUT_HEIGHT)
+    );
+    source_highlight::paint_active_background(ui,rect);
 }
 
 /// Read-only TextEdit does not reliably own the egui hover response.
@@ -1392,6 +1408,7 @@ pub fn reception_recipient_fields(
             line.spacing_mut().item_spacing.x = theme::RECIPIENT_LABEL_GAP;
             label_cell(line, label, theme::RECIPIENT_LABEL_WIDTH);
             let width = line.available_width().max(1.0);
+            reception_recipient_linked_background(line,width,active);
             // The response belongs to the input, NOT the combined row.
             // This is read-only while retaining hover and native text layout.
             let display=line.add_sized(
@@ -1433,6 +1450,9 @@ pub fn reception_recipient_fields(
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
                     label_cell(line, "휴대폰", theme::RECIPIENT_LABEL_WIDTH);
+                    reception_recipient_linked_background(
+                        line,mobile_width,active[2]
+                    );
                     let mobile_display = line.add_sized(
                         Vec2::new(mobile_width, theme::INPUT_HEIGHT),
                         reception_recipient_text_edit(mobile, mobile_width, active[2], true).interactive(false),
@@ -1444,6 +1464,9 @@ pub fn reception_recipient_fields(
                     label_cell(line, "전화", theme::RECIPIENT_PHONE_LABEL_WIDTH);
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
+                    reception_recipient_linked_background(
+                        line,phone_width,active[3]
+                    );
                     let phone_display = line.add_sized(
                         Vec2::new(phone_width, theme::INPUT_HEIGHT),
                         reception_recipient_text_edit(phone, phone_width, active[3], true).interactive(false),
