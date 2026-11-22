@@ -605,7 +605,16 @@ impl CategoryManager {
                     ){
                         self.request_close_editor(&cats);
                     }
-                    modal.add_enabled_ui(!nested_dialog,|body|{
+                    // Only the fields scroll. Keep the shared footer
+                    // outside the ScrollArea and visible on short screens.
+                    egui::ScrollArea::vertical()
+                        .id_salt("native-category-editor-fields")
+                        .max_height(components::modal_editor_body_max_height(
+                            work_area.height()
+                        ))
+                        .auto_shrink([false,true])
+                        .show(modal,|scroll|{
+                            scroll.add_enabled_ui(!nested_dialog,|body|{
                         if let Some(current)=self.current(&cats){
                             let name_display=typography::fit_category_path(
                                 body,&current.name,
@@ -687,42 +696,47 @@ impl CategoryManager {
                                     "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
                                 ));
                             }
-                            body.add_space(theme::SPACE_8);
-                            body.add_space(theme::SPACE_12);
-                            // The two action slots only record intent.
-                            // Apply mutations afterward to avoid simultaneous
-                            // mutable captures of the category editor state.
-                            let mut request_delete=false;
-                            let mut request_save=false;
-                            components::modal_action_row_split(
-                                body,
-                                |left|{
-                                    request_delete=theme::action(left,"분류 삭제",
-                                        theme::ButtonRole::Danger,
-                                        editable&&!busy&&!is_root(&current.id)
-                                        &&children(&cats,&current.id).is_empty()
-                                        &&direct_count(catalog,&current.id)==0
-                                    ).clicked();
-                                },
-                                |right|{
-                                    request_save=theme::action(right,"변경사항 저장",
-                                        theme::ButtonRole::Primary,
-                                        editable&&!busy&&self.rename_dirty(&cats)
-                                    ).clicked();
-                                }
-                            );
-                            if request_delete {
-                                self.begin_operation(&cats,catalog,Operation::Delete);
-                            }
-                            if request_save {
-                                match self.write_request(&cats,catalog){
-                                    Ok(req)=>write=Some(req),
-                                    Err(e)=>self.error=Some(e),
-                                }
-                            }
 
+                            body.add_space(theme::SPACE_8);
                         }
                     });
+                });
+                    modal.add_space(theme::SPACE_12);
+                    // The footer stays visible independently of form length.
+                    // Capture intent before calling the existing state machine.
+                    let can_delete=self.current(&cats).is_some_and(|cur|{
+                        !is_root(&cur.id)
+                            &&children(&cats,&cur.id).is_empty()
+                            &&direct_count(catalog,&cur.id)==0
+                    });
+                    let can_save=self.current(&cats).is_some()
+                        &&self.rename_dirty(&cats);
+                    let mut request_delete=false;
+                    let mut request_save=false;
+                    components::modal_action_row_split(
+                        modal,
+                        |left|{
+                            request_delete=theme::action(left,"분류 삭제",
+                                theme::ButtonRole::Danger,
+                                editable&&!busy&&!nested_dialog&&can_delete
+                            ).clicked();
+                        },
+                        |right|{
+                            request_save=theme::action(right,"변경사항 저장",
+                                theme::ButtonRole::Primary,
+                                editable&&!busy&&!nested_dialog&&can_save
+                            ).clicked();
+                        }
+                    );
+                    if request_delete {
+                        self.begin_operation(&cats,catalog,Operation::Delete);
+                    }
+                    if request_save {
+                        match self.write_request(&cats,catalog){
+                            Ok(req)=>write=Some(req),
+                            Err(e)=>self.error=Some(e),
+                        }
+                    }
                 });
         }
         if let Some(operation)=self.operation{
