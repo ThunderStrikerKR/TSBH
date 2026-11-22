@@ -452,7 +452,11 @@ pub fn modal_header(ui:&mut Ui,title:&str,close_label:&str,enabled:bool)->bool{
         Vec2::new(ui.available_width(),theme::MODAL_HEADER_HEIGHT),
         Sense::hover()
     );
-    modal_master_header_in_rect(ui,rect,title,"",close_label,enabled)
+    let close=modal_master_header_in_rect(ui,rect,title,"",close_label,enabled);
+    // Keep the first body line clear of the header's bottom divider. The
+    // compact dialog has no separate scrolling chrome or subtitle row.
+    ui.add_space(theme::SPACE_8);
+    close
 }
 
 /// Fixed popup title region with its own background and a single
@@ -912,10 +916,10 @@ pub fn decision_window(
     title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
     modal_window(title,id,work_area)
-        // Unlike large editors with local scroll regions, short confirmation
-        // dialogs may grow when warning text wraps. Enable outer scrolling
-        // only as an overflow fallback for unusually short viewports.
-        .vscroll(true)
+        // Confirmation dialogs must size to their content. Enabling an outer
+        // ScrollArea here makes egui greedily occupy the available height,
+        // leaving a large blank panel below the final action button.
+        // Large editors keep their own explicitly bounded body scroll areas.
         .resizable(false)
         .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))
 }
