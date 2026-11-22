@@ -102,7 +102,7 @@ impl ItemEditor{
         }else{category};
         let edited=self.replacement.is_some();
         let price=if edited {
-            "적용 후 Rust 가격 재계산".to_owned()
+            "가격 확인 필요".to_owned()
         }else{
             self.initial_price.map(components::display_won)
                 .unwrap_or_else(||"가격 확인 필요".into())
@@ -173,13 +173,13 @@ impl ItemEditor{
                 }
                 if needs_customer{
                     ui.label(typography::caption(
-                        "이 상품은 고객 확인이 필요한 추천 상품입니다."
+                        "추천 상품 고객 확인 필요"
                     ));
                 }
                 if let Some(error)=&self.error{
                     ui.label(typography::status(error,theme::DANGER));
                 }
-                if busy{ui.label(typography::caption("Rust 상품 변경 처리 중"));}
+                if busy{ui.label(typography::caption("상품 변경 중"));}
                 ui.add_space(theme::SPACE_16);
                 components::modal_action_row_split(
                     ui,
