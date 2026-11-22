@@ -133,8 +133,8 @@ fn workflow_card<R>(
         .corner_radius(egui::CornerRadius::same(theme::WORKFLOW_CARD_RADIUS))
         .inner_margin(0);
     let response=frame.show(ui,|card|{
-        // The exact row rectangles own spacing. A layout-managed gap would
-        // make collapsed cards taller than the approved 84pt outer height.
+        // The 42pt upper/lower bands and 1pt divider own all vertical
+        // spacing. No additional automatic gap between the compact rows.
         card.spacing_mut().item_spacing.y=0.0;
         card.set_min_width(
             (outer-theme::SOFT_DIVIDER_WIDTH*2.0).max(0.0)
@@ -160,6 +160,16 @@ fn workflow_row_content(rect:Rect)->Rect{
 }
 fn workflow_cell(x:f32,width:f32,row:Rect)->Rect{
     Rect::from_min_size(Pos2::new(x,row.top()),Vec2::new(width.max(0.0),row.height()))
+}
+/// The signal group and ALL four buttons use the exact same vertical inset.
+/// Top and lower bands are both 42pt; a 30pt control is inset 6pt per side.
+/// Avoid screen-local y-offsets which previously made the rows unbalanced.
+fn workflow_control_rect(cell:Rect)->Rect{
+    let inner=cell.shrink2(Vec2::new(0.0,theme::WORKFLOW_CONTROL_VERTICAL_INSET));
+    debug_assert!((inner.height()-theme::WORKFLOW_AUX_CONTROL_HEIGHT).abs()<0.01);
+    debug_assert!((theme::WORKFLOW_ACTION_ROW_HEIGHT-inner.height()).abs()<0.01);
+    debug_assert!((theme::WORKFLOW_SIGNAL_BLOCK_HEIGHT-inner.height()).abs()<0.01);
+    inner
 }
 /// Manually measured Hangul ellipsis: truncation must not alter the position
 /// of four signal lamps or the management controls beside the dealer name.
@@ -254,8 +264,7 @@ fn workflow_header(
         Id::new(("workflow-header",id)),egui::Sense::click()
     ).on_hover_text(title);
 
-    let block=Rect::from_center_size(signal.center(),
-        Vec2::new(theme::WORKFLOW_SIGNAL_WIDTH,theme::WORKFLOW_SIGNAL_BLOCK_HEIGHT));
+    let block=workflow_control_rect(signal);
     ui.painter().rect_filled(
         block,5.0,theme::WORKFLOW_SIGNAL_BLOCK_BG
     );
@@ -289,12 +298,10 @@ fn workflow_header(
             egui::StrokeKind::Inside
         );
     }
-    workflow_auxiliary_at(ui,id,Rect::from_center_size(
-        manage.center(),Vec2::new(manage.width(),theme::WORKFLOW_AUX_CONTROL_HEIGHT)
-    ),components::WorkflowAuxiliaryAction::Manage);
-    workflow_auxiliary_at(ui,id,Rect::from_center_size(
-        delete.center(),Vec2::new(delete.width(),theme::WORKFLOW_AUX_CONTROL_HEIGHT)
-    ),components::WorkflowAuxiliaryAction::Delete);
+    workflow_auxiliary_at(ui,id,workflow_control_rect(manage),
+        components::WorkflowAuxiliaryAction::Manage);
+    workflow_auxiliary_at(ui,id,workflow_control_rect(delete),
+        components::WorkflowAuxiliaryAction::Delete);
     title_response
 }
 fn stage_name(step:usize,notice:bool)->&'static str{
@@ -424,12 +431,11 @@ fn workflow_action_line(
     ui.interact(price,Id::new(("workflow-money",id)),
         egui::Sense::hover()).on_hover_text(&amount);
 
-    let stage_rect=Rect::from_center_size(action.center(),
-        Vec2::new(action.width(),theme::WORKFLOW_ACTION_ROW_HEIGHT));
-    let response=workflow_primary_at(ui,id,stage_rect,button_text,enabled);
-    workflow_auxiliary_at(ui,id,Rect::from_center_size(
-        undo.center(),Vec2::new(undo.width(),theme::WORKFLOW_AUX_CONTROL_HEIGHT)
-    ),components::WorkflowAuxiliaryAction::PreviousStage);
+    let response=workflow_primary_at(
+        ui,id,workflow_control_rect(action),button_text,enabled
+    );
+    workflow_auxiliary_at(ui,id,workflow_control_rect(undo),
+        components::WorkflowAuxiliaryAction::PreviousStage);
     (response.clicked(),response.hovered())
 }
 /// Keep the expanded shipment detail inset; the compact header and action
