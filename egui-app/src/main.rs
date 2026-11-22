@@ -3520,15 +3520,16 @@ impl BandoEgui {
                 let gap = theme::SPACE_8;
                 let client_card_height = if has_source {
                     (available_body - 4.0 * gap - theme::ACTION_STANDARD_HEIGHT)
-                        .max(0.0).min(70.0)
+                        .max(0.0)
+                        .min(theme::ACTION_STANDARD_HEIGHT + 2.0*theme::SPACE_8)
                 } else { 0.0 };
                 if has_source {
                     let card_rect = Rect::from_min_size(
                         egui::pos2(body_rect.left(), body_rect.top() + gap),
                         Vec2::new(body_rect.width(), client_card_height),
                     );
-                    // Render a READ-ONLY 70pt reference. An advisory Rust
-                    // match is not a confirmed dealer until it has passed
+                    // Render a compact single-line reference. An advisory
+                    // Rust match is not a confirmed dealer until it has passed
                     // the existing native order-client mutation.
                     let active=self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|row|row.id==id));
@@ -3548,15 +3549,8 @@ impl BandoEgui {
                         .unwrap_or(if linked_id.is_some(){
                             "거래처 확인 중"
                         }else{"거래처 확인 필요"});
-                    let state=if linked_id.is_none(){
-                        "· 확인 필요"
-                    }else{match active.and_then(|row|row.client_selection.as_deref()){
-                        Some("MANUAL")=>"· 직접 선택",
-                        Some("AUTO")=>"· 자동 인식",
-                        _=>"· 연결됨"
-                    }};
                     if components::reception_client_summary_card(
-                        ui,card_rect,linked_id.is_some(),display,name,state
+                        ui,card_rect,linked_id.is_some(),display,name
                     ){
                         open_client_chooser=true;
                     }
