@@ -3183,9 +3183,9 @@ fn reception_item_row_with_mode(
     ReceptionItemCells { product, quantity, amount }
 }
 
-/// Presentation-only freight field: numbers and prepay/COD are supplied by
-/// native Rust. Disabled text input mirrors the React field without implying
-/// that a backend edit command exists in egui.
+/// Presentation-only freight amount supplied by native Rust. The region
+/// checkbox is a real controlled egui checkbox whose value comes from the
+/// engine's resolved remote-area state; the factory inquiry is a disabled stub.
 pub struct ReceptionFreightEdit {
     pub amount_rect:Option<Rect>,
     pub amount_clicked:bool,
@@ -3276,21 +3276,21 @@ pub fn reception_freight_row_editable(
                 if collect {"(착불)"} else {"(선불)"}
             ).size(typography::FONT_RECEPTION_ITEM_TEXT));
         }
-        if let Some(checked)=remote {
-            let mut read_only=checked;
-            let display=line.add_enabled(false,egui::Checkbox::new(
-                &mut read_only,"도서/산간"
-            ));
-            if editable && line.interact(
-                display.rect,line.make_persistent_id("edit-remote-delivery"),
-                Sense::click()
-            ).clicked(){remote_clicked=true;}
+        // Always present the checkbox, including while classification is
+        // pending. A resolved, checked engine decision is drawn CHECKED even
+        // when no manual remoteDelivery field exists on the recognition row.
+        let mut checked=remote.unwrap_or(false);
+        if line.add_enabled(editable && remote.is_some(),
+            egui::Checkbox::new(&mut checked,"도서/산간")
+        ).changed(){
+            remote_clicked=true;
         }
-        if inquiry_visible {
-            theme::action(
-                line,"공장에 운임 문의",theme::ButtonRole::Standard,false
-            );
-        }
+        // Deliberately a non-functional, disabled placeholder. Do not hide
+        // it behind the selected factory/store origin or an inquiry result.
+        let _=inquiry_visible;
+        theme::action(
+            line,"공장에 운임 문의",theme::ButtonRole::Standard,false
+        );
     });
     ReceptionFreightEdit {
         amount_rect,amount_clicked:clicked,remote_clicked,collect_clicked
