@@ -286,6 +286,27 @@ pub fn section_heading_galley(
     ui.fonts_mut(|fonts| fonts.layout_job(job))
 }
 pub fn subsection_heading(text: &str) -> RichText { render(text, Role::Subsection) }
+/// Working-order dealer title: approved 14pt emphasized Korean UI face.
+/// Paint into the fixed text slot; never let its natural width reposition the
+/// neighboring signal block or management controls.
+pub fn workflow_dealer_galley(
+    ui:&egui::Ui,text:&str
+)->std::sync::Arc<egui::Galley>{
+    let role=spec(Role::Subsection);
+    let format=egui::TextFormat {
+        font_id:FontId::new(
+            role.size,FontFamily::Name(EMPHASIS_FAMILY.into())
+        ),
+        color:TEXT,
+        extra_letter_spacing:0.0,
+        line_height:Some(role.line),
+        ..Default::default()
+    };
+    ui.fonts_mut(|fonts|fonts.layout_job(
+        egui::text::LayoutJob::single_section(text.to_owned(),format)
+    ))
+}
+
 pub fn body(text: &str) -> RichText { render(text, Role::Body) }
 /// Reception source document only: editable/highlighted source, read-only
 /// workflow source and OCR review agree at 16pt without enlarging labels,
