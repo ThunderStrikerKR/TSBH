@@ -194,37 +194,76 @@ fn workflow_title_fit(ui:&Ui,title:&str,width:f32)->String{
 /// rectangle gives them an exact 30pt height and stops egui auto-width from
 /// spilling over the edge of the working-order card.
 fn workflow_auxiliary_at(
-    ui:&mut Ui,id:&str,rect:Rect,action:components::WorkflowAuxiliaryAction
+    ui:&mut Ui,_id:&str,rect:Rect,action:components::WorkflowAuxiliaryAction
 ){
-    let clip=ui.clip_rect();
-    let slot=match action{
-        components::WorkflowAuxiliaryAction::Manage=>"manage",
-        components::WorkflowAuxiliaryAction::Delete=>"delete",
-        components::WorkflowAuxiliaryAction::PreviousStage=>"undo",
-    };
-    ui.scope_builder(
-        egui::UiBuilder::new()
-            .id_salt(("workflow-fixed-aux",id,slot))
-            .max_rect(rect)
-            .layout(Layout::top_down(Align::Min)),
-        |child|{
-            child.set_clip_rect(clip.intersect(rect));
-            child.spacing_mut().item_spacing=Vec2::ZERO;
-            components::workflow_auxiliary_button(child,action);
-        }
+    // These actions have no wired business command yet and must stay
+    // disabled. Paint directly in the allocated rect: a nested button Ui
+    // used to introduce its own padding/centering and made upper controls
+    // look as though they touched the divider.
+    let painter=ui.painter();
+    painter.rect_filled(rect,5.0,theme::DISABLED_ACTION_BG);
+    painter.rect_stroke(
+        rect,5.0,egui::Stroke::new(
+            theme::FRAME_STROKE_WIDTH,theme::DISABLED_ACTION_BORDER
+        ),egui::StrokeKind::Inside
     );
+    match action{
+        components::WorkflowAuxiliaryAction::Manage=>painter.text(
+            rect.center(),egui::Align2::CENTER_CENTER,"관리",
+            egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
+            theme::DISABLED_ACTION_TEXT
+        ),
+        components::WorkflowAuxiliaryAction::Delete=>{
+            components::paint_workflow_icon(
+                painter,rect.center(),components::WorkflowIcon::Trash,
+                theme::DISABLED_ACTION_TEXT
+            );
+        }
+        components::WorkflowAuxiliaryAction::PreviousStage=>{
+            components::paint_workflow_icon(
+                painter,rect.center(),components::WorkflowIcon::PreviousStage,
+                theme::DISABLED_ACTION_TEXT
+            );
+        }
+    };
+}
+/// One allocated 85pt rectangle, not three independent egui allocations.
+/// The divider position and both 42pt band bounds come from this same rect.
+/// This makes 6pt margins above/below every 30pt control deterministic.
+fn workflow_compact_band_rects(rect:Rect)->(Rect,Rect,Rect){
+    let upper=Rect::from_min_size(
+        rect.min,Vec2::new(rect.width(),theme::WORKFLOW_TITLE_HEIGHT)
+    );
+    let divider=Rect::from_min_size(
+        Pos2::new(rect.left(),upper.bottom()),
+        Vec2::new(rect.width(),theme::WORKFLOW_BAND_DIVIDER_HEIGHT)
+    );
+    let lower=Rect::from_min_size(
+        Pos2::new(rect.left(),divider.bottom()),
+        Vec2::new(rect.width(),theme::WORKFLOW_BOTTOM_HEIGHT)
+    );
+    debug_assert!((lower.bottom()-rect.bottom()).abs()<0.01);
+    (upper,divider,lower)
+}
+fn workflow_compact_rows(ui:&mut Ui)->(Rect,Rect){
+    let total=theme::WORKFLOW_TITLE_HEIGHT
+        +theme::WORKFLOW_BAND_DIVIDER_HEIGHT
+        +theme::WORKFLOW_BOTTOM_HEIGHT;
+    let (card,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),total),egui::Sense::hover()
+    );
+    let (upper,divider,lower)=workflow_compact_band_rects(card);
+    ui.painter().rect_filled(divider,0.0,theme::WORKFLOW_CARD_BORDER);
+    ui.painter().rect_filled(lower,0.0,theme::WORKFLOW_CARD_LOWER_BG);
+    (upper,lower)
 }
 /// All five upper controls occupy stable x positions at every card width.
 /// The 1920×1080 reference card (394pt outer) gets a 166pt dealer slot and a
 /// trailing 188pt signal/manage/delete group, matching the bottom action
 /// group exactly. Long dealer names are clipped inside their OWN slot.
 fn workflow_header(
-    ui:&mut Ui,id:&str,title:&str,open:bool,step:usize,notice:bool
+    ui:&mut Ui,row:Rect,id:&str,title:&str,open:bool,step:usize,notice:bool
 )->egui::Response{
-    let (row,_)=ui.allocate_exact_size(
-        Vec2::new(ui.available_width(),theme::WORKFLOW_TITLE_HEIGHT),
-        egui::Sense::hover()
-    );
     let content=workflow_row_content(row);
     let gap=theme::WORKFLOW_CARD_SLOT_GAP;
     let toggle=theme::WORKFLOW_TOGGLE_ICON_WIDTH;
@@ -352,20 +391,9 @@ fn workflow_primary_at(
 /// delete and undo share a right edge. Currency text has 8pt clearance to
 /// the one-touch button, not just the minimum 4pt column gutter.
 fn workflow_action_line(
-    ui:&mut Ui,id:&str,shipments:usize,total:Option<i64>,
+    ui:&mut Ui,lower:Rect,id:&str,shipments:usize,total:Option<i64>,
     vat:Option<&str>,button_text:&str,enabled:bool
 )->(bool,bool){
-    let width=ui.available_width();
-    let (line,_)=ui.allocate_exact_size(
-        Vec2::new(width,theme::WORKFLOW_BAND_DIVIDER_HEIGHT),
-        egui::Sense::hover()
-    );
-    ui.painter().rect_filled(line,0.0,theme::WORKFLOW_CARD_BORDER);
-    let (lower,_)=ui.allocate_exact_size(
-        Vec2::new(width,theme::WORKFLOW_BOTTOM_HEIGHT),egui::Sense::hover()
-    );
-    ui.painter().rect_filled(lower,0.0,theme::WORKFLOW_CARD_LOWER_BG);
-
     let content=workflow_row_content(lower);
     let gap=theme::WORKFLOW_CARD_SLOT_GAP;
     let ship_width=theme::WORKFLOW_SHIPPING_WIDTH;
@@ -613,8 +641,9 @@ fn group_frame(
     let mut event=None;
     let active=selected.is_some_and(|s|s.group_id==group.id);
     workflow_card(ui,active && !in_preview,in_preview,|ui|{
+        let (top,bottom)=workflow_compact_rows(ui);
         let btn=workflow_header(
-            ui,&group.id,&group.dealer_name,open || in_preview,
+            ui,top,&group.id,&group.dealer_name,open || in_preview,
             group.step,group.needs_notice
         );
             if btn.clicked(){
@@ -633,7 +662,7 @@ fn group_frame(
             "부가세 포함".to_owned()
         }else{"부가세 별도".to_owned()};
         let (_,stage_hovered)=workflow_action_line(
-            ui,&group.id,group.shipments.len(),group.total,
+            ui,bottom,&group.id,group.shipments.len(),group.total,
             if group.vat_included>0{Some(vat.as_str())}else{None},
             stage_name(group.step,group.needs_notice),false
         );
@@ -706,8 +735,9 @@ fn pending_frame(
 )->Option<Event>{
     let mut event=None;
     workflow_card(ui,selected,false,|ui|{
+        let (top,bottom)=workflow_compact_rows(ui);
         let header=workflow_header(
-            ui,&draft.id,dealer_name,open,0,false
+            ui,top,&draft.id,dealer_name,open,0,false
         );
         if header.clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
@@ -719,7 +749,7 @@ fn pending_frame(
                 .and_then(|v|v.as_array()).map(Vec::as_slice).unwrap_or(&[])
         }else{&[]};
         let (clicked,_)=workflow_action_line(
-            ui,&draft.id,recipients.len(),None,None,"거래처 확인",
+            ui,bottom,&draft.id,recipients.len(),None,None,"거래처 확인",
             draft.client_id.is_none()
         );
         if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
