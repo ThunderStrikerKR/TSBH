@@ -1556,10 +1556,7 @@ impl BandoEgui {
                         self.working_sync_error=None;
                     }
                     if let Some(analysis)=self.analysis.as_mut() {
-                        analysis.recognition["recipients"]=recips.clone();
-                        analysis.linked_spans=source_highlight::collect(
-                            &self.raw_source,&analysis.recognition
-                        );
+                        analysis.apply_edited_recipients(&self.raw_source,recips);
                     }
                     self.queue_source_save();
                     self.start_remote_recheck(ctx);
