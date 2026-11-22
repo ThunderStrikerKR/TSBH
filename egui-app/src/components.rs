@@ -2767,6 +2767,9 @@ fn management_dropdown_inner(
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
+            // Every selectable row reports its parent trigger, never its
+            // popup-row pointer, to the shared action-notice origin.
+            crate::floating_notice::dropdown_popup_trigger(menu.ctx(),rect);
             menu.set_min_width(width);
             if compact {menu.set_max_width(width);}
             management_dropdown_option_palette(menu);
@@ -2827,7 +2830,10 @@ pub fn management_dropdown_option<T:PartialEq>(
         current,value,egui::RichText::new(label).color(Color32::TRANSPARENT)
     );
     management_dropdown_option_glyph(ui,&response,label,false);
-    if response.clicked(){ui.close();}
+    if response.clicked(){
+        crate::floating_notice::dropdown_option_selected(ui.ctx());
+        ui.close();
+    }
     response
 }
 
@@ -2849,6 +2855,7 @@ pub fn management_dropdown_compact_option<T:PartialEq>(
             *current=value;
             response.mark_changed();
         }
+        crate::floating_notice::dropdown_option_selected(ui.ctx());
         ui.close();
     }
     response
@@ -4954,6 +4961,21 @@ mod management_dropdown_unification_tests {
         assert_eq!(
             typography::management_dropdown_option_text_y(28.0,18.0),4.0
         );
+    }
+
+    #[test]
+    fn normal_and_compact_dropdowns_share_the_same_selection_notice_bridge(){
+        // The common trigger registers the position; both option variants
+        // notify the same bridge. No individual screen should capture a
+        // popup item's pointer for a result bubble.
+        let source=include_str!("components.rs");
+        let first=source.find("pub fn management_dropdown_option<T:PartialEq>").unwrap();
+        let second=source.find("pub fn management_dropdown_compact_option<T:PartialEq>").unwrap();
+        let end=source[second..].find("pub fn management_tabs(").unwrap()+second;
+        assert!(source[first..second].contains("dropdown_option_selected(ui.ctx())"));
+        assert!(source[second..end].contains("dropdown_option_selected(ui.ctx())"));
+        let popup=source.find("fn management_dropdown_inner(").unwrap();
+        assert!(source[popup..first].contains("dropdown_popup_trigger(menu.ctx(),rect)"));
     }
 
     #[test]
