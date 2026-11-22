@@ -4465,6 +4465,9 @@ impl BandoEgui {
 
         let mut next_recipient = None;
         let mut inline_open:Option<(InlineTarget,String)>=None;
+        // Header and body are separate FnMut callbacks supplied to the
+        // same section. They cannot both mutably capture inline_open.
+        let mut header_inline_open:Option<(InlineTarget,String)>=None;
         let mut inline_commit=false;
         let mut inline_cancel=false;
         let mut inline_command:Option<(InlineTarget,String)>=None;
@@ -4504,7 +4507,7 @@ impl BandoEgui {
                             if let Some(analysis)=self.analysis.as_ref(){
                                 if let Some(recipient)=reception_service::recipients(analysis)
                                     .get(self.selected_recipient) {
-                                    inline_open=Some((
+                                    header_inline_open=Some((
                                         InlineTarget{
                                             recipient_id:reception_service::text(recipient,"id").into(),
                                             item_id:None,field:"name"
@@ -4600,6 +4603,9 @@ impl BandoEgui {
                 });
             },
         );
+        // Resolve both requests only after the two section callbacks have
+        // returned, preserving body-click priority if both occurred.
+        if inline_open.is_none(){inline_open=header_inline_open;}
         if let Some(index) = next_recipient {
             self.selected_recipient = index;
             if self.inline_editor.is_some(){inline_commit=true;}
