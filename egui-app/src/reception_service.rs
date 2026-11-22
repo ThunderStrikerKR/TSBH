@@ -437,3 +437,101 @@ mod remote_notice_tests{
         assert!(remote_delivery_notice(&normal).is_none());
     }
 }
+
+#[cfg(test)]
+mod persisted_analysis_restore_tests {
+    use super::*;
+
+    #[test]
+    fn saved_native_evidence_rehydrates_without_analyzer_or_price_gateway(){
+        let raw="김가상";
+        let recognition=json!({
+            "recipients":[{
+                "id":"r1","name":"김가상","address":"서울시 중구",
+                "items":[{"id":"i1","productId":"p1","variantId":"v1"}],
+                "sources":[{"targetId":"r1","field":"name",
+                    "start":0,"end":3,"text":"김가상"}]
+            }],
+            "candidates":[],"unassigned":[]
+        });
+        let analysis=ReceptionAnalysis{
+            linked_spans:source_highlight::collect(raw,&recognition),
+            recognition:recognition.clone(),
+            reference:vec![RecipientReference{
+                remote:Some(json!({"address":"서울시 중구","manual":false,
+                    "checked":false,"status":"normal"})),
+                remote_error:None,
+                item_prices:vec![PriceReference{retail:Some(10000),error:None}]
+            }],
+            client_match:json!({"clientId":"c1"}),
+            client_candidates:vec![json!({"clientId":"c1"})],
+            matched_client_name:Some("거래처".into()),
+            chosen_client_name:Some("거래처".into()),
+            directory_count:23,
+        };
+        let view=analysis.cached_view();
+        let restored=ReceptionAnalysis::from_cached_view(
+            raw,recognition,analysis.client_match.clone(),&view
+        ).unwrap();
+        assert_eq!(restored.reference.len(),1);
+        assert_eq!(restored.reference[0].item_prices[0].retail,Some(10000));
+        assert!(restored.reference[0].remote.is_some());
+        assert_eq!(restored.client_candidates,analysis.client_candidates);
+        assert_eq!(restored.directory_count,23);
+        assert_eq!(restored.chosen_client_name.as_deref(),Some("거래처"));
+        assert_eq!(restored.linked_spans.len(),1);
+        assert_eq!(restored.linked_spans[0].key.field,"name");
+    }
+
+    #[test]
+    fn changed_recipient_structure_cannot_reuse_incompatible_reference(){
+        let raw="김가상";
+        let recognition=json!({"recipients":[{"id":"r1","items":[]}],
+            "candidates":[],"unassigned":[]});
+        let empty=ReceptionAnalysis{
+            recognition:recognition.clone(),
+            reference:vec![RecipientReference{
+                remote:None,remote_error:None,item_prices:Vec::new()
+            }],
+            client_match:json!({}),client_candidates:Vec::new(),
+            matched_client_name:None,chosen_client_name:None,
+            directory_count:0,linked_spans:Vec::new(),
+        };
+        let view=empty.cached_view();
+        let mut changed=recognition;
+        changed["recipients"][0]["items"]=json!([{"id":"new"}]);
+        assert!(ReceptionAnalysis::from_cached_view(
+            raw,changed,json!({}),&view
+        ).is_none());
+    }
+
+    #[test]
+    fn edited_contact_keeps_reference_and_rebuilds_links_without_price_rules(){
+        let raw="김가상";
+        let recog=json!({"recipients":[{
+            "id":"r1","name":"김가상","address":"서울",
+            "items":[{"id":"i1","quantity":2}],
+            "sources":[{"targetId":"r1","field":"name",
+                "start":0,"end":3,"text":"김가상"}]
+        }]});
+        let mut analysis=ReceptionAnalysis{
+            linked_spans:Vec::new(),recognition:recog.clone(),
+            reference:vec![RecipientReference{
+                remote:Some(json!({"address":"서울","manual":false,"checked":false})),
+                remote_error:None,
+                item_prices:vec![PriceReference{retail:Some(6000),error:None}]
+            }],
+            client_match:json!({}),client_candidates:Vec::new(),
+            matched_client_name:None,chosen_client_name:None,directory_count:0,
+        };
+        let mut update=recog["recipients"].clone();
+        update[0]["note"]=json!("수정");
+        analysis.apply_edited_recipients(raw,&update);
+        assert_eq!(analysis.reference[0].item_prices[0].retail,Some(6000));
+        assert_eq!(analysis.linked_spans.len(),1);
+        let mut address_change=update;
+        address_change[0]["address"]=json!("제주");
+        analysis.apply_edited_recipients(raw,&address_change);
+        assert!(analysis.reference[0].remote.is_none());
+    }
+}
