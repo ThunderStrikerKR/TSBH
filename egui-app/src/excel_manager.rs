@@ -446,9 +446,16 @@ fn table<const N:usize>(
         }
         if sort_enabled[i]{
             let hit=h.intersect(header_text_rect);
-            if hit.width()>0.0&&hit.height()>0.0&&ui.interact(hit,
-                ui.make_persistent_id((id,"sort",i)),Sense::click()).clicked(){
-                clicked=Some(Sort::next(*sort,i));
+            if hit.width()>0.0&&hit.height()>0.0{
+                let response=ui.interact(
+                    hit,ui.make_persistent_id((id,"sort",i)),Sense::click()
+                );
+                if response.hovered(){
+                    components::management_master_header_sort_hover(ui,hit);
+                }
+                if response.clicked(){
+                    clicked=Some(Sort::next(*sort,i));
+                }
             }
         }
     }
