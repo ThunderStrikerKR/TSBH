@@ -4900,10 +4900,11 @@ impl BandoEgui {
                                             .and_then(|analysis|
                                                 analysis.reference.get(self.selected_recipient))
                                             .and_then(|reference|reference.remote.as_ref())
-                                            .filter(|result|result["address"].as_str()
-                                                ==Some(reception_service::text(
-                                                    recipient,"address"
-                                                )));
+                                            .filter(|result|
+                                                reception_service::remote_reference_matches(
+                                                    recipient,result
+                                                )
+                                            );
                                         let remote=remote_result.and_then(|result|
                                             result["checked"].as_bool()
                                         );

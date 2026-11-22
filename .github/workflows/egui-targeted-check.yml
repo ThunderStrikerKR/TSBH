@@ -74,6 +74,12 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml remote_delivery::tests -- --nocapture
       - name: Verify engine-provided locality notice and checkbox explanation
         run: cargo test --manifest-path egui-app/Cargo.toml remote_notice_tests -- --nocapture
+      - name: Verify workflow checkbox follows the native auto/manual/legacy projection
+        run: cargo test --manifest-path egui-app/Cargo.toml native_remote_preview_is_not_replaced -- --nocapture
+      - name: Verify manual worksheet locality matches recipient and exact address
+        run: cargo test --manifest-path egui-app/Cargo.toml manual_remote_row_tests -- --nocapture
+      - name: Verify inline edits stay inside the original input cell
+        run: cargo test --manifest-path egui-app/Cargo.toml inline_editor_is_in_original_cell -- --nocapture
       - name: Verify native recipient freight and remote-area edit validation
         run: cargo test --manifest-path egui-app/Cargo.toml manual_classification::tests -- --nocapture
       - name: Verify floating notice placement at screen edges and caret anchors

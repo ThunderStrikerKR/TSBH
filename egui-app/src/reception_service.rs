@@ -130,6 +130,23 @@ pub fn remote_decision(
     }))
 }
 
+/// A completed Rust decision is usable only for the exact displayed row.
+/// In particular, an older decision for the same address must not briefly
+/// override a newer employee toggle while its Rust worker recalculates.
+pub fn remote_reference_matches(recipient:&Value,decision:&Value)->bool{
+    let address=text(recipient,"address");
+    if decision["address"].as_str()!=Some(address){return false;}
+    let manual=recipient.get("remoteDelivery")
+        .filter(|value|value["address"].as_str()==Some(address)
+            && value["manual"]==true)
+        .and_then(|value|value["checked"].as_bool());
+    match manual {
+        Some(checked)=>decision["manual"]==true
+            && decision["checked"].as_bool()==Some(checked),
+        None=>decision["manual"]!=true,
+    }
+}
+
 /// Read-only, synchronous helper used ONLY inside existing background workers
 /// after a manual model has replaced the initial recognition projection.
 pub fn refresh_remote_references(
@@ -277,6 +294,24 @@ pub fn display_won(amount: i64) -> String {
 #[cfg(test)]
 mod remote_notice_tests{
     use super::*;
+    #[test]
+    fn remote_result_cannot_outlive_a_manual_override_or_address_change(){
+        let row=json!({"address":"제주특별자치도 제주시 1"});
+        let auto=json!({"status":"auto","checked":true,"manual":false,
+            "address":"제주특별자치도 제주시 1"});
+        assert!(remote_reference_matches(&row,&auto));
+        let revised=json!({"address":"제주특별자치도 제주시 1",
+            "remoteDelivery":{"address":"제주특별자치도 제주시 1",
+                "checked":false,"manual":true}});
+        assert!(!remote_reference_matches(&revised,&auto));
+        let manual=json!({"status":"auto","checked":false,"manual":true,
+            "address":"제주특별자치도 제주시 1"});
+        assert!(remote_reference_matches(&revised,&manual));
+        let changed=json!({"address":"서울특별시 중구 1"});
+        assert!(!remote_reference_matches(&changed,&auto));
+        assert!(!remote_reference_matches(&row,&manual));
+    }
+
     #[test]
     fn render_auto_checked_and_manual_override_without_ui_classification(){
         let detection=json!({"status":"auto","checked":true,
