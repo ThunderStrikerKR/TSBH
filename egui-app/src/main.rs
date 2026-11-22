@@ -9048,3 +9048,83 @@ mod reception_workflow_admission_integration_tests {
         assert!(!app.remote_recheck_due);
     }
 }
+
+
+#[cfg(test)]
+mod reception_item_editor_integration_tests{
+    use super::*;
+    fn populated_app()->BandoEgui{
+        let mut app=BandoEgui::default();
+        app.active_id=Some("o1".into());
+        app.raw_source="원문 709 4개".into();
+        app.drafts.push(WorkingReception{
+            id:"o1".into(),raw:app.raw_source.clone(),
+            order_type:"AGENCY".into(),source_input_method:None,
+            last_input_method:None,analysis_raw:Some(app.raw_source.clone()),
+            analysis_evidence:Some(serde_json::json!({"recipients":[
+                {"id":"r1","items":[{"id":"i1","name":"BD 709 / 블랙 / 타공 상판",
+                    "productId":"p1","variantId":"v1","quantity":4,
+                    "quantityConfirmed":true,"unitPrice":59000}]}
+            ]})),analysis_view:None,client_match:None,
+            chat_handle:None,chat_title:None,
+            client_id:Some("c1".into()),client_selection:Some("MANUAL".into()),
+            pricing_preview:None,working_version:None,
+            working_synced:false,manual_model:None,edit_history:Vec::new()
+        });
+        app.analysis=Some(reception_service::ReceptionAnalysis{
+            recognition:serde_json::json!({"recipients":[{
+                "id":"r1","items":[{
+                    "id":"i1","name":"BD 709 / 블랙 / 타공 상판",
+                    "productId":"p1","variantId":"v1","quantity":4,
+                    "quantityConfirmed":true,"unitPrice":59000
+                }]
+            }]}),reference:Vec::new(),
+            client_match:serde_json::Value::Null,
+            client_candidates:Vec::new(),matched_client_name:None,
+            chosen_client_name:None,directory_count:0,
+            linked_spans:Vec::new()
+        });
+        app
+    }
+    #[test]
+    fn product_cell_opens_order_scoped_modal_instead_of_inline_text_editor(){
+        let ctx=egui::Context::default();
+        let mut app=populated_app();
+        app.open_item_editor("r1","i1",&ctx);
+        let dialog=app.item_editor.as_ref().expect("product detail dialog");
+        assert!(dialog.is_same_target("o1","원문 709 4개","r1","i1"));
+        assert!(app.inline_editor.is_none(),
+            "React product clicks must not open a plain TextEdit");
+        assert_eq!(app.reception_job_admission(
+            ReceptionJob::NavigateReception,false
+        ),JobAdmission::Conflict(ReceptionJob::ItemDialog));
+        assert_eq!(app.reception_job_admission(
+            ReceptionJob::InlineEdit,false
+        ),JobAdmission::Start,
+            "the modal must be permitted to submit its native item write");
+    }
+    #[test]
+    fn item_dialog_never_opens_with_uncommitted_edited_quantity(){
+        let ctx=egui::Context::default();
+        let mut app=populated_app();
+        app.inline_editor=Some(InlineReceptionEditor{
+            source_id:"o1".into(),
+            target:InlineTarget{
+                recipient_id:"r1".into(),item_id:Some("i1".into()),
+                field:"quantity"
+            },
+            original:"4".into(),text:"7".into(),
+            focus_next:false,click_at:None
+        });
+        app.open_item_editor("r1","i1",&ctx);
+        assert!(app.item_editor.is_none());
+        assert_eq!(app.inline_editor.as_ref().unwrap().text,"7");
+    }
+    #[test]
+    fn unknown_product_item_does_not_open_dialog(){
+        let ctx=egui::Context::default();
+        let mut app=populated_app();
+        app.open_item_editor("r1","no-item",&ctx);
+        assert!(app.item_editor.is_none());
+    }
+}
