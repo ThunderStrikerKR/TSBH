@@ -97,6 +97,9 @@ pub(super) fn resolve_recipient(recipient: &Value) -> Result<Value, String> {
     };
     analysis["checked"] = json!(checked);
     analysis["manual"] = json!(manually_set);
+    // Tie a visible engine decision to the exact delivery address.
+    // Async UI results from an old address must never auto-check a new one.
+    analysis["address"] = json!(address);
     Ok(analysis)
 }
 
@@ -209,6 +212,25 @@ mod tests {
         assert_eq!(check("충남 보령시 오천면 녹도리")["status"], "auto");
     }
 
+    #[test]
+    fn resolved_ui_decision_contains_address_auto_check_and_detection_evidence(){
+        let address="제주특별자치도 제주시 연동 1";
+        let result=resolve_recipient(&json!({"address":address})).unwrap();
+        assert_eq!(result["address"],address);
+        assert_eq!(result["status"],"auto");
+        assert_eq!(result["checked"],true);
+        assert_eq!(result["manual"],false);
+        assert!(result["matchedPath"].is_string());
+        let overridden=resolve_recipient(&json!({
+            "address":address,"remoteDelivery":{
+                "address":address,"checked":false,"manual":true
+            }
+        })).unwrap();
+        assert_eq!(overridden["suggestedChecked"],true);
+        assert_eq!(overridden["checked"],false);
+        assert_eq!(overridden["manual"],true);
+        assert_eq!(multiply(Some(3000),&json!({"address":address})),Some(6000));
+    }
     #[test]
     fn auto_check_can_be_manually_overridden_and_address_change_resets_it() {
         let address = "제주특별자치도 서귀포시 대정읍 에듀시티로 23";
