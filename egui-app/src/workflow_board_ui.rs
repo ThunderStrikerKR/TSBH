@@ -975,9 +975,27 @@ mod pending_matching_tests {
     fn pending_receipt_never_emits_a_fake_dealer_confirmation_action(){
         let ctx=egui::Context::default();
         let mut tapped=None;
+        let draft=WorkingReception{
+            id:"egui-pending-test".to_owned(),
+            raw:"테스트 주문".to_owned(),
+            order_type:"AGENCY".to_owned(),
+            source_input_method:None,
+            last_input_method:None,
+            analysis_raw:None,
+            analysis_evidence:None,
+            client_match:None,
+            chat_handle:None,
+            chat_title:None,
+            client_id:Some("verified-client".to_owned()),
+            client_selection:Some("AUTO".to_owned()),
+            pricing_preview:None,
+            working_version:None,
+            working_synced:false,
+            manual_model:None,
+            edit_history:Vec::new()
+        };
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
-                let draft=WorkingReception::default();
                 tapped=pending_frame(ui,&draft,false,false,"확인된 거래처");
             });
         });
