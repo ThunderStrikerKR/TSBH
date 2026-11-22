@@ -2358,7 +2358,7 @@ impl BandoEgui {
                         master.workspace,ppp
                     );
                     close=components::modal_master_header_in_rect(
-                        master_ui,header_rect,"OCR 문자 인식 검토",
+                        &mut master_ui,header_rect,"OCR 문자 인식 검토",
                         "원본 이미지와 인식된 텍스트를 대조하고 오타를 수정한 뒤 반영하세요.",
                         "취소",true
                     );
@@ -2366,7 +2366,7 @@ impl BandoEgui {
                     // Common popup master owns the ONE workspace frame and
                     // both divider lines. The OCR pane ratio is content-specific.
                     let frame=components::modal_master_workspace_background(
-                        master_ui,compare_rect,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT,
+                        &master_ui,compare_rect,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT,
                         Some(2.0/3.0)
                     );
                     let divider_x=frame.divider_x.expect("OCR has two panes");
@@ -2628,13 +2628,13 @@ impl BandoEgui {
                     // Its flat, pixel-snapped dividers and single rounded
                     // outline repair the tiny overhangs and corner seams.
                     components::modal_master_workspace_finish(
-                        master_ui,compare_rect,frame
+                        &master_ui,compare_rect,frame
                     );
 
                     let edited=review.edited_text.trim();
                     let valid=!edited.is_empty() && edited.chars().count()<=20_000;
                     components::modal_master_footer_in_rect(
-                        master_ui,footer_rect,|buttons|{
+                        &mut master_ui,footer_rect,|buttons|{
                             if theme::action(
                                 buttons,"적용",ButtonRole::Primary,valid
                             ).clicked() {
