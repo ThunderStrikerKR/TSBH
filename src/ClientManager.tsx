@@ -148,7 +148,6 @@ export function ClientManager({
               beginEdit({
                 id: uid(),
                 name: "",
-                displayName: "",
                 address: "",
                 phone: "",
                 tier: "wholesale",
