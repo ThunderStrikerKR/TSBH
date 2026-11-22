@@ -647,19 +647,19 @@ impl CategoryManager {
                             // Default 8pt item gaps around the single divider
                             // already provide enough breathing room.
                             components::soft_divider(body);
-                            body.label(typography::field_label("분류 이름"));
-                            body.add_enabled_ui(
-                                editable && !busy && !is_root(&current.id),
-                                |field_ui|{
-                                    let input_width=field_ui.available_width();
-                                    components::flexible_text_field(
-                                        field_ui,&mut self.name,input_width,"분류 이름"
-                                    );
-                                }
-                            );
-                            body.add_space(theme::SPACE_4);
-                            body.label(typography::field_label("상위 카테고리"));
-                            body.horizontal(|location|{
+                            components::modal_labeled_row(body,"분류 이름",|row|{
+                                row.add_enabled_ui(
+                                    editable && !busy && !is_root(&current.id),
+                                    |field_ui|{
+                                        let input_width=field_ui.available_width().max(1.0);
+                                        components::flexible_text_field(
+                                            field_ui,&mut self.name,input_width,"분류 이름"
+                                        );
+                                    }
+                                );
+                            });
+                            body.add_space(theme::SPACE_12);
+                            components::modal_labeled_row(body,"상위 분류",|location|{
                                 // Align category text to the button's vertical
                                 // center; keep them adjacent at a shared 8pt gap.
                                 location.spacing_mut().item_spacing.x=theme::SPACE_8;
@@ -764,22 +764,31 @@ impl CategoryManager {
                                 // and keep the mandatory consent as its own
                                 // clearly separated information block.
                                 let location_path=path_text(&cats,&current.id);
-                                modal.label(typography::field_label("생성 위치"));
-                                let path_width=modal.available_width();
-                                let visible=typography::fit_category_path(
-                                    modal,&location_path,path_width,
-                                    typography::CategoryPathFont::Body
+                                components::modal_labeled_row(
+                                    modal,"생성 위치",|line|{
+                                        let path_width=line.available_width().max(1.0);
+                                        let visible=typography::fit_category_path(
+                                            line,&location_path,path_width,
+                                            typography::CategoryPathFont::Body
+                                        );
+                                        line.add_sized(
+                                            [path_width,theme::INPUT_HEIGHT],
+                                            egui::Label::new(typography::body(&visible))
+                                                .truncate()
+                                        ).on_hover_text(&location_path);
+                                    }
                                 );
-                                modal.add(egui::Label::new(
-                                    typography::body(&visible)
-                                ).truncate()).on_hover_text(&location_path);
                                 modal.add_space(theme::SPACE_12);
                                 components::soft_divider(modal);
                                 modal.add_space(theme::SPACE_12);
-                                let input_width=modal.available_width();
-                                components::flexible_text_field(
-                                    modal,&mut self.new_name,input_width,
-                                    "새 하위 분류 이름"
+                                components::modal_labeled_row(
+                                    modal,"새 분류 이름",|line|{
+                                        let input_width=line.available_width().max(1.0);
+                                        components::flexible_text_field(
+                                            line,&mut self.new_name,input_width,
+                                            "새 하위 분류 이름"
+                                        );
+                                    }
                                 );
                                 let count=direct_count(catalog,&current.id);
                                 if count>0{
@@ -799,33 +808,39 @@ impl CategoryManager {
                                 modal.label(typography::body(
                                     "분류 ID와 기존 상품 연결은 유지하고 상위 분류만 변경합니다."
                                 ));
-                                modal.label(typography::field_label("이동할 상위 분류"));
                                 let choices=cats.iter().filter(|row|{
                                     row.active && row.id!=current.id
                                     && !under(&cats,&row.id,&current.id)
                                     && path(&cats,&row.id).iter().all(|c|c.active)
                                 }).collect::<Vec<_>>();
                                 let current_path=path_text(&cats,&self.target);
-                                let path_width=theme::CATEGORY_PATH_PICKER_WIDTH-
-                                    theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
-                                let selected_text=typography::fit_category_path(
-                                    modal,&current_path,path_width,
-                                    typography::CategoryPathFont::Body
+                                components::modal_labeled_row(
+                                    modal,"상위 분류",|line|{
+                                        let picker_width=line.available_width()
+                                            .min(theme::CATEGORY_PATH_PICKER_WIDTH).max(1.0);
+                                        let path_width=(picker_width-
+                                            theme::CATEGORY_PATH_PICKER_TEXT_PADDING).max(1.0);
+                                        let selected_text=typography::fit_category_path(
+                                            line,&current_path,path_width,
+                                            typography::CategoryPathFont::Body
+                                        );
+                                        components::management_dropdown(
+                                            line,&selected_text,picker_width,
+                                            true,&current_path,|ui|{
+                                                for option in &choices{
+                                                    let full=path_text(&cats,&option.id);
+                                                    let visible=typography::fit_category_path(
+                                                        ui,&full,path_width,
+                                                        typography::CategoryPathFont::Body
+                                                    );
+                                                    components::management_dropdown_option(
+                                                        ui,&mut self.target,option.id.clone(),&visible
+                                                    ).on_hover_text(full);
+                                                }
+                                            }
+                                        );
+                                    }
                                 );
-                                components::management_dropdown(
-                                    modal,&selected_text,theme::CATEGORY_PATH_PICKER_WIDTH,
-                                    true,&current_path,|ui|{
-                                        for option in choices{
-                                            let full=path_text(&cats,&option.id);
-                                            let visible=typography::fit_category_path(
-                                                ui,&full,path_width,
-                                                typography::CategoryPathFont::Body
-                                            );
-                                            components::management_dropdown_option(
-                                                ui,&mut self.target,option.id.clone(),&visible
-                                            ).on_hover_text(full);
-                                        }
-                                    });
                             }
                             Operation::Delete=>{
                                 modal.label(typography::body(
