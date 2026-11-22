@@ -1313,7 +1313,7 @@ impl BandoEgui {
                     }
                 }
             },
-            _=>serde_json::json!(editor.text)
+            _=>serde_json::json!(editor.text.clone())
         };
         let request=manual_workspace::InlineRequest{
             recipient_id:editor.target.recipient_id.clone(),
