@@ -63,12 +63,14 @@ pub fn native_order(
 enum Outcome {
     Initial { order:Value, model:Value, assignment_order:Vec<String> },
     Updated { model:Value, assignment_order:Vec<String> },
-    Applied { order:Value, model:Value, assignment_order:Vec<String> },
+    Applied { order:Value, model:Value, assignment_order:Vec<String>,
+        quote:Option<Value>,quote_error:Option<String> },
 }
 pub enum Event {
     Closed,
     Applied { order_id:String,raw:String,order_type:String,client_id:Option<String>,
-        model:Value,assignment_order:Vec<String>,order:Value },
+        model:Value,assignment_order:Vec<String>,order:Value,
+        quote:Option<Value>,quote_error:Option<String> },
 }
 
 pub struct ManualWorkspace {
@@ -91,7 +93,7 @@ pub struct ManualWorkspace {
     receiver:Option<Receiver<Result<Outcome,String>>>,
     error:Option<String>,
     dirty:bool,
-    applied:Option<Value>,
+    applied:Option<(Value,Option<Value>,Option<String>)>,
 }
 
 impl ManualWorkspace {
@@ -178,10 +180,12 @@ impl ManualWorkspace {
                 self.receiver=None;
                 self.edit_text=self.current_value();
             }
-            Some(Ok(Ok(Outcome::Applied{order,model,assignment_order})))=>{
+            Some(Ok(Ok(Outcome::Applied{
+                order,model,assignment_order,quote,quote_error
+            })))=>{
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
-                self.applied=Some(order);
+                self.applied=Some((order,quote,quote_error));
                 self.receiver=None;
             }
             Some(Ok(Err(error)))=>{
@@ -214,11 +218,14 @@ impl ManualWorkspace {
         if let Some(id)=&self.selected_item {
             let Some(item)=list(row,"items").iter().find(|v|text(v,"id")==id)
                 else{return String::new()};
-            return if self.selected_field=="quantity" {
-                item.get("quantity").and_then(Value::as_i64)
-                    .map(|n|n.to_string()).unwrap_or_default()
-            } else {
-                text(item,"name").to_owned()
+            return match self.selected_field.as_str(){
+                "quantity"=>item.get("quantity").and_then(Value::as_i64)
+                    .map(|n|n.to_string()).unwrap_or_default(),
+                "unitPrice"=>item.get("manualUnitPrice")
+                    .or_else(||item.get("unitPrice"))
+                    .and_then(Value::as_i64)
+                    .map(|n|n.to_string()).unwrap_or_default(),
+                _=>text(item,"name").to_owned()
             };
         }
         if self.selected_field=="shippingCharge"{
@@ -299,6 +306,7 @@ impl ManualWorkspace {
             else{return};
         let keys=self.assignment_order.clone();
         let service=Arc::clone(&self.gateway);
+        let selected_client=self.client_id.clone();
         let (tx,rx)=mpsc::channel();
         self.receiver=Some(rx);
         self.error=None;
@@ -317,7 +325,34 @@ impl ManualWorkspace {
                 }))?;
                 let order=applied.get("order").filter(|v|v.is_object())
                     .ok_or("Rust 수동 분류 적용 결과가 올바르지 않습니다.")?.clone();
-                Ok(Outcome::Applied{order,model,assignment_order:keys})
+                // Preview and final SQLite commit use the identical native
+                // pricing + shipping operation, with no egui arithmetic.
+                let (quote,quote_error)=if let Some(id)=selected_client.as_deref(){
+                    let result=(||->Result<Value,String>{
+                        let state=service.load_business_state()?;
+                        let client=state["clients"].as_array()
+                            .and_then(|clients|clients.iter().find(|client|
+                                client["id"].as_str()==Some(id)))
+                            .ok_or("선택한 거래처의 단가 기준을 찾지 못했습니다.")?;
+                        let revision=state["revision"].as_u64()
+                            .ok_or("Rust 기준 revision이 없습니다.")?;
+                        let mut quote=service.execute(
+                            ReadOperation::CalculateReceptionQuote,
+                            json!({"order":&order,"state":&state,"client":client})
+                        )?;
+                        quote["authorityRevision"]=json!(revision);
+                        Ok(quote)
+                    })();
+                    match result{
+                        Ok(quote)=>(Some(quote),None),
+                        Err(error)=>(None,Some(format!(
+                            "Rust 금액 재계산에 실패했습니다: {error}"
+                        )))
+                    }
+                }else{(None,None)};
+                Ok(Outcome::Applied{
+                    order,model,assignment_order:keys,quote,quote_error
+                })
             })();
             let _=tx.send(result);
             ctx.request_repaint();
@@ -325,7 +360,7 @@ impl ManualWorkspace {
     }
     pub fn show(&mut self,ctx:&Context,work_area:egui::Rect)->Option<Event> {
         self.poll();
-        if let Some(order)=self.applied.take() {
+        if let Some((order,quote,quote_error))=self.applied.take() {
             if order.get("id").and_then(Value::as_str)!=Some(self.order_id.as_str()) ||
                order.get("raw").and_then(Value::as_str)!=Some(self.raw.as_str()) {
                 self.error=Some("적용 결과의 발주서 ID나 원문이 일치하지 않습니다.".into());
@@ -333,7 +368,8 @@ impl ManualWorkspace {
                 return Some(Event::Applied {
                     order_id:self.order_id.clone(),raw:self.raw.clone(),
                     order_type:self.order_type.clone(),client_id:self.client_id.clone(),
-                    model,assignment_order:self.assignment_order.clone(),order
+                    model,assignment_order:self.assignment_order.clone(),order,
+                    quote,quote_error
                 });
             }
         }
@@ -702,7 +738,10 @@ impl ManualWorkspace {
                             // under every shipment or change the panel height.
                             panel.horizontal(|ui|{
                                 let label=if self.selected_item.is_some(){
-                                    if self.selected_field=="quantity"{"수량"}else{"상품명"}
+                                    match self.selected_field.as_str(){
+                                        "quantity"=>"수량","unitPrice"=>"단가",
+                                        _=>"상품명"
+                                    }
                                 } else {
                                     match self.selected_field.as_str() {
                                         "name"=>"이름","address"=>"주소",
@@ -809,6 +848,17 @@ impl ManualWorkspace {
                     "native_confirm_quantity"
                 }else if self.selected_field=="product"{
                     "set_manual_product"
+                }else if self.selected_field=="unitPrice"{
+                    let raw=self.edit_text.trim().replace(',',"");
+                    if raw.is_empty(){
+                        value=Value::Null;
+                    }else if let Ok(price)=raw.parse::<i64>(){
+                        value=json!(price);
+                    }else{
+                        self.error=Some("단가는 0 이상의 정수로 입력하세요.".into());
+                        return None;
+                    }
+                    "set_manual_unit_price"
                 }else if self.selected_field=="shippingCharge"{
                     // The UI only parses an entered integer. The existing
                     // Rust rule is the sole authority for 2x normalization,
