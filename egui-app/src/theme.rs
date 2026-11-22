@@ -655,7 +655,18 @@ pub fn install(ctx: &egui::Context) {
     style.visuals.override_text_color = Some(TEXT);
     style.visuals.widgets.noninteractive.bg_fill = PANEL;
     style.visuals.widgets.inactive.bg_fill = RAISED;
-    style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(53, 53, 53);
+    // Native egui controls, selectables, toggles and pop-up options inherit
+    // the same clearly visible hover feedback as our authored buttons.
+    // Keep hover blue distinct from committed orange order selection.
+    style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(47, 62, 74);
+    style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(47, 62, 74);
+    style.visuals.widgets.hovered.bg_stroke = Stroke::new(
+        SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.72)
+    );
+    style.visuals.widgets.hovered.fg_stroke=Stroke::new(
+        1.5_f32,TEXT
+    );
+    style.visuals.widgets.hovered.expansion = 0.0;
     style.visuals.widgets.active.bg_fill = Color32::from_rgb(61, 61, 61);
     style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, BORDER);
     style.visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER);
@@ -853,6 +864,25 @@ pub fn nested_frame() -> Frame {
         .inner_margin(NESTED_PADDING)
 }
 
+/// Paint-only hover emphasis for every actionable rectangular control,
+/// including buttons with explicit fills that bypass egui's hovered fill.
+//// No layout, font metrics, border rect or hit area changes on hover.
+pub fn paint_button_hover(ui:&Ui,response:&Response,radius:f32){
+    if !response.hovered(){return;}
+    let paint=ui.painter().with_clip_rect(ui.clip_rect());
+    let rect=response.rect.shrink(0.5);
+    if rect.width()<=1.0 || rect.height()<=1.0{return;}
+    paint.rect_filled(
+        rect,radius,
+        Color32::from_rgba_unmultiplied(112,180,255,20)
+    );
+    paint.rect_stroke(
+        rect,radius,
+        Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.82)),
+        egui::StrokeKind::Inside
+    );
+}
+
 pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
     action_with_min_width(ui, label, role, enabled, 0.0)
 }
@@ -935,7 +965,7 @@ pub fn action_with_min_width(
         ButtonRole::Danger | ButtonRole::ActiveNavigation |
         ButtonRole::ActiveManagementTab | ButtonRole::ActiveKakaoControl
     );
-    ui.scope(|ui| {
+    let response=ui.scope(|ui| {
         let padding_y = match role {
             ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 2.0,
             ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 6.0,
@@ -950,7 +980,11 @@ pub fn action_with_min_width(
             .corner_radius(CornerRadius::same(radius))
             .min_size(Vec2::new(min_width, height));
         ui.add_enabled(enabled, button)
-    }).inner
+    }).inner;
+    if effective_enabled {
+        paint_button_hover(ui,&response,radius as f32);
+    }
+    response
 }
 
 /// Frameless Windows controls share a single 32pt hit area and precise
