@@ -5251,3 +5251,102 @@ mod modal_section_heading_spacing_tests {
         assert!(boxed.contains("section.scope(|body|"));
     }
 }
+
+/// Real egui layout integration test: validate the actual allocated Rects
+/// for header, three card surfaces, the advanced divider, and footer.
+/// A numeric token-only test cannot detect implicit spacer accumulation.
+#[cfg(test)]
+mod modal_editor_workspace_geometry_tests {
+    use super::*;
+
+    fn render_measured_workspace() -> ModalEditorGeometry {
+        let ctx=egui::Context::default();
+        let mut actual=None;
+        // egui resolves some text/layout geometry on the next frame.
+        for _ in 0..3 {
+            let _=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(1120.0);
+                    let (_,_,geometry)=modal_editor_workspace(
+                        ui,"상품 상세 관리","취소",true,|workspace|{
+                            workspace.body(640.0,|body|{
+                                let mut seen=ModalEditorBodyGeometry::default();
+                                body.horizontal(|row|{
+                                    row.spacing_mut().item_spacing.x=
+                                        theme::MODAL_MASTER_WORKSPACE_GAP;
+                                    for (label,width) in [
+                                        ("상품 이미지",355.0),
+                                        ("상품 개요",405.0),
+                                        ("판매 · 가격",255.0),
+                                    ] {
+                                        row.vertical(|column|{
+                                            column.set_width(width);
+                                            let section=modal_section_measured(
+                                                column,label,|content|{
+                                                    // Nontrivial height gives the row a
+                                                    // realistic image-led minimum.
+                                                    content.allocate_exact_size(
+                                                        Vec2::new(
+                                                            (width-2.0*theme::MODAL_SECTION_PADDING
+                                                                -2.0*theme::FRAME_STROKE_WIDTH)
+                                                                .min(320.0),
+                                                            320.0
+                                                        ),Sense::hover()
+                                                    );
+                                                }
+                                            );
+                                            seen.cards.push(section.response.rect);
+                                        });
+                                    }
+                                });
+                                seen.divider=Some(modal_master_spaced_divider(body));
+                                let advanced=egui::CollapsingHeader::new("고급 정보")
+                                    .default_open(false)
+                                    .show(body,|_|{});
+                                seen.advanced_header=Some(advanced.header_response.rect);
+                                ((),seen)
+                            });
+                            workspace.footer(|_|{},|_|{});
+                        }
+                    );
+                    actual=Some(geometry);
+                });
+            });
+        }
+        actual.expect("layout was not allocated")
+    }
+
+    #[test]
+    fn actual_modal_rects_keep_every_16pt_workspace_boundary(){
+        let geometry=render_measured_workspace();
+        assert_eq!(geometry.content.cards.len(),3);
+        assert!(geometry.header.is_some()
+            && geometry.body.is_some() && geometry.footer.is_some());
+        assert!(geometry.content.advanced_header.is_some());
+        let gaps=geometry.gaps();
+        for label in [
+            "header_to_card","card_gap_1","card_gap_2",
+            "card_to_rule","rule_to_advanced","body_to_footer"
+        ]{
+            assert!(gaps.iter().any(|(name,_)|*name==label),
+                "missing actual measured gap {label}: {gaps:?}");
+        }
+        assert!(geometry.invalid_gaps(1.0).is_empty(),
+            "actual egui rects violate 16pt master: {gaps:?}");
+        let cards=&geometry.content.cards;
+        for window in cards.windows(2){
+            assert!((window[0].top()-window[1].top()).abs()<=1.0,
+                "card top boundaries differ");
+            assert!((window[0].bottom()-window[1].bottom()).abs()<=1.0,
+                "card bottom boundaries differ");
+        }
+    }
+    #[test]
+    fn geometry_audit_detects_real_boundary_drift(){
+        let mut geometry=render_measured_workspace();
+        let previous=geometry.header.unwrap();
+        geometry.header=Some(previous.translate(Vec2::new(0.0,3.0)));
+        assert!(geometry.invalid_gaps(1.0).iter()
+            .any(|(label,_)|*label=="header_to_card"));
+    }
+}
