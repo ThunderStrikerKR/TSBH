@@ -1840,18 +1840,56 @@ mod tests {
     use super::*;
     #[test]
     fn product_detail_reacts_to_actual_kakao_safe_modal_width(){
-        // Three columns fit only when a 320px image, a 300px overview,
-        // and a 210px price form plus two egui horizontal gaps all fit.
-        assert!(ProductManager::detail_columns(893.0).is_none());
-        for width in [894.0,940.0,1000.0,1100.0]{
+        // All three sections have the SAME approved inset/frame thickness,
+        // so the 320pt image and inline 36pt price fields may not clip.
+        for width in [420.0,893.0,940.0,969.0]{
+            assert!(ProductManager::detail_columns(width).is_none());
+        }
+        let inset=2.0*(theme::MODAL_SECTION_PADDING+
+            theme::FRAME_STROKE_WIDTH);
+        for width in [970.0,1000.0,1100.0]{
             let (overview,price,image)=ProductManager::detail_columns(width).unwrap();
-            assert_eq!(image,theme::PRODUCT_DETAIL_IMAGE_SIZE);
-            assert!(overview>=300.0 && price>=210.0 && price<=250.0);
+            assert_eq!(image,theme::PRODUCT_DETAIL_IMAGE_SIZE+inset);
+            assert!(overview>=310.0 && price>=240.0 && price<=255.0);
             let gap=theme::SPACE_16+2.0*theme::SPACE_8;
             assert!(overview+price+image+2.0*gap<=width+0.01,
-                "columns overflow {width}pt");
+                "boxed columns overflow {width}pt");
         }
-        assert!(ProductManager::detail_columns(420.0).is_none());
+    }
+    #[test]
+    fn product_detail_cannot_reintroduce_stacked_fields_or_static_sales_label(){
+        // Architecture gate: section/field composition must stay on the
+        // approved shared components, not custom vertical label + TextEdit.
+        let source=include_str!("product_manager.rs");
+        let detail=source.split("    fn detail_columns(").nth(1).unwrap()
+            .split("    pub fn show_detail(").next().unwrap();
+        assert!(detail.contains("components::modal_labeled_row("));
+        assert!(!detail.contains("ui.vertical(|row|"));
+        assert!(!detail.contains("● 판매중"));
+        assert!(detail.contains("components::management_dropdown("));
+        for label in ["상품명","상품 옵션","카테고리","브랜드","판매 상태"]{
+            assert!(detail.contains(label),"{label} missing from inline form");
+        }
+        let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
+            .split("        self.selected=Some(draft.clone());").next().unwrap();
+        for heading in ["상품 개요","판매 · 가격","상품 이미지"]{
+            assert!(composition.contains(&format!(
+                "components::modal_section("
+            )) && composition.contains(heading));
+        }
+    }
+    #[test]
+    fn product_active_flag_is_preserved_in_existing_catalog_write(){
+        let original=json!({"id":"p1","active":false,"variants":[{
+            "id":"v1","wholesale":1000,"semi":1200,"retail":1500
+        }]});
+        let mut prices=HashMap::new();
+        prices.insert("wholesale".into(),"1,000".into());
+        prices.insert("semi".into(),"1,200".into());
+        prices.insert("retail".into(),"1,500".into());
+        let candidate=ProductManager::product_price_candidate(&original,&prices)
+            .expect("valid prices");
+        assert_eq!(candidate["active"],json!(false));
     }
     #[test]
     fn price_draft_uses_react_price_cell_zero_as_unregistered(){
