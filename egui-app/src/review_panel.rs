@@ -34,6 +34,8 @@ pub enum Action {
         link_key:Option<String>},
     ChooseClient(String),
     Candidate{recipient_id:String,field:String,value:String},
+    ApproveOne{recipient_id:String,item_id:String},
+    CancelApproval{recipient_id:String,item_id:String},
 }
 impl ReviewPanel {
     pub fn clear(&mut self){*self=Self::default();}
@@ -282,6 +284,30 @@ fn issue_card(
                                     field:field.to_owned(),value:value.to_owned(),
                                 });
                             }
+                        }
+                    }
+                }
+                if kind=="QUANTITY_MISSING"{
+                    if let Some(item_id)=iid {
+                        if theme::action(
+                            buttons,"1개로 잠정 처리",ButtonRole::Standard,
+                            enabled && issue["canApproveOne"]==true
+                        ).clicked(){
+                            *selected=Some(Action::ApproveOne{
+                                recipient_id:rid.to_owned(),item_id:item_id.to_owned()
+                            });
+                        }
+                    }
+                }
+                if kind=="QUANTITY_MISSING"
+                    &&text(issue,"resolution")=="PROVISIONALLY_APPROVED" {
+                    if let Some(item_id)=iid {
+                        if theme::action(
+                            buttons,"잠정 승인 취소",ButtonRole::Standard,enabled
+                        ).clicked(){
+                            *selected=Some(Action::CancelApproval{
+                                recipient_id:rid.to_owned(),item_id:item_id.to_owned()
+                            });
                         }
                     }
                 }
