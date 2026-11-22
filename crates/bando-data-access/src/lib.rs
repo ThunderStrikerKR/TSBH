@@ -30,6 +30,7 @@ mod reception_commands;
 mod recovery;
 pub mod backup_service;
 pub mod client_names;
+pub mod product_colors;
 pub mod audit_service;
 pub mod shipping_action;
 pub use validation::{
