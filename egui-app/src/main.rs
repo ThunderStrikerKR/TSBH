@@ -1924,6 +1924,22 @@ impl BandoEgui {
                 let field=link_key.as_deref()
                     .and_then(|key|key.rsplit_once(':').map(|(_,field)|field))
                     .unwrap_or(if item_id.is_some(){"product"}else{"name"});
+                if kind=="APPLIED"{
+                    // Informational auto-matches navigate/highlight the actual
+                    // product cell. They never start an unnecessary write.
+                    if let Some(item_id)=item_id.as_deref(){
+                        let link=source_highlight::key(
+                            &recipient_id,item_id,"product"
+                        );
+                        if let Some(id)=self.active_id.as_deref(){
+                            self.link_hover.update_for(id,Some(link.clone()),ctx);
+                            self.link_hover.active=Some(link.clone());
+                            self.link_hover.scroll_to=Some(link);
+                        }
+                    }
+                    ctx.request_repaint();
+                    return;
+                }
                 let manual=matches!(kind.as_str(),
                     "UNASSIGNED_EVIDENCE"|"ITEM"|"OPTION"|
                     "MODEL"|"MODEL_CHOICE"|"ALIAS_CONFLICT"|
@@ -6314,7 +6330,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             &&self.working_sync.is_none()
                             &&self.workflow_ui.pending_preview().is_none();
                         review_action=self.review_panel.show(
-                            ui,analysis,self.selected_recipient,can_act
+                            ui,analysis,visible_index,can_act
                         );
                     }
                         });
