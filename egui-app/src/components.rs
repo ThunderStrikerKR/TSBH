@@ -3,7 +3,7 @@
 
 use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, Stroke, Ui, Vec2};
 use chrono::{Datelike, Duration as Days, Months, NaiveDate};
-use crate::{theme, typography};
+use crate::{source_highlight, theme, typography};
 
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 pub const TABLE_ROW_HEIGHT: f32 = theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
@@ -1162,7 +1162,8 @@ pub fn reception_recipient_navigator(
 /// The minimum widths preserve Korean telephone numbers; extra space is
 /// distributed to BOTH editors rather than left empty. The two labels and
 /// editors are siblings in one horizontal layout (no nested line offsets).
-/// Responses retain separate field-level evidence hover/highlight targets.
+/// Only the five actual input controls are hover/highlight targets.
+/// Static Korean field labels remain in their normal theme color.
 pub fn reception_recipient_fields(
     ui: &mut Ui,
     name: &mut String,
@@ -1170,15 +1171,20 @@ pub fn reception_recipient_fields(
     mobile: &mut String,
     phone: &mut String,
     note: &mut String,
+    active: [bool; 5],
 ) -> [Response; 5] {
-    fn editor(value: &mut String, width: f32) -> egui::TextEdit<'_> {
-        egui::TextEdit::singleline(value)
+    fn editor(value: &mut String, width: f32, active: bool) -> egui::TextEdit<'_> {
+        let input=egui::TextEdit::singleline(value)
             .font(egui::FontId::proportional(
                 typography::FONT_RECEPTION_RECIPIENT_TEXT
             ))
             .vertical_align(Align::Center)
             .margin(egui::Margin::symmetric(8, 2))
-            .desired_width(width)
+            .desired_width(width);
+        if active {
+            input.background_color(source_highlight::ACTIVE_FILL)
+                .text_color(source_highlight::ACTIVE_TEXT)
+        } else {input}
     }
 
     fn label_cell(ui: &mut Ui, text: &str, width: f32) -> Response {
@@ -1193,25 +1199,24 @@ pub fn reception_recipient_fields(
         response
     }
 
-    fn row(ui: &mut Ui, label: &str, value: &mut String) -> Response {
+    fn row(ui: &mut Ui, label: &str, value: &mut String, active: bool) -> Response {
         ui.horizontal(|line| {
             line.spacing_mut().item_spacing.x = theme::RECIPIENT_LABEL_GAP;
-            let title = label_cell(line, label, theme::RECIPIENT_LABEL_WIDTH);
+            label_cell(line, label, theme::RECIPIENT_LABEL_WIDTH);
             let width = line.available_width().max(1.0);
-            // Read-only is not disabled: keep 36pt management INPUT
-            // contrast while preventing all user edits and preserving hover.
-            let input = line.add_sized(
+            // The response belongs to the input, NOT the combined row.
+            // This is read-only while retaining hover and native text layout.
+            line.add_sized(
                 Vec2::new(width, theme::INPUT_HEIGHT),
-                editor(value, width).interactive(false),
-            );
-            title.union(input)
+                editor(value, width, active).interactive(false),
+            )
         }).inner
     }
 
     ui.scope(|fields| {
         fields.spacing_mut().item_spacing.y = theme::RECIPIENT_ROW_GAP;
-        let name_response = row(fields, "이름", name);
-        let address_response = row(fields, "주소", address);
+        let name_response = row(fields, "이름", name, active[0]);
+        let address_response = row(fields, "주소", address, active[1]);
 
         let row_width = fields.available_width()
             .max(theme::RECIPIENT_PHONE_ROW_MIN_WIDTH);
@@ -1238,32 +1243,25 @@ pub fn reception_recipient_fields(
                     line.spacing_mut().item_spacing.y = 0.0;
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
-                    let mobile_label = label_cell(
-                        line, "휴대폰", theme::RECIPIENT_LABEL_WIDTH,
-                    );
+                    label_cell(line, "휴대폰", theme::RECIPIENT_LABEL_WIDTH);
                     let mobile_input = line.add_sized(
                         Vec2::new(mobile_width, theme::INPUT_HEIGHT),
-                        editor(mobile, mobile_width).interactive(false),
+                        editor(mobile, mobile_width, active[2]).interactive(false),
                     );
                     // Only the gap between the TWO contact groups is 8pt.
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_PHONE_COLUMN_GAP;
-                    let phone_label = label_cell(
-                        line, "전화", theme::RECIPIENT_PHONE_LABEL_WIDTH,
-                    );
+                    label_cell(line, "전화", theme::RECIPIENT_PHONE_LABEL_WIDTH);
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
                     let phone_input = line.add_sized(
                         Vec2::new(phone_width, theme::INPUT_HEIGHT),
-                        editor(phone, phone_width).interactive(false),
+                        editor(phone, phone_width, active[3]).interactive(false),
                     );
-                    (
-                        mobile_label.union(mobile_input),
-                        phone_label.union(phone_input),
-                    )
+                    (mobile_input,phone_input)
                 }).inner
             }).inner;
-        let note_response = row(fields, "메시지", note);
+        let note_response = row(fields, "메시지", note, active[4]);
         [
             name_response, address_response,
             mobile_response, phone_response, note_response,
@@ -2600,6 +2598,7 @@ pub fn reception_items_header(ui: &mut Ui) {
 
 pub fn reception_item_row(
     ui: &mut Ui, name: &str, quantity: &str, amount: &str,
+    active: [bool; 3],
 ) -> ReceptionItemCells {
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(
@@ -2620,12 +2619,17 @@ pub fn reception_item_row(
     ].into_iter().enumerate() {
         let cell = cells[index];
         let right = index != 0;
+        // Draw the same blue fill as recipient TextEdit, before value glyphs.
+        // No header, label, surrounding table row or column divider is filled.
+        if active[index] {
+            source_highlight::paint_active_background(ui,cell);
+        }
         ui.painter().with_clip_rect(cell).text(
             egui::pos2(if right { cell.right() } else { cell.left() }, cell.center().y),
             if right { egui::Align2::RIGHT_CENTER } else { egui::Align2::LEFT_CENTER },
             text,
             font,
-            color,
+            if active[index] {source_highlight::ACTIVE_TEXT} else {color},
         );
     }
     // Preserve the five-source-field highlighting contract: these three
