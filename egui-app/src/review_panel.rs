@@ -15,7 +15,7 @@ use crate::{
 fn text<'a>(row:&'a Value,key:&str)->&'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
 }
-#[derive(Clone,PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 struct ReviewKey {
     id:String,raw:String,order_type:String,client_id:Option<String>,
     recipients:Value,client_match:Value,price:Option<Value>,
