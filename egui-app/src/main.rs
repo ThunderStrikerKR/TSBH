@@ -1888,7 +1888,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 );
                 row.add_sized(
                     egui::vec2(16.0,theme::INPUT_HEIGHT),
-                    egui::Label::new(typography::body("%")).valign(Align::Center)
+                    egui::Label::new(typography::body("%"))
                 );
             });
             ui.add_space(theme::SPACE_12);
