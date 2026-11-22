@@ -133,8 +133,9 @@ struct OcrReview {
     zoom: f32,
     chat: Option<ChatWindow>,
     clipboard_sequence: Option<u32>,
-    /// Entirely optional: disabled starts with unmodified OCR output.
-    learning_enabled: bool,
+    /// Controls applying learned analysis to this review, NOT learning.
+    /// Approved original/corrected OCR pairs are recorded regardless of this.
+    learned_analysis_enabled: bool,
     model_receiver: Option<Receiver<Result<ocr_learning::Suggestion,String>>>,
     model_suggestion: Option<String>,
     model_error: Option<String>,
@@ -2094,6 +2095,8 @@ impl BandoEgui {
             client_id:None,
             original_text,
             corrected_text:text.clone(),
+            // Audit whether learned analysis was enabled. Collection of
+            // approved OCR correction pairs is unconditional.
             learning_used,
             model_suggestion,
         });
@@ -2210,7 +2213,7 @@ impl BandoEgui {
                             texture,width:image.width,height:image.height,
                             zoom:1.0,chat:intake_chat,
                             clipboard_sequence:sequence,
-                            learning_enabled:false,
+                            learned_analysis_enabled:false,
                             model_receiver:None,
                             model_suggestion:None,
                             model_error:None,
@@ -2270,7 +2273,7 @@ impl BandoEgui {
             if let Some(outcome)=review.model_receiver.as_ref().map(|rx|rx.try_recv()){
                 match outcome {
                     Ok(Ok(suggestion))=>{
-                        if review.learning_enabled && suggestion.replacements>0
+                        if review.learned_analysis_enabled && suggestion.replacements>0
                             && review.edited_text==review.original_text {
                             review.edited_text=suggestion.text.clone();
                             review.model_suggestion=Some(suggestion.text);
@@ -2425,20 +2428,20 @@ impl BandoEgui {
                                 typography::subsection_heading("인식된 텍스트 · 직접 수정")
                             ).truncate());
                             let help=review.model_error.as_deref()
-                                .unwrap_or("반복 정정 패턴을 적용하되 최종 판단은 직원이 합니다.");
+                                .unwrap_or("확정된 OCR 원문과 수정 결과는 항상 학습 자료로 기록됩니다. 이 옵션은 저장된 정정 패턴을 이번 분석에 사용할지만 결정합니다.");
                             let mut changed=false;
                             toolbar.with_layout(
                                 Layout::right_to_left(Align::Center),
                                 |option|{
                                     changed=option.checkbox(
-                                        &mut review.learning_enabled,
-                                        "학습 모델 사용 (시험 기능)"
+                                        &mut review.learned_analysis_enabled,
+                                        "학습된 분석 사용 (시험 기능)"
                                     ).on_hover_text(help).changed();
                                 },
                             );
                             if changed {
                                 review.model_error=None;
-                                if review.learning_enabled {
+                                if review.learned_analysis_enabled {
                                     let initial=review.original_text.clone();
                                     let template_client=verified_template_client.clone();
                                     let (tx,rx)=mpsc::channel();
@@ -2634,7 +2637,7 @@ impl BandoEgui {
                                     review.chat.clone(),
                                     review.clipboard_sequence,
                                     review.original_text.clone(),
-                                    review.learning_enabled,
+                                    review.learned_analysis_enabled,
                                     review.model_suggestion.clone()
                                 ));
                             }
