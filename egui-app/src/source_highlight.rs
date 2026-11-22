@@ -7,8 +7,10 @@ use eframe::egui::{self, Color32, FontId};
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
-pub const HOVER_ENTER: Duration = Duration::from_millis(200);
-pub const HOVER_EXIT: Duration = Duration::from_millis(250);
+// Approved source-document linkage: 100ms enter / 150ms release.
+// This is distinct from the 250ms working-order foreground preview.
+pub const HOVER_ENTER: Duration = Duration::from_millis(100);
+pub const HOVER_EXIT: Duration = Duration::from_millis(150);
 const MAX_SPANS: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -521,6 +523,12 @@ pub fn block_shapes(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn source_link_delays_match_approved_ui_behavior() {
+        assert_eq!(HOVER_ENTER,Duration::from_millis(100));
+        assert_eq!(HOVER_EXIT,Duration::from_millis(150));
+    }
 
     #[test]
     fn korean_and_emoji_use_true_utf16_boundaries() {
