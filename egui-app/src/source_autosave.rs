@@ -4,7 +4,9 @@
 
 use crate::gateway::{BandoGateway,ReadOperation};
 use serde_json::{json,Value};
-use crate::preview_store::{OcrFeedback, PreviewStore, WorkingSource};
+use crate::preview_store::{
+    OcrFeedback, PreviewStore, WorkingReception, WorkingSource
+};
 use eframe::egui;
 use std::{
     sync::{mpsc::{self, Receiver, Sender, RecvTimeoutError}, Arc},
@@ -12,9 +14,82 @@ use std::{
     time::Duration,
 };
 
+/// Only one draft's source fields cross the egui -> autosave channel for
+/// keystrokes. The worker retains the last complete WorkingSource and applies
+/// these deltas in FIFO order before the existing 180ms disk debounce.
+#[derive(Clone, Debug)]
+pub struct SourceTextEdit {
+    pub order_id:String,
+    pub raw:String,
+    pub order_type:String,
+    pub source_input_method:Option<String>,
+    pub last_input_method:Option<String>,
+}
+
+/// Keep the source-dependent invalidation identical for full snapshots and
+/// incremental edits; manual dealer selections and edit audit survive.
+pub fn update_draft_source(
+    row:&mut WorkingReception,raw:&str,order_type:&str
+)->bool{
+    let changed=row.raw!=raw || row.order_type!=order_type;
+    if changed{
+        row.analysis_raw=None;
+        row.analysis_evidence=None;
+        row.analysis_view=None;
+        row.client_match=None;
+        row.pricing_preview=None;
+        row.manual_model=None;
+        row.working_synced=false;
+        if row.client_selection.as_deref()==Some("AUTO"){
+            row.client_id=None;
+            row.client_selection=None;
+        }
+    }
+    row.raw=raw.to_owned();
+    row.order_type=order_type.to_owned();
+    changed
+}
+
+impl SourceTextEdit{
+    fn apply(self,source:&mut WorkingSource)->Result<(),String>{
+        if source.active_id.as_deref()!=Some(self.order_id.as_str()){
+            return Err(
+                "직접 입력 저장 대상이 현재 발주서와 일치하지 않습니다.".into()
+            );
+        }
+        let Some(row)=source.drafts.iter_mut().find(|row|
+            row.id==self.order_id
+        )else{
+            return Err("직접 입력 저장 대상 발주서가 없습니다.".into());
+        };
+        update_draft_source(row,&self.raw,&self.order_type);
+        row.source_input_method=self.source_input_method;
+        row.last_input_method=self.last_input_method;
+        source.raw=self.raw;
+        source.order_type=self.order_type;
+        Ok(())
+    }
+}
+
 enum Command {
     Save { source: WorkingSource, feedback: Vec<OcrFeedback> },
+    Edit(SourceTextEdit),
     Shutdown,
+}
+
+fn merge_command(
+    snapshot:&mut WorkingSource,feedback:&mut Vec<OcrFeedback>,
+    command:Command
+)->Result<bool,String>{
+    match command{
+        Command::Save{source,feedback:additional}=>{
+            *snapshot=source;
+            feedback.extend(additional);
+            Ok(true)
+        }
+        Command::Edit(edit)=>{edit.apply(snapshot)?;Ok(true)}
+        Command::Shutdown=>Ok(false),
+    }
 }
 
 #[derive(Debug)]
@@ -33,40 +108,48 @@ pub struct SourceAutosave {
 impl SourceAutosave {
     pub fn new(
         gateway: Arc<dyn BandoGateway>,
-        initial_revision: u64,
+        initial_source: WorkingSource,
         ctx: egui::Context,
     ) -> Self {
         let (sender, rx) = mpsc::channel::<Command>();
         let (updates, results) = mpsc::channel::<SaveStatus>();
         let worker = thread::spawn(move || {
-            let mut revision = initial_revision;
+            let mut revision = initial_source.revision;
+            let mut source=initial_source;
             loop {
-                let Ok(command) = rx.recv() else { break; };
-                let (mut source, mut feedback) = match command {
-                    Command::Save { source, feedback } => (source, feedback),
-                    Command::Shutdown => break,
-                };
-                let mut shutdown = false;
-                // A small debounce only affects disk writes, never the input.
-                // Shutdown drains the latest pending edit before exiting.
-                loop {
-                    match rx.recv_timeout(Duration::from_millis(180)) {
-                        Ok(Command::Save { source: latest, feedback: additions }) => {
-                            source = latest;
-                            // Keep every approved OCR pair even when rapid
-                            // edits coalesce intermediate source snapshots.
-                            feedback.extend(additions);
+                let Ok(command)=rx.recv() else{break};
+                let mut feedback=Vec::new();
+                let mut dirty=false;
+                let mut shutdown=false;
+                match merge_command(&mut source,&mut feedback,command){
+                    Ok(true)=>dirty=true,
+                    Ok(false)=>shutdown=true,
+                    Err(error)=>{let _=updates.send(SaveStatus::Failed(error));}
+                }
+                // Debounce disk IO without re-cloning the full drafts vector.
+                // Full saves and source deltas retain FIFO order, including
+                // OCR feedback and Shutdown's final flush.
+                while !shutdown{
+                    match rx.recv_timeout(Duration::from_millis(180)){
+                        Ok(command)=>match merge_command(
+                            &mut source,&mut feedback,command
+                        ){
+                            Ok(true)=>dirty=true,
+                            Ok(false)=>shutdown=true,
+                            Err(error)=>{
+                                let _=updates.send(SaveStatus::Failed(error));
+                            }
                         },
-                        Ok(Command::Shutdown) => {
-                            shutdown = true;
-                            break;
-                        }
-                        Err(RecvTimeoutError::Timeout) => break,
-                        Err(RecvTimeoutError::Disconnected) => {
-                            shutdown = true;
+                        Err(RecvTimeoutError::Timeout)=>break,
+                        Err(RecvTimeoutError::Disconnected)=>{
+                            shutdown=true;
                             break;
                         }
                     }
+                }
+                if !dirty{
+                    if shutdown{break;}
+                    continue;
                 }
                 source.revision = revision;
                 let status = match gateway.save_working_source(&source) {
@@ -165,6 +248,12 @@ impl SourceAutosave {
         self.queue_with_feedback(source, Vec::new())
     }
 
+    /// Lightweight direct-source edit, never a full draft collection clone.
+    pub fn queue_source_edit(&self,edit:SourceTextEdit)->Result<(),String>{
+        self.sender.send(Command::Edit(edit))
+            .map_err(|_| "egui 원문 자동저장 작업이 중단되었습니다.".to_owned())
+    }
+
     pub fn queue_with_feedback(
         &self,source: WorkingSource,feedback:Vec<OcrFeedback>
     ) -> Result<(),String> {
@@ -179,7 +268,7 @@ impl SourceAutosave {
 
 impl Drop for SourceAutosave {
     fn drop(&mut self) {
-        // Order-preserving: every queued Save precedes Shutdown. The worker
+        // Order-preserving: every queued Save/Edit precedes Shutdown. The worker
         // persists the newest source before it terminates, even on app close.
         let _ = self.sender.send(Command::Shutdown);
         if let Some(worker) = self.thread.take() {
