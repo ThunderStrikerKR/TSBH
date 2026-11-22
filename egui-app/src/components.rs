@@ -2329,9 +2329,9 @@ fn paint_client_line(
     );
 }
 
-/// Shared management-table column separators. Freight Assignment paints
-/// these column boundaries inline; other table screens reuse this painter
-/// instead of silently omitting vertical rules when using the master frame.
+/// Shared management-table column separators. Freight Assignment and
+/// Client Management both call this painter for header and body instead
+/// of leaving vertical rules to independently implemented screen widgets.
 ///
 /// The caller supplies DATA coordinates, not window coordinates. `region`
 /// clips the header before its scrollbar gutter and keeps body rules inside
