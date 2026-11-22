@@ -4,9 +4,10 @@
 //! import native Rust modules, reqwest, Tauri, or a database connection.
 //! Local and future HTTPS adapters preserve the same JSON business contract.
 //!
-//! Business operations remain an explicit read-only allowlist. The gateway
-//! saves a versioned *preview-only multi-reception workspace*; this never
-//! confirms a production order. No HTTP->local fallback.
+//! Business queries use a read-only allowlist. Explicit writes use separate
+//! native v2 commands behind existing-database authorization, revision CAS
+//! and Rust rules validation. The isolated reception workspace never
+//! confirms an operating order. No HTTP->local fallback.
 
 use serde_json::Value;
 use std::sync::Arc;
