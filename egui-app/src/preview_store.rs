@@ -986,3 +986,80 @@ mod ocr_layout_tests {
         assert_eq!(trace["boundaryChanges"],json!([]));
     }
 }
+
+#[cfg(test)]
+mod reception_edit_audit_tests {
+    use super::*;
+
+    #[test]
+    fn initial_and_revised_snapshots_are_cas_committed_and_survive_draft_removal() {
+        let path=std::env::temp_dir().join(format!(
+            "bando-egui-edit-audit-{}.sqlite",uuid::Uuid::new_v4()
+        ));
+        let conn=Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE working_source(
+                id INTEGER PRIMARY KEY,raw TEXT NOT NULL,order_type TEXT NOT NULL,
+                revision INTEGER NOT NULL,active_id TEXT NOT NULL,
+                drafts_json TEXT NOT NULL,updated_at TEXT
+             );
+             INSERT INTO working_source
+                (id,raw,order_type,revision,active_id,drafts_json)
+             VALUES(1,'','AGENCY',0,'','[]');
+             CREATE TABLE reception_edit_audit(
+                id TEXT PRIMARY KEY,order_id TEXT NOT NULL,source_raw TEXT NOT NULL,
+                initial_analysis_json TEXT NOT NULL,
+                before_rows_json TEXT NOT NULL,after_rows_json TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+             );"
+        ).unwrap();
+        drop(conn);
+        let store=PreviewStore{path:path.clone()};
+        let initial=json!({
+            "recipients":[{"id":"r1","name":"초기 수취인"}],
+            "candidates":[],"unassigned":[]
+        });
+        let updated=json!([{"id":"r1","name":"수정 수취인"}]);
+        let draft=WorkingReception{
+            id:"order-1".into(),raw:"원문".into(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:Some("원문".into()),
+            analysis_evidence:Some(initial.clone()),client_match:Some(json!({})),
+            chat_handle:None,chat_title:None,client_id:None,
+            client_selection:None,pricing_preview:None,
+            working_version:None,working_synced:false,manual_model:None,
+            edit_history:vec![json!({
+                "id":"change-1","at":"2026-11-22T00:00:00Z","sourceRaw":"원문",
+                "initialAnalysis":initial,"beforeRows":[{"id":"r1","name":"초기 수취인"}],
+                "afterRows":updated
+            })]
+        };
+        let source=WorkingSource{
+            raw:"원문".into(),order_type:"AGENCY".into(),revision:0,
+            active_id:Some("order-1".into()),drafts:vec![draft]
+        };
+        assert_eq!(store.save_source(&source).unwrap(),1);
+        let conn=store.open_connection().unwrap();
+        let (before,after):(String,String)=conn.query_row(
+            "SELECT before_rows_json,after_rows_json FROM reception_edit_audit
+             WHERE id='change-1'",[],|row|Ok((row.get(0)?,row.get(1)?))
+        ).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&before).unwrap()[0]["name"],
+            "초기 수취인");
+        assert_eq!(serde_json::from_str::<Value>(&after).unwrap()[0]["name"],
+            "수정 수취인");
+        drop(conn);
+        assert_eq!(store.save_source(&WorkingSource{
+            raw:"".into(),order_type:"AGENCY".into(),revision:1,
+            active_id:None,drafts:vec![]
+        }).unwrap(),2);
+        let conn=store.open_connection().unwrap();
+        let preserved:i64=conn.query_row(
+            "SELECT count(*) FROM reception_edit_audit WHERE order_id='order-1'",
+            [],|row|row.get(0)
+        ).unwrap();
+        assert_eq!(preserved,1);
+        drop(conn);
+        let _=std::fs::remove_file(&path);
+    }
+}
