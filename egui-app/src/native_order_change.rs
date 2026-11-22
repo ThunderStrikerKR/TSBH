@@ -19,6 +19,10 @@ pub struct ChangeResult {
     // The existing employee-corrected model rebased to the selected dealer.
     // This is persisted only into the isolated draft, never the business DB.
     pub manual_model: Option<Value>,
+    // Exact dealer-specific native recognition produced by this same worker.
+    // Reuse it in the reception UI; never schedule another AnalyzeOrder after
+    // a successful quote solely to rediscover the chosen dealer's aliases.
+    pub recognition: Option<Value>,
 }
 
 fn required<'a>(value:&'a Value,key:&str)->Result<&'a Value,String>{
@@ -87,6 +91,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
             client_id:target_id.to_owned(),
             pricing_preview:None,
             manual_model,
+            recognition:None,
         });
     }
 
@@ -140,7 +145,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
     // Only native Rust may merge recognized recipients, stable item IDs and
     // customer-specific business defaults into the Order.
     let merged=gateway.execute(ReadOperation::MergeReceptionAnalysis,json!({
-        "previous":selected, "evidence":evidence,
+        "previous":selected, "evidence":&evidence,
         "raw":source.raw, "clientId":target_id,
         "client":client, "state":state, "at":now,
     }))?;
@@ -172,6 +177,8 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         }
         let recipients=required(order,"recipients")?;
         let manual_model=rebind_manual_model(saved,target_id,recipients)?;
+        let mut selected_recognition=evidence.clone();
+        selected_recognition["recipients"]=recipients.clone();
         let preview=json!({
             "sourceRaw":source.raw,"orderId":source.id,
             "orderType":source.order_type,"clientId":target_id,
@@ -195,6 +202,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
             client_id:target_id.to_owned(),
             pricing_preview:Some(preview),
             manual_model:Some(manual_model),
+            recognition:Some(selected_recognition),
         });
     }
 
@@ -241,6 +249,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         client_id:target_id.to_owned(),
         pricing_preview:Some(price_summary),
         manual_model:None,
+        recognition:Some(evidence),
     })
 }
 
