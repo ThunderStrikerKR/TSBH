@@ -245,6 +245,11 @@ struct InlineReceptionEditor {
     text:String,
     focus_next:bool,
 }
+struct PendingRemoteRecheck{
+    order_id:String,
+    source_raw:String,
+    receiver:Receiver<Vec<(String,String,Result<serde_json::Value,String>)>>,
+}
 struct PendingInlineChange {
     order_id:String,
     raw:String,
@@ -319,6 +324,7 @@ struct BandoEgui {
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
     inline_editor:Option<InlineReceptionEditor>,
     inline_change:Option<PendingInlineChange>,
+    remote_recheck:Option<PendingRemoteRecheck>,
     edit_history_open: bool,
     client_change: Option<PendingClientChange>,
     auto_client_change: Option<PendingAutomaticClient>,
@@ -413,6 +419,7 @@ impl Default for BandoEgui {
             manual_workspace: None,
             inline_editor:None,
             inline_change:None,
+            remote_recheck:None,
             edit_history_open: false,
             client_change: None,
             auto_client_change: None,
@@ -1155,7 +1162,7 @@ impl BandoEgui {
             }
             Some(event)=>{
                 self.manual_workspace=None;
-                self.apply_manual_event(event);
+                self.apply_manual_event(event,ctx);
             }
             None=>{}
         }
@@ -1165,7 +1172,9 @@ impl BandoEgui {
     /// manual-classification dialog and edits made inside reception cells.
     /// This is where immutable first recognition, before/after snapshots and
     /// the native (read-only) quote are stored.
-    fn apply_manual_event(&mut self,event:manual_workspace::Event){
+    fn apply_manual_event(
+        &mut self,event:manual_workspace::Event,ctx:&egui::Context
+    ){
         let manual_workspace::Event::Applied{
             order_id,raw,order_type,client_id,model,assignment_order,
             order,quote,quote_error
@@ -1244,11 +1253,87 @@ impl BandoEgui {
                         );
                     }
                     self.queue_source_save();
+                    self.start_remote_recheck(ctx);
                 }else{
                     self.source_save_error=Some(
                         "Rust 수동 분류 결과에 배송 정보가 없어 적용하지 않았습니다.".into()
                     );
                 }
+    }
+
+    /// Resolve each currently displayed recipient in a worker, not per egui
+    /// frame. A stale worker is discarded when source or address changes.
+    fn start_remote_recheck(&mut self,ctx:&egui::Context){
+        let Some(order_id)=self.active_id.clone() else{return};
+        let source_raw=self.raw_source.clone();
+        let Some(analysis)=self.analysis.as_ref() else{return};
+        let rows=reception_service::recipients(&analysis.recognition).to_vec();
+        let gateway=Arc::clone(&self.gateway);
+        let context=ctx.clone();
+        let (tx,receiver)=mpsc::channel();
+        self.remote_recheck=Some(PendingRemoteRecheck{
+            order_id,source_raw,receiver
+        });
+        std::thread::spawn(move||{
+            let values=rows.into_iter().map(|row|{
+                let id=reception_service::text(&row,"id").to_owned();
+                let address=reception_service::text(&row,"address").to_owned();
+                let answer=if address.trim().is_empty(){
+                    Ok(serde_json::Value::Null)
+                }else{
+                    reception_service::remote_decision(gateway.as_ref(),&row)
+                };
+                (id,address,answer)
+            }).collect::<Vec<_>>();
+            let _=tx.send(values);
+            context.request_repaint();
+        });
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+    fn poll_remote_recheck(&mut self,ctx:&egui::Context){
+        let outcome=self.remote_recheck.as_ref().map(|pending|
+            pending.receiver.try_recv());
+        let received=match outcome{
+            Some(Ok(value))=>Some(value),
+            Some(Err(mpsc::TryRecvError::Disconnected))=>Some(Vec::new()),
+            _=>None
+        };
+        let Some(values)=received else{
+            if self.remote_recheck.is_some(){
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+            return;
+        };
+        let Some(pending)=self.remote_recheck.take() else{return};
+        if self.active_id.as_deref()!=Some(pending.order_id.as_str())
+            || self.raw_source!=pending.source_raw{return;}
+        let Some(analysis)=self.analysis.as_mut() else{return};
+        let current=reception_service::recipients(&analysis.recognition).to_vec();
+        for (index,recipient) in current.iter().enumerate(){
+            let id=reception_service::text(recipient,"id");
+            let address=reception_service::text(recipient,"address");
+            let Some((_,_,resolved))=values.iter().find(|(rid,addr,_)|
+                rid==id && addr==address
+            ) else{continue};
+            if index>=analysis.reference.len(){
+                analysis.reference.push(reception_service::RecipientReference{
+                    remote:None,remote_error:None,item_prices:Vec::new()
+                });
+            }
+            let reference=&mut analysis.reference[index];
+            match resolved{
+                Ok(value)=>{
+                    reference.remote=if value.is_null(){None}else{Some(value.clone())};
+                    reference.remote_error=None;
+                },
+                Err(error)=>{
+                    reference.remote=None;
+                    reference.remote_error=Some(error.clone());
+                }
+            }
+        }
+        analysis.reference.truncate(current.len());
+        ctx.request_repaint();
     }
 
     fn begin_inline_edit(&mut self,target:InlineTarget,original:String){
@@ -1380,7 +1465,7 @@ impl BandoEgui {
         match result {
             Ok(event)=>{
                 self.source_save_error=None;
-                self.apply_manual_event(event);
+                self.apply_manual_event(event,ctx);
             },
             Err(error)=>{
                 self.source_save_error=Some(format!("셀 수정 실패: {error}"));
@@ -1635,7 +1720,7 @@ impl BandoEgui {
                     let result=gateway.execute(
                         gateway::ReadOperation::ManualClassification,
                         serde_json::json!({
-                            "action":"apply_manual","order":order,
+                            "action":"preview_manual","order":order,
                             "model":model,"assignmentOrder":keys
                         })
                     )?;
@@ -1646,6 +1731,9 @@ impl BandoEgui {
                     analysis.recognition["recipients"]=recipients.clone();
                     analysis.linked_spans=source_highlight::collect(
                         &source,&analysis.recognition
+                    );
+                    reception_service::refresh_remote_references(
+                        gateway.as_ref(),&mut analysis
                     );
                 }
                 Ok(analysis)
@@ -5801,6 +5889,7 @@ impl eframe::App for BandoEgui {
         self.poll_client_change(ctx);
         self.poll_working_sync(ctx);
         self.poll_inline_change(ctx);
+        self.poll_remote_recheck(ctx);
         self.poll_source_clear(ctx);
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
