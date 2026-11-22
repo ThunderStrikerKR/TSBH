@@ -29,7 +29,6 @@ pub struct ClientChooser {
     generation: u64,
     searching: bool,
     error: Option<String>,
-    selecting: Option<String>,
     focus_search: bool,
     sort: Option<(usize,bool)>,
 }
@@ -136,7 +135,7 @@ impl ClientChooser {
             order_id, query:String::new(),
             clients:Vec::new(),results:Vec::new(),loaded:false,
             loading:receiver,search_result:None,generation:0,
-            searching:false,error:None,selecting:None,
+            searching:false,error:None,
             focus_search:true,sort:None,
         }
     }
@@ -144,17 +143,8 @@ impl ClientChooser {
     pub fn contains(&self, id:&str)->bool {
         self.loaded && self.clients.iter().any(|c| text(c,"id")==id && active(c))
     }
-    /// Only a successful native result closes the chooser. Keep selection
-    /// and search state intact across Rust errors for an immediate retry.
-    pub fn begin_selection(&mut self,id:&str) {
-        self.selecting=Some(id.to_owned());
-        self.error=None;
-    }
-    pub fn selection_failed(&mut self,message:String) {
-        self.selecting=None;
-        self.error=Some(message);
-    }
-    pub fn is_selecting(&self)->bool { self.selecting.is_some() }
+    // A verified row click emits Selected once; the owning reception closes
+    // this modal immediately. Native calculation never owns dialog lifetime.
 
     fn search(&mut self, gateway:Arc<dyn BandoGateway>, ctx:Context) {
         self.generation=self.generation.wrapping_add(1);
@@ -230,7 +220,6 @@ impl ClientChooser {
     pub fn show(&mut self, ctx:&Context, gateway:Arc<dyn BandoGateway>,
                 current_id:Option<&str>, work_area:egui::Rect) -> Option<Choice> {
         self.poll(Arc::clone(&gateway),ctx);
-        let busy=self.selecting.is_some();
         let mut is_open=true;
         let mut chosen:Option<String>=None;
         // The 1200pt modal fits the 900pt shared client grid plus the popup
@@ -248,13 +237,13 @@ impl ClientChooser {
             .fixed_size(dialog_size)
             .show(ctx,|ui|{
                 if components::modal_header_chrome(
-                    ui,"거래처 찾기","닫기",!busy
+                    ui,"거래처 찾기","닫기",true
                 ){is_open=false;}
                 ui.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
                 components::modal_master_body(ui,|workspace|{
                     components::modal_master_body_section(
                         workspace,"거래처 검색",|search_panel|{
-                            let response=search_panel.add_enabled_ui(!busy,|field|{
+                            let response=search_panel.add_enabled_ui(true,|field|{
                                 let width=field.available_width();
                                 components::flexible_text_field(
                                     field,&mut self.query,width,
@@ -288,10 +277,7 @@ impl ClientChooser {
                                 "reception.client_chooser",
                                 Tone::Error,self.error.as_deref()
                             );
-                            if busy {
-                                results_panel.label(typography::caption("거래처 적용 중…"));
-                            }
-                            let clients=visible_clients(
+                             let clients=visible_clients(
                                 &self.clients,&self.results,&self.query,
                                 self.searching,self.sort
                             );
@@ -392,7 +378,7 @@ impl ClientChooser {
                                                                 ),egui::StrokeKind::Inside
                                                             );
                                                     }
-                                                    if !busy&&!selected&&response.clicked(){
+                                                    if !selected&&response.clicked(){
                                                         chosen=Some(client_id.to_owned());
                                                     }
                                                 } else {
@@ -444,7 +430,7 @@ impl ClientChooser {
                 return Some(Choice::Selected(id));
             }
         }
-        if !is_open && !busy{
+        if !is_open{
             floating_notice::sync(
                 ctx,"reception.client_chooser.error",
                 "reception.client_chooser",Tone::Error,None
