@@ -1307,6 +1307,14 @@ impl ProductManager {
         if overview<310.0{return None;}
         Some((overview,price,image))
     }
+    /// Three full-height cards share one image-led body minimum. Inline
+    /// label/editor rows retain their natural heights; spare height is blank.
+    fn detail_section_body_height()->f32{
+        theme::PRODUCT_DETAIL_IMAGE_SIZE
+            +theme::SPACE_8
+            +theme::ACTION_STANDARD_HEIGHT
+            +2.0*theme::SPACING
+    }
     fn detail_wide_text(
         ui:&mut Ui,draft:&mut Value,key:&str,label:&str,enabled:bool
     ){
@@ -1362,11 +1370,11 @@ impl ProductManager {
         editable:bool,busy:bool
     ){
         Self::detail_wide_text(ui,draft,"name","상품명",editable&&!busy);
-        ui.add_space(theme::SPACE_12);
+        ui.add_space(theme::SPACE_16);
         Self::detail_wide_text(
             ui,draft,"subtitle","상품 옵션",editable&&!busy
         );
-        ui.add_space(theme::SPACE_12);
+        ui.add_space(theme::SPACE_16);
         components::modal_labeled_row(ui,"카테고리",|row|{
             let before=draft["categories"].as_array()
                 .and_then(|ids|ids.last())
@@ -1409,7 +1417,7 @@ impl ProductManager {
                     .unwrap_or(""));
             }
         });
-        ui.add_space(theme::SPACE_12);
+        ui.add_space(theme::SPACE_16);
         components::modal_labeled_row(ui,"브랜드",|row|{
             let before=field(draft,"brandId").to_owned();
             let mut brand_id=before.clone();
@@ -1457,7 +1465,7 @@ impl ProductManager {
             });
             if selected!=current{draft["active"]=json!(selected);}
         });
-        ui.add_space(theme::SPACE_12);
+        ui.add_space(theme::SPACE_16);
         for (label,tier) in [
             ("도매가","wholesale"),("반도매가","semi"),
             ("소매가","retail")
@@ -1480,7 +1488,7 @@ impl ProductManager {
                 );
                 line.label(typography::field_label("원"));
             });
-            ui.add_space(theme::SPACE_12);
+            if tier!="retail"{ui.add_space(theme::SPACE_16);}
         }
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
@@ -1592,6 +1600,9 @@ impl ProductManager {
                                     overview.set_width(overview_width);
                                     components::modal_section(
                                         overview,"상품 개요",|fields|{
+                                            fields.set_min_height(
+                                                Self::detail_section_body_height()
+                                            );
                                             Self::detail_overview_column(
                                                 fields,&mut draft,&brands,&categories,
                                                 editable,busy
@@ -1604,6 +1615,9 @@ impl ProductManager {
                                     prices_ui.set_width(price_width);
                                     components::modal_section(
                                         prices_ui,"판매 · 가격",|fields|{
+                                            fields.set_min_height(
+                                                Self::detail_section_body_height()
+                                            );
                                             Self::detail_price_column(
                                                 fields,&mut draft,&mut prices,
                                                 editable,busy
@@ -1616,6 +1630,9 @@ impl ProductManager {
                                     media.set_width(image_width);
                                     components::modal_section(
                                         media,"상품 이미지",|photos|{
+                                            photos.set_min_height(
+                                                Self::detail_section_body_height()
+                                            );
                                             self.detail_image_column(
                                                 photos,&mut draft,editable,busy,
                                                 &mut photo_error
@@ -1840,6 +1857,14 @@ impl ProductManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn product_detail_inline_rows_leave_blank_space_under_fixed_320_image(){
+        let body=ProductManager::detail_section_body_height();
+        let rows=4.0*theme::INPUT_HEIGHT+3.0*theme::SPACE_16;
+        assert!(body>=theme::PRODUCT_DETAIL_IMAGE_SIZE);
+        assert!(body>rows,"the remaining space must be a blank margin");
+        assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
+    }
     #[test]
     fn product_detail_reacts_to_actual_kakao_safe_modal_width(){
         // All three sections have the SAME approved inset/frame thickness,
