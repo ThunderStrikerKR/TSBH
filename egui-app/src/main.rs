@@ -4256,6 +4256,7 @@ impl BandoEgui {
 
         let mut next_recipient = None;
         let mut edit_from_pane=false;
+        let mut edit_target:Option<(usize,Option<String>,&'static str)>=None;
         let mut open_audit=false;
         let editable=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
@@ -4328,6 +4329,18 @@ impl BandoEgui {
                                     for (response, field) in responses.into_iter().zip([
                                         "name", "address", "mobile", "phone", "note",
                                     ]) {
+                                        // Read-only styled fields open the
+                                        // native manual editor on click. They
+                                        // never write ephemeral UI strings.
+                                        if editable && fields.interact(
+                                            response.rect,
+                                            fields.make_persistent_id((
+                                                "recipient-inline-edit",recipient_id,field
+                                            )),
+                                            Sense::click()
+                                        ).clicked(){
+                                            edit_target=Some((self.selected_recipient,None,field));
+                                        }
                                         let key = source_highlight::key(
                                             recipient_id, recipient_id, field,
                                         );
@@ -4439,11 +4452,17 @@ impl BandoEgui {
                                                     self.link_hover.active.as_ref(),
                                                     &source_highlight::key(recipient_id,item_id,field),
                                                 ));
-                                                let cells=components::reception_item_row(
-                                                    items_ui,
-                                                    &reception_service::item_title(item),
-                                                    &quantity,&amount,active_fields,
-                                                );
+                                                let cells=if editable{
+                                                    components::reception_item_row_editable(
+                                                        items_ui,&reception_service::item_title(item),
+                                                        &quantity,&amount,active_fields
+                                                    )
+                                                }else{
+                                                    components::reception_item_row(
+                                                        items_ui,&reception_service::item_title(item),
+                                                        &quantity,&amount,active_fields
+                                                    )
+                                                };
                                                 for (response,field) in [
                                                     (&cells.product,"product"),
                                                     (&cells.quantity,"quantity"),
@@ -4454,6 +4473,13 @@ impl BandoEgui {
                                                     );
                                                     if response.hovered(){
                                                         hovered_detail=Some(key.clone());
+                                                    }
+                                                    if editable && response.clicked(){
+                                                        edit_target=Some((
+                                                            self.selected_recipient,
+                                                            Some(item_id.to_owned()),
+                                                            if field=="quantity"{"quantity"}else{"product"}
+                                                        ));
                                                     }
                                                     source_highlight::paint_active(
                                                         items_ui,response,&key,
@@ -4487,7 +4513,11 @@ impl BandoEgui {
                                             origin==Some("FACTORY"),
                                         );
                                         items_ui.add_space(theme::SPACE_8);
-                                        components::reception_item_actions(items_ui,origin);
+                                        if components::reception_item_actions_editable(
+                                            items_ui,origin,editable
+                                        ){
+                                            edit_from_pane=true;
+                                        }
                                     } else {
                                         items_ui.add_space(theme::SPACE_8);
                                         items_ui.label(typography::caption(
@@ -4533,7 +4563,12 @@ impl BandoEgui {
                 .is_some_and(|analysis|analysis.linked_spans.iter()
                     .any(|span|span.key==*key)));
         self.link_hover.update(linked,ui.ctx());
-        if edit_from_pane{
+        if let Some((recipient,item,field))=edit_target{
+            self.open_manual_workspace(ui.ctx());
+            if let Some(editor)=self.manual_workspace.as_mut(){
+                editor.focus_cell(recipient,item,field);
+            }
+        }else if edit_from_pane{
             self.open_manual_workspace(ui.ctx());
         }
         if open_audit {
