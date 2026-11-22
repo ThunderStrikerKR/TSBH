@@ -418,6 +418,32 @@ impl FieldKind {
 fn modal_pivot_pos(work_area:Rect)->egui::Pos2{
     work_area.center()
 }
+
+/// Wide image reviews need symmetric left/right screen gutters, unlike
+/// normal workflow dialogs, whose constrained area excludes KakaoTalk.
+/// Vertical limits still respect the application's header and status area.
+pub fn modal_balanced_review_area(viewport:Rect,workflow_area:Rect)->Rect{
+    let gutter=theme::MODAL_VIEWPORT_GUTTER;
+    let left=(viewport.left()+gutter).min(viewport.right()-1.0);
+    let right=(viewport.right()-gutter).max(left+1.0).min(viewport.right());
+    Rect::from_min_max(
+        egui::pos2(left,workflow_area.top()),
+        egui::pos2(right,workflow_area.bottom())
+    )
+}
+
+/// egui Window::fixed_size is the OUTER size, including the modal frame's
+/// margin and border. Use the corresponding inner size for the master rect.
+/// Never read the auto-layout's available_rect_before_wrap to position the
+/// fixed OCR footer: it may not represent the fixed-size content contract.
+pub fn modal_master_content_size(outer:Vec2)->Vec2{
+    let frame_x=theme::MODAL_PANEL_PADDING_X+theme::FRAME_STROKE_WIDTH;
+    let frame_y=theme::MODAL_PANEL_PADDING_Y+theme::FRAME_STROKE_WIDTH;
+    Vec2::new(
+        (outer.x-2.0*frame_x).max(1.0),
+        (outer.y-2.0*frame_y).max(1.0)
+    )
+}
 /// Native modal geometry belongs here, not to individual screens.
 /// `work_area` excludes the externally foregrounded KakaoTalk dock.
 pub fn modal_window(
@@ -3813,6 +3839,39 @@ mod management_toolbar_geometry_tests {
 #[cfg(test)]
 mod modal_safe_position_tests {
     use super::*;
+
+    #[test]
+    fn image_review_is_horizontally_centered_on_whole_viewport(){
+        let viewport=Rect::from_min_size(
+            egui::pos2(0.0,0.0),Vec2::new(1648.0,928.0)
+        );
+        // Ordinary dialogs exclude the 340pt KakaoTalk reserve.
+        let workflow=Rect::from_min_max(
+            egui::pos2(360.0,80.0),egui::pos2(1630.0,910.0)
+        );
+        let review=modal_balanced_review_area(viewport,workflow);
+        assert_eq!(review.center().x,viewport.center().x);
+        assert_eq!(review.top(),workflow.top());
+        assert_eq!(review.bottom(),workflow.bottom());
+        assert!(review.left()<workflow.left());
+    }
+
+    #[test]
+    fn ocr_master_footer_ends_above_the_rounded_outer_frame(){
+        let outer=Vec2::new(1400.0,800.0);
+        let inner=modal_master_content_size(outer);
+        assert_eq!(inner,Vec2::new(1362.0,766.0));
+        let bounds=Rect::from_min_size(egui::pos2(19.0,17.0),inner);
+        let layout=modal_master_layout(
+            bounds,theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT,
+            theme::MODAL_FOOTER_HEIGHT,theme::MODAL_MASTER_WORKSPACE_GAP
+        );
+        assert_eq!(layout.footer.bottom(),bounds.bottom());
+        // Footer is inside the 17pt bottom frame, never clipped at the
+        // actual window's outer lower rounded corner.
+        assert_eq!(outer.y-layout.footer.bottom(),17.0);
+        assert!(layout.workspace.bottom()<=layout.footer.top());
+    }
 
     #[test]
     fn popup_pivot_uses_exact_safe_area_center_without_double_header_offset(){
