@@ -8433,6 +8433,63 @@ mod reception_workflow_admission_integration_tests {
     }
 
     #[test]
+    fn every_reception_job_owner_is_visible_to_common_admission(){
+        let mut app=app();
+        app.analysis_pending=true;
+        app.clipboard_busy=true;
+        app.direct_source_entry=true;
+        app.pending_replace=Some(PendingReplace{
+            text:"수정".into(),order_type:OrderType::Dealer,
+            chat:None,input_method:"OCR",clipboard_sequence:None,
+            ocr_original:None,ocr_learning_used:false,ocr_model_suggestion:None
+        });
+        let (_rtx,rrx)=mpsc::channel();
+        app.remote_recheck=Some(PendingRemoteRecheck{
+            order_id:"draft-1".into(),source_raw:"원문".into(),
+            order_type:"AGENCY".into(),recipients:Vec::new(),
+            cancel:Arc::new(AtomicBool::new(false)),receiver:rrx
+        });
+        let (_wtx,wrx)=mpsc::channel();
+        app.workflow_action=Some(PendingWorkflowAction{
+            group_id:"group".into(),action:"advance_group".into(),
+            receiver:wrx
+        });
+        let active=app.active_reception_jobs(ReceptionJob::DeleteReception);
+        for expected in [
+            ReceptionJob::Analysis,ReceptionJob::RemoteRecheck,
+            ReceptionJob::SourceIntake,ReceptionJob::SourceReview,
+            ReceptionJob::SourceEntry,ReceptionJob::WorkflowAction
+        ]{
+            assert!(active.contains(&expected),"{expected:?} absent from job inventory");
+        }
+        assert!(matches!(
+            app.reception_job_admission(ReceptionJob::DeleteReception,false),
+            JobAdmission::Conflict(_)
+        ));
+    }
+
+    #[test]
+    fn changing_only_reception_kind_invalidates_old_analysis_and_quote(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.drafts[0].analysis_raw=Some("원문".into());
+        app.drafts[0].analysis_evidence=Some(
+            serde_json::json!({"recipients":[]})
+        );
+        app.drafts[0].pricing_preview=Some(
+            serde_json::json!({"totals":{"grandTotal":12000}})
+        );
+        app.apply_intake_text(
+            "원문".into(),OrderType::Dealer,None,&ctx,
+            "TEXT_PASTE",true,None,None,false,None
+        );
+        assert_eq!(app.order_type,OrderType::Dealer);
+        assert_eq!(app.drafts[0].order_type,"DEALER");
+        assert!(app.drafts[0].analysis_evidence.is_none());
+        assert!(app.drafts[0].pricing_preview.is_none());
+    }
+
+    #[test]
     fn locality_lookup_retries_after_a_conflicting_write_finishes(){
         let ctx=egui::Context::default();
         let mut app=app();
