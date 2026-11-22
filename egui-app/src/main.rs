@@ -4859,9 +4859,23 @@ impl BandoEgui {
                                         items_ui.add_space(theme::SPACE_8);
                                         // The ORDER total is not a recipient fee.
                                         // Show only the native per-recipient amount.
-                                        let remote=recipient.get("remoteDelivery")
-                                            .and_then(|v|v.get("checked"))
-                                            .and_then(serde_json::Value::as_bool);
+                                        // Engine result (auto suggestion +
+                                        // explicit same-address staff override)
+                                        // is authoritative for the CHECKED UI.
+                                        // The previous code read only the
+                                        // optional manual remoteDelivery field,
+                                        // hiding the checkbox for auto zones.
+                                        let remote_result=self.analysis.as_ref()
+                                            .and_then(|analysis|
+                                                analysis.reference.get(self.selected_recipient))
+                                            .and_then(|reference|reference.remote.as_ref())
+                                            .filter(|result|result["address"].as_str()
+                                                ==Some(reception_service::text(
+                                                    recipient,"address"
+                                                )));
+                                        let remote=remote_result.and_then(|result|
+                                            result["checked"].as_bool()
+                                        );
                                         let origin=recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
                                         let line_fee=preview.and_then(|quote|
@@ -4880,7 +4894,7 @@ impl BandoEgui {
                                         };
                                         let freight_actions=components::reception_freight_row_editable(
                                             items_ui,"운임",line_fee,cod,remote,
-                                            origin==Some("FACTORY"),editable
+                                            true,editable
                                         );
                                         if freight_actions.amount_clicked{
                                             inline_open=Some((
@@ -4923,6 +4937,26 @@ impl BandoEgui {
                                                     input.key_pressed(egui::Key::Enter))){
                                                 inline_commit=true;
                                             }
+                                        }
+                                        if let Some(decision)=remote_result{
+                                            if let Some(message)=
+                                                reception_service::remote_delivery_notice(decision)
+                                            {
+                                                items_ui.add_space(theme::SPACE_4);
+                                                items_ui.label(typography::status(
+                                                    message,theme::SELECTED_ORDER
+                                                ));
+                                            }
+                                        }else if let Some(error)=self.analysis.as_ref()
+                                            .and_then(|analysis|
+                                                analysis.reference.get(self.selected_recipient))
+                                            .and_then(|reference|reference.remote_error.as_ref())
+                                        {
+                                            items_ui.add_space(theme::SPACE_4);
+                                            items_ui.label(typography::status(
+                                                format!("도서/산간 판정 실패 · {error}"),
+                                                theme::SELECTED_ORDER
+                                            ));
                                         }
                                         items_ui.add_space(theme::SPACE_8);
                                         if let Some(command)=components::reception_item_actions_editable(
