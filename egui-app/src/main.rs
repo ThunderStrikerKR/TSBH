@@ -19,6 +19,7 @@ mod ocr_learning;
 mod client_directory;
 mod client_master;
 mod client_manager;
+mod client_search_tags;
 mod automatic_message_manager;
 mod category_manager;
 mod alias_manager;
