@@ -78,6 +78,8 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify actual egui modal boundary rects and 16pt workspace spacing
+        run: cargo test --manifest-path egui-app/Cargo.toml modal_editor_workspace_geometry_tests -- --nocapture
       - name: Verify management search re-entry places caret after last query character
         run: cargo test --manifest-path egui-app/Cargo.toml management_search_caret_tests -- --nocapture
       - name: Verify shared money input live commas and caret-safe editing
@@ -188,8 +190,6 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml auto_database_location_tests -- --nocapture
       - name: Verify egui product-price input conversion and non-mutating category choices
         run: cargo test --manifest-path egui-app/Cargo.toml product_manager::tests -- --nocapture
-      - name: Verify actual egui modal boundary rects and 16pt workspace spacing
-        run: cargo test --manifest-path egui-app/Cargo.toml modal_editor_workspace_geometry_tests -- --nocapture
       - name: Verify unified product Excel V2 import-export roundtrip and review approval
         run: |
           cargo test --manifest-path egui-app/Cargo.toml product_excel::tests -- --nocapture
