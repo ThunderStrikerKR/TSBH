@@ -5087,6 +5087,8 @@ impl BandoEgui {
             && self.client_change.is_none()
             && self.working_sync.is_none()
             && self.inline_change.is_none()
+            && self.vat_change.is_none()
+            && self.vat_dialog.is_none()
             && self.source_clear_job.is_none();
         let recipient_nav=self.analysis.as_ref()
             .map(|analysis|reception_service::recipients(analysis))
