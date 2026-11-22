@@ -159,7 +159,7 @@ pub fn apply_inline(
         // Other existing quantity issues can be resolved one field at a time.
     }
     let applied=rule(gateway,json!({
-        "action":"apply_manual","order":&order,"model":&model,
+        "action":"preview_manual","order":&order,"model":&model,
         "assignmentOrder":&keys
     }))?;
     let updated=applied.get("order").filter(|v|v.is_object())
