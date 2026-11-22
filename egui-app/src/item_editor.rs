@@ -2,13 +2,14 @@
 //! The dialog only stages employee intent. Catalog search is Rust-backed;
 //! the native manual reducer validates the actual item and recalculates price.
 
-use std::sync::Arc;
+use std::{sync::{Arc,mpsc::{self,Receiver,TryRecvError}},thread};
 use eframe::egui::{self,Context,Vec2};
 use serde_json::Value;
 use crate::{
     components,
     gateway::BandoGateway,
     manual_product_search::{Event as SearchEvent, ProductSearch},
+    product_images::ProductImageCache,
     theme::{self, ButtonRole},
     typography,
 };
@@ -31,6 +32,10 @@ pub struct ItemEditor{
     initial_price:Option<i64>,
     replacement:Option<Value>,
     search:Option<ProductSearch>,
+    original_catalog_product:Option<Value>,
+    photo_receiver:Option<Receiver<Result<Option<Value>,String>>>,
+    photo_requested:bool,
+    photos:ProductImageCache,
     confirm_delete:bool,
     confirm_discard:bool,
     error:Option<String>,
@@ -44,7 +49,10 @@ impl ItemEditor{
         Self{
             order_id,source_raw,recipient_id,item_id,client_id,
             initial:item,initial_price:price,replacement:None,
-            search:None,confirm_delete:false,confirm_discard:false,
+            search:None,original_catalog_product:None,
+            photo_receiver:None,photo_requested:false,
+            photos:ProductImageCache::default(),
+            confirm_delete:false,confirm_discard:false,
             error:None,
         }
     }
@@ -85,10 +93,45 @@ impl ItemEditor{
             self.client_id.clone(),query,gateway,ctx.clone()
         ));
     }
+    fn poll_catalog_photo(&mut self,gateway:Arc<dyn BandoGateway>,ctx:&Context){
+        if !self.photo_requested{
+            self.photo_requested=true;
+            let id=field(&self.initial,"productId").to_owned();
+            if !id.is_empty(){
+                let (tx,rx)=mpsc::channel();
+                self.photo_receiver=Some(rx);
+                let context=ctx.clone();
+                thread::spawn(move||{
+                    // Catalog reads run off the UI thread. Product details
+                    // and the image are projected from the same saved ID.
+                    let result=gateway.load_catalog().map(|catalog|
+                        catalog.get("products").and_then(Value::as_array)
+                            .and_then(|products|products.iter().find(|p|
+                                field(p,"id")==id
+                            )).cloned()
+                    );
+                    let _=tx.send(result);
+                    context.request_repaint();
+                });
+            }
+        }
+        let event=self.photo_receiver.as_ref().map(Receiver::try_recv);
+        match event{
+            Some(Ok(Ok(product)))=>{
+                self.original_catalog_product=product;
+                self.photo_receiver=None;
+            }
+            Some(Ok(Err(_))) | Some(Err(TryRecvError::Disconnected))=>{
+                self.photo_receiver=None;
+            }
+            _=>{}
+        }
+    }
     pub fn show(
         &mut self,ctx:&Context,gateway:Arc<dyn BandoGateway>,
         work_area:egui::Rect,busy:bool
     )->Option<Event>{
+        self.poll_catalog_photo(Arc::clone(&gateway),ctx);
         let mut result=None;
         let selected=self.selected().clone();
         let name=field(&selected,"name");
@@ -130,14 +173,13 @@ impl ItemEditor{
                         let (photo,_) = line.allocate_exact_size(
                             Vec2::new(128.0,128.0),egui::Sense::hover()
                         );
-                        line.painter().rect_filled(
-                            photo,theme::CONTROL_RADIUS as f32,theme::INPUT
-                        );
-                        line.painter().text(
-                            photo.center(),egui::Align2::CENTER_CENTER,
-                            "상품 사진 없음",egui::FontId::proportional(14.0),
-                            theme::SECONDARY
-                        );
+                        // React: replacement product overrides the original
+                        // catalog photo; HIDDEN/MANUAL rules are shared with
+                        // the ProductManager photo projection.
+                        let product=self.replacement.as_ref()
+                            .or(self.original_catalog_product.as_ref())
+                            .unwrap_or(&self.initial);
+                        self.photos.paint(line,product,photo);
                         line.add_space(theme::SPACE_16);
                         line.vertical(|details|{
                             details.label(typography::caption("상품명"));
