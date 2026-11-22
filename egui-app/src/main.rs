@@ -1148,11 +1148,23 @@ impl BandoEgui {
             Some(manual_workspace::Event::Closed)=>{
                 self.manual_workspace=None;
             }
-            Some(manual_workspace::Event::Applied {
-                order_id,raw,order_type,client_id,model,assignment_order,order,
-                quote,quote_error
-            })=>{
+            Some(event)=>{
                 self.manual_workspace=None;
+                self.apply_manual_event(event);
+            }
+            None=>{}
+        }
+    }
+
+    /// One final, shared application path for BOTH the explicitly opened
+    /// manual-classification dialog and edits made inside reception cells.
+    /// This is where immutable first recognition, before/after snapshots and
+    /// the native (read-only) quote are stored.
+    fn apply_manual_event(&mut self,event:manual_workspace::Event){
+        let manual_workspace::Event::Applied{
+            order_id,raw,order_type,client_id,model,assignment_order,
+            order,quote,quote_error
+        }=event else{return;};
                 if self.active_id.as_deref()!=Some(order_id.as_str()) ||
                    self.raw_source!=raw ||
                    self.order_type.as_str()!=order_type ||
@@ -1232,9 +1244,6 @@ impl BandoEgui {
                         "Rust 수동 분류 결과에 배송 정보가 없어 적용하지 않았습니다.".into()
                     );
                 }
-            }
-            None=>{}
-        }
     }
 
     fn show_edit_history(&mut self,ctx:&egui::Context,work_area:Rect){
