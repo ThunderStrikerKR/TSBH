@@ -741,9 +741,15 @@ impl BandoEgui {
         if self.vat_change.is_some(){active.push(ReceptionJob::VatEdit);}
         if self.working_sync.is_some(){active.push(ReceptionJob::WorkingSync);}
         if self.manual_workspace.is_some(){active.push(ReceptionJob::ManualWorkspace);}
-        // An active text field must not be discarded by a dealer or VAT edit.
-        // Submitting that same field is the sole exception.
-        if request!=ReceptionJob::InlineEdit && self.inline_editor.is_some(){
+        // A changed cell is uncommitted employee input. A clean, unchanged
+        // editor may be dismissed by navigation or an approved draft delete;
+        // other actions keep their existing edit-focus protection.
+        if request!=ReceptionJob::InlineEdit &&
+            self.inline_editor.as_ref().is_some_and(|editor|
+                editor.text!=editor.original ||
+                !matches!(request,
+                    ReceptionJob::NavigateReception|ReceptionJob::DeleteReception)
+            ){
             active.push(ReceptionJob::InlineEditor);
         }
         if self.analysis_pending {active.push(ReceptionJob::Analysis);}
@@ -1285,6 +1291,7 @@ impl BandoEgui {
         // Navigation is allowed to abandon a read-only manual dealer quote;
         // dropping its receiver ensures it cannot publish into the next order.
         self.client_change=None;
+        self.inline_editor=None;
         self.active_id = Some(item.id);
         self.requested_recipient_focus=None;
         self.raw_source = item.raw;
@@ -2605,6 +2612,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if self.active_id.as_deref().and_then(|id|
             self.drafts.iter().find(|item| item.id == id)
         ).is_some_and(|item| item.raw.trim().is_empty()) {
+            // Clicking '+ 새 주문' on an empty direct-entry draft simply
+            // returns to intake mode; it must not strand SourceEntry forever.
+            self.direct_source_entry=false;
             self.source_editing = false;
             return;
         }
@@ -6875,6 +6885,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let was_active=self.active_id.as_deref()==Some(id);
         self.drafts.retain(|row|row.id!=id);
         if was_active{
+            // Native dealer/analysis workers are advisory for an unconfirmed
+            // draft. Discard their receivers so they cannot block the next
+            // intake after this employee-approved deletion.
+            self.client_change=None;
+            self.inline_editor=None;
             self.active_id=None;
             self.raw_source.clear();
             self.source_editing=false;
