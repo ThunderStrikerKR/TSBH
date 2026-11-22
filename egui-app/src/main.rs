@@ -1825,10 +1825,12 @@ impl BandoEgui {
             self.source_save_error=Some("선택한 품목이 현재 발주서에 없습니다.".into());
             return;
         };
-        let price=row.pricing_preview.as_ref().and_then(|quote|
-            quoted_item_line(quote,item_id)
-        ).and_then(|line|line["unitPrice"].as_i64())
-        .or_else(||item.get("unitPrice").and_then(serde_json::Value::as_i64));
+        let price=row.pricing_preview.as_ref()
+            .filter(|quote|quote.get("sourceRaw")
+                .and_then(serde_json::Value::as_str)==Some(row.raw.as_str()))
+            .and_then(|quote|quoted_item_line(quote,item_id))
+            .and_then(|line|line["unitPrice"].as_i64())
+            .or_else(||item.get("unitPrice").and_then(serde_json::Value::as_i64));
         self.inline_editor=None;
         self.item_editor=Some(item_editor::ItemEditor::new(
             row.id.clone(),row.raw.clone(),recipient_id.into(),
