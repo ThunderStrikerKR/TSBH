@@ -1783,7 +1783,17 @@ impl BandoEgui {
             cancel=components::modal_header(
                 ui,"부가세 설정","취소",!busy
             );
-            ui.label(typography::field_label("적용 범위"));
+            // The tax rate applies to the whole order and precedes
+            // both the bulk and the per-recipient VAT selections.
+            ui.horizontal(|row|{
+                row.label(typography::field_label("부가세율"));
+                row.add_enabled(!busy,
+                    egui::TextEdit::singleline(&mut dialog.rate_text)
+                        .desired_width(85.0)
+                );
+                row.label(typography::body("%"));
+            });
+            ui.add_space(theme::SPACE_12);
             ui.horizontal_wrapped(|row|{
                 row.spacing_mut().item_spacing.x=theme::SPACE_12;
                 // These are mutually exclusive whole-order shortcuts,
@@ -1828,15 +1838,6 @@ impl BandoEgui {
                         components::soft_divider(list);
                     }
                 });
-            ui.add_space(theme::SPACE_12);
-            ui.horizontal(|row|{
-                row.label(typography::field_label("부가세율"));
-                row.add_enabled(!busy,
-                    egui::TextEdit::singleline(&mut dialog.rate_text)
-                        .desired_width(85.0)
-                );
-                row.label(typography::body("%"));
-            });
             if let Some(error)=dialog.error.as_deref(){
                 ui.label(typography::status(error,theme::DANGER));
             }
