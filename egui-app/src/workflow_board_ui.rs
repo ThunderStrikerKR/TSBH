@@ -206,7 +206,8 @@ fn workflow_title_fit(ui:&Ui,title:&str,width:f32)->String{
     }else{String::new()}
 }
 /// Draw one fixed-size action with its own collision-free pointer ID.
-/// Preview clones never mutate the background group's operational state.
+/// Preview controls carry their own IDs and dispatch the SAME authorized
+/// operations as the base card; they never mutate state while painting.
 fn workflow_auxiliary_at(
     ui:&mut Ui,id:&str,rect:Rect,
     action:components::WorkflowAuxiliaryAction,
@@ -217,7 +218,7 @@ fn workflow_auxiliary_at(
         components::WorkflowAuxiliaryAction::Delete=>"delete",
         components::WorkflowAuxiliaryAction::PreviousStage=>"undo",
     };
-    let effective=enabled && !in_preview;
+    let effective=enabled;
     let response=ui.interact(
         rect,Id::new(("workflow-aux",id,kind,in_preview)),
         if effective{egui::Sense::click()}else{egui::Sense::hover()}
@@ -962,7 +963,7 @@ pub fn show(
             let mut ignored_hover=None;
             overlay_event=group_frame(
                 ui,&group,current,true,true,state.preview_shipment.as_deref(),
-                false,&mut ignored_hover,&mut hovered_row
+                writable,&mut ignored_hover,&mut hovered_row
             );
         });
         state.preview_rect=Some(response.response.rect);
@@ -975,7 +976,10 @@ pub fn show(
                         group_id:id,order_id:first.order_id.clone(),shipment_id:first.id.clone()
                     }));
                 }
-            }else if matches!(overlay_event,Event::SelectShipment(_)){
+            }else {
+                // The foreground card is fully usable: forwarding its
+                // actions is safe because every widget ID includes
+                // in_preview, avoiding cross-layer egui ID collisions.
                 event=Some(overlay_event);
             }
         }
