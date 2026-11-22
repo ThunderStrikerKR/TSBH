@@ -547,6 +547,8 @@ pub struct ModalEditorBodyGeometry {
 pub struct ModalEditorGeometry {
     pub header:Option<Rect>,
     pub body:Option<Rect>,
+    pub viewport:Option<Rect>,
+    pub scroll_offset_y:f32,
     pub footer:Option<Rect>,
     pub content:ModalEditorBodyGeometry,
 }
@@ -608,7 +610,7 @@ impl ModalEditorWorkspace<'_> {
     )->R{
         self.ui.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
         let result=self.ui.scope(|host|{
-            egui::ScrollArea::vertical()
+            let scroll=egui::ScrollArea::vertical()
                 .id_salt("modal-editor-workspace-body")
                 .max_height(max_height)
                 .auto_shrink([false,true])
@@ -619,10 +621,13 @@ impl ModalEditorWorkspace<'_> {
                         modal_master_controlled_spacing(body);
                         contents(body)
                     }).inner
-                }).inner
+                });
+            (scroll.inner,scroll.inner_rect,scroll.state.offset.y)
         });
         self.geometry.body=Some(result.response.rect);
-        let (value,measured)=result.inner;
+        let ((value,measured),viewport,scroll_offset)=result.inner;
+        self.geometry.viewport=Some(viewport);
+        self.geometry.scroll_offset_y=scroll_offset;
         self.geometry.content=measured;
         value
     }
@@ -5325,6 +5330,9 @@ mod modal_editor_workspace_geometry_tests {
             && geometry.body.is_some() && geometry.footer.is_some());
         assert!(geometry.content.advanced_header.is_some());
         let gaps=geometry.gaps();
+        eprintln!("modal rect trace header={:?} viewport={:?} scroll_y={:.2} card0={:?} body={:?} footer={:?} gaps={:?}",
+            geometry.header,geometry.viewport,geometry.scroll_offset_y,
+            geometry.content.cards.first(),geometry.body,geometry.footer,gaps);
         for label in [
             "header_to_card","card_gap_1","card_gap_2",
             "card_to_rule","rule_to_advanced","body_to_footer"
