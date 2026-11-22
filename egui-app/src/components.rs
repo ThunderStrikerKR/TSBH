@@ -5077,7 +5077,8 @@ mod modal_section_heading_spacing_tests {
     use super::*;
     #[test]
     fn same_explicit_gap_both_sides_of_section_heading_rule(){
-        assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,12.0);
+        assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,16.0);
+        assert_eq!(theme::MODAL_SECTION_PADDING,16.0);
         assert_eq!(theme::SOFT_DIVIDER_WIDTH,1.0);
         let source=include_str!("components.rs");
         let helper=source.split("fn modal_section_heading_with_rule(").nth(1).unwrap()
