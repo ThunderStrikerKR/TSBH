@@ -3524,5 +3524,48 @@
       "WINDOWS": "NOT_EXECUTED: real Windows screenshot, hover and DPI test pending"
     },
     "verdict": "CODE_COMMITTED__RUNTIME_REGRESSION_VERIFICATION_OPEN"
+  },
+  "eguiReceptionCachedQuoteSelectivePricing20261123": {
+    "date": "2026-11-23",
+    "features": [
+      "F04",
+      "F05",
+      "F06",
+      "F07",
+      "F12"
+    ],
+    "baseline": "User approved: preserve the selected dealer, original recognition, employee-corrected model, freight/VAT and the exact calculated quote on reopen/restart; re-run Rust pricing ONLY for changed recipient/item/selected-master inputs. Preserve frozen/audited data and stale async guards.",
+    "paths": [
+      "egui-app/src/main.rs",
+      "egui-app/src/preview_store.rs",
+      "egui-app/src/reception_service.rs",
+      "egui-app/src/native_order_change.rs",
+      "egui-app/src/manual_workspace.rs",
+      "egui-app/src/pricing_basis.rs",
+      "egui-app/src/http_gateway.rs",
+      ".github/workflows/egui-targeted-check.yml"
+    ],
+    "behavior": "Persist source-bound latest dealer-specific analysisView separately from immutable first analysisEvidence; rehydrate UI on draft switch and startup without OCR/AnalyzeOrder/repricing. SQLite allows and validates pendingRecipients and optional pricingBasis. Standardized complete-quote fields across manual/operational/native paths. New Rust pricing_basis records actual native quoted order inputs + selected-client tier/overrides, used product variants and relevant shipping group/combination rules, excluding unrelated masters. Asynchronously checks this on reopening: unchanged basis keeps quote, changed basis invokes native reprice with AUTO/MANUAL selection preserved. Native inline/manual reducer compares money/freight/VAT fields and master basis before reusing original quote for contact/name/note/source-only changes. Source/selection/async identity guards remain in force.",
+    "patchCommits": [
+      "dbd232027e1c8be4f749283226abed7a1da390a9",
+      "45d2f379ae278905ce6c067c6228194f45722048",
+      "60b15257e615eb93c6bf11c1330ac4636920e474",
+      "7eb129f57dbb0ae6d9298e741d2521f84eb4fa64",
+      "b57ddb50e25fae61223c3ceb03c5ac5b4c077717",
+      "0f08cfb6f6b09e7887f88731f2b198c8e2826ee6",
+      "c3bda5596072daaeae34faa44343e4e12e18bc4e",
+      "61f46d62192cc8bfda36527f3beb9105152b9ff4",
+      "e7d83d2d2d3168cbf7b670a514772bd7c00f0a56"
+    ],
+    "verification": {
+      "PATCH": "COMMITTED_MAIN: all affected modules use native Rust quote and serialized SQLite workspace",
+      "UNIT": "ADDED, CI OUTCOME PENDING: cached_reception_roundtrip_tests, persisted_analysis_restore_tests, quote_reuse_tests, pricing_basis::tests",
+      "DIFF": "NOT_EXECUTED: reference React/TS differential replay not performed",
+      "ACTION": "NOT_EXECUTED: full user paste→select→edit→save→exit→reopen on GUI pending",
+      "CI": "PENDING: https://github.com/ThunderStrikerKR/TSBH/actions/runs/45037751225",
+      "WINDOWS": "NOT_EXECUTED: live Windows app startup and screen verification pending"
+    },
+    "verdict": "PATCH_COMMITTED__FULL_VERIFICATION_OPEN",
+    "risks": "Legacy quotes without complete pendingRecipients or v2 basis trigger one native backfill. Operating working-version and concurrent external master updates require live reconciliation testing; compiler/test job completion not yet verified."
   }
 }
