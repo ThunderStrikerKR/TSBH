@@ -246,10 +246,15 @@ pub fn apply_inline(
             // The authoritative Rust issue predicate decides eligibility.
             // Copy its exact approved item (including quantityApproval)
             // into the native manual model; never emulate approval in UI.
+            let actor=gateway.load_settings().ok()
+                .and_then(|settings|settings.pointer("/settings/operatorName")
+                    .and_then(Value::as_str).map(str::trim)
+                    .filter(|name|!name.is_empty()).map(str::to_owned))
+                .unwrap_or_else(||"사용자".to_owned());
             let approved=gateway.execute(ReadOperation::ApplyIssueAction,json!({
                 "action":"approve_missing_quantity","order":&order,
                 "recipientId":rid,"itemId":iid,
-                "actor":"사용자","now":chrono::Utc::now().to_rfc3339()
+                "actor":actor,"now":chrono::Utc::now().to_rfc3339()
             }))?;
             let approved_item=approved["order"]["recipients"].as_array()
                 .into_iter().flatten().find(|row|text(row,"id")==rid)
