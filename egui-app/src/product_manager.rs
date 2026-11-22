@@ -722,7 +722,7 @@ impl ProductManager {
             panel.horizontal_wrapped(|filter|{
                     filter.spacing_mut().item_spacing.x=theme::SPACE_8;
                     let before=self.query.clone();
-                    if components::flexible_text_field(
+                    if components::management_search_field(
                         filter,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                         "모델명 또는 상품명 검색"
                     ).changed(){
