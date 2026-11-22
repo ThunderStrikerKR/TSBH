@@ -5261,6 +5261,7 @@ mod modal_editor_workspace_geometry_tests {
 
     fn render_measured_workspace() -> ModalEditorGeometry {
         let ctx=egui::Context::default();
+        crate::typography::install(&ctx);
         let mut actual=None;
         // egui resolves some text/layout geometry on the next frame.
         for _ in 0..3 {
