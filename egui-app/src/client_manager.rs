@@ -673,7 +673,7 @@ impl ClientManager {
                                             .collect::<String>())
                                     }else{tag.to_owned()};
                                     line.label(typography::body(&visible))
-                                        .on_hover_text(tag);
+                                        .on_hover_text(tag.as_str());
                                     // The close target uses the existing
                                     // shared 28pt navigation hit-area token.
                                     if line.add(egui::Button::new("×")
