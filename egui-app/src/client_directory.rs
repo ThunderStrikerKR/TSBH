@@ -105,12 +105,17 @@ pub(crate) fn project_index(value: &Value) -> Result<(Value, Value), String> {
             .filter(|s| !s.trim().is_empty())
             .ok_or("거래처에 유효한 name이 없습니다.")?;
         let text = |key| client.get(key).and_then(Value::as_str).unwrap_or("");
+        // Read-only imported indexes may still have the legacy key.
+        // Convert it in memory so it remains searchable without copying
+        // the override into the active client model or changing the DB.
+        let canonical=bando_data_access::client_names::normalized(client);
+        let search_text=|key| canonical.get(key).and_then(Value::as_str)
+            .unwrap_or("").to_owned();
         compact.push(json!({
             "id": id,
             "name": name,
-            "displayName": text("displayName"),
-            "shortNames": text("shortNames"),
-            "identifiers": text("identifiers"),
+            "shortNames": search_text("shortNames"),
+            "identifiers": search_text("identifiers"),
             // Local read-only search/display fields; never persisted to the
             // isolated egui receipt or the original Tauri database.
             "address": text("address"),

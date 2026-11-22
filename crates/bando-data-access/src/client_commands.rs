@@ -51,8 +51,9 @@ pub fn mutate_client_v2(
     }
 
     let transition=if action=="upsert_client"{
-        native_client_mutation::validate_client(&before,client)?;
-        native_client_mutation::upsert(&before,client,"clients")?
+        let canonical=crate::client_names::normalized(client);
+        native_client_mutation::validate_client(&before,&canonical)?;
+        native_client_mutation::upsert(&before,&canonical,"clients")?
     }else{
         let id=client.get("id").and_then(Value::as_str).unwrap_or("");
         let now=chrono::Utc::now().to_rfc3339();

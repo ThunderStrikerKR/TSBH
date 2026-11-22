@@ -144,7 +144,10 @@ fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
     Ok(())
 }
 fn upsert(state: &Value, entity: &Value, collection: &str) -> Result<Value, String> {
-    client_mutation::upsert(state,entity,collection)
+    let canonical=if collection=="clients" {
+        bando_data_access::client_names::normalized(entity)
+    }else{entity.clone()};
+    client_mutation::upsert(state,&canonical,collection)
 }
 /// Original oracle: src/client-workbook.ts::applyClientWorkbook.
 /// The Excel parser and per-row draft remain in TypeScript; the approved
@@ -166,21 +169,22 @@ fn apply_client_workbook(state: &Value, preview: &Value) -> Result<Value, String
         let status = field(row, "status");
         if status != "ADD" && status != "UPDATE" { continue; }
         let Some(client) = row.get("client").filter(|c| !c.is_null()) else { continue };
-        validate_client(&next, client)?;
+        let canonical=bando_data_access::client_names::normalized(client);
+        validate_client(&next, &canonical)?;
         let clients = next.get_mut("clients").and_then(Value::as_array_mut)
             .ok_or("거래처 목록이 없습니다.")?;
-        let id = field(client, "id");
+        let id = field(&canonical, "id");
         if status == "ADD" {
             if clients.iter().any(|c| field(c, "id") == id) {
                 return Err("거래처 ID 충돌입니다.".into());
             }
-            clients.push(client.clone());
+            clients.push(canonical.clone());
             created += 1;
         } else {
             let index = clients.iter().position(|c| field(c, "id") == id
                 && !value_present(c, "deletedAt"))
                 .ok_or("기존 거래처 정보를 확인할 수 없습니다.")?;
-            clients[index] = client.clone();
+            clients[index] = canonical;
             updated += 1;
         }
     }

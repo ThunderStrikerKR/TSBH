@@ -83,7 +83,6 @@ export interface Client {
   active: boolean;
   identifiers: string;
   overrides: Record<string, number>;
-  displayName?: string;
   address?: string;
   phone?: string;
   mobile?: string;

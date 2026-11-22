@@ -292,6 +292,9 @@ fn initialize_database(path: &Path) -> Result<Connection, String> {
     relational_store::migrate(&mut conn)?;
     let data_root = path.parent().ok_or("상품명 변경 백업 경로를 확인할 수 없습니다.")?;
     product_name_enrichment::apply(&mut conn, data_root)?;
+    // One-time, backed-up migration of the obsolete invoice sender override.
+    // It touches only live client rows, never historic order snapshots.
+    bando_data_access::client_names::migrate_v2(&mut conn,data_root)?;
     relational_store::verify(&conn)?;
     Ok(conn)
 }
@@ -531,6 +534,8 @@ fn backup_restore(db: State<'_, Database>, filename: String) -> Result<(), Strin
     // Hold the live DB mutex for the full preflight, safety copy, and restore.
     // Another app command cannot mutate the DB between those operations.
     let mut conn = lock_db(&db)?;
+    // The shared restore service applies legacy-name migration inside its
+    // verified pre-restore backup/rollback boundary, not afterward.
     backup_manager::restore_backup(&mut conn, &db.base, &filename)?;
     Ok(())
 }

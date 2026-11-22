@@ -2,11 +2,31 @@ import type ExcelJS from "exceljs";
 import type { Client, State } from "./types";
 
 export const CLIENT_HEADERS = [
+  "__거래처ID", "거래처명", "주소", "우편번호",
+  "전화번호", "휴대폰", "담당자", "연락처 메모", "가격등급", "결제방식",
+  "운임 청구 제외", "부가세 기본 적용", "거래 상태",
+  "거래처 별칭", "검색 식별자", "주 사용 계좌 ID", "보관 상태",
+] as const;
+// Read-only compatibility for previously exported V1 files. New exports use
+// the 17-column V2 layout, with client.name as the only sender name.
+const LEGACY_CLIENT_HEADERS = [
   "__거래처ID", "거래처명", "송장 표시 상호", "주소", "우편번호",
   "전화번호", "휴대폰", "담당자", "연락처 메모", "가격등급", "결제방식",
   "운임 청구 제외", "부가세 기본 적용", "거래 상태",
   "거래처 별칭", "검색 식별자", "주 사용 계좌 ID", "보관 상태",
 ] as const;
+function migrateLegacyAlias(name: string, legacy: string, tags: string, identifiers: string): string {
+  const compact = (v: string) => v.replace(/\s+/g, "").toLocaleLowerCase();
+  const seen = new Set([name, ...tags.split(","), ...identifiers.split(",")]
+    .map((v) => compact(v.trim())));
+  const extra = legacy.split(",").map((v) => v.trim()).filter((v) => {
+    const key = compact(v);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return [tags.trim(), ...extra].filter(Boolean).join(", ");
+}
 export type ClientRowStatus = "ADD" | "UPDATE" | "UNCHANGED" | "HOLD" | "ERROR";
 export interface ClientWorkbookRow {
   row: number;
@@ -44,7 +64,7 @@ function workbookText(cell: ExcelJS.Cell): string {
   return String(value).trim();
 }
 const rowValues = (client: Client): string[] => [
-  client.id, client.name, client.displayName ?? "", client.address ?? "", client.postcode ?? "",
+  client.id, client.name, client.address ?? "", client.postcode ?? "",
   client.phone ?? "", client.mobile ?? "", client.person ?? "", client.contact,
   tierText[client.tier], paymentText[client.payment],
   client.shippingFeeExcluded ? "예" : "아니오",
@@ -61,9 +81,9 @@ export async function exportClientWorkbook(state: State): Promise<number[]> {
   sheet.addRow([...CLIENT_HEADERS]);
   for (const client of state.clients) sheet.addRow(rowValues(client));
   sheet.views = [{ state: "frozen", ySplit: 1 }];
-  sheet.autoFilter = { from: "A1", to: "R1" };
+  sheet.autoFilter = { from: "A1", to: "Q1" };
   for (const [index, width] of
-    [38, 30, 30, 44, 14, 19, 19, 19, 24, 16, 16, 16, 18, 16, 32, 32, 39, 14].entries()) {
+    [38, 30, 44, 14, 19, 19, 19, 24, 16, 16, 16, 18, 16, 32, 32, 39, 14].entries()) {
     // getColumn retains cells already inserted by addRow; resetting sheet.columns
     // at this point would silently delete all worksheet rows.
     const column = sheet.getColumn(index + 1);
@@ -107,7 +127,7 @@ export async function exportClientWorkbook(state: State): Promise<number[]> {
   }
   exceptions.columns = [{ width: 40 }, { width: 34 }, { width: 42 }, { width: 18 }];
   const meta = workbook.addWorksheet("__반도허브_관리정보");
-  meta.addRow(["종류", "BANDO-HUB-CLIENTS-V1"]);
+  meta.addRow(["종류", "BANDO-HUB-CLIENTS-V2"]);
   meta.addRow(["DB버전", state.revision ?? 0]);
   meta.state = "veryHidden";
   const buffer = await workbook.xlsx.writeBuffer();
@@ -127,12 +147,15 @@ export async function readClientWorkbookRows(state: State, file: File): Promise<
   await workbook.xlsx.load(bytes as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const data = workbook.getWorksheet("거래처 목록");
   const meta = workbook.getWorksheet("__반도허브_관리정보");
-  if (!data || !meta || workbookText(meta.getCell("B1")) !== "BANDO-HUB-CLIENTS-V1") {
+  const version = meta ? workbookText(meta.getCell("B1")) : "";
+  const legacy = version === "BANDO-HUB-CLIENTS-V1";
+  const headers = legacy ? LEGACY_CLIENT_HEADERS : CLIENT_HEADERS;
+  if (!data || !meta || (!legacy && version !== "BANDO-HUB-CLIENTS-V2")) {
     throw Error("반도허브에서 내려받은 거래처 전체 목록 Excel만 업로드할 수 있습니다.");
   }
   const sourceRevision = Number(workbookText(meta.getCell("B2")));
   if (!Number.isSafeInteger(sourceRevision) || sourceRevision < 0) throw Error("원본 DB 버전이 올바르지 않습니다.");
-  for (const [index, header] of CLIENT_HEADERS.entries()) {
+  for (const [index, header] of headers.entries()) {
     if (workbookText(data.getRow(1).getCell(index + 1)) !== header) {
       throw Error("거래처 Excel 열 이름이나 순서가 달라졌습니다: " + header);
     }
@@ -142,14 +165,23 @@ export async function readClientWorkbookRows(state: State, file: File): Promise<
   for (let i = 2; i <= data.rowCount; i++) {
     const values: string[] = [];
     try {
-      for (let col = 1; col <= CLIENT_HEADERS.length; col++) {
+      for (let col = 1; col <= headers.length; col++) {
         const cell = data.getRow(i).getCell(col);
-        if ([1, 5, 6, 7, 17].includes(col) && typeof cell.value === "number") {
-          throw Error(CLIENT_HEADERS[col - 1] + "은 숫자가 아닌 텍스트 형식으로 입력하세요. 앞자리 0이 사라질 수 있습니다.");
+        if ((legacy ? [1, 5, 6, 7, 17] : [1, 4, 5, 6, 16]).includes(col)
+            && typeof cell.value === "number") {
+          throw Error(headers[col - 1] + "은 숫자가 아닌 텍스트 형식으로 입력하세요. 앞자리 0이 사라질 수 있습니다.");
         }
         values.push(workbookText(cell));
       }
-      cells.push({ row: i, cells: values });
+      if (legacy) {
+        const [id, name, displayName, ...rest] = values;
+        const canonical = [id, name, ...rest];
+        canonical[13] = migrateLegacyAlias(name, displayName, canonical[13] ?? "",
+          canonical[14] ?? "");
+        cells.push({ row: i, cells: canonical });
+      } else {
+        cells.push({ row: i, cells: values });
+      }
     } catch (error) {
       // An unsafe row must block the entire import, never get silently skipped.
       throw Error(i + "행: " + String(error instanceof Error ? error.message : error));

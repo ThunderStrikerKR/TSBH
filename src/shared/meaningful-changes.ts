@@ -33,8 +33,10 @@ export function sameFreightEditor(a: ShippingRule, b: ShippingRule): boolean {
 
 export function sameClientEditor(a: Client, b: Client): boolean {
   const visible = (client: Client) => ({
-    ...client,
-    displayName: optionalText(client.displayName),
+    ...Object.fromEntries(Object.entries(client)
+      .filter(([key]) => key !== "displayName")),
+    // Ignore historic JSON snapshots' retired sender override.
+    // The official client name is the only sender name.
     contact: optionalText(client.contact),
     address: optionalText(client.address),
     phone: optionalText(client.phone),

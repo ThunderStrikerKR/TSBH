@@ -5,18 +5,18 @@ use serde_json::{json, Value, Map};
 use std::collections::HashSet;
 const MAX_ROWS:usize=20_000;
 const EMPTY:&str="[비우기]";
-const HEADERS:[&str;18]=[
-"__거래처ID","거래처명","송장 표시 상호","주소","우편번호",
+const HEADERS:[&str;17]=[
+"__거래처ID","거래처명","주소","우편번호",
 "전화번호","휴대폰","담당자","연락처 메모","가격등급","결제방식",
 "운임 청구 제외","부가세 기본 적용","거래 상태","거래처 별칭",
 "검색 식별자","주 사용 계좌 ID","보관 상태"];
-const FIELDS:[(&str,usize);12]=[
-("name",1),("displayName",2),("address",3),("postcode",4),
-("phone",5),("mobile",6),("person",7),("contact",8),
-("shortNames",14),("identifiers",15),("preferredAccountId",16),
-("unused",17)];
-const CHANGED:[&str;17]=[
-"name","displayName","address","postcode","phone","mobile",
+const FIELDS:[(&str,usize);11]=[
+("name",1),("address",2),("postcode",3),
+("phone",4),("mobile",5),("person",6),("contact",7),
+("shortNames",13),("identifiers",14),("preferredAccountId",15),
+("unused",16)];
+const CHANGED:[&str;16]=[
+"name","address","postcode","phone","mobile",
 "person","contact","tier","payment","shippingFeeExcluded",
 "defaultApplyVat","active","shortNames","identifiers","preferredAccountId",
 "unused"];
@@ -29,8 +29,21 @@ fn val_or_empty<'a>(v:&'a Value,k:&str)->Value{
     v.get(k).filter(|x| !x.is_null()).cloned().unwrap_or(json!(""))
 }
 fn is_deleted(v:&Value)->bool {v.get("deletedAt").is_some_and(|x| !x.is_null() && x!=false && x!="")}
-fn cells<'a>(row:&'a Value)->Vec<&'a str>{
-    arr(row,"cells").iter().map(|v|v.as_str().unwrap_or("")).collect()
+fn cells(row:&Value)->Vec<String>{
+    let mut values=arr(row,"cells").iter()
+        .map(|v|v.as_str().unwrap_or("").to_owned()).collect::<Vec<_>>();
+    // Legacy 18-column workbooks may also be handed directly to the native
+    // preview API, without passing through the TypeScript Excel reader.
+    // Convert them to the current 17-column index before any validation.
+    if values.len()==18{
+        let old=bando_data_access::client_names::normalized(&json!({
+            "name":values[1].clone(),"displayName":values[2].clone(),
+            "shortNames":values[14].clone(),"identifiers":values[15].clone()
+        }));
+        values.remove(2);
+        values[13]=old["shortNames"].as_str().unwrap_or("").to_owned();
+    }
+    values
 }
 fn at<'a>(cells:&[&'a str],i:usize)->&'a str{cells.get(i).copied().unwrap_or("")}
 fn flag(raw:&str,before:bool)->Result<bool,String>{
@@ -56,7 +69,7 @@ fn payment(raw:&str,before:&str)->Result<String,String>{
     }
 }
 fn new_client(id:&str)->Value{
-    json!({"id":id,"name":"","displayName":"","address":"","postcode":"",
+    json!({"id":id,"name":"","address":"","postcode":"",
     "phone":"","mobile":"","person":"","contact":"","identifiers":"",
     "shortNames":"","tier":"wholesale","payment":"PREPAID",
     "shippingFeeExcluded":false,"defaultApplyVat":false,
@@ -66,7 +79,7 @@ fn candidate(original:Option<&Value>,cells:&[&str],id:&str)->Result<Value,String
     let is_new=original.is_none();
     let mut next=original.cloned().unwrap_or_else(||new_client(id));
     let map=next.as_object_mut().ok_or("거래처 데이터 형식 오류")?;
-    for (key,index) in FIELDS.iter().take(11){
+    for (key,index) in FIELDS.iter().take(10){
         let raw=at(cells,*index);
         if raw.is_empty() && !is_new {continue}
         let before=map.get(*key).and_then(Value::as_str).unwrap_or("");
@@ -78,23 +91,23 @@ fn candidate(original:Option<&Value>,cells:&[&str],id:&str)->Result<Value,String
         map.insert((*key).into(),json!(value));
     }
     let before_tier=map.get("tier").and_then(Value::as_str).unwrap_or("wholesale");
-    let new_tier=tier(at(cells,9),before_tier)?;
+    let new_tier=tier(at(cells,8),before_tier)?;
     map.insert("tier".into(),json!(new_tier));
     let before_pay=map.get("payment").and_then(Value::as_str).unwrap_or("PREPAID");
-    let new_pay=payment(at(cells,10),before_pay)?;
+    let new_pay=payment(at(cells,9),before_pay)?;
     map.insert("payment".into(),json!(new_pay));
     let old=map.get("shippingFeeExcluded").and_then(Value::as_bool).unwrap_or(false);
-    map.insert("shippingFeeExcluded".into(),json!(flag(at(cells,11),old)?));
-    if !at(cells,12).is_empty() || is_new{
+    map.insert("shippingFeeExcluded".into(),json!(flag(at(cells,10),old)?));
+    if !at(cells,11).is_empty() || is_new{
         let old=map.get("defaultApplyVat").and_then(Value::as_bool).unwrap_or(false);
-        map.insert("defaultApplyVat".into(),json!(flag(at(cells,12),old)?));
+        map.insert("defaultApplyVat".into(),json!(flag(at(cells,11),old)?));
     }
-    if at(cells,13)=="보관"{
+    if at(cells,12)=="보관"{
         return Err("Excel에서 거래처를 삭제하거나 보관 상태로 전환할 수 없습니다.".into())
     }
     let old=map.get("active").and_then(Value::as_bool).unwrap_or(false);
-    map.insert("active".into(),json!(flag(at(cells,13),old)?));
-    let archive=at(cells,17).trim();
+    map.insert("active".into(),json!(flag(at(cells,12),old)?));
+    let archive=at(cells,16).trim();
     let expected=if original.is_some_and(is_deleted){"보관"}else{"사용"};
     if !archive.is_empty() && archive!=expected{
         return Err("보관 상태는 Excel에서 변경할 수 없습니다.".into())
@@ -105,7 +118,7 @@ fn candidate(original:Option<&Value>,cells:&[&str],id:&str)->Result<Value,String
     Ok(next)
 }
 fn changed(before:&Value,after:&Value)->Vec<String>{
-    CHANGED.iter().take(16).filter_map(|key|{
+    CHANGED.iter().take(15).filter_map(|key|{
         let old=val_or_empty(before,key);
         let new=val_or_empty(after,key);
         if old==new{return None}
@@ -150,7 +163,8 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
     let mut rows=vec![];
     let mut seen_new:Vec<Value>=vec![];
     for (idx,entry) in input.iter().enumerate(){
-        let cells=cells(entry);
+        let cell_values=cells(entry);
+        let cells=cell_values.iter().map(String::as_str).collect::<Vec<_>>();
         if cells.iter().all(|v|v.trim().is_empty()){continue}
         let id=at(&cells,0).trim();
         let original=if id.is_empty(){None}else{existing.iter().find(|c|strv(c,"id")==id)};
@@ -241,4 +255,24 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
     let listed=rows.iter().map(|r|strv(r,"id")).collect::<HashSet<_>>();
     let missing=existing.iter().filter(|c|!listed.contains(strv(c,"id"))).count();
     Ok(json!({"revision":revision,"rows":rows,"missing":missing}))
+}
+
+#[cfg(test)]
+mod client_name_excel_compat_tests {
+    use super::*;
+    #[test]
+    fn old_workbook_sender_name_moves_to_alias_column(){
+        let entry=json!({"cells":[
+            "client-01","테스트상사","테스트 납품처 01","서울","12345",
+            "02-123","010-234","담당자","메모","도매","선입금",
+            "아니오","아니오","거래중","기존 태그","내부코드","", "사용"
+        ]});
+        let columns=cells(&entry);
+        assert_eq!(columns.len(),17);
+        assert_eq!(columns[1],"테스트상사");
+        assert_eq!(columns[2],"서울");
+        assert_eq!(columns[13],"기존 태그, 테스트 납품처 01");
+        assert_eq!(columns[14],"내부코드");
+        assert_eq!(columns[16],"사용");
+    }
 }

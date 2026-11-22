@@ -40,7 +40,7 @@ fn new_id()->String {
     format!("egui-client-{}-{stamp}",std::process::id())
 }
 fn empty_client()->Value {
-    json!({"id":new_id(),"name":"","displayName":"","shortNames":"",
+    json!({"id":new_id(),"name":"","shortNames":"",
         "identifiers":"","address":"","phone":"","mobile":"",
         "tier":"wholesale","payment":"PREPAID",
         "preferredAccountId":null,"shippingFeeExcluded":false,
@@ -549,8 +549,9 @@ impl ClientManager {
                                 row.set_clip_rect(rows_clip);
                                 if let Some(client)=rows.get(index){
                                     let name=field(client,"name");
-                                    let display=field(client,"displayName");
-                                    let description=if display!=name {display}else{""};
+                                    // Internal aliases are searchable, not a
+                                    // second invoice sender name or table label.
+                                    let description="";
                                     let address=field(client,"address");
                                     let contacts=[
                                         field(client,"phone"),field(client,"mobile")
@@ -627,10 +628,7 @@ impl ClientManager {
     }
     fn editor_fields(&mut self,ui:&mut Ui,draft:&mut Value) {
         ui.label(typography::section_heading("거래처 식별"));
-        ui.columns(2,|cols|{
-            label_edit(&mut cols[0],draft,"name","거래처명");
-            label_edit(&mut cols[1],draft,"displayName","송장 표시 상호");
-        });
+        label_edit(ui,draft,"name","거래처명");
         ui.vertical(|ui|{
             ui.label(typography::field_label("검색 태그"));
             let mut tags=[

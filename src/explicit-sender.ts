@@ -18,7 +18,6 @@ export function explicitSender(raw: string, base: Client): Client | undefined {
   return {
     ...base,
     name,
-    displayName: name,
     address,
     phone: phone ? phone[0] : "",
     mobile: "",

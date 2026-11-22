@@ -209,7 +209,7 @@ export function clientCandidates(text: string, clients: Client[]) {
   return clients.filter(
     (c) =>
       !c.deletedAt &&
-      [c.name, c.displayName, c.phone, c.mobile, c.address, c.shortNames, c.identifiers].some(
+      [c.name, c.phone, c.mobile, c.address, c.shortNames, c.identifiers].some(
         (v) => v && v.toLowerCase().replace(/\s/g, "").includes(query),
       ),
   );
@@ -218,7 +218,8 @@ export function suggestClient(raw: string, clients: Client[]) {
   return clients.filter(
     (c) =>
       !c.deletedAt &&
-      [c.name, c.displayName ?? ""].some((n) => n.trim().length >= 2 && raw.includes(n.trim())),
+      [c.name, ...(c.shortNames ?? "").split(","), ...(c.identifiers ?? "").split(",")]
+          .some((n) => n.trim().length >= 2 && raw.includes(n.trim())),
   );
 }
 export function recommendAccount(o: Order, s: Settings, products: Product[] = [], client?: Client) {

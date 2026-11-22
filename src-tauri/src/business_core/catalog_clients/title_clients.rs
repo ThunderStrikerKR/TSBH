@@ -46,7 +46,7 @@ fn remembered(state:&Value,windows:&Value)->Option<String> {
 // the school placed the order. Only explicitly marked sender/dealer fields
 // qualify for automatic identification from raw text.
 fn client_terms(client:&Value)->Vec<String>{
-    ["name","displayName","shortNames","identifiers"].iter()
+    ["name","shortNames","identifiers"].iter()
         .flat_map(|field| s(client,field).split(|ch| matches!(ch, ',' | ';' | '|' | '\n')))
         .map(str::trim).filter(|term|term.chars().count()>=2)
         .map(key).collect()
@@ -203,7 +203,7 @@ fn reception_candidates(payload:&Value)->Result<Value,String>{
         if !(title_hit||explicit_hit) || !seen.insert(id.to_owned()){continue;}
         candidates.push(json!({
             "clientId":id,
-            "name":if s(c,"name").is_empty(){s(c,"displayName")}else{s(c,"name")}
+            "name":s(c,"name")
         }));
         if candidates.len()>=8{break;}
     }
