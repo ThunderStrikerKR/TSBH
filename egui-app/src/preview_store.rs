@@ -936,7 +936,7 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
                price.get("linePrices").and_then(Value::as_array).is_none() {
                 return Err("Rust 주문 가격 근거가 원문 또는 거래처와 일치하지 않습니다.".into());
             }
-            if let Some(basis)=price.get("pricingBasis"){
+            if let Some(basis)=price.get("pricingBasis").filter(|value|!value.is_null()){
                 if !basis.is_object() || basis.get("schema")!=Some(&json!(1)){
                     return Err("거래처·상품·운임 계산 기준 스냅샷이 올바르지 않습니다.".into());
                 }
