@@ -857,7 +857,7 @@ impl CategoryManager {
                         save=theme::action(actions,"저장하고 이동",
                             theme::ButtonRole::Primary,editable&&!busy).clicked();
                         discard=theme::action(actions,"저장 안 함",
-                            theme::ButtonRole::Standard,!busy).clicked();
+                            theme::ButtonRole::Danger,!busy).clicked();
                     }
                 );
             });
