@@ -15,13 +15,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-358-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -822,13 +822,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-333-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -904,13 +904,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-327-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -946,13 +946,13 @@
         "48"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-312-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -987,13 +987,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-300-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1029,13 +1029,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-287-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1071,13 +1071,13 @@
         "50"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-277-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1112,13 +1112,13 @@
         "71"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-272-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1153,13 +1153,13 @@
         "71"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-271-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1194,13 +1194,13 @@
         "71"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-270-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1236,13 +1236,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-266-P00000KF000B",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "크롬",
           "siteOptionId": "P00000KF000B",
           "wholesale": null,
@@ -1374,13 +1374,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-259-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1415,13 +1415,13 @@
         "70"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-241-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1457,13 +1457,13 @@
         "70"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-240-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1500,13 +1500,13 @@
         "71"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-239-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1584,13 +1584,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "다크 그린",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-237-P00000JC000H",
-          "color": "색상 미표기",
+          "color": "다크 그린",
           "option": "다크 그린",
           "siteOptionId": "P00000JC000H",
           "wholesale": null,
@@ -1632,13 +1632,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "와인",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-237-P00000JC000I",
-          "color": "색상 미표기",
+          "color": "와인",
           "option": "와인",
           "siteOptionId": "P00000JC000I",
           "wholesale": null,
@@ -1725,13 +1725,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-84-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1766,13 +1766,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-83-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1805,13 +1805,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-82-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1844,13 +1844,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-81-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1883,13 +1883,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-80-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1922,13 +1922,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": false,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-78-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -1962,13 +1962,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": false,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-77-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -2004,13 +2004,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-76-P00000CX000B",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "Chrome",
           "siteOptionId": "P00000CX000B",
           "wholesale": null,
@@ -2100,13 +2100,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-75-P00000CW000C",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "25cm 크롬",
           "siteOptionId": "P00000CW000C",
           "wholesale": null,
@@ -2151,13 +2151,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-75-P00000CW000D",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "35cm크롬",
           "siteOptionId": "P00000CW000D",
           "wholesale": null,
@@ -2202,13 +2202,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-75-P00000CW000E",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "43cm 크롬",
           "siteOptionId": "P00000CW000E",
           "wholesale": null,
@@ -2253,13 +2253,13 @@
         "53"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-75-P00000CW000F",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "60cm 크롬",
           "siteOptionId": "P00000CW000F",
           "wholesale": null,
@@ -2457,13 +2457,13 @@
         "71"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-74-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -2498,13 +2498,13 @@
         "71"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-73-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -2539,13 +2539,13 @@
         "71"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-72-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -2580,13 +2580,13 @@
         "71"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-71-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -2867,13 +2867,13 @@
         "52"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-63-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -2909,13 +2909,13 @@
         "51"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-62-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -2950,13 +2950,13 @@
         "51"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-61-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -2991,13 +2991,13 @@
         "51"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-60-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -3032,13 +3032,13 @@
         "51"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-59-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -3073,13 +3073,13 @@
         "50"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-58-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -3114,13 +3114,13 @@
         "50"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-57-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -3155,13 +3155,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-56-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -3196,13 +3196,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-55-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -3237,13 +3237,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-54-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -3511,13 +3511,13 @@
         "70"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-45-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4168,13 +4168,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-29-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4209,13 +4209,13 @@
         "48"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-28-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4250,13 +4250,13 @@
         "48"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-27-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4291,13 +4291,13 @@
         "48"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-25-P000000Y000F",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "707(타공 상판)",
           "siteOptionId": "P000000Y000F",
           "wholesale": null,
@@ -4339,13 +4339,13 @@
         "48"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-25-P000000Y000G",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "707-1(무타공 상판)",
           "siteOptionId": "P000000Y000G",
           "wholesale": null,
@@ -4387,13 +4387,13 @@
         "48"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-23-P000000W000F",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "705(타공 상판)",
           "siteOptionId": "P000000W000F",
           "wholesale": null,
@@ -4435,13 +4435,13 @@
         "48"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-23-P000000W000G",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "705-1(무타공 상판)",
           "siteOptionId": "P000000W000G",
           "wholesale": null,
@@ -4483,13 +4483,13 @@
         "48"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-22-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4524,13 +4524,13 @@
         "48"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-21-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4565,13 +4565,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-20-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4606,13 +4606,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-19-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4647,13 +4647,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-18-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4688,13 +4688,13 @@
         "49"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-17-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4811,13 +4811,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-87-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4852,13 +4852,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-88-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4893,13 +4893,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-89-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -4975,13 +4975,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "품절",
       "variants": [
         {
           "id": "bando-91-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -5057,13 +5057,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-93-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -5098,13 +5098,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-94-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -5180,13 +5180,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-96-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -5221,13 +5221,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-97-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -5262,13 +5262,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-98-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -5304,13 +5304,13 @@
         "61"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-339-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -5345,13 +5345,13 @@
         "64"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "품절",
       "variants": [
         {
           "id": "bando-141-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -5387,13 +5387,13 @@
         "63"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-140-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -5428,13 +5428,13 @@
         "63"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-139-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -5469,13 +5469,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-138-P00000FH000F",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "37 x 29cm-37 x 29cm",
           "siteOptionId": "P00000FH000F",
           "wholesale": null,
@@ -5517,13 +5517,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-138-P00000FH000G",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "37 x 29cm-42 x 34cm",
           "siteOptionId": "P00000FH000G",
           "wholesale": null,
@@ -5565,13 +5565,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-138-P00000FH000H",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "42 x 34cm-37 x 29cm",
           "siteOptionId": "P00000FH000H",
           "wholesale": null,
@@ -5613,13 +5613,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-138-P00000FH000I",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "42 x 34cm-42 x 34cm",
           "siteOptionId": "P00000FH000I",
           "wholesale": null,
@@ -5661,13 +5661,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-137-P00000FG000F",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "37x29cm",
           "siteOptionId": "P00000FG000F",
           "wholesale": null,
@@ -5709,13 +5709,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-137-P00000FG000G",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "42x34cm(추가금)",
           "siteOptionId": "P00000FG000G",
           "wholesale": null,
@@ -5757,13 +5757,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-136-P00000FF000F",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "바퀴 미포함",
           "siteOptionId": "P00000FF000F",
           "wholesale": null,
@@ -5805,13 +5805,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-136-P00000FF000G",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "바퀴 포함",
           "siteOptionId": "P00000FF000G",
           "wholesale": null,
@@ -5853,13 +5853,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-135-P00000FE000F",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "바퀴 미포함",
           "siteOptionId": "P00000FE000F",
           "wholesale": null,
@@ -5901,13 +5901,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-135-P00000FE000G",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "바퀴 포함",
           "siteOptionId": "P00000FE000G",
           "wholesale": null,
@@ -5949,13 +5949,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-134-P00000FD000L",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "바퀴 미포함",
           "siteOptionId": "P00000FD000L",
           "wholesale": null,
@@ -5997,13 +5997,13 @@
         "62"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-134-P00000FD000M",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "바퀴 포함",
           "siteOptionId": "P00000FD000M",
           "wholesale": null,
@@ -6045,13 +6045,13 @@
         "61"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-133-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6086,13 +6086,13 @@
         "61"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-132-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6127,13 +6127,13 @@
         "61"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-131-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6168,13 +6168,13 @@
         "61"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-130-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6209,13 +6209,13 @@
         "61"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-129-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6250,13 +6250,13 @@
         "61"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-128-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6291,13 +6291,13 @@
         "61"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-127-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6428,13 +6428,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-296-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6469,13 +6469,13 @@
         "80"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-292-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6511,13 +6511,13 @@
         "80"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-291-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6553,13 +6553,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-295-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6594,13 +6594,13 @@
         "79"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-150-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6636,13 +6636,13 @@
         "80"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-161-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6678,13 +6678,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-169-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6719,13 +6719,13 @@
         "80"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-289-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6761,13 +6761,13 @@
         "79"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-148-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6803,13 +6803,13 @@
         "80"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-160-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6845,13 +6845,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-144-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6888,13 +6888,13 @@
         "79"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-145-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6930,13 +6930,13 @@
         "80"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-159-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -6972,13 +6972,13 @@
         "79"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-143-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7014,13 +7014,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-147-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7055,13 +7055,13 @@
         "80"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-149-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7097,13 +7097,13 @@
         "80"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-142-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7139,13 +7139,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-146-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7180,13 +7180,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-168-P00000GL000F",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "평평한 벽용",
           "siteOptionId": "P00000GL000F",
           "wholesale": null,
@@ -7228,13 +7228,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-168-P00000GL000G",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "스페이스 벽용",
           "siteOptionId": "P00000GL000G",
           "wholesale": null,
@@ -7276,13 +7276,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-167-P00000GK000K",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "평평한벽",
           "siteOptionId": "P00000GK000K",
           "wholesale": null,
@@ -7324,13 +7324,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-167-P00000GK000L",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "스페이스벽",
           "siteOptionId": "P00000GK000L",
           "wholesale": null,
@@ -7372,13 +7372,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-166-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7414,13 +7414,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-165-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7456,13 +7456,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-164-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7498,13 +7498,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-163-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7540,13 +7540,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-162-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7582,13 +7582,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-158-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7623,13 +7623,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-157-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7664,13 +7664,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-156-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7705,13 +7705,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-155-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7746,13 +7746,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "품절",
       "variants": [
         {
           "id": "bando-154-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7787,13 +7787,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-153-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7828,13 +7828,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-152-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7869,13 +7869,13 @@
         "78"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "품절",
       "variants": [
         {
           "id": "bando-151-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7908,13 +7908,13 @@
         "66"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-178-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7949,13 +7949,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-192-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -7988,13 +7988,13 @@
         "66"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-177-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8029,13 +8029,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-191-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8068,13 +8068,13 @@
         "66"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-175-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8110,13 +8110,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-236-P00000JB000H",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "상판 37 x 29 (cm)",
           "siteOptionId": "P00000JB000H",
           "wholesale": null,
@@ -8159,13 +8159,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-236-P00000JB000I",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "상판 42 x 34 (cm)",
           "siteOptionId": "P00000JB000I",
           "wholesale": null,
@@ -8205,13 +8205,13 @@
         "66"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-176-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8247,13 +8247,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-189-P00000HG000K",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "상판 37 x 29 (cm)",
           "siteOptionId": "P00000HG000K",
           "wholesale": null,
@@ -8296,13 +8296,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-189-P00000HG000L",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "상판 42 x 34 (cm)",
           "siteOptionId": "P00000HG000L",
           "wholesale": null,
@@ -8342,13 +8342,13 @@
         "66"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-174-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8385,13 +8385,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-183-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8424,13 +8424,13 @@
         "66"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-173-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8463,13 +8463,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "품절",
       "variants": [
         {
           "id": "bando-193-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8502,13 +8502,13 @@
         "66"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-172-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8543,13 +8543,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-190-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8585,13 +8585,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-273-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8627,13 +8627,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-182-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8669,13 +8669,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-181-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8710,13 +8710,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "품절",
       "variants": [
         {
           "id": "bando-180-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8751,13 +8751,13 @@
         "65"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-179-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8793,13 +8793,13 @@
         "67"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-184-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8833,13 +8833,13 @@
         "67"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-185-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8872,13 +8872,13 @@
         "67"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-187-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8911,13 +8911,13 @@
         "67"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-188-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8950,13 +8950,13 @@
         "67"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-276-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -8991,13 +8991,13 @@
         "67"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-315-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -9032,13 +9032,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-356-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -9073,13 +9073,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-355-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -9114,13 +9114,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-332-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -9154,13 +9154,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-307-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -9192,13 +9192,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-274-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -9232,13 +9232,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "품절",
       "variants": [
         {
           "id": "bando-213-P00000IE000W",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "A타입 상판 35*26",
           "siteOptionId": "P00000IE000W",
           "wholesale": null,
@@ -9279,13 +9279,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "품절",
       "variants": [
         {
           "id": "bando-213-P00000IE000X",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "B타입 상판 35*30",
           "siteOptionId": "P00000IE000X",
           "wholesale": null,
@@ -9326,13 +9326,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "품절",
       "variants": [
         {
           "id": "bando-210-P00000IB000Q",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "A타입 상판 35*26",
           "siteOptionId": "P00000IB000Q",
           "wholesale": null,
@@ -9373,13 +9373,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "품절",
       "variants": [
         {
           "id": "bando-210-P00000IB000R",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "B타입 상판 35*30",
           "siteOptionId": "P00000IB000R",
           "wholesale": null,
@@ -9420,13 +9420,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-209-P00000IA000M",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "A타입 상판 41*30",
           "siteOptionId": "P00000IA000M",
           "wholesale": null,
@@ -9467,13 +9467,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-209-P00000IA000N",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "B타입 상판 41*33",
           "siteOptionId": "P00000IA000N",
           "wholesale": null,
@@ -9514,13 +9514,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-212-P00000ID000K",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "A타입 상판 41*30",
           "siteOptionId": "P00000ID000K",
           "wholesale": null,
@@ -9561,13 +9561,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-212-P00000ID000L",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "B타입 상판 41*33",
           "siteOptionId": "P00000ID000L",
           "wholesale": null,
@@ -9608,13 +9608,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-208-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -9648,13 +9648,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-207-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -9688,13 +9688,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-205-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -9729,13 +9729,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-204-P00000HV000X",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "타입A(펜거치대)",
           "siteOptionId": "P00000HV000X",
           "wholesale": null,
@@ -9776,13 +9776,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-204-P00000HV000Y",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "타입B",
           "siteOptionId": "P00000HV000Y",
           "wholesale": null,
@@ -9826,13 +9826,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-203-P00000HU000L",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "A타입(펜거치대)",
           "siteOptionId": "P00000HU000L",
           "wholesale": null,
@@ -9873,13 +9873,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-203-P00000HU000M",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "B타입",
           "siteOptionId": "P00000HU000M",
           "wholesale": null,
@@ -9923,13 +9923,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-202-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -9964,13 +9964,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-201-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10005,13 +10005,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-200-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10045,13 +10045,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-199-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10083,13 +10083,13 @@
         "42"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-206-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10124,13 +10124,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-217-P00000II000C",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "25cm 크롬",
           "siteOptionId": "P00000II000C",
           "wholesale": null,
@@ -10175,13 +10175,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-217-P00000II000D",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "35cm 크롬",
           "siteOptionId": "P00000II000D",
           "wholesale": null,
@@ -10226,13 +10226,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-217-P00000II000E",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "43cm 크롬",
           "siteOptionId": "P00000II000E",
           "wholesale": null,
@@ -10277,13 +10277,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-217-P00000II000F",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "60cm 크롬",
           "siteOptionId": "P00000II000F",
           "wholesale": null,
@@ -10480,13 +10480,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-316-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10520,13 +10520,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-313-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10561,13 +10561,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-308-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10600,13 +10600,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-302-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10639,13 +10639,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-301-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10680,13 +10680,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-297-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10720,13 +10720,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-229-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10760,13 +10760,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-228-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10800,13 +10800,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-234-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10840,13 +10840,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-233-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10880,13 +10880,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-232-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10920,13 +10920,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-221-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -10960,13 +10960,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-220-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11000,13 +11000,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-219-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11040,13 +11040,13 @@
         "43"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-218-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11160,13 +11160,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-340-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11200,13 +11200,13 @@
         "56"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-294-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11240,13 +11240,13 @@
         "57"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-341-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11280,13 +11280,13 @@
         "57"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-338-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11321,13 +11321,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-331-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11362,13 +11362,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-330-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11403,13 +11403,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-311-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11486,13 +11486,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-290-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11527,13 +11527,13 @@
         "57"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-106-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11568,13 +11568,13 @@
         "57"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-109-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11770,13 +11770,13 @@
         "57"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-111-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11850,13 +11850,13 @@
         "57"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-107-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11890,13 +11890,13 @@
         "57"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-105-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -11931,13 +11931,13 @@
         "57"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-104-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12136,13 +12136,13 @@
         "57"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-101-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12175,13 +12175,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-364-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12215,13 +12215,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-363-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12255,13 +12255,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-337-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12296,13 +12296,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-334-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12337,13 +12337,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-326-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12377,13 +12377,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-325-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12417,13 +12417,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-324-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12458,13 +12458,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-323-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12499,13 +12499,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-322-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12540,13 +12540,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-321-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12581,13 +12581,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-320-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12622,13 +12622,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-319-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12704,13 +12704,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-285-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12744,13 +12744,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-284-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12948,13 +12948,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-252-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -12989,13 +12989,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-251-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -13030,13 +13030,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-250-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -13071,13 +13071,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-249-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -13112,13 +13112,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-248-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -13153,13 +13153,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-247-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -13276,13 +13276,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-244-P00000JJ000B",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "크롬 25cm 2개",
           "siteOptionId": "P00000JJ000B",
           "wholesale": null,
@@ -13323,13 +13323,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-244-P00000JJ000C",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "크롬 35cm 2개",
           "siteOptionId": "P00000JJ000C",
           "wholesale": null,
@@ -13417,13 +13417,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-244-P00000JJ000E",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "크롬 43cm 2개",
           "siteOptionId": "P00000JJ000E",
           "wholesale": null,
@@ -13511,13 +13511,13 @@
         "58"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "Chrome",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-244-P00000JJ000G",
-          "color": "색상 미표기",
+          "color": "Chrome",
           "option": "크롬 60cm 2개",
           "siteOptionId": "P00000JJ000G",
           "wholesale": null,
@@ -13765,13 +13765,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-365-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -13804,13 +13804,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-361-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -13842,13 +13842,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-360-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -13880,13 +13880,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-359-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -13920,13 +13920,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-336-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -13961,13 +13961,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-335-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14001,13 +14001,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-329-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14041,13 +14041,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-306-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14082,13 +14082,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-304-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14121,13 +14121,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-298-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14161,13 +14161,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-286-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14201,13 +14201,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-114-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14242,13 +14242,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-123-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14281,13 +14281,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-280-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14319,13 +14319,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-282-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14359,13 +14359,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-258-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14399,13 +14399,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-257-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14440,13 +14440,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-122-P00000ER000C",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "1번 15mm",
           "siteOptionId": "P00000ER000C",
           "wholesale": null,
@@ -14487,13 +14487,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-122-P00000ER000D",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "2번 18mm",
           "siteOptionId": "P00000ER000D",
           "wholesale": null,
@@ -14534,13 +14534,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-122-P00000ER000E",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "3번 23mm",
           "siteOptionId": "P00000ER000E",
           "wholesale": null,
@@ -14581,13 +14581,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-122-P00000ER000F",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "4번 25.5mm",
           "siteOptionId": "P00000ER000F",
           "wholesale": null,
@@ -14626,13 +14626,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-243-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14664,13 +14664,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-279-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14702,13 +14702,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-288-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14740,13 +14740,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-126-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14820,13 +14820,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-275-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14900,13 +14900,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-121-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14940,13 +14940,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-120-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -14980,13 +14980,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-119-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -15180,13 +15180,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-116-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -15220,13 +15220,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-118-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -15260,13 +15260,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-115-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
@@ -15300,13 +15300,13 @@
         "60"
       ],
       "origin": "FACTORY",
-      "defaultColor": "색상 미표기",
+      "defaultColor": "단일",
       "active": true,
       "saleStatus": "판매 표시",
       "variants": [
         {
           "id": "bando-117-single",
-          "color": "색상 미표기",
+          "color": "단일",
           "option": "",
           "wholesale": null,
           "semi": null,
