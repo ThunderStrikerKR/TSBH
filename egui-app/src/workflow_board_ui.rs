@@ -1309,9 +1309,14 @@ mod pending_hover_navigation_tests{
         ));
         board.update_pending_order_hover(Some(other.clone()),Some(&committed),&ctx);
         assert_eq!(board.pending_preview(),Some(&other));
-        // Returning to the selected row must NOT short-circuit as a click.
+        // Returning to the selected row immediately clears Pyo's stale
+        // preview, but waits the ordinary 250ms before highlighting Kim.
         board.update_pending_order_hover(Some(committed.clone()),Some(&committed),&ctx);
-        assert_eq!(board.pending_preview(),Some(&other));
+        assert!(board.pending_preview().is_none());
+        assert_eq!(
+            board.pending_order_hover.as_ref().map(|(target,_)|target),
+            Some(&committed)
+        );
         board.pending_order_hover=Some((
             committed.clone(),Instant::now()-PENDING_ORDER_HOVER_ENTER
         ));
