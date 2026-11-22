@@ -300,6 +300,47 @@ pub(super) fn recommend(order: &Value, state: &Value) -> Result<Value, String> {
 }
 
 
+
+/// Quote an UNCONFIRMED edited reception without modifying tariff masters.
+/// Existing shipping::recommend remains the sole product/group rate engine.
+/// An explicitly typed base charge takes precedence only for that recipient
+/// and origin, and the native remote-delivery multiplier applies exactly once.
+pub(super) fn reception_recommend(order:&Value,state:&Value)->Result<Value,String>{
+    let mut quote=recommend(order,state)?;
+    let bundles=quote["bundles"].as_array_mut().ok_or("배송 운임 목록 오류")?;
+    let mut billed=Vec::new();
+    for bundle in bundles {
+        let recipient_id=str_field(bundle,"recipientId");
+        let origin=str_field(bundle,"origin").to_owned();
+        let recipient=rows(field(order,"recipients")).iter().find(|r|
+            str_field(r,"id")==recipient_id
+        ).ok_or("계산할 수취인을 찾을 수 없습니다.")?;
+        let override_value=field(field(recipient,"shippingCharges"),&origin);
+        let from_staff=override_value.as_i64().is_some();
+        let applied=if from_staff{
+            super::remote_delivery::multiply(safe(override_value),recipient)
+        }else{safe(field(bundle,"recommendation"))};
+        if from_staff && applied.is_none(){
+            return Err("도서/산간 적용 운임이 안전한 정수 범위를 초과했습니다.".into());
+        }
+        bundle["appliedCharge"]=json!(applied);
+        bundle["source"]=json!(if from_staff{"MANUAL"}else{
+            str_field(bundle,"source")
+        });
+        let cod=str_field(recipient,"freightCode")=="020";
+        bundle["freightCode"]=json!(if cod{"020"}else{"010"});
+        let billable=if cod{Some(0)}else{applied};
+        bundle["billableCharge"]=json!(billable);
+        billed.push(billable);
+    }
+    let total=if billed.is_empty(){None}else{
+        billed.into_iter().collect::<Option<Vec<_>>>()
+            .and_then(checked_sum)
+    };
+    quote["total"]=json!(total);
+    Ok(quote)
+}
+
 /// State-changing tariff operations corresponding to src/shipping.ts. IDs and
 /// timestamps are supplied by the caller instead of reading process globals.
 pub(super) fn shipping_action(payload: &Value) -> Result<Value, String> {
@@ -815,6 +856,27 @@ pub(super) fn shipping_action(payload: &Value) -> Result<Value, String> {
 #[cfg(test)]
 mod p1_product_freight_tests {
     use super::*;
+    #[test]
+    fn reception_manual_freight_replaces_tariff_without_double_adding_remote(){
+        let state=json!({"products":[]});
+        let order=json!({"recipients":[{"id":"r","name":"검증","address":"제주특별자치도 제주시 연동 1",
+            "dispatchOrigin":"FACTORY","freightCode":"010",
+            "shippingCharges":{"FACTORY":3000},
+            "remoteDelivery":{"address":"제주특별자치도 제주시 연동 1",
+                "checked":true,"manual":true},
+            "items":[{"id":"i","productId":"p","variantId":"v","quantity":2,
+                "origin":"FACTORY"}]}]});
+        let quote=reception_recommend(&order,&state).unwrap();
+        assert_eq!(quote["bundles"][0]["appliedCharge"],6000);
+        assert_eq!(quote["bundles"][0]["billableCharge"],6000);
+        assert_eq!(quote["total"],6000);
+        let mut cod=order.clone();
+        cod["recipients"][0]["freightCode"]=json!("020");
+        let cod_quote=reception_recommend(&cod,&state).unwrap();
+        assert_eq!(cod_quote["bundles"][0]["appliedCharge"],6000);
+        assert_eq!(cod_quote["bundles"][0]["billableCharge"],0);
+        assert_eq!(cod_quote["total"],0);
+    }
     #[test]
     fn legacy_packable_false_cannot_block_a_current_confirmed_two_item_rate(){
         // Nov 10 shipping contract: maxBundle + registered fee is sufficient.
