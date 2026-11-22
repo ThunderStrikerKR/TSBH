@@ -1783,9 +1783,27 @@ impl ProductManager {
                     }
                 );
                 request_close=closed;
-                // The geometry is based on this frame's allocated egui Rects,
-                // and is consumed by the headless integration tests.
-                let _measured_geometry=geometry;
+                // Capture actual egui allocation geometry each frame.
+                // The common audit is also exercised with a headless Context.
+                #[cfg(debug_assertions)]
+                {
+                    let mismatches=geometry.invalid_gaps(
+                        1.0/modal.ctx().pixels_per_point().max(1.0)
+                    );
+                    if !mismatches.is_empty(){
+                        // Store the latest diagnostic in egui temporary data
+                        // instead of spamming a production log every frame.
+                        modal.ctx().data_mut(|data|{
+                            data.insert_temp(
+                                egui::Id::new("product-detail-modal-layout-audit"),
+                                mismatches.iter().map(|(label,actual)|
+                                    format!("{label}: {actual:.1}pt")).collect::<Vec<_>>()
+                            );
+                        });
+                    }
+                }
+                #[cfg(not(debug_assertions))]
+                let _=geometry;
             });
         self.selected=Some(draft.clone());
         self.detail_prices=prices;
@@ -1874,9 +1892,11 @@ mod tests {
         let source=include_str!("product_manager.rs");
         let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
             .split("        self.selected=Some(draft.clone());").next().unwrap();
-        assert!(composition.contains("modal_master_controlled_spacing(modal)"));
-        assert!(composition.contains("modal_header_with_workspace_gap("));
-        assert!(composition.contains("modal_master_controlled_spacing(body)"));
+        assert!(!composition.contains("modal_header_with_workspace_gap("));
+        assert!(composition.contains("components::modal_editor_workspace("));
+        assert!(composition.contains("workspace.body("));
+        assert!(composition.contains("workspace.footer("));
+        assert!(composition.contains("ModalEditorBodyGeometry::default()"));
         assert!(composition.contains("modal_master_spaced_divider(body)"));
         assert!(composition.contains("top.spacing_mut().item_spacing.x="));
         assert!(!composition.contains("top.add_space(theme::SPACE_16)"));
@@ -1940,7 +1960,7 @@ mod tests {
             .split("        self.selected=Some(draft.clone());").next().unwrap();
         for heading in ["상품 개요","판매 · 가격","상품 이미지"]{
             assert!(composition.contains(&format!(
-                "components::modal_section("
+                "components::modal_section_measured("
             )) && composition.contains(heading));
         }
     }
