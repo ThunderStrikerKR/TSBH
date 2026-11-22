@@ -3661,6 +3661,14 @@ fn reception_cod_dropdown(
     (editable && selected!=collect.unwrap_or(false),response)
 }
 
+// Combined intrinsic controls need more width than the fixed 392pt
+// product table. Above this threshold they remain in one horizontal
+// line; below it the right-hand actions get their own full-width row.
+const RECEPTION_FREIGHT_INLINE_MIN_WIDTH:f32=560.0;
+fn freight_actions_need_second_row(available_width:f32)->bool{
+    available_width<RECEPTION_FREIGHT_INLINE_MIN_WIDTH
+}
+
 pub fn reception_freight_row_editable(
     ui:&mut Ui,label:&str,amount:Option<i64>,collect:Option<bool>,
     remote:Option<bool>,inquiry_visible:bool,editable:bool
@@ -3673,9 +3681,13 @@ pub fn reception_freight_row_editable(
     let mut amount_text=amount
         .map(|value|display_won(value).trim_end_matches('원').to_owned())
         .unwrap_or_else(||"—".to_owned());
-    // Use the same predictable 36pt row for both ordinary and active cells.
-    // The parent already provides horizontal scrolling for narrow viewports.
-    ui.horizontal(|line| {
+    // The item grid has a 392pt minimum horizontal scroll extent, but
+    // freight has a larger combined intrinsic control width. Never put the
+    // left-to-right price/COD group and the right-to-left actions in the
+    // same egui horizontal row unless BOTH groups physically fit.
+    // Keep the 36pt control geometry; only the row placement responds.
+    let stack_actions=freight_actions_need_second_row(ui.available_width());
+    let mut draw_price_and_cod=|line:&mut Ui|{
         line.spacing_mut().item_spacing=Vec2::new(theme::SPACE_4,theme::SPACE_4);
         line.allocate_ui_with_layout(
             Vec2::new(168.0,theme::INPUT_HEIGHT),
@@ -3727,6 +3739,9 @@ pub fn reception_freight_row_editable(
         // saves. Keep the SAME common dropdown instead of flashing "(선불)".
         let (changed,_response)=reception_cod_dropdown(line,collect,editable);
         collect_clicked=changed;
+    };
+    let mut draw_remote_and_inquiry=|line:&mut Ui|{
+        line.spacing_mut().item_spacing.x=theme::SPACE_4;
         // Right edge matches React: disabled inquiry is the rightmost
         // action and the 도서/산간 checkbox is immediately to its left.
         line.with_layout(Layout::right_to_left(Align::Center),|right|{
@@ -3738,8 +3753,19 @@ pub fn reception_freight_row_editable(
             ).changed(){
                 remote_clicked=true;
             }
+        });    };
+    if stack_actions {
+        ui.vertical(|column|{
+            column.spacing_mut().item_spacing.y=theme::SPACE_8;
+            column.horizontal(|line|draw_price_and_cod(line));
+            column.horizontal(|line|draw_remote_and_inquiry(line));
         });
-    });
+    }else{
+        ui.horizontal(|line|{
+            draw_price_and_cod(line);
+            draw_remote_and_inquiry(line);
+        });
+    }
     ReceptionFreightEdit {
         amount_rect,amount_clicked:clicked,amount_click_pos,
         remote_clicked,collect_clicked
@@ -3748,6 +3774,19 @@ pub fn reception_freight_row_editable(
 #[cfg(test)]
 mod reception_cod_selector_tests {
     use super::*;
+
+    #[test]
+    fn narrow_freight_stacks_controls_instead_of_overlapping_right_to_left(){
+        // The item table stays 392pt wide and scrolls horizontally below
+        // this; the unrelated freight controls must never overlap it.
+        assert!(freight_actions_need_second_row(
+            theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH
+        ));
+        assert!(freight_actions_need_second_row(480.0));
+        assert!(freight_actions_need_second_row(559.0));
+        assert!(!freight_actions_need_second_row(560.0));
+        assert!(!freight_actions_need_second_row(720.0));
+    }
 
     #[test]
     fn selector_geometry_remains_identical_while_native_edit_is_pending(){
