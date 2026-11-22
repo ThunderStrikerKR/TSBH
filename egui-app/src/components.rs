@@ -2369,6 +2369,39 @@ fn paint_client_line(
     );
 }
 
+/// Shared management-table column separators. Freight Assignment and
+/// Client Management both call this painter for header and body instead
+/// of leaving vertical rules to independently implemented screen widgets.
+///
+/// The caller supplies DATA coordinates, not window coordinates. `region`
+/// clips the header before its scrollbar gutter and keeps body rules inside
+/// each virtualized row. Header bottom 2pt outline remains owned by the
+/// existing `management_master_header_finish` function.
+pub fn management_master_column_rules(
+    ui:&Ui,region:Rect,boundaries:&[f32]
+){
+    let clip=region.intersect(ui.clip_rect());
+    if clip.width()<=0.0 || clip.height()<=0.0{return;}
+    let painter=ui.painter().with_clip_rect(clip);
+    for &x in boundaries{
+        if x>clip.left() && x<clip.right() {
+            painter.line_segment(
+                [egui::pos2(x,region.top()),egui::pos2(x,region.bottom())],
+                Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+            );
+        }
+    }
+}
+
+/// The client header and row share the same 30/38/32 column positions,
+/// including the scroll-offset table origin. Do not recompute these from
+/// the fixed header rect, which stays in place while body rows scroll.
+fn management_client_column_edges(table_left:f32,table_width:f32)->[f32;2]{
+    let first=table_left+table_width*theme::MANAGEMENT_CLIENT_COLS[0];
+    let second=first+table_width*theme::MANAGEMENT_CLIENT_COLS[1];
+    [first,second]
+}
+
 /// Client columns share the EXACT 36pt / 34pt text / 2pt footer band
 /// of Freight Assignment. Column widths and 12pt label starts still
 /// belong to the client row contract; only the master chrome is reused.
@@ -2378,7 +2411,7 @@ pub fn management_client_header(
     ui:&mut Ui,header:Rect,header_content_rect:Rect,
     table_left:f32,table_width:f32,current_sort:Option<(usize,bool)>
 )->Option<usize>{
-    let titles=["거래처","발송인 정보","거래 조건"];
+    let titles=["거래처","주소 / 전화번호","거래 조건"];
     let sort_keys=["거래처명","주소","가격 등급"];
     let text_row=management_master_header_begin(
         ui,header,header_content_rect
@@ -2436,6 +2469,10 @@ pub fn management_client_header(
         }
         x+=col_width;
     }
+    management_master_column_rules(
+        ui,text_row,
+        &management_client_column_edges(table_left,table_width)
+    );
     management_master_header_finish(ui,header);
     selected
 }
@@ -2493,8 +2530,8 @@ fn management_row_impl(
             egui::pos2(x+theme::SPACE_12,rect.top()),
             egui::pos2(x+col_width-theme::SPACE_12,rect.bottom())
         );
-        // In particular, heading '발송인 정보' and the first address
-        // glyph both start at cell.left(), never at its centered label rect.
+        // The '주소 / 전화번호' heading and the first address glyph
+        // share the same left anchor, not a centered label allocation.
         if heading {
             paint_client_line(
                 ui,cell,cell.left(),typography::table_header_galley(ui,primary),
@@ -2529,8 +2566,14 @@ fn management_row_impl(
         }else if primary.is_empty() || secondary.is_empty() {
             let visible=if primary.is_empty(){secondary}else{primary};
             if !visible.is_empty() {
-                let galley=if primary.is_empty() {
-                    typography::client_table_metadata_galley(ui,visible,theme::MUTED)
+                // A real phone is primary business data, not muted
+                // metadata. Only the client-name secondary label keeps
+                // the smaller and quieter visual hierarchy.
+                let metadata=primary.is_empty() && i==0;
+                let galley=if metadata {
+                    typography::client_table_metadata_galley(
+                        ui,visible,theme::MUTED
+                    )
                 }else{
                     typography::management_table_cell_galley(
                         ui,visible,if i==0 {
@@ -2542,7 +2585,7 @@ fn management_row_impl(
                 };
                 paint_client_line(
                     ui,cell,cell.left(),galley,
-                    if primary.is_empty(){theme::MUTED}else{theme::TEXT}
+                    if metadata{theme::MUTED}else{theme::TEXT}
                 );
             }
         }else{
@@ -2568,10 +2611,21 @@ fn management_row_impl(
                 ),
                 theme::TEXT
             );
+            // The address and its paired phone number are equally
+            // important. Retain metadata styling only for the dealer
+            // name's secondary description.
+            let secondary_galley=if i==1 {
+                typography::management_table_cell_galley(
+                    ui,secondary,typography::ManagementTableCellRole::Text
+                )
+            }else{
+                typography::client_table_metadata_galley(
+                    ui,secondary,theme::MUTED
+                )
+            };
             paint_client_line(
-                ui,second,second.left(),
-                typography::client_table_metadata_galley(ui,secondary,theme::MUTED),
-                theme::MUTED
+                ui,second,second.left(),secondary_galley,
+                if i==1 {theme::TEXT} else {theme::MUTED}
             );
         }
         // Keep full, unclipped information accessible without changing the
@@ -2587,10 +2641,37 @@ fn management_row_impl(
         }
         x+=col_width;
     }
+    management_master_column_rules(
+        ui,rect,
+        &management_client_column_edges(rect.left(),rect.width())
+    );
     if !heading {
         theme::paint_button_hover(ui,&response,0.0);
     }
     response
+}
+
+#[cfg(test)]
+mod management_client_column_divider_tests{
+    use super::*;
+    #[test]
+    fn table_header_and_rows_share_the_same_three_column_edges(){
+        let expected=[130.0,320.0];
+        assert_eq!(management_client_column_edges(-20.0,500.0),
+            [-20.0+150.0,-20.0+340.0]);
+        assert_eq!(management_client_column_edges(0.0,500.0),
+            [150.0,340.0]);
+        assert_eq!(expected,management_client_column_edges(-20.0,500.0));
+    }
+    #[test]
+    fn narrow_table_keeps_boundaries_ordered_and_inside_data_width(){
+        for width in [theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH,900.0,1200.0]{
+            let edges=management_client_column_edges(25.0,width);
+            assert!(edges[0]>25.0);
+            assert!(edges[1]>edges[0]);
+            assert!(edges[1]<25.0+width);
+        }
+    }
 }
 
 /// Display-only won formatting. No business price or rounding decisions live
