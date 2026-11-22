@@ -4475,13 +4475,9 @@ impl BandoEgui {
 
         let mut next_recipient = None;
         let mut inline_open:Option<(InlineTarget,String)>=None;
-        // Header and body are separate FnMut callbacks supplied to the
-        // same section. They cannot both mutably capture inline_open.
-        let mut header_inline_open:Option<(InlineTarget,String)>=None;
         let mut inline_commit=false;
         let mut inline_cancel=false;
         let mut inline_command:Option<(InlineTarget,String)>=None;
-        let mut open_audit=false;
         let editable=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
             .is_some_and(|row|row.analysis_raw.as_deref()==Some(self.raw_source.as_str())
@@ -4491,9 +4487,6 @@ impl BandoEgui {
             && self.working_sync.is_none()
             && self.inline_change.is_none()
             && self.source_clear_job.is_none();
-        let has_audit=self.active_id.as_deref()
-            .and_then(|id|self.drafts.iter().find(|row|row.id==id))
-            .is_some_and(|row|!row.edit_history.is_empty());
         let recipient_nav=self.analysis.as_ref()
             .map(|analysis|reception_service::recipients(analysis))
             .filter(|recipients|recipients.len()>1)
@@ -4513,22 +4506,8 @@ impl BandoEgui {
                 Self::section_with_header(
                     pane,"수취인별 주문 정보",recipient_height,
                     |header|{
-                        if theme::action(header,"수정",ButtonRole::Standard,editable).clicked(){
-                            if let Some(analysis)=self.analysis.as_ref(){
-                                if let Some(recipient)=reception_service::recipients(analysis)
-                                    .get(self.selected_recipient) {
-                                    header_inline_open=Some((
-                                        InlineTarget{
-                                            recipient_id:reception_service::text(recipient,"id").into(),
-                                            item_id:None,field:"name"
-                                        },
-                                        reception_service::text(recipient,"name").into()
-                                    ));
-                                }
-                            }
-                        }
-                        if theme::action(header,"이력",ButtonRole::TableSecondary,has_audit)
-                            .clicked(){open_audit=true;}
+                        // Actual recipient inputs are directly editable;
+                        // separate Edit/History header controls are redundant.
                         if let Some((name,index,total))=recipient_nav.as_ref(){
                             next_recipient=components::reception_recipient_navigator(
                                 header,name,*index,*total
@@ -4613,9 +4592,6 @@ impl BandoEgui {
                 });
             },
         );
-        // Resolve both requests only after the two section callbacks have
-        // returned, preserving body-click priority if both occurred.
-        if inline_open.is_none(){inline_open=header_inline_open;}
         if let Some(index) = next_recipient {
             self.selected_recipient = index;
             if self.inline_editor.is_some(){inline_commit=true;}
@@ -4625,7 +4601,6 @@ impl BandoEgui {
         });
 
         let remaining = bottom_rect.height();
-        let mut edit_item_header=false;
         ui.scope_builder(
             UiBuilder::new().id_salt("details-items").max_rect(bottom_rect)
                 .layout(Layout::top_down(Align::Min)),
@@ -4634,13 +4609,7 @@ impl BandoEgui {
                 pane.set_width(bottom_rect.width());
                 pane.set_height(bottom_rect.height());
                 Self::section_with_header(pane,"품목 및 운임",remaining,
-                    |header|{
-                        if theme::action(header,"수정",ButtonRole::Standard,editable).clicked(){
-                            edit_item_header=true;
-                        }
-                        if theme::action(header,"이력",ButtonRole::TableSecondary,has_audit)
-                            .clicked(){open_audit=true;}
-                    },|ui| {
+                    |_header|{},|ui| {
                     // In intake standby, do not draw empty table headings,
                     // freight controls, VAT text or a fictitious zero total.
                     // Keep the section frame and divider exactly as-is.
@@ -4926,28 +4895,6 @@ impl BandoEgui {
                 });
             },
         );
-        if edit_item_header {
-            if let Some(row)=selected {
-                let rid=reception_service::text(row,"id").to_owned();
-                if let Some(item)=row.get("items").and_then(serde_json::Value::as_array)
-                    .and_then(|items|items.first()) {
-                    inline_open=Some((
-                        InlineTarget{
-                            recipient_id:rid,
-                            item_id:Some(reception_service::text(item,"id").to_owned()),
-                            field:"product"
-                        },
-                        reception_service::item_title(item)
-                    ));
-                }else{
-                    inline_open=Some((
-                        InlineTarget{
-                            recipient_id:rid,item_id:None,field:"shippingCharge"
-                        },String::new()
-                    ));
-                }
-            }
-        }
         // Only authoritative Rust source spans may drive a linked hover.
         // A recognized field with no source evidence must not flash blue as
         // though a corresponding token were found in the original document.
@@ -4978,9 +4925,6 @@ impl BandoEgui {
                 });
                 self.submit_inline_edit(ui.ctx());
             }
-        }
-        if open_audit {
-            self.edit_history_open=true;
         }
     }
 
