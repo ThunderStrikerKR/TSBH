@@ -75,8 +75,15 @@ fn bytes_for_product(product:&Value)->Option<Vec<u8>>{
 fn cache_identity(product:&Value)->String{
     use std::hash::{Hash,Hasher};
     let mut hasher=std::collections::hash_map::DefaultHasher::new();
-    for value in ["id","imageOverride","imageData","siteId","sourceProductId"] {
-        product.get(value).map(Value::to_string).hash(&mut hasher);
+    for key in ["id","imageOverride","imageData","siteId","sourceProductId"] {
+        // Uploaded data URIs can contain 1.5M characters. Hash the borrowed
+        // source directly instead of allocating an equally large JSON string
+        // on every egui repaint.
+        if let Some(text)=product.get(key).and_then(Value::as_str) {
+            text.hash(&mut hasher);
+        }else{
+            product.get(key).map(Value::to_string).hash(&mut hasher);
+        }
     }
     format!("product-photo:{:016x}",hasher.finish())
 }
