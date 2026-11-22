@@ -1299,7 +1299,8 @@ impl ProductManager {
         let section_inset=2.0*(theme::MODAL_SECTION_PADDING+
             theme::FRAME_STROKE_WIDTH);
         let image=theme::PRODUCT_DETAIL_IMAGE_SIZE+section_inset;
-        let gap=theme::SPACE_16+2.0*theme::SPACE_8;
+        // The common horizontal row owns the exact 16pt column gaps.
+        let gap=theme::MODAL_MASTER_WORKSPACE_GAP;
         let usable=width-image-2.0*gap;
         if usable<560.0{return None;}
         let price=(usable*0.36).clamp(240.0,255.0);
@@ -1566,6 +1567,7 @@ impl ProductManager {
                 (work_area.width()-2.0*theme::MODAL_VIEWPORT_GUTTER).max(1.0)
             ))
             .show(ctx,|modal|{
+                components::modal_master_controlled_spacing(modal);
                 let dialog_title=if is_new{"상품 등록"}else{"상품 상세 관리"};
                 if components::modal_header(
                     modal,dialog_title,"취소",!busy
@@ -1591,11 +1593,14 @@ impl ProductManager {
                         // Reuse the APPROVED modal-section frame for the
                         // three independent roles. Prior raw labels on the
                         // modal background made them visually indistinct.
+                        components::modal_master_controlled_spacing(body);
                         let content_width=body.available_width().max(1.0);
                         if let Some((overview_width,price_width,image_width))=
                             Self::detail_columns(content_width)
                         {
                             body.horizontal(|top|{
+                                top.spacing_mut().item_spacing.x=
+                                    theme::MODAL_MASTER_WORKSPACE_GAP;
                                 top.vertical(|overview|{
                                     overview.set_width(overview_width);
                                     components::modal_section(
@@ -1610,7 +1615,6 @@ impl ProductManager {
                                         }
                                     );
                                 });
-                                top.add_space(theme::SPACE_16);
                                 top.vertical(|prices_ui|{
                                     prices_ui.set_width(price_width);
                                     components::modal_section(
@@ -1625,7 +1629,6 @@ impl ProductManager {
                                         }
                                     );
                                 });
-                                top.add_space(theme::SPACE_16);
                                 top.vertical(|media|{
                                     media.set_width(image_width);
                                     components::modal_section(
@@ -1673,8 +1676,9 @@ impl ProductManager {
                                 );
                             });
                         }
-                        body.add_space(theme::SPACE_16);
-                        components::soft_divider(body);
+                        // A single shared structural separator reserves
+                        // exactly 16pt on both sides of its divider.
+                        components::modal_master_spaced_divider(body);
                         egui::CollapsingHeader::new(
                             "고급 정보"
                         )
@@ -1682,6 +1686,7 @@ impl ProductManager {
                             .default_open(false)
                             .icon(components::paint_collapsing_header_icon)
                             .show(body,|advanced|{
+                                advanced.spacing_mut().item_spacing.y=theme::SPACING;
                                 advanced.add_space(theme::SPACE_8);
                                 components::modal_labeled_row(
                                     advanced,"배송 그룹",|group_ui|{
@@ -1752,9 +1757,11 @@ impl ProductManager {
                                     }
                                 }
                             });
+                        // The footer draws its own rule. Its preceding
+                        // gap uses the SAME 16pt structural master.
+                        body.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
                         });
                     });
-                modal.add_space(theme::SPACE_12);
                 components::modal_action_row_split(
                     modal,
                     |left|{
@@ -1866,19 +1873,33 @@ mod tests {
         assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
     }
     #[test]
+    fn product_detail_modal_uses_one_shared_gap_and_exact_divider_spacing(){
+        let source=include_str!("product_manager.rs");
+        let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
+            .split("        self.selected=Some(draft.clone());").next().unwrap();
+        assert!(composition.contains("modal_master_controlled_spacing(modal)"));
+        assert!(composition.contains("modal_master_controlled_spacing(body)"));
+        assert!(composition.contains("modal_master_spaced_divider(body)"));
+        assert!(composition.contains("top.spacing_mut().item_spacing.x="));
+        assert!(!composition.contains("top.add_space(theme::SPACE_16)"));
+        assert!(!composition.contains("modal.add_space(theme::SPACE_12)"));
+        assert!(!composition.contains("components::soft_divider(body)"));
+        assert_eq!(theme::MODAL_MASTER_WORKSPACE_GAP,16.0);
+    }
+    #[test]
     fn product_detail_reacts_to_actual_kakao_safe_modal_width(){
         // All three sections have the SAME approved inset/frame thickness,
         // so the 320pt image and inline 36pt price fields may not clip.
-        for width in [420.0,893.0,940.0,969.0]{
+        for width in [420.0,893.0,930.0,937.0]{
             assert!(ProductManager::detail_columns(width).is_none());
         }
         let inset=2.0*(theme::MODAL_SECTION_PADDING+
             theme::FRAME_STROKE_WIDTH);
-        for width in [970.0,1000.0,1100.0]{
+        for width in [938.0,940.0,970.0,1000.0,1100.0]{
             let (overview,price,image)=ProductManager::detail_columns(width).unwrap();
             assert_eq!(image,theme::PRODUCT_DETAIL_IMAGE_SIZE+inset);
             assert!(overview>=310.0 && price>=240.0 && price<=255.0);
-            let gap=theme::SPACE_16+2.0*theme::SPACE_8;
+            let gap=theme::MODAL_MASTER_WORKSPACE_GAP;
             assert!(overview+price+image+2.0*gap<=width+0.01,
                 "boxed columns overflow {width}pt");
         }
