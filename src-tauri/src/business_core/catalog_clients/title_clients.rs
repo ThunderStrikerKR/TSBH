@@ -203,7 +203,7 @@ fn reception_candidates(payload:&Value)->Result<Value,String>{
         if !(title_hit||explicit_hit) || !seen.insert(id.to_owned()){continue;}
         candidates.push(json!({
             "clientId":id,
-            "name":if s(c,"name").is_empty(){s(c,"displayName")}else{s(c,"name")}
+            "name":s(c,"name")
         }));
         if candidates.len()>=8{break;}
     }
