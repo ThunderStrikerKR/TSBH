@@ -77,6 +77,12 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify product details dialog scope, choice and quantity-gated Apply
+        run: cargo test --manifest-path egui-app/Cargo.toml item_editor::tests -- --nocapture
+      - name: Verify product-row click opens correct modal and blocks dirty edits
+        run: cargo test --manifest-path egui-app/Cargo.toml reception_item_editor_integration_tests -- --nocapture
+      - name: Verify catalog replacement preserves source and confirmed quantity
+        run: cargo test --manifest-path egui-app/Cargo.toml explicit_catalog_replacement_keeps_existing_quantity_and_source -- --nocapture
       - name: Verify linked source hover uses authoritative recipient spans
         run: cargo test --manifest-path egui-app/Cargo.toml source_highlight::tests -- --nocapture
       - name: Verify 72nd-pass reversible hover and committed pending-order selection
@@ -89,12 +95,6 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml client_chooser_async_handoff_tests -- --nocapture
       - name: Verify source autosave delta FIFO, OCR audit coalescing, and final shutdown flush
         run: cargo test --manifest-path egui-app/Cargo.toml source_autosave::source_delta_tests -- --nocapture
-      - name: Verify product details dialog scope, choice and quantity-gated Apply
-        run: cargo test --manifest-path egui-app/Cargo.toml item_editor::tests -- --nocapture
-      - name: Verify product-row click opens correct modal and blocks dirty edits
-        run: cargo test --manifest-path egui-app/Cargo.toml reception_item_editor_integration_tests -- --nocapture
-      - name: Verify catalog replacement preserves source and confirmed quantity
-        run: cargo test --manifest-path egui-app/Cargo.toml explicit_catalog_replacement_keeps_existing_quantity_and_source -- --nocapture
       - name: Verify shared reception async admission rejects every conflicting write order
         run: cargo test --manifest-path egui-app/Cargo.toml reception_jobs::tests -- --nocapture
       - name: Verify clipboard OCR, source replacement, draft deletion, workflow and locality admission
