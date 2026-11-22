@@ -31,6 +31,8 @@ pub struct LinkedSpan {
 
 #[derive(Default)]
 pub struct HoverState {
+    /// An evidence key is meaningful only inside its source order.
+    order_id: Option<String>,
     pending: Option<LinkKey>,
     pending_at: Option<Instant>,
     pub active: Option<LinkKey>,
@@ -40,6 +42,28 @@ pub struct HoverState {
 
 impl HoverState {
     pub fn clear(&mut self) { *self=Self::default(); }
+
+    /// One order-scoped hover state is shared by source text, recipient
+    /// inputs, item cells and workflow cards, including read-only previews.
+    /// A stale hover from another receipt cannot select an identically
+    /// numbered recipient on the new receipt.
+    pub fn update_for(&mut self, order_id:&str, incoming:Option<LinkKey>,
+                      ctx:&egui::Context) {
+        if self.order_id.as_deref()!=Some(order_id) {
+            self.clear();
+            self.order_id=Some(order_id.to_owned());
+        }
+        self.update(incoming,ctx);
+    }
+
+    pub fn active_for(&self, order_id:&str)->Option<&LinkKey>{
+        (self.order_id.as_deref()==Some(order_id))
+            .then_some(self.active.as_ref()).flatten()
+    }
+
+    pub fn scoped_active(&self)->Option<(&str,&LinkKey)> {
+        self.order_id.as_deref().zip(self.active.as_ref())
+    }
 
     /// The caller passes exactly one hover target per frame. A hover on an
     /// unrelated field cancels any pending entry to prevent stale focus.
@@ -564,6 +588,21 @@ mod tests {
     fn source_link_delays_match_approved_ui_behavior() {
         assert_eq!(HOVER_ENTER,Duration::from_millis(50));
         assert_eq!(HOVER_EXIT,Duration::from_millis(150));
+    }
+
+    #[test]
+    fn linked_hover_never_crosses_order_identity() {
+        let ctx=egui::Context::default();
+        let mut state=HoverState::default();
+        let linked=key("r1","r1","name");
+        state.update_for("order-a",Some(linked.clone()),&ctx);
+        state.pending_at=Some(Instant::now()-HOVER_ENTER);
+        state.update_for("order-a",Some(linked.clone()),&ctx);
+        assert_eq!(state.active_for("order-a"),Some(&linked));
+        assert!(state.active_for("order-b").is_none());
+        state.update_for("order-b",None,&ctx);
+        assert!(state.active_for("order-a").is_none());
+        assert!(state.scoped_active().is_none());
     }
 
     #[test]
