@@ -200,36 +200,26 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         });
     }
 
-    let priced=gateway.execute(ReadOperation::RepriceOrder,json!({
-        "order":merged_order, "state":state, "client":client,
-        "explicitEdit":true, "persistedOrders":[],
+    // Use the SAME shipment-aware Rust quote as manual edits. The legacy
+    // CalculatePrice route has no per-recipient freight, no amount fields in
+    // linePrices, and no pendingRecipients diagnostics for incomplete orders.
+    let quote=gateway.execute(ReadOperation::CalculateReceptionQuote,json!({
+        "order":merged_order,"state":state,"client":client,
     }))?;
-    let order=required(&priced,"order")?;
-    // Billing remains a pure native calculation, never an egui formula.
-    // The result may legitimately be null until items or freight are known.
-    let totals=gateway.execute(ReadOperation::CalculatePrice,json!({
-        "order":order, "client":client,
-    }))?;
+    let order=required(&quote,"order")?;
+    let totals=required(&quote,"totals")?;
     if order.get("id").and_then(Value::as_str)!=Some(source.id.as_str()) ||
        order.get("clientId").and_then(Value::as_str)!=Some(target_id) ||
        order.get("raw").and_then(Value::as_str)!=Some(source.raw.as_str()) {
         return Err("Rust 주문 변경 결과가 현재 발주서와 일치하지 않습니다.".into());
     }
+    if !quote.get("linePrices").is_some_and(Value::is_array) ||
+       !quote.get("freightLines").is_some_and(Value::is_array) {
+        return Err("Rust 품목·운임 계산 결과가 올바르지 않습니다.".into());
+    }
 
-    // The preview is intentionally an allowlist; it must never persist the
-    // full clientSnapshot, recipient PII, company payment details or history.
-    let receipts=order.get("recipients").and_then(Value::as_array)
-        .ok_or("Rust 주문 수취인 목록이 잘못되었습니다.")?;
-    let lines:Vec<Value>=receipts.iter().flat_map(|recipient| {
-        recipient.get("items").and_then(Value::as_array)
-            .into_iter().flatten().map(|item|json!({
-                "itemId":item.get("id"),
-                "productId":item.get("productId"),
-                "variantId":item.get("variantId"),
-                "quantity":item.get("quantity"),
-                "unitPrice":item.get("unitPrice"),
-            }))
-    }).collect();
+    // Allowlist: never store the full customer snapshot or recipient PII.
+    // Amounts and freight are calculated by native Rust, never multiplied in UI.
     let price_summary=json!({
         "sourceRaw":source.raw,
         "orderId":source.id,
@@ -242,9 +232,11 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         "vatAmount":totals.get("vat"),
         "subtotal":totals.get("subtotal"),
         "total":totals.get("total"),
+        "pendingRecipients":totals.get("pendingRecipients"),
         "notified":order.get("notified"),
         "paid":order.get("paid"),
-        "linePrices":lines,
+        "linePrices":quote.get("linePrices"),
+        "freightLines":quote.get("freightLines"),
     });
     Ok(ChangeResult {
         client_id:target_id.to_owned(),
