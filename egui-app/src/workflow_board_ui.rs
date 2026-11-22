@@ -836,7 +836,7 @@ fn pending_dealer_title(
 /// from the same order-scoped link, never from matching display names.
 pub fn visible_pending_recipient<'a>(
     order_id:&str,preview:Option<&'a PendingTarget>,
-    linked_selection:Option<(&'a str,&'a str>)
+    linked_selection:Option<(&'a str,&'a str)>
 )->Option<&'a str>{
     linked_selection.and_then(|(source_order,id)|
         (source_order==order_id).then_some(id)
