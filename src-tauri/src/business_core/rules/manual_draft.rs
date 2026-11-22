@@ -113,6 +113,10 @@ fn set_item(payload:&Value,value:&str)->Result<Value,String>{
         .iter_mut().find(|r|str_field(r,"id")==rid).ok_or("배송 행을 선택하세요.")?;
     let idx=rows(field(r,"items")).iter().position(|i|str_field(i,"id")==iid)
         .ok_or("상품 행을 선택하세요.")?;
+    let previous=r["items"][idx].clone();
+    let preserve=payload.get("preserveExistingQuantity")
+        .and_then(Value::as_bool)==Some(true)
+        && payload.get("product").is_some_and(|v|v.is_object());
     let mut item=if str_field(cell,"field")=="quantity"{
         let parsed=super::manual_classification::apply(&json!({"action":"parse_manual_quantity",
             "value":value}))?;
@@ -181,16 +185,35 @@ fn set_item(payload:&Value,value:&str)->Result<Value,String>{
         }
     }
     set(&mut item,"id",json!(iid))?;
-    set(&mut item,"raw",json!(value))?;
-    set(&mut item,"quantity",Value::Null)?;
-    set(&mut item,"quantityConfirmed",json!(false))?;
-    set(&mut item,"manuallyConfirmed",json!(payload.get("product").is_some_and(|v|!v.is_null())))?;
-    set(&mut item,"sources",json!([]))?;
+    // React's OrderItemEditor preserves the original evidence, item ID and
+    // confirmed quantity when replacing only the catalog product. Preserve
+    // the quantity assignment too; invalidate only the old product binding.
+    set(&mut item,"raw",if preserve{
+        field(&previous,"raw").clone()
+    }else{json!(value)})?;
+    set(&mut item,"quantity",if preserve{
+        field(&previous,"quantity").clone()
+    }else{Value::Null})?;
+    set(&mut item,"quantityConfirmed",if preserve{
+        field(&previous,"quantityConfirmed").clone()
+    }else{json!(false)})?;
+    set(&mut item,"manuallyConfirmed",
+        json!(payload.get("product").is_some_and(|v|!v.is_null())))?;
+    set(&mut item,"sources",if preserve{
+        field(&previous,"sources").clone()
+    }else{json!([])})?;
+    if preserve && field(&previous,"origin").is_string(){
+        set(&mut item,"origin",field(&previous,"origin").clone())?;
+    }
     item.as_object_mut().ok_or("상품 데이터 오류")?.remove("quantityApproval");
     r["items"][idx]=item;
     model["assignments"].as_object_mut().ok_or("배정 정보 오류")?
         .retain(|_,v|str_field(v,"itemId")!=iid ||
-            !["product","quantity"].contains(&str_field(v,"field")));
+            if preserve{
+                str_field(v,"field")!="product"
+            }else{
+                !["product","quantity"].contains(&str_field(v,"field"))
+            });
     let keys=assignment_order(payload,req(payload,"model")?).into_iter()
         .filter(|key|model["assignments"].get(key).is_some()).collect::<Vec<_>>();
     Ok(json!({"model":model,"assignmentOrder":keys}))
@@ -280,6 +303,41 @@ mod tests{
         assert_eq!(x["model"]["blocks"].as_array().unwrap().len(),1);
         assert_eq!(x["model"]["blocks"][0]["id"],"0:6");
     }
+    #[test]
+    fn explicit_catalog_replacement_keeps_existing_quantity_and_source(){
+        let product=json!({"id":"p2","name":"BD 709","origin":"FACTORY",
+            "variants":[{"id":"v2","color":"Black","wholesale":59000}],
+            "requiresOption":false});
+        let item=json!({"id":"i1","name":"예전 상품","raw":"원문상품 4개",
+            "productId":"p1","variantId":"v1","quantity":4,
+            "quantityConfirmed":true,"sources":[{"start":0,"end":6}],
+            "origin":"STORE","issues":[]});
+        let model=json!({"rows":[{"id":"r1","items":[item]}],
+            "blocks":[],"assignments":{
+                "product":{"recipientId":"r1","itemId":"i1","field":"product"},
+                "quantity":{"recipientId":"r1","itemId":"i1","field":"quantity"}
+            }});
+        let next=execute(&json!({
+            "action":"set_manual_product","model":model,
+            "order":{"clientId":"c1"},
+            "state":{"clients":[{"id":"c1","tier":"wholesale"}]},
+            "cell":{"recipientId":"r1","itemId":"i1","field":"product"},
+            "value":"BD 709","product":product,
+            "preserveExistingQuantity":true,
+            "assignmentOrder":["product","quantity"]
+        })).unwrap();
+        let item=&next["model"]["rows"][0]["items"][0];
+        assert_eq!(item["productId"],"p2");
+        assert_eq!(item["variantId"],"v2");
+        assert_eq!(item["quantity"],4);
+        assert_eq!(item["quantityConfirmed"],true);
+        assert_eq!(item["raw"],"원문상품 4개");
+        assert_eq!(item["origin"],"STORE");
+        assert_eq!(item["sources"],json!([{"start":0,"end":6}]));
+        assert!(next["model"]["assignments"].get("product").is_none());
+        assert!(next["model"]["assignments"].get("quantity").is_some());
+    }
+
     #[test]fn blocks_reject_duplicate_binding(){
         let model=json!({"rows":[{"id":"r","name":"","items":[]}],
             "blocks":[{"id":"0:3","text":"가상명","field":"name"}],
