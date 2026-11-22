@@ -1315,7 +1315,7 @@ impl FreightManager {
                     // Search stays at 36pt; the shared 34pt dropdown trigger
                     // is vertically centered within the same 36pt toolbar.
                     tools.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
-                components::flexible_text_field(
+                components::management_search_field(
                     tools,search,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                     "모델명 / 상품명 / 카테고리 검색"
                 );
@@ -1966,7 +1966,7 @@ impl FreightManager {
                 |field|{
                     field.set_clip_rect(search_rect);
                     field.set_width(search_rect.width());
-                    components::flexible_text_field(
+                    components::management_search_field(
                         field,search,search_width,"배송 그룹 검색"
                     )
                 }
