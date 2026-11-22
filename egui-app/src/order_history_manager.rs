@@ -873,9 +873,9 @@ fn range_date_picker_rtl(
                     .vertical_align(Align::Center)
                     // Match the *visible* digit center, not only the
                     // TextEdit's glyph line box; keep caret and hint aligned.
-                    // Numeric font glyphs already receive the shared -1pt
-                    // Consolas correction; do not stack the old body-font
-                    // date margin correction on top.
+                    // The shared +2pt Consolas font correction already
+                    // adjusts numeric glyphs; do not stack the former
+                    // date-only body-font margin correction on top.
                     .margin(egui::Margin::symmetric(2,2))
                     .hint_text(if all_dates{"전체"}else{"YYYY-MM-DD"})
                     .desired_width(HISTORY_DATE_FIELD_WIDTH)
