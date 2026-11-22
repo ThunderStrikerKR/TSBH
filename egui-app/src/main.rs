@@ -42,6 +42,7 @@ mod manual_workspace;
 mod catalog_query_bridge;
 mod manual_product_search;
 mod item_editor;
+mod product_images;
 mod manual_source_view;
 mod kakao_context;
 mod kakao_dock;
