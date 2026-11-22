@@ -323,7 +323,8 @@ pub const RECEPTION_ITEMS_MIN_TABLE_WIDTH: f32 =
 pub const RECEPTION_ORDER_TOTAL_SECTION_HEIGHT: f32 = 120.0;
 pub const RECEPTION_ORDER_TOTAL_SECTION_GAP: f32 = SPACE_8;
 // VAT modal recipient list is a distinct bounded scroll region with a
-// visible surface; on a normal desktop up to ten 42pt rows fit before scroll.
+// visible surface; always reserve five 42pt rows, grow up to ten before scroll.
+pub const RECEPTION_VAT_LIST_MIN_VISIBLE_ROWS: usize = 5;
 pub const RECEPTION_VAT_LIST_VISIBLE_ROWS: usize = 10;
 pub const RECEPTION_VAT_LIST_ROW_HEIGHT: f32 = 42.0;
 pub const RECEPTION_VAT_LIST_SCREEN_RESERVE: f32 = 256.0;
