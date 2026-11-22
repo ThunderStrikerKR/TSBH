@@ -585,8 +585,8 @@ pub const SETTLEMENT_PAYMENT_COL_WIDTHS:[f32;7] =
 pub const SETTLEMENT_KPI_CARD_WIDTH:f32 = 278.0;
 pub const SETTLEMENT_DATE_FIELD_WIDTH:f32 = 132.0;
 pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
-// The three-column dealer list has its own content minimum (30/38/32).
-// Do not force freight/product's 1320pt table width onto the client list.
+// Client name, phone and terms stay compact; the address takes remaining
+// width. Do not force freight/product's 1320pt grid on the client list.
 pub const MANAGEMENT_CLIENT_TABLE_MIN_WIDTH: f32 = 900.0;
 // React shipping.css constrains lengthy freight lists to a 60vh scroll
 // region; native management tables keep both axes inside that region.
@@ -619,7 +619,11 @@ pub const CLIENT_TIER_RETAIL_TEXT: Color32 = Color32::from_rgb(255,178,185);
 pub const CLIENT_TIER_SPECIAL_BG: Color32 = Color32::from_rgb(68,48,92);
 pub const CLIENT_TIER_SPECIAL_TEXT: Color32 = Color32::from_rgb(218,181,255);
 pub const MANAGEMENT_MODAL_BODY_MAX_HEIGHT: f32 = 670.0;
-pub const MANAGEMENT_CLIENT_COLS: [f32; 3] = [0.30, 0.38, 0.32];
+// Fixed cells fit a ten-character client name, an 11-digit phone number
+// (plus separators), and a tier badge followed by its transaction terms.
+pub const MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH:f32 = 172.0;
+pub const MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH:f32 = 154.0;
+pub const MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH:f32 = 350.0;
 pub const MANUAL_TABLE_MIN_WIDTH: f32 = 1180.0;
 pub const MANUAL_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANUAL_TABLE_ROW_HEIGHT: f32 = 42.0;
