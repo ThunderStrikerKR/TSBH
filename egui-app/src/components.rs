@@ -412,6 +412,12 @@ impl FieldKind {
     }
 }
 
+/// A dialog's pivot belongs to the Kakao-safe work rect itself.
+/// Do NOT subtract the top-navigation height a second time: callers have
+/// already removed the 62pt header and the viewport gutters.
+fn modal_pivot_pos(work_area:Rect)->egui::Pos2{
+    work_area.center()
+}
 /// Native modal geometry belongs here, not to individual screens.
 /// `work_area` excludes the externally foregrounded KakaoTalk dock.
 pub fn modal_window(
@@ -422,14 +428,10 @@ pub fn modal_window(
         .id(egui::Id::new(id))
         .order(egui::Order::Foreground)
         .pivot(egui::Align2::CENTER_CENTER)
-        .fixed_pos(egui::pos2(
-            work_area.center().x,
-            // The work area starts below the 62pt header; its geometric
-            // midpoint is therefore lower than the viewport's visual center.
-            // Keep the Kakao-safe horizontal center, but center vertically
-            // against the full application window.
-            work_area.center().y - theme::HEADER_HEIGHT / 2.0,
-        ))
+        .fixed_pos(modal_pivot_pos(work_area))
+        // Keep both the pivot and the actual window within the SAME safe
+        // rectangle. A second header offset pushed tall dialogs upward,
+        // where their top edge could be clipped by the viewport.
         .constrain_to(work_area)
         .max_size(work_area.size())
         // All app dialogs are fixed at the approved Kakao-safe center.
@@ -910,6 +912,10 @@ pub fn decision_window(
     title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
     modal_window(title,id,work_area)
+        // Unlike large editors with local scroll regions, short confirmation
+        // dialogs may grow when warning text wraps. Enable outer scrolling
+        // only as an overflow fallback for unusually short viewports.
+        .vscroll(true)
         .resizable(false)
         .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))
 }
@@ -3443,6 +3449,22 @@ mod management_toolbar_geometry_tests {
                 assert!(slot.left()>=toolbar.left()-0.01);
                 assert!(slot.right()<=toolbar.right()+0.01);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod modal_safe_position_tests {
+    use super::*;
+
+    #[test]
+    fn popup_pivot_uses_exact_safe_area_center_without_double_header_offset(){
+        for (width,height) in [(240.0,180.0),(600.0,360.0),(1200.0,860.0)] {
+            let safe=Rect::from_min_size(egui::pos2(440.0,80.0),Vec2::new(width,height));
+            let pivot=modal_pivot_pos(safe);
+            assert_eq!(pivot,safe.center());
+            assert!(safe.contains(pivot));
+            assert_eq!(pivot.y-safe.top(),safe.bottom()-pivot.y);
         }
     }
 }
