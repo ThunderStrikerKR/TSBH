@@ -127,7 +127,11 @@ impl BoardUi{
         let now=Instant::now();
         if let Some(candidate)=incoming{
             self.pending_release=None;
-            if Some(&candidate)==committed{
+            if Some(&candidate)==committed ||
+                (candidate.recipient_id.is_none() &&
+                    committed.is_some_and(|current|
+                        current.order_id==candidate.order_id)){
+                // The header of the selected order is not a new preview.
                 self.pending_order_hover=None;
                 if self.pending_visible.take().is_some(){ctx.request_repaint();}
                 return;
@@ -1162,6 +1166,17 @@ mod pending_hover_navigation_tests{
         assert!(board.pending_preview().is_none());
         assert_eq!(PENDING_ORDER_HOVER_ENTER,Duration::from_millis(250));
         assert_eq!(PENDING_ORDER_HOVER_EXIT,Duration::from_millis(250));
+    }
+    #[test]
+    fn hovering_selected_order_header_does_not_replace_recipient(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let selected=PendingTarget::recipient("order","kim");
+        board.update_pending_order_hover(
+            Some(PendingTarget::order("order")),Some(&selected),&ctx
+        );
+        assert!(board.pending_preview().is_none());
+        assert!(board.pending_order_hover.is_none());
     }
     #[test]
     fn moving_to_another_recipient_restarts_the_timer(){
