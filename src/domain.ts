@@ -218,7 +218,8 @@ export function suggestClient(raw: string, clients: Client[]) {
   return clients.filter(
     (c) =>
       !c.deletedAt &&
-      [c.name, c.displayName ?? ""].some((n) => n.trim().length >= 2 && raw.includes(n.trim())),
+      [c.name, ...(c.shortNames ?? "").split(","), ...(c.identifiers ?? "").split(",")]
+          .some((n) => n.trim().length >= 2 && raw.includes(n.trim())),
   );
 }
 export function recommendAccount(o: Order, s: Settings, products: Product[] = [], client?: Client) {
