@@ -4529,7 +4529,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .and_then(|recipient|recipient.get("id"))
                         .and_then(serde_json::Value::as_str)
                         .map(str::to_owned);
-                    let active_link=self.link_hover.active.clone();
+                    // Use one shared evidence highlight for workflow
+                    // row previews and source/detail field hover.
+                    let board_link=self.workflow_ui.pending_preview()
+                        .filter(|target|self.active_id.as_deref()
+                            ==Some(target.order_id.as_str()))
+                        .and_then(|target|target.recipient_id.as_deref())
+                        .and_then(|id|spans.iter()
+                            .find(|span|span.key.recipient_id==id &&
+                                span.key.field=="name")
+                            .or_else(||spans.iter().find(|span|
+                                span.key.recipient_id==id)))
+                        .map(|span|span.key.clone());
+                    let active_link=board_link.or_else(||self.link_hover.active.clone());
                     let scroll_link=self.link_hover.scroll_to.clone();
                     let mut hovered_link=None;
                     let mut clicked_link=None;
@@ -5693,12 +5705,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     .min(ui.available_height().max(0.0)))
                                 .auto_shrink([false, false])
                                 .show(ui, |fields| {
+                                    let board_preview=self.workflow_ui.pending_preview()
+                                        .is_some_and(|target|
+                                            self.active_id.as_deref()
+                                                ==Some(target.order_id.as_str()) &&
+                                            target.recipient_id.as_deref()==Some(recipient_id));
                                     let active_fields=[
                                         "name","address","mobile","phone","note"
-                                    ].map(|field| source_highlight::is_active(
-                                        self.link_hover.active.as_ref(),
-                                        &source_highlight::key(recipient_id,recipient_id,field),
-                                    ));
+                                    ].map(|field|(board_preview && field=="name") ||
+                                        source_highlight::is_active(
+                                            self.link_hover.active.as_ref(),
+                                            &source_highlight::key(recipient_id,recipient_id,field)
+                                        ));
                                     let responses = components::reception_recipient_fields(
                                         fields, &mut name, &mut address, &mut mobile,
                                         &mut phone, &mut note, active_fields,
@@ -5841,12 +5859,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     .and_then(serde_json::Value::as_i64)
                                                     .map(components::display_won)
                                                     .unwrap_or_else(||"—".to_owned());
+                                                let board_preview=self.workflow_ui.pending_preview()
+                                                    .is_some_and(|target|
+                                                        self.active_id.as_deref()
+                                                            ==Some(target.order_id.as_str()) &&
+                                                        target.recipient_id.as_deref()==Some(recipient_id));
                                                 let active_fields=[
                                                     "product","quantity","price"
-                                                ].map(|field| source_highlight::is_active(
-                                                    self.link_hover.active.as_ref(),
-                                                    &source_highlight::key(recipient_id,item_id,field),
-                                                ));
+                                                ].map(|field|(board_preview && field=="product") ||
+                                                    source_highlight::is_active(
+                                                        self.link_hover.active.as_ref(),
+                                                        &source_highlight::key(recipient_id,item_id,field)
+                                                    ));
                                                 let cells=if editable{
                                                     components::reception_item_row_editable(
                                                         items_ui,&reception_service::item_title(item),
