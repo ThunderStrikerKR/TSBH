@@ -1282,3 +1282,110 @@ mod manual_remote_row_tests {
         })).is_none());
     }
 }
+
+#[cfg(test)]
+mod quote_reuse_tests {
+    use super::*;
+
+    fn sample()->Value {
+        json!({
+            "id":"draft","applyVat":false,
+            "recipients":[{
+                "id":"r1","name":"원본 이름","address":"서울특별시 중구",
+                "mobile":"010-1234-5678","phone":"","note":"문 앞",
+                "freightCode":"010","dispatchOrigin":"FACTORY",
+                "shippingCharges":{"FACTORY":3000},
+                "remoteDelivery":{"address":"서울특별시 중구",
+                    "checked":false,"manual":false},
+                "vatOverride":false,"vatRateBps":1000,
+                "items":[{
+                    "id":"i1","productId":"p1","variantId":"v1",
+                    "quantity":2,"unitPrice":6000,"origin":"FACTORY"
+                }]
+            }]
+        })
+    }
+
+    #[test]
+    fn contact_edits_do_not_change_native_price_inputs(){
+        let original=sample();
+        for field in ["name","mobile","phone","note"]{
+            let mut updated=original.clone();
+            updated["recipients"][0][field]=json!("직원 수정");
+            assert_eq!(
+                price_input_snapshot(&original),price_input_snapshot(&updated),
+                "editing {field} must not refresh the invoice"
+            );
+        }
+        let mut source_labels=original.clone();
+        source_labels["recipients"][0]["sources"]=json!([{"field":"name"}]);
+        assert_eq!(price_input_snapshot(&original),price_input_snapshot(&source_labels));
+    }
+
+    #[test]
+    fn financial_changes_invalidate_the_prior_quote(){
+        let original=sample();
+        for (path,value) in [
+            ("address",json!("제주특별자치도 제주시")),
+            ("dispatchOrigin",json!("STORE")),
+            ("freightCode",json!("020")),
+            ("shippingCharges",json!({"FACTORY":4500})),
+            ("remoteDelivery",json!({"checked":true,"manual":true})),
+            ("vatOverride",json!(true)),
+            ("vatRateBps",json!(2000)),
+        ]{
+            let mut updated=original.clone();
+            updated["recipients"][0][path]=value;
+            assert_ne!(price_input_snapshot(&original),
+                price_input_snapshot(&updated),"{path}");
+        }
+        for (path,value) in [
+            ("productId",json!("p2")),("variantId",json!("v2")),
+            ("quantity",json!(3)),("unitPrice",json!(7300)),
+            ("manualUnitPrice",json!(7200)),("origin",json!("STORE"))
+        ]{
+            let mut updated=original.clone();
+            updated["recipients"][0]["items"][0][path]=value;
+            assert_ne!(price_input_snapshot(&original),
+                price_input_snapshot(&updated),"{path}");
+        }
+        let mut vat=original.clone();
+        vat["applyVat"]=json!(true);
+        assert_ne!(price_input_snapshot(&original),price_input_snapshot(&vat));
+    }
+
+    #[test]
+    fn existing_complete_quote_is_reused_without_arithmetic(){
+        let mut updated=sample();
+        updated["recipients"][0]["note"]=json!("관리 메모만 수정됨");
+        let saved=json!({
+            "authorityRevision":9,"sourceRaw":"원문","orderId":"draft",
+            "clientId":"c1","orderType":"AGENCY",
+            "shippingFee":3000,"shippingVersion":2,
+            "subtotal":12000,"vatAmount":0,"total":15000,
+            "pendingRecipients":[],
+            "linePrices":[{"itemId":"i1","amount":12000}],
+            "freightLines":[{"recipientId":"r1","origin":"FACTORY",
+                "appliedCharge":3000,"billableCharge":3000}]
+        });
+        let restored=reuse_native_quote(Some(&saved),&updated).unwrap();
+        assert_eq!(restored["totals"]["total"],15000);
+        assert_eq!(restored["totals"]["pendingRecipients"],json!([]));
+        assert_eq!(restored["linePrices"],saved["linePrices"]);
+        assert_eq!(restored["freightLines"],saved["freightLines"]);
+        assert_eq!(restored["order"]["recipients"][0]["note"],
+            "관리 메모만 수정됨");
+        assert_eq!(restored["order"]["shippingFee"],3000);
+    }
+
+    #[test]
+    fn legacy_incomplete_quote_requires_native_recalculation(){
+        let order=sample();
+        let stale=json!({
+            "authorityRevision":1,"linePrices":[{"itemId":"i1"}],
+            "freightLines":[]
+        });
+        assert!(reuse_native_quote(Some(&stale),&order).is_none());
+        assert!(reuse_native_quote(None,&order).is_none());
+    }
+}
