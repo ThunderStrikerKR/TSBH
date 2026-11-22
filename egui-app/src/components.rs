@@ -1409,14 +1409,15 @@ pub fn reception_recipient_fields(
     }).inner
 }
 
-/// Edit over the original 36pt input rectangle without shrinking it. The
-/// readonly control and focused control share the same builder, so the text
+/// Edit over the original 36pt input rectangle without shrinking it.
+/// Ui::place never advances the parent layout cursor (Ui::put does).
+/// The readonly control and focused control share the same builder, so the text
 /// baseline, inset and phone font do not change when focus is acquired.
 pub fn reception_recipient_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     phone_number:bool,active:bool
 )->Response{
-    let response=ui.put(
+    let response=ui.place(
         cell,reception_recipient_text_edit(value,cell.width(),active,phone_number)
     );
     if request_focus {response.request_focus();}
@@ -3080,7 +3081,7 @@ pub fn reception_inline_cell_editor(
     }else{
         egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
     };
-    let response=ui.put(
+    let response=ui.place(
         rect,
         egui::TextEdit::singleline(value)
             .font(font)
@@ -3276,7 +3277,7 @@ pub struct ReceptionFreightEdit {
 }
 /// Both resting and focused freight controls are the SAME 84×36pt TextEdit.
 /// A smaller overlay would reduce the perceived lower inset and move its
-/// right-aligned numeric baseline on click.
+/// right-aligned numeric baseline on click. Ui::place preserves row spacing.
 fn reception_freight_amount_text_edit(value:&mut String)->egui::TextEdit<'_>{
     egui::TextEdit::singleline(value)
         .font(typography::data_value_font(
@@ -3294,7 +3295,7 @@ fn reception_freight_amount_text_edit(value:&mut String)->egui::TextEdit<'_>{
 pub fn reception_freight_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool
 )->Response{
-    let response=ui.put(cell,reception_freight_amount_text_edit(value));
+    let response=ui.place(cell,reception_freight_amount_text_edit(value));
     if request_focus {response.request_focus();}
     response
 }
