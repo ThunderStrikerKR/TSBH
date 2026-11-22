@@ -2505,6 +2505,22 @@ pub fn management_dropdown(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
     options:impl FnOnce(&mut Ui)
 )->Response {
+    management_dropdown_inner(ui,label,width,enabled,tooltip,false,options)
+}
+
+/// Compact, two-option menus such as 선불 / 착불 never grow wider than their
+/// own trigger. Other selectors may expand to fit longer catalog names.
+pub fn management_dropdown_compact(
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    options:impl FnOnce(&mut Ui)
+)->Response {
+    management_dropdown_inner(ui,label,width,enabled,tooltip,true,options)
+}
+
+fn management_dropdown_inner(
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    compact:bool,options:impl FnOnce(&mut Ui)
+)->Response {
     // Keep exact toolbar/cell width without stretching the subsequent action
     // or exceeding a narrow selector slot.
     let width=width.min(ui.available_width()).max(1.0);
@@ -2565,20 +2581,24 @@ pub fn management_dropdown(
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
             menu.set_min_width(width);
+            if compact {menu.set_max_width(width);}
             management_dropdown_option_palette(menu);
-            // The popup frame already provides a compact inset (~4pt).
-            // Match the vertical gap between option highlights to that inset
-            // rather than inheriting egui's wider default item spacing.
+            // The popup frame owns its 4pt inset. Use full-height selectable
+            // rows, so Hangul glyph ink has space above AND below its center.
             menu.spacing_mut().item_spacing.y=theme::SPACE_4;
-            // Long customer/product/category lists stay within this menu.
-            // The page and its surrounding editor never become scrollable.
-            egui::ScrollArea::vertical()
+            // Horizontal auto-shrink is mandatory: forcing a wide ScrollArea
+            // caused 90pt 선불/착불 selectors to open ~600pt-wide menus.
+            let scroll=egui::ScrollArea::vertical()
                 .max_height(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
-                .auto_shrink([false,true])
-                .show(menu,|choices|{
-                    choices.spacing_mut().item_spacing.y=theme::SPACE_4;
-                    options(choices);
-                });
+                .auto_shrink([true,true]);
+            let scroll=if compact {scroll.max_width(width)}else{scroll};
+            scroll.show(menu,|choices|{
+                choices.spacing_mut().item_spacing.y=theme::SPACE_4;
+                choices.spacing_mut().interact_size.y=
+                    theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
+                if compact{choices.set_width(width);}
+                options(choices);
+            });
         });
     trigger
 }
@@ -2590,6 +2610,26 @@ pub fn management_dropdown_option<T:PartialEq>(
 )->Response {
     let response=ui.selectable_value(current,value,label);
     if response.clicked(){ui.close();}
+    response
+}
+
+/// Explicit width for short menus. Keep egui's native selectable visual
+/// states, keyboard click semantics and changed flag, with a 28pt hit area.
+pub fn management_dropdown_compact_option<T:PartialEq>(
+    ui:&mut Ui,current:&mut T,value:T,label:&str,width:f32
+)->Response {
+    let selected=*current==value;
+    let mut response=ui.add_sized(
+        Vec2::new(width,theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
+        egui::Button::selectable(selected,label)
+    );
+    if response.clicked(){
+        if *current!=value {
+            *current=value;
+            response.mark_changed();
+        }
+        ui.close();
+    }
     response
 }
 
@@ -3546,9 +3586,9 @@ fn reception_cod_dropdown(
         None if editable=>"선불",
         None=>"—",
     };
-    let response=management_dropdown(ui,label,90.0,editable,"",|menu|{
-        management_dropdown_option(menu,&mut selected,false,"선불");
-        management_dropdown_option(menu,&mut selected,true,"착불");
+    let response=management_dropdown_compact(ui,label,90.0,editable,"",|menu|{
+        management_dropdown_compact_option(menu,&mut selected,false,"선불",90.0);
+        management_dropdown_compact_option(menu,&mut selected,true,"착불",90.0);
     });
     (editable && selected!=collect.unwrap_or(false),response)
 }
@@ -4437,6 +4477,34 @@ mod management_dropdown_unification_tests {
             assert_eq!(rect.height(),theme::ACTION_STANDARD_HEIGHT);
         }
         assert_eq!(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT,320.0);
+    }
+
+    #[test]
+    fn shared_select_options_have_real_vertical_padding_and_compact_width(){
+        let ctx=egui::Context::default();
+        let mut rects=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.scope(|choices|{
+                    choices.spacing_mut().interact_size.y=
+                        theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
+                    let mut selected=false;
+                    let first=management_dropdown_compact_option(
+                        choices,&mut selected,false,"선불",90.0
+                    );
+                    let second=management_dropdown_compact_option(
+                        choices,&mut selected,true,"착불",90.0
+                    );
+                    rects.extend([first.rect,second.rect]);
+                });
+            });
+        });
+        assert_eq!(rects.len(),2);
+        for rect in rects {
+            assert_eq!(rect.width(),90.0);
+            assert_eq!(rect.height(),theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
+        }
+        assert!(theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT>=28.0);
     }
 
     #[test]
