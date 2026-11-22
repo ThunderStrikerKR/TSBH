@@ -2292,24 +2292,14 @@ impl BandoEgui {
                 }
             }
         }
-        // The OCR image review is a large, screen-centered overlay. Normal
-        // small dialogs may avoid the Kakao dock, but this comparison needs
-        // equal left and right gutters over the full application viewport.
-        let review_area=components::modal_balanced_review_area(
-            ctx.screen_rect(),work_area
-        );
-        let dialog_width=(review_area.width()*0.94).clamp(560.0,1480.0)
-            .min(review_area.width().max(1.0));
-        let dialog_height=(review_area.height()*0.88).clamp(450.0,960.0)
-            .min(review_area.height().max(1.0));
-        let dialog_size=Vec2::new(dialog_width,dialog_height);
-        // The LEFT_TOP + explicit coordinate variant previously displayed
-        // the OCR contents reliably. Keep that placement contract but center
-        // it on the full-screen balanced area, not the Kakao-excluded area.
-        let dialog_rect=Rect::from_center_size(review_area.center(),dialog_size);
+        // The KakaoTalk dock is an externally owned foreground window.
+        // Like every other modal, OCR must be centered inside the remaining
+        // approved work area and must never overlap the KakaoTalk reserve.
+        let dialog_rect=components::modal_ocr_review_rect(work_area);
+        let dialog_size=dialog_rect.size();
         if let Some(review)=self.ocr_review.as_mut() {
             components::modal_window(
-                "OCR 문자 인식 검토","egui-ocr-review",review_area
+                "OCR 문자 인식 검토","egui-ocr-review",work_area
             )
                 .pivot(egui::Align2::LEFT_TOP)
                 .fixed_pos(dialog_rect.min)
