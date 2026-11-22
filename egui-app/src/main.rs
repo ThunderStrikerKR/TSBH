@@ -2451,6 +2451,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
     fn clear_source_analysis(&mut self) {
         self.auto_client_change=None;
+        self.pricing_basis_check=None;
         self.analysis_request = self.analysis_request.wrapping_add(1);
         self.analysis_receiver = None;
         self.analysis_pending = false;
