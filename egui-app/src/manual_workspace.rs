@@ -864,8 +864,6 @@ impl ManualWorkspace {
                                                     theme::SELECTED_ORDER
                                                 ));
                                             }
-                                            let vat=row.get("vatOverride")
-                                                .and_then(Value::as_bool).unwrap_or(false);
                                             ui.horizontal_wrapped(|options|{
                                                 options.spacing_mut().item_spacing.x=theme::SPACE_8;
                                                 options.label(typography::field_label("발송지"));
@@ -911,17 +909,6 @@ impl ManualWorkspace {
                                                         json!({"cell":{"recipientId":rid,
                                                             "field":"remoteDelivery"},
                                                             "value":!remote})
-                                                    ));
-                                                }
-                                                if theme::action(options,
-                                                    if vat{"부가세 포함"}else{"부가세 별도"},
-                                                    ButtonRole::Standard,!busy
-                                                ).clicked(){
-                                                    chosen=Some((
-                                                        "set_manual_delivery_option".into(),
-                                                        json!({"cell":{"recipientId":rid,
-                                                            "field":"vatOverride"},
-                                                            "value":!vat})
                                                     ));
                                                 }
                                                 if theme::action(options,

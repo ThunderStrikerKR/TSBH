@@ -69,6 +69,12 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml pricing::migration_tests -- --nocapture
       - name: Verify complete multi-recipient receipt totals with VAT and doubled freight
         run: cargo test --manifest-path egui-app/Cargo.toml two_recipients_with_complete_freight -- --nocapture
+      - name: Verify order-wide VAT atomically updates selected recipients
+        run: cargo test --manifest-path egui-app/Cargo.toml order_wide_vat_policy_changes_all_rows -- --nocapture
+      - name: Verify editable VAT rate recalculates receipt totals
+        run: cargo test --manifest-path egui-app/Cargo.toml seven_point_five_percent_applies_only_to_selected_shipment -- --nocapture
+      - name: Verify VAT modal percentage and scope input
+        run: cargo test --manifest-path egui-app/Cargo.toml vat_settings_ui_tests -- --nocapture
       - name: Verify recipient freight completes the entire order total automatically
         run: cargo test --manifest-path egui-app/Cargo.toml incomplete_second_recipient -- --nocapture
       - name: Verify native recipient freight is quoted and collected exactly once

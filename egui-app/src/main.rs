@@ -5527,7 +5527,12 @@ impl BandoEgui {
                                 && self.vat_change.is_none()
                         ).clicked(){edit_vat=true;}
                     },|body|{
-
+                    let preview=self.active_id.as_deref()
+                        .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
+                        .and_then(|draft|draft.pricing_preview.as_ref())
+                        .filter(|quote|quote.get("sourceRaw")
+                            .and_then(serde_json::Value::as_str)
+                            ==Some(self.raw_source.as_str()));
                     let synced=self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|row|row.id==id))
                         .is_some_and(|row|row.working_synced);
