@@ -1782,17 +1782,12 @@ impl FreightManager {
                         // of the column gaps. No opacity multiplication:
                         // 0.30 × DIVIDER was darker than the row background,
                         // which made the separators effectively invisible.
-                        for index in 0..5 {
-                            let edge=cells[index].right()
-                                +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-                            row.painter().line_segment(
-                                [egui::pos2(edge,row_rect.top()),
-                                 egui::pos2(edge,row_rect.bottom())],
-                                egui::Stroke::new(
-                                    theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
-                                )
-                            );
-                        }
+                        let boundaries=std::array::from_fn::<_,5,_>(|index|{
+                            cells[index].right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0
+                        });
+                        components::management_master_column_rules(
+                            row,row_rect,&boundaries
+                        );
                         row.painter().line_segment(
                             [row_rect.left_bottom(),row_rect.right_bottom()],
                             egui::Stroke::new(
@@ -1896,18 +1891,13 @@ impl FreightManager {
                         );
                     }
                 }
-                if i<5 {
-                    let edge=header_cells[i].right()
-                        +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-                    header_painter.line_segment(
-                        [egui::pos2(edge,header_rect.top()),
-                         egui::pos2(edge,header_rect.bottom())],
-                        egui::Stroke::new(
-                            theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
-                        )
-                    );
-                }
             }
+            let boundaries=std::array::from_fn::<_,5,_>(|index|{
+                header_cells[index].right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0
+            });
+            components::management_master_column_rules(
+                section,header_rect,&boundaries
+            );
             // This shared painter preserves the exact master 2pt bottom band.
             components::management_master_header_finish(section,header_rect);
 

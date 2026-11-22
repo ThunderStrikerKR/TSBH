@@ -218,7 +218,7 @@ export function suggestClient(raw: string, clients: Client[]) {
   return clients.filter(
     (c) =>
       !c.deletedAt &&
-      [c.name, ...(c.shortNames ?? "").split(","), ...(c.identifiers ?? "").split(",")]
+      [c.name, ...(c.shortNames ?? "").split(/[,;|\n]/), ...(c.identifiers ?? "").split(/[,;|\n]/)]
           .some((n) => n.trim().length >= 2 && raw.includes(n.trim())),
   );
 }
