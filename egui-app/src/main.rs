@@ -1800,6 +1800,61 @@ impl BandoEgui {
         self.manual_workspace=Some(editor);
     }
 
+    /// Staff issue edits use the existing serialized native edit pipeline.
+    fn start_review_inline_action(
+        &mut self,target:InlineTarget,value:serde_json::Value,ctx:&egui::Context
+    ){
+        if self.inline_editor.is_some() || self.inline_change.is_some(){
+            self.source_save_error=Some(
+                "현재 셀 편집을 먼저 확정하거나 취소하세요.".into()
+            );
+            return;
+        }
+        if self.reception_job_admission(
+            ReceptionJob::InlineEdit,false
+        )!=JobAdmission::Start{return;}
+        let Some(source)=self.active_id.as_deref().and_then(|id|
+            self.drafts.iter().find(|row|row.id==id)
+        ).cloned()else{return};
+        if source.analysis_raw.as_deref()!=Some(source.raw.as_str())
+            ||source.analysis_evidence.is_none(){
+            self.source_save_error=Some(
+                "원문 인식이 완료된 뒤 확인 항목을 처리하세요.".into()
+            );
+            return;
+        }
+        let original=self.analysis.as_ref().and_then(|analysis|
+            current_inline_value(
+                &analysis.recognition,source.pricing_preview.as_ref(),&target
+            )
+        ).unwrap_or_default();
+        let editor=InlineReceptionEditor{
+            source_id:source.id.clone(),target:target.clone(),
+            original:original.clone(),text:original,
+            focus_next:false,click_at:None
+        };
+        let (tx,receiver)=mpsc::channel();
+        self.inline_change=Some(PendingInlineChange{
+            order_id:source.id.clone(),raw:source.raw.clone(),
+            target:target.clone(),editor,next:None,receiver
+        });
+        let gateway=Arc::clone(&self.gateway);
+        let context=ctx.clone();
+        std::thread::spawn(move||{
+            let request=manual_workspace::InlineRequest{
+                recipient_id:target.recipient_id,
+                item_id:target.item_id,
+                field:target.field.to_owned(),value
+            };
+            let outcome=manual_workspace::apply_inline(
+                gateway.as_ref(),&source,&request
+            );
+            let _=tx.send(outcome);
+            context.request_repaint();
+        });
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+
     /// React StaffChecks routing: navigate to the exact recipient/item
     /// rather than opening an unrelated manual screen or creating UI rules.
     fn handle_review_action(
@@ -1811,45 +1866,50 @@ impl BandoEgui {
                 self.select_client_candidate(&id,ctx);
                 return;
             }
+            review_panel::Action::ApproveOne{recipient_id,item_id}=>{
+                self.start_review_inline_action(
+                    InlineTarget{
+                        recipient_id,item_id:Some(item_id),field:"approveOne"
+                    },serde_json::Value::Null,ctx
+                );
+                return;
+            }
+            review_panel::Action::CancelApproval{recipient_id,item_id}=>{
+                self.start_review_inline_action(
+                    InlineTarget{
+                        recipient_id,item_id:Some(item_id),field:"cancelApproval"
+                    },serde_json::Value::Null,ctx
+                );
+                return;
+            }
             review_panel::Action::Candidate{recipient_id,field,value}=>{
-                let index=self.analysis.as_ref()
-                    .and_then(|analysis|reception_service::recipients(analysis)
-                        .iter().position(|row|
-                            reception_service::text(row,"id")==recipient_id))
-                    ;
-                let Some(index)=index else{return};
-                if self.inline_change.is_some() || self.inline_editor.is_some(){
-                    self.source_save_error=Some(
-                        "현재 셀 편집을 먼저 확정하거나 취소하세요.".into()
-                    );return;
-                }
+                let Some(index)=self.analysis.as_ref().and_then(|analysis|
+                    reception_service::recipients(analysis).iter().position(|row|
+                        reception_service::text(row,"id")==recipient_id)
+                )else{return};
                 self.selected_recipient=index;
                 self.workflow_ui.stop_preview();
                 self.link_hover.clear();
-                let target=InlineTarget{
-                    recipient_id,item_id:None,
-                    field:match field.as_str(){
-                        "name"=>"name","address"=>"address",
-                        "phone"=>"phone","mobile"=>"mobile",_=>return
-                    }
+                let field=match field.as_str(){
+                    "name"=>"name","address"=>"address",
+                    "phone"=>"phone","mobile"=>"mobile",_=>return
                 };
-                let current=self.analysis.as_ref()
-                    .and_then(|analysis|current_inline_value(
-                        &analysis.recognition,None,&target
-                    )).unwrap_or_default();
-                self.begin_inline_edit(target.clone(),current,None);
-                if let Some(editor)=self.inline_editor.as_mut()
-                    .filter(|editor|editor.target==target){
-                    editor.text=value;
-                    self.submit_inline_edit(ctx);
-                }
+                // Selecting even the same text confirms the field in Rust.
+                self.start_review_inline_action(
+                    InlineTarget{recipient_id,item_id:None,field},
+                    serde_json::json!(value),ctx
+                );
                 return;
             }
             review_panel::Action::Navigate{
                 kind,recipient_id,item_id,link_key
             }=>{
                 if recipient_id.is_empty(){
-                    self.open_client_chooser(ctx);
+                    if kind=="CLIENT" || kind.starts_with("CLIENT_MATCH_"){
+                        self.open_client_chooser(ctx);
+                    }else if kind=="RECIPIENT"{
+                        self.open_manual_workspace(ctx);
+                    }
                     return;
                 }
                 let Some(index)=self.analysis.as_ref().and_then(|analysis|
@@ -2361,7 +2421,9 @@ impl BandoEgui {
             },
             Err(error)=>{
                 self.source_save_error=Some(format!("셀 수정 실패: {error}"));
-                self.inline_editor=Some(pending.editor);
+                if !matches!(pending.target.field,"approveOne"|"cancelApproval") {
+                    self.inline_editor=Some(pending.editor);
+                }
             }
         }
         ctx.request_repaint();
