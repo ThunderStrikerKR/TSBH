@@ -50,6 +50,30 @@ pub struct BoardSnapshot {
     pub revision: Option<u64>,
     pub groups: Vec<GroupRow>,
 }
+/// Locate the evidence-owned shipment across ALL groups of the same order.
+/// A recipient name is not an identity. If one recipient has multiple packages,
+/// preserve the committed package when it is still a valid candidate.
+pub fn find_recipient_shipment<'a>(
+    snapshot:&'a BoardSnapshot,order_id:&str,recipient_id:&str,
+    preferred_shipment_id:Option<&str>
+)->Option<(&'a GroupRow,&'a ShipmentRow)>{
+    let mut fallback=None;
+    for group in &snapshot.groups{
+        for shipment in &group.shipments{
+            if shipment.order_id!=order_id || shipment.recipient_id!=recipient_id{
+                continue;
+            }
+            if preferred_shipment_id==Some(shipment.id.as_str()){
+                return Some((group,shipment));
+            }
+            if fallback.is_none(){
+                fallback=Some((group,shipment));
+            }
+        }
+    }
+    fallback
+}
+
 fn rows(value:&Value)->&[Value]{
     value.as_array().map(Vec::as_slice).unwrap_or(&[])
 }
@@ -241,5 +265,64 @@ mod tests{
             "legacy":true}});
         assert_eq!(projected_remote(&legacy).unwrap()["legacy"],true);
         assert!(projected_remote(&json!({"shipmentId":"ordinary"})).is_none());
+    }
+}
+
+// The source and contact panes must resolve exactly the same shipment as
+// the workflow board, even when a single order spans multiple groups.
+#[cfg(test)]
+mod linked_recipient_selection_tests{
+    use super::*;
+    fn shipment(id:&str,order:&str,recipient:&str)->ShipmentRow{
+        ShipmentRow{
+            id:id.into(),order_id:order.into(),recipient_id:recipient.into(),
+            recipient_name:"동명이인".into(),products:vec![],
+            source_raw:"공통 발주원문".into(),recipient:json!({"id":recipient}),
+            remote:None,freight:None,collect:false,vat_included:None,
+            shipment_count:1,order_total:None,
+        }
+    }
+    fn group(id:&str,shipments:Vec<ShipmentRow>)->GroupRow{
+        GroupRow{
+            id:id.into(),created_at:String::new(),dealer_name:String::new(),
+            source_id:String::new(),dealer_id:String::new(),transferred:false,
+            step:0,needs_notice:false,total:None,vat_included:0,vat_excluded:0,
+            shipments,automatic_text:None,automatic_error:None,
+            automatic_phase:None,automatic_payment_issues:vec![],issues:vec![],
+        }
+    }
+    #[test]
+    fn finds_recipient_in_another_group_without_matching_duplicate_names(){
+        let board=BoardSnapshot{
+            revision:None,
+            groups:vec![
+                group("g1",vec![shipment("s1","order1","r1")]),
+                group("g2",vec![
+                    shipment("s2","order1","r2"),
+                    shipment("s3","order2","r2"),
+                ]),
+            ],
+        };
+        let (found_group,found_ship)=find_recipient_shipment(
+            &board,"order1","r2",Some("s1")
+        ).expect("cross-group recipient");
+        assert_eq!((found_group.id.as_str(),found_ship.id.as_str()),("g2","s2"));
+        assert!(find_recipient_shipment(&board,"order1","r3",None).is_none());
+        assert!(find_recipient_shipment(&board,"order2","r1",None).is_none());
+    }
+    #[test]
+    fn preserves_clicked_package_for_recipient_with_multiple_shipments(){
+        let board=BoardSnapshot{
+            revision:None,groups:vec![
+                group("g1",vec![shipment("s1","order1","r1")]),
+                group("g2",vec![shipment("s2","order1","r1")]),
+            ],
+        };
+        let (found_group,found_ship)=find_recipient_shipment(
+            &board,"order1","r1",Some("s2")
+        ).expect("committed shipment");
+        assert_eq!((found_group.id.as_str(),found_ship.id.as_str()),("g2","s2"));
+        assert_eq!(find_recipient_shipment(&board,"order1","r1",Some("gone"))
+            .unwrap().1.id,"s1");
     }
 }

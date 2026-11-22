@@ -4190,12 +4190,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // workflow group of the same confirmed order. Never match on name.
         let linked=if stage.is_none(){
             self.link_hover.active.as_ref().and_then(|key|
-                committed.and_then(|selected|board.groups.iter()
-                    .flat_map(|group|group.shipments.iter()
-                        .map(move |shipment|(group,shipment)))
-                    .find(|(_group,shipment)|
-                        shipment.order_id==selected.order_id &&
-                        shipment.recipient_id==key.recipient_id))
+                committed.and_then(|selected|
+                    workflow_board::find_recipient_shipment(
+                        board,&selected.order_id,&key.recipient_id,
+                        Some(&selected.shipment_id)
+                    )
+                )
             )
         }else{None};
         let group_id=stage
@@ -4405,11 +4405,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             });
             self.source_hover=hovered_source;
             if let Some(clicked)=clicked_source{
-                if let Some(target)=group.shipments.iter().find(|ship|
-                    ship.order_id==shipment.order_id &&
-                    ship.recipient_id==clicked.recipient_id){
+                // A source token may belong to a recipient in ANOTHER group.
+                // Use the same ID-based resolver as hover, not just this card.
+                if let Some((target_group,target))=self.workflow_snapshot.as_ref()
+                    .and_then(|snapshot|workflow_board::find_recipient_shipment(
+                        snapshot,&shipment.order_id,&clicked.recipient_id,
+                        Some(&shipment.id)
+                    )){
                     self.workflow_ui.select(workflow_board_ui::Selection{
-                        group_id:group.id.clone(),
+                        group_id:target_group.id.clone(),
                         order_id:target.order_id.clone(),
                         shipment_id:target.id.clone()
                     });
