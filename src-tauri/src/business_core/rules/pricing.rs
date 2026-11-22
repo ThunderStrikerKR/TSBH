@@ -206,12 +206,21 @@ fn reception_totals(order:&Value,client:&Value,freight:&Value)->Result<Value,Str
             };
         let vat_enabled=field(recipient,"vatOverride").as_bool()
             .unwrap_or_else(||flag(order,"applyVat"));
+        let rate=field(recipient,"vatRateBps").as_i64()
+            .unwrap_or(1000);
+        if !(0..=10_000).contains(&rate){
+            return Err("부가세율이 허용 범위를 벗어났습니다.".into());
+        }
         let vat=if !vat_enabled{Some(0)}
             else{
                 subtotal.zip(shipping)
                     .and_then(|(items,shipping)|items.checked_add(shipping))
                     .filter(|n|*n<=MAX_SAFE)
-                    .map(|base|((base as f64)*0.1).round() as i64)
+                    // Exact integer rounding to won for arbitrary tax rates.
+                    .and_then(|base|{
+                        let rounded=((base as i128)*i128::from(rate)+5_000)/10_000;
+                        i64::try_from(rounded).ok()
+                    })
                     .filter(|n|*n<=MAX_SAFE)
             };
         if subtotal.is_none() || shipping.is_none() || vat.is_none(){
@@ -355,6 +364,21 @@ mod migration_tests {
         assert_eq!(quote["totals"]["vat"],24200);
         assert_eq!(quote["totals"]["total"],327700);
         assert_eq!(quote["totals"]["pendingRecipients"],json!([]));
+    }
+    #[test]
+    fn seven_point_five_percent_applies_only_to_selected_shipment(){
+        let order=json!({"applyVat":false,"recipients":[
+            {"id":"a","vatOverride":true,"vatRateBps":750,"items":[
+                {"productId":"p","variantId":"v","unitPrice":10000,"quantity":1}]},
+            {"id":"b","vatOverride":false,"vatRateBps":750,"items":[
+                {"productId":"p","variantId":"v","unitPrice":10000,"quantity":1}]}
+        ]});
+        let freight=json!({"bundles":[
+            {"recipientId":"a","billableCharge":4000},
+            {"recipientId":"b","billableCharge":3000}]});
+        let total=reception_totals(&order,&json!({}),&freight).unwrap();
+        assert_eq!(total["vat"],1050);
+        assert_eq!(total["total"],28050);
     }
     #[test]
     fn incomplete_second_recipient_does_not_show_false_final_total(){

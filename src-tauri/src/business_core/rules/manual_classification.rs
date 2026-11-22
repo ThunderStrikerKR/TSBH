@@ -319,6 +319,47 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
         }
         return Ok(json!({"model":model}));
     }
+    if action == "set_manual_vat_settings" {
+        // One authoritative reducer updates all recipients as an atomic
+        // model revision, never N separate per-shipment UI clicks.
+        let mut model=req(payload,"model")?.clone();
+        let settings=req(payload,"value")?;
+        let scope=required_str(settings,"scope")?;
+        if !matches!(scope,"none"|"all"|"partial"){
+            return Err("부가세 적용 범위를 선택하세요.".into());
+        }
+        let rate=settings["rateBps"].as_i64().filter(|bps|
+            (0..=10_000).contains(bps)
+        ).ok_or("부가세율은 0%~100% 범위에서 0.01% 단위로 입력하세요.")?;
+        let applied=settings["recipientIds"].as_array()
+            .ok_or("부가세 적용 배송건이 없습니다.")?;
+        let rows=model["rows"].as_array_mut().ok_or("배송건 목록이 없습니다.")?;
+        if rows.is_empty(){return Err("배송건이 없습니다.".into());}
+        let ids=rows.iter().map(|row|str_field(row,"id").to_owned())
+            .collect::<std::collections::HashSet<_>>();
+        if ids.len()!=rows.len() || ids.contains(""){
+            return Err("배송건 ID가 중복되거나 누락됐습니다.".into());
+        }
+        let mut chosen=std::collections::HashSet::new();
+        for item in applied {
+            let id=item.as_str().ok_or("배송건 ID 형식이 잘못됐습니다.")?;
+            if !ids.contains(id) || !chosen.insert(id.to_owned()){
+                return Err("부가세 적용 배송건이 중복되거나 변경됐습니다.".into());
+            }
+        }
+        if scope=="partial" && (chosen.is_empty() || chosen.len()>=rows.len()){
+            return Err("일부 적용은 전체 배송건 중 일부를 선택하세요.".into());
+        }
+        for row in rows {
+            let included=match scope {
+                "none"=>false,"all"=>true,
+                _=>chosen.contains(str_field(row,"id"))
+            };
+            set(row,"vatOverride",json!(included))?;
+            set(row,"vatRateBps",json!(rate))?;
+        }
+        return Ok(json!({"model":model}));
+    }
     if action == "set_manual_delivery_option" {
         // The manual editor may change an UNCONFIRMED recipient only.
         // Freight amounts are normalized through the same Rust 2x rule
@@ -454,6 +495,25 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn order_wide_vat_policy_changes_all_rows_and_validates_selection(){
+        let model=json!({"rows":[{"id":"a"},{"id":"b"},{"id":"c"}]});
+        let updated=apply(&json!({"action":"set_manual_vat_settings",
+            "model":model,
+            "value":{"scope":"partial","recipientIds":["a","c"],"rateBps":750}
+        })).unwrap()["model"].clone();
+        assert_eq!(updated["rows"][0]["vatOverride"],true);
+        assert_eq!(updated["rows"][1]["vatOverride"],false);
+        assert_eq!(updated["rows"][2]["vatOverride"],true);
+        for row in rows(field(&updated,"rows")) {
+            assert_eq!(row["vatRateBps"],750);
+        }
+        let invalid=apply(&json!({"action":"set_manual_vat_settings",
+            "model":model,
+            "value":{"scope":"partial","recipientIds":["x"],"rateBps":1000}
+        }));
+        assert!(invalid.is_err());
+    }
     #[test]
     fn address_fields_follow_original_parts_shape() {
         assert_eq!(manual_address_parts(""),json!({}));

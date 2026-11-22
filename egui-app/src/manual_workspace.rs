@@ -140,6 +140,7 @@ pub fn apply_inline(
             "name"|"address"|"mobile"|"phone"|"note"=>"set_manual_recipient_field",
             "shippingCharge"|"dispatchOrigin"|"freightCode"|
             "remoteDelivery"|"vatOverride"=>"set_manual_delivery_option",
+            "vatSettings"=>"set_manual_vat_settings",
             "addItem"=>"add_manual_item",
             _=>return Err("지원하지 않는 수취인 입력 항목입니다.".into())
         }
