@@ -229,12 +229,6 @@ export function ClientManager({
                 onChange={(e) => setEdit({ ...edit, name: e.target.value })}
               />
                   </Field>
-                  <Field label="송장 표시 상호" help={{ purpose: "택배를 보낼 때 운송장에 표시할 보내는 사람의 상호를 정합니다.", when: "거래처의 실제 상호와 운송장에 인쇄할 상호가 다를 때 사용합니다.", steps: ["운송장에 표시할 상호를 입력합니다.", "거래처 정보를 저장합니다."], result: "대리발송 운송장을 만들 때 이 상호를 사용합니다.", caution: "비워두면 거래처명을 사용합니다." }}>
-              <input
-                value={edit.displayName ?? ""}
-                onChange={(e) => setEdit({ ...edit, displayName: e.target.value })}
-              />
-                  </Field>
 
                   <div className="client-editor-wide">
                   <Field label="검색 태그" help={{ purpose: "거래처를 다른 이름이나 약칭으로도 쉽게 찾을 수 있도록 합니다.", when: "거래처 이름 외에 자주 사용하는 호칭이 있을 때 사용합니다.", steps: ["검색에 사용할 이름이나 약칭을 쉼표로 구분하여 입력합니다.", "거래처를 저장합니다.", "거래처 검색창에서 등록한 단어로 검색합니다."], result: "검색할 때 거래처를 더 쉽게 찾을 수 있습니다." }}>
