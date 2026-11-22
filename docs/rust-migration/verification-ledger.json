@@ -3402,7 +3402,7 @@
       "id": "LIVE-20261123-EGUI-LINKED-SELECTION-72",
       "scope": "72차 React↔egui 처리 중인 주문 클릭/호버, 발주원문·수취인·품목 및 운임 연결 하이라이트",
       "status": "PATCHED_CI_PENDING_WINDOWS_UNVERIFIED",
-      "description": "72차 main 소스에서 React의 committed selection과 temporary preview 분리는 이식되었으나 최초 감사 기준 다른 그룹의 동일 주문 수취인 원문 클릭이 현재 그룹 검색으로 제한되어 불일치. 2026-11-23 동일 ID 조회 헬퍼(find_recipient_shipment)를 호버/원문 클릭에 함께 사용하도록 수정. 처리 중인 미확정 타 발주서 읽기 전용 미리보기의 원문·상세 역방향 호버는 여전히 별도 확인/보완 대상. 코드 커밋은 GUI 행동의 완료 증거가 아님.",
+      "description": "React의 확정 선택과 일시적 미리보기 분리 기준으로 72차 코드를 확인하고, 교차 배송그룹 연결 오류를 동일 ID 기반 탐색으로 수정. 2026-11-23 후속 작업은 미확정 타 주문의 읽기 전용 원문·수취인·상품 필드 역방향 hover, 주문 ID 범위로 격리된 공통 evidence hover, 네 영역이 공유하는 visible_pending_recipient resolver, 주문 카드→연결 패널 이동 시 hover 유지, 별도 레이어의 미확정 주문 펼침 미리보기를 구현. 발주서/계산/저장 데이터는 호버로 변경하지 않음. Windows GUI 실행과 최신 head CI 통과는 별도 검증 전까지 완료로 판정하지 않음.",
       "baseline": [
         "src/workspace-selection.ts",
         "src/HubWorkspace.tsx",
@@ -3417,20 +3417,28 @@
       "patches": [
         "87109d6394d67193bf61dc4e836b191790bd7868",
         "5f8773edd9a40eb5bd34ac282d2252227341706d",
-        "717548db3b08fcd07069cb7009ed4fa246584c5e"
+        "717548db3b08fcd07069cb7009ed4fa246584c5e",
+        "b91efb59d04e4a778c99108485639fe852c2b3ec",
+        "5185b5df6c630bdb7e406ab07b3c36612235e640",
+        "d7629b57e80445ee71ec7f49a5a05b58f1239856",
+        "05dd26d36240d62f141ac01d9b63b6b4bb32145c",
+        "cfa6315f8966a3e4924ab5630003e045d0ee468e",
+        "0c0ed3396b182566434f745c78143d514f6f372b",
+        "6dc6bc77f3f8a3504b3e454ad37cddc789237964",
+        "4797653f59c28e65acc304219bd6e1afd7bf96b1"
       ],
       "gates": {
         "patch": "COMMITTED_MAIN",
-        "unit": "ADDED cross-group and preferred-shipment tests; result pending latest-head CI",
-        "differential": "SOURCE-LEVEL ONLY: React selection precedence reviewed, no executable parity run",
-        "action": "NOT_VERIFIED: Windows actual pointer enter/leave/click/fold/multigroup route",
-        "ci": "PENDING: https://github.com/ThunderStrikerKR/TSBH/actions/runs/45042132809 ; previous 1d52e58 test compilation blocked by missing WorkingReception.analysis_view fixture (patched 717548d)",
+        "unit": "TESTS_ADDED_NOT_YET_PASSED: 50/150ms linked evidence, scoped hover cross-order guard, 250ms pending preview keepalive, single pending resolver, clicked selection preservation and multi-group recipient identity; CI has not completed on new head.",
+        "differential": "SOURCE_REVIEW: React committed selection vs temporary preview separation and egui precedence checked, executable React↔egui mouse-action parity remains unverified.",
+        "action": "NOT_VERIFIED: actual Windows pointer transfer between card/source/recipient/items, order swap, duplicate name and click while preview active.",
+        "ci": "PENDING: rapid unrelated main pushes repeatedly superseded targeted runs; most recent observed running https://github.com/ThunderStrikerKR/TSBH/actions/runs/45043360794 is NOT the newest code head. Do not reuse earlier head's result as PASS.",
         "windows": "NOT_VERIFIED"
       },
       "remaining": [
-        "새 head의 egui targeted CI 통과 확인",
-        "다른 미확정 주문 read-only source/detail의 역방향 호버와 미리보기 유지 동작",
-        "Windows 실기기에서 2명/동명이인/복수 배송그룹/수동 수정 중 클릭 전환 검수"
+        "최신 코드 HEAD의 Windows egui targeted CI 완료·PASS 확인",
+        "Windows 실화면에서 미확정 두 주문·동명이인·다른 배송그룹·원문/필드 호버 복귀 검수",
+        "React↔egui 클릭/호버/연속 이동·편집 대기 중 선택 상태에 대한 사용자 행동 차등 검증"
       ]
     }
   ],
