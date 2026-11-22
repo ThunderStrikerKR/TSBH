@@ -5115,18 +5115,23 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         self.clear_source_analysis();
                         self.queue_source_save();
                         if !self.raw_source.trim().is_empty() {
-                            self.analysis_due_at = Some(
-                                Instant::now() + Duration::from_millis(250)
-                            );
-                            ui.ctx().request_repaint_after(Duration::from_millis(260));
+                            // Analyze only after this input session finishes,
+                            // not every 250ms while the user is still typing.
+                            self.analysis_due_at=Some(Instant::now());
                         }
                     }
-                    // Finish explicit direct entry on blur. Afterwards the
-                    // accepted source is immutable. Discard a pending receipt
-                    // through the workflow list's trash action.
-                    if self.direct_source_entry && editor.lost_focus() &&
-                        !self.raw_source.trim().is_empty(){
+                    // A blur is an explicit end of this editing session.
+                    // Empty input returns to intake options; nonempty input
+                    // becomes immutable and is analyzed just once afterward.
+                    if self.direct_source_entry && editor.lost_focus(){
                         self.direct_source_entry=false;
+                        if self.raw_source.trim().is_empty(){
+                            self.source_editing=false;
+                            self.analysis_due_at=None;
+                        }else{
+                            self.analysis_due_at=Some(Instant::now());
+                        }
+                        ui.ctx().request_repaint();
                     }
                 }
                 if has_source {
@@ -7655,7 +7660,8 @@ impl eframe::App for BandoEgui {
                 ctx.request_repaint_after(Duration::from_millis(200));
             }
         }
-        if self.analysis_due_at.is_some_and(|at| Instant::now() >= at) {
+        if !self.direct_source_entry &&
+            self.analysis_due_at.is_some_and(|at| Instant::now() >= at) {
             self.analysis_due_at = None;
             if !self.raw_source.trim().is_empty() {
                 self.start_source_analysis(ctx.clone());
@@ -8411,6 +8417,81 @@ mod reception_workflow_admission_integration_tests {
         assert_eq!(app.drafts.len(),1);
         assert_eq!(app.active_id.as_deref(),Some("draft-2"));
         assert!(app.workflow_dialog.is_none());
+    }
+
+    #[test]
+    fn clean_inline_editor_does_not_block_switch_but_dirty_editor_does(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        let target=InlineTarget {
+            recipient_id:"r1".into(),item_id:None,field:"name"
+        };
+        app.inline_editor=Some(InlineReceptionEditor{
+            source_id:"draft-1".into(),target:target.clone(),
+            original:"김준희".into(),text:"김준희".into(),
+            focus_next:false,click_at:None,
+        });
+        assert_eq!(app.reception_job_admission(
+            ReceptionJob::NavigateReception,false
+        ),JobAdmission::Start);
+        app.select_reception("draft-2",&ctx);
+        assert_eq!(app.active_id.as_deref(),Some("draft-2"));
+        assert!(app.inline_editor.is_none());
+        app.select_reception("draft-1",&ctx);
+        app.inline_editor=Some(InlineReceptionEditor{
+            source_id:"draft-1".into(),target,
+            original:"김준희".into(),text:"수정 중".into(),
+            focus_next:false,click_at:None,
+        });
+        assert_eq!(app.reception_job_admission(
+            ReceptionJob::NavigateReception,false
+        ),JobAdmission::Conflict(ReceptionJob::InlineEditor));
+        app.select_reception("draft-2",&ctx);
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+        assert_eq!(app.inline_editor.as_ref().unwrap().text,"수정 중");
+    }
+
+    #[test]
+    fn blank_direct_input_can_be_abandoned_without_stuck_job(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.raw_source.clear();
+        app.drafts[0].raw.clear();
+        app.source_editing=true;
+        app.direct_source_entry=true;
+        app.new_reception(&ctx);
+        assert!(!app.direct_source_entry);
+        assert!(!app.source_editing);
+        assert_eq!(app.drafts.len(),2);
+        // The same empty draft is reused instead of multiplying blanks.
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+    }
+
+    #[test]
+    fn approved_deletion_cancels_pending_advisory_analysis_without_waiting(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.analysis_pending=true;
+        app.analysis_running_key=Some((
+            "draft-1".into(),"원문".into(),"AGENCY".into()
+        ));
+        app.delete_pending_reception("draft-1",&ctx);
+        assert_eq!(app.drafts.len(),1);
+        assert_eq!(app.active_id.as_deref(),Some("draft-2"));
+        assert!(!app.analysis_pending);
+        assert!(app.analysis_running_key.is_none());
+    }
+
+    #[test]
+    fn direct_source_can_switch_receptions_with_existing_draft_preserved(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.direct_source_entry=true;
+        app.source_editing=true;
+        app.select_reception("draft-2",&ctx);
+        assert_eq!(app.active_id.as_deref(),Some("draft-2"));
+        assert!(!app.direct_source_entry);
+        assert_eq!(app.drafts[0].raw,"원문");
     }
 
     #[test]
