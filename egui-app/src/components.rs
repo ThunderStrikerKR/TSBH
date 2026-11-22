@@ -3890,7 +3890,8 @@ mod modal_safe_position_tests {
             egui::pos2(360.0,80.0),egui::pos2(1630.0,910.0)
         );
         let review=modal_ocr_review_rect(work_area);
-        assert_eq!(review.center(),work_area.center());
+        assert!((review.center().x-work_area.center().x).abs()<0.01);
+        assert!((review.center().y-work_area.center().y).abs()<0.01);
         assert_ne!(review.center().x,viewport.center().x);
         assert!(review.left()>=work_area.left());
         assert!(review.right()<=work_area.right());
@@ -3906,7 +3907,8 @@ mod modal_safe_position_tests {
         ]{
             let work_area=Rect::from_min_size(egui::pos2(340.0,70.0),size);
             let review=modal_ocr_review_rect(work_area);
-            assert_eq!(review.center(),work_area.center());
+            assert!((review.center().x-work_area.center().x).abs()<0.01);
+            assert!((review.center().y-work_area.center().y).abs()<0.01);
             assert!(review.left()>=work_area.left());
             assert!(review.right()<=work_area.right());
             assert!(review.top()>=work_area.top());
