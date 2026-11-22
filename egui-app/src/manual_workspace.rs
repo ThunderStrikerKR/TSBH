@@ -133,12 +133,21 @@ impl ManualWorkspace {
             receiver:Some(rx),error:None,dirty:false,applied:None,
         }
     }
+    /// Open the existing native editor on the recipient currently selected
+    /// in the main intake pane, not silently on the first shipment.
+    pub fn focus_recipient(&mut self,index:usize){
+        self.selected_recipient=index;
+        self.selected_item=None;
+        self.selected_field="name".to_owned();
+    }
     fn busy(&self)->bool {self.receiver.is_some()}
     fn poll(&mut self) {
         let received=self.receiver.as_ref().map(|r|r.try_recv());
         match received {
             Some(Ok(Ok(Outcome::Initial{order,model,assignment_order})))=>{
                 self.base_order=Some(order);
+                let count=list(&model,"rows").len();
+                self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
                 self.receiver=None;
@@ -206,6 +215,12 @@ impl ManualWorkspace {
             } else {
                 text(item,"name").to_owned()
             };
+        }
+        if self.selected_field=="shippingCharge"{
+            // The input is a NEW applied charge, validated/normalized only
+            // by the native remote-delivery rule on confirmation. Avoid
+            // calculating a shown 2x charge in the egui presentation layer.
+            return String::new();
         }
         text(row,&self.selected_field).to_owned()
     }
@@ -600,6 +615,81 @@ impl ManualWorkspace {
                                                 "recipientId":rid,"itemId":unique_id()
                                             })));
                                         }
+                                        if index==self.selected_recipient {
+                                            let origin=text(row,"dispatchOrigin");
+                                            let origin=if origin=="STORE"{"STORE"}else{"FACTORY"};
+                                            let code=text(row,"freightCode");
+                                            let code=if code=="020"{"020"}else{"010"};
+                                            let remote=row.get("remoteDelivery")
+                                                .and_then(|v|v.get("checked"))
+                                                .and_then(Value::as_bool).unwrap_or(false);
+                                            let vat=row.get("vatOverride")
+                                                .and_then(Value::as_bool).unwrap_or(false);
+                                            ui.horizontal_wrapped(|options|{
+                                                options.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                                options.label(typography::field_label("발송지"));
+                                                for (label,value) in [
+                                                    ("공장","FACTORY"),("매장","STORE")
+                                                ]{
+                                                    if theme::action(
+                                                        options,label,
+                                                        if origin==value{ButtonRole::TableSecondary}
+                                                        else{ButtonRole::Standard},!busy
+                                                    ).clicked(){
+                                                        chosen=Some((
+                                                            "set_manual_delivery_option".into(),
+                                                            json!({"cell":{"recipientId":rid,
+                                                                "field":"dispatchOrigin"},
+                                                                "value":value})
+                                                        ));
+                                                    }
+                                                }
+                                                for (label,value) in [
+                                                    ("선불","010"),("착불","020")
+                                                ]{
+                                                    if theme::action(options,label,
+                                                        if code==value{ButtonRole::TableSecondary}
+                                                        else{ButtonRole::Standard},!busy).clicked(){
+                                                        chosen=Some((
+                                                            "set_manual_delivery_option".into(),
+                                                            json!({"cell":{"recipientId":rid,
+                                                                "field":"freightCode"},
+                                                                "value":value})
+                                                        ));
+                                                    }
+                                                }
+                                            });
+                                            ui.horizontal_wrapped(|options|{
+                                                options.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                                if theme::action(options,
+                                                    if remote{"도서산간 적용"}else{"도서산간 미적용"},
+                                                    ButtonRole::Standard,!busy
+                                                ).clicked(){
+                                                    chosen=Some((
+                                                        "set_manual_delivery_option".into(),
+                                                        json!({"cell":{"recipientId":rid,
+                                                            "field":"remoteDelivery"},
+                                                            "value":!remote})
+                                                    ));
+                                                }
+                                                if theme::action(options,
+                                                    if vat{"부가세 포함"}else{"부가세 별도"},
+                                                    ButtonRole::Standard,!busy
+                                                ).clicked(){
+                                                    chosen=Some((
+                                                        "set_manual_delivery_option".into(),
+                                                        json!({"cell":{"recipientId":rid,
+                                                            "field":"vatOverride"},
+                                                            "value":!vat})
+                                                    ));
+                                                }
+                                                if theme::action(options,
+                                                    "운임 수정",ButtonRole::Standard,!busy
+                                                ).clicked(){
+                                                    self.select_cell(index,None,"shippingCharge");
+                                                }
+                                            });
+                                        }
                                         components::soft_divider(ui);
                                     }
                                 });
@@ -612,7 +702,8 @@ impl ManualWorkspace {
                                     match self.selected_field.as_str() {
                                         "name"=>"이름","address"=>"주소",
                                         "mobile"=>"휴대폰","phone"=>"전화",
-                                        "note"=>"배송 요청",_=>"이름"
+                                        "note"=>"배송 요청",
+                                        "shippingCharge"=>"적용 운임",_=>"이름"
                                     }
                                 };
                                 ui.label(typography::field_label(label));
@@ -708,11 +799,25 @@ impl ManualWorkspace {
                 if let Some(item)=self.selected_item.as_ref() {
                     cell["itemId"]=json!(item);
                 }
-                let value=self.edit_text.clone();
+                let mut value=json!(self.edit_text.clone());
                 let action=if self.selected_field=="quantity" {
                     "native_confirm_quantity"
                 }else if self.selected_field=="product"{
                     "set_manual_product"
+                }else if self.selected_field=="shippingCharge"{
+                    // The UI only parses an entered integer. The existing
+                    // Rust rule is the sole authority for 2x normalization,
+                    // COD and allowed base freight.
+                    let raw=self.edit_text.trim().replace(',',"");
+                    if raw.is_empty(){
+                        value=Value::Null;
+                    }else if let Ok(n)=raw.parse::<i64>(){
+                        value=json!(n);
+                    }else{
+                        self.error=Some("운임은 0 이상의 정수로 입력하세요.".into());
+                        return None;
+                    }
+                    "set_manual_delivery_option"
                 }else{
                     "set_manual_recipient_field"
                 };
