@@ -1279,35 +1279,42 @@ impl BandoEgui {
             return;
         }
         let field=editor.target.field;
-        let value=if matches!(field,"quantity"|"unitPrice"|"shippingCharge"){
-            let digits=editor.text.trim().replace(',',"");
-            if digits.is_empty() && field!="quantity"{
-                serde_json::Value::Null
-            }else if let Ok(number)=digits.parse::<i64>(){
-                if !(0..=9_007_199_254_740_991).contains(&number)
-                    || (field=="quantity" && number==0) {
-                    self.source_save_error=Some(
-                        "수량은 1 이상, 단가·운임은 0 이상의 안전한 정수여야 합니다.".into()
+        let value=match field{
+            "quantity"|"unitPrice"|"shippingCharge"=>{
+                let digits=editor.text.trim().replace(',',"");
+                if digits.is_empty() && field!="quantity"{
+                    serde_json::Value::Null
+                }else{
+                    let parsed=digits.parse::<i64>();
+                    let valid=parsed.ok().filter(|n|
+                        (0..=9_007_199_254_740_991).contains(n) &&
+                        (field!="quantity"||*n>0)
                     );
-                    self.inline_editor=Some(editor);
-                    return;
+                    let Some(number)=valid else{
+                        self.source_save_error=Some(
+                            "수량은 1 이상, 단가·운임은 0 이상의 안전한 정수여야 합니다.".into()
+                        );
+                        self.inline_editor=Some(editor);
+                        return;
+                    };
+                    if field=="quantity"{
+                        serde_json::json!(number.to_string())
+                    }else{serde_json::json!(number)}
                 }
-                serde_json::json!(if field=="quantity"{
-                    number.to_string()
-                }else{digits})
-            }else{
-                self.source_save_error=Some("숫자 입력값을 확인하세요.".into());
-                self.inline_editor=Some(editor);
-                return;
-            }
-        }else{serde_json::json!(editor.text)};
-        let value=if matches!(field,"unitPrice"|"shippingCharge")
-            && !value.is_null(){
-            // The native reducer receives a numeric JSON value, never
-            // employee-formatted currency text.
-            serde_json::json!(editor.text.trim().replace(',','')
-                .parse::<i64>().unwrap_or(0))
-        }else{value};
+            },
+            "remoteDelivery"|"vatOverride"=>{
+                match editor.text.as_str(){
+                    "true"=>serde_json::json!(true),
+                    "false"=>serde_json::json!(false),
+                    _=>{
+                        self.source_save_error=Some("체크박스 변경값이 올바르지 않습니다.".into());
+                        self.inline_editor=Some(editor);
+                        return;
+                    }
+                }
+            },
+            _=>serde_json::json!(editor.text)
+        };
         let request=manual_workspace::InlineRequest{
             recipient_id:editor.target.recipient_id.clone(),
             item_id:editor.target.item_id.clone(),
