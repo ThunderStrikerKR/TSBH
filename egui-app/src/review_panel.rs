@@ -256,7 +256,12 @@ fn issue_card(
                 .and_then(|rows|rows.iter().find(|row|text(row,"id")==rid));
             cell.horizontal_wrapped(|buttons|{
                 if is_client && severity!="INFO"{
-                    for candidate in &analysis.client_candidates {
+                    // React uses the current native match's candidate list,
+                    // falling back to directory candidates for a missing match.
+                    let native=analysis.client_match.get("candidates")
+                        .and_then(Value::as_array).filter(|rows|!rows.is_empty());
+                    let candidates=native.unwrap_or(&analysis.client_candidates);
+                    for candidate in candidates {
                         let id=text(candidate,"clientId");
                         let name=text(candidate,"name");
                         if !id.is_empty() && !name.is_empty()
