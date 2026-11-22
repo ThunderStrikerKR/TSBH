@@ -2664,6 +2664,16 @@ pub fn reception_items_header(ui: &mut Ui) {
     );
 }
 
+/// Use the actual laid-out glyph box for all value cells.
+/// Product text is left aligned; quantity and amount share a right edge and
+/// the exact same vertical midpoint independently of their string length.
+fn reception_item_value_origin(cell:Rect,glyphs:Vec2,right:bool)->egui::Pos2 {
+    egui::pos2(
+        if right {cell.right()-glyphs.x} else {cell.left()},
+        cell.center().y-glyphs.y/2.0,
+    )
+}
+
 pub fn reception_item_row(
     ui: &mut Ui, name: &str, quantity: &str, amount: &str,
     active: [bool; 3],
@@ -2684,11 +2694,14 @@ pub fn reception_item_row(
     // Use explicit column anchors for all three text cells. Ui::put(Label)
     // was moving text toward the center inside the row, while the table
     // header used another alignment calculation.
-    for (index, (text, font, color)) in [
-        (name, egui::FontId::proportional(typography::FONT_RECEPTION_ITEM_TEXT), theme::TEXT),
-        (quantity, egui::FontId::monospace(typography::FONT_RECEPTION_ITEM_TEXT), theme::SECONDARY),
-        (amount, egui::FontId::monospace(typography::FONT_RECEPTION_ITEM_TEXT), theme::TEXT),
+    // One 16pt proportional font for product names, digits and Korean units.
+    // Mono font fallback gave quantity digits and '개' differing visual heights.
+    for (index, (text, color)) in [
+        (name, theme::TEXT),
+        (quantity, theme::SECONDARY),
+        (amount, theme::TEXT),
     ].into_iter().enumerate() {
+        let font=egui::FontId::proportional(typography::FONT_RECEPTION_ITEM_TEXT);
         let cell = cells[index];
         let right = index != 0;
         let row_text=if index==1 {compact_quantity} else {text};
@@ -2709,16 +2722,11 @@ pub fn reception_item_row(
                 candidate.to_owned(),font.clone(),color
             ).size().x,
         ));
-        ui.painter().with_clip_rect(value_clip).text(
-            egui::pos2(
-                if right { value_clip.right() } else { value_clip.left() },
-                value_clip.center().y
-            ),
-            if right { egui::Align2::RIGHT_CENTER } else { egui::Align2::LEFT_CENTER },
-            visible_product.as_deref().unwrap_or(row_text),
-            font,
-            if active[index] {source_highlight::ACTIVE_TEXT} else {color},
-        );
+        let ink=if active[index] {source_highlight::ACTIVE_TEXT} else {color};
+        let label=visible_product.as_deref().unwrap_or(row_text);
+        let galley=ui.painter().layout_no_wrap(label.to_owned(),font,ink);
+        let origin=reception_item_value_origin(value_clip,galley.size(),right);
+        ui.painter().with_clip_rect(value_clip).galley(origin,galley,ink);
     }
     // Preserve the five-source-field highlighting contract: these three
     // hover responses still map to the exact Rust product/quantity/price keys.
@@ -3033,6 +3041,22 @@ mod management_toolbar_geometry_tests {
             assert_eq!(rect.left()-cell.left(),cell.right()-rect.right());
             assert_eq!(rect.top()-cell.top(),cell.bottom()-rect.bottom());
             assert!(cell.contains(rect.min)&&cell.contains(rect.max));
+        }
+    }
+
+    #[test]
+    fn reception_value_origins_share_vertical_center_and_right_edge() {
+        let cell=Rect::from_min_size(
+            egui::pos2(10.0,104.0),Vec2::new(76.0,34.0)
+        );
+        let quantity=reception_item_value_origin(cell,Vec2::new(42.0,19.0),true);
+        let short=reception_item_value_origin(cell,Vec2::new(10.0,19.0),true);
+        let product=reception_item_value_origin(cell,Vec2::new(65.0,19.0),false);
+        assert_eq!(quantity.x+42.0,cell.right());
+        assert_eq!(short.x+10.0,cell.right());
+        assert_eq!(product.x,cell.left());
+        for pos in [quantity,short,product] {
+            assert_eq!(pos.y+19.0/2.0,cell.center().y);
         }
     }
 
