@@ -577,6 +577,7 @@ struct BandoEgui {
     analysis: Option<reception_service::ReceptionAnalysis>,
     analysis_error: Option<String>,
     selected_recipient: usize,
+    requested_recipient_focus:Option<(String,String)>,
     source_hover: Option<source_highlight::LinkKey>,
     link_hover: source_highlight::HoverState,
     workflow_snapshot: Option<workflow_board::BoardSnapshot>,
@@ -676,6 +677,7 @@ impl Default for BandoEgui {
             analysis: None,
             analysis_error: None,
             selected_recipient: 0,
+            requested_recipient_focus:None,
             source_hover: None,
             link_hover: source_highlight::HoverState::default(),
             workflow_snapshot: None,
@@ -1119,6 +1121,67 @@ impl BandoEgui {
         });
     }
 
+    /// Click commits to the real working reception; the target ID is kept
+    /// until its asynchronous recognition has restored the same recipient.
+    fn focus_pending_recipient(
+        &mut self,target:&workflow_board_ui::PendingTarget,ctx:&egui::Context
+    ){
+        self.select_reception(&target.order_id,ctx);
+        if self.active_id.as_deref()!=Some(target.order_id.as_str()){return;}
+        self.requested_recipient_focus=target.recipient_id.as_ref()
+            .map(|id|(target.order_id.clone(),id.clone()));
+        self.apply_requested_recipient_focus(ctx);
+    }
+    fn apply_requested_recipient_focus(&mut self,ctx:&egui::Context){
+        let Some((order_id,recipient_id))=self.requested_recipient_focus.as_ref()
+            else{return};
+        if self.active_id.as_deref()!=Some(order_id.as_str()){
+            self.requested_recipient_focus=None;
+            return;
+        }
+        let Some(index)=self.analysis.as_ref().and_then(|analysis|
+            reception_service::recipients(analysis).iter().position(|row|
+                reception_service::text(row,"id")==recipient_id
+            )
+        )else{return};
+        self.selected_recipient=index;
+        self.requested_recipient_focus=None;
+        ctx.request_repaint();
+    }
+    /// React parity: temporary board preview > linked hover > clicked
+    /// recipient. All four docked panes consult this display-only choice.
+    fn visible_recipient_index(&self)->usize{
+        let Some(analysis)=self.analysis.as_ref() else{return self.selected_recipient};
+        let rows=reception_service::recipients(analysis);
+        let preview=self.workflow_ui.pending_preview()
+            .filter(|p|self.active_id.as_deref()==Some(p.order_id.as_str()))
+            .and_then(|p|p.recipient_id.as_deref());
+        let linked=self.link_hover.active.as_ref().map(|key|key.recipient_id.as_str());
+        preview.or(linked).and_then(|id|rows.iter().position(|row|
+            reception_service::text(row,"id")==id
+        )).unwrap_or(self.selected_recipient)
+    }
+    /// Read-only projection of another unsaved receipt. Never replace the
+    /// employee's active source, analysis, inline editor or autosave owner.
+    fn visible_pending_other(&self)->Option<(preview_store::WorkingReception,serde_json::Value,usize)>{
+        let preview=self.workflow_ui.pending_preview()?;
+        if self.active_id.as_deref()==Some(preview.order_id.as_str()){return None;}
+        let draft=self.drafts.iter().find(|row|row.id==preview.order_id)?;
+        let recognition=draft.manual_model.as_ref()
+            .and_then(|model|model.pointer("/model/rows"))
+            .filter(|rows|rows.is_array())
+            .map(|rows|serde_json::json!({"recipients":rows}))
+            .or_else(||draft.analysis_view.as_ref()
+                .and_then(|view|view.get("recognition")).cloned())
+            .or_else(||draft.analysis_evidence.clone())
+            .unwrap_or_else(||serde_json::json!({"recipients":[]}));
+        let recipients=reception_service::recipients(&recognition);
+        let index=preview.recipient_id.as_deref()
+            .and_then(|id|recipients.iter().position(|row|
+                reception_service::text(row,"id")==id)).unwrap_or(0);
+        Some((draft.clone(),recognition,index))
+    }
+
     fn select_reception(&mut self, id: &str, ctx: &egui::Context) {
         let Some(item) = self.drafts.iter().find(|item| item.id == id).cloned() else {
             self.source_save_error = Some("선택한 발주서를 찾을 수 없습니다.".to_owned());
@@ -1128,6 +1191,7 @@ impl BandoEgui {
             return;
         }
         self.active_id = Some(item.id);
+        self.requested_recipient_focus=None;
         self.raw_source = item.raw;
         self.order_type = OrderType::parse(&item.order_type).unwrap_or_default();
         // Blank receipts show clipboard/type choices; direct input is explicit.
@@ -2660,6 +2724,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         self.queue_source_save();
                     }
                     self.selected_recipient = 0;
+                    self.apply_requested_recipient_focus(ctx);
                     if let Some(target)=auto_target {
                         self.start_auto_client_change(&target,ctx);
                     }
@@ -6260,6 +6325,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .and_then(|draft|draft.client_id.as_deref())
                         .zip(self.analysis.as_ref()
                             .and_then(|analysis|analysis.chosen_client_name.as_deref()));
+                    let active_recipient=self.analysis.as_ref()
+                        .and_then(|analysis|reception_service::recipients(analysis)
+                            .get(self.selected_recipient))
+                        .and_then(|row|row["id"].as_str());
                     event=workflow_board_ui::show(
                         ui,self.workflow_snapshot.as_ref(),&self.drafts,
                         self.active_id.as_deref(),
@@ -6273,7 +6342,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             self.manual_workspace.is_none() && self.vat_dialog.is_none() &&
                             self.vat_change.is_none() && self.client_chooser.is_none() &&
                             self.client_change.is_none() && self.working_sync.is_none() &&
-                            self.workflow_dialog.is_none() && !self.ocr_processing
+                            self.workflow_dialog.is_none() && !self.ocr_processing,
+                        active_recipient
                     );
                 });
         });
@@ -6327,6 +6397,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_ui.folded=None;
                 self.workflow_ui.stop_preview();
                 self.select_reception(&id,ui.ctx());
+            }
+            Some(workflow_board_ui::Event::SelectPendingRecipient(target))=>{
+                self.workflow_ui.selection=None;
+                self.workflow_ui.folded=None;
+                self.workflow_ui.stop_preview();
+                self.focus_pending_recipient(&target,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectShipment(selection))=>{
                 self.workflow_ui.select(selection);
