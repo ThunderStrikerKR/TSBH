@@ -268,7 +268,11 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
         set(row,field_name,json!(value))?;
         if field_name=="address" {
             set(row,"addressParts",manual_address_parts(value))?;
-            row.as_object_mut().ok_or("수취인 데이터 오류")?.remove("addressStatus");
+            let fields=row.as_object_mut().ok_or("수취인 데이터 오류")?;
+            fields.remove("addressStatus");
+            // A manual remote-delivery decision belongs to the exact
+            // address. The previous checkbox must never survive a new one.
+            fields.remove("remoteDelivery");
         }
         if !field(row,"confirmedFields").is_array() {
             set(row,"confirmedFields",json!([]))?;
@@ -277,6 +281,86 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
             .ok_or("수취인 확인 목록 오류")?;
         if !confirmed.iter().any(|v|v.as_str()==Some(field_name)) {
             confirmed.push(json!(field_name));
+        }
+        return Ok(json!({"model":model}));
+    }
+    if action == "set_manual_delivery_option" {
+        // The manual editor may change an UNCONFIRMED recipient only.
+        // Freight amounts are normalized through the same Rust 2x rule
+        // used by the React shipping editor; no UI-side billing math.
+        let mut model=req(payload,"model")?.clone();
+        let cell=req(payload,"cell")?;
+        let rid=required_str(cell,"recipientId")?;
+        let option=required_str(cell,"field")?;
+        let value=payload.get("value").ok_or("운임 수정값이 없습니다.")?;
+        let recipient=model["rows"].as_array_mut()
+            .ok_or("배송 행을 선택하세요.")?
+            .iter_mut().find(|r|str_field(r,"id")==rid)
+            .ok_or("배송 행을 선택하세요.")?;
+        match option {
+            "dispatchOrigin" => {
+                let origin=value.as_str().ok_or("발송지를 선택하세요.")?;
+                if !matches!(origin,"FACTORY"|"STORE"){
+                    return Err("발송지는 공장 또는 매장만 선택할 수 있습니다.".into());
+                }
+                let old=recipient.get("dispatchOrigin").and_then(Value::as_str)
+                    .unwrap_or("FACTORY").to_owned();
+                set(recipient,"dispatchOrigin",json!(origin))?;
+                if let Some(items)=recipient.get_mut("items").and_then(Value::as_array_mut){
+                    for item in items{set(item,"origin",json!(origin))?;}
+                }
+                if old!=origin {
+                    if let Some(previous)=recipient.get("shippingCharges")
+                        .and_then(|v|v.get(&old)).cloned() {
+                        set(recipient,"shippingCharges",
+                            json!({origin:previous}))?;
+                    }
+                }
+            },
+            "freightCode" => {
+                let code=value.as_str().ok_or("선불/착불 선택값이 잘못되었습니다.")?;
+                if !matches!(code,"010"|"020"){
+                    return Err("선불(010) 또는 착불(020)만 선택할 수 있습니다.".into());
+                }
+                set(recipient,"freightCode",json!(code))?;
+            },
+            "remoteDelivery" => {
+                let checked=value.as_bool().ok_or("도서/산간 적용값이 잘못되었습니다.")?;
+                let address=str_field(recipient,"address").to_owned();
+                if address.trim().is_empty(){
+                    return Err("도서/산간 설정 전에 수취인 주소를 확인하세요.".into());
+                }
+                set(recipient,"remoteDelivery",json!({
+                    "address":address,"checked":checked,"manual":true
+                }))?;
+            },
+            "vatOverride" => {
+                if !value.is_null() && !value.is_boolean(){
+                    return Err("부가세 선택값이 잘못되었습니다.".into());
+                }
+                set(recipient,"vatOverride",value.clone())?;
+            },
+            "shippingCharge" => {
+                if value.as_i64().is_none() && !value.is_null(){
+                    return Err("운임은 0 이상의 정수로 입력하세요.".into());
+                }
+                let origin=recipient.get("dispatchOrigin")
+                    .and_then(Value::as_str).unwrap_or("FACTORY").to_owned();
+                if !matches!(origin.as_str(),"FACTORY"|"STORE"){
+                    return Err("운임을 변경할 발송지가 잘못되었습니다.".into());
+                }
+                let applied=super::remote_delivery::normalize_applied_input(&json!({
+                    "recipient":recipient,
+                    "shipment":{},
+                    "order":payload.get("order").cloned().unwrap_or(Value::Null),
+                    "appliedCharge":value
+                }))?;
+                let mut charges=recipient.get("shippingCharges")
+                    .and_then(Value::as_object).cloned().unwrap_or_default();
+                charges.insert(origin,applied["baseCharge"].clone());
+                set(recipient,"shippingCharges",Value::Object(charges))?;
+            },
+            _=>return Err("허용되지 않은 운임 수정 항목입니다.".into())
         }
         return Ok(json!({"model":model}));
     }
@@ -358,6 +442,39 @@ mod tests {
         })).unwrap();
         assert_eq!(result["model"]["rows"][0]["name"],"");
         assert_eq!(result["model"]["rows"][0]["confirmedFields"],json!(["name"]));
+    }
+    #[test]
+    fn delivery_options_reuse_native_remote_double_freight_and_guard_fields() {
+        let base=json!({"rows":[{"id":"r","address":"제주특별자치도 제주시 연동 1",
+            "dispatchOrigin":"FACTORY","items":[{"id":"i","name":"709","quantity":1}]}],
+            "blocks":[],"assignments":{}});
+        let make=|model:Value,field:&str,value:Value|json!({
+            "action":"set_manual_delivery_option","model":model,
+            "cell":{"recipientId":"r","field":field},"value":value,
+            "order":{"confirmedAt":null}
+        });
+        let remote=apply(&make(base,"remoteDelivery",json!(true))).unwrap()["model"].clone();
+        let normalized=apply(&make(remote,"shippingCharge",json!(6000))).unwrap()["model"].clone();
+        assert_eq!(normalized["rows"][0]["shippingCharges"]["FACTORY"],3000);
+        assert!(apply(&make(normalized.clone(),"shippingCharge",json!(6001)))
+            .unwrap_err().contains("짝수"));
+        let store=apply(&make(normalized,"dispatchOrigin",json!("STORE"))).unwrap()["model"].clone();
+        assert_eq!(store["rows"][0]["shippingCharges"]["STORE"],3000);
+        assert_eq!(store["rows"][0]["items"][0]["origin"],"STORE");
+        let cod=apply(&make(store,"freightCode",json!("020"))).unwrap()["model"].clone();
+        assert_eq!(cod["rows"][0]["freightCode"],"020");
+        let vat=apply(&make(cod,"vatOverride",json!(true))).unwrap()["model"].clone();
+        assert_eq!(vat["rows"][0]["vatOverride"],true);
+        assert!(apply(&make(vat,"dispatchOrigin",json!("UNKNOWN"))).is_err());
+    }
+    #[test]
+    fn manual_address_edit_invalidates_an_old_remote_delivery_choice() {
+        let recipient=json!({"rows":[{"id":"r","address":"제주특별자치도 제주시 1",
+            "remoteDelivery":{"address":"제주특별자치도 제주시 1","checked":true,"manual":true}}]});
+        let revised=apply(&json!({"action":"set_manual_recipient_field",
+            "model":recipient,"cell":{"recipientId":"r","field":"address"},
+            "value":"경기도 의정부시 2"})).unwrap();
+        assert!(revised["model"]["rows"][0].get("remoteDelivery").is_none());
     }
     #[test]
     fn parses_original_manual_quantity_tokens() {
