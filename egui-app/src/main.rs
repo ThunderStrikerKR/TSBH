@@ -6867,6 +6867,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             return;
         }
+        // The approved delete owns this modal. Release it before selecting
+        // the next receipt, otherwise navigation would conflict with the
+        // confirmation that just authorized the delete.
+        self.workflow_dialog=None;
         let was_active=self.active_id.as_deref()==Some(id);
         self.drafts.retain(|row|row.id!=id);
         if was_active{
@@ -8380,6 +8384,17 @@ mod reception_workflow_admission_integration_tests {
         app.delete_pending_reception("draft-1",&ctx);
         assert_eq!(app.drafts.len(),2);
         assert!(app.vat_change.is_some());
+    }
+
+    #[test]
+    fn approved_delete_closes_its_modal_before_switching_to_next_draft(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.workflow_dialog=Some(WorkflowDialog::DeletePending("draft-1".into()));
+        app.delete_pending_reception("draft-1",&ctx);
+        assert_eq!(app.drafts.len(),1);
+        assert_eq!(app.active_id.as_deref(),Some("draft-2"));
+        assert!(app.workflow_dialog.is_none());
     }
 
     #[test]
