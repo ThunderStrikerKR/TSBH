@@ -4846,6 +4846,15 @@ impl BandoEgui {
                                                 (!remote.unwrap_or(false)).to_string()
                                             ));
                                         }
+                                        if freight_actions.collect_clicked{
+                                            inline_command=Some((
+                                                InlineTarget{
+                                                    recipient_id:recipient_id.to_owned(),
+                                                    item_id:None,field:"freightCode"
+                                                },
+                                                if cod.unwrap_or(false){"010"}else{"020"}.to_owned()
+                                            ));
+                                        }
                                         if let (Some(editor),Some(rect))=(
                                             self.inline_editor.as_mut()
                                                 .filter(|edit|edit.target==freight_target),
