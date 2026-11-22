@@ -386,18 +386,6 @@ fn edit_fields(
                 return Err("수취인 운임 발송지 정보 오류".into());
             }
             if let Some(value)=map.get(origin){
-                if !value.is_null() && super::rules::execute(
-                    "normalize_remote_freight_input",
-                    json!({"recipient":row,"shipment":{},"order":order,
-                        "appliedCharge":value})
-                ).is_err(){
-                    // This rejects unsafe numeric values while the native
-                    // set_manual_delivery_option below is the authority for
-                    // persisted undoubled (base) charges.
-                    let valid=value.as_i64().is_some_and(|n|
-                        (0..=9_007_199_254_740_991).contains(&n));
-                    if !valid {return Err("기본 운임 숫자 형식 오류".into());}
-                }
                 apply_step("set_manual_delivery_option",native,keys,json!({
                     "cell":{"recipientId":rid,"field":"shippingBaseCharge"},
                     "value":value
