@@ -1379,6 +1379,9 @@ impl BandoEgui {
                             "paid":false,
                             "linePrices":result.get("linePrices"),
                             "freightLines":result.get("freightLines"),
+                            "pricingBasis":result.get("pricingBasis")
+                                .or_else(||row.pricing_preview.as_ref()
+                                    .and_then(|quote|quote.get("pricingBasis"))),
                             "pendingRecipients":result.get("pendingRecipients")
                                 .filter(|rows|rows.is_array()).cloned()
                                 .or_else(||row.pricing_preview.as_ref()
@@ -1546,7 +1549,8 @@ impl BandoEgui {
                                 "pendingRecipients":totals.get("pendingRecipients"),
                                 "notified":false,"paid":false,
                                 "linePrices":calculation.get("linePrices"),
-                                "freightLines":calculation.get("freightLines")
+                                "freightLines":calculation.get("freightLines"),
+                                "pricingBasis":calculation.get("pricingBasis")
                             }))
                         });
                         row.working_synced=false;
