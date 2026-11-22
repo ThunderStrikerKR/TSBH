@@ -184,7 +184,7 @@ fn apply_client_workbook(state: &Value, preview: &Value) -> Result<Value, String
             let index = clients.iter().position(|c| field(c, "id") == id
                 && !value_present(c, "deletedAt"))
                 .ok_or("기존 거래처 정보를 확인할 수 없습니다.")?;
-            clients[index] = client.clone();
+            clients[index] = canonical;
             updated += 1;
         }
     }
