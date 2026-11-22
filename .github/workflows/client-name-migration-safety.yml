@@ -1,0 +1,56 @@
+name: Client-name migration and searchable-tag safety
+on:
+  push:
+    branches:
+      - main
+      - domain/client-name-alias-migration-67
+      - ui/client-search-tag-chips-67
+    paths:
+      - .github/workflows/client-name-migration-safety.yml
+      - crates/bando-data-access/src/client_names.rs
+      - crates/bando-data-access/src/backup_service.rs
+      - src-tauri/src/business_core/catalog_clients/client_preview.rs
+      - egui-app/src/client_manager.rs
+      - egui-app/src/client_search_tags.rs
+  pull_request:
+    paths:
+      - .github/workflows/client-name-migration-safety.yml
+      - crates/bando-data-access/src/client_names.rs
+      - src-tauri/src/business_core/catalog_clients/client_preview.rs
+      - egui-app/src/client_search_tags.rs
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: client-name-safety-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  client-name-safety:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Verify full-SQLite backup, alias migration and immutable order snapshots
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml client_names::tests -- --nocapture
+      - name: Verify V1 client Excel alias column migrates without shifting recipient fields
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib client_name_excel_compat_tests -- --nocapture
+      - name: Compile egui client management and master table
+        run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify multi-tag add, dedupe, delete and identifier preservation when present
+        shell: pwsh
+        run: |
+          if (Test-Path "egui-app/src/client_search_tags.rs") {
+            cargo test --manifest-path egui-app/Cargo.toml client_search_tags::tests -- --nocapture
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check TypeScript and legacy Excel integration build
+        run: npm run build
