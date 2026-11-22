@@ -432,17 +432,29 @@ pub fn modal_balanced_review_area(viewport:Rect,workflow_area:Rect)->Rect{
     )
 }
 
-/// OCR's fixed-size master must use the measured inner Ui and its clip.
-/// A fixed outer Window size does not guarantee the frame's inner clip
-/// matches a manually margin-subtracted prediction.
-pub fn modal_master_visible_content_size(
-    available:Rect,clip:Rect,outer:Vec2
-)->Vec2{
-    let visible=available.intersect(clip);
+/// Measure the master's layout from the inner Ui, not the paint clip.
+/// egui can provide an empty/intermediate clip during a window sizing pass.
+/// Intersecting it with the available layout rect collapsed the OCR body to
+/// 1pt; shrinking its image viewport by 12pt then produced -26pt and panicked.
+pub fn modal_master_content_from_ui(available:Rect,outer:Vec2)->Vec2{
     Vec2::new(
-        visible.width().max(1.0).min(outer.x.max(1.0)),
-        visible.height().max(1.0).min(outer.y.max(1.0))
+        available.width().max(0.0).min(outer.x.max(0.0)),
+        available.height().max(0.0).min(outer.y.max(0.0))
     )
+}
+
+/// A split OCR review needs room for fixed header, footer, toolbar, inset
+/// and real image/text viewports. If the window is only in a sizing pass,
+/// skip child construction instead of passing a negative size into egui.
+pub fn modal_master_ocr_body_is_usable(body:Vec2)->bool{
+    const EXTRA_PANE_HEIGHT:f32=2.0*theme::SPACE_12+4.0;
+    let required_height=
+        theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT
+        +theme::MODAL_FOOTER_HEIGHT
+        +2.0*theme::MODAL_MASTER_WORKSPACE_GAP
+        +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
+        +EXTRA_PANE_HEIGHT;
+    body.x>=240.0 && body.y>=required_height
 }
 /// Native modal geometry belongs here, not to individual screens.
 /// `work_area` excludes the externally foregrounded KakaoTalk dock.
@@ -3859,35 +3871,36 @@ mod modal_safe_position_tests {
     }
 
     #[test]
-    fn ocr_master_uses_visible_inner_area_not_outer_margin_guess(){
+    fn sizing_pass_paint_clip_does_not_collapse_ocr_layout(){
         let outer=Vec2::new(1400.0,800.0);
         let available=Rect::from_min_size(
             egui::pos2(19.0,17.0),Vec2::new(1362.0,710.0)
         );
-        let clip=Rect::from_min_size(
-            egui::pos2(19.0,17.0),Vec2::new(1362.0,680.0)
-        );
-        let inner=modal_master_visible_content_size(available,clip,outer);
-        assert_eq!(inner,Vec2::new(1362.0,680.0));
+        // Even if the paint clip is disjoint or empty, the Ui layout's
+        // available size remains 1362 × 710, not 1 × 1.
+        let inner=modal_master_content_from_ui(available,outer);
+        assert_eq!(inner,Vec2::new(1362.0,710.0));
+        assert!(modal_master_ocr_body_is_usable(inner));
         let bounds=Rect::from_min_size(available.min,inner);
         let layout=modal_master_layout(
             bounds,theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT,
             theme::MODAL_FOOTER_HEIGHT,theme::MODAL_MASTER_WORKSPACE_GAP
         );
         assert_eq!(layout.footer.bottom(),bounds.bottom());
-        assert!(layout.footer.bottom()<=clip.bottom());
-        assert!(layout.workspace.bottom()<=layout.footer.top());
+        assert!(layout.workspace.height()
+            >theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT+2.0*theme::SPACE_12);
     }
     #[test]
-    fn clipped_content_does_not_expand_to_requested_outer_size(){
+    fn tiny_sizing_rect_is_not_usable_for_split_ocr_viewports(){
         let outer=Vec2::new(1400.0,900.0);
-        let available=Rect::from_min_size(
-            egui::pos2(10.0,10.0),Vec2::new(640.0,440.0)
+        let tiny=Rect::from_min_size(
+            egui::pos2(10.0,10.0),Vec2::new(1.0,1.0)
         );
-        assert_eq!(
-            modal_master_visible_content_size(available,available,outer),
-            Vec2::new(640.0,440.0)
-        );
+        let size=modal_master_content_from_ui(tiny,outer);
+        assert_eq!(size,Vec2::new(1.0,1.0));
+        assert!(!modal_master_ocr_body_is_usable(size));
+        assert!(!modal_master_ocr_body_is_usable(Vec2::new(640.0,200.0)));
+        assert!(modal_master_ocr_body_is_usable(Vec2::new(640.0,500.0)));
     }
     #[test]
     fn popup_pivot_uses_exact_safe_area_center_without_double_header_offset(){
