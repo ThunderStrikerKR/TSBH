@@ -45,6 +45,42 @@ pub const FONT_FREIGHT_SUMMARY_NUMBER: f32 = 28.0;
 pub const FONT_FREIGHT_SUMMARY_LABEL: f32 = 13.0;
 pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
+
+/// Business data typography is classified by semantic value, never by the
+/// screen that happens to contain it. All four kinds use the same Korean UI
+/// family so mixed strings like "30개" and "62,000원" retain one baseline.
+/// Sizes follow the approved presentation context, not digit count.
+#[derive(Clone,Copy,Debug,Eq,PartialEq)]
+pub enum DataValueKind { Money, Quantity, Date, Phone }
+#[derive(Clone,Copy,Debug,Eq,PartialEq)]
+pub enum DataValueContext { Table, Form, Reception, CompactCard, Summary }
+
+pub fn data_value_font(_kind:DataValueKind,context:DataValueContext)->FontId {
+    let size=match context {
+        DataValueContext::Table|DataValueContext::Form
+        |DataValueContext::CompactCard=>FONT_BODY,
+        DataValueContext::Reception=>FONT_RECEPTION_ITEM_TEXT,
+        DataValueContext::Summary=>FONT_SECTION_HEADING,
+    };
+    FontId::proportional(size)
+}
+
+/// A fixed numeric slot right-aligns even the unknown em dash; dates and
+/// telephone identifiers are read from the left without numeric right-align.
+pub fn data_value_align(kind:DataValueKind)->egui::Align {
+    match kind {
+        DataValueKind::Money|DataValueKind::Quantity=>egui::Align::RIGHT,
+        DataValueKind::Date|DataValueKind::Phone=>egui::Align::LEFT,
+    }
+}
+
+pub fn data_value_text(
+    value:&str,kind:DataValueKind,context:DataValueContext
+)->RichText {
+    let color=if kind==DataValueKind::Quantity{SECONDARY}else{TEXT};
+    RichText::new(value).font(data_value_font(kind,context)).color(color)
+}
+
 /// Visual offset for management dropdown captions, calibrated against the
 /// 34pt trigger's visible glyph bounds rather than the 22pt Body line box.
 /// Keep this shared: date-basis, product-filter and freight-group selectors
@@ -165,11 +201,11 @@ fn spec(role: Role) -> TypeSpec {
         },
         Role::SummaryValue => TypeSpec {
             size: FONT_SECTION_HEADING, line: 23.0, tracking: 0.0,
-            color: TEXT, weight: Weight::Monospace,
+            color: TEXT, weight: Weight::Regular,
         },
         Role::Quantity => TypeSpec {
             size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
-            color: SECONDARY, weight: Weight::Monospace,
+            color: SECONDARY, weight: Weight::Regular,
         },
         Role::Status => TypeSpec {
             size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
@@ -397,10 +433,10 @@ pub fn management_table_cell_galley(
     )
 }
 
-/// Existing product-table prices use a numeric face, which must remain
-/// regular even when the monetary field happens to have a high value.
+/// Repeated money cells use the same 14pt family as other business data.
+/// Numeric content never inherits KPI bold styling.
 pub fn management_table_money_font()->FontId {
-    numeric_editor_font()
+    data_value_font(DataValueKind::Money,DataValueContext::Table)
 }
 
 /// Order-history shipment details use the same table font with true
@@ -508,7 +544,7 @@ pub fn summary_value(text: &str) -> RichText { render(text, Role::SummaryValue) 
 
 /// Freight overview card label and unit use the same 16pt size as
 /// SummaryValue. All three use the shared 23pt line box and a single
-/// centerline; numbers stay monospaced and right-aligned in the caller.
+/// centerline; the caller owns numeric right alignment.
 fn summary_card_secondary_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
@@ -576,7 +612,7 @@ pub fn summary_value_galley(
 ) -> std::sync::Arc<egui::Galley> {
     let role = spec(Role::SummaryValue);
     let format = egui::TextFormat {
-        font_id: FontId::new(role.size, FontFamily::Monospace),
+        font_id: data_value_font(DataValueKind::Money,DataValueContext::Summary),
         color: role.color,
         extra_letter_spacing: role.tracking,
         line_height: Some(role.line),
@@ -588,10 +624,9 @@ pub fn summary_value_galley(
 }
 pub fn quantity(text: &str) -> RichText { render(text, Role::Quantity) }
 
-/// Explicit numeric input typography: use Consolas (or system monospace
-/// fallback) for editable money and quantity fields as well as display.
+/// Compatibility shim for existing money/quantity editor call sites.
 pub fn numeric_editor_font() -> FontId {
-    FontId::monospace(FONT_BODY)
+    data_value_font(DataValueKind::Money,DataValueContext::Form)
 }
 
 pub fn status(text: &str, color: Color32) -> RichText {
@@ -730,6 +765,43 @@ pub fn install(ctx: &egui::Context) {
 #[cfg(test)]
 mod management_table_type_roles_tests {
     use super::*;
+    #[test]
+    fn semantic_data_roles_share_the_ui_family_and_stable_alignment(){
+        for kind in [
+            DataValueKind::Money,DataValueKind::Quantity,
+            DataValueKind::Date,DataValueKind::Phone
+        ] {
+            assert_eq!(
+                data_value_font(kind,DataValueContext::Table),
+                FontId::proportional(FONT_BODY)
+            );
+            assert_eq!(
+                data_value_font(kind,DataValueContext::Form),
+                FontId::proportional(FONT_BODY)
+            );
+            assert_eq!(
+                data_value_font(kind,DataValueContext::Reception),
+                FontId::proportional(FONT_RECEPTION_ITEM_TEXT)
+            );
+            assert_eq!(
+                data_value_font(kind,DataValueContext::CompactCard),
+                FontId::proportional(FONT_BODY)
+            );
+        }
+        assert_eq!(data_value_align(DataValueKind::Money),egui::Align::RIGHT);
+        assert_eq!(data_value_align(DataValueKind::Quantity),egui::Align::RIGHT);
+        assert_eq!(data_value_align(DataValueKind::Date),egui::Align::LEFT);
+        assert_eq!(data_value_align(DataValueKind::Phone),egui::Align::LEFT);
+        assert_eq!(numeric_editor_font(),
+            data_value_font(DataValueKind::Money,DataValueContext::Form));
+        assert_eq!(management_table_money_font(),
+            data_value_font(DataValueKind::Money,DataValueContext::Table));
+        assert_eq!(spec(Role::SummaryValue).weight as u8,
+            Weight::Regular as u8);
+        assert_eq!(spec(Role::Quantity).weight as u8,
+            Weight::Regular as u8);
+    }
+
     #[test]
     fn ordinary_table_data_never_uses_bold_face(){
         for role in [
