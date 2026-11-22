@@ -1402,8 +1402,12 @@ impl BandoEgui {
                     // A failure is a reception-level, non-modal error. Keep
                     // the prior confirmed client/quote and never reopen the
                     // dismissed chooser automatically.
-                    self.source_save_error=
-                        Some(format!("거래처 변경 확인 실패: {error}"));
+                    let message=format!("거래처 변경 확인 실패: {error}");
+                    self.source_save_error=Some(message.clone());
+                    floating_notice::publish(
+                        ctx,"reception.client_change",
+                        floating_notice::Tone::Error,message
+                    );
                 }
             }
         } else if self.client_change.is_some() {
@@ -4399,6 +4403,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .unwrap_or(if linked_id.is_some(){
                             "거래처 확인 중"
                         }else{"거래처 확인 필요"});
+                    floating_notice::section(
+                        ui.ctx(),"reception.client_change",card_rect
+                    );
                     if components::reception_client_summary_card(
                         ui,card_rect,linked_id.is_some(),display,name
                     ){
