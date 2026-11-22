@@ -1084,11 +1084,9 @@ pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) ->
     }).inner
 }
 
-/// UI-only money input: same 36pt control and semantic UI font as `field`.
-/// Uses the React MoneyInput rule: digits (including zero) or an empty
-/// unconfirmed amount, with thousands separators only when unfocused.
-/// Invalid keystrokes never become business rules; the Rust command still
-/// validates every saved number.
+/// UI-only money input: keep the 36pt shared money field and semantic font.
+/// Thousands separators are visible during typing, not only after blur.
+/// The native business command remains responsible for validating saved values.
 pub fn parse_money_input(raw:&str)->Option<i64>{
     let digits=raw.trim().replace(',',"");
     if digits.is_empty() || !digits.bytes().all(|b|b.is_ascii_digit()){
@@ -1097,20 +1095,76 @@ pub fn parse_money_input(raw:&str)->Option<i64>{
     digits.parse::<i64>().ok()
         .filter(|value|*value<=9_007_199_254_740_991)
 }
+
+/// Format digits without changing their numeric meaning or stripping leading
+/// zeros while the employee is still typing. Empty is an unset price.
+fn formatted_money_input(raw:&str)->Option<String>{
+    let digits=raw.trim().replace(',',"");
+    if digits.is_empty(){return Some(String::new());}
+    parse_money_input(&digits)?;
+    let mut formatted=String::with_capacity(digits.len()+digits.len()/3);
+    for (index,digit) in digits.bytes().enumerate(){
+        if index>0 && (digits.len()-index)%3==0{
+            formatted.push(',');
+        }
+        formatted.push(digit as char);
+    }
+    Some(formatted)
+}
+
+/// Remap a caret or selection endpoint using the number of digits before it.
+/// This works when a separator appears *before* a selection, so inserting
+/// digits in the middle does not jump the cursor to the end of the input.
+fn money_cursor_after_format(raw:&str,formatted:&str,old_index:usize)->usize{
+    let before=raw.chars().take(old_index).filter(char::is_ascii_digit).count();
+    if before==0{return 0;}
+    let mut seen=0;
+    let mut target=formatted.chars().count();
+    for (index,c) in formatted.chars().enumerate(){
+        if c.is_ascii_digit(){
+            seen+=1;
+            if seen==before {
+                target=index+1;
+                break;
+            }
+        }
+    }
+    // When the caret was just after an existing separator, keep it there.
+    if raw.chars().nth(old_index.saturating_sub(1))==Some(',')
+        && formatted.chars().nth(target)==Some(','){
+        target+=1;
+    }
+    target
+}
 pub fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
     let before=value.clone();
     let response=field(ui,value,FieldKind::Money,enabled);
-    if response.changed() {
-        let digits=value.replace(',',"");
-        if digits.is_empty() || parse_money_input(&digits).is_some(){
-            *value=digits;
-        }else{
-            *value=before;
+    // Normalize both keystroke and initial raw data. Never persist display
+    // punctuation as an alternative numerical business representation.
+    let formatted=formatted_money_input(value);
+    let next=formatted.unwrap_or(before.clone());
+    if *value!=next{
+        let raw=value.clone();
+        if response.has_focus(){
+            if let Some(mut state)=egui::TextEdit::load_state(ui.ctx(),response.id){
+                if let Some(mut range)=state.cursor.char_range(){
+                    range.primary=egui::text::CCursor::new(
+                        money_cursor_after_format(
+                            &raw,&next,range.primary.index
+                        )
+                    );
+                    range.secondary=egui::text::CCursor::new(
+                        money_cursor_after_format(
+                            &raw,&next,range.secondary.index
+                        )
+                    );
+                    state.cursor.set_char_range(Some(range));
+                    state.store(ui.ctx(),response.id);
+                }
+            }
         }
-    }else if !response.has_focus(){
-        if let Some(amount)=parse_money_input(value) {
-            *value=display_won(amount).trim_end_matches('원').to_owned();
-        }
+        *value=next;
+        ui.ctx().request_repaint();
     }
     response
 }
@@ -4761,6 +4815,43 @@ mod recipient_source_reverse_hover_tests {
             assert!(hovered[index],"recipient field {index} lost hover");
             assert_eq!(output.platform_output.cursor_icon,
                 egui::CursorIcon::Text,"recipient field {index} lost I-beam cursor");
+        }
+    }
+}
+
+#[cfg(test)]
+mod money_live_format_tests{
+    use super::*;
+    #[test]
+    fn grouped_money_is_immediate_and_keeps_empty_or_zero(){
+        for (raw,expected) in [
+            ("",""),("0","0"),("100","100"),("1000","1,000"),
+            ("1234567","1,234,567"),("0000100","0,000,100"),
+            ("9,999","9,999"),("9007199254740991","9,007,199,254,740,991")
+        ]{
+            assert_eq!(formatted_money_input(raw),Some(expected.into()));
+        }
+        for invalid in ["-1","1.25","1e3","1 000","abc",
+            "9007199254740992","9,999,999,999,999,999,999"]{
+            assert_eq!(formatted_money_input(invalid),None);
+        }
+    }
+    #[test]
+    fn cursor_remapping_preserves_middle_insertions_and_selection(){
+        assert_eq!(money_cursor_after_format("1000","1,000",1),1);
+        assert_eq!(money_cursor_after_format("1000","1,000",2),3);
+        assert_eq!(money_cursor_after_format("1000","1,000",4),5);
+        assert_eq!(money_cursor_after_format("1,000","1,000",2),2);
+        assert_eq!(money_cursor_after_format("1234567","1,234,567",4),5);
+        let (a,b)=(money_cursor_after_format("1234567","1,234,567",2),
+            money_cursor_after_format("1234567","1,234,567",6));
+        assert_eq!((a,b),(3,8));
+    }
+    #[test]
+    fn grouped_display_roundtrips_through_original_native_price_parser(){
+        for raw in ["1000","1234567","0","9007199254740991"]{
+            let pretty=formatted_money_input(raw).unwrap();
+            assert_eq!(parse_money_input(&pretty),parse_money_input(raw));
         }
     }
 }
