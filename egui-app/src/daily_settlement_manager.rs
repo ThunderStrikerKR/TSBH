@@ -400,10 +400,14 @@ fn report_table<const N:usize>(
             galley,theme::SECONDARY
         );
         if clip.width()>0.0 && clip.height()>0.0{
-            if ui.interact(
+            let response=ui.interact(
                 clip,ui.make_persistent_id((id,"sort",column)),
                 Sense::click()
-            ).clicked(){
+            );
+            if response.hovered(){
+                components::management_master_header_sort_hover(ui,clip);
+            }
+            if response.clicked(){
                 sort_change=Some(Sort::next(*sort,column));
             }
         }
