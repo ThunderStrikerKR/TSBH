@@ -94,13 +94,13 @@ impl ItemEditor{
         let name=field(&selected,"name");
         let name=if name.is_empty(){field(&selected,"code")}else{name};
         let name=if name.is_empty(){"상품 확인 필요"}else{name};
+        let edited=self.replacement.is_some();
         let category=field(&selected,"category");
         let category=if category.is_empty(){
             if edited || !field(&self.initial,"productId").is_empty(){
                 "등록 상품"
             }else{"등록 상품 미연결"}
         }else{category};
-        let edited=self.replacement.is_some();
         let price=if edited {
             "가격 확인 필요".to_owned()
         }else{
