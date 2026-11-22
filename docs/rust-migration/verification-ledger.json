@@ -3484,5 +3484,45 @@
     },
     "verdict": "PATCH_COMMITTED__FULL_VERIFICATION_OPEN",
     "remaining": "Confirm new adapter regression tests and full egui compilation at latest SHA; inspect any unrelated prior CI failures separately; perform live Windows handoff including persisted work order."
+  },
+  "eguiUnifiedSingleSelectDropdowns20261122": {
+    "date": "2026-11-22",
+    "scope": "Native egui ordinary single-choice dropdowns consolidated into components::management_dropdown and management_dropdown_option",
+    "sourceFiles": [
+      "egui-app/src/main.rs",
+      "egui-app/src/alias_manager.rs",
+      "egui-app/src/category_manager.rs",
+      "egui-app/src/client_manager.rs",
+      "egui-app/src/freight_manager.rs",
+      "egui-app/src/product_manager.rs",
+      "egui-app/src/manual_product_search.rs",
+      "egui-app/src/components.rs",
+      "egui-app/src/theme.rs"
+    ],
+    "changedSelectors": 18,
+    "policy": "Preserve original selected values, dependent filter updates and disabled-state handling. Date calendar, long-name disclosure, freight action and detail popups retain specialized behavior. Dropdown highlights use the shared 4pt gap; 320pt max scroll viewport prevents long lists from overflowing.",
+    "codeCommits": [
+      "bd4fe98900fdff1b6db8e21e8d1681935ae5eca2",
+      "9f845b0920a11e599c5f4aa9f91efb159f4c18f1",
+      "3ab6fef9c94425528926e1e761f91d9969f3ab7d",
+      "91c5098255cb99e71bbb9f9a24850f3c570d80c9",
+      "45164550c74220331637255c562965fc5ad91352",
+      "c92ebd276605c7ecc86eb4f621887613097fdb7e",
+      "0c28d4a78bebd74bb88b9ea33d0d5eca2d6dfc9d",
+      "586064d0784b110552c8f9c9b7c27d78a2f1fc44",
+      "a7b37d5eaf451b175f8889ca97170a094ac8c028",
+      "382b33dd85e8840cc9f24b81868110d15370b328",
+      "bb767c70cea07471be1c64e0c22b7618a9ea34e0"
+    ],
+    "verification": {
+      "PATCH": "COMMITTED_MAIN: modified native egui components and seven UI modules",
+      "UNIT": "ADDED, OUTCOME_PENDING: management_dropdown_unification_tests (2 tests)",
+      "STATIC": "PASS_SCOPE: no ComboBox or local selectable_value calls found in all egui-app/src Rust modules inspected",
+      "DIFF": "NOT_EXECUTED: older React/Tauri behavior not automatically replayed",
+      "ACTION": "NOT_EXECUTED: no live per-screen interaction or long-list scroll walkthrough",
+      "CI": "PENDING_AT_WRITE: https://github.com/ThunderStrikerKR/TSBH/actions/runs/45034311405",
+      "WINDOWS": "NOT_EXECUTED: real Windows screenshot, hover and DPI test pending"
+    },
+    "verdict": "CODE_COMMITTED__RUNTIME_REGRESSION_VERIFICATION_OPEN"
   }
 }
