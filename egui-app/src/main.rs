@@ -433,6 +433,9 @@ struct BandoEgui {
     drafts: Vec<WorkingReception>,
     active_id: Option<String>,
     source_editing: bool,
+    // Only the explicit "직접 입력" intake route may modify the source
+    // document. Imported or reopened source documents remain read-only.
+    direct_source_entry: bool,
     order_type: OrderType,
     clipboard_monitor: ClipboardMonitor,
     kakao_tracker: KakaoTracker,
@@ -536,6 +539,7 @@ impl Default for BandoEgui {
             drafts: Vec::new(),
             active_id: None,
             source_editing: false,
+            direct_source_entry: false,
             order_type: OrderType::Agency,
             clipboard_monitor: ClipboardMonitor::default(),
             kakao_tracker: KakaoTracker::default(),
@@ -892,6 +896,7 @@ impl BandoEgui {
         self.order_type = OrderType::parse(&item.order_type).unwrap_or_default();
         // Blank receipts show clipboard/type choices; direct input is explicit.
         self.source_editing = !self.raw_source.is_empty();
+        self.direct_source_entry = false;
         self.clear_source_analysis();
         if !self.raw_source.trim().is_empty() {
             self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
@@ -2550,6 +2555,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         self.raw_source = text;
         self.order_type = order_type;
         self.source_editing = true;
+        self.direct_source_entry = false;
         if let Some(chat) = chat {
             self.bind_chat_to_active(chat, ctx);
         }
@@ -3315,6 +3321,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             Ok(())=>{
                 self.raw_source.clear();
                 self.source_editing=false;
+                self.direct_source_entry=false;
                 self.clear_source_analysis();
                 if let Some(row)=self.drafts.iter_mut().find(|row|
                     row.id==job.request.order_id
@@ -4272,15 +4279,29 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 // glyphs, caret and selection. Rounded gray source blocks
                                 // remain decoration, never input hit targets.
                                 let block_slot=scroll_ui.painter().add(egui::Shape::Noop);
-                                let output=egui::TextEdit::multiline(&mut self.raw_source)
-                                    .frame(false)
-                                    .font(egui::FontId::proportional(
-                                        typography::FONT_RECEPTION_SOURCE_TEXT
-                                    ))
-                                    .desired_rows(lines)
-                                    .desired_width(scroll_ui.available_width())
-                                    .layouter(&mut layouter)
-                                    .show(scroll_ui);
+                                // Use egui's immutable &str TextBuffer for
+                                // imported/reopened source documents. Unlike
+                                // interactive(false), this keeps text selection,
+                                // copying and linked-span click/hover working.
+                                // Only the explicit direct-entry route gets a
+                                // mutable String buffer.
+                                let mut show_source=|buffer:&mut dyn egui::TextBuffer|{
+                                    egui::TextEdit::multiline(buffer)
+                                        .frame(false)
+                                        .font(egui::FontId::proportional(
+                                            typography::FONT_RECEPTION_SOURCE_TEXT
+                                        ))
+                                        .desired_rows(lines)
+                                        .desired_width(scroll_ui.available_width())
+                                        .layouter(&mut layouter)
+                                        .show(scroll_ui)
+                                };
+                                let output=if self.direct_source_entry {
+                                    show_source(&mut self.raw_source)
+                                }else{
+                                    let mut read_only=self.raw_source.as_str();
+                                    show_source(&mut read_only)
+                                };
                                 let (block_fills,active_outlines)=
                                     source_highlight::block_shapes(
                                         &self.raw_source,&output.galley,output.galley_pos,
@@ -4336,8 +4357,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                         }
                     }
-                    if editor.changed() {
-                        // Ctrl+V into the editable document is text paste,
+                    if self.direct_source_entry && editor.changed() {
+                        // Ctrl+V into explicit direct entry is text paste,
                         // not manual typing. Clipboard image OCR is recorded
                         // separately by the worker's OCR result branch.
                         let typed_method = if ui.ctx().input(|input|
@@ -4366,6 +4387,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             );
                             ui.ctx().request_repaint_after(Duration::from_millis(260));
                         }
+                    }
+                    // Finish explicit direct entry on blur. Afterwards the
+                    // accepted source is immutable until a new intake action
+                    // or the existing confirmed delete/replacement workflow.
+                    if self.direct_source_entry && editor.lost_focus() &&
+                        !self.raw_source.trim().is_empty(){
+                        self.direct_source_entry=false;
                     }
                 }
                 if has_source {
@@ -4586,6 +4614,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.new_reception(ui.ctx());
             }
             self.source_editing = true;
+            self.direct_source_entry = true;
         }
         if let Some(kind) = start_clipboard {
             self.begin_clipboard_intake(kind, ui.ctx().clone());
@@ -5832,6 +5861,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.active_id=None;
             self.raw_source.clear();
             self.source_editing=false;
+            self.direct_source_entry=false;
             self.clear_source_analysis();
             if let Some(next)=self.drafts.last().map(|row|row.id.clone()){
                 self.select_reception(&next,ctx);
