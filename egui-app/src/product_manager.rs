@@ -1298,7 +1298,10 @@ impl ProductManager {
     fn detail_columns(width:f32)->Option<(f32,f32)>{
         if width<660.0{return None;}
         let image=(width*0.34).clamp(210.0,260.0);
-        let details=(width-image-theme::SPACE_16-theme::SPACE_8).max(1.0);
+        // egui::horizontal adds item_spacing around add_space(16) too:
+        // 8 + 16 + 8. Reserve the complete gap before sizing the
+        // right column; otherwise its dropdown extends under the scrollbar.
+        let details=(width-image-theme::SPACE_16-2.0*theme::SPACE_8).max(1.0);
         Some((image,details))
     }
     fn detail_wide_text(
@@ -1412,6 +1415,7 @@ impl ProductManager {
                 line.add_enabled_ui(editable&&!busy,|input|{
                     components::money_field(input,value,true);
                 });
+                line.label(typography::field_label("원"));
             });
         }
     }
@@ -1498,7 +1502,15 @@ impl ProductManager {
                         work_area.height()
                     ))
                     .auto_shrink([false,false])
-                    .show(modal,|body|{
+                    .show(modal,|scroller|{
+                        // The scrollbar belongs to the scroll surface;
+                        // use the master 16pt inset INSIDE it so fields
+                        // never touch the rail or panel's right edge.
+                        egui::Frame::NONE
+                            .inner_margin(egui::Margin::symmetric(
+                                theme::MODAL_MASTER_CONTENT_INSET as i8,0
+                            ))
+                            .show(scroller,|body|{
                         // The original React product-detail has a true
                         // image/information split, followed by full-width
                         // fields. Use the same hierarchy without changing
@@ -1682,6 +1694,7 @@ impl ProductManager {
                                     }
                                 }
                             });
+                        });
                     });
                 modal.add_space(theme::SPACE_12);
                 components::modal_action_row_split(
@@ -1795,7 +1808,7 @@ mod tests {
             let (image,details)=ProductManager::detail_columns(width).unwrap();
             assert!(image>=210.0 && image<=260.0);
             assert!(details>=300.0);
-            assert!(image+details+theme::SPACE_16+theme::SPACE_8
+            assert!(image+details+theme::SPACE_16+2.0*theme::SPACE_8
                 <=width+0.01,"columns overflow {width}pt");
         }
         assert!(ProductManager::detail_columns(420.0).is_none());
