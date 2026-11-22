@@ -2403,13 +2403,21 @@ pub fn management_master_column_rules(
     }
 }
 
-/// The client header and row share the same 30/38/32 column positions,
-/// including the scroll-offset table origin. Do not recompute these from
-/// the fixed header rect, which stays in place while body rows scroll.
-fn management_client_column_edges(table_left:f32,table_width:f32)->[f32;2]{
-    let first=table_left+table_width*theme::MANAGEMENT_CLIENT_COLS[0];
-    let second=first+table_width*theme::MANAGEMENT_CLIENT_COLS[1];
-    [first,second]
+/// The three compact columns keep fixed widths; the address gets all spare
+/// width. The header, rows and rules share this one layout computation.
+fn management_client_column_widths(table_width:f32)->[f32;4]{
+    let name=theme::MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH;
+    let phone=theme::MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH;
+    let terms=theme::MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH;
+    [name,(table_width-name-phone-terms).max(0.0),phone,terms]
+}
+fn management_client_column_edges(table_left:f32,table_width:f32)->[f32;3]{
+    let [name,address,phone,_]=management_client_column_widths(table_width);
+    [
+        table_left+name,
+        table_left+name+address,
+        table_left+name+address+phone
+    ]
 }
 
 /// Client columns share the EXACT 36pt / 34pt text / 2pt footer band
@@ -2421,16 +2429,17 @@ pub fn management_client_header(
     ui:&mut Ui,header:Rect,header_content_rect:Rect,
     table_left:f32,table_width:f32,current_sort:Option<(usize,bool)>
 )->Option<usize>{
-    let titles=["거래처","주소 / 전화번호","거래 조건"];
-    let sort_keys=["거래처명","주소","가격 등급"];
+    let titles=["거래처","주소","전화번호","거래 조건"];
+    let sort_keys=["거래처명","주소","전화번호","가격 등급"];
     let text_row=management_master_header_begin(
         ui,header,header_content_rect
     );
     let painter=ui.painter().with_clip_rect(text_row);
+    let column_widths=management_client_column_widths(table_width);
     let mut x=table_left;
     let mut selected=None;
     for (i,title) in titles.iter().enumerate(){
-        let col_width=table_width*theme::MANAGEMENT_CLIENT_COLS[i];
+        let col_width=column_widths[i];
         let column=Rect::from_min_max(
             egui::pos2(x,text_row.top()),
             egui::pos2(x+col_width,text_row.bottom())
@@ -2487,11 +2496,10 @@ pub fn management_client_header(
     selected
 }
 
-/// Three React-derived client columns (30/38/32), with the heading and all
-/// data anchored at identical left edges. Every client occupies one row.
-/// Address/alias/contact text clips inside its own region without wrapping.
+/// Four client columns, each a single line. Complete values stay available
+/// on hover while address space grows with the table width.
 pub fn management_row(
-    ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],heading:bool,tier:Option<&str>
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],heading:bool,tier:Option<&str>
 ) -> Response {
     management_row_impl(ui,row_id,columns,heading,tier,None)
 }
@@ -2500,14 +2508,14 @@ pub fn management_row(
 /// The index is the visible row position after filtering, not a persistent
 /// customer ID, so the stripes remain consistent during search.
 pub fn management_row_striped(
-    ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],tier:Option<&str>,
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],tier:Option<&str>,
     visible_index:usize
 ) -> Response {
     management_row_impl(ui,row_id,columns,false,tier,Some(visible_index))
 }
 
 fn management_row_impl(
-    ui:&mut Ui,row_id:&str,columns:[(&str,&str);3],heading:bool,
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],heading:bool,
     tier:Option<&str>,visible_index:Option<usize>
 ) -> Response {
     let width=ui.available_width().max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
@@ -2534,33 +2542,38 @@ fn management_row_impl(
     );
 
     let mut x=rect.left();
+    let column_widths=management_client_column_widths(rect.width());
     for (i,(primary,secondary)) in columns.iter().enumerate() {
-        let col_width=rect.width()*theme::MANAGEMENT_CLIENT_COLS[i];
+        let col_width=column_widths[i];
         let cell=Rect::from_min_max(
             egui::pos2(x+theme::SPACE_12,rect.top()),
             egui::pos2(x+col_width-theme::SPACE_12,rect.bottom())
         );
-        // The '주소 / 전화번호' heading and the first address glyph
-        // share the same left anchor, not a centered label allocation.
+        // Every header and value shares the column's leading inset.
         if heading {
             paint_client_line(
                 ui,cell,cell.left(),typography::table_header_galley(ui,primary),
                 theme::SECONDARY
             );
-        }else if i==2 {
-            // Inline tier badge: intrinsic text width + 4pt horizontal and
-            // 2pt vertical inset. No full-width or full-height badge block.
+        }else if i==3 {
+            // Uniform badges use the measured widest grade (반도매).
+            // Condition descriptions therefore always start at the same x.
             let (fill,ink)=client_tier_colors(tier.unwrap_or(""));
             let badge_text=typography::client_table_metadata_galley(ui,primary,ink);
-            let badge_width=(badge_text.size().x+theme::SPACE_8).min(cell.width());
-            let badge_height=badge_text.size().y+theme::SPACE_4;
+            let widest=typography::client_table_metadata_galley(ui,"반도매",ink);
+            let badge_width=(widest.size().x.max(badge_text.size().x)
+                +theme::SPACE_8).min(cell.width());
+            let badge_height=widest.size().y.max(badge_text.size().y)
+                +theme::SPACE_4;
             let badge=Rect::from_min_size(
                 egui::pos2(cell.left(),cell.center().y-badge_height/2.0),
                 Vec2::new(badge_width,badge_height)
             );
             ui.painter().rect_filled(badge,theme::CONTROL_RADIUS as f32,fill);
             paint_client_line(
-                ui,badge,cell.left()+theme::SPACE_4,badge_text,ink
+                ui,badge,
+                badge.left()+(badge.width()-badge_text.size().x)/2.0,
+                badge_text,ink
             );
             if !secondary.is_empty() {
                 let second=Rect::from_min_max(
@@ -2573,20 +2586,17 @@ fn management_row_impl(
                     theme::MUTED
                 );
             }
-        }else if primary.is_empty() || secondary.is_empty() {
+        }else{
+            // Only the primary value is visible in a name/address/phone cell.
+            // Secondary contacts remain available through the hover tooltip.
             let visible=if primary.is_empty(){secondary}else{primary};
-            if !visible.is_empty() {
-                // A real phone is primary business data, not muted
-                // metadata. Only the client-name secondary label keeps
-                // the smaller and quieter visual hierarchy.
+            if !visible.is_empty(){
                 let metadata=primary.is_empty() && i==0;
-                let galley=if metadata {
-                    typography::client_table_metadata_galley(
-                        ui,visible,theme::MUTED
-                    )
+                let galley=if metadata{
+                    typography::client_table_metadata_galley(ui,visible,theme::MUTED)
                 }else{
                     typography::management_table_cell_galley(
-                        ui,visible,if i==0 {
+                        ui,visible,if i==0{
                             typography::ManagementTableCellRole::ClientName
                         }else{
                             typography::ManagementTableCellRole::Text
@@ -2598,45 +2608,6 @@ fn management_row_impl(
                     if metadata{theme::MUTED}else{theme::TEXT}
                 );
             }
-        }else{
-            // Only the *second* datum is offset. Primary text always uses
-            // the exact header start and is not centered within its share.
-            let available=(cell.width()-theme::SPACE_8).max(0.0);
-            let first_width=available*if i==1 {0.69}else{0.64};
-            let first=Rect::from_min_size(
-                cell.min,Vec2::new(first_width,cell.height())
-            );
-            let second=Rect::from_min_max(
-                egui::pos2((first.right()+theme::SPACE_8).min(cell.right()),cell.top()),
-                cell.max
-            );
-            paint_client_line(
-                ui,first,first.left(),
-                typography::management_table_cell_galley(
-                    ui,primary,if i==0 {
-                        typography::ManagementTableCellRole::ClientName
-                    }else{
-                        typography::ManagementTableCellRole::Text
-                    }
-                ),
-                theme::TEXT
-            );
-            // The address and its paired phone number are equally
-            // important. Retain metadata styling only for the dealer
-            // name's secondary description.
-            let secondary_galley=if i==1 {
-                typography::management_table_cell_galley(
-                    ui,secondary,typography::ManagementTableCellRole::Text
-                )
-            }else{
-                typography::client_table_metadata_galley(
-                    ui,secondary,theme::MUTED
-                )
-            };
-            paint_client_line(
-                ui,second,second.left(),secondary_galley,
-                if i==1 {theme::TEXT} else {theme::MUTED}
-            );
         }
         // Keep full, unclipped information accessible without changing the
         // row-wide click-to-edit behavior or inserting extra visible controls.
@@ -2665,21 +2636,27 @@ fn management_row_impl(
 mod management_client_column_divider_tests{
     use super::*;
     #[test]
-    fn table_header_and_rows_share_the_same_three_column_edges(){
-        let expected=[130.0,320.0];
-        assert_eq!(management_client_column_edges(-20.0,500.0),
-            [-20.0+150.0,-20.0+340.0]);
-        assert_eq!(management_client_column_edges(0.0,500.0),
-            [150.0,340.0]);
-        assert_eq!(expected,management_client_column_edges(-20.0,500.0));
+    fn address_gains_all_extra_width(){
+        assert_eq!(management_client_column_widths(900.0),
+            [172.0,224.0,154.0,350.0]);
+        assert_eq!(management_client_column_widths(1200.0),
+            [172.0,524.0,154.0,350.0]);
     }
     #[test]
-    fn narrow_table_keeps_boundaries_ordered_and_inside_data_width(){
+    fn header_and_rows_share_four_column_edges(){
+        assert_eq!(management_client_column_edges(0.0,900.0),
+            [172.0,396.0,550.0]);
+        assert_eq!(management_client_column_edges(-20.0,900.0),
+            [152.0,376.0,530.0]);
+    }
+    #[test]
+    fn boundaries_are_ordered_and_inside_table(){
         for width in [theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH,900.0,1200.0]{
             let edges=management_client_column_edges(25.0,width);
             assert!(edges[0]>25.0);
             assert!(edges[1]>edges[0]);
-            assert!(edges[1]<25.0+width);
+            assert!(edges[2]>edges[1]);
+            assert!(edges[2]<25.0+width);
         }
     }
 }
