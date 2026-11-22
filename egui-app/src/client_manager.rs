@@ -11,6 +11,10 @@ use std::{sync::{mpsc::{self,Receiver},Arc},thread,time::{SystemTime,UNIX_EPOCH}
 fn field<'a>(client:&'a Value,key:&str)->&'a str {
     client.get(key).and_then(Value::as_str).unwrap_or("")
 }
+fn displayed_phone(client:&Value)->&str {
+    let phone=field(client,"phone");
+    if phone.trim().is_empty(){field(client,"mobile")}else{phone}
+}
 fn readable_tier(tier:&str)->&'static str {
     match tier {"wholesale"=>"도매","semi"=>"반도매",
         "retail"=>"소매","special"=>"특수",_=>"미지정"}
@@ -406,11 +410,13 @@ impl ClientManager {
                 let a=match column {
                     0=>field(left,"name"),
                     1=>field(left,"address"),
+                    2=>displayed_phone(left),
                     _=>readable_tier(field(left,"tier")),
                 };
                 let b=match column {
                     0=>field(right,"name"),
                     1=>field(right,"address"),
+                    2=>displayed_phone(right),
                     _=>readable_tier(field(right,"tier")),
                 };
                 let compared=a.to_lowercase().cmp(&b.to_lowercase())
@@ -563,13 +569,17 @@ impl ClientManager {
                                     // second invoice sender name or table label.
                                     let description="";
                                     let address=field(client,"address");
-                                    let contacts=[
-                                        field(client,"phone"),field(client,"mobile")
-                                    ].into_iter().filter(|v|!v.trim().is_empty())
-                                        .collect::<Vec<_>>().join(" / ");
-                                    let contacts=if contacts.is_empty(){
-                                        "연락처 미등록".to_owned()
-                                    }else{contacts};
+                                    // Show one phone; preserve a second distinct
+                                    // mobile number in the cell's hover text.
+                                    let phone=displayed_phone(client);
+                                    let shown_phone=if phone.trim().is_empty(){
+                                        "연락처 미등록"
+                                    }else{phone};
+                                    let mobile=field(client,"mobile");
+                                    let extra_mobile=if !field(client,"phone").trim().is_empty()
+                                        && !mobile.trim().is_empty() && mobile!=phone{
+                                        mobile
+                                    }else{""};
                                     let conditions=[
                                         if field(client,"payment")=="POSTPAID"{
                                             "후불"
@@ -592,7 +602,9 @@ impl ClientManager {
                                         .collect::<Vec<_>>().join(" / ");
                                     if components::management_row_striped(
                                         row,field(client,"id"),[
-                                            (name,description),(address,&contacts),
+                                            (name,description),
+                                            (address,""),
+                                            (shown_phone,extra_mobile),
                                             (readable_tier(field(client,"tier")),&conditions)
                                         ],Some(field(client,"tier")),index
                                     ).clicked(){
