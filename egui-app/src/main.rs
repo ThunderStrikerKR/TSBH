@@ -1475,6 +1475,18 @@ impl BandoEgui {
     /// reception into the Tauri working-order store. Editing or selecting
     /// customers continues to save exclusively to egui-preview.sqlite3.
     fn start_working_sync(&mut self, ctx:&egui::Context) {
+        match self.reception_job_admission(
+            ReceptionJob::WorkingSync,self.working_sync.is_some()
+        ){
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.working_sync_error=Some(format!(
+                    "{} 중에는 운영 작업본을 저장할 수 없습니다.",blocker.label()
+                ));
+                return;
+            }
+            JobAdmission::Start=>{}
+        }
         self.working_sync_error=None;
         if !self.gateway.working_commit_enabled() {
             self.working_sync_error=Some(
@@ -1657,7 +1669,16 @@ impl BandoEgui {
     }
 
     fn open_manual_workspace(&mut self,ctx:&egui::Context) {
-        if self.manual_workspace.is_some() {return;}
+        match self.reception_job_admission(
+            ReceptionJob::ManualWorkspace,self.manual_workspace.is_some()
+        ){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::ManualWorkspace,blocker);
+                return;
+            }
+        }
         if self.client_change.is_some() || self.working_sync.is_some() ||
             self.inline_change.is_some() || self.inline_editor.as_ref()
                 .is_some_and(|edit|edit.text!=edit.original) {
@@ -1950,7 +1971,16 @@ impl BandoEgui {
     }
 
     fn submit_inline_edit(&mut self,ctx:&egui::Context){
-        if self.inline_change.is_some(){return;}
+        match self.reception_job_admission(
+            ReceptionJob::InlineEdit,self.inline_change.is_some()
+        ){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::InlineEdit,blocker);
+                return;
+            }
+        }
         let Some(editor)=self.inline_editor.take() else{return};
         if editor.text==editor.original{return;}
         let Some(source)=self.active_id.as_deref().and_then(|id|
@@ -2092,6 +2122,9 @@ impl BandoEgui {
     }
 
     fn open_vat_settings(&mut self){
+        if self.reception_job_admission(
+            ReceptionJob::VatEdit,false
+        )!=JobAdmission::Start{return;}
         let Some(order_id)=self.active_id.clone() else{return};
         let Some(analysis)=self.analysis.as_ref() else{return};
         let rows=reception_service::recipients(analysis);
@@ -2107,9 +2140,16 @@ impl BandoEgui {
     fn start_vat_change(
         &mut self,request:manual_workspace::InlineRequest,ctx:&egui::Context
     ){
-        if self.vat_change.is_some() || self.inline_change.is_some() ||
-            self.inline_editor.is_some() || self.working_sync.is_some() ||
-            self.client_change.is_some(){return;}
+        match self.reception_job_admission(
+            ReceptionJob::VatEdit,self.vat_change.is_some()
+        ){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::VatEdit,blocker);
+                return;
+            }
+        }
         let Some(source)=self.active_id.as_deref().and_then(|id|
             self.drafts.iter().find(|row|row.id==id)
         ).cloned() else{return};
