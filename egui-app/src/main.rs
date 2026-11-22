@@ -2835,8 +2835,20 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
         if let Some(Ok((request, result))) = complete {
             self.analysis_receiver = None;
-            self.analysis_running_key=None;
-            if request != self.analysis_request {
+            let started=self.analysis_running_key.take();
+            let is_current=started.as_ref().is_some_and(|(id,raw,kind)|
+                self.active_id.as_deref()==Some(id.as_str()) &&
+                self.raw_source==*raw &&
+                self.order_type.as_str()==kind.as_str()
+            );
+            if request != self.analysis_request || !is_current {
+                // A changed source/receipt may never inherit an earlier OCR
+                // or auto-match response, even if the old worker won the race.
+                self.analysis_pending=false;
+                if !self.raw_source.trim().is_empty(){
+                    self.analysis_due_at=Some(Instant::now());
+                    ctx.request_repaint();
+                }
                 return;
             }
             self.analysis_pending = false;
