@@ -1695,6 +1695,102 @@ pub fn calendar_dates(month:NaiveDate)->Vec<Option<NaiveDate>>{
             .flatten()
     }).collect()
 }
+/// Common management date group used by Order History and Excel History.
+/// The shared component owns the outer 36pt frame, 34pt content clip,
+/// asymmetric end caps, divider-safe hover geometry and arrow rendering.
+/// Consumers own only the date value, callbacks and calendar popup.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum ManagementDateSegmentEdge{Leading,Middle,Trailing}
+
+pub fn management_date_segment_corners(
+    edge:ManagementDateSegmentEdge
+)->egui::CornerRadius{
+    let r=theme::CONTROL_RADIUS.saturating_sub(
+        theme::FRAME_STROKE_WIDTH as u8
+    );
+    match edge {
+        ManagementDateSegmentEdge::Leading=>egui::CornerRadius{
+            nw:r,ne:0,sw:r,se:0
+        },
+        ManagementDateSegmentEdge::Middle=>egui::CornerRadius::same(0),
+        ManagementDateSegmentEdge::Trailing=>egui::CornerRadius{
+            nw:0,ne:r,sw:0,se:r
+        },
+    }
+}
+
+/// Keep the date segment's hit target, fill, asymmetric rounding and hover
+/// tied to one component. The caller must not paint a second hover layer.
+pub fn management_date_segment(
+    ui:&mut Ui,label:&str,width:f32,edge:ManagementDateSegmentEdge
+)->Response{
+    let corners=management_date_segment_corners(edge);
+    let direction=match label {
+        "‹"=>Some(ManagementChevronDirection::Left),
+        "›"=>Some(ManagementChevronDirection::Right),
+        _=>None
+    };
+    let display=if direction.is_some(){""}else{label};
+    let response=ui.add_sized(
+        Vec2::new(width,theme::ACTION_STANDARD_HEIGHT),
+        egui::Button::new(typography::action_label(
+            display,typography::FONT_STANDARD_ACTION,false,theme::TEXT
+        ))
+            .fill(theme::INPUT)
+            .stroke(Stroke::NONE)
+            .corner_radius(corners)
+    );
+    theme::paint_button_hover_corners(ui,&response,corners);
+    if let Some(direction)=direction{
+        let painter=ui.painter().with_clip_rect(response.rect);
+        paint_management_chevron(
+            &painter,response.rect.center(),direction
+        );
+    }
+    response
+}
+
+/// One 36pt allocation per date group. All children share the 34pt inset
+/// and cannot extend hover painting into the outer rounded frame.
+pub fn management_date_group<R>(
+    ui:&mut Ui,id:&'static str,width:f32,
+    add_contents:impl FnOnce(&mut Ui,Rect)->R
+)->R{
+    let (outer,_)=ui.allocate_exact_size(
+        Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
+    );
+    let inset=theme::FRAME_STROKE_WIDTH;
+    let inner=Rect::from_center_size(
+        outer.center(),
+        Vec2::new(
+            (outer.width()-2.0*inset).max(0.0),
+            (outer.height()-2.0*inset).max(0.0)
+        )
+    );
+    ui.painter().rect_filled(
+        outer,theme::CONTROL_RADIUS as f32,theme::INPUT
+    );
+    let output=ui.scope_builder(
+        egui::UiBuilder::new()
+            .id_salt(("management-date-group",id))
+            .max_rect(inner)
+            .layout(Layout::left_to_right(Align::Center)),
+        |row|{
+            row.set_width(inner.width());
+            row.set_height(inner.height());
+            row.set_clip_rect(row.clip_rect().intersect(inner));
+            row.spacing_mut().item_spacing=Vec2::ZERO;
+            add_contents(row,inner)
+        }
+    ).inner;
+    ui.painter().rect_stroke(
+        outer.shrink(0.5),theme::CONTROL_RADIUS as f32,
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
+        egui::StrokeKind::Inside
+    );
+    output
+}
+
 /// Shared calendar navigation: identical 28pt hit targets, border, radius,
 /// and vector chevrons for year/month movement in either direction.
 fn calendar_nav_button(
@@ -4170,5 +4266,39 @@ mod modal_safe_position_tests {
             assert!(safe.contains(pivot));
             assert_eq!(pivot.y-safe.top(),safe.bottom()-pivot.y);
         }
+    }
+}
+
+#[cfg(test)]
+mod management_date_group_tests{
+    use super::*;
+
+    #[test]
+    fn only_outer_date_segment_corners_are_rounded(){
+        let radius=theme::CONTROL_RADIUS-1;
+        let leading=management_date_segment_corners(
+            ManagementDateSegmentEdge::Leading
+        );
+        let middle=management_date_segment_corners(
+            ManagementDateSegmentEdge::Middle
+        );
+        let trailing=management_date_segment_corners(
+            ManagementDateSegmentEdge::Trailing
+        );
+        assert_eq!((leading.nw,leading.ne,leading.sw,leading.se),
+            (radius,0,radius,0));
+        assert_eq!((middle.nw,middle.ne,middle.sw,middle.se),(0,0,0,0));
+        assert_eq!((trailing.nw,trailing.ne,trailing.sw,trailing.se),
+            (0,radius,0,radius));
+    }
+
+    #[test]
+    fn date_segment_dimensions_fit_one_common_outer_frame(){
+        let segments=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH*2.0
+            +theme::MANAGEMENT_DATE_CALENDAR_BUTTON_WIDTH+106.0;
+        let outer=segments+theme::FRAME_STROKE_WIDTH*2.0;
+        assert_eq!(outer-segments,2.0*theme::FRAME_STROKE_WIDTH);
+        assert_eq!(theme::INPUT_HEIGHT-2.0*theme::FRAME_STROKE_WIDTH,
+            theme::ACTION_STANDARD_HEIGHT);
     }
 }
