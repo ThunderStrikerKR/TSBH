@@ -323,6 +323,13 @@ mod manual_rebind_tests {
             edit_history:vec![]
         };
         let result=prepare(&PreviewGateway,&source,"new").unwrap();
+        assert_eq!(result.recognition,Some(json!({
+            "recipients":[],"candidates":[]
+        })),"the selected-client recognition must accompany the price quote");
+        let cancelled=AtomicBool::new(true);
+        assert!(prepare_cancellable(&PreviewGateway,&source,"new",&cancelled)
+            .err().is_some_and(|error|error.contains("취소")),
+            "a superseded auto-match must stop without entering native rules");
         let preview=result.pricing_preview.unwrap();
         assert_eq!(preview["total"],27300);
         assert_eq!(preview["pendingRecipients"],json!([]));
