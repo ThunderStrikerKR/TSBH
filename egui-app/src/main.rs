@@ -32,6 +32,7 @@ mod product_excel_ui;
 mod client_chooser;
 mod business_state;
 mod native_order_change;
+mod pricing_basis;
 mod source_highlight;
 mod workflow_board;
 mod workflow_board_ui;
