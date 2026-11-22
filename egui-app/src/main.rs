@@ -8014,4 +8014,98 @@ mod client_chooser_async_handoff_tests {
         assert!(app.source_save_error.as_deref()
             .is_some_and(|message|message.contains("synthetic dealer lookup error")));
     }
+
+    #[test]
+    fn repeated_same_dealer_request_is_coalesced_while_native_worker_is_busy(){
+        let ctx=egui::Context::default();
+        let gate=Arc::new((Mutex::new(false),Condvar::new()));
+        let adapter:Arc<dyn gateway::BandoGateway>=Arc::new(GatedGateway{
+            gate:Arc::clone(&gate),fail:false
+        });
+        let mut app=create_app(adapter,&ctx);
+        app.apply_manual_client("new",&ctx);
+        assert_eq!(app.client_change.as_ref().map(|job|job.client_id.as_str()),
+            Some("new"));
+        app.apply_manual_client("new",&ctx);
+        assert!(app.source_save_error.is_none(),
+            "identical request should be a no-op, not an error or new worker");
+        assert_eq!(app.client_change.as_ref().map(|job|job.client_id.as_str()),
+            Some("new"));
+        app.start_working_sync(&ctx);
+        assert!(app.working_sync.is_none());
+        assert!(app.working_sync_error.as_deref()
+            .is_some_and(|error|error.contains("거래처 변경")));
+        let edit=manual_workspace::InlineRequest{
+            recipient_id:"r1".into(),item_id:None,
+            field:"vatSettings".into(),value:json!({"scope":"all"})
+        };
+        app.start_vat_change(edit,&ctx);
+        assert!(app.vat_change.is_none());
+        app.open_manual_workspace(&ctx);
+        assert!(app.manual_workspace.is_none());
+        release(&gate);
+        poll_until_done(&mut app,&ctx);
+    }
+
+    #[test]
+    fn working_save_blocks_manual_client_change_in_the_reverse_start_order(){
+        let ctx=egui::Context::default();
+        let gate=Arc::new((Mutex::new(true),Condvar::new()));
+        let adapter:Arc<dyn gateway::BandoGateway>=Arc::new(GatedGateway{
+            gate,fail:false
+        });
+        let mut app=create_app(adapter,&ctx);
+        let (_tx,receiver)=mpsc::channel();
+        app.working_sync=Some(PendingWorkingSync{
+            order_id:"draft-1".into(),source_raw:"첫 발주 원문".into(),
+            order_type:"AGENCY".into(),client_id:"old".into(),
+            authority_revision:Some(1),submitted_manual:None,receiver,
+        });
+        app.apply_manual_client("new",&ctx);
+        assert!(app.client_change.is_none());
+        assert_eq!(app.drafts[0].client_id.as_deref(),Some("old"));
+        assert!(app.source_save_error.as_deref()
+            .is_some_and(|message|message.contains("운영 작업본 저장")));
+    }
+
+    #[test]
+    fn native_client_success_reuses_selected_recognition_without_reanalysis(){
+        let ctx=egui::Context::default();
+        let gate=Arc::new((Mutex::new(true),Condvar::new()));
+        let adapter:Arc<dyn gateway::BandoGateway>=Arc::new(GatedGateway{
+            gate,fail:false
+        });
+        let mut app=create_app(adapter,&ctx);
+        let recognition=json!({
+            "recipients":[],"candidates":[],"unassigned":[]
+        });
+        let view=json!({
+            "recognition":recognition,"reference":[],
+            "clientCandidates":[],"directoryCount":0,
+            "matchedClientName":null,"chosenClientName":null
+        });
+        app.analysis=reception_service::ReceptionAnalysis::from_cached_view(
+            &app.raw_source,recognition.clone(),json!({}),&view
+        );
+        assert!(app.analysis.is_some());
+        let (tx,receiver)=mpsc::channel();
+        app.client_change=Some(PendingClientChange{
+            order_id:"draft-1".into(),client_id:"new".into(),
+            source_raw:"첫 발주 원문".into(),order_type:"AGENCY".into(),
+            chat_handle:None,chat_title:None,manual_model:None,
+            reprice_selection:None,receiver,
+        });
+        tx.send(Ok(native_order_change::ChangeResult{
+            client_id:"new".into(),manual_model:None,
+            pricing_preview:None,recognition:Some(recognition.clone()),
+        })).unwrap();
+        app.poll_client_change(&ctx);
+        assert!(app.client_change.is_none());
+        assert!(app.analysis.is_some());
+        assert!(app.analysis_due_at.is_none(),
+            "successful native change must not schedule AnalyzeOrder again");
+        assert_eq!(app.drafts[0].client_id.as_deref(),Some("new"));
+        assert_eq!(app.drafts[0].analysis_evidence.as_ref(),Some(&recognition));
+        assert!(app.drafts[0].analysis_view.is_some());
+    }
 }
