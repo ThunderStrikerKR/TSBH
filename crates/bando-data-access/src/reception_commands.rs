@@ -198,21 +198,16 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
         "order":merged, "state":&state, "client":selected_client,
         "explicitEdit":true, "persistedOrders":[]
     }))?)?;
+    let mut manual_quote=None;
     if manual.is_some(){
-        // Manual row counts, addresses, product quantities and factory
-        // origins may change the shipping quote. Never retain the automatic
-        // freight computed for the pre-manual set of recipients.
-        let freight=rule("calculate_shipping",json!({
-            "order":&next,"state":&state
+        // The *same* read-only native quote as the egui editing preview:
+        // item unit price overrides, quantity, per-recipient base charges,
+        // COD, and remote 2x are resolved against this transaction's state.
+        let quoted=rule("calculate_reception_quote",json!({
+            "order":&next,"state":&state,"client":selected_client
         }))?;
-        next["shippingFee"]=if selected_client.get("shippingFeeExcluded")
-            ==Some(&Value::Bool(true)) {
-            json!(0)
-        }else{
-            freight.get("total").cloned().unwrap_or(Value::Null)
-        };
-        next["shippingVersion"]=freight.get("version")
-            .cloned().unwrap_or(Value::Null);
+        next=order_from(quoted.clone())?;
+        manual_quote=Some(quoted);
     }
     if !same_id(&next, order_id) ||
        next.get("raw").and_then(Value::as_str) != Some(raw) ||
@@ -223,9 +218,14 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
            .is_some_and(|v| !v.is_empty()) {
         return Err("재계산된 미확정 주문이 요청과 일치하지 않습니다.".into());
     }
-    let totals = rule("calculate_price", json!({
-        "order":&next, "client":selected_client
-    }))?;
+    let totals=if let Some(quoted)=manual_quote.as_ref(){
+        quoted.get("totals").filter(|value|value.is_object())
+            .ok_or("재계산된 청구합계가 없습니다.")?.clone()
+    }else{
+        rule("calculate_price", json!({
+            "order":&next, "client":selected_client
+        }))?
+    };
     let working_version = expected_working_version.unwrap_or(0).checked_add(1)
         .ok_or("미확정 주문 버전 범위를 초과했습니다.")?;
     next["_eguiBridgeVersion"] = json!(working_version);
@@ -255,16 +255,24 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
     tx.commit().map_err(err)?;
     // The CLI never returns contact details, recipients, account information,
     // customer snapshots, or full order history to the egui UI.
-    let lines=next.get("recipients").and_then(Value::as_array)
-        .into_iter().flatten().flat_map(|row|
-            row.get("items").and_then(Value::as_array).into_iter().flatten()
-        ).map(|item|json!({
-            "itemId":item.get("id"),
-            "productId":item.get("productId"),
-            "variantId":item.get("variantId"),
-            "quantity":item.get("quantity"),
-            "unitPrice":item.get("unitPrice"),
-        })).collect::<Vec<_>>();
+    let lines=if let Some(quote)=manual_quote.as_ref(){
+        quote.get("linePrices").and_then(Value::as_array)
+            .ok_or("수동 수정 품목별 재계산 결과가 누락됐습니다.")?.clone()
+    }else{
+        next.get("recipients").and_then(Value::as_array)
+            .into_iter().flatten().flat_map(|row|
+                row.get("items").and_then(Value::as_array).into_iter().flatten()
+            ).map(|item|json!({
+                "itemId":item.get("id"),
+                "productId":item.get("productId"),
+                "variantId":item.get("variantId"),
+                "quantity":item.get("quantity"),
+                "unitPrice":item.get("unitPrice"),
+            })).collect::<Vec<_>>()
+    };
+    let freight_lines=manual_quote.as_ref().and_then(|quote|
+        quote.get("freightLines").and_then(Value::as_array))
+        .cloned().unwrap_or_default();
     let mut acknowledgement=json!({
         "orderId":order_id,
         "clientId":client_id,
@@ -277,6 +285,7 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
         "vatAmount":totals.get("vat"),
         "total":totals.get("total"),
         "linePrices":lines,
+        "freightLines":freight_lines,
         "manualApplied":manual.is_some()
     });
     // The one-shot CLI has a deliberately bounded stdout contract. Truncate
@@ -284,6 +293,7 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
     // and an empty detail list rather than losing the commit acknowledgement.
     if serde_json::to_vec(&acknowledgement).map_err(err)?.len()>90_000 {
         acknowledgement["linePrices"]=json!([]);
+        acknowledgement["freightLines"]=json!([]);
     }
     Ok(acknowledgement)
 }
