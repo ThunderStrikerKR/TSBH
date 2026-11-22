@@ -461,15 +461,40 @@ mod tests {
             form_fingerprint("수취인\n다\n라"));
     }
     #[test]
+    fn multiple_forms_of_one_client_do_not_share_layout_votes(){
+        let mut examples=Vec::new();
+        for n in 1..=3{
+            examples.push(OcrLayoutExample{
+                order_id:format!("a{n}"),
+                client_id:Some("A".into()),
+                original_text:"수취인\n강\n남\n010\n서울".into(),
+                corrected_text:"수취인\n강남\n010\n서울".into(),
+            });
+            examples.push(OcrLayoutExample{
+                order_id:format!("b{n}"),
+                client_id:Some("A".into()),
+                original_text:"품목명\n강\n남\n010\n서울".into(),
+                corrected_text:"품목명\n강\n남\n010\n서울".into(),
+            });
+        }
+        assert_eq!(layout_shape("수취인\n강\n남\n010\n서울"),
+            layout_shape("품목명\n강\n남\n010\n서울"));
+        let (result,count)=layout_suggestion(
+            "수취인\n강\n남\n010\n서울",&examples,Some("A")
+        );
+        assert!(count>0);
+        assert_eq!(result,"수취인\n강남\n010\n서울");
+    }
+    #[test]
     fn conflicting_global_ocr_corrections_are_never_autorun(){
         let mut examples=Vec::new();
         for i in 0..3{
-            examples.push(sample(&format!("a{i}"),"서울 특별시 강남구",
-                "서울특별시 강남구"));
+            examples.push(sample(&format!("a{i}"),"산울역","서울역"));
         }
-        examples.push(sample("dispute","서울 특별시 강남구",
-            "서울 특별시 강남동"));
-        let text="서울 특별시 강남구";
+        // The same OCR source token has a different staff-approved target.
+        // Even a single dissenting receipt must suspend auto-application.
+        examples.push(sample("dispute","산울역","소울역"));
+        let text="산울역";
         let output=suggest(text,&examples);
         assert_eq!(output.text,text);
         assert_eq!(output.learning.repeated_error_corrections,0);
