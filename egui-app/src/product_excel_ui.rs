@@ -142,7 +142,8 @@ impl ProductExcelUi {
                 self.job=None;
                 self.error=Some("상품 Excel 작업 응답이 중단됐습니다. 다시 조회하세요.".into());
             }
-            Some(Err(TryRecvError::Empty))=>ctx.request_repaint_after(std::time::Duration::from_millis(100)),
+            // The Excel worker wakes egui as soon as the channel is ready.
+            Some(Err(TryRecvError::Empty))=>{},
             None=>{}
         }
         None
