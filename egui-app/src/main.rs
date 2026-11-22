@@ -239,6 +239,7 @@ struct InlineTarget {
     field:&'static str,
 }
 struct InlineReceptionEditor {
+    source_id:String,
     target:InlineTarget,
     original:String,
     text:String,
@@ -926,8 +927,10 @@ impl BandoEgui {
             );
             return;
         }
-        if self.working_sync.is_some() || self.client_change.is_some() {
-            self.working_sync_error=Some("진행 중인 Rust 작업이 끝난 후 저장하세요.".into());
+        if self.working_sync.is_some() || self.client_change.is_some() ||
+            self.inline_change.is_some() || self.inline_editor.as_ref()
+                .is_some_and(|edit|edit.text!=edit.original) {
+            self.working_sync_error=Some("진행 중인 셀 수정을 확정한 후 저장하세요.".into());
             return;
         }
         let Some(source)=self.active_id.as_deref()
@@ -1089,8 +1092,10 @@ impl BandoEgui {
 
     fn open_manual_workspace(&mut self,ctx:&egui::Context) {
         if self.manual_workspace.is_some() {return;}
-        if self.client_change.is_some() || self.working_sync.is_some() {
-            self.source_save_error=Some("진행 중인 Rust 주문 작업이 끝난 뒤 수동 분류를 여세요.".into());
+        if self.client_change.is_some() || self.working_sync.is_some() ||
+            self.inline_change.is_some() || self.inline_editor.as_ref()
+                .is_some_and(|edit|edit.text!=edit.original) {
+            self.source_save_error=Some("셀 입력을 확정한 다음 수동 분류를 여세요.".into());
             return;
         }
         let Some(row)=self.active_id.as_deref()
@@ -1248,6 +1253,10 @@ impl BandoEgui {
 
     fn begin_inline_edit(&mut self,target:InlineTarget,original:String){
         if self.inline_change.is_some(){return;}
+        if self.inline_editor.as_ref().is_some_and(|editor|
+            Some(editor.source_id.as_str())!=self.active_id.as_deref()){
+            self.inline_editor=None;
+        }
         if self.inline_editor.as_ref().is_some_and(|editor|editor.target==target){
             return;
         }
@@ -1260,6 +1269,7 @@ impl BandoEgui {
             return;
         }
         self.inline_editor=Some(InlineReceptionEditor{
+            source_id:self.active_id.clone().unwrap_or_default(),
             target,original:original.clone(),text:original,focus_next:true
         });
     }
@@ -1271,6 +1281,12 @@ impl BandoEgui {
         let Some(source)=self.active_id.as_deref().and_then(|id|
             self.drafts.iter().find(|row|row.id==id)
         ).cloned() else{return};
+        if editor.source_id!=source.id{
+            self.source_save_error=Some(
+                "다른 발주서에서 시작한 입력은 현재 주문에 적용되지 않았습니다.".into()
+            );
+            return;
+        }
         if source.analysis_raw.as_deref()!=Some(source.raw.as_str()) ||
             source.analysis_evidence.is_none() ||
             self.working_sync.is_some() || self.client_change.is_some(){
@@ -4953,6 +4969,7 @@ impl BandoEgui {
         }else if let Some((target,value))=inline_command{
             if self.inline_editor.is_none() && self.inline_change.is_none(){
                 self.inline_editor=Some(InlineReceptionEditor{
+                    source_id:self.active_id.clone().unwrap_or_default(),
                     target,original:"__previous__".into(),
                     text:value,focus_next:false
                 });
