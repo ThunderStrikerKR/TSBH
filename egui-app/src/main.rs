@@ -296,6 +296,7 @@ struct BandoEgui {
     settings_pending_page: Option<Page>,
     settings_pending_save: bool,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
+    edit_history_open: bool,
     client_change: Option<PendingClientChange>,
     auto_client_change: Option<PendingAutomaticClient>,
     working_sync: Option<PendingWorkingSync>,
@@ -382,6 +383,7 @@ impl Default for BandoEgui {
             settings_pending_page: None,
             settings_pending_save: false,
             manual_workspace: None,
+            edit_history_open: false,
             client_change: None,
             auto_client_change: None,
             working_sync: None,
@@ -1105,6 +1107,26 @@ impl BandoEgui {
                 if let Some(recips)=order.get("recipients").filter(|v|v.is_array()) {
                     if let Some(row)=self.drafts.iter_mut()
                         .find(|row|row.id==order_id) {
+                        // The first Rust recognition never becomes an
+                        // employee-corrected projection. Keep both snapshots
+                        // and every subsequent manual edit independently.
+                        let initial=row.analysis_evidence.as_ref()
+                            .filter(|v|v.get("recipients").is_some_and(serde_json::Value::is_array));
+                        let before=row.manual_model.as_ref()
+                            .and_then(|v|v.pointer("/model/rows"))
+                            .or_else(||initial.and_then(|v|v.get("recipients")));
+                        if let (Some(original),Some(previous))=(initial,before) {
+                            if previous!=recips {
+                                row.edit_history.push(serde_json::json!({
+                                    "id":uuid::Uuid::new_v4().to_string(),
+                                    "at":chrono::Utc::now().to_rfc3339(),
+                                    "sourceRaw":raw,
+                                    "initialAnalysis":original,
+                                    "beforeRows":previous,
+                                    "afterRows":recips
+                                }));
+                            }
+                        }
                         row.manual_model=Some(serde_json::json!({
                             "sourceRaw":raw,"orderType":order_type,
                             "clientId":client_id,"model":model,
@@ -1128,6 +1150,66 @@ impl BandoEgui {
             }
             None=>{}
         }
+    }
+
+    fn show_edit_history(&mut self,ctx:&egui::Context,work_area:Rect){
+        if !self.edit_history_open{return;}
+        let receipt=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id)).cloned();
+        let Some(receipt)=receipt else{
+            self.edit_history_open=false;
+            return;
+        };
+        let original=receipt.analysis_evidence.as_ref()
+            .and_then(|value|value.get("recipients"))
+            .cloned().unwrap_or(serde_json::Value::Null);
+        let latest=receipt.manual_model.as_ref()
+            .and_then(|m|m.pointer("/model/rows"))
+            .cloned().unwrap_or_else(||original.clone());
+        let mut close=false;
+        components::modal_window("최초 분석 및 수정 이력",
+            "reception-correction-history",work_area)
+            .default_width(work_area.width().min(860.0))
+            .show(ctx,|ui|{
+                close=components::modal_header(
+                    ui,"최초 분석 및 수정 이력","닫기",true
+                );
+                egui::ScrollArea::vertical()
+                    .id_salt("reception-correction-history-body")
+                    .max_height(work_area.height()*0.6)
+                    .show(ui,|body|{
+                        body.label(typography::section_heading("최초 분석"));
+                        body.add(egui::Label::new(
+                            typography::body(&serde_json::to_string_pretty(&original)
+                                .unwrap_or_default())
+                        ).selectable(true));
+                        components::soft_divider(body);
+                        body.label(typography::section_heading("현재 수정 결과"));
+                        body.add(egui::Label::new(
+                            typography::body(&serde_json::to_string_pretty(&latest)
+                                .unwrap_or_default())
+                        ).selectable(true));
+                        components::soft_divider(body);
+                        for (index,event) in receipt.edit_history.iter().enumerate().rev(){
+                            egui::CollapsingHeader::new(format!(
+                                "수정 {} · {}",index+1,
+                                event["at"].as_str().unwrap_or("")
+                            )).show(body,|history|{
+                                history.label(typography::field_label("수정 전"));
+                                history.add(egui::Label::new(typography::body(
+                                    &serde_json::to_string_pretty(&event["beforeRows"])
+                                        .unwrap_or_default()
+                                )).selectable(true));
+                                history.label(typography::field_label("수정 후"));
+                                history.add(egui::Label::new(typography::body(
+                                    &serde_json::to_string_pretty(&event["afterRows"])
+                                        .unwrap_or_default()
+                                )).selectable(true));
+                            });
+                        }
+                    });
+            });
+        if close {self.edit_history_open=false;}
     }
 
     fn open_client_chooser(&mut self, ctx: &egui::Context) {
@@ -1213,6 +1295,7 @@ impl BandoEgui {
             chat_handle: None, chat_title: None,
             client_id: None, client_selection: None, pricing_preview: None,
             working_version: None, working_synced: false, manual_model: None,
+            edit_history: Vec::new(),
         });
         self.select_reception(&id, ctx);
     }
@@ -1493,8 +1576,16 @@ impl BandoEgui {
                     if let Some(active_id) = self.active_id.as_deref() {
                         if let Some(item) = self.drafts.iter_mut()
                             .find(|item| item.id == active_id) {
+                            // An employee-corrected manual model can be
+                            // projected onto the new read result. The immutable
+                            // first recognition is kept separately for audit.
+                            let first_for_source=item.analysis_raw.as_deref()
+                                !=Some(self.raw_source.as_str())
+                                || item.analysis_evidence.is_none();
+                            if first_for_source {
+                                item.analysis_evidence=Some(analysis.recognition.clone());
+                            }
                             item.analysis_raw = Some(self.raw_source.clone());
-                            item.analysis_evidence = Some(analysis.recognition.clone());
                             item.client_match = Some(analysis.client_match.clone());
                             if item.client_selection.as_deref() != Some("MANUAL") &&
                                item.manual_model.is_none() {
@@ -4162,6 +4253,19 @@ impl BandoEgui {
         }
 
         let mut next_recipient = None;
+        let mut edit_from_pane=false;
+        let mut open_audit=false;
+        let editable=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+            .is_some_and(|row|row.analysis_raw.as_deref()==Some(self.raw_source.as_str())
+                && row.analysis_evidence.is_some())
+            && self.manual_workspace.is_none()
+            && self.client_change.is_none()
+            && self.working_sync.is_none()
+            && self.source_clear_job.is_none();
+        let has_audit=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+            .is_some_and(|row|!row.edit_history.is_empty());
         let recipient_nav=self.analysis.as_ref()
             .map(|analysis|reception_service::recipients(analysis))
             .filter(|recipients|recipients.len()>1)
@@ -4181,6 +4285,11 @@ impl BandoEgui {
                 Self::section_with_header(
                     pane,"수취인별 주문 정보",recipient_height,
                     |header|{
+                        if theme::action(header,"수정",ButtonRole::Standard,editable).clicked(){
+                            edit_from_pane=true;
+                        }
+                        if theme::action(header,"이력",ButtonRole::TableSecondary,has_audit)
+                            .clicked(){open_audit=true;}
                         if let Some((name,index,total))=recipient_nav.as_ref(){
                             next_recipient=components::reception_recipient_navigator(
                                 header,name,*index,*total
@@ -4249,7 +4358,14 @@ impl BandoEgui {
                 pane.set_clip_rect(bottom_rect);
                 pane.set_width(bottom_rect.width());
                 pane.set_height(bottom_rect.height());
-                Self::section(pane, "품목 및 운임", remaining, |ui| {
+                Self::section_with_header(pane,"품목 및 운임",remaining,
+                    |header|{
+                        if theme::action(header,"수정",ButtonRole::Standard,editable).clicked(){
+                            edit_from_pane=true;
+                        }
+                        if theme::action(header,"이력",ButtonRole::TableSecondary,has_audit)
+                            .clicked(){open_audit=true;}
+                    },|ui| {
                     // In intake standby, do not draw empty table headings,
                     // freight controls, VAT text or a fictitious zero total.
                     // Keep the section frame and divider exactly as-is.
@@ -4415,6 +4531,12 @@ impl BandoEgui {
                 .is_some_and(|analysis|analysis.linked_spans.iter()
                     .any(|span|span.key==*key)));
         self.link_hover.update(linked,ui.ctx());
+        if edit_from_pane{
+            self.open_manual_workspace(ui.ctx());
+        }
+        if open_audit {
+            self.edit_history_open=true;
+        }
     }
 
     /// Run an approved group mutation off the egui frame. The gateway calls
@@ -5333,7 +5455,7 @@ impl eframe::App for BandoEgui {
         if self.ocr_review.is_some() || self.pending_replace.is_some() || self.source_clear_confirm.is_some() ||
             (self.page==Page::Reception &&
                 (self.client_chooser.is_some() || self.manual_workspace.is_some() ||
-                self.workflow_dialog.is_some())) {
+                self.edit_history_open || self.workflow_dialog.is_some())) {
             components::modal_backdrop(
                 ctx,"bando-workspace-modal-backdrop",false
             );
@@ -5344,6 +5466,7 @@ impl eframe::App for BandoEgui {
         if self.page == Page::Reception {
             self.show_client_chooser(ctx,work_area);
             self.show_manual_workspace(ctx,work_area);
+            self.show_edit_history(ctx,work_area);
             self.show_workflow_dialog(ctx,work_area);
         } else if self.page==Page::History {
             if let Some(history)=self.order_history_manager.as_mut(){
