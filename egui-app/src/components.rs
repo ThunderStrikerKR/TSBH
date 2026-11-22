@@ -608,7 +608,15 @@ impl ModalEditorWorkspace<'_> {
         &mut self,max_height:f32,
         contents:impl FnOnce(&mut Ui)->(R,ModalEditorBodyGeometry),
     )->R{
-        self.ui.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
+        // Use the *allocated header rect*, not an assumed cursor position.
+        // egui can leave the flow cursor inside the reserved header widget
+        // area (11pt in the previous Windows Rect audit). Adding 16pt to
+        // that cursor produced only 5pt between header and first card.
+        let target_top=self.geometry.header
+            .map(|rect|rect.bottom()+theme::MODAL_MASTER_WORKSPACE_GAP)
+            .unwrap_or(self.ui.cursor().top()+theme::MODAL_MASTER_WORKSPACE_GAP);
+        let cursor_top=self.ui.cursor().top();
+        self.ui.add_space((target_top-cursor_top).max(0.0));
         let result=self.ui.scope(|host|{
             let scroll=egui::ScrollArea::vertical()
                 .id_salt("modal-editor-workspace-body")
