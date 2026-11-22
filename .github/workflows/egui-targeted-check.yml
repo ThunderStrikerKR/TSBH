@@ -96,6 +96,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml native_remote_preview_is_not_replaced -- --nocapture
       - name: Verify manual worksheet locality matches recipient and exact address
         run: cargo test --manifest-path egui-app/Cargo.toml manual_remote_row_tests -- --nocapture
+      - name: Verify reverse recipient source hover and I-beam cursor on all five fields
+        run: cargo test --manifest-path egui-app/Cargo.toml recipient_source_reverse_hover_tests -- --nocapture
       - name: Verify one-click cell handoff uses the committed Rust values
         run: cargo test --manifest-path egui-app/Cargo.toml inline_single_click_handoff_tests -- --nocapture
       - name: Verify first-click caret position in Hangul and numeric text fields
