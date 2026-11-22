@@ -169,9 +169,89 @@ pub(super) fn reprice_order(payload: &Value) -> Result<Value, String> {
     Ok(json!({"order":order,"refreshed":true}))
 }
 
+
+/// Read-only pricing projection for an employee-modified, unconfirmed intake.
+/// Both the UI preview and SQLite working-reception writer use THIS route.
+pub(super) fn reception_quote(payload:&Value)->Result<Value,String>{
+    let state=req(payload,"state")?;
+    let client=req(payload,"client")?;
+    let original=req(payload,"order")?;
+    if has_value(field(original,"confirmedAt")) || flag(original,"pricesLocked"){
+        return Err("확정된 주문은 미확정 접수 편집으로 재계산할 수 없습니다.".into());
+    }
+    let repriced=reprice_order(&json!({
+        "order":original,"state":state,"client":client,
+        "explicitEdit":true,"persistedOrders":[]
+    }))?;
+    let mut order=repriced.get("order").filter(|value|value.is_object())
+        .ok_or("Rust 품목 재계산 결과가 없습니다.")?.clone();
+    let freight=super::shipping::reception_recommend(&order,state)?;
+    let shipping=if flag(client,"shippingFeeExcluded"){json!(0)}else{
+        field(&freight,"total").clone()
+    };
+    set(&mut order,"shippingFee",shipping)?;
+    set(&mut order,"shippingVersion",field(&freight,"version").clone())?;
+    let amounts=totals(&order,client)?;
+    let mut lines=Vec::new();
+    for recipient in rows(field(&order,"recipients")){
+        for item in rows(field(recipient,"items")){
+            let amount=safe(field(item,"unitPrice")).and_then(|unit|
+                field(item,"quantity").as_i64().filter(|quantity|*quantity>0)
+                    .and_then(|quantity|unit.checked_mul(quantity))
+                    .filter(|value|(0..=MAX_SAFE).contains(value))
+            );
+            lines.push(json!({
+                "recipientId":field(recipient,"id"),
+                "itemId":field(item,"id"),
+                "productId":field(item,"productId"),
+                "variantId":field(item,"variantId"),
+                "quantity":field(item,"quantity"),
+                "unitPrice":field(item,"unitPrice"),
+                "amount":amount,
+                "manualUnitPrice":field(item,"manualUnitPrice"),
+            }));
+        }
+    }
+    let freight_lines=rows(field(&freight,"bundles")).iter().map(|bundle|json!({
+        "recipientId":field(bundle,"recipientId"),
+        "origin":field(bundle,"origin"),
+        "appliedCharge":field(bundle,"appliedCharge"),
+        "billableCharge":field(bundle,"billableCharge"),
+        "freightCode":field(bundle,"freightCode"),
+        "source":field(bundle,"source"),
+    })).collect::<Vec<_>>();
+    Ok(json!({
+        "order":order,"totals":amounts,"linePrices":lines,
+        "freightLines":freight_lines
+    }))
+}
+
 #[cfg(test)]
 mod migration_tests {
     use super::*;
+    #[test]
+    fn native_reception_quote_multiplies_quantity_and_manual_price_and_freight() {
+        let state=json!({"products":[{"id":"p","variants":[{"id":"v",
+            "wholesale":12000}]}],"shipping":{"epoch":1}});
+        let order=json!({"id":"draft","raw":"가상","orderType":"AGENCY",
+            "recipients":[{"id":"r","address":"제주특별자치도 제주시 연동 1",
+                "freightCode":"010","dispatchOrigin":"FACTORY",
+                "shippingCharges":{"FACTORY":3000},
+                "remoteDelivery":{"address":"제주특별자치도 제주시 연동 1",
+                    "checked":true,"manual":true},
+                "items":[{"id":"i","productId":"p","variantId":"v",
+                    "quantity":2,"unitPrice":9900,"manualUnitPrice":9900,
+                    "origin":"FACTORY"}]}]});
+        let client=json!({"id":"c","tier":"wholesale"});
+        let quote=reception_quote(&json!({"order":order,"state":state,"client":client}))
+            .unwrap();
+        assert_eq!(quote["linePrices"][0]["unitPrice"],9900);
+        assert_eq!(quote["linePrices"][0]["amount"],19800);
+        assert_eq!(quote["freightLines"][0]["appliedCharge"],6000);
+        assert_eq!(quote["totals"]["subtotal"],19800);
+        assert_eq!(quote["totals"]["shipping"],6000);
+        assert_eq!(quote["totals"]["total"],25800);
+    }
     #[test]
     fn manual_unit_price_survives_reprice_but_auto_lines_follow_catalog() {
         let state=json!({"products":[{"id":"p","variants":[{"id":"v",
