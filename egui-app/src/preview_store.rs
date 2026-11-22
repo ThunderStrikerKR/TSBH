@@ -1128,3 +1128,110 @@ mod reception_edit_audit_tests {
         let _=std::fs::remove_file(&path);
     }
 }
+
+#[cfg(test)]
+mod cached_reception_roundtrip_tests {
+    use super::*;
+
+    #[test]
+    fn completed_pricing_and_recognition_survive_sqlite_save_reopen(){
+        let path=std::env::temp_dir().join(format!(
+            "bando-egui-cached-quote-{}.sqlite",uuid::Uuid::new_v4()
+        ));
+        let conn=Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE working_source(
+                id INTEGER PRIMARY KEY,raw TEXT NOT NULL,order_type TEXT NOT NULL,
+                revision INTEGER NOT NULL,active_id TEXT NOT NULL,
+                drafts_json TEXT NOT NULL,updated_at TEXT
+             );
+             INSERT INTO working_source
+                (id,raw,order_type,revision,active_id,drafts_json)
+             VALUES(1,'','AGENCY',0,'','[]');"
+        ).unwrap();
+        drop(conn);
+        let store=PreviewStore{path:path.clone()};
+        let quote=json!({
+            "sourceRaw":"원문","orderId":"order-1","orderType":"AGENCY",
+            "clientId":"c1","authorityRevision":44,"status":"REVIEW",
+            "shippingFee":3000,"shippingVersion":1,
+            "vatAmount":0,"subtotal":12000,"total":15000,
+            "pendingRecipients":[],"notified":false,"paid":false,
+            "linePrices":[{"recipientId":"r1","itemId":"i1",
+                "productId":"p","variantId":"v","quantity":2,
+                "unitPrice":6000,"manualUnitPrice":null,"amount":12000}],
+            "freightLines":[{"recipientId":"r1","origin":"FACTORY",
+                "appliedCharge":3000,"billableCharge":3000,
+                "freightCode":"010","source":"RULE"}]
+        });
+        let recognized=json!({
+            "recipients":[{
+                "id":"r1","name":"수취인","address":"서울",
+                "items":[{"id":"i1","productId":"p","variantId":"v",
+                    "quantity":2,"unitPrice":6000}]
+            }],"candidates":[],"unassigned":[]
+        });
+        let cache=json!({
+            "reference":[{"remote":null,"remoteError":null,
+                "itemPrices":[{"retail":6000,"error":null}]}],
+            "clientCandidates":[{"clientId":"c1"}],
+            "matchedClientName":"테스트 거래처",
+            "chosenClientName":"테스트 거래처","directoryCount":1
+        });
+        let draft=WorkingReception{
+            id:"order-1".into(),raw:"원문".into(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:Some("원문".into()),
+            analysis_evidence:Some(recognized.clone()),
+            analysis_view:Some(cache.clone()),
+            client_match:Some(json!({"clientId":"c1"})),
+            chat_handle:None,chat_title:None,client_id:Some("c1".into()),
+            client_selection:Some("MANUAL".into()),
+            pricing_preview:Some(quote.clone()),working_version:None,
+            working_synced:false,manual_model:None,edit_history:Vec::new(),
+        };
+        let source=WorkingSource{
+            raw:"원문".into(),order_type:"AGENCY".into(),revision:0,
+            active_id:Some("order-1".into()),drafts:vec![draft]
+        };
+        assert_eq!(store.save_source(&source).unwrap(),1);
+        let loaded=store.load_source().unwrap();
+        assert_eq!(loaded.revision,1);
+        assert_eq!(loaded.active_id.as_deref(),Some("order-1"));
+        assert_eq!(loaded.drafts[0].pricing_preview.as_ref(),Some(&quote));
+        assert_eq!(loaded.drafts[0].analysis_evidence.as_ref(),Some(&recognized));
+        assert_eq!(loaded.drafts[0].analysis_view.as_ref(),Some(&cache));
+        assert_eq!(loaded.drafts[0].client_id.as_deref(),Some("c1"));
+        drop(store);
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn pending_recipient_details_must_keep_native_field_types(){
+        let mut source=WorkingSource{
+            raw:"원문".into(),order_type:"AGENCY".into(),revision:0,
+            active_id:Some("order-1".into()),drafts:vec![WorkingReception{
+                id:"order-1".into(),raw:"원문".into(),
+                order_type:"AGENCY".into(),
+                source_input_method:None,last_input_method:None,
+                analysis_raw:None,analysis_evidence:None,analysis_view:None,
+                client_match:None,chat_handle:None,chat_title:None,
+                client_id:Some("c1".into()),
+                client_selection:Some("MANUAL".into()),
+                pricing_preview:Some(json!({
+                    "sourceRaw":"원문","orderId":"order-1",
+                    "orderType":"AGENCY","clientId":"c1",
+                    "authorityRevision":4,"linePrices":[],
+                    "freightLines":[],"pendingRecipients":[]
+                })),
+                working_version:None,working_synced:false,manual_model:None,
+                edit_history:Vec::new(),
+            }]
+        };
+        assert!(validate_source(&source).is_ok());
+        source.drafts[0].pricing_preview.as_mut().unwrap()["pendingRecipients"]=
+            json!([{"recipientId":"r1","product":"yes",
+                "freight":true,"vat":false}]);
+        assert!(validate_source(&source).is_err());
+    }
+}
