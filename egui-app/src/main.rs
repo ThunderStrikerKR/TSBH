@@ -866,27 +866,12 @@ impl BandoEgui {
                 self.source_save_error = Some("활성 발주서를 찾을 수 없습니다.".to_owned());
                 return;
             };
-            if active.raw != self.raw_source ||
-               active.order_type != self.order_type.as_str() {
-                active.analysis_raw = None;
-                active.analysis_evidence = None;
-                active.analysis_view = None;
-                active.client_match = None;
-                active.pricing_preview = None;
-                active.manual_model = None;
-                active.working_synced = false;
-                // Invalidate an unfinished auto-pricing response for an old
-                // raw/kind even before a new Rust analysis begins.
-                self.auto_client_change = None;
-                // Source changes revoke only automatic dealer assignment.
-                // A deliberate employee selection stays with this receipt.
-                if active.client_selection.as_deref() == Some("AUTO") {
-                    active.client_id = None;
-                    active.client_selection = None;
-                }
+            if source_autosave::update_draft_source(
+                active,&self.raw_source,self.order_type.as_str()
+            ){
+                // In-flight advice belongs to the old raw/kind snapshot.
+                self.auto_client_change=None;
             }
-            active.raw.clone_from(&self.raw_source);
-            active.order_type = self.order_type.as_str().to_owned();
         }
         // Capture a screen-only projection alongside the immutable source
         // evidence. Saving unrelated state must not destroy a valid snapshot.
@@ -916,6 +901,43 @@ impl BandoEgui {
             }
         } else {
             self.source_save_error = Some("격리 원문 저장소가 초기화되지 않았습니다.".to_owned());
+        }
+    }
+
+    /// Direct typing updates one draft in memory and transmits only that
+    /// draft's raw/input metadata. All other receipts stay in the worker's
+    /// last complete snapshot until a structural edit queues a full Save.
+    fn queue_source_text_edit(&mut self){
+        self.source_save_error=None;
+        let Some(active_id)=self.active_id.as_deref() else{
+            self.source_save_error=Some("활성 발주서를 찾을 수 없습니다.".into());
+            return;
+        };
+        let Some(row)=self.drafts.iter_mut().find(|row|row.id==active_id)
+        else{
+            self.source_save_error=Some("활성 발주서를 찾을 수 없습니다.".into());
+            return;
+        };
+        if source_autosave::update_draft_source(
+            row,&self.raw_source,self.order_type.as_str()
+        ){
+            self.auto_client_change=None;
+        }
+        let edit=source_autosave::SourceTextEdit{
+            order_id:row.id.clone(),
+            raw:self.raw_source.clone(),
+            order_type:self.order_type.as_str().into(),
+            source_input_method:row.source_input_method.clone(),
+            last_input_method:row.last_input_method.clone(),
+        };
+        if let Some(worker)=&self.source_autosave{
+            if let Err(error)=worker.queue_source_edit(edit){
+                self.source_save_error=Some(error);
+            }
+        }else{
+            self.source_save_error=Some(
+                "격리 원문 저장소가 초기화되지 않았습니다.".into()
+            );
         }
     }
 
@@ -5346,7 +5368,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                         }
                         self.clear_source_analysis();
-                        self.queue_source_save();
+                        self.queue_source_text_edit();
                         if !self.raw_source.trim().is_empty() {
                             // Analyze only after this input session finishes,
                             // not every 250ms while the user is still typing.
@@ -8194,8 +8216,10 @@ fn main() -> eframe::Result<()> {
                 brand_image,
                 egui::TextureOptions::LINEAR,
             );
+            // Seed the autosave worker once. Keystrokes only transmit the
+            // active draft's source delta, never all saved draft projections.
             let autosave = source_autosave::SourceAutosave::new(
-                Arc::clone(&backend), restored.revision, cc.egui_ctx.clone()
+                Arc::clone(&backend), restored.clone(), cc.egui_ctx.clone()
             );
             let source_editing = !restored.raw.is_empty();
             let saved_type = match OrderType::parse(&restored.order_type) {
