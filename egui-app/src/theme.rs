@@ -611,6 +611,9 @@ pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
 pub const MANAGEMENT_FILTER_DROPDOWN_WIDTH: f32 = 148.0;
 // Common single-select menus scroll locally instead of growing beyond the viewport.
 pub const MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT: f32 = 320.0;
+/// Selectable option hit box: 14pt Korean label needs symmetric vertical ink
+/// clearance rather than egui's small natural-height selectable row.
+pub const MANAGEMENT_DROPDOWN_OPTION_HEIGHT: f32 = 28.0;
 // Width reserved for the two original client-list actions on one toolbar row.
 // Match the actual two button widths plus their shared spacing, rather
 // than leaving a large unused gap after the search field.
