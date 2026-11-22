@@ -9,6 +9,7 @@ use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
 const HOVER_ENTER:Duration=Duration::from_millis(250);
 const HOVER_EXIT:Duration=Duration::from_millis(250);
 const PENDING_ORDER_HOVER_ENTER:Duration=Duration::from_millis(250);
+const PENDING_ORDER_HOVER_EXIT:Duration=Duration::from_millis(250);
 const STEP_NAMES:[&str;4]=["주문 확인","운임 적용","계좌 안내","입금 확인"];
 
 /// The base card and its foreground hover preview are both painted within
@@ -24,6 +25,19 @@ pub struct Selection {
     pub order_id:String,
     pub shipment_id:String,
 }
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub struct PendingTarget{
+    pub order_id:String,
+    pub recipient_id:Option<String>,
+}
+impl PendingTarget{
+    fn order(id:&str)->Self{
+        Self{order_id:id.into(),recipient_id:None}
+    }
+    fn recipient(id:&str,recipient:&str)->Self{
+        Self{order_id:id.into(),recipient_id:(!recipient.is_empty()).then(||recipient.into())}
+    }
+}
 #[derive(Default)]
 pub struct BoardUi {
     pub selection:Option<Selection>,
@@ -37,10 +51,13 @@ pub struct BoardUi {
     row_release:Option<Instant>,
     // Delayed hover navigation for an unconfirmed receipt, independent of
     // the blue workflow group/stage overlay and its selection state.
-    pending_order_hover:Option<(String,Instant)>,
+    pending_order_hover:Option<(PendingTarget,Instant)>,
+    pending_visible:Option<PendingTarget>,
+    pending_release:Option<Instant>,
 }
 pub enum Event {
     SelectPending(String),
+    SelectPendingRecipient(PendingTarget),
     SelectShipment(Selection),
     ToggleGroup(String),
     TogglePending(String),
@@ -61,6 +78,8 @@ impl BoardUi{
         self.row_pending=None;
         self.row_release=None;
         self.pending_order_hover=None;
+        self.pending_visible=None;
+        self.pending_release=None;
     }
     pub fn select(&mut self,selection:Selection){
         self.selection=Some(selection);
@@ -69,6 +88,9 @@ impl BoardUi{
     }
     pub fn active_preview(&self)->Option<&str>{
         self.preview_active.as_deref()
+    }
+    pub fn pending_preview(&self)->Option<&PendingTarget>{
+        self.pending_visible.as_ref()
     }
     fn update_row_hover(&mut self,incoming:Option<String>,ctx:&egui::Context){
         let now=Instant::now();
@@ -96,35 +118,51 @@ impl BoardUi{
             }
         }
     }
+    /// Hover only affects the visible projection. Committed selection
+    /// and its unsaved edit ownership remain unchanged.
     fn update_pending_order_hover(
-        &mut self,incoming:Option<String>,active_id:Option<&str>,
+        &mut self,incoming:Option<PendingTarget>,committed:Option<&PendingTarget>,
         ctx:&egui::Context
-    )->Option<String>{
-        let Some(id)=incoming else{
-            self.pending_order_hover=None;
-            return None;
-        };
-        // The already selected receipt needs no repeated selection, autosave
-        // or re-analysis while the mouse rests on its title/recipient.
-        if active_id==Some(id.as_str()){
-            self.pending_order_hover=None;
-            return None;
-        }
+    ){
         let now=Instant::now();
-        match &self.pending_order_hover {
-            Some((candidate,at)) if candidate==&id &&
-                now.duration_since(*at)>=PENDING_ORDER_HOVER_ENTER=>{
-                    self.pending_order_hover=None;
-                    Some(id)
-                }
-            Some((candidate,_)) if candidate==&id=>{
-                ctx.request_repaint_after(PENDING_ORDER_HOVER_ENTER);
-                None
+        if let Some(candidate)=incoming{
+            self.pending_release=None;
+            if Some(&candidate)==committed{
+                self.pending_order_hover=None;
+                if self.pending_visible.take().is_some(){ctx.request_repaint();}
+                return;
             }
-            _=>{
-                self.pending_order_hover=Some((id,now));
-                ctx.request_repaint_after(PENDING_ORDER_HOVER_ENTER);
-                None
+            if self.pending_visible.as_ref()==Some(&candidate){
+                self.pending_order_hover=None;
+                return;
+            }
+            match &self.pending_order_hover{
+                Some((pending,at)) if pending==&candidate &&
+                    now.duration_since(*at)>=PENDING_ORDER_HOVER_ENTER=>{
+                    self.pending_visible=Some(candidate);
+                    self.pending_order_hover=None;
+                    ctx.request_repaint();
+                }
+                Some((pending,_)) if pending==&candidate=>{
+                    ctx.request_repaint_after(PENDING_ORDER_HOVER_ENTER);
+                }
+                _=>{
+                    self.pending_order_hover=Some((candidate,now));
+                    ctx.request_repaint_after(PENDING_ORDER_HOVER_ENTER);
+                }
+            }
+        }else{
+            self.pending_order_hover=None;
+            if self.pending_visible.is_some(){
+                let until=*self.pending_release
+                    .get_or_insert(now+PENDING_ORDER_HOVER_EXIT);
+                if now>=until{
+                    self.pending_visible=None;
+                    self.pending_release=None;
+                    ctx.request_repaint();
+                }else{
+                    ctx.request_repaint_after(PENDING_ORDER_HOVER_EXIT);
+                }
             }
         }
     }
