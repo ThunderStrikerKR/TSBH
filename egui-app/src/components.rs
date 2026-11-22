@@ -4146,16 +4146,13 @@ mod management_search_caret_tests {
         });
         let id=id.unwrap();
         let mut state=egui::TextEdit::load_state(&ctx,id).unwrap();
-        let response=egui::Response::new(&ctx,egui::LayerId::background(),
-            id,Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(240.0,36.0)),
-            egui::Sense::click());
         // The end index is 6 Unicode scalar values, not UTF-8 bytes.
         let end=value.chars().count();
         assert_eq!(end,6);
         state.cursor.set_char_range(Some(
             egui::text::CCursorRange::one(egui::text::CCursor::new(end))
         ));
-        state.store(&ctx,response.id);
+        state.store(&ctx,id);
         assert_eq!(egui::TextEdit::load_state(&ctx,id).unwrap()
             .cursor.char_range().unwrap().primary.index,6);
     }
