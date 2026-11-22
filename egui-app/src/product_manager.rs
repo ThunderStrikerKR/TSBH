@@ -1598,9 +1598,27 @@ impl ProductManager {
                         if let Some((overview_width,price_width,image_width))=
                             Self::detail_columns(content_width)
                         {
+                            // Visual reading order: reference image first,
+                            // editable overview second, and prices last.
+                            // Keep the existing 320pt image and all shared
+                            // modal section and inline form components.
                             body.horizontal(|top|{
                                 top.spacing_mut().item_spacing.x=
                                     theme::MODAL_MASTER_WORKSPACE_GAP;
+                                top.vertical(|media|{
+                                    media.set_width(image_width);
+                                    components::modal_section(
+                                        media,"상품 이미지",|photos|{
+                                            photos.set_min_height(
+                                                Self::detail_section_body_height()
+                                            );
+                                            self.detail_image_column(
+                                                photos,&mut draft,editable,busy,
+                                                &mut photo_error
+                                            );
+                                        }
+                                    );
+                                });
                                 top.vertical(|overview|{
                                     overview.set_width(overview_width);
                                     components::modal_section(
@@ -1629,26 +1647,20 @@ impl ProductManager {
                                         }
                                     );
                                 });
-                                top.vertical(|media|{
-                                    media.set_width(image_width);
-                                    components::modal_section(
-                                        media,"상품 이미지",|photos|{
-                                            photos.set_min_height(
-                                                Self::detail_section_body_height()
-                                            );
-                                            self.detail_image_column(
-                                                photos,&mut draft,editable,busy,
-                                                &mut photo_error
-                                            );
-                                        }
-                                    );
-                                });
                             });
                         }else{
-                            // Narrow Kakao-safe work areas stack the SAME
-                            // three boxed sections. Never regress to a
-                            // different unboxed vertical-label layout.
+                            // Preserve the same order when the Kakao-safe
+                            // workspace requires vertical stacking.
                             body.vertical(|stack|{
+                                components::modal_section(
+                                    stack,"상품 이미지",|photos|{
+                                        self.detail_image_column(
+                                            photos,&mut draft,editable,busy,
+                                            &mut photo_error
+                                        );
+                                    }
+                                );
+                                stack.add_space(theme::SPACE_16);
                                 components::modal_section(
                                     stack,"상품 개요",|fields|{
                                         Self::detail_overview_column(
@@ -1662,15 +1674,6 @@ impl ProductManager {
                                     stack,"판매 · 가격",|fields|{
                                         Self::detail_price_column(
                                             fields,&mut draft,&mut prices,editable,busy
-                                        );
-                                    }
-                                );
-                                stack.add_space(theme::SPACE_16);
-                                components::modal_section(
-                                    stack,"상품 이미지",|photos|{
-                                        self.detail_image_column(
-                                            photos,&mut draft,editable,busy,
-                                            &mut photo_error
                                         );
                                     }
                                 );
@@ -1904,6 +1907,24 @@ mod tests {
             assert!(overview+price+image+2.0*gap<=width+0.01,
                 "boxed columns overflow {width}pt");
         }
+    }
+    #[test]
+    fn product_detail_visual_order_is_image_overview_price_in_both_layouts(){
+        let source=include_str!("product_manager.rs");
+        let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
+            .split("        self.selected=Some(draft.clone());").next().unwrap();
+        let horizontal=composition.split("body.horizontal(|top|{").nth(1).unwrap()
+            .split("                        }else{").next().unwrap();
+        let stacked=composition.split("body.vertical(|stack|{").nth(1).unwrap()
+            .split("                        // A single shared structural separator").next().unwrap();
+        for section in [horizontal,stacked]{
+            let image=section.find("\"상품 이미지\"").unwrap();
+            let overview=section.find("\"상품 개요\"").unwrap();
+            let price=section.find("\"판매 · 가격\"").unwrap();
+            assert!(image<overview && overview<price);
+        }
+        assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
+        assert!(horizontal.contains("theme::MODAL_MASTER_WORKSPACE_GAP"));
     }
     #[test]
     fn product_detail_cannot_reintroduce_stacked_fields_or_static_sales_label(){
