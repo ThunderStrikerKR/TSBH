@@ -2757,36 +2757,68 @@ pub fn reception_freight_row(
     ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
     remote: Option<bool>, inquiry_visible: bool,
 ) {
+    let mut amount_text=amount
+        .map(|value|display_won(value).trim_end_matches('원').to_owned())
+        .unwrap_or_else(||"—".to_owned());
     ui.horizontal_wrapped(|line| {
-        line.spacing_mut().item_spacing = Vec2::new(theme::SPACE_4, theme::SPACE_4);
-        line.label(typography::body(label).size(typography::FONT_RECEPTION_ITEM_TEXT));
-        let mut amount_text = amount
-            .map(|value| display_won(value).trim_end_matches('원').to_owned())
-            .unwrap_or_else(||"—".to_owned());
-        // Match shared 36pt input geometry; the previous bare TextEdit
-        // rendered at native text height and looked misaligned beside labels.
-        line.add_enabled_ui(false, |cell| {
-            cell.add_sized(
-                Vec2::new(84.0, theme::INPUT_HEIGHT),
-                egui::TextEdit::singleline(&mut amount_text)
-                    .font(egui::FontId::monospace(typography::FONT_RECEPTION_ITEM_TEXT))
-                    .vertical_align(Align::Center)
-                    .margin(egui::Margin::symmetric(8, 2))
-                    .desired_width(84.0),
-            )
-        });
-        line.label(typography::body("원").size(typography::FONT_RECEPTION_ITEM_TEXT));
-        if let Some(collect) = collect {
+        line.spacing_mut().item_spacing=Vec2::new(theme::SPACE_4,theme::SPACE_4);
+        // Keep the label, 36pt input, and its currency unit together in a
+        // single centered row. The options may wrap independently as before.
+        // 8pt left inset matches product/header text in the item grid.
+        line.allocate_ui_with_layout(
+            Vec2::new(168.0,theme::INPUT_HEIGHT),
+            Layout::left_to_right(Align::Center),
+            |price|{
+                price.spacing_mut().item_spacing.x=theme::SPACE_4;
+                price.add_space(theme::SPACE_8);
+                let (label_rect,_)=price.allocate_exact_size(
+                    Vec2::new(40.0,theme::INPUT_HEIGHT),Sense::hover()
+                );
+                let galley=price.painter().layout_no_wrap(
+                    label.to_owned(),
+                    egui::FontId::proportional(typography::FONT_RECEPTION_ITEM_TEXT),
+                    theme::TEXT,
+                );
+                price.painter().galley(
+                    egui::pos2(
+                        label_rect.left(),
+                        label_rect.center().y-galley.size().y/2.0
+                    ),
+                    galley,theme::TEXT
+                );
+                // The exact amount (including the unknown '—') is
+                // right-aligned. It remains a disabled, native 36pt input.
+                price.add_enabled_ui(false,|cell|{
+                    cell.add_sized(
+                        Vec2::new(84.0,theme::INPUT_HEIGHT),
+                        egui::TextEdit::singleline(&mut amount_text)
+                            .font(egui::FontId::proportional(
+                                typography::FONT_RECEPTION_ITEM_TEXT
+                            ))
+                            .align(egui::Align2::RIGHT_CENTER)
+                            .margin(egui::Margin::symmetric(8,2))
+                            .desired_width(84.0),
+                    )
+                });
+                price.label(typography::body("원")
+                    .size(typography::FONT_RECEPTION_ITEM_TEXT));
+            }
+        );
+        if let Some(collect)=collect {
             line.label(typography::body(
-                if collect { "(착불)" } else { "(선불)" }
+                if collect {"(착불)"} else {"(선불)"}
             ).size(typography::FONT_RECEPTION_ITEM_TEXT));
         }
-        if let Some(checked) = remote {
-            let mut read_only = checked;
-            line.add_enabled(false, egui::Checkbox::new(&mut read_only, "도서/산간"));
+        if let Some(checked)=remote {
+            let mut read_only=checked;
+            line.add_enabled(false,egui::Checkbox::new(
+                &mut read_only,"도서/산간"
+            ));
         }
         if inquiry_visible {
-            theme::action(line, "공장에 운임 문의", theme::ButtonRole::Standard, false);
+            theme::action(
+                line,"공장에 운임 문의",theme::ButtonRole::Standard,false
+            );
         }
     });
 }
