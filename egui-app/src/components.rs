@@ -545,11 +545,13 @@ pub fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect {
 pub fn modal_master_workspace_background(
     ui:&Ui,rect:Rect,toolbar_height:f32,split_ratio:Option<f32>
 )->ModalMasterWorkspace {
-    let rect=modal_master_pixel_aligned_rect(rect,ui.ctx().pixels_per_point());
+    let ppp=ui.ctx().pixels_per_point().max(1.0);
+    let rect=modal_master_pixel_aligned_rect(rect,ppp);
     ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,theme::PANEL);
-    let toolbar_bottom=(rect.top()+toolbar_height.max(0.0)).min(rect.bottom());
+    let snap=|v:f32|(v*ppp).round()/ppp;
+    let toolbar_bottom=snap((rect.top()+toolbar_height.max(0.0)).min(rect.bottom()));
     let divider_x=split_ratio.map(|share|{
-        (rect.left()+rect.width()*share.clamp(0.0,1.0)).floor()
+        snap(rect.left()+rect.width()*share.clamp(0.0,1.0))
     });
     ModalMasterWorkspace{toolbar_bottom,divider_x}
 }
