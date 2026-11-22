@@ -2359,10 +2359,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 components::compact_text_field(
                     row,&mut dialog.rate_text,48.0,!busy
                 );
-                row.add_sized(
-                    egui::vec2(16.0,theme::INPUT_HEIGHT),
-                    egui::Label::new(typography::body("%"))
-                );
+                // Let the horizontal row center the natural-height unit
+                // label against the 36pt TextEdit, instead of stretching the
+                // Label itself to 36pt (which top-aligns its glyphs).
+                row.label(typography::body("%"));
             });
             ui.add_space(theme::SPACE_12);
             ui.horizontal_wrapped(|row|{
