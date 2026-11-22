@@ -1192,16 +1192,19 @@ impl BandoEgui {
         self.requested_recipient_focus=None;
         ctx.request_repaint();
     }
-    /// React parity: temporary board preview > linked hover > clicked
-    /// recipient. All four docked panes consult this display-only choice.
+    /// Hovered source/detail evidence temporarily overrides the board's
+    /// preview recipient; neither ever changes the committed clicked target.
+    /// All four panes resolve the same order-scoped evidence identity.
     fn visible_recipient_index(&self)->usize{
         let Some(analysis)=self.analysis.as_ref() else{return self.selected_recipient};
         let rows=reception_service::recipients(analysis);
         let preview=self.workflow_ui.pending_preview()
             .filter(|p|self.active_id.as_deref()==Some(p.order_id.as_str()))
             .and_then(|p|p.recipient_id.as_deref());
-        let linked=self.link_hover.active.as_ref().map(|key|key.recipient_id.as_str());
-        preview.or(linked).and_then(|id|rows.iter().position(|row|
+        let linked=self.active_id.as_deref()
+            .and_then(|order|self.link_hover.active_for(order))
+            .map(|key|key.recipient_id.as_str());
+        linked.or(preview).and_then(|id|rows.iter().position(|row|
             reception_service::text(row,"id")==id
         )).unwrap_or(self.selected_recipient)
     }
@@ -1223,7 +1226,9 @@ impl BandoEgui {
             .or_else(||draft.analysis_evidence.clone())
             .unwrap_or_else(||serde_json::json!({"recipients":[]}));
         let recipients=reception_service::recipients(&recognition);
-        let index=preview.recipient_id.as_deref()
+        let linked=self.link_hover.active_for(&draft.id)
+            .map(|key|key.recipient_id.as_str());
+        let index=linked.or(preview.recipient_id.as_deref())
             .and_then(|id|recipients.iter().position(|row|
                 reception_service::text(row,"id")==id)).unwrap_or(0);
         Some((draft.clone(),recognition,index))
@@ -4310,8 +4315,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // Linked recipient evidence can identify a shipment in ANOTHER
         // workflow group of the same confirmed order. Never match on name.
         let linked=if stage.is_none(){
-            self.link_hover.active.as_ref().and_then(|key|
-                committed.and_then(|selected|
+            committed.and_then(|selected|
+                self.link_hover.active_for(&selected.order_id).and_then(|key|
                     workflow_board::find_recipient_shipment(
                         board,&selected.order_id,&key.recipient_id,
                         Some(&selected.shipment_id)
@@ -4341,11 +4346,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // React visibleSelection: another pending order may be previewed
         // without replacing the employee's editable reception or autosave.
         if let Some((draft,recognition,index))=self.visible_pending_other(){
+            self.workflow_ui.note_pending_content_hover(
+                &draft.id,ui.ctx().input(|input|input.pointer.hover_pos()
+                    .is_some_and(|point|ui.clip_rect().contains(point)))
+            );
             let spans=source_highlight::collect(&draft.raw,&recognition);
             let selected_id=reception_service::recipients(&recognition).get(index)
                 .and_then(|row|row["id"].as_str()).map(str::to_owned);
-            let active=selected_id.as_ref().map(|id|
-                source_highlight::key(id,id,"name"));
+            let active=self.link_hover.active_for(&draft.id).cloned()
+                .filter(|key|spans.iter().any(|span|span.key==*key))
+                .or_else(||selected_id.as_ref().map(|id|
+                    source_highlight::key(id,id,"name")));
+            let mut hovered_source=None;
             let mut new_clicked=false;
             let mut clicked_source=None;
             Self::section_with_header(ui,"발주 원문",height,|header|{
@@ -4404,14 +4416,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         paint_slot,egui::Shape::Vec(normal)
                                     );
                                     text_ui.painter().add(egui::Shape::Vec(focused));
-                                    if display.response.hovered() &&
-                                        display.response.clicked(){
+                                    if display.response.hovered(){
                                         if let Some(pointer)=text_ui.input(|i|
                                             i.pointer.hover_pos()){
-                                            clicked_source=source_highlight::hovered_key_at_pointer(
+                                            hovered_source=source_highlight::hovered_key_at_pointer(
                                                 &draft.raw,&spans,&display.galley,
                                                 display.galley_pos,pointer
                                             );
+                                            if display.response.clicked(){
+                                                clicked_source=hovered_source.clone();
+                                            }
                                         }
                                     }
                                 });
@@ -4419,6 +4433,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     );
                 }
             });
+            self.source_hover=hovered_source;
             if let Some(clicked)=clicked_source{
                 self.workflow_ui.selection=None;
                 self.workflow_ui.folded=None;
@@ -4452,8 +4467,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 .map(|row|row.recipient.clone()).collect::<Vec<_>>()});
             let spans=source_highlight::collect(raw,&recognition);
             let selected_id=Some(shipment.recipient_id.as_str());
-            let active=self.link_hover.active.clone().filter(|key|
-                spans.iter().any(|span|span.key==*key));
+            let active=self.link_hover.active_for(&shipment.order_id).cloned()
+                .filter(|key|spans.iter().any(|span|span.key==*key));
             let mut hovered_source=None;
             let mut clicked_source=None;
             let mut new_clicked=false;
@@ -4766,8 +4781,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .or_else(||spans.iter().find(|span|
                                 span.key.recipient_id==id)))
                         .map(|span|span.key.clone());
-                    let active_link=board_link.or_else(||self.link_hover.active.clone());
-                    let scroll_link=self.link_hover.scroll_to.clone();
+                    let active_link=self.active_id.as_deref()
+                        .and_then(|id|self.link_hover.active_for(id))
+                        .cloned().or(board_link);
+                    let scroll_link=self.active_id.as_deref()
+                        .and_then(|id|self.link_hover.active_for(id))
+                        .and_then(|_|self.link_hover.scroll_to.clone());
                     let mut hovered_link=None;
                     let mut clicked_link=None;
                     let mut did_scroll=false;
