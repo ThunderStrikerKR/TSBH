@@ -4453,12 +4453,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 );
                                 if output.response.hovered() {
                                     if let Some(pointer)=scroll_ui.input(|i|i.pointer.hover_pos()) {
-                                        let cursor=output.galley.cursor_from_pos(
-                                            pointer-output.galley_pos
-                                        ).index;
-                                        hovered_link=spans.iter().find(|span|
-                                            span.start_char<=cursor && cursor<span.end_char
-                                        ).map(|span|span.key.clone());
+                                        hovered_link=source_highlight::hovered_key_at_pointer(
+                                            &self.raw_source,&spans,&output.galley,
+                                            output.galley_pos,pointer
+                                        );
                                         if output.response.clicked() {
                                             clicked_link=hovered_link.clone();
                                         }
