@@ -438,8 +438,6 @@ impl ProductManager {
             if Instant::now()>=at {
                 self.next_query=None;
                 self.reload(ctx.clone());
-            }else{
-                ctx.request_repaint_after(Duration::from_millis(60));
             }
         }
         if let Some(result)=self.result.poll(){
@@ -454,9 +452,7 @@ impl ProductManager {
                 Err(e)=>self.error=Some(e),
             }
         }
-        if self.result.pending(){
-            ctx.request_repaint_after(Duration::from_millis(100));
-        }
+        // LatestJob already requests a repaint on worker completion.
     }
     pub fn has_modal(&self)->bool {
         self.selected.is_some() || self.excel.has_modal() ||
