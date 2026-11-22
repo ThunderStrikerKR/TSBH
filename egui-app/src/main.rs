@@ -1928,16 +1928,45 @@ impl BandoEgui {
     fn start_remote_recheck(&mut self,ctx:&egui::Context){
         let Some(order_id)=self.active_id.clone() else{return};
         let source_raw=self.raw_source.clone();
+        let order_type=self.order_type.as_str().to_owned();
         let Some(analysis)=self.analysis.as_ref() else{return};
         let rows=reception_service::recipients(&analysis.recognition).to_vec();
+        let recipients=rows.iter().map(|row|(
+            reception_service::text(row,"id").to_owned(),
+            reception_service::text(row,"address").to_owned()
+        )).collect::<Vec<_>>();
+        let duplicate=self.remote_recheck.as_ref().is_some_and(|pending|
+            pending.order_id==order_id &&
+            pending.source_raw==source_raw &&
+            pending.order_type==order_type &&
+            pending.recipients==recipients
+        );
+        match self.reception_job_admission(ReceptionJob::RemoteRecheck,duplicate){
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(_)=>{
+                // The result is advisory. Never drop the recheck because an
+                // employee write or source analysis currently owns the order.
+                self.remote_recheck_due=true;
+                ctx.request_repaint_after(Duration::from_millis(100));
+                return;
+            }
+            JobAdmission::Start=>{}
+        }
+        self.remote_recheck_due=false;
+        // Abandon the obsolete address snapshot before starting another.
+        // PendingRemoteRecheck::drop signals cooperative cancellation.
+        self.remote_recheck=None;
+        let cancel=Arc::new(AtomicBool::new(false));
+        let cancelled=Arc::clone(&cancel);
         let gateway=Arc::clone(&self.gateway);
         let context=ctx.clone();
         let (tx,receiver)=mpsc::channel();
         self.remote_recheck=Some(PendingRemoteRecheck{
-            order_id,source_raw,receiver
+            order_id,source_raw,order_type,recipients,cancel,receiver
         });
         std::thread::spawn(move||{
-            let values=rows.into_iter().map(|row|{
+            let values=rows.into_iter().map_while(|row|{
+                if cancelled.load(Ordering::Acquire){return None;}
                 let id=reception_service::text(&row,"id").to_owned();
                 let address=reception_service::text(&row,"address").to_owned();
                 let answer=if address.trim().is_empty(){
@@ -1945,10 +1974,12 @@ impl BandoEgui {
                 }else{
                     reception_service::remote_decision(gateway.as_ref(),&row)
                 };
-                (id,address,answer)
+                Some((id,address,answer))
             }).collect::<Vec<_>>();
-            let _=tx.send(values);
-            context.request_repaint();
+            if !cancelled.load(Ordering::Acquire){
+                let _=tx.send(values);
+                context.request_repaint();
+            }
         });
         ctx.request_repaint_after(Duration::from_millis(100));
     }
@@ -1968,7 +1999,8 @@ impl BandoEgui {
         };
         let Some(pending)=self.remote_recheck.take() else{return};
         if self.active_id.as_deref()!=Some(pending.order_id.as_str())
-            || self.raw_source!=pending.source_raw{return;}
+            || self.raw_source!=pending.source_raw
+            || self.order_type.as_str()!=pending.order_type{return;}
         let Some(analysis)=self.analysis.as_mut() else{return};
         let current=reception_service::recipients(&analysis.recognition).to_vec();
         for (index,recipient) in current.iter().enumerate(){
