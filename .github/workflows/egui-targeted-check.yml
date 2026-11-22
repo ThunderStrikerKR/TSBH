@@ -16,6 +16,9 @@ on:
       - egui-app/src/gateway.rs
       - egui-app/src/developer_ui_samples.rs
       - egui-app/src/main.rs
+      - egui-app/src/http_gateway.rs
+      - egui-app/src/preview_store.rs
+      - egui-app/src/reception_service.rs
       - egui-app/src/native_order_change.rs
       - egui-app/src/workflow_board_ui.rs
       - egui-app/src/manual_workspace.rs
@@ -66,6 +69,12 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify saved native quote and recognition survive SQLite restart
+        run: cargo test --manifest-path egui-app/Cargo.toml cached_reception_roundtrip_tests -- --nocapture
+      - name: Verify cached Rust recognition restores without fresh analysis
+        run: cargo test --manifest-path egui-app/Cargo.toml persisted_analysis_restore_tests -- --nocapture
+      - name: Verify non-price edits reuse quotes while invoice inputs invalidate
+        run: cargo test --manifest-path egui-app/Cargo.toml quote_reuse_tests -- --nocapture
       - name: Verify dealer reassignment retains native manual-correction rows and links
         run: cargo test --manifest-path egui-app/Cargo.toml native_order_change::manual_rebind_tests -- --nocapture
       - name: Verify shared single-select dropdown coverage and geometry
