@@ -2570,8 +2570,10 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
 /// The name receives all width not reserved for the two narrow numeric columns.
 fn reception_item_columns(rect: Rect) -> [Rect; 3] {
     let qty = (rect.width() * 0.22).min(theme::RECEPTION_ITEMS_QTY_MAX_WIDTH).max(52.0);
-    let amount = (rect.width() * 0.34)
-        .min(theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH).max(74.0);
+    // The amount column only needs to fit the tens-of-millions range,
+    // e.g. "99,999,999원" in 16pt mono. Reserve its existing 136pt cap
+    // even in a narrower pane; do not let it collapse to 74pt and clip digits.
+    let amount = theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH;
     let name_right = (rect.right() - qty - amount).max(rect.left() + 12.0);
     let qty_right = (name_right + qty).min(rect.right());
     [
