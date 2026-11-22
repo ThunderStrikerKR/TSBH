@@ -4087,6 +4087,35 @@ mod management_search_caret_tests {
     use super::*;
 
     #[test]
+    fn every_management_query_surface_uses_shared_caret_policy(){
+        // The list covers actual search/filter controls. Ordinary editing
+        // of product names, client tags, dates, addresses, memo text, etc.
+        // remains a native click-position TextEdit.
+        let surfaces=[
+            ("freight",include_str!("freight_manager.rs"),2),
+            ("products",include_str!("product_manager.rs"),1),
+            ("clients",include_str!("client_manager.rs"),1),
+            ("excel",include_str!("excel_manager.rs"),1),
+            ("order history",include_str!("order_history_manager.rs"),1),
+            ("categories",include_str!("category_manager.rs"),1),
+            ("model groups",include_str!("model_group_manager.rs"),2),
+            ("aliases",include_str!("alias_manager.rs"),1),
+            ("automatic messages",include_str!("automatic_message_manager.rs"),1),
+            ("audit archive",include_str!("settings_view.rs"),1),
+            ("client chooser",include_str!("client_chooser.rs"),1),
+            ("manual product chooser",include_str!("manual_product_search.rs"),1),
+        ];
+        for (screen,source,expected) in surfaces {
+            let count=source.matches("components::management_search_field(").count();
+            assert_eq!(count,expected,"{screen} query did not use the shared field");
+        }
+        // Search-tag entry is an editor, not a query field.
+        let clients=include_str!("client_manager.rs");
+        assert!(clients.contains("entry,&mut self.tag_input,width"));
+        assert!(clients.contains("components::flexible_text_field("));
+    }
+
+    #[test]
     fn clicking_existing_query_resumes_at_the_end_not_the_first_character(){
         fn draw(
             ctx:&egui::Context,raw:egui::RawInput,query:&mut String
