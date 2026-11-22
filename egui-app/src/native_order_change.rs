@@ -103,14 +103,9 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         )) {
         return Err("운영 DB에 이미 존재하는 주문은 egui 미확정 발주서로 수정할 수 없습니다.".into());
     }
-    if let Some(old)=&source.pricing_preview {
-        // A stored price quote must never survive a changed master revision
-        // when the employee is proposing a subsequent client edit.
-        if old.get("authorityRevision").and_then(Value::as_u64)
-            != Some(authority_revision) {
-            return Err("거래처·가격·운임 기준이 변경됐습니다. 최신 DB를 기준으로 다시 확인하세요.".into());
-        }
-    }
+    // A stale quote is NEVER copied to a newly selected client. This worker
+    // already calculates fresh prices from the latest native business state;
+    // blocking on the unrelated global revision only prevents valid edits.
     let client=state.get("clients").and_then(Value::as_array)
         .and_then(|clients|clients.iter().find(|c|
             c.get("id").and_then(Value::as_str)==Some(target_id) &&
@@ -192,6 +187,9 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
             "paid":order.get("paid"),
             "linePrices":quote.get("linePrices"),
             "freightLines":quote.get("freightLines"),
+            "pricingBasis":crate::pricing_basis::snapshot(
+                &state,client,order
+            ),
         });
         return Ok(ChangeResult {
             client_id:target_id.to_owned(),
@@ -237,6 +235,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         "paid":order.get("paid"),
         "linePrices":quote.get("linePrices"),
         "freightLines":quote.get("freightLines"),
+        "pricingBasis":crate::pricing_basis::snapshot(&state,client,order),
     });
     Ok(ChangeResult {
         client_id:target_id.to_owned(),
