@@ -21,6 +21,7 @@ on:
       - egui-app/src/preview_store.rs
       - egui-app/src/reception_service.rs
       - egui-app/src/pricing_basis.rs
+      - egui-app/src/reception_jobs.rs
       - egui-app/src/native_order_change.rs
       - egui-app/src/workflow_board_ui.rs
       - egui-app/src/workflow_board.rs
@@ -83,6 +84,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml hover_changes_visible_recipient_without_changing_committed_selection -- --nocapture
       - name: Verify dealer chooser closes on click before native calculation resolves
         run: cargo test --manifest-path egui-app/Cargo.toml client_chooser_async_handoff_tests -- --nocapture
+      - name: Verify shared reception async admission rejects every conflicting write order
+        run: cargo test --manifest-path egui-app/Cargo.toml reception_jobs::tests -- --nocapture
       - name: Verify saved native quote and recognition survive SQLite restart
         run: cargo test --manifest-path egui-app/Cargo.toml cached_reception_roundtrip_tests -- --nocapture
       - name: Verify cached Rust recognition restores without fresh analysis
