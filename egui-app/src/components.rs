@@ -1021,6 +1021,42 @@ pub fn modal_backdrop(
     });
 }
 
+/// A 36pt inline form label. Unlike natural-height ui.label(), the text is
+/// measured and painted inside the SAME row height as its sibling TextEdit.
+/// Optical adjustment comes from the typography layer, not each screen.
+pub fn form_field_label_sized(ui:&mut Ui,label:&str,width:f32)->Response {
+    let galley=typography::field_label_galley(ui,label);
+    let width=width.max(1.0).min(ui.available_width().max(1.0));
+    let (rect,response)=ui.allocate_exact_size(
+        Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
+    );
+    let pos=egui::pos2(rect.left(),
+        rect.top()+typography::form_label_text_y(rect.height(),galley.size().y));
+    ui.painter().with_clip_rect(rect).galley(pos,galley,theme::SECONDARY);
+    response
+}
+pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
+    let width=typography::field_label_galley(ui,label).size().x;
+    form_field_label_sized(ui,label,width)
+}
+
+/// Short body-text input (for rates and percentages): same caret, selection,
+/// margins and row height as every form editor. Font remains proportional,
+/// so the independent Consolas +2.5pt data-value tweak is not involved.
+pub fn compact_text_field(
+    ui:&mut Ui,value:&mut String,width:f32,enabled:bool
+)->Response{
+    let width=width.min(ui.available_width().max(1.0)).max(1.0);
+    let edit=egui::TextEdit::singleline(value)
+        .font(egui::TextStyle::Body)
+        .vertical_align(Align::Center)
+        .margin(typography::form_input_text_margin())
+        .desired_width(width);
+    ui.add_enabled_ui(enabled,|entry|
+        entry.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
+    ).inner
+}
+
 /// Uses the same height, font and focus styling for every single-line field.
 /// Disabled preview controls cannot edit business data.
 pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
@@ -1041,7 +1077,7 @@ pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) ->
         .font(editor_font)
         .horizontal_align(semantic.map_or(Align::LEFT,typography::data_value_align))
         .vertical_align(Align::Center)
-        .margin(egui::Margin::symmetric(8, 2))
+        .margin(typography::form_input_text_margin())
         .desired_width(width);
     ui.add_enabled_ui(enabled, |ui| {
         ui.add_sized(Vec2::new(width, theme::INPUT_HEIGHT), field)
@@ -1088,7 +1124,7 @@ pub fn flexible_text_field(
     let edit=egui::TextEdit::singleline(value)
         .font(egui::TextStyle::Body)
         .vertical_align(Align::Center)
-        .margin(egui::Margin::symmetric(8,2))
+        .margin(typography::form_input_text_margin())
         .hint_text(placeholder)
         .desired_width(width);
     ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
@@ -1133,10 +1169,7 @@ pub fn labeled_field(
     enabled: bool,
 ) -> Response {
     ui.horizontal(|ui| {
-        let title=ui.add_sized(
-            Vec2::new(LABEL_WIDTH, theme::INPUT_HEIGHT),
-            egui::Label::new(typography::field_label(label)),
-        );
+        let title=form_field_label_sized(ui,label,LABEL_WIDTH);
         // The whole field row (including its label) is a single hover
         // target for exact source linking. No geometry is modified.
         let input=field(ui, value, kind, enabled);
