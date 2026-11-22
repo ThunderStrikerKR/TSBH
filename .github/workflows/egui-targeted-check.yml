@@ -62,6 +62,10 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify first recognition and revised delivery snapshots persist through draft removal
+        run: cargo test --manifest-path egui-app/Cargo.toml reception_edit_audit_tests -- --nocapture
+      - name: Verify native recipient freight and remote-area edit validation
+        run: cargo test --manifest-path egui-app/Cargo.toml manual_classification::tests -- --nocapture
       - name: Verify floating notice placement at screen edges and caret anchors
         run: cargo test --manifest-path egui-app/Cargo.toml floating_notice::tests -- --nocapture
       - name: Verify Excel loading and empty-state text does not shift its table
