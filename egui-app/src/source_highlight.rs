@@ -608,7 +608,7 @@ mod tests {
                 placed.pos.y+placed.row.size.y*0.5,
             );
             result=hovered_key_at_pointer(raw,&spans,&galley,
-                egui::Pos2::ZERO,pos);
+                egui::pos2(0.0,0.0),pos);
         });
         assert_eq!(result.unwrap().recipient_id,"second");
     }
