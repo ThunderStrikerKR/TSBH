@@ -195,6 +195,11 @@ impl ModelGroupManager {
             ui.painter().rect_filled(rect,theme::CONTROL_RADIUS as f32,
                 if self.selected==id{theme::RAISED}else{theme::INPUT});
         }
+        if self.selected!=id && !self.busy(){
+            theme::paint_button_hover(
+                ui,&response,theme::CONTROL_RADIUS as f32
+            );
+        }
         ui.scope_builder(UiBuilder::new().max_rect(rect)
             .layout(Layout::left_to_right(Align::Center)),|line|{
                 line.add_space(theme::SPACE_12);
