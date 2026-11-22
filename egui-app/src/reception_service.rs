@@ -19,7 +19,8 @@ pub struct PriceReference {
 
 #[derive(Debug)]
 pub struct RecipientReference {
-    /// Rust "detect_remote_delivery_area" output, not a freight quote.
+    /// Rust resolved remote-area suggestion, checked state and matched reason.
+    /// This is a read-only decision tied to the exact recipient address.
     pub remote: Option<Value>,
     pub remote_error: Option<String>,
     pub item_prices: Vec<PriceReference>,
@@ -123,8 +124,8 @@ fn recipient_reference(gateway: &dyn BandoGateway, recipient: &Value, state: &Va
     let (remote, remote_error) = if address.trim().is_empty() {
         (None, None)
     } else {
-        match gateway.execute(ReadOperation::DetectRemoteDeliveryArea, json!({
-            "address": address,
+        match gateway.execute(ReadOperation::ResolveRemoteDeliveryArea, json!({
+            "recipient":recipient,
         })) {
             Ok(result) => (Some(result), None),
             Err(error) => (None, Some(error)),
