@@ -5007,8 +5007,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             && self.working_sync.is_none()
             && self.inline_change.is_none()
             && self.vat_change.is_none()
-            && self.vat_dialog.is_none()
-;
+            && self.vat_dialog.is_none();
         let recipient_nav=self.analysis.as_ref()
             .map(|analysis|reception_service::recipients(analysis))
             .filter(|recipients|recipients.len()>1)
