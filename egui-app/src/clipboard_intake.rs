@@ -47,6 +47,40 @@ pub struct ClipboardImage {
     pub rgba: Vec<u8>,
 }
 
+/// A bounded snapshot sent to the Reception UI before OCR finishes.
+/// Only pixels are copied; the original full-resolution image continues to
+/// PaddleOCR and is retained for employee review unchanged.
+pub fn preview_thumbnail(image:&ClipboardImage,max_edge:usize)->ClipboardImage{
+    let expected=image.width.saturating_mul(image.height).saturating_mul(4);
+    if image.width==0 || image.height==0 || image.rgba.len()!=expected{
+        return ClipboardImage{
+            width:1,height:1,rgba:vec![0,0,0,255]
+        };
+    }
+    let edge=max_edge.max(1);
+    let longest=image.width.max(image.height);
+    let (width,height)=if longest<=edge{
+        (image.width,image.height)
+    }else{
+        let ratio=edge as f64/longest as f64;
+        (
+            ((image.width as f64*ratio).round() as usize).max(1),
+            ((image.height as f64*ratio).round() as usize).max(1)
+        )
+    };
+    let mut rgba=vec![0u8;width*height*4];
+    for y in 0..height{
+        let src_y=y*image.height/height;
+        for x in 0..width{
+            let src_x=x*image.width/width;
+            let src=(src_y*image.width+src_x)*4;
+            let dst=(y*width+x)*4;
+            rgba[dst..dst+4].copy_from_slice(&image.rgba[src..src+4]);
+        }
+    }
+    ClipboardImage{width,height,rgba}
+}
+
 #[derive(Debug)]
 pub enum ClipboardPayload {
     Text(String),
@@ -375,4 +409,28 @@ fn bmp_from_rgba(image: &ClipboardImage) -> Result<Vec<u8>, String> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod ocr_processing_preview_tests{
+    use super::*;
+    #[test]
+    fn thumbnail_preserves_aspect_and_bounds(){
+        let input=ClipboardImage{
+            width:100,height:200,rgba:vec![255;100*200*4]
+        };
+        let preview=preview_thumbnail(&input,64);
+        assert_eq!((preview.width,preview.height),(32,64));
+        assert_eq!(preview.rgba.len(),32*64*4);
+        assert_eq!(input.width,100);
+        assert_eq!(input.height,200);
+    }
+    #[test]
+    fn small_images_are_not_upscaled(){
+        let input=ClipboardImage{
+            width:2,height:1,rgba:vec![255;8]
+        };
+        let preview=preview_thumbnail(&input,640);
+        assert_eq!((preview.width,preview.height),(2,1));
+    }
 }
