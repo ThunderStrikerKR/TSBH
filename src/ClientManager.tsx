@@ -186,9 +186,6 @@ export function ClientManager({
                 >
                   <td>
                     <b>{c.name}</b>
-                    {c.displayName && c.displayName !== c.name && (
-                      <small className="client-list-meta">{c.displayName}</small>
-                    )}
                   </td>
                   <td>
                     <span>{c.address}</span>
