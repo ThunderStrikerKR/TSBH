@@ -315,6 +315,13 @@ impl VatDialog {
         Self{order_id,source_raw,scope,recipients,
             rate_text:vat_rate_text(bps),error:None}
     }
+    /// Checkbox state maps directly to the selected recipient IDs; the
+    /// order-level Apply action is the only point that writes to Rust.
+    fn set_recipient_checked(&mut self,id:&str,checked:bool){
+        if checked{self.recipients.insert(id.to_owned());}
+        else{self.recipients.remove(id);}
+        self.error=None;
+    }
     fn request(&self,rows:&[serde_json::Value])
         ->Result<manual_workspace::InlineRequest,String>
     {
@@ -1788,27 +1795,20 @@ impl BandoEgui {
                             let id=reception_service::text(recipient,"id");
                             if id.is_empty(){continue;}
                             let name=reception_service::text(recipient,"name");
-                            let included=dialog.recipients.contains(id);
-                            list.horizontal(|row|{
-                                row.label(typography::body(&format!(
-                                    "{} · {}",index+1,
-                                    if name.is_empty(){"수취인 확인"}else{name}
-                                )));
-                                row.with_layout(
-                                    Layout::right_to_left(Align::Center),|right|{
-                                        let role=if included{
-                                            ButtonRole::TableSecondary
-                                        }else{ButtonRole::Standard};
-                                        if theme::action(right,
-                                            if included{"적용"}else{"제외"},
-                                            role,!busy
-                                        ).clicked(){
-                                            if included{dialog.recipients.remove(id);}
-                                            else{dialog.recipients.insert(id.to_owned());}
-                                            dialog.error=None;
-                                        }
-                                    }
-                                );
+                            let mut checked=dialog.recipients.contains(id);
+                            let label=format!(
+                                "{} · {}",index+1,
+                                if name.is_empty(){"수취인 확인"}else{name}
+                            );
+                            // Click the checkbox OR its recipient label.
+                            // Unlike the old '적용/제외' button, the selected
+                            // state remains visible at a glance.
+                            list.push_id(("order-vat-recipient",id),|row|{
+                                if row.add_enabled(!busy,
+                                    egui::Checkbox::new(&mut checked,label)
+                                ).changed(){
+                                    dialog.set_recipient_checked(id,checked);
+                                }
                             });
                             components::soft_divider(list);
                         }
@@ -6626,6 +6626,32 @@ mod vat_settings_ui_tests {
         draft.scope=VatScope::All;
         assert_eq!(draft.request(rows.as_array().unwrap()).unwrap()
             .value["scope"],"all");
+    }
+    #[test]
+    fn partial_vat_checkbox_updates_only_selected_recipient_and_can_toggle_back(){
+        let rows=serde_json::json!([
+            {"id":"a","name":"김준희","vatOverride":true},
+            {"id":"b","name":"표시나","vatOverride":false},
+            {"id":"c","name":"추가 수취인","vatOverride":false}
+        ]);
+        let mut draft=VatDialog::new(
+            "order".into(),"raw".into(),rows.as_array().unwrap()
+        );
+        assert_eq!(draft.scope,VatScope::Partial);
+        draft.set_recipient_checked("a",false);
+        draft.set_recipient_checked("b",true);
+        assert!(!draft.recipients.contains("a"));
+        assert!(draft.recipients.contains("b"));
+        assert_eq!(
+            draft.request(rows.as_array().unwrap()).unwrap().value["recipientIds"],
+            serde_json::json!(["b"])
+        );
+        draft.set_recipient_checked("a",true);
+        draft.set_recipient_checked("b",false);
+        assert_eq!(
+            draft.request(rows.as_array().unwrap()).unwrap().value["recipientIds"],
+            serde_json::json!(["a"])
+        );
     }
 }
 #[cfg(test)]
