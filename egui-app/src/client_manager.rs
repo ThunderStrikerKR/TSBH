@@ -40,7 +40,7 @@ fn new_id()->String {
     format!("egui-client-{}-{stamp}",std::process::id())
 }
 fn empty_client()->Value {
-    json!({"id":new_id(),"name":"","displayName":"","shortNames":"",
+    json!({"id":new_id(),"name":"","shortNames":"",
         "identifiers":"","address":"","phone":"","mobile":"",
         "tier":"wholesale","payment":"PREPAID",
         "preferredAccountId":null,"shippingFeeExcluded":false,
