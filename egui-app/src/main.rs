@@ -2282,6 +2282,13 @@ impl BandoEgui {
                     let (bounds,_)=ui.allocate_exact_size(
                         body_size,Sense::hover()
                     );
+                    // The enclosing Window owns only the single allocated
+                    // content rect above. Painting the split master inside an
+                    // independent child prevents its positioned widgets from
+                    // expanding Window::min_rect past the fixed lower edge.
+                    let mut master_ui=components::modal_master_overlay_ui(
+                        ui,bounds,"ocr-review-fixed-master"
+                    );
                     let master=components::modal_master_layout(
                         bounds,
                         theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT,
@@ -2291,7 +2298,7 @@ impl BandoEgui {
                     // The OCR master paints all three chrome regions on the
                     // same device-pixel grid. Fractional work-area sizes must
                     // not introduce fuzzy header rules or rounded corners.
-                    let ppp=ui.ctx().pixels_per_point();
+                    let ppp=master_ui.ctx().pixels_per_point();
                     let header_rect=components::modal_master_pixel_aligned_rect(
                         master.header,ppp
                     );
@@ -2302,7 +2309,7 @@ impl BandoEgui {
                         master.workspace,ppp
                     );
                     close=components::modal_master_header_in_rect(
-                        ui,header_rect,"OCR 문자 인식 검토",
+                        master_ui,header_rect,"OCR 문자 인식 검토",
                         "원본 이미지와 인식된 텍스트를 대조하고 오타를 수정한 뒤 반영하세요.",
                         "취소",true
                     );
@@ -2310,7 +2317,7 @@ impl BandoEgui {
                     // Common popup master owns the ONE workspace frame and
                     // both divider lines. The OCR pane ratio is content-specific.
                     let frame=components::modal_master_workspace_background(
-                        ui,compare_rect,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT,
+                        master_ui,compare_rect,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT,
                         Some(2.0/3.0)
                     );
                     let divider_x=frame.divider_x.expect("OCR has two panes");
@@ -2330,8 +2337,8 @@ impl BandoEgui {
                         Vec2::new((compare_rect.right()-divider_x-2.0*inset)
                             .max(1.0),theme::ACTION_STANDARD_HEIGHT)
                     );
-                    let left_clip=left_header.intersect(ui.clip_rect());
-                    ui.scope_builder(
+                    let left_clip=left_header.intersect(master_ui.clip_rect());
+                    master_ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-review-image-toolbar")
                             .max_rect(left_header)
                             .layout(Layout::left_to_right(Align::Center)),
@@ -2363,8 +2370,8 @@ impl BandoEgui {
                             );
                         },
                     );
-                    let right_clip=right_header.intersect(ui.clip_rect());
-                    ui.scope_builder(
+                    let right_clip=right_header.intersect(master_ui.clip_rect());
+                    master_ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-review-text-toolbar")
                             .max_rect(right_header)
                             .layout(Layout::left_to_right(Align::Center)),
@@ -2453,14 +2460,14 @@ impl BandoEgui {
                     let inner_radius=theme::CONTROL_RADIUS.saturating_sub(
                         theme::FRAME_STROKE_WIDTH.ceil() as u8
                     );
-                    ui.painter().rect_filled(
+                    master_ui.painter().rect_filled(
                         image_view_rect,
                         egui::CornerRadius{
                             nw:0,ne:0,sw:inner_radius,se:0
                         },
                         theme::CANVAS
                     );
-                    ui.painter().rect_filled(
+                    master_ui.painter().rect_filled(
                         text_view_rect,
                         egui::CornerRadius{
                             nw:0,ne:0,sw:0,se:inner_radius
@@ -2473,8 +2480,8 @@ impl BandoEgui {
                     // visible dark border even when the source is zoomed or
                     // panned to an image edge. No nested card or frame.
                     let image_scroll_rect=image_view_rect.shrink(theme::SPACE_12);
-                    let image_clip=image_scroll_rect.intersect(ui.clip_rect());
-                    ui.scope_builder(
+                    let image_clip=image_scroll_rect.intersect(master_ui.clip_rect());
+                    master_ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-image-fixed-viewport")
                             .max_rect(image_scroll_rect)
                             .layout(Layout::top_down(Align::Min)),
@@ -2538,8 +2545,8 @@ impl BandoEgui {
                             }
                         },
                     );
-                    let text_clip=text_view_rect.intersect(ui.clip_rect());
-                    ui.scope_builder(
+                    let text_clip=text_view_rect.intersect(master_ui.clip_rect());
+                    master_ui.scope_builder(
                         UiBuilder::new().id_salt("ocr-text-fixed-viewport")
                             .max_rect(text_view_rect)
                             .layout(Layout::top_down(Align::Min)),
@@ -2572,13 +2579,13 @@ impl BandoEgui {
                     // Its flat, pixel-snapped dividers and single rounded
                     // outline repair the tiny overhangs and corner seams.
                     components::modal_master_workspace_finish(
-                        ui,compare_rect,frame
+                        master_ui,compare_rect,frame
                     );
 
                     let edited=review.edited_text.trim();
                     let valid=!edited.is_empty() && edited.chars().count()<=20_000;
                     components::modal_master_footer_in_rect(
-                        ui,footer_rect,|buttons|{
+                        master_ui,footer_rect,|buttons|{
                             if theme::action(
                                 buttons,"적용",ButtonRole::Primary,valid
                             ).clicked() {
@@ -2601,8 +2608,8 @@ impl BandoEgui {
                                     +(theme::MODAL_FOOTER_HEIGHT-22.0)/2.0),
                             Vec2::new((footer_rect.width()-130.0).max(1.0),22.0)
                         );
-                        let clip=hint_rect.intersect(ui.clip_rect());
-                        ui.scope_builder(
+                        let clip=hint_rect.intersect(master_ui.clip_rect());
+                        master_ui.scope_builder(
                             UiBuilder::new().id_salt("ocr-review-footer-error")
                                 .max_rect(hint_rect),
                             |hint|{
