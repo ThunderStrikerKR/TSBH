@@ -351,7 +351,7 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
                     return Err("운임을 변경할 발송지가 잘못되었습니다.".into());
                 }
                 let applied=super::remote_delivery::normalize_applied_input(&json!({
-                    "recipient":recipient,
+                    "recipient":recipient.clone(),
                     "shipment":{},
                     "order":payload.get("order").cloned().unwrap_or(Value::Null),
                     "appliedCharge":value
