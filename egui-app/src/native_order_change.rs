@@ -338,9 +338,10 @@ mod manual_rebind_tests {
                     let rows=order["recipients"].as_array_mut().unwrap();
                     for row in rows {
                         for item in row["items"].as_array_mut().unwrap() {
-                            item["unitPrice"]=item.get("manualUnitPrice")
+                            let unit_price=item.get("manualUnitPrice")
                                 .filter(|price|!price.is_null())
                                 .cloned().unwrap_or_else(||json!(5000));
+                            item["unitPrice"]=unit_price;
                         }
                     }
                     order["shippingFee"]=json!(2500);
@@ -382,7 +383,7 @@ mod manual_rebind_tests {
             working_synced:false,
             manual_model:Some(json!({"sourceRaw":raw,
                 "orderType":"AGENCY","clientId":"old",
-                "model":model,"assignmentOrder":[]})),
+                "model":model.clone(),"assignmentOrder":[]})),
             edit_history:vec![json!({"beforeRows":[],"afterRows":[1]})],
         };
         let result=prepare(&PreviewGateway,&row,"new").unwrap();
