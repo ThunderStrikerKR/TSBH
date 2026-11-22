@@ -292,6 +292,9 @@ fn initialize_database(path: &Path) -> Result<Connection, String> {
     relational_store::migrate(&mut conn)?;
     let data_root = path.parent().ok_or("상품명 변경 백업 경로를 확인할 수 없습니다.")?;
     product_name_enrichment::apply(&mut conn, data_root)?;
+    // One-time, backed-up migration of the obsolete invoice sender override.
+    // It touches only live client rows, never historic order snapshots.
+    bando_data_access::client_names::migrate_v2(&mut conn,data_root)?;
     relational_store::verify(&conn)?;
     Ok(conn)
 }
