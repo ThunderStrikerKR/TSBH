@@ -40,6 +40,12 @@ pub enum Event {
     SelectShipment(Selection),
     ToggleGroup(String),
     TogglePending(String),
+    ManageGroup(String),
+    DeleteGroup(String),
+    AdvanceGroup(String),
+    UndoGroup(String),
+    ManagePending(String),
+    DeletePending(String),
 }
 impl BoardUi{
     pub fn stop_preview(&mut self){
@@ -198,44 +204,61 @@ fn workflow_title_fit(ui:&Ui,title:&str,width:f32)->String{
         "…".to_owned()
     }else{String::new()}
 }
-/// Disabled auxiliary buttons retain their existing semantics. The scoped
-/// rectangle gives them an exact 30pt height and stops egui auto-width from
-/// spilling over the edge of the working-order card.
+/// Draw one fixed-size action with its own collision-free pointer ID.
+/// Preview clones never mutate the background group's operational state.
 fn workflow_auxiliary_at(
-    ui:&mut Ui,_id:&str,rect:Rect,action:components::WorkflowAuxiliaryAction
-){
-    // These actions have no wired business command yet and must stay
-    // disabled. Paint directly in the allocated rect: a nested button Ui
-    // used to introduce its own padding/centering and made upper controls
-    // look as though they touched the divider.
+    ui:&mut Ui,id:&str,rect:Rect,
+    action:components::WorkflowAuxiliaryAction,
+    enabled:bool,in_preview:bool
+)->egui::Response{
+    let kind=match action{
+        components::WorkflowAuxiliaryAction::Manage=>"manage",
+        components::WorkflowAuxiliaryAction::Delete=>"delete",
+        components::WorkflowAuxiliaryAction::PreviousStage=>"undo",
+    };
+    let effective=enabled && !in_preview;
+    let response=ui.interact(
+        rect,Id::new(("workflow-aux",id,kind,in_preview)),
+        if effective{egui::Sense::click()}else{egui::Sense::hover()}
+    ).on_hover_text(match action{
+        components::WorkflowAuxiliaryAction::Manage=>"배송 건 묶음 관리",
+        components::WorkflowAuxiliaryAction::Delete=>"주문 묶음 삭제",
+        components::WorkflowAuxiliaryAction::PreviousStage=>"이전 단계 취소",
+    });
     let painter=ui.painter();
-    painter.rect_filled(rect,5.0,theme::DISABLED_ACTION_BG);
+    let (fill,stroke,ink)=if effective{
+        (theme::RAISED,theme::BORDER,theme::TEXT)
+    }else{
+        (theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_BORDER,
+         theme::DISABLED_ACTION_TEXT)
+    };
+    painter.rect_filled(rect,5.0,fill);
     painter.rect_stroke(
-        rect,5.0,egui::Stroke::new(
-            theme::FRAME_STROKE_WIDTH,theme::DISABLED_ACTION_BORDER
-        ),egui::StrokeKind::Inside
+        rect,5.0,
+        egui::Stroke::new(theme::FRAME_STROKE_WIDTH,stroke),
+        egui::StrokeKind::Inside
     );
     match action{
         components::WorkflowAuxiliaryAction::Manage=>{
             painter.text(
                 rect.center(),egui::Align2::CENTER_CENTER,"관리",
                 egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-                theme::DISABLED_ACTION_TEXT
+                ink
             );
         }
         components::WorkflowAuxiliaryAction::Delete=>{
             components::paint_workflow_icon(
-                painter,rect.center(),components::WorkflowIcon::Trash,
-                theme::DISABLED_ACTION_TEXT
+                painter,rect.center(),components::WorkflowIcon::Trash,ink
             );
         }
         components::WorkflowAuxiliaryAction::PreviousStage=>{
             components::paint_workflow_icon(
-                painter,rect.center(),components::WorkflowIcon::PreviousStage,
-                theme::DISABLED_ACTION_TEXT
+                painter,rect.center(),components::WorkflowIcon::PreviousStage,ink
             );
         }
     };
+    if effective{theme::paint_button_hover(ui,&response,5.0);}
+    response
 }
 /// One allocated 85pt rectangle, not three independent egui allocations.
 /// The divider position and both 42pt band bounds come from this same rect.
@@ -272,10 +295,15 @@ fn workflow_compact_rows(ui:&mut Ui)->(Rect,Rect){
 /// a trailing 192pt signal/manage/delete group. The lower stage/undo group
 /// is also 192pt, and every horizontal inter-control gap is precisely 6pt.
 /// Long dealer names are clipped inside their OWN slot.
+struct HeaderActions {
+    title: egui::Response,
+    manage: bool,
+    delete: bool,
+}
 fn workflow_header(
     ui:&mut Ui,row:Rect,id:&str,title:&str,open:bool,step:usize,
-    notice:bool,in_preview:bool
-)->egui::Response{
+    notice:bool,in_preview:bool,can_manage:bool,can_delete:bool
+)->HeaderActions{
     let content=workflow_row_content(row);
     let gap=theme::WORKFLOW_CARD_SLOT_GAP;
     let toggle=theme::WORKFLOW_TOGGLE_ICON_WIDTH;
@@ -352,14 +380,22 @@ fn workflow_header(
             egui::StrokeKind::Inside
         );
     }
-    workflow_auxiliary_at(ui,id,workflow_control_rect(manage),
-        components::WorkflowAuxiliaryAction::Manage);
-    workflow_auxiliary_at(ui,id,workflow_control_rect(delete),
-        components::WorkflowAuxiliaryAction::Delete);
+    let manage_clicked=workflow_auxiliary_at(
+        ui,id,workflow_control_rect(manage),
+        components::WorkflowAuxiliaryAction::Manage,
+        can_manage,in_preview
+    ).clicked();
+    let delete_clicked=workflow_auxiliary_at(
+        ui,id,workflow_control_rect(delete),
+        components::WorkflowAuxiliaryAction::Delete,
+        can_delete,in_preview
+    ).clicked();
     // The header is an actionable target even when the status/control
     // boxes beside it are inert. Hover blue; selected cards remain orange.
     theme::paint_button_hover(ui,&title_response,theme::CONTROL_RADIUS as f32);
-    title_response
+    HeaderActions{
+        title:title_response,manage:manage_clicked,delete:delete_clicked
+    }
 }
 fn stage_name(step:usize,notice:bool)->&'static str{
     if notice && step>=2 {"계좌 재안내 완료"}
@@ -413,8 +449,9 @@ fn workflow_primary_at(
 /// the one-touch button (6pt slot gap + 4pt inner ink inset).
 fn workflow_action_line(
     ui:&mut Ui,lower:Rect,id:&str,shipments:usize,total:Option<i64>,
-    vat:Option<&str>,button_text:&str,enabled:bool,in_preview:bool
-)->(bool,bool){
+    vat:Option<&str>,button_text:&str,enabled:bool,
+    undo_enabled:bool,in_preview:bool
+)->(bool,bool,bool){
     let content=workflow_row_content(lower);
     let gap=theme::WORKFLOW_CARD_SLOT_GAP;
     let ship_width=theme::WORKFLOW_SHIPPING_WIDTH;
@@ -484,9 +521,12 @@ fn workflow_action_line(
     let response=workflow_primary_at(
         ui,id,workflow_control_rect(action),button_text,enabled,in_preview
     );
-    workflow_auxiliary_at(ui,id,workflow_control_rect(undo),
-        components::WorkflowAuxiliaryAction::PreviousStage);
-    (response.clicked(),response.hovered())
+    let undo_clicked=workflow_auxiliary_at(
+        ui,id,workflow_control_rect(undo),
+        components::WorkflowAuxiliaryAction::PreviousStage,
+        undo_enabled,in_preview
+    ).clicked();
+    (response.clicked(),response.hovered(),undo_clicked)
 }
 /// Keep the expanded shipment detail inset; the compact header and action
 /// bands alone are full width. Neither selected nor hover preview changes
@@ -657,7 +697,7 @@ fn row(
 }
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
-    open:bool,in_preview:bool,previewed_id:Option<&str>,
+    open:bool,in_preview:bool,previewed_id:Option<&str>,writable:bool,
     trigger:&mut Option<String>,hovered_row:&mut Option<String>
 )->Option<Event>{
     let mut event=None;
@@ -666,9 +706,12 @@ fn group_frame(
         let (top,bottom)=workflow_compact_rows(ui);
         let btn=workflow_header(
             ui,top,&group.id,&group.dealer_name,open || in_preview,
-            group.step,group.needs_notice,in_preview
+            group.step,group.needs_notice,in_preview,
+            true,writable && !group.transferred
         );
-            if btn.clicked(){
+        if btn.manage{event=Some(Event::ManageGroup(group.id.clone()));}
+        if btn.delete{event=Some(Event::DeleteGroup(group.id.clone()));}
+            if btn.title.clicked(){
                 if active {
                     event=Some(Event::ToggleGroup(group.id.clone()));
                 }else if let Some(first)=group.shipments.first(){
@@ -683,11 +726,15 @@ fn group_frame(
         }else if group.vat_included>0{
             "부가세 포함".to_owned()
         }else{"부가세 별도".to_owned()};
-        let (_,stage_hovered)=workflow_action_line(
+        let (advance_clicked,stage_hovered,undo_clicked)=workflow_action_line(
             ui,bottom,&group.id,group.shipments.len(),group.total,
             if group.vat_included>0{Some(vat.as_str())}else{None},
-            stage_name(group.step,group.needs_notice),false,in_preview
+            stage_name(group.step,group.needs_notice),
+            writable && !group.transferred,
+            writable && group.step>0 && !group.transferred,in_preview
         );
+        if advance_clicked{event=Some(Event::AdvanceGroup(group.id.clone()));}
+        if undo_clicked{event=Some(Event::UndoGroup(group.id.clone()));}
         if stage_hovered && !in_preview{
             *trigger=Some(group.id.clone());
         }
@@ -762,9 +809,11 @@ fn pending_frame(
     workflow_card(ui,selected,false,|ui|{
         let (top,bottom)=workflow_compact_rows(ui);
         let header=workflow_header(
-            ui,top,&draft.id,dealer_name,open,0,false,false
+            ui,top,&draft.id,dealer_name,open,0,false,false,true,true
         );
-        if header.clicked(){
+        if header.manage{event=Some(Event::ManagePending(draft.id.clone()));}
+        if header.delete{event=Some(Event::DeletePending(draft.id.clone()));}
+        if header.title.clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
                 else{Event::SelectPending(draft.id.clone())});
         }
@@ -773,9 +822,9 @@ fn pending_frame(
                 .and_then(|v|v.get("recipients"))
                 .and_then(|v|v.as_array()).map(Vec::as_slice).unwrap_or(&[])
         }else{&[]};
-        let (clicked,_)=workflow_action_line(
+        let (clicked,_,_)=workflow_action_line(
             ui,bottom,&draft.id,recipients.len(),None,None,"거래처 확인",
-            draft.client_id.is_none(),false
+            true,false,false
         );
         if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
         if open{
@@ -834,7 +883,7 @@ pub fn show(
     drafts:&[WorkingReception],active_id:Option<&str>,
     client_names:&HashMap<String,String>,
     active_selected_client:Option<(&str,&str)>,
-    state:&mut BoardUi
+    state:&mut BoardUi,writable:bool
 )->Option<Event>{
     // Prevent implicit vertical item spacing from doubling the explicit
     // WORKFLOW_CARD_GAP between order bundles. This is scoped to the list
@@ -858,7 +907,7 @@ pub fn show(
             let pos=ui.cursor().min;
             let mut ignored_row=None;
             if let Some(value)=group_frame(ui,group,current,open,false,None,
-                &mut trigger,&mut ignored_row){
+                writable,&mut trigger,&mut ignored_row){
                 match value{
                     Event::ToggleGroup(id)=>{
                         state.folded=if open{Some(id)}else{None};
@@ -912,7 +961,7 @@ pub fn show(
             let mut ignored_hover=None;
             overlay_event=group_frame(
                 ui,&group,current,true,true,state.preview_shipment.as_deref(),
-                &mut ignored_hover,&mut hovered_row
+                false,&mut ignored_hover,&mut hovered_row
             );
         });
         state.preview_rect=Some(response.response.rect);
@@ -925,7 +974,9 @@ pub fn show(
                         group_id:id,order_id:first.order_id.clone(),shipment_id:first.id.clone()
                     }));
                 }
-            }else { event=Some(overlay_event); }
+            }else if matches!(overlay_event,Event::SelectShipment(_)){
+                event=Some(overlay_event);
+            }
         }
     }else{
         state.preview_rect=None;
