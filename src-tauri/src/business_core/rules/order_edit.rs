@@ -9,7 +9,7 @@ fn company_party(settings:&Value)->Value {
     // Exactly order-types.ts::companyParty, including empty company client ID.
     json!({
         "postcode":field(settings,"senderPostcode").as_str().unwrap_or(""),
-        "id":"","name":"반도스탠드","displayName":"반도스탠드",
+        "id":"","name":"반도스탠드",
         "address":field(settings,"senderAddress").as_str().unwrap_or(""),
         "phone":field(settings,"senderPhone").as_str().unwrap_or(""),
         "mobile":field(settings,"senderMobile").as_str().unwrap_or(""),
