@@ -84,6 +84,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml hover_changes_visible_recipient_without_changing_committed_selection -- --nocapture
       - name: Verify dealer chooser closes on click before native calculation resolves
         run: cargo test --manifest-path egui-app/Cargo.toml client_chooser_async_handoff_tests -- --nocapture
+      - name: Verify source autosave delta FIFO, OCR audit coalescing, and final shutdown flush
+        run: cargo test --manifest-path egui-app/Cargo.toml source_autosave::source_delta_tests -- --nocapture
       - name: Verify shared reception async admission rejects every conflicting write order
         run: cargo test --manifest-path egui-app/Cargo.toml reception_jobs::tests -- --nocapture
       - name: Verify clipboard OCR, source replacement, draft deletion, workflow and locality admission
