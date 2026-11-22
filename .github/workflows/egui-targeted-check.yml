@@ -16,6 +16,7 @@ on:
       - egui-app/src/gateway.rs
       - egui-app/src/developer_ui_samples.rs
       - egui-app/src/main.rs
+      - egui-app/src/client_chooser.rs
       - egui-app/src/http_gateway.rs
       - egui-app/src/preview_store.rs
       - egui-app/src/reception_service.rs
@@ -70,6 +71,8 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify dealer chooser closes on click before native calculation resolves
+        run: cargo test --manifest-path egui-app/Cargo.toml client_chooser_async_handoff_tests -- --nocapture
       - name: Verify saved native quote and recognition survive SQLite restart
         run: cargo test --manifest-path egui-app/Cargo.toml cached_reception_roundtrip_tests -- --nocapture
       - name: Verify cached Rust recognition restores without fresh analysis
