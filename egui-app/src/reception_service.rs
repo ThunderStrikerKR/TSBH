@@ -473,6 +473,7 @@ mod persisted_analysis_restore_tests {
             directory_count:23,
         };
         let view=analysis.cached_view();
+        assert_eq!(view["recognition"],recognition);
         let restored=ReceptionAnalysis::from_cached_view(
             raw,recognition,analysis.client_match.clone(),&view
         ).unwrap();
