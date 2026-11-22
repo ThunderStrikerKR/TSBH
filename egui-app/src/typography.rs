@@ -96,6 +96,12 @@ pub fn data_value_text(
 /// Keep this shared: date-basis, product-filter and freight-group selectors
 /// must not acquire separate screen-local Y corrections.
 pub const MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y: f32 = 2.0;
+/// Optical adjustment for the TEXT INSIDE compact dropdown popup options.
+/// The option's 28pt background, hitbox, hover and selected outline stay put.
+pub const MANAGEMENT_DROPDOWN_OPTION_TEXT_OPTICAL_Y: f32 = -1.0;
+pub fn management_dropdown_option_text_y(row_height:f32,text_height:f32)->f32 {
+    (row_height-text_height)*0.5+MANAGEMENT_DROPDOWN_OPTION_TEXT_OPTICAL_Y
+}
 /// Date TextEdit optical centering: the original ink appeared too low, while
 /// the full -2pt correction appeared too high in subsequent Windows captures.
 /// Use the midpoint -1pt without moving control or table rectangles.
@@ -838,6 +844,17 @@ pub fn install(ctx: &egui::Context) {
     match numeric {
         Some((path, _)) => eprintln!("[BANDO HUB] Numeric face: {path}"),
         None => eprintln!("[BANDO HUB] Numeric face: egui monospace fallback"),
+    }
+}
+
+#[cfg(test)]
+mod dropdown_option_text_geometry_tests {
+    use super::*;
+    #[test]
+    fn only_popup_option_text_moves_up_one_point(){
+        assert_eq!(MANAGEMENT_DROPDOWN_OPTION_TEXT_OPTICAL_Y,-1.0);
+        assert_eq!(management_dropdown_option_text_y(28.0,18.0),4.0);
+        assert_eq!(MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y,2.0);
     }
 }
 
