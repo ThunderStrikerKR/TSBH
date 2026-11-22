@@ -1568,7 +1568,10 @@ impl ProductManager {
                     .max_height(components::modal_editor_body_max_height(
                         work_area.height()
                     ))
-                    .auto_shrink([false,false])
+                    // Large empty space below the image is not content.
+                    // Shrink naturally while keeping a bounded, local scroll
+                    // region for short work areas / expanded advanced details.
+                    .auto_shrink([false,true])
                     .show(modal,|scroller|{
                         // The scrollbar belongs to the scroll surface;
                         // use the master 16pt inset INSIDE it so fields
