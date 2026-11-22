@@ -316,10 +316,12 @@ pub fn paint_active_background(ui:&egui::Ui,rect:egui::Rect) {
     ui.painter().rect_filled(rect,ACTIVE_RADIUS,ACTIVE_FILL);
 }
 
-/// Draw only the input/column value border, never the row, title or label.
-pub fn paint_active(ui:&egui::Ui, response:&egui::Response,
-                    key:&LinkKey, active:Option<&LinkKey>) {
-    if is_active(active,key) {
+/// Draw the same 2pt outline whenever the shared visible projection
+/// marks a field active. A board-driven recipient preview and a span-driven
+/// hover MUST produce exactly the same border, even when no LinkKey has
+/// completed its 50ms entrance timer yet.
+pub fn paint_active_if(ui:&egui::Ui, response:&egui::Response, highlighted:bool) {
+    if highlighted {
         ui.painter().rect_stroke(
             response.rect.shrink(0.5),ACTIVE_RADIUS,
             egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER),
