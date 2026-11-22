@@ -1429,10 +1429,34 @@ impl BandoEgui {
             }
             match result {
                 Ok(result)=>{
+                    // The same native worker already recognized the source
+                    // against this dealer before calculating prices. Reuse
+                    // that exact projection instead of launching a second
+                    // matcher/OCR/quote worker after the successful result.
+                    let new_client=result.client_id.clone();
+                    let chosen_name=self.client_names.get(&new_client).cloned()
+                        .or_else(||self.client_summaries.get(&new_client)
+                            .map(|client|client.name.clone()));
+                    let display_cache=if let Some(analysis)=self.analysis.as_mut(){
+                        if let Some(recognition)=result.recognition.as_ref(){
+                            if let Some(rows)=recognition.get("recipients")
+                                .filter(|rows|rows.is_array()){
+                                analysis.apply_edited_recipients(
+                                    &self.raw_source,rows
+                                );
+                                analysis.recognition=recognition.clone();
+                                analysis.linked_spans=source_highlight::collect(
+                                    &self.raw_source,&analysis.recognition
+                                );
+                            }
+                        }
+                        analysis.chosen_client_name=chosen_name;
+                        Some(analysis.cached_view())
+                    }else{None};
                     if let Some(row)=self.drafts.iter_mut().find(|r|
                         r.id==pending.order_id && r.raw==pending.source_raw
                     ) {
-                        row.client_id=Some(result.client_id);
+                        row.client_id=Some(new_client);
                         row.client_selection=Some(
                             pending.reprice_selection.clone()
                                 .unwrap_or_else(||"MANUAL".into())
@@ -1440,22 +1464,26 @@ impl BandoEgui {
                         row.pricing_preview=result.pricing_preview;
                         row.manual_model=result.manual_model;
                         row.working_synced=false;
-                        // Preserve the immutable first Rust recognition for
-                        // edited rows and their before/after audit history.
-                        // A fresh selected-client analysis is still scheduled.
-                        // Keep the immutable first evidence and its matching
-                        // advisory together for manually corrected drafts.
-                        if row.manual_model.is_none() {
-                            row.analysis_raw=None;
-                            row.analysis_evidence=None;
-                            row.client_match=None;
-                        }
-                        row.analysis_view=None;
+                        // Preserve the initial analysisEvidence and advisory
+                        // clientMatch independently for audit. The newer
+                        // dealer-specific view lives in analysisView.
+                        row.analysis_view=display_cache.clone();
                     }
-                    self.clear_source_analysis();
-                    if !self.raw_source.trim().is_empty() {
-                        self.analysis_due_at=Some(Instant::now()+Duration::from_millis(250));
-                        ctx.request_repaint_after(Duration::from_millis(260));
+                    if display_cache.is_some(){
+                        self.analysis_pending=false;
+                        self.analysis_due_at=None;
+                        self.analysis_error=None;
+                        self.selected_recipient=0;
+                        self.source_hover=None;
+                        self.link_hover.clear();
+                    }else{
+                        // Safe compatibility fallback for incomplete legacy
+                        // drafts: the second analysis is strictly exceptional.
+                        self.clear_source_analysis();
+                        if !self.raw_source.trim().is_empty(){
+                            self.analysis_due_at=Some(Instant::now()+Duration::from_millis(250));
+                            ctx.request_repaint_after(Duration::from_millis(260));
+                        }
                     }
                     self.queue_source_save();
                 }
