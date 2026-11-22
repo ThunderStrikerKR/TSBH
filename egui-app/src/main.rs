@@ -4710,21 +4710,57 @@ impl BandoEgui {
                                                     if response.hovered(){
                                                         hovered_detail=Some(key.clone());
                                                     }
-                                                    if editable && response.clicked(){
-                                                        edit_target=Some((
-                                                            self.selected_recipient,
-                                                            Some(item_id.to_owned()),
-                                                            match field {
-                                                                "quantity"=>"quantity",
-                                                                "price"=>"unitPrice",
-                                                                _=>"product"
-                                                            }
-                                                        ));
+                                                    let target=InlineTarget{
+                                                        recipient_id:recipient_id.to_owned(),
+                                                        item_id:Some(item_id.to_owned()),
+                                                        field:match field {
+                                                            "quantity"=>"quantity",
+                                                            "price"=>"unitPrice",
+                                                            _=>"product"
+                                                        }
+                                                    };
+                                                    let original=match field{
+                                                        "quantity"=>item.get("quantity")
+                                                            .and_then(serde_json::Value::as_i64)
+                                                            .map(|n|n.to_string()).unwrap_or_default(),
+                                                        "price"=>item.get("manualUnitPrice")
+                                                            .or_else(||item.get("unitPrice"))
+                                                            .and_then(serde_json::Value::as_i64)
+                                                            .or_else(||preview.and_then(|quote|
+                                                                quote.get("linePrices"))
+                                                                .and_then(serde_json::Value::as_array)
+                                                                .and_then(|lines|lines.iter()
+                                                                    .find(|line|line["itemId"]
+                                                                        .as_str()==Some(item_id)))
+                                                                .and_then(|line|line["unitPrice"].as_i64()))
+                                                            .map(|n|n.to_string()).unwrap_or_default(),
+                                                        _=>reception_service::item_title(item)
+                                                    };
+                                                    let is_editing=self.inline_editor.as_ref()
+                                                        .is_some_and(|editor|editor.target==target);
+                                                    if editable && !is_editing && response.clicked(){
+                                                        inline_open=Some((target.clone(),original));
                                                     }
                                                     source_highlight::paint_active(
                                                         items_ui,response,&key,
                                                         self.link_hover.active.as_ref(),
                                                     );
+                                                    if let Some(editor)=self.inline_editor.as_mut()
+                                                        .filter(|editor|editor.target==target) {
+                                                        let result=components::reception_inline_cell_editor(
+                                                            items_ui,response.rect,&mut editor.text,
+                                                            editor.focus_next,field!="product"
+                                                        );
+                                                        editor.focus_next=false;
+                                                        if result.has_focus() && items_ui.input(|input|
+                                                            input.key_pressed(egui::Key::Escape)) {
+                                                            inline_cancel=true;
+                                                        }else if result.lost_focus() ||
+                                                            (result.has_focus() && items_ui.input(|input|
+                                                                input.key_pressed(egui::Key::Enter))) {
+                                                            inline_commit=true;
+                                                        }
+                                                    }
                                                 }
                                                 if let Some(issues)=item.get("issues")
                                                     .and_then(serde_json::Value::as_array)
