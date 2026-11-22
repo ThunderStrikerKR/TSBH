@@ -32,7 +32,7 @@ pub fn snapshot(state:&Value,client:&Value,order:&Value)->Value{
     let shipping=value(state,"shipping");
     let mut used=BTreeMap::<String,BTreeSet<String>>::new();
     let mut combination_keys=BTreeSet::<String>::new();
-    let mut manual_prices=BTreeSet::<(String,String)>::new();
+    let mut catalog_priced=BTreeSet::<(String,String)>::new();
     for recipient in list(order,"recipients"){
         for origin in ["FACTORY","STORE"]{
             let mut grouped=BTreeMap::<String,i64>::new();
@@ -41,8 +41,8 @@ pub fn snapshot(state:&Value,client:&Value,order:&Value)->Value{
                 let vid=text(item,"variantId");
                 if pid.is_empty() || vid.is_empty(){continue;}
                 used.entry(pid.to_owned()).or_default().insert(vid.to_owned());
-                if value(item,"manualUnitPrice").as_i64().is_some(){
-                    manual_prices.insert((pid.into(),vid.into()));
+                if value(item,"manualUnitPrice").as_i64().is_none(){
+                    catalog_priced.insert((pid.into(),vid.into()));
                 }
                 if text(item,"origin")!=origin{continue;}
                 let key=format!("{pid}@{vid}");
@@ -72,7 +72,9 @@ pub fn snapshot(state:&Value,client:&Value,order:&Value)->Value{
         for vid in variants {
             let variant=product.and_then(|p|list(p,"variants").iter()
                 .find(|v|text(v,"id")==vid));
-            let manual=manual_prices.contains(&(pid.clone(),vid.clone()));
+            // Mixed manual/automatic lines sharing one variant must still
+            // invalidate on changes to the catalog-priced line.
+            let manual=!catalog_priced.contains(&(pid.clone(),vid.clone()));
             let aliases=variant.map(|v|value(v,"legacyIds")).unwrap_or(&Value::Null);
             let override_prices=if tier=="special" && !manual {
                 let mut map=serde_json::Map::new();
@@ -98,7 +100,9 @@ pub fn snapshot(state:&Value,client:&Value,order:&Value)->Value{
                 "overrides":override_prices
             }));
         }
-        let standalone_rule=value(value(shipping,"productRules"),&pid);
+        let standalone_rule=if group.is_empty(){
+            value(value(shipping,"productRules"),&pid)
+        }else{&Value::Null};
         chosen_products.push(json!({
             "id":pid,"origin":origin,"shippingGroupId":group,
             "productRule":rule_inputs(standalone_rule),
