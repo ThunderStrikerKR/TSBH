@@ -706,6 +706,7 @@ fn row(
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
     open:bool,in_preview:bool,previewed_id:Option<&str>,writable:bool,
+    linked_recipient:Option<&str>,
     trigger:&mut Option<String>,hovered_row:&mut Option<String>
 )->Option<Event>{
     let mut event=None;
@@ -754,7 +755,9 @@ fn group_frame(
                 // Orange means committed selection ONLY on the base card.
                 // Blue means the temporarily hovered row ONLY in the clone.
                 let chosen=!in_preview && selected.is_some_and(|s|s.shipment_id==ship.id);
-                let previewed=in_preview && previewed_id==Some(ship.id.as_str());
+                let previewed=(!chosen && linked_recipient
+                    ==Some(ship.recipient_id.as_str())) ||
+                    (in_preview && previewed_id==Some(ship.id.as_str()));
                 let label=row(ui,ship,chosen,previewed);
                 let response=ui.interact(
                     label.rect,Id::new(("workflow-shipment",ship.id.as_str(),in_preview)),
@@ -948,7 +951,7 @@ pub fn show(
             let pos=ui.cursor().min;
             let mut ignored_row=None;
             if let Some(value)=group_frame(ui,group,current,open,false,None,
-                writable,&mut trigger,&mut ignored_row){
+                writable,linked_recipient_id,&mut trigger,&mut ignored_row){
                 match value{
                     Event::ToggleGroup(id)=>{
                         state.folded=if open{Some(id)}else{None};
@@ -1022,7 +1025,7 @@ pub fn show(
             let mut ignored_hover=None;
             overlay_event=group_frame(
                 ui,&group,current,true,true,state.preview_shipment.as_deref(),
-                writable,&mut ignored_hover,&mut hovered_row
+                writable,linked_recipient_id,&mut ignored_hover,&mut hovered_row
             );
         });
         state.preview_rect=Some(response.response.rect);
