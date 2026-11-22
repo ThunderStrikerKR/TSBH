@@ -30,7 +30,10 @@ pub fn load()->Result<Value,String>{
         return Ok(json!({
             "revision":state.get("revision").and_then(Value::as_u64)
                 .ok_or("거래처 revision을 확인할 수 없습니다.")?,
-            "clients":state.get("clients").cloned().unwrap_or_else(||json!([])),
+            "clients":json!(state.get("clients").and_then(Value::as_array)
+                .into_iter().flatten()
+                .map(bando_data_access::client_names::normalized)
+                .collect::<Vec<_>>()),
             "products":state.get("products").cloned().unwrap_or_else(||json!([])),
             "aliases":state.get("aliases").cloned().unwrap_or_else(||json!([])),
             "settings":{"accounts":state.pointer("/settings/accounts").cloned()
