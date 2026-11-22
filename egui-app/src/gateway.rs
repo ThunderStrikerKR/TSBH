@@ -206,6 +206,15 @@ pub trait BandoGateway: Send + Sync {
     fn commit_working_reception(&self, _request: Value) -> Result<Value,String> {
         Err("운영 미확정 접수 저장 연결이 설정되지 않았습니다.".into())
     }
+    /// Group progression, undo, delete/restore and shipment grouping all
+    /// use the original native Rust rule reducers and the v2 revision CAS.
+    /// Never mutate the read-only egui preview store or an HTTP fallback.
+    fn workflow_write_enabled(&self)->bool{false}
+    fn mutate_workflow(
+        &self,_expected_revision:u64,_action:&str,_args:Value
+    )->Result<Value,String>{
+        Err("현재 연결은 주문 묶음 업무 변경을 지원하지 않습니다.".into())
+    }
     /// A per-shipment employee management memo is writable only through
     /// the existing authorized operational shipment DB boundary.
     fn shipment_memo_write_enabled(&self)->bool{false}
@@ -518,6 +527,128 @@ impl BandoGateway for LocalGateway {
         }
         let projection=crate::management_queries::project_freight(self,&state)?;
         Ok(serde_json::json!({"state":state,"projection":projection}))
+    }
+    fn workflow_write_enabled(&self)->bool{
+        // A named, pre-existing v2 database is the user's explicit binding.
+        // The writer guard restricts debug Windows to the developer TEST DB.
+        crate::business_state::authorized_business_write_path().is_ok()
+    }
+    fn mutate_workflow(
+        &self,expected_revision:u64,action:&str,args:Value
+    )->Result<Value,String>{
+        use rusqlite::{Connection,OpenFlags};
+        // These are the existing React/Rust actions, not UI-invented stages.
+        let group_delete=matches!(action,"delete_group"|"restore_group");
+        if !group_delete && !matches!(
+            action,
+            "advance_group"|"undo_group"|"confirm_group_payment"|"process_group"
+            |"detach_shipment"|"regroup_shipment"
+        ){
+            return Err("지원하지 않는 주문 묶음 작업입니다.".into());
+        }
+        let path=crate::business_state::authorized_business_write_path()?;
+        let mut conn=Connection::open_with_flags(
+            path,OpenFlags::SQLITE_OPEN_READ_WRITE
+        ).map_err(|_|"업무 DB를 쓰기 모드로 열 수 없습니다.".to_owned())?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|error|error.to_string())?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|error|error.to_string())?;
+        let before=bando_data_access::read_v2_snapshot(&conn)?;
+        if before["revision"].as_u64()!=Some(expected_revision){
+            return Err("다른 작업에서 주문이 변경되었습니다. 새로고침 후 다시 진행하세요.".into());
+        }
+        let now=chrono::Utc::now().to_rfc3339();
+        let event_id=uuid::Uuid::new_v4().to_string();
+        let actor=before["settings"]["operatorName"].as_str()
+            .filter(|name|!name.trim().is_empty())
+            .unwrap_or("사용자(이름 미설정)").to_owned();
+        let request=if group_delete {
+            serde_json::json!({
+                "state":&before,"action":action,
+                "groupId":args["groupId"],"now":now,"eventId":event_id
+            })
+        }else{
+            // Reconcile changes to prices, tariff signatures and late
+            // corrections before attempting the transition. The native
+            // reducer produces all immutable audit entries and validations.
+            let count=(12*before["workflow"]["shipments"]
+                .as_array().map(Vec::len).unwrap_or(0)
+                +8*before["orders"].as_array().map(Vec::len).unwrap_or(0)+64)
+                .max(256);
+            if count>15000{
+                return Err("재검증 이벤트 수가 허용 범위를 초과했습니다.".into());
+            }
+            let event_ids=(0..count).map(|_|
+                uuid::Uuid::new_v4().to_string()).collect::<Vec<_>>();
+            let reconciled=rules::execute("reconcile_workflow",serde_json::json!({
+                "state":&before,"now":now,"eventIds":event_ids
+            }))?;
+            let prepared=reconciled.get("state")
+                .ok_or("업무 재검증 결과에 상태가 없습니다.")?;
+            let next_step=if action=="advance_group"{
+                Some(rules::execute("evaluate_workflow",serde_json::json!({
+                    "state":prepared,"groupId":args["groupId"]
+                }))?.get("nextStep").and_then(Value::as_u64)
+                    .ok_or("다음 진행 단계를 확인하지 못했습니다.")?)
+            }else{None};
+            let payment_message=if next_step==Some(3){
+                Some(output::execute("render_payment_notice",
+                    serde_json::json!({
+                        "state":prepared,"groupId":args["groupId"]
+                    })
+                )?.get("payment").and_then(Value::as_str)
+                    .ok_or("입금 안내 문구를 생성하지 못했습니다.")?.to_owned())
+            }else{None};
+            let audit_ids=(0..2048).map(|_|
+                uuid::Uuid::new_v4().to_string()).collect::<Vec<_>>();
+            let mut request=serde_json::json!({
+                "state":prepared,"action":action,"now":now,"actor":actor,
+                "eventId":event_id,"auditEventIds":audit_ids,
+                "newGroupId":uuid::Uuid::new_v4().to_string(),
+                "confirmationId":uuid::Uuid::new_v4().to_string(),
+                "noticeId":uuid::Uuid::new_v4().to_string()
+            });
+            let extras=args.as_object()
+                .ok_or("주문 묶음 작업 인자 형식이 올바르지 않습니다.")?;
+            let object=request.as_object_mut().ok_or("업무 요청 형식 오류")?;
+            for (key,value) in extras{
+                if matches!(key.as_str(),
+                    "groupId"|"shipmentId"|"targetGroupId"|"ack"
+                ){
+                    object.insert(key.clone(),value.clone());
+                }
+            }
+            if let Some(payment_message)=payment_message{
+                object.insert("paymentMessage".into(),
+                    Value::String(payment_message));
+            }
+            request
+        };
+        let op=if group_delete{"apply_group_action"}
+            else{"apply_workflow_action"};
+        let result=rules::execute(op,request)?;
+        let changed=result.get("state")
+            .ok_or("업무 처리 결과에 상태가 없습니다.")?.clone();
+        rules::execute("validate_workflow",serde_json::json!({
+            "state":&changed,"before":&before
+        }))?;
+        if changed==before{
+            return Err("현재 상태에서 수행할 변경이 없습니다.".into());
+        }
+        // The same authoritative writer as Tauri: transactional revision
+        // compare, relational order validation, audit and single commit.
+        let written=bando_data_access::write_v2_snapshot(
+            &mut conn,changed,expected_revision,true
+        )?;
+        let committed_revision=written["revision"].as_u64()
+            .ok_or("업무 처리 결과의 revision이 없습니다.")?;
+        drop(conn);
+        let verified=self.load_business_state()?;
+        if verified["revision"].as_u64()!=Some(committed_revision){
+            return Err("저장 후 다른 작업에서 상태가 변경되었습니다. 다시 조회하세요.".into());
+        }
+        Ok(written)
     }
     fn working_commit_enabled(&self) -> bool {
         std::env::var("BANDO_EGUI_ENABLE_WORKING_COMMIT")
