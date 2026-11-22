@@ -233,9 +233,10 @@ impl ClientChooser {
         let busy=self.selecting.is_some();
         let mut is_open=true;
         let mut chosen:Option<String>=None;
-        // The same 900pt client grid as the management master should fit
-        // without scaling at ordinary desktop sizes. Narrower work areas
-        // gain a horizontal table scroll; modal itself never overflows.
+        // The 1200pt modal fits the 900pt shared client grid plus the popup
+        // padding and scrollbar. Only a physically narrower Kakao-safe work
+        // area may require horizontal overflow; never extend the modal beyond
+        // the usable window.
         let gutter=2.0*theme::MODAL_VIEWPORT_GUTTER;
         let dialog_size=egui::vec2(
             theme::CLIENT_CHOOSER_DIALOG_WIDTH
@@ -475,6 +476,16 @@ mod client_chooser_display_tests{
         assert_eq!(data.conditions,"후불 / 부가세 포함");
     }
 
+    #[test]
+    fn default_dialog_fits_shared_client_table_without_horizontal_scroll(){
+        // The modal master has 12pt padding per side, a 1pt border per side,
+        // and a scrollbar gutter. The remaining table viewport exceeds 900pt.
+        let required=theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH
+            +2.0*theme::MODAL_SECTION_PADDING
+            +2.0*theme::FRAME_STROKE_WIDTH
+            +2.0*theme::MODAL_VIEWPORT_GUTTER;
+        assert!(theme::CLIENT_CHOOSER_DIALOG_WIDTH>=required);
+    }
     #[test]
     fn native_result_order_and_explicit_sort_are_separate(){
         let rows=vec![
