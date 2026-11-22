@@ -205,8 +205,9 @@ fn workflow_auxiliary_at(
     );
 }
 /// All five upper controls occupy stable x positions at every card width.
-/// At the 328pt reference the text slot is 119pt, status is 91pt, and the
-/// Manage/Delete slots are 40/30pt; the actual layout never exceeds its pane.
+/// The 1920×1080 reference card (394pt outer) gets a 166pt dealer slot and a
+/// trailing 188pt signal/manage/delete group, matching the bottom action
+/// group exactly. Long dealer names are clipped inside their OWN slot.
 fn workflow_header(
     ui:&mut Ui,id:&str,title:&str,open:bool,step:usize,notice:bool
 )->egui::Response{
@@ -236,7 +237,13 @@ fn workflow_header(
         Pos2::new((title_rect.right()-4.0).max(title_rect.left()+2.0),
             title_rect.bottom()),
     );
-    let visible=workflow_title_fit(ui,title,text_rect.width());
+    // The agreed dealer caption needs roughly eight Hangul characters.
+    // Keep the whole reserved slot for geometry, but limit the readable
+    // caption to ~8 characters so unusually long names do not crowd the
+    // status group. Full text remains available on hover.
+    let title_ink_width=text_rect.width()
+        .min(typography::FONT_SUBSECTION_HEADING*9.0);
+    let visible=workflow_title_fit(ui,title,title_ink_width);
     let galley=typography::workflow_dealer_galley(ui,&visible);
     ui.painter().with_clip_rect(text_rect).galley(
         Pos2::new(text_rect.left(),text_rect.center().y-galley.size().y/2.0),
@@ -294,7 +301,8 @@ fn stage_name(step:usize,notice:bool)->&'static str{
 fn money(amount:Option<i64>)->String{
     amount.map(components::display_won).unwrap_or_else(||"—".to_owned())
 }
-/// Compact one-touch button, fixed to 126×30pt even for long stage labels.
+/// Compact one-touch button, 152×30pt at the 1080p reference, preserving
+/// every stage label including "계좌 재안내 완료" without shrinking text.
 /// This uses the shared Emphasized/disabled palette and 13pt action type,
 /// but not egui's minimum text padding (which could enlarge the rectangle).
 fn workflow_primary_at(
@@ -318,7 +326,7 @@ fn workflow_primary_at(
         text.to_owned(),
         egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
     );
-    ui.painter().with_clip_rect(rect.shrink2(Vec2::new(2.0,0.0)))
+    ui.painter().with_clip_rect(rect.shrink2(Vec2::new(theme::SPACE_8,0.0)))
         .galley(Pos2::new(
             rect.center().x-galley.size().x/2.0,
             rect.center().y-galley.size().y/2.0
@@ -327,7 +335,10 @@ fn workflow_primary_at(
 }
 /// The lower band is a true full-bleed #292929 surface. Shipping and money
 /// share the bottom glyph edge, VAT appears above the amount only when used.
-/// At 328pt width: shipping 40, price 98, one-touch 126, undo 32, gaps 4×3.
+/// At the 394pt 1080p reference: shipping 44, price 134, one-touch 152,
+/// undo 32, and gaps 4×3. Signal block left aligns to one-touch left;
+/// delete and undo share a right edge. Currency text has 8pt clearance to
+/// the one-touch button, not just the minimum 4pt column gutter.
 fn workflow_action_line(
     ui:&mut Ui,id:&str,shipments:usize,total:Option<i64>,
     vat:Option<&str>,button_text:&str,enabled:bool
@@ -354,6 +365,12 @@ fn workflow_action_line(
     let price=workflow_cell(shipping.right()+gap,price_width,lower);
     let action=workflow_cell(price.right()+gap,action_width,lower);
     let undo=workflow_cell(action.right()+gap,undo_width,lower);
+    debug_assert!((content.right()-undo.right()).abs()<=0.01);
+    // signal + manage + delete total width matches one-touch + undo.
+    let upper_right_width=theme::WORKFLOW_SIGNAL_WIDTH
+        +theme::WORKFLOW_MANAGE_WIDTH+theme::WORKFLOW_TRASH_WIDTH+2.0*gap;
+    let lower_right_width=action_width+undo_width+gap;
+    debug_assert!((upper_right_width-lower_right_width).abs()<=0.01);
     let bottom_y=lower.bottom()-7.0;
 
     let shipping_text=format!("배송 {shipments}건");
@@ -378,8 +395,13 @@ fn workflow_action_line(
             typography::DataValueContext::CompactCard
         ),theme::TEXT
     );
-    ui.painter().with_clip_rect(price).galley(
-        Pos2::new(price.right()-money_galley.size().x,bottom_y-money_galley.size().y),
+    let price_ink=Rect::from_min_max(
+        price.min,Pos2::new((price.right()-theme::SPACE_4).max(price.left()),
+            price.bottom())
+    );
+    ui.painter().with_clip_rect(price_ink).galley(
+        Pos2::new(price_ink.right()-money_galley.size().x,
+            bottom_y-money_galley.size().y),
         money_galley,theme::TEXT
     );
     if let Some(vat)=vat{
@@ -389,8 +411,8 @@ fn workflow_action_line(
             visible,egui::FontId::proportional(theme::WORKFLOW_VAT_FONT_SIZE),
             theme::WORKFLOW_VAT_TEXT
         );
-        ui.painter().with_clip_rect(price).galley(
-            Pos2::new(price.right()-vat_galley.size().x,price.top()+3.0),
+        ui.painter().with_clip_rect(price_ink).galley(
+            Pos2::new(price_ink.right()-vat_galley.size().x,price.top()+3.0),
             vat_galley,theme::WORKFLOW_VAT_TEXT
         );
     }
