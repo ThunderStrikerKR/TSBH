@@ -418,6 +418,12 @@ pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 // Text-heavy chooser lists show a primary title and a small status line.
 // React automatic-message/product-notice rows use a 48pt compact role.
 pub const MANAGEMENT_CHOOSER_ROW_HEIGHT: f32 = 48.0;
+// Reception client lookup is a full search-and-compare dialog, not a 460pt
+// compact confirmation. Own its geometry here instead of per-screen literals.
+pub const CLIENT_CHOOSER_DIALOG_WIDTH: f32 = 760.0;
+pub const CLIENT_CHOOSER_DIALOG_HEIGHT: f32 = 700.0;
+pub const CLIENT_CHOOSER_ROW_HEIGHT: f32 = 78.0;
+pub const CLIENT_CHOOSER_RESULTS_MAX_HEIGHT: f32 = 460.0;
 // Dual-master table geometry contract, approved on 2026-11-21.
 // Source of truth: table widths, minimums and spare-width distribution live
 // here; neither master screen may redefine them in its view implementation.
