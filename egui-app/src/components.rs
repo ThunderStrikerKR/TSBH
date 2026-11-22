@@ -3526,26 +3526,6 @@ pub fn reception_item_origin_action_editable(
     selection
 }
 
-pub fn reception_vat_row(ui: &mut Ui, vat_included: Option<bool>) {
-    let _=reception_vat_row_editable(ui,vat_included,false);
-}
-pub fn reception_vat_row_editable(
-    ui: &mut Ui,vat_included:Option<bool>,editable:bool
-)->bool{
-    let mut selected=vat_included.unwrap_or(false);
-    let mut changed=false;
-    let width=ui.available_width();
-    ui.allocate_ui_with_layout(
-        Vec2::new(width,theme::RECEPTION_VAT_ROW_HEIGHT),
-        Layout::left_to_right(Align::Center),|line|{
-            changed=line.add_enabled(editable,
-                egui::Checkbox::new(&mut selected,"부가세 포함")
-            ).changed();
-        }
-    );
-    changed
-}
-
 /// React's pinned 56px total: first line is title / fixed right amount,
 /// second line is shipment count / fixed right VAT. Neither line is allowed
 /// to resize the item scroller or move when the monetary text changes.

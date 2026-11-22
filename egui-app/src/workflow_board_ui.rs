@@ -654,7 +654,7 @@ fn group_frame(
                 }
             }
         let vat=if group.vat_included>0 && group.vat_excluded>0{
-            format!("포함{}·별도{}",group.vat_included,group.vat_excluded)
+            "부가세 일부 포함".to_owned()
         }else if group.vat_included>0{
             "부가세 포함".to_owned()
         }else{"부가세 별도".to_owned()};
