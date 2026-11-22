@@ -778,6 +778,7 @@ impl SettingsView{
         let mut accounts=self.draft.get("accounts")
             .and_then(Value::as_array).cloned().unwrap_or_default();
         let mut delete=None;
+        let account_count=accounts.len();
         for (index,account) in accounts.iter_mut().enumerate(){
             if ui.available_width()>=theme::SETTINGS_ACCOUNT_ROW_MIN_WIDTH{
                 ui.horizontal(|row|{
@@ -837,7 +838,7 @@ impl SettingsView{
                     }
                 });
             }
-            if index+1<accounts.len(){
+            if index+1<account_count{
                 ui.add_space(theme::SPACE_8);
                 components::soft_divider(ui);
                 ui.add_space(theme::SPACE_8);
