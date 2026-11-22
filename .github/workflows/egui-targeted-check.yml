@@ -70,6 +70,10 @@ jobs:
         run: cargo test --manifest-path crates/bando-data-access/Cargo.toml sqlite_replay_keeps_staff_unit_price -- --nocapture
       - name: Verify first recognition and revised delivery snapshots persist through draft removal
         run: cargo test --manifest-path egui-app/Cargo.toml reception_edit_audit_tests -- --nocapture
+      - name: Verify engine auto-checked islands, review exceptions and base-charge doubling
+        run: cargo test --manifest-path egui-app/Cargo.toml remote_delivery::tests -- --nocapture
+      - name: Verify engine-provided locality notice and checkbox explanation
+        run: cargo test --manifest-path egui-app/Cargo.toml remote_notice_tests -- --nocapture
       - name: Verify native recipient freight and remote-area edit validation
         run: cargo test --manifest-path egui-app/Cargo.toml manual_classification::tests -- --nocapture
       - name: Verify floating notice placement at screen edges and caret anchors
