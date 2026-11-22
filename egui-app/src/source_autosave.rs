@@ -76,6 +76,12 @@ enum Command {
     Edit(SourceTextEdit),
     Shutdown,
 }
+impl Command{
+    fn needs_ocr_client_bind(&self)->bool{
+        // Source-only keystrokes never change a verified dealer assignment.
+        matches!(self,Self::Save{..})
+    }
+}
 
 fn merge_command(
     snapshot:&mut WorkingSource,feedback:&mut Vec<OcrFeedback>,
@@ -121,6 +127,7 @@ impl SourceAutosave {
                 let mut feedback=Vec::new();
                 let mut dirty=false;
                 let mut shutdown=false;
+                let mut bind_ocr_clients=command.needs_ocr_client_bind();
                 match merge_command(&mut source,&mut feedback,command){
                     Ok(true)=>dirty=true,
                     Ok(false)=>shutdown=true,
@@ -131,13 +138,14 @@ impl SourceAutosave {
                 // OCR feedback and Shutdown's final flush.
                 while !shutdown{
                     match rx.recv_timeout(Duration::from_millis(180)){
-                        Ok(command)=>match merge_command(
-                            &mut source,&mut feedback,command
-                        ){
-                            Ok(true)=>dirty=true,
-                            Ok(false)=>shutdown=true,
-                            Err(error)=>{
-                                let _=updates.send(SaveStatus::Failed(error));
+                        Ok(command)=>{
+                            bind_ocr_clients|=command.needs_ocr_client_bind();
+                            match merge_command(&mut source,&mut feedback,command){
+                                Ok(true)=>dirty=true,
+                                Ok(false)=>shutdown=true,
+                                Err(error)=>{
+                                    let _=updates.send(SaveStatus::Failed(error));
+                                }
                             }
                         },
                         Err(RecvTimeoutError::Timeout)=>break,
@@ -221,8 +229,10 @@ impl SourceAutosave {
                         // whose dealer was selected before capture is tagged.
                         // Future manual client selection updates earlier
                         // samples by the same unconfirmed receipt ID.
-                        if let Err(error)=PreviewStore::bind_verified_ocr_clients(&source){
-                            let _=updates.send(SaveStatus::FeedbackFailed(error));
+                        if bind_ocr_clients{
+                            if let Err(error)=PreviewStore::bind_verified_ocr_clients(&source){
+                                let _=updates.send(SaveStatus::FeedbackFailed(error));
+                            }
                         }
                         SaveStatus::Saved {
                             revision:next,
@@ -318,6 +328,7 @@ mod source_delta_tests{
         let mut state=snapshot();
         let untouched=state.drafts[1].clone();
         let mut feedback=Vec::new();
+        assert!(!Command::Edit(edit("o")).needs_ocr_client_bind());
         for raw in ["o","or","ord","order"]{
             assert!(merge_command(
                 &mut state,&mut feedback,Command::Edit(edit(raw))
@@ -351,6 +362,9 @@ mod source_delta_tests{
         full.drafts.push(draft("third"));
         full.drafts[0].client_selection=Some("MANUAL".into());
         full.drafts[0].client_id=Some("staff".into());
+        assert!(Command::Save{
+            source:full.clone(),feedback:Vec::new()
+        }.needs_ocr_client_bind());
         assert!(merge_command(
             &mut state,&mut feedback,Command::Save{
                 source:full,feedback:vec![correction]
