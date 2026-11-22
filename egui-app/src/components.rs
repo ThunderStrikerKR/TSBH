@@ -2338,7 +2338,7 @@ pub fn management_client_header(
     ui:&mut Ui,header:Rect,header_content_rect:Rect,
     table_left:f32,table_width:f32,current_sort:Option<(usize,bool)>
 )->Option<usize>{
-    let titles=["거래처","발송인 정보","거래 조건"];
+    let titles=["거래처","주소 / 전화번호","거래 조건"];
     let sort_keys=["거래처명","주소","가격 등급"];
     let text_row=management_master_header_begin(
         ui,header,header_content_rect
@@ -2453,8 +2453,8 @@ fn management_row_impl(
             egui::pos2(x+theme::SPACE_12,rect.top()),
             egui::pos2(x+col_width-theme::SPACE_12,rect.bottom())
         );
-        // In particular, heading '발송인 정보' and the first address
-        // glyph both start at cell.left(), never at its centered label rect.
+        // The '주소 / 전화번호' heading and the first address glyph
+        // share the same left anchor, not a centered label allocation.
         if heading {
             paint_client_line(
                 ui,cell,cell.left(),typography::table_header_galley(ui,primary),
@@ -2489,8 +2489,14 @@ fn management_row_impl(
         }else if primary.is_empty() || secondary.is_empty() {
             let visible=if primary.is_empty(){secondary}else{primary};
             if !visible.is_empty() {
-                let galley=if primary.is_empty() {
-                    typography::client_table_metadata_galley(ui,visible,theme::MUTED)
+                // A real phone is primary business data, not muted
+                // metadata. Only the client-name secondary label keeps
+                // the smaller and quieter visual hierarchy.
+                let metadata=primary.is_empty() && i==0;
+                let galley=if metadata {
+                    typography::client_table_metadata_galley(
+                        ui,visible,theme::MUTED
+                    )
                 }else{
                     typography::management_table_cell_galley(
                         ui,visible,if i==0 {
@@ -2502,7 +2508,7 @@ fn management_row_impl(
                 };
                 paint_client_line(
                     ui,cell,cell.left(),galley,
-                    if primary.is_empty(){theme::MUTED}else{theme::TEXT}
+                    if metadata{theme::MUTED}else{theme::TEXT}
                 );
             }
         }else{
@@ -2528,10 +2534,21 @@ fn management_row_impl(
                 ),
                 theme::TEXT
             );
+            // The address and its paired phone number are equally
+            // important. Retain metadata styling only for the dealer
+            // name's secondary description.
+            let secondary_galley=if i==1 {
+                typography::management_table_cell_galley(
+                    ui,secondary,typography::ManagementTableCellRole::Text
+                )
+            }else{
+                typography::client_table_metadata_galley(
+                    ui,secondary,theme::MUTED
+                )
+            };
             paint_client_line(
-                ui,second,second.left(),
-                typography::client_table_metadata_galley(ui,secondary,theme::MUTED),
-                theme::MUTED
+                ui,second,second.left(),secondary_galley,
+                if i==1 {theme::TEXT} else {theme::MUTED}
             );
         }
         // Keep full, unclipped information accessible without changing the
