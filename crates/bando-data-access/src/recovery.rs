@@ -84,6 +84,14 @@ fn sql_schema(conn: &Connection) -> Result<(), String> {
     "#).map_err(err)
 }
 
+/// Tests of independent v2 migrations must use the actual schema without
+/// re-running historical product transformations, which require a complete
+/// production product seed unrelated to client-name migration.
+#[cfg(test)]
+pub(crate) fn create_v2_schema_for_tests(conn:&Connection)->Result<(),String>{
+    sql_schema(conn)
+}
+
 fn schema_version(conn:&Connection)->Result<i64,String>{
     let exists:bool=conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='core_schema')",
