@@ -917,7 +917,7 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
         if let Some(price)=&draft.pricing_preview {
             let keys=["sourceRaw","orderId","orderType","clientId","authorityRevision",
                 "status","shippingFee","shippingVersion","vatAmount",
-                "subtotal","total","notified","paid","linePrices","freightLines"];
+                "subtotal","total","pendingRecipients","notified","paid","linePrices","freightLines"];
             let map=price.as_object()
                 .ok_or("Rust 가격 계산 결과는 JSON 객체여야 합니다.")?;
             if map.keys().any(|key|!keys.contains(&key.as_str())) ||
@@ -928,6 +928,19 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
                price.get("authorityRevision").and_then(Value::as_u64).is_none() ||
                price.get("linePrices").and_then(Value::as_array).is_none() {
                 return Err("Rust 주문 가격 근거가 원문 또는 거래처와 일치하지 않습니다.".into());
+            }
+            if let Some(pending)=price.get("pendingRecipients"){
+                if !pending.is_array(){
+                    return Err("미확정 배송건 계산 결과는 배열이어야 합니다.".into());
+                }
+                for recipient in pending.as_array().into_iter().flatten(){
+                    if recipient.get("recipientId").and_then(Value::as_str).is_none() ||
+                       !recipient.get("product").is_some_and(Value::is_boolean) ||
+                       !recipient.get("freight").is_some_and(Value::is_boolean) ||
+                       !recipient.get("vat").is_some_and(Value::is_boolean) {
+                        return Err("미확정 배송건 계산 근거가 올바르지 않습니다.".into());
+                    }
+                }
             }
             for line in price["linePrices"].as_array().into_iter().flatten() {
                 let allowed=["recipientId","itemId","productId","variantId",
