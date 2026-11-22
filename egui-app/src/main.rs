@@ -1669,6 +1669,185 @@ impl BandoEgui {
         ctx.request_repaint();
     }
 
+    fn open_vat_settings(&mut self){
+        let Some(order_id)=self.active_id.clone() else{return};
+        let Some(analysis)=self.analysis.as_ref() else{return};
+        let rows=reception_service::recipients(analysis);
+        if rows.is_empty() || self.vat_change.is_some() ||
+            self.inline_change.is_some() || self.inline_editor.is_some(){
+            return;
+        }
+        self.vat_dialog=Some(VatDialog::new(
+            order_id,self.raw_source.clone(),rows
+        ));
+    }
+
+    fn start_vat_change(
+        &mut self,request:manual_workspace::InlineRequest,ctx:&egui::Context
+    ){
+        if self.vat_change.is_some() || self.inline_change.is_some() ||
+            self.inline_editor.is_some() || self.working_sync.is_some() ||
+            self.client_change.is_some(){return;}
+        let Some(source)=self.active_id.as_deref().and_then(|id|
+            self.drafts.iter().find(|row|row.id==id)
+        ).cloned() else{return};
+        let (tx,receiver)=mpsc::channel();
+        let context=ctx.clone();
+        let gateway=Arc::clone(&self.gateway);
+        self.vat_change=Some(PendingVatChange{
+            order_id:source.id.clone(),source_raw:source.raw.clone(),receiver
+        });
+        std::thread::spawn(move||{
+            let result=manual_workspace::apply_inline(
+                gateway.as_ref(),&source,&request
+            );
+            let _=tx.send(result);
+            context.request_repaint();
+        });
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+
+    fn poll_vat_change(&mut self,ctx:&egui::Context){
+        let fetched=self.vat_change.as_ref().map(|pending|
+            pending.receiver.try_recv());
+        let outcome=match fetched{
+            Some(Ok(value))=>Some(value),
+            Some(Err(mpsc::TryRecvError::Disconnected))=>
+                Some(Err("부가세 설정 저장이 중단됐습니다.".into())),
+            _=>None
+        };
+        let Some(outcome)=outcome else{
+            if self.vat_change.is_some(){
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+            return;
+        };
+        let Some(pending)=self.vat_change.take() else{return};
+        if self.active_id.as_deref()!=Some(pending.order_id.as_str()) ||
+            self.raw_source!=pending.source_raw{return;}
+        match outcome{
+            Ok(event)=>{
+                self.source_save_error=None;
+                self.apply_manual_event(event,ctx);
+                if self.source_save_error.is_none(){
+                    self.vat_dialog=None;
+                }
+            }
+            Err(error)=>{
+                if let Some(dialog)=self.vat_dialog.as_mut(){
+                    dialog.error=Some(error);
+                }
+            }
+        }
+        ctx.request_repaint();
+    }
+
+    fn show_vat_settings(&mut self,ctx:&egui::Context,work_area:Rect){
+        let Some(dialog)=self.vat_dialog.as_mut() else{return};
+        if self.active_id.as_deref()!=Some(dialog.order_id.as_str()) ||
+            self.raw_source!=dialog.source_raw{
+            self.vat_dialog=None;
+            return;
+        }
+        let recipients=self.analysis.as_ref().map(|analysis|
+            reception_service::recipients(analysis).to_vec()
+        ).unwrap_or_default();
+        let busy=self.vat_change.is_some();
+        let mut cancel=false;
+        let mut apply=false;
+        components::decision_window(
+            "부가세 설정","egui-order-vat-settings",work_area
+        ).show(ctx,|ui|{
+            cancel=components::modal_header(
+                ui,"부가세 설정","취소",!busy
+            );
+            ui.label(typography::field_label("적용 범위"));
+            ui.horizontal_wrapped(|row|{
+                row.spacing_mut().item_spacing.x=theme::SPACE_8;
+                for (label,scope) in [
+                    ("전체 미적용",VatScope::None),
+                    ("전체 적용",VatScope::All),
+                    ("일부 적용",VatScope::Partial)
+                ]{
+                    let role=if dialog.scope==scope{
+                        ButtonRole::TableSecondary
+                    }else{ButtonRole::Standard};
+                    if theme::action(row,label,role,!busy).clicked(){
+                        dialog.scope=scope;
+                        dialog.error=None;
+                    }
+                }
+            });
+            if dialog.scope==VatScope::Partial{
+                ui.add_space(theme::SPACE_12);
+                egui::ScrollArea::vertical()
+                    .max_height((work_area.height()*0.36).min(280.0))
+                    .id_salt("order-vat-select-recipients")
+                    .show(ui,|list|{
+                        for (index,recipient) in recipients.iter().enumerate(){
+                            let id=reception_service::text(recipient,"id");
+                            if id.is_empty(){continue;}
+                            let name=reception_service::text(recipient,"name");
+                            let included=dialog.recipients.contains(id);
+                            list.horizontal(|row|{
+                                row.label(typography::body(&format!(
+                                    "{} · {}",index+1,
+                                    if name.is_empty(){"수취인 확인"}else{name}
+                                )));
+                                row.with_layout(
+                                    Layout::right_to_left(Align::Center),|right|{
+                                        let role=if included{
+                                            ButtonRole::TableSecondary
+                                        }else{ButtonRole::Standard};
+                                        if theme::action(right,
+                                            if included{"적용"}else{"제외"},
+                                            role,!busy
+                                        ).clicked(){
+                                            if included{dialog.recipients.remove(id);}
+                                            else{dialog.recipients.insert(id.to_owned());}
+                                            dialog.error=None;
+                                        }
+                                    }
+                                );
+                            });
+                            components::soft_divider(list);
+                        }
+                    });
+            }
+            ui.add_space(theme::SPACE_12);
+            ui.horizontal(|row|{
+                row.label(typography::field_label("부가세율"));
+                row.add_enabled(!busy,
+                    egui::TextEdit::singleline(&mut dialog.rate_text)
+                        .desired_width(85.0)
+                );
+                row.label(typography::body("%"));
+            });
+            if let Some(error)=dialog.error.as_deref(){
+                ui.label(typography::status(error,theme::DANGER));
+            }
+            ui.add_space(theme::SPACE_8);
+            components::modal_action_row(ui,|buttons|{
+                if theme::action(
+                    buttons,"적용",ButtonRole::Primary,!busy
+                ).clicked(){apply=true;}
+            });
+        });
+        if cancel && !busy{self.vat_dialog=None;return;}
+        if apply && !busy{
+            let result=self.vat_dialog.as_ref()
+                .expect("current VAT dialog").request(&recipients);
+            match result{
+                Ok(request)=>self.start_vat_change(request,ctx),
+                Err(error)=>{
+                    if let Some(dialog)=self.vat_dialog.as_mut(){
+                        dialog.error=Some(error);
+                    }
+                }
+            }
+        }
+    }
+
     fn show_edit_history(&mut self,ctx:&egui::Context,work_area:Rect){
         if !self.edit_history_open{return;}
         let receipt=self.active_id.as_deref()
