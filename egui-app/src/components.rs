@@ -1223,11 +1223,20 @@ pub fn reception_recipient_fields(
     note: &mut String,
     active: [bool; 5],
 ) -> [Response; 5] {
-    fn editor(value: &mut String, width: f32, active: bool) -> egui::TextEdit<'_> {
+    fn editor(
+        value:&mut String,width:f32,active:bool,phone_number:bool
+    )->egui::TextEdit<'_>{
+        let font=if phone_number {
+            typography::data_value_font(
+                typography::DataValueKind::Phone,
+                typography::DataValueContext::Reception
+            )
+        }else{
+            egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
+        };
         let input=egui::TextEdit::singleline(value)
-            .font(egui::FontId::proportional(
-                typography::FONT_RECEPTION_RECIPIENT_TEXT
-            ))
+            .font(font)
+            .horizontal_align(Align::LEFT)
             .vertical_align(Align::Center)
             .margin(egui::Margin::symmetric(8, 2))
             .desired_width(width);
@@ -1258,7 +1267,7 @@ pub fn reception_recipient_fields(
             // This is read-only while retaining hover and native text layout.
             line.add_sized(
                 Vec2::new(width, theme::INPUT_HEIGHT),
-                editor(value, width, active).interactive(false),
+                editor(value, width, active, false).interactive(false),
             )
         }).inner
     }
@@ -1296,7 +1305,7 @@ pub fn reception_recipient_fields(
                     label_cell(line, "휴대폰", theme::RECIPIENT_LABEL_WIDTH);
                     let mobile_input = line.add_sized(
                         Vec2::new(mobile_width, theme::INPUT_HEIGHT),
-                        editor(mobile, mobile_width, active[2]).interactive(false),
+                        editor(mobile, mobile_width, active[2], true).interactive(false),
                     );
                     // Only the gap between the TWO contact groups is 8pt.
                     line.spacing_mut().item_spacing.x =
@@ -1306,7 +1315,7 @@ pub fn reception_recipient_fields(
                         theme::RECIPIENT_LABEL_GAP;
                     let phone_input = line.add_sized(
                         Vec2::new(phone_width, theme::INPUT_HEIGHT),
-                        editor(phone, phone_width, active[3]).interactive(false),
+                        editor(phone, phone_width, active[3], true).interactive(false),
                     );
                     (mobile_input,phone_input)
                 }).inner
