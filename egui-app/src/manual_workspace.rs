@@ -670,7 +670,7 @@ impl ManualWorkspace {
                                 );
                                 panel.label(typography::subsection_heading("배송 정보 구성표"));
                                 panel.horizontal(|ui|{
-                                ui.label(typography::field_label("배송 건수"));
+                                components::form_field_label(ui,"배송 건수");
                                 if theme::action(ui,"−",ButtonRole::Standard,
                                     !busy && rows.len()>1).clicked(){
                                     let last=&rows[rows.len()-1];
@@ -866,7 +866,7 @@ impl ManualWorkspace {
                                             }
                                             ui.horizontal_wrapped(|options|{
                                                 options.spacing_mut().item_spacing.x=theme::SPACE_8;
-                                                options.label(typography::field_label("발송지"));
+                                                components::form_field_label(options,"발송지");
                                                 for (label,value) in [
                                                     ("공장","FACTORY"),("매장","STORE")
                                                 ]{
@@ -938,7 +938,7 @@ impl ManualWorkspace {
                                         "shippingCharge"=>"적용 운임",_=>"이름"
                                     }
                                 };
-                                ui.label(typography::field_label(label));
+                                components::form_field_label(ui,label);
                                 components::flexible_text_field(
                                     ui,&mut self.edit_text,
                                     theme::MANUAL_INPUT_WIDTH,""
