@@ -60,7 +60,8 @@ pub fn remove(client:&mut Value,selected:&str)->bool{
         let remaining=entries.iter().copied()
             .filter(|tag|key(tag)!=search).collect::<Vec<_>>();
         if remaining.len()!=entries.len(){
-            client[source]=json!(remaining.join(", "));
+            let updated=remaining.join(", ");
+            client[source]=json!(updated);
             changed=true;
         }
     }
