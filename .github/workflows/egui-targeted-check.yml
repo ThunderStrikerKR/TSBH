@@ -86,6 +86,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml client_chooser_async_handoff_tests -- --nocapture
       - name: Verify shared reception async admission rejects every conflicting write order
         run: cargo test --manifest-path egui-app/Cargo.toml reception_jobs::tests -- --nocapture
+      - name: Verify clipboard OCR, source replacement, draft deletion, workflow and locality admission
+        run: cargo test --manifest-path egui-app/Cargo.toml reception_workflow_admission_integration_tests -- --nocapture
       - name: Verify saved native quote and recognition survive SQLite restart
         run: cargo test --manifest-path egui-app/Cargo.toml cached_reception_roundtrip_tests -- --nocapture
       - name: Verify cached Rust recognition restores without fresh analysis
