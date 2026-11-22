@@ -278,8 +278,9 @@ pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 =
 // remains a separate fixed-height strip below its own scrolling content.
 pub const RECEPTION_ITEMS_HEADER_HEIGHT: f32 = 32.0;
 pub const RECEPTION_ITEMS_ROW_HEIGHT: f32 = 42.0;
-pub const RECEPTION_ITEMS_QTY_MAX_WIDTH: f32 = 78.0;
-pub const RECEPTION_ITEMS_AMOUNT_MAX_WIDTH: f32 = 108.0;
+// Extra numeric room is necessary for 16pt amounts without clipping.
+pub const RECEPTION_ITEMS_QTY_MAX_WIDTH: f32 = 88.0;
+pub const RECEPTION_ITEMS_AMOUNT_MAX_WIDTH: f32 = 136.0;
 pub const RECEPTION_VAT_ROW_HEIGHT: f32 = 32.0;
 pub const RECEPTION_TOTAL_HEIGHT: f32 = 56.0;
 pub const HEADER_HEIGHT: f32 = 62.0;
