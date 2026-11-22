@@ -88,6 +88,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             Ok(json!({"prices":prices}))
         },
         "reprice_order" => pricing::reprice_order(&payload),
+        "calculate_reception_quote" => pricing::reception_quote(&payload),
         "should_refresh_pricing" => Ok(json!({"refresh": pricing::should_refresh(&payload)?})),
         "assess_delivery_address" => {
             let value=required_str(&payload,"value")?;
