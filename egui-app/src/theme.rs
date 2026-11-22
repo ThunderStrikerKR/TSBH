@@ -76,7 +76,10 @@ pub const WORKFLOW_SIGNAL_WIDTH: f32 = 104.0;
 pub const WORKFLOW_SIGNAL_BLOCK_HEIGHT: f32 = 30.0;
 pub const WORKFLOW_SIGNAL_BLOCK_BG: Color32 = INPUT;
 pub const WORKFLOW_SIGNAL_BLOCK_BORDER: Color32 = DIVIDER;
+// Square-ish four-stage indicators; group container remains 104×30pt.
 pub const WORKFLOW_SIGNAL_SIZE: f32 = 21.0;
+pub const WORKFLOW_SIGNAL_HEIGHT: f32 = 20.0;
+pub const WORKFLOW_SIGNAL_RADIUS: f32 = 4.0;
 pub const WORKFLOW_SIGNAL_GAP: f32 = 3.0;
 pub const WORKFLOW_SIGNAL_DONE: Color32 = Color32::from_rgb(73, 166, 106);
 pub const WORKFLOW_SIGNAL_DONE_BORDER: Color32 = Color32::from_rgb(105, 198, 136);
