@@ -153,9 +153,9 @@ impl ModelGroupManager {
                 self.write=None;self.after_save=None;
                 self.status="모델군 저장 응답을 확인할 수 없습니다. 재조회가 필요합니다.".into();None
             }
-            Some(Err(TryRecvError::Empty))=>{
-                ctx.request_repaint_after(Duration::from_millis(100));None
-            }
+            // The write worker calls ctx.request_repaint() immediately after
+            // sending its result. No 100ms polling frames are required.
+            Some(Err(TryRecvError::Empty))=>None
             None=>None,
         }
     }
