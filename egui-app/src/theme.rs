@@ -398,6 +398,9 @@ pub const MODAL_REVIEW_CONTENT_INSET: f32 = MODAL_MASTER_CONTENT_INSET;
 pub const MODAL_HEADER_HEIGHT: f32 = 56.0;
 pub const MODAL_FOOTER_HEIGHT: f32 = 58.0;
 pub const MODAL_SECTION_PADDING: f32 = SPACE_12;
+// Equal clearance above and below the divider in every modal section.
+// Kept separate from frame padding so the layout role is explicit.
+pub const MODAL_SECTION_HEADER_RULE_GAP: f32 = SPACE_12;
 pub const MODAL_SECTION_RADIUS: u8 = CONTROL_RADIUS;
 // Approved compact modal form row: label and editable value share one 36pt
 // line. No product-management-specific vertical label/input layout.
