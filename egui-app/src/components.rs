@@ -2459,6 +2459,18 @@ fn paint_client_tier_badge(ui:&Ui,cell:Rect,label:&str,tier:&str)->Rect{
     badge
 }
 
+/// Keep names and the first exceptional condition adjacent on a compact
+/// card. The management table's address column may expand; the intake card's
+/// name must never use that empty width as a spacer.
+fn client_card_name_limit(
+    available:f32,name_width:f32,terms_width:f32,has_terms:bool
+)->f32{
+    let available=available.max(0.0);
+    if !has_terms || available<=160.0{return name_width.min(available);}
+    let reserved=terms_width.min(available*0.45)+theme::SPACE_8;
+    name_width.min((available-reserved).max(0.0))
+}
+
 /// Compact Reception client reference. Does not use the 900pt table grid;
 /// the original reserved rectangle remains exactly 70pt at normal height.
 pub fn reception_client_summary_card(
@@ -2522,49 +2534,55 @@ pub fn reception_client_summary_card(
             let terms_galley=typography::client_table_metadata_galley(
                 ui,terms,theme::MUTED
             );
-            let terms_width=if !terms.is_empty()&&available>160.0{
-                terms_galley.size().x.min(available*0.45)
-            }else{0.0};
-            let name_width=(available-if terms_width>0.0{
-                terms_width+theme::SPACE_8
-            }else{0.0}).max(0.0);
-            let name_cell=Rect::from_min_max(
-                egui::pos2(x,row.top()),
-                egui::pos2(x+name_width,row.bottom())
-            );
-            // Real-font ellipsis, with full text retained in hover details.
             let full=typography::management_table_cell_galley(
                 ui,name,typography::ManagementTableCellRole::ClientName
             );
+            let name_limit=client_card_name_limit(
+                available,full.size().x,terms_galley.size().x,
+                !terms.is_empty()
+            );
+            // Truncate the name only when genuinely necessary. Short names
+            // occupy their measured width, not the whole flexible subcell:
+            // the next condition starts directly after the visible name.
             let mut shown=name.to_owned();
-            if full.size().x>name_width{
+            if full.size().x>name_limit{
                 shown.clear();
-                for ch in name.chars(){
-                    let next=format!("{shown}{ch}…");
-                    let measured=typography::management_table_cell_galley(
-                        ui,&next,typography::ManagementTableCellRole::ClientName
-                    );
-                    if measured.size().x>name_width{break;}
-                    shown.push(ch);
+                let ellipsis=typography::management_table_cell_galley(
+                    ui,"…",typography::ManagementTableCellRole::ClientName
+                );
+                if ellipsis.size().x<=name_limit{
+                    for ch in name.chars(){
+                        let next=format!("{shown}{ch}…");
+                        let measured=typography::management_table_cell_galley(
+                            ui,&next,typography::ManagementTableCellRole::ClientName
+                        );
+                        if measured.size().x>name_limit{break;}
+                        shown.push(ch);
+                    }
+                    shown.push('…');
                 }
-                shown.push('…');
             }
-            if name_cell.width()>0.0{
-                paint_client_line(
-                    ui,name_cell,x,
-                    typography::management_table_cell_galley(
-                        ui,&shown,typography::ManagementTableCellRole::ClientName
-                    ),theme::TEXT
+            let shown_galley=typography::management_table_cell_galley(
+                ui,&shown,typography::ManagementTableCellRole::ClientName
+            );
+            let name_width=shown_galley.size().x.min(name_limit);
+            if name_width>0.0{
+                let name_cell=Rect::from_min_max(
+                    egui::pos2(x,row.top()),
+                    egui::pos2(x+name_width,row.bottom())
                 );
+                paint_client_line(ui,name_cell,x,shown_galley,theme::TEXT);
             }
-            if terms_width>0.0{
+            if !terms.is_empty(){
                 let terms_x=x+name_width+theme::SPACE_8;
-                let terms_cell=Rect::from_min_max(
-                    egui::pos2(terms_x,row.top()),row.right_bottom()
-                );
-                paint_client_line(
-                    ui,terms_cell,terms_x,terms_galley,theme::MUTED
-                );
+                if terms_x<row.right(){
+                    let terms_cell=Rect::from_min_max(
+                        egui::pos2(terms_x,row.top()),row.right_bottom()
+                    );
+                    paint_client_line(
+                        ui,terms_cell,terms_x,terms_galley,theme::MUTED
+                    );
+                }
             }
         }
     }
@@ -2874,6 +2892,13 @@ mod management_client_column_divider_tests{
 mod client_display_summary_tests{
     use super::*;
     use serde_json::json;
+    #[test]
+    fn short_client_names_do_not_create_extra_space_before_conditions(){
+        assert_eq!(client_card_name_limit(400.0,62.0,94.0,true),62.0);
+        assert_eq!(client_card_name_limit(400.0,340.0,94.0,true),298.0);
+        assert_eq!(client_card_name_limit(400.0,62.0,94.0,false),62.0);
+        assert_eq!(client_card_name_limit(130.0,200.0,94.0,true),130.0);
+    }
     #[test]
     fn shared_tier_and_default_conditions(){
         let data=json!({"name":"테스트 상사","tier":"semi",
