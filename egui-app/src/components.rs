@@ -2500,7 +2500,15 @@ pub fn management_dropdown(
             // Match the vertical gap between option highlights to that inset
             // rather than inheriting egui's wider default item spacing.
             menu.spacing_mut().item_spacing.y=theme::SPACE_4;
-            options(menu);
+            // Long customer/product/category lists stay within this menu.
+            // The page and its surrounding editor never become scrollable.
+            egui::ScrollArea::vertical()
+                .max_height(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
+                .auto_shrink([false,true])
+                .show(menu,|choices|{
+                    choices.spacing_mut().item_spacing.y=theme::SPACE_4;
+                    options(choices);
+                });
         });
     trigger
 }
