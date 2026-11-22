@@ -894,8 +894,9 @@ impl BandoEgui {
             );
             return;
         };
-        let Some(rows)=row.manual_model.as_ref()
-            .and_then(|model|model.pointer("/model/rows"))
+        let Some(rows)=quote.pointer("/pricingBasis/orderInputs/recipients")
+            .or_else(||row.manual_model.as_ref()
+                .and_then(|model|model.pointer("/model/rows")))
             .or_else(||row.analysis_view.as_ref()
                 .and_then(|view|view.pointer("/recognition/recipients")))
             .or_else(||row.analysis_evidence.as_ref()
