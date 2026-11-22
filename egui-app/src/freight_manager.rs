@@ -1218,7 +1218,7 @@ impl FreightManager {
                     if theme::action(bar,"저장하고 이동",
                         theme::ButtonRole::Primary,can_save).clicked(){save=true;}
                     if theme::action(bar,"저장 안 함",
-                        theme::ButtonRole::Standard,enabled).clicked(){discard=true;}
+                        theme::ButtonRole::Danger,enabled).clicked(){discard=true;}
                 });
             });
             if cancel{self.requested_tab=None;}
