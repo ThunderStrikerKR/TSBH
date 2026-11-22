@@ -10,6 +10,13 @@ const HOVER_ENTER:Duration=Duration::from_millis(250);
 const HOVER_EXIT:Duration=Duration::from_millis(250);
 const STEP_NAMES:[&str;4]=["주문 확인","운임 적용","계좌 안내","입금 확인"];
 
+/// The base card and its foreground hover preview are both painted within
+/// the same frame. Their interactive widgets MUST have different IDs:
+/// reusing one ID in Background and Foreground panics in egui 0.33.
+fn workflow_widget_id(kind:&'static str,order_id:&str,in_preview:bool)->Id{
+    Id::new((kind,order_id,in_preview))
+}
+
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Selection {
     pub group_id:String,
@@ -266,7 +273,8 @@ fn workflow_compact_rows(ui:&mut Ui)->(Rect,Rect){
 /// is also 192pt, and every horizontal inter-control gap is precisely 6pt.
 /// Long dealer names are clipped inside their OWN slot.
 fn workflow_header(
-    ui:&mut Ui,row:Rect,id:&str,title:&str,open:bool,step:usize,notice:bool
+    ui:&mut Ui,row:Rect,id:&str,title:&str,open:bool,step:usize,
+    notice:bool,in_preview:bool
 )->egui::Response{
     let content=workflow_row_content(row);
     let gap=theme::WORKFLOW_CARD_SLOT_GAP;
@@ -307,7 +315,7 @@ fn workflow_header(
     );
     let title_response=ui.interact(
         arrow.union(title_rect),
-        Id::new(("workflow-header",id)),egui::Sense::click()
+        workflow_widget_id("workflow-header",id,in_preview),egui::Sense::click()
     ).on_hover_text(title);
 
     let block=workflow_control_rect(signal);
@@ -364,10 +372,10 @@ fn money(amount:Option<i64>)->String{
 /// This uses the shared Emphasized/disabled palette and 13pt action type,
 /// but not egui's minimum text padding (which could enlarge the rectangle).
 fn workflow_primary_at(
-    ui:&mut Ui,id:&str,rect:Rect,text:&str,enabled:bool
+    ui:&mut Ui,id:&str,rect:Rect,text:&str,enabled:bool,in_preview:bool
 )->egui::Response{
     let response=ui.interact(
-        rect,Id::new(("workflow-stage-button",id)),
+        rect,workflow_widget_id("workflow-stage-button",id,in_preview),
         if enabled{egui::Sense::click()}else{egui::Sense::hover()}
     ).on_hover_text(text);
     let fill=if enabled{theme::BRIGHT}else{theme::DISABLED_ACTION_BG};
@@ -399,7 +407,7 @@ fn workflow_primary_at(
 /// the one-touch button (6pt slot gap + 4pt inner ink inset).
 fn workflow_action_line(
     ui:&mut Ui,lower:Rect,id:&str,shipments:usize,total:Option<i64>,
-    vat:Option<&str>,button_text:&str,enabled:bool
+    vat:Option<&str>,button_text:&str,enabled:bool,in_preview:bool
 )->(bool,bool){
     let content=workflow_row_content(lower);
     let gap=theme::WORKFLOW_CARD_SLOT_GAP;
@@ -431,7 +439,7 @@ fn workflow_action_line(
         Pos2::new(shipping.left(),bottom_y-ship_galley.size().y),
         ship_galley,theme::SECONDARY
     );
-    ui.interact(shipping,Id::new(("workflow-shipping",id)),
+    ui.interact(shipping,workflow_widget_id("workflow-shipping",id,in_preview),
         egui::Sense::hover()).on_hover_text(shipping_text);
 
     let amount=total.map(components::display_won)
@@ -464,11 +472,11 @@ fn workflow_action_line(
             vat_galley,theme::WORKFLOW_VAT_TEXT
         );
     }
-    ui.interact(price,Id::new(("workflow-money",id)),
+    ui.interact(price,workflow_widget_id("workflow-money",id,in_preview),
         egui::Sense::hover()).on_hover_text(&amount);
 
     let response=workflow_primary_at(
-        ui,id,workflow_control_rect(action),button_text,enabled
+        ui,id,workflow_control_rect(action),button_text,enabled,in_preview
     );
     workflow_auxiliary_at(ui,id,workflow_control_rect(undo),
         components::WorkflowAuxiliaryAction::PreviousStage);
@@ -652,7 +660,7 @@ fn group_frame(
         let (top,bottom)=workflow_compact_rows(ui);
         let btn=workflow_header(
             ui,top,&group.id,&group.dealer_name,open || in_preview,
-            group.step,group.needs_notice
+            group.step,group.needs_notice,in_preview
         );
             if btn.clicked(){
                 if active {
@@ -672,7 +680,7 @@ fn group_frame(
         let (_,stage_hovered)=workflow_action_line(
             ui,bottom,&group.id,group.shipments.len(),group.total,
             if group.vat_included>0{Some(vat.as_str())}else{None},
-            stage_name(group.step,group.needs_notice),false
+            stage_name(group.step,group.needs_notice),false,in_preview
         );
         if stage_hovered && !in_preview{
             *trigger=Some(group.id.clone());
@@ -745,7 +753,7 @@ fn pending_frame(
     workflow_card(ui,selected,false,|ui|{
         let (top,bottom)=workflow_compact_rows(ui);
         let header=workflow_header(
-            ui,top,&draft.id,dealer_name,open,0,false
+            ui,top,&draft.id,dealer_name,open,0,false,false
         );
         if header.clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
@@ -758,7 +766,7 @@ fn pending_frame(
         }else{&[]};
         let (clicked,_)=workflow_action_line(
             ui,bottom,&draft.id,recipients.len(),None,None,"거래처 확인",
-            draft.client_id.is_none()
+            draft.client_id.is_none(),false
         );
         if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
         if open{
@@ -911,4 +919,38 @@ pub fn show(
         state.update_row_hover(None,ui.ctx());
     }
     event
+}
+
+#[cfg(test)]
+mod widget_id_tests {
+    use super::workflow_widget_id;
+
+    #[test]
+    fn foreground_preview_ids_never_reuse_base_card_ids() {
+        for kind in [
+            "workflow-header", "workflow-stage-button",
+            "workflow-shipping", "workflow-money",
+        ] {
+            let base=workflow_widget_id(kind,"group-123",false);
+            let preview=workflow_widget_id(kind,"group-123",true);
+            assert_ne!(base,preview,"{kind} must be unique per layer");
+            assert_ne!(base,workflow_widget_id(kind,"group-456",false));
+        }
+    }
+
+    #[test]
+    fn distinct_card_controls_never_reuse_each_others_ids() {
+        let kinds=[
+            "workflow-header", "workflow-stage-button",
+            "workflow-shipping", "workflow-money",
+        ];
+        for (i,kind) in kinds.iter().enumerate() {
+            for other in kinds.iter().skip(i+1) {
+                assert_ne!(
+                    workflow_widget_id(kind,"group-123",false),
+                    workflow_widget_id(other,"group-123",false)
+                );
+            }
+        }
+    }
 }
