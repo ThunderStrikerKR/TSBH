@@ -5518,10 +5518,14 @@ impl BandoEgui {
                 pane.set_clip_rect(summary_rect);
                 pane.set_width(summary_rect.width());
                 pane.set_height(summary_rect.height());
+                let mut edit_vat=false;
                 Self::section_with_header(pane,"발주서 합계",summary_rect.height(),
                     |header|{
-                        theme::action(header,"부가세 설정",ButtonRole::Standard,
-                            editable && self.analysis.is_some());
+                        if theme::action(header,"부가세 설정",ButtonRole::Standard,
+                            editable && self.analysis.is_some()
+                                && self.inline_editor.is_none()
+                                && self.vat_change.is_none()
+                        ).clicked(){edit_vat=true;}
                     },|body|{
 
                     let synced=self.active_id.as_deref()
@@ -5561,6 +5565,7 @@ impl BandoEgui {
                     );
 
                     });
+                if edit_vat{self.open_vat_settings();}
             }
         );
         // Only authoritative Rust source spans may drive a linked hover.
@@ -6442,6 +6447,8 @@ impl eframe::App for BandoEgui {
             self.order_history_manager=None;
             self.client_chooser=None;
             self.working_sync=None;
+            self.vat_change=None;
+            self.vat_dialog=None;
             self.client_change=None;
             self.auto_client_change=None;
             // Invalidate deletion replies from a different restored DB/catalog.
@@ -6455,6 +6462,7 @@ impl eframe::App for BandoEgui {
         self.poll_client_change(ctx);
         self.poll_working_sync(ctx);
         self.poll_inline_change(ctx);
+        self.poll_vat_change(ctx);
         self.poll_remote_recheck(ctx);
         self.poll_source_clear(ctx);
         self.poll_source_saves();
@@ -6500,7 +6508,8 @@ impl eframe::App for BandoEgui {
         if self.ocr_review.is_some() || self.pending_replace.is_some() || self.source_clear_confirm.is_some() ||
             (self.page==Page::Reception &&
                 (self.client_chooser.is_some() || self.manual_workspace.is_some() ||
-                self.edit_history_open || self.workflow_dialog.is_some())) {
+                self.edit_history_open || self.workflow_dialog.is_some()
+                 || self.vat_dialog.is_some())) {
             components::modal_backdrop(
                 ctx,"bando-workspace-modal-backdrop",false
             );
@@ -6511,6 +6520,7 @@ impl eframe::App for BandoEgui {
         if self.page == Page::Reception {
             self.show_client_chooser(ctx,work_area);
             self.show_manual_workspace(ctx,work_area);
+            self.show_vat_settings(ctx,work_area);
             self.show_edit_history(ctx,work_area);
             self.show_workflow_dialog(ctx,work_area);
         } else if self.page==Page::History {
