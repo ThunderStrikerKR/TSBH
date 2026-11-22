@@ -1207,13 +1207,14 @@ impl BandoEgui {
     fn visible_recipient_index(&self)->usize{
         let Some(analysis)=self.analysis.as_ref() else{return self.selected_recipient};
         let rows=reception_service::recipients(analysis);
-        let preview=self.workflow_ui.pending_preview()
-            .filter(|p|self.active_id.as_deref()==Some(p.order_id.as_str()))
-            .and_then(|p|p.recipient_id.as_deref());
-        let linked=self.active_id.as_deref()
-            .and_then(|order|self.link_hover.active_for(order))
-            .map(|key|key.recipient_id.as_str());
-        linked.or(preview).and_then(|id|rows.iter().position(|row|
+        let linked=self.link_hover.scoped_active()
+            .map(|(order,key)|(order,key.recipient_id.as_str()));
+        let visible=self.active_id.as_deref().and_then(|order|
+            workflow_board_ui::visible_pending_recipient(
+                order,self.workflow_ui.pending_preview(),linked
+            )
+        );
+        visible.and_then(|id|rows.iter().position(|row|
             reception_service::text(row,"id")==id
         )).unwrap_or(self.selected_recipient)
     }
@@ -1235,10 +1236,11 @@ impl BandoEgui {
             .or_else(||draft.analysis_evidence.clone())
             .unwrap_or_else(||serde_json::json!({"recipients":[]}));
         let recipients=reception_service::recipients(&recognition);
-        let linked=self.link_hover.active_for(&draft.id)
-            .map(|key|key.recipient_id.as_str());
-        let index=linked.or(preview.recipient_id.as_deref())
-            .and_then(|id|recipients.iter().position(|row|
+        let linked=self.link_hover.scoped_active()
+            .map(|(order,key)|(order,key.recipient_id.as_str()));
+        let index=workflow_board_ui::visible_pending_recipient(
+            &draft.id,Some(preview),linked
+        ).and_then(|id|recipients.iter().position(|row|
                 reception_service::text(row,"id")==id)).unwrap_or(0);
         Some((draft.clone(),recognition,index))
     }
@@ -5799,7 +5801,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         let recipient_id=reception_service::text(row,"id");
                                                         let fields=["product","quantity","price"];
                                                         let active_fields=fields.map(|field|
-                                                            (linked_active.is_none() && field=="product") ||
                                                             source_highlight::is_active(
                                                                 linked_active.as_ref(),
                                                                 &source_highlight::key(recipient_id,item_id,field)
