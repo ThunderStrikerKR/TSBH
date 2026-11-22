@@ -1844,6 +1844,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .auto_shrink([false,false])
                         .id_salt("order-vat-select-recipients")
                         .show(panel,|list|{
+                            // The row height already includes all vertical
+                            // breathing room; egui's default item gap would
+                            // otherwise clip the 10th entry and show only ~8.
+                            list.spacing_mut().item_spacing.y=0.0;
                             for (index,recipient) in recipients.iter().enumerate(){
                                 let id=reception_service::text(recipient,"id");
                                 if id.is_empty(){continue;}
