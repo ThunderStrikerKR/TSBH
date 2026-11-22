@@ -4193,7 +4193,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .filter(|s|s.group_id==group.id)
             .and_then(|s|group.shipments.iter().find(|ship|
                 ship.id==s.shipment_id&&ship.order_id==s.order_id));
-        let ship=previewed.or(selected).or_else(||group.shipments.first())?;
+        let linked=self.link_hover.active.as_ref()
+            .and_then(|key|group.shipments.iter().find(|ship|
+                ship.recipient_id==key.recipient_id &&
+                selected.is_some_and(|committed|
+                    committed.order_id==ship.order_id)));
+        let ship=previewed.or(linked).or(selected)
+            .or_else(||group.shipments.first())?;
         Some((group.clone(),ship.clone()))
     }
 
@@ -5171,6 +5177,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
 
         if let Some((group,ship))=self.visible_workflow_group(){
+            let mut hovered_detail:Option<source_highlight::LinkKey>=None;
             // The same preallocated review/recipient/items rectangles are
             // used for real workflow rows. No source replacement, false
             // editing actions or section boundary changes on hover.
@@ -5221,10 +5228,25 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 let mut mobile = reception_service::text(&ship.recipient,"mobile").to_owned();
                                 let mut phone = reception_service::text(&ship.recipient,"phone").to_owned();
                                 let mut note = reception_service::text(&ship.recipient,"note").to_owned();
-                                components::reception_recipient_fields(
-                                    contents, &mut name, &mut address, &mut mobile,
-                                    &mut phone, &mut note, [false;5],
+                                let id=ship.recipient_id.as_str();
+                                let fields=["name","address","mobile","phone","note"];
+                                let highlighted=fields.map(|field|source_highlight::is_active(
+                                    self.link_hover.active.as_ref(),
+                                    &source_highlight::key(id,id,field)
+                                ));
+                                let responses=components::reception_recipient_fields(
+                                    contents,&mut name,&mut address,&mut mobile,
+                                    &mut phone,&mut note,highlighted
                                 );
+                                for (response,field) in responses.iter().zip(fields){
+                                    let key=source_highlight::key(id,id,field);
+                                    if response.hovered(){
+                                        hovered_detail=Some(key.clone());
+                                    }
+                                    source_highlight::paint_active(
+                                        contents,response,&key,self.link_hover.active.as_ref()
+                                    );
+                                }
                             });
                         }
                     );
@@ -5299,11 +5321,35 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     .and_then(serde_json::Value::as_i64)
                                                     .map(components::display_won)
                                                     .unwrap_or_else(||"—".into());
-                                                components::reception_item_row(
+                                                let item_id=reception_service::text(item,"id");
+                                                let fields=["product","quantity","price"];
+                                                let highlighted=fields.map(|field|
+                                                    source_highlight::is_active(
+                                                        self.link_hover.active.as_ref(),
+                                                        &source_highlight::key(
+                                                            &ship.recipient_id,item_id,field
+                                                        )
+                                                    )
+                                                );
+                                                let cells=components::reception_item_row(
                                                     contents,
                                                     &reception_service::item_title(item),
-                                                    &quantity, &amount, [false;3],
+                                                    &quantity,&amount,highlighted
                                                 );
+                                                for (response,field) in [
+                                                    (&cells.product,"product"),
+                                                    (&cells.quantity,"quantity"),
+                                                    (&cells.amount,"price")
+                                                ] {
+                                                    let key=source_highlight::key(
+                                                        &ship.recipient_id,item_id,field
+                                                    );
+                                                    if response.hovered(){hovered_detail=Some(key.clone());}
+                                                    source_highlight::paint_active(
+                                                        contents,response,&key,
+                                                        self.link_hover.active.as_ref()
+                                                    );
+                                                }
                                             }
                                         }
                                         contents.add_space(theme::SPACE_8);
@@ -5357,6 +5403,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }
                     );
                 }
+            );
+            self.link_hover.update(
+                hovered_detail.or_else(||self.source_hover.clone()),ui.ctx()
             );
             return;
         }
@@ -6743,6 +6792,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Some(workflow_board_ui::Event::SelectShipment(selection))=>{
                 self.workflow_ui.select(selection);
+                self.link_hover.clear();
+                self.source_hover=None;
             }
             _=>{}
         }
