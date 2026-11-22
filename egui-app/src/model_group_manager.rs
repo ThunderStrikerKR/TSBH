@@ -281,7 +281,7 @@ impl ModelGroupManager {
                         });
                         components::soft_divider(left);
                         left.horizontal(|search|{
-                            search.label(typography::field_label("상품 검색"));
+                            components::form_field_label(search,"상품 검색");
                             components::flexible_text_field(search,&mut self.query,
                                 theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                                 "그룹 이름 또는 상품명 검색");
