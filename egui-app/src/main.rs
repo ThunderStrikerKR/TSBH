@@ -4177,6 +4177,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     fn visible_workflow_group(&self)->Option<(
         workflow_board::GroupRow,workflow_board::ShipmentRow
     )>{
+        // A temporary pending-order preview takes priority over committed
+        // native workflow selection; both remain completely read-only.
+        if self.workflow_ui.pending_preview().is_some(){return None;}
         let group_id=self.workflow_ui.active_preview()
             .or_else(||self.workflow_ui.selection.as_ref()
                 .map(|selection|selection.group_id.as_str()))?;
@@ -4195,6 +4198,84 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn source_section(&mut self, ui: &mut Ui, height: f32) {
+        // React visibleSelection: another pending order may be previewed
+        // without replacing the employee's editable reception or autosave.
+        if let Some((draft,recognition,index))=self.visible_pending_other(){
+            let spans=source_highlight::collect(&draft.raw,&recognition);
+            let selected_id=reception_service::recipients(&recognition).get(index)
+                .and_then(|row|row["id"].as_str()).map(str::to_owned);
+            let active=selected_id.as_ref().map(|id|
+                source_highlight::key(id,id,"name"));
+            let mut new_clicked=false;
+            Self::section_with_header(ui,"발주 원문",height,|header|{
+                if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,true).clicked(){
+                    new_clicked=true;
+                }
+            },|body|{
+                body.spacing_mut().item_spacing.y=0.0;
+                let available=components::docked_section_body_height(height)
+                    .min(body.available_height().max(0.0));
+                let (document_rect,_)=body.allocate_exact_size(
+                    Vec2::new(body.available_width(),available),Sense::hover()
+                );
+                components::paint_source_document_surface(body,document_rect);
+                if available>0.0{
+                    let inner=document_rect.shrink(theme::SPACE_4);
+                    body.scope_builder(
+                        UiBuilder::new()
+                            .id_salt(("pending-hover-source",draft.id.as_str()))
+                            .max_rect(inner).layout(Layout::top_down(Align::Min)),
+                        |canvas|{
+                            canvas.set_clip_rect(inner);
+                            canvas.set_width(inner.width());
+                            canvas.set_height(inner.height());
+                            egui::ScrollArea::vertical()
+                                .id_salt(("pending-hover-source-scroll",draft.id.as_str()))
+                                .max_height(inner.height())
+                                .auto_shrink([false,false])
+                                .show(canvas,|text_ui|{
+                                    let mut immutable=draft.raw.as_str();
+                                    let mut layouter=|layout_ui:&egui::Ui,
+                                        buffer:&dyn egui::TextBuffer,width:f32|{
+                                        let job=source_highlight::layout(
+                                            buffer.as_str(),&spans,
+                                            selected_id.as_deref(),active.as_ref(),width,
+                                            egui::FontId::proportional(
+                                                typography::FONT_RECEPTION_SOURCE_TEXT),
+                                            theme::TEXT
+                                        );
+                                        layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
+                                    };
+                                    let paint_slot=text_ui.painter().add(egui::Shape::Noop);
+                                    let display=egui::TextEdit::multiline(&mut immutable)
+                                        .frame(false)
+                                        .font(egui::FontId::proportional(
+                                            typography::FONT_RECEPTION_SOURCE_TEXT))
+                                        .desired_width(text_ui.available_width())
+                                        .layouter(&mut layouter)
+                                        .show(text_ui);
+                                    let (normal,focused)=source_highlight::block_shapes(
+                                        &draft.raw,&display.galley,display.galley_pos,
+                                        &spans,selected_id.as_deref(),active.as_ref(),
+                                        text_ui.clip_rect().intersect(display.text_clip_rect),
+                                    );
+                                    text_ui.painter().set(
+                                        paint_slot,egui::Shape::Vec(normal)
+                                    );
+                                    text_ui.painter().add(egui::Shape::Vec(focused));
+                                });
+                        }
+                    );
+                }
+            });
+            if new_clicked{
+                self.workflow_ui.selection=None;
+                self.workflow_ui.folded=None;
+                self.workflow_ui.stop_preview();
+                self.new_reception(ui.ctx());
+            }
+            return;
+        }
         if let Some((_group,shipment))=self.visible_workflow_group(){
             let mut new_clicked=false;
             Self::section_with_header(ui,"발주 원문",height,|header|{
