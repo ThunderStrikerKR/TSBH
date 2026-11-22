@@ -930,11 +930,8 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
                         |"freightCode"|"source")) {
                         return Err("허용되지 않은 운임 계산 필드입니다.".into());
                     }
-                    if !matches!(line["origin"].as_str(),"Some") {
-                        // Preserve only the normal factory/store discriminator.
-                        if !matches!(line["origin"].as_str(),Some("FACTORY")|Some("STORE")) {
-                            return Err("계산된 운임 발송지를 확인하세요.".into());
-                        }
+                    if !matches!(line["origin"].as_str(),Some("FACTORY")|Some("STORE")){
+                        return Err("계산된 운임 발송지를 확인하세요.".into());
                     }
                 }
             }
