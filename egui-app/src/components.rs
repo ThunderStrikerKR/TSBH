@@ -4088,27 +4088,30 @@ mod management_search_caret_tests {
 
     #[test]
     fn clicking_existing_query_resumes_at_the_end_not_the_first_character(){
+        fn draw(
+            ctx:&egui::Context,raw:egui::RawInput,query:&mut String
+        )->(Rect,egui::Id){
+            let mut measured=None;
+            let _=ctx.run(raw,|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(320.0);
+                    let response=management_search_field(
+                        ui,query,240.0,"모델명 / 상품명 검색"
+                    );
+                    measured=Some((response.rect,response.id));
+                });
+            });
+            measured.expect("search input rendered")
+        }
         let ctx=egui::Context::default();
         let mut query="709".to_owned();
-        let mut rect=Rect::NOTHING;
-        let mut field_id=None;
-        let mut draw=|ctx:&egui::Context|{
-            egui::CentralPanel::default().show(ctx,|ui|{
-                ui.set_width(320.0);
-                let response=management_search_field(
-                    ui,&mut query,240.0,"모델명 / 상품명 검색"
-                );
-                rect=response.rect;
-                field_id=Some(response.id);
-            });
-        };
         let mut input=egui::RawInput::default();
         input.screen_rect=Some(Rect::from_min_size(
             egui::Pos2::ZERO,Vec2::new(360.0,180.0)
         ));
-        ctx.run(input,|ctx|draw(ctx));
+        let (rect,field_id)=draw(&ctx,input,&mut query);
         let pointer=egui::pos2(rect.left()+8.0,rect.center().y);
-        ctx.run(egui::RawInput{
+        draw(&ctx,egui::RawInput{
             events:vec![
                 egui::Event::PointerMoved(pointer),
                 egui::Event::PointerButton{
@@ -4117,15 +4120,15 @@ mod management_search_caret_tests {
                 },
             ],
             ..Default::default()
-        },|ctx|draw(ctx));
-        ctx.run(egui::RawInput{
+        },&mut query);
+        draw(&ctx,egui::RawInput{
             events:vec![egui::Event::PointerButton{
                 pos:pointer,button:egui::PointerButton::Primary,
                 pressed:false,modifiers:egui::Modifiers::NONE
             }],
             ..Default::default()
-        },|ctx|draw(ctx));
-        let state=egui::TextEdit::load_state(&ctx,field_id.unwrap())
+        },&mut query);
+        let state=egui::TextEdit::load_state(&ctx,field_id)
             .expect("search edit state after click");
         let range=state.cursor.char_range().expect("search caret after click");
         assert_eq!(range.primary.index,3);
