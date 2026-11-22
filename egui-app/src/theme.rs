@@ -55,15 +55,15 @@ pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
 pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
-// Compact working-order cards use one 328pt-width two-band surface.
-// All coordinates are allocated from the actual right-pane width; shrinking
-// company text may never move status lamps or any action control.
+// Compact working-order cards derive every slot from the actual right pane.
+// The horizontal outer inset, inter-control gaps and vertical insets use
+// the same 6pt rhythm. Long dealer text cannot move any control.
 pub const WORKFLOW_CARD_BG: Color32 = Color32::from_rgb(32, 32, 32);
 pub const WORKFLOW_CARD_LOWER_BG: Color32 = INPUT;
 pub const WORKFLOW_SELECTED_BG: Color32 = Color32::from_rgb(36, 36, 36);
 pub const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_SELECTED_BORDER: Color32 = Color32::from_rgb(245, 158, 11);
-pub const WORKFLOW_CARD_PADDING_X: f32 = 9.0;
+pub const WORKFLOW_CARD_PADDING_X: f32 = 6.0;
 pub const WORKFLOW_CARD_PADDING_Y: f32 = 8.0;
 pub const WORKFLOW_CARD_RADIUS: u8 = 7;
 pub const WORKFLOW_SELECTED_STRIPE: f32 = 2.0;
@@ -75,7 +75,7 @@ pub const WORKFLOW_CONTROL_VERTICAL_INSET: f32 = 6.0;
 pub const WORKFLOW_TITLE_HEIGHT: f32 = 42.0;
 pub const WORKFLOW_BOTTOM_HEIGHT: f32 = WORKFLOW_TITLE_HEIGHT;
 pub const WORKFLOW_BAND_DIVIDER_HEIGHT: f32 = 1.0;
-pub const WORKFLOW_CARD_SLOT_GAP: f32 = SPACE_4;
+pub const WORKFLOW_CARD_SLOT_GAP: f32 = 6.0;
 pub const WORKFLOW_SIGNAL_WIDTH: f32 = 104.0;
 pub const WORKFLOW_SIGNAL_BLOCK_HEIGHT: f32 = 30.0;
 pub const WORKFLOW_SIGNAL_BLOCK_BG: Color32 = INPUT;
@@ -104,17 +104,18 @@ pub const WORKFLOW_CHIP_RADIUS: u8 = 4;
 pub const WORKFLOW_CHIP_HEIGHT: f32 = 24.0;
 pub const WORKFLOW_CHIP_PAD_X: i8 = 4;
 pub const WORKFLOW_CHIP_PAD_Y: i8 = 2;
-// At the 1920×1080 reference, the right pane card is ~394pt wide.
-// Inner width = 394 - 2 border - 18 inset = 374pt.
-// Upper: 12 toggle + 166 title + 104 status + 44 manage + 32 delete
-//        + 4×4 gap = 374.
-// Lower: 44 shipping + 134 price + 152 stage + 32 undo
-//        + 3×4 gap = 374.
-// Crucially, both trailing groups occupy 188pt: 104+4+44+4+32 = 152+4+32.
-// The upper signal and lower one-touch share the SAME left boundary.
-// For smaller cards, ONLY the title/price slots shrink; trailing controls
-// remain aligned. Data never changes other slots' position.
-pub const WORKFLOW_CONTROL_WIDTH: f32 = 152.0;
+// At the 1920×1080 reference, the right-pane card is ~394pt wide.
+// Usable width = 394 - 2 border - (6 left + 6 right) = 380pt.
+// Upper: 12 toggle + 164 title + 104 status + 44 manage + 32 delete
+//        + 4×6 gap = 380.
+// Lower: 44 shipping + 132 price + 154 stage + 32 undo
+//        + 3×6 gap = 380.
+// Both trailing groups have equal 192pt width:
+//   104 + 6 + 44 + 6 + 32 == 154 + 6 + 32.
+// This preserves aligned start/end x-coordinates, and EVERY control gap
+// (signal ↔ manage, manage ↔ delete, stage ↔ undo) is 6pt.
+// On narrow cards only the dealer/price slots shrink; controls stay fixed.
+pub const WORKFLOW_CONTROL_WIDTH: f32 = 154.0;
 pub const WORKFLOW_MANAGE_WIDTH: f32 = 44.0;
 pub const WORKFLOW_TRASH_WIDTH: f32 = 32.0;
 pub const WORKFLOW_UNDO_WIDTH: f32 = 32.0;
