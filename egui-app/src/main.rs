@@ -3918,7 +3918,7 @@ impl BandoEgui {
                             Layout::top_down(Align::Min),
                             |area| {
                                 area.set_min_height(list_height);
-                                egui::ScrollArea::vertical()
+                                egui::ScrollArea::both()
                                     .scroll_bar_visibility(
                                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                                     )
@@ -4243,7 +4243,7 @@ impl BandoEgui {
                         Layout::top_down(Align::Min),
                         |list_area|{
                             list_area.set_min_height(list_height);
-                            egui::ScrollArea::vertical()
+                            egui::ScrollArea::both()
                                 .scroll_bar_visibility(
                                     egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                                 )
