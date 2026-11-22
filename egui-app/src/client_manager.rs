@@ -733,8 +733,8 @@ impl ClientManager {
         label_edit(ui,draft,"name","거래처명");
         self.search_tag_editor(ui,draft);
         components::soft_divider(ui);
-        ui.label(typography::section_heading("발송인 정보"));
-        label_edit(ui,draft,"address","거래처 주소");
+        ui.label(typography::section_heading("주소 / 전화번호"));
+        label_edit(ui,draft,"address","주소");
         ui.columns(2,|cols|{
             label_edit(&mut cols[0],draft,"phone","전화번호");
             label_edit(&mut cols[1],draft,"mobile","휴대폰번호");
