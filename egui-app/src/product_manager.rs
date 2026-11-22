@@ -11,7 +11,7 @@ use crate::{
     management_queries::{self, ManagementProductRows},
     latest_job::LatestJob,
     product_excel_ui::ProductExcelUi,
-    product_images::ProductImageCache,
+    product_images::{self,ProductImageCache},
     settings_help, theme, typography,
 };
 use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Pos2, Vec2};
@@ -1370,6 +1370,7 @@ impl ProductManager {
         let mut request_close=false;
         let mut request_save=false;
         let mut request_archive=false;
+        let mut photo_error=None;
         components::modal_backdrop(ctx,"egui-product-detail-backdrop",false);
         components::modal_window(
             if is_new {"상품 등록"} else {"상품 상세 관리"},
@@ -1388,20 +1389,40 @@ impl ProductManager {
                     ))
                     .auto_shrink([false,false])
                     .show(modal,|body|{
-                        // Same cached local/official image source as the
-                        // reception item dialog. No model-name guesses or
-                        // web requests, and HIDDEN wins over any fallback.
+                        // React's existing imageOverride / imageData rules:
+                        // HIDDEN suppresses bundled images, MANUAL uses the
+                        // staged upload, AUTO resolves the saved site ID.
+                        // Both controls stage changes in the same existing
+                        // product-edit draft and require explicit Save.
                         body.horizontal(|media|{
                             self.photos.photo(media,&draft,128.0);
                             media.add_space(theme::SPACE_16);
-                            media.vertical(|detail|{
-                                detail.label(typography::section_heading("상품 정보"));
-                                detail.label(typography::caption(
-                                    if field(&draft,"siteId").is_empty() &&
-                                       field(&draft,"imageData").is_empty(){
-                                        "등록된 대표이미지 없음"
-                                    }else{"등록된 상품 대표이미지"}
-                                ));
+                            media.vertical(|actions|{
+                                actions.label(typography::section_heading("상품 정보"));
+                                actions.add_space(theme::SPACE_8);
+                                if theme::action(
+                                    actions,"이미지 등록",theme::ButtonRole::Standard,
+                                    editable&&!busy
+                                ).clicked(){
+                                    match product_images::choose_and_optimize_photo(){
+                                        Ok(Some(data))=>{
+                                            draft["imageData"]=json!(data);
+                                            draft["imageOverride"]=json!("MANUAL");
+                                            self.photos.clear();
+                                        }
+                                        Ok(None)=>{}
+                                        Err(error)=>photo_error=Some(error),
+                                    }
+                                }
+                                if theme::action(
+                                    actions,"이미지 제거",theme::ButtonRole::Quiet,
+                                    editable&&!busy
+                                ).clicked(){
+                                    draft["imageData"]=Value::Null;
+                                    draft["imageOverride"]=json!("HIDDEN");
+                                    self.photos.clear();
+                                }
+                                actions.label(typography::caption("로컬에 저장된 이미지 사용"));
                             });
                         });
                         body.add_space(theme::SPACE_8);
@@ -1601,6 +1622,7 @@ impl ProductManager {
             });
         self.selected=Some(draft.clone());
         self.detail_prices=prices;
+        if let Some(error)=photo_error{self.error=Some(error);}
         if request_save{
             match Self::product_price_candidate(&draft,&self.detail_prices){
                 Ok(candidate)=>self.start_write(
