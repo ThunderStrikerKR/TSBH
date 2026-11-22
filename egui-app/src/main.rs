@@ -5296,6 +5296,192 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             return;
         }
 
+        // Same display target as the read-only source pane above. The
+        // pending card may point to another order/recipient; do not swap
+        // this projection into the employee's active editable draft.
+        if let Some((draft,recognition,index))=self.visible_pending_other(){
+            let recipients=reception_service::recipients(&recognition);
+            let recipient=recipients.get(index);
+            let preview=draft.pricing_preview.as_ref()
+                .filter(|quote|quote["sourceRaw"].as_str()==Some(draft.raw.as_str()));
+            let mut next_target=None;
+            ui.scope_builder(
+                UiBuilder::new().id_salt("pending-hover-review")
+                    .max_rect(review_rect).layout(Layout::top_down(Align::Min)),
+                |pane|{
+                    pane.set_clip_rect(review_rect);
+                    pane.set_width(review_rect.width());
+                    pane.set_height(review_rect.height());
+                    Self::section(pane,"확인할 내용",review_height,|ui|{
+                        egui::ScrollArea::vertical()
+                            .max_height(components::docked_section_body_height(review_height))
+                            .show(ui,|issues|{
+                                if let Some(rows)=recognition.get("issues")
+                                    .and_then(serde_json::Value::as_array){
+                                    for item in rows{
+                                        if let Some(message)=item.as_str(){
+                                            components::reception_review_status(issues,message);
+                                        }
+                                    }
+                                }
+                            });
+                    });
+                }
+            );
+            ui.scope_builder(
+                UiBuilder::new().id_salt("pending-hover-recipient")
+                    .max_rect(recipient_rect).layout(Layout::top_down(Align::Min)),
+                |pane|{
+                    pane.set_clip_rect(recipient_rect);
+                    pane.set_width(recipient_rect.width());
+                    pane.set_height(recipient_rect.height());
+                    Self::section_with_header(
+                        pane,"수취인별 주문 정보",recipient_height,
+                        |header|{
+                            if recipients.len()>1{
+                                let name=recipient.map(|row|
+                                    reception_service::text(row,"name")).unwrap_or("");
+                                if let Some(next)=components::reception_recipient_navigator(
+                                    header,name,index,recipients.len()){
+                                    next_target=recipients.get(next)
+                                        .and_then(|row|row["id"].as_str())
+                                        .map(|id|workflow_board_ui::PendingTarget{
+                                            order_id:draft.id.clone(),
+                                            recipient_id:Some(id.into())
+                                        });
+                                }
+                            }
+                        },|ui|{
+                            if let Some(row)=recipient{
+                                egui::ScrollArea::vertical()
+                                    .max_height(components::docked_section_body_height(recipient_height))
+                                    .show(ui,|contents|{
+                                        let mut name=reception_service::text(row,"name").to_owned();
+                                        let mut address=reception_service::text(row,"address").to_owned();
+                                        let mut mobile=reception_service::text(row,"mobile").to_owned();
+                                        let mut phone=reception_service::text(row,"phone").to_owned();
+                                        let mut note=reception_service::text(row,"note").to_owned();
+                                        components::reception_recipient_fields(
+                                            contents,&mut name,&mut address,&mut mobile,
+                                            &mut phone,&mut note,[true,false,false,false,false]
+                                        );
+                                    });
+                            }
+                        }
+                    );
+                }
+            );
+            ui.scope_builder(
+                UiBuilder::new().id_salt("pending-hover-goods")
+                    .max_rect(bottom_rect).layout(Layout::top_down(Align::Min)),
+                |pane|{
+                    pane.set_clip_rect(bottom_rect);
+                    pane.set_width(bottom_rect.width());
+                    pane.set_height(bottom_rect.height());
+                    Self::section_with_header(
+                        pane,"품목 및 운임",bottom_rect.height(),
+                        |header|{
+                            components::reception_item_add_action_editable(header,false);
+                        },|ui|{
+                            ui.spacing_mut().item_spacing.y=0.0;
+                            ui.spacing_mut().scroll=theme::management_table_scroll_style();
+                            let available=components::docked_section_body_height(
+                                bottom_rect.height()
+                            ).min(ui.available_height().max(0.0));
+                            ui.allocate_ui_with_layout(
+                                Vec2::new(ui.available_width(),available),
+                                Layout::top_down(Align::Min),
+                                |area|{
+                                    area.set_min_height(available);
+                                    let table_width=area.available_width()
+                                        .max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH);
+                                    egui::ScrollArea::both()
+                                        .id_salt(("pending-hover-products",draft.id.as_str()))
+                                        .max_height(available).auto_shrink([false,false])
+                                        .show(area,|contents|{
+                                            contents.set_width(table_width);
+                                            contents.spacing_mut().item_spacing.y=0.0;
+                                            components::reception_items_header(contents);
+                                            if let Some(row)=recipient{
+                                                if let Some(items)=row["items"].as_array(){
+                                                    for item in items{
+                                                        let item_id=reception_service::text(item,"id");
+                                                        let quantity=item["quantity"].as_i64()
+                                                            .filter(|n|*n>0)
+                                                            .map(|n|format!("{n}개"))
+                                                            .unwrap_or_else(||"—".into());
+                                                        let amount=preview
+                                                            .and_then(|quote|quoted_item_line(quote,item_id))
+                                                            .and_then(|line|line["amount"].as_i64())
+                                                            .map(components::display_won)
+                                                            .unwrap_or_else(||"—".into());
+                                                        components::reception_item_row(
+                                                            contents,
+                                                            &reception_service::item_title(item),
+                                                            &quantity,&amount,[true,false,false]
+                                                        );
+                                                    }
+                                                }
+                                                contents.add_space(theme::SPACE_8);
+                                                let origin=row["dispatchOrigin"].as_str();
+                                                let recipient_id=reception_service::text(row,"id");
+                                                let fee=preview.and_then(|quote|
+                                                    quoted_freight_line(quote,recipient_id,origin)
+                                                ).and_then(|line|line["appliedCharge"].as_i64());
+                                                let collect=row["freightCode"].as_str()
+                                                    .map(|code|code=="020").unwrap_or(false);
+                                                let remote=row["remoteDelivery"]["checked"].as_bool();
+                                                components::reception_freight_row(
+                                                    contents,"운임",
+                                                    if collect{None}else{fee},
+                                                    Some(collect),remote,
+                                                    origin==Some("FACTORY")
+                                                );
+                                                contents.add_space(theme::SPACE_8);
+                                                components::reception_item_origin_action_editable(
+                                                    contents,origin,false
+                                                );
+                                            }
+                                        });
+                                }
+                            );
+                        }
+                    );
+                }
+            );
+            ui.scope_builder(
+                UiBuilder::new().id_salt("pending-hover-total")
+                    .max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
+                |pane|{
+                    pane.set_clip_rect(summary_rect);
+                    pane.set_width(summary_rect.width());
+                    pane.set_height(summary_rect.height());
+                    Self::section_with_header(
+                        pane,"발주서 합계",summary_rect.height(),
+                        |header|{
+                            theme::action(header,"부가세 설정",ButtonRole::Standard,false);
+                        },|body|{
+                            let inclusive=recipients.iter().filter(|r|
+                                r["vatOverride"].as_bool()==Some(true)).count();
+                            let vat=if inclusive==recipients.len() && !recipients.is_empty(){
+                                "부가세 포함"
+                            }else if inclusive>0{"부가세 일부 포함"}
+                            else{"부가세 별도"};
+                            components::reception_total_footer(
+                                body,preview.and_then(|quote|quote["total"].as_i64()),
+                                Some(recipients.len()),vat,""
+                            );
+                        }
+                    );
+                }
+            );
+            if let Some(target)=next_target{
+                self.workflow_ui.stop_preview();
+                self.workflow_ui.selection=None;
+                self.focus_pending_recipient(&target,ui.ctx());
+            }
+            return;
+        }
         let mut client_choice: Option<String> = None;
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
         let mut sync_clicked=false;
