@@ -72,11 +72,11 @@ pub const WORKFLOW_TITLE_HEIGHT: f32 = 38.0;
 pub const WORKFLOW_BOTTOM_HEIGHT: f32 = 43.0;
 pub const WORKFLOW_BAND_DIVIDER_HEIGHT: f32 = 1.0;
 pub const WORKFLOW_CARD_SLOT_GAP: f32 = SPACE_4;
-pub const WORKFLOW_SIGNAL_WIDTH: f32 = 91.0;
+pub const WORKFLOW_SIGNAL_WIDTH: f32 = 104.0;
 pub const WORKFLOW_SIGNAL_BLOCK_HEIGHT: f32 = 30.0;
 pub const WORKFLOW_SIGNAL_BLOCK_BG: Color32 = INPUT;
 pub const WORKFLOW_SIGNAL_BLOCK_BORDER: Color32 = DIVIDER;
-pub const WORKFLOW_SIGNAL_SIZE: f32 = 19.0;
+pub const WORKFLOW_SIGNAL_SIZE: f32 = 21.0;
 pub const WORKFLOW_SIGNAL_GAP: f32 = 3.0;
 pub const WORKFLOW_SIGNAL_DONE: Color32 = Color32::from_rgb(73, 166, 106);
 pub const WORKFLOW_SIGNAL_DONE_BORDER: Color32 = Color32::from_rgb(105, 198, 136);
@@ -97,14 +97,21 @@ pub const WORKFLOW_CHIP_RADIUS: u8 = 4;
 pub const WORKFLOW_CHIP_HEIGHT: f32 = 24.0;
 pub const WORKFLOW_CHIP_PAD_X: i8 = 4;
 pub const WORKFLOW_CHIP_PAD_Y: i8 = 2;
-// At the reference 328pt outer card, inner width = 328-2border-18 inset =
-// 308pt. Upper: 12 +119(title)+91 +40 +30 +4*4 =308.
-// Lower: 40 +98(price)+126 +32 +3*4 =308.
-pub const WORKFLOW_CONTROL_WIDTH: f32 = 126.0;
-pub const WORKFLOW_MANAGE_WIDTH: f32 = 40.0;
-pub const WORKFLOW_TRASH_WIDTH: f32 = 30.0;
+// At the 1920×1080 reference, the right pane card is ~394pt wide.
+// Inner width = 394 - 2 border - 18 inset = 374pt.
+// Upper: 12 toggle + 166 title + 104 status + 44 manage + 32 delete
+//        + 4×4 gap = 374.
+// Lower: 44 shipping + 134 price + 152 stage + 32 undo
+//        + 3×4 gap = 374.
+// Crucially, both trailing groups occupy 188pt: 104+4+44+4+32 = 152+4+32.
+// The upper signal and lower one-touch share the SAME left boundary.
+// For smaller cards, ONLY the title/price slots shrink; trailing controls
+// remain aligned. Data never changes other slots' position.
+pub const WORKFLOW_CONTROL_WIDTH: f32 = 152.0;
+pub const WORKFLOW_MANAGE_WIDTH: f32 = 44.0;
+pub const WORKFLOW_TRASH_WIDTH: f32 = 32.0;
 pub const WORKFLOW_UNDO_WIDTH: f32 = 32.0;
-pub const WORKFLOW_SHIPPING_WIDTH: f32 = 40.0;
+pub const WORKFLOW_SHIPPING_WIDTH: f32 = 44.0;
 pub const WORKFLOW_AUX_CONTROL_HEIGHT: f32 = 30.0;
 pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = 30.0;
 pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
