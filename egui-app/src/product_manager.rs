@@ -1567,33 +1567,16 @@ impl ProductManager {
                 (work_area.width()-2.0*theme::MODAL_VIEWPORT_GUTTER).max(1.0)
             ))
             .show(ctx,|modal|{
-                components::modal_master_controlled_spacing(modal);
                 let dialog_title=if is_new{"상품 등록"}else{"상품 상세 관리"};
-                if components::modal_header_with_workspace_gap(
-                    modal,dialog_title,"취소",!busy
-                ){request_close=true;}
-                egui::ScrollArea::vertical()
-                    .id_salt("egui-product-detail-content")
-                    .max_height(components::modal_editor_body_max_height(
-                        work_area.height()
-                    ))
-                    // Large empty space below the image is not content.
-                    // Shrink naturally while keeping a bounded, local scroll
-                    // region for short work areas / expanded advanced details.
-                    .auto_shrink([false,true])
-                    .show(modal,|scroller|{
-                        // The scrollbar belongs to the scroll surface;
-                        // use the master 16pt inset INSIDE it so fields
-                        // never touch the rail or panel's right edge.
-                        egui::Frame::NONE
-                            .inner_margin(egui::Margin::symmetric(
-                                theme::MODAL_MASTER_CONTENT_INSET as i8,0
-                            ))
-                            .show(scroller,|body|{
-                        // Reuse the APPROVED modal-section frame for the
-                        // three independent roles. Prior raw labels on the
-                        // modal background made them visually indistinct.
-                        components::modal_master_controlled_spacing(body);
+                // One shared owner allocates the true header, scrolling
+                // body, and footer. Every boundary can now be measured.
+                let (closed,_,geometry)=components::modal_editor_workspace(
+                    modal,dialog_title,"취소",!busy,|workspace|{
+                        workspace.body(
+                            components::modal_editor_body_max_height(
+                                work_area.height()
+                            ),|body|{
+                        let mut measured=components::ModalEditorBodyGeometry::default();
                         let content_width=body.available_width().max(1.0);
                         if let Some((overview_width,price_width,image_width))=
                             Self::detail_columns(content_width)
@@ -1607,7 +1590,7 @@ impl ProductManager {
                                     theme::MODAL_MASTER_WORKSPACE_GAP;
                                 top.vertical(|media|{
                                     media.set_width(image_width);
-                                    components::modal_section(
+                                    let section=components::modal_section_measured(
                                         media,"상품 이미지",|photos|{
                                             photos.set_min_height(
                                                 Self::detail_section_body_height()
@@ -1618,10 +1601,11 @@ impl ProductManager {
                                             );
                                         }
                                     );
+                                    measured.cards.push(section.response.rect);
                                 });
                                 top.vertical(|overview|{
                                     overview.set_width(overview_width);
-                                    components::modal_section(
+                                    let section=components::modal_section_measured(
                                         overview,"상품 개요",|fields|{
                                             fields.set_min_height(
                                                 Self::detail_section_body_height()
@@ -1632,10 +1616,11 @@ impl ProductManager {
                                             );
                                         }
                                     );
+                                    measured.cards.push(section.response.rect);
                                 });
                                 top.vertical(|prices_ui|{
                                     prices_ui.set_width(price_width);
-                                    components::modal_section(
+                                    let section=components::modal_section_measured(
                                         prices_ui,"판매 · 가격",|fields|{
                                             fields.set_min_height(
                                                 Self::detail_section_body_height()
@@ -1646,13 +1631,14 @@ impl ProductManager {
                                             );
                                         }
                                     );
+                                    measured.cards.push(section.response.rect);
                                 });
                             });
                         }else{
                             // Preserve the same order when the Kakao-safe
                             // workspace requires vertical stacking.
                             body.vertical(|stack|{
-                                components::modal_section(
+                                let section=components::modal_section_measured(
                                     stack,"상품 이미지",|photos|{
                                         self.detail_image_column(
                                             photos,&mut draft,editable,busy,
@@ -1660,8 +1646,9 @@ impl ProductManager {
                                         );
                                     }
                                 );
+                                measured.cards.push(section.response.rect);
                                 stack.add_space(theme::SPACE_16);
-                                components::modal_section(
+                                let section=components::modal_section_measured(
                                     stack,"상품 개요",|fields|{
                                         Self::detail_overview_column(
                                             fields,&mut draft,&brands,&categories,
@@ -1669,20 +1656,24 @@ impl ProductManager {
                                         );
                                     }
                                 );
+                                measured.cards.push(section.response.rect);
                                 stack.add_space(theme::SPACE_16);
-                                components::modal_section(
+                                let section=components::modal_section_measured(
                                     stack,"판매 · 가격",|fields|{
                                         Self::detail_price_column(
                                             fields,&mut draft,&mut prices,editable,busy
                                         );
                                     }
                                 );
+                                measured.cards.push(section.response.rect);
                             });
                         }
                         // A single shared structural separator reserves
                         // exactly 16pt on both sides of its divider.
-                        components::modal_master_spaced_divider(body);
-                        egui::CollapsingHeader::new(
+                        measured.divider=Some(
+                            components::modal_master_spaced_divider(body)
+                        );
+                        let advanced=egui::CollapsingHeader::new(
                             "고급 정보"
                         )
                             .id_salt("product-detail-advanced")
@@ -1760,13 +1751,10 @@ impl ProductManager {
                                     }
                                 }
                             });
-                        // The footer draws its own rule. Its preceding
-                        // gap uses the SAME 16pt structural master.
-                        body.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
+                        measured.advanced_header=Some(advanced.header_response.rect);
+                        ((),measured)
                         });
-                    });
-                components::modal_action_row_split(
-                    modal,
+                        workspace.footer(
                     |left|{
                         if !is_new && theme::action(
                             left,"상품 삭제",theme::ButtonRole::Danger,
@@ -1792,6 +1780,12 @@ impl ProductManager {
                         ).clicked(){request_save=true;}
                     }
                 );
+                    }
+                );
+                request_close=closed;
+                // The geometry is based on this frame's allocated egui Rects,
+                // and is consumed by the headless integration tests.
+                let _measured_geometry=geometry;
             });
         self.selected=Some(draft.clone());
         self.detail_prices=prices;
