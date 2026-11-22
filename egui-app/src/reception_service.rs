@@ -119,16 +119,79 @@ pub fn analyze_raw(
 }
 
 
+/// Resolve the checked state on the complete recipient, not just the
+/// address. The native engine owns auto detection, manual override and
+/// address-change invalidation; the UI never guesses the checkbox value.
+pub fn remote_decision(
+    gateway:&dyn BandoGateway,recipient:&Value
+)->Result<Value,String>{
+    gateway.execute(ReadOperation::ResolveRemoteDeliveryArea,json!({
+        "recipient":recipient
+    }))
+}
+
+/// Read-only, synchronous helper used ONLY inside existing background workers
+/// after a manual model has replaced the initial recognition projection.
+pub fn refresh_remote_references(
+    gateway:&dyn BandoGateway,analysis:&mut ReceptionAnalysis
+){
+    let recipients=recipients(&analysis.recognition).to_vec();
+    for (index,recipient) in recipients.iter().enumerate(){
+        let result=if text(recipient,"address").trim().is_empty(){
+            Ok(None)
+        }else{
+            remote_decision(gateway,recipient).map(Some)
+        };
+        let entry=if let Some(reference)=analysis.reference.get_mut(index){
+            reference
+        }else{
+            analysis.reference.push(RecipientReference{
+                remote:None,remote_error:None,item_prices:Vec::new()
+            });
+            analysis.reference.last_mut().expect("pushed recipient reference")
+        };
+        match result{
+            Ok(value)=>{entry.remote=value;entry.remote_error=None;},
+            Err(error)=>{entry.remote=None;entry.remote_error=Some(error);}
+        }
+    }
+    analysis.reference.truncate(recipients.len());
+}
+
+/// Display wording only; status, match path, checked state and reason are
+/// always those returned by the Rust remote-area engine.
+pub fn remote_delivery_notice(decision:&Value)->Option<String>{
+    let status=decision.get("status").and_then(Value::as_str).unwrap_or("unknown");
+    let checked=decision.get("checked").and_then(Value::as_bool).unwrap_or(false);
+    let path=decision.get("matchedPath").and_then(Value::as_str)
+        .unwrap_or("주소 기준 미확정");
+    let reason=decision.get("reason").and_then(Value::as_str).unwrap_or("");
+    let evidence=if reason.is_empty(){path.to_owned()}
+        else{format!("{path} · {reason}")};
+    match status{
+        "auto"=>Some(if checked{
+            format!("도서/산간 자동 판정: {evidence} · 운임 2배 적용")
+        }else{
+            format!("도서/산간 판정: {evidence} · 수동으로 적용 해제")
+        }),
+        "review"=>Some(if checked{
+            format!("도서/산간 확인 필요: {evidence} · 수동 적용으로 운임 2배")
+        }else{
+            format!("도서/산간 확인 필요: {evidence} · 확인 후 체크")
+        }),
+        _ if checked=>Some("도서/산간 수동 적용 · 운임 2배 적용".to_owned()),
+        _=>None,
+    }
+}
+
 fn recipient_reference(gateway: &dyn BandoGateway, recipient: &Value, state: &Value) -> RecipientReference {
     let address = text(recipient, "address");
     let (remote, remote_error) = if address.trim().is_empty() {
-        (None, None)
-    } else {
-        match gateway.execute(ReadOperation::ResolveRemoteDeliveryArea, json!({
-            "recipient":recipient,
-        })) {
-            Ok(result) => (Some(result), None),
-            Err(error) => (None, Some(error)),
+        (None,None)
+    }else{
+        match remote_decision(gateway,recipient){
+            Ok(result)=>(Some(result),None),
+            Err(error)=>(None,Some(error))
         }
     };
 
@@ -209,4 +272,29 @@ pub fn display_won(amount: i64) -> String {
         output.push(ch);
     }
     format!("{output}원")
+}
+
+#[cfg(test)]
+mod remote_notice_tests{
+    use super::*;
+    #[test]
+    fn render_auto_checked_and_manual_override_without_ui_classification(){
+        let detection=json!({"status":"auto","checked":true,
+            "matchedPath":"제주특별자치도",
+            "reason":"제주특별자치도 전역: 항공·도서 권역"});
+        let checked=remote_delivery_notice(&detection).unwrap();
+        assert!(checked.contains("자동 판정"));
+        assert!(checked.contains("제주특별자치도"));
+        assert!(checked.contains("운임 2배"));
+        let mut override_detection=detection;
+        override_detection["checked"]=json!(false);
+        let unchecked=remote_delivery_notice(&override_detection).unwrap();
+        assert!(unchecked.contains("적용 해제"));
+        let review=json!({"status":"review","checked":false,
+            "matchedPath":"군산시 옥도면 신시도리",
+            "reason":"연륙교 연결 지역"});
+        assert!(remote_delivery_notice(&review).unwrap().contains("확인 필요"));
+        let normal=json!({"status":"normal","checked":false});
+        assert!(remote_delivery_notice(&normal).is_none());
+    }
 }
