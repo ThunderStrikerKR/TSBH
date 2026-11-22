@@ -256,7 +256,51 @@ struct PendingInlineChange {
     raw:String,
     target:InlineTarget,
     editor:InlineReceptionEditor,
+    /// Captured from the SAME click that blurs the previous field.
+    /// Never discard this intent merely because native saving is async.
+    next:Option<InlineTarget>,
     receiver:Receiver<Result<manual_workspace::Event,String>>,
+}
+
+/// Resolve the value that is CURRENT after the preceding native edit,
+/// rather than copying a stale value captured before it was committed.
+fn current_inline_value(
+    recognition:&serde_json::Value,
+    quote:Option<&serde_json::Value>,
+    target:&InlineTarget
+)->Option<String>{
+    let recipient=recognition.get("recipients")?.as_array()?.iter().find(|row|
+        row["id"].as_str()==Some(target.recipient_id.as_str())
+    )?;
+    if let Some(item_id)=target.item_id.as_deref(){
+        let item=recipient.get("items")?.as_array()?.iter().find(|row|
+            row["id"].as_str()==Some(item_id)
+        )?;
+        return match target.field {
+            "product"=>Some(reception_service::item_title(item)),
+            "quantity"=>Some(item["quantity"].as_i64().map(|v|v.to_string())
+                .unwrap_or_default()),
+            "unitPrice"=>Some(item.get("manualUnitPrice")
+                .or_else(||item.get("unitPrice"))
+                .and_then(serde_json::Value::as_i64)
+                .or_else(||quote.and_then(|value|value["linePrices"].as_array())
+                    .and_then(|lines|lines.iter().find(|line|
+                        line["itemId"].as_str()==Some(item_id)
+                    )).and_then(|line|line["unitPrice"].as_i64()))
+                .map(|v|v.to_string()).unwrap_or_default()),
+            _=>None
+        };
+    }
+    if target.field=="shippingCharge"{
+        let origin=recipient["dispatchOrigin"].as_str();
+        return Some(quote.and_then(|value|value["freightLines"].as_array())
+            .and_then(|lines|lines.iter().find(|line|
+                line["recipientId"].as_str()==Some(target.recipient_id.as_str())
+                && line["origin"].as_str()==origin
+            )).and_then(|line|line["appliedCharge"].as_i64())
+            .map(|v|v.to_string()).unwrap_or_default());
+    }
+    recipient[target.field].as_str().map(str::to_owned)
 }
 
 struct PendingWorkingSync {
@@ -1366,6 +1410,29 @@ impl BandoEgui {
         });
     }
 
+    /// One click on B commits dirty A, retains B as the next target and
+    /// automatically focuses B when Rust returns. Clean A switches immediately.
+    fn switch_inline_edit(
+        &mut self,target:InlineTarget,original:String,ctx:&egui::Context
+    ){
+        if self.inline_change.is_some(){return;}
+        if self.inline_editor.as_ref().is_some_and(|editor|
+            editor.target==target
+        ){return;}
+        if self.inline_editor.as_ref().is_some_and(|editor|
+            editor.text!=editor.original
+        ){
+            self.submit_inline_edit(ctx);
+            if let Some(pending)=self.inline_change.as_mut(){
+                pending.next=Some(target);
+            }
+            return;
+        }
+        self.inline_editor=None;
+        self.begin_inline_edit(target,original);
+        ctx.request_repaint();
+    }
+
     fn submit_inline_edit(&mut self,ctx:&egui::Context){
         if self.inline_change.is_some(){return;}
         let Some(editor)=self.inline_editor.take() else{return};
@@ -1433,7 +1500,7 @@ impl BandoEgui {
         let (tx,receiver)=mpsc::channel();
         let gateway=Arc::clone(&self.gateway);
         self.inline_change=Some(PendingInlineChange{
-            order_id,raw,target:editor.target.clone(),editor,receiver
+            order_id,raw,target:editor.target.clone(),editor,next:None,receiver
         });
         let context=ctx.clone();
         std::thread::spawn(move||{
@@ -1473,6 +1540,32 @@ impl BandoEgui {
             Ok(event)=>{
                 self.source_save_error=None;
                 self.apply_manual_event(event,ctx);
+                // The prior cell and source must commit successfully before
+                // opening the destination. Use the new Rust projection so a
+                // quantity edit cannot leave a stale price in the next input.
+                if self.source_save_error.is_none() &&
+                    self.page==Page::Reception
+                {
+                    if let Some(target)=pending.next {
+                        let displayed_recipient=self.analysis.as_ref()
+                            .and_then(|analysis|
+                                reception_service::recipients(analysis)
+                                    .get(self.selected_recipient))
+                            .and_then(|row|row["id"].as_str());
+                        if displayed_recipient==Some(target.recipient_id.as_str()){
+                            let refreshed=self.analysis.as_ref().and_then(|analysis|{
+                                let quote=self.active_id.as_deref()
+                                    .and_then(|id|self.drafts.iter()
+                                        .find(|row|row.id==id))
+                                    .and_then(|row|row.pricing_preview.as_ref());
+                                current_inline_value(&analysis.recognition,quote,&target)
+                            });
+                            if let Some(value)=refreshed{
+                                self.begin_inline_edit(target,value);
+                            }
+                        }
+                    }
+                }
             },
             Err(error)=>{
                 self.source_save_error=Some(format!("셀 수정 실패: {error}"));
@@ -5174,10 +5267,13 @@ impl BandoEgui {
         self.link_hover.update(linked,ui.ctx());
         if inline_cancel{
             self.inline_editor=None;
+        }else if let Some((target,text))=inline_open {
+            // B's click and A's blur happen on the same egui frame.
+            // Click intent must win over the A blur, otherwise B needs
+            // a second click after the pending native save.
+            self.switch_inline_edit(target,text,ui.ctx());
         }else if inline_commit{
             self.submit_inline_edit(ui.ctx());
-        }else if let Some((target,text))=inline_open {
-            self.begin_inline_edit(target,text);
         }else if let Some((target,value))=inline_command{
             if self.inline_editor.is_none() && self.inline_change.is_none(){
                 self.inline_editor=Some(InlineReceptionEditor{
@@ -6180,6 +6276,67 @@ impl eframe::App for BandoEgui {
             eprintln!("[BANDO HUB] slow frame: screen={screen} elapsed_ms={}",
                 frame_started.elapsed().as_millis());
         }
+    }
+}
+
+
+#[cfg(test)]
+mod inline_single_click_handoff_tests {
+    use super::*;
+
+    fn target(field:&'static str)->InlineTarget{
+        InlineTarget{recipient_id:"r1".into(),item_id:None,field}
+    }
+
+    #[test]
+    fn next_cell_is_resolved_from_committed_recipient_state(){
+        let latest=serde_json::json!({"recipients":[{
+            "id":"r1","name":"수정된 이름","address":"서울시 중구",
+            "mobile":"010-1111-2222","phone":"02-333-4444",
+            "note":"직접 수정됨"
+        }]});
+        for (field,expected) in [
+            ("name","수정된 이름"),("address","서울시 중구"),
+            ("mobile","010-1111-2222"),("phone","02-333-4444"),
+            ("note","직접 수정됨")
+        ]{
+            assert_eq!(
+                current_inline_value(&latest,None,&target(field)).as_deref(),
+                Some(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn next_cell_price_comes_from_updated_native_quote(){
+        let latest=serde_json::json!({"recipients":[{
+            "id":"r1","dispatchOrigin":"FACTORY",
+            "items":[{"id":"item-1","name":"709","quantity":4}]
+        }]});
+        let quote=serde_json::json!({
+            "linePrices":[{"itemId":"item-1","unitPrice":12000}],
+            "freightLines":[{"recipientId":"r1","origin":"FACTORY",
+                "appliedCharge":6000}]
+        });
+        let quantity=InlineTarget{recipient_id:"r1".into(),
+            item_id:Some("item-1".into()),field:"quantity"};
+        let price=InlineTarget{field:"unitPrice",..quantity.clone()};
+        assert_eq!(current_inline_value(&latest,Some(&quote),&quantity),
+            Some("4".into()));
+        assert_eq!(current_inline_value(&latest,Some(&quote),&price),
+            Some("12000".into()));
+        assert_eq!(current_inline_value(
+            &latest,Some(&quote),&target("shippingCharge")
+        ),Some("6000".into()));
+    }
+
+    #[test]
+    fn removed_recipient_or_item_is_not_opened_after_save(){
+        let latest=serde_json::json!({"recipients":[{"id":"r1","items":[]}]});
+        assert!(current_inline_value(&latest,None,&target("name")).is_none());
+        let item=InlineTarget{recipient_id:"r1".into(),
+            item_id:Some("removed".into()),field:"quantity"};
+        assert!(current_inline_value(&latest,None,&item).is_none());
     }
 }
 
