@@ -290,8 +290,44 @@ impl ClientManager {
         // scrollbar track as the approved Freight Assignment screen.
         ui.spacing_mut().scroll=theme::management_scroll_style();
         components::management_page_title_top_gap(ui);
+        // The four actual client tiers fill the same four KPI slots as
+        // Freight > Shipping Group Assignment. These counts intentionally
+        // include every non-deleted client, not just filtered search rows.
+        let mut tier_counts=[0usize;4];
+        let mut filtered_count=0usize;
+        for client in self.clients().iter()
+            .filter(|client|field(client,"deletedAt").is_empty()){
+            match field(client,"tier"){
+                "wholesale"=>tier_counts[0]+=1,
+                "semi"=>tier_counts[1]+=1,
+                "retail"=>tier_counts[2]+=1,
+                "special"=>tier_counts[3]+=1,
+                _=>{},
+            }
+            if self.search.trim().is_empty() ||
+                (!self.searching && self.matches.iter()
+                    .any(|id|id==field(client,"id"))){
+                filtered_count+=1;
+            }
+        }
+        let list_status=if !self.ready{
+            "불러오는 중".to_owned()
+        }else if self.searching{
+            "검색 중".to_owned()
+        }else{
+            format!("{}개",filtered_count)
+        };
         components::management_top_content(ui,|top|{
-            top.label(typography::page_heading("거래처 관리"));
+            top.horizontal(|heading|{
+                heading.label(typography::page_heading("거래처 관리"));
+                if !self.show_messages {
+                    heading.with_layout(
+                        Layout::right_to_left(Align::Center),|right|{
+                            right.label(typography::caption(&list_status));
+                        }
+                    );
+                }
+            });
         });
         ui.add_space(theme::SPACE_8);
         // Keep the existing second tab disabled until its native workflow
@@ -321,13 +357,31 @@ impl ClientManager {
                 }
             }
         }
-        ui.add_space(theme::SPACE_16);
-        if self.show_messages{
+        if self.show_messages {
+            // The automatic-message editor has its own nested tabs, not
+            // four client-tier KPIs. Preserve that established workflow.
+            ui.add_space(theme::SPACE_16);
             if let Some(manager)=self.messages.as_mut(){
                 manager.show(ui,gateway,page_origin_y);
             }
             return;
         }
+        // Match Freight's 12pt tabs-to-KPI and 16pt KPI-to-card rhythm.
+        ui.add_space(theme::SPACE_12);
+        components::management_top_content(ui,|top|{
+            top.horizontal_wrapped(|strip|{
+                strip.spacing_mut().item_spacing=egui::vec2(
+                    theme::SPACE_8,theme::SPACE_8
+                );
+                for (label,count) in [
+                    ("도매",tier_counts[0]),("반도매",tier_counts[1]),
+                    ("소매",tier_counts[2]),("특수",tier_counts[3])
+                ]{
+                    components::management_summary_card(strip,label,count);
+                }
+            });
+        });
+        ui.add_space(theme::SPACE_16);
 
         // A filtered copy keeps Rust's search IDs authoritative.
         // Sorting changes display order only, never the backing master.
@@ -355,96 +409,98 @@ impl ClientManager {
             });
         }
 
-        // A single outlined section owns its heading, a stable search/
-        // action toolbar, a permanently visible header and its own rows.
+        // Same FULL master table frame as Freight Assignment: one 16pt
+        // inset on every edge, one 36pt toolbar, one 21pt transition and
+        // one fixed 36pt header. No extra '등록 거래처' title row/card.
         components::align_management_primary_card(ui,page_origin_y);
-        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::FRAME_STROKE_WIDTH);
-        theme::management_list_frame().show(ui,|section|{
+        let card_min_height=
+            components::management_master_table_card_min_inner_height(ui);
+        theme::management_master_table_frame().show(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
             section.spacing_mut().item_spacing.y=0.0;
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(
-                    theme::SPACE_12 as i8,theme::SPACE_8 as i8
-                ))
-                .show(section,|tools|{
-                    tools.horizontal(|heading|{
-                        heading.label(typography::section_heading("등록 거래처"));
-                        heading.with_layout(
-                            Layout::right_to_left(Align::Center),|right|{
-                                let status=if !self.ready{
-                                    "불러오는 중".to_owned()
-                                }else if self.searching{
-                                    "검색 중".to_owned()
-                                }else{
-                                    format!("{}개",rows.len())
-                                };
-                                right.label(typography::caption(&status));
-                            }
-                        );
-                    });
-                    tools.add_space(theme::SPACE_8);
-                    let toolbar_width=tools.available_width().max(1.0);
-                    if toolbar_width<theme::MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH {
-                        // On narrow Kakao-split layouts only the toolbar
-                        // stacks; columns and table header never wrap.
-                        tools.horizontal(|search|{
-                            self.list_search(search,Arc::clone(&gateway));
-                        });
-                        tools.add_space(theme::SPACE_8);
-                        self.list_toolbar_actions(tools);
-                    }else{
-                        let (toolbar_rect,_)=tools.allocate_exact_size(
-                            egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
-                            egui::Sense::hover()
-                        );
-                        let actions_width=theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH;
-                        let search_rect=egui::Rect::from_min_size(
-                            toolbar_rect.min,
-                            egui::vec2(
-                                toolbar_width-actions_width-theme::SPACE_16,
-                                toolbar_rect.height()
-                            )
-                        );
-                        // Apply CONFLICT-001=C to the client-list action
-                        // slot too: the last control ends at the toolbar's
-                        // card-inner right edge, without a table rail offset.
-                        let action_rect=components::management_toolbar_trailing_rect(
-                            toolbar_rect,actions_width,0.0,toolbar_rect.height()
-                        );
-                        tools.scope_builder(
-                            egui::UiBuilder::new()
-                                .id_salt("client-management-search-slot")
-                                .max_rect(search_rect)
-                                .layout(Layout::left_to_right(Align::Center)),
-                            |search|{
-                                search.set_clip_rect(search_rect);
-                                search.set_width(search_rect.width());
-                                self.list_search(search,Arc::clone(&gateway));
-                            }
-                        );
-                        tools.scope_builder(
-                            egui::UiBuilder::new()
-                                .id_salt("client-management-actions-slot")
-                                .max_rect(action_rect)
-                                .layout(Layout::left_to_right(Align::Center)),
-                            |actions|{
-                                actions.set_clip_rect(action_rect);
-                                actions.set_width(action_rect.width());
-                                self.list_toolbar_actions(actions);
-                            }
-                        );
+            let toolbar_width=section.available_width().max(1.0);
+            if toolbar_width<theme::MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH {
+                // Only genuinely narrow panes stack their SEARCH and
+                // actions. The table and header stay on one fixed grid.
+                let (search_rect,_)=section.allocate_exact_size(
+                    egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
+                    egui::Sense::hover()
+                );
+                section.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("client-master-search-narrow")
+                        .max_rect(search_rect)
+                        .layout(Layout::left_to_right(Align::Center)),
+                    |search|{
+                        search.set_clip_rect(search_rect);
+                        search.set_width(search_rect.width());
+                        self.list_search(search,Arc::clone(&gateway));
                     }
-                });
-            // CONFLICT-005: the toolbar Frame already contributes 8pt
-            // bottom inset. Add only 8pt + 1pt rule + 4pt below, so the
-            // actual toolbar-to-header transition totals exactly 21pt.
-            // Keep this client's 900pt table minimum and 36pt header.
-            let layout=components::management_sticky_table_header_after_inset(
-                section,theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH,theme::SPACE_8
+                );
+                section.add_space(theme::SPACE_8);
+                let (actions_rect,_)=section.allocate_exact_size(
+                    egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
+                    egui::Sense::hover()
+                );
+                section.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("client-master-actions-narrow")
+                        .max_rect(actions_rect)
+                        .layout(Layout::left_to_right(Align::Center)),
+                    |actions|{
+                        actions.set_clip_rect(actions_rect);
+                        actions.set_width(actions_rect.width());
+                        self.list_toolbar_actions(actions);
+                    }
+                );
+            }else{
+                // Freight's separate absolute slots keep the trailing
+                // action at the card's inner edge, NOT the scrollbar edge.
+                let (toolbar_rect,_)=section.allocate_exact_size(
+                    egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
+                    egui::Sense::hover()
+                );
+                let actions_width=theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH
+                    .min(toolbar_rect.width());
+                let left_width=(toolbar_rect.width()-actions_width
+                    -theme::SPACE_16).max(1.0);
+                let search_rect=egui::Rect::from_min_size(
+                    toolbar_rect.min,
+                    egui::vec2(left_width,toolbar_rect.height())
+                );
+                let action_rect=components::management_toolbar_trailing_rect(
+                    toolbar_rect,actions_width,0.0,toolbar_rect.height()
+                );
+                section.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("client-master-search-toolbar")
+                        .max_rect(search_rect)
+                        .layout(Layout::left_to_right(Align::Center)),
+                    |search|{
+                        search.set_clip_rect(search_rect);
+                        search.set_width(search_rect.width());
+                        self.list_search(search,Arc::clone(&gateway));
+                    }
+                );
+                section.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("client-master-actions-toolbar")
+                        .max_rect(action_rect)
+                        .layout(Layout::left_to_right(Align::Center)),
+                    |actions|{
+                        actions.set_clip_rect(action_rect);
+                        actions.set_width(action_rect.width());
+                        self.list_toolbar_actions(actions);
+                    }
+                );
+            }
+            let layout=components::management_sticky_table_header(
+                section,theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH
             );
             let table_width=layout.table_width;
             let header_rect=layout.header_rect;
+            let header_content_rect=layout.header_content_rect;
             // This is the only large list in its card; no footer follows.
             // Measure after the title, toolbar and pinned 36pt header.
             let scroll_max_height=components::management_single_list_scroll_height(
@@ -556,7 +612,8 @@ impl ClientManager {
                 header_rect.left()-scroll_output.state.offset.x
             );
             if let Some(column)=components::management_client_header(
-                section,header_rect,header_left,table_width,self.sort
+                section,header_rect,header_content_rect,
+                header_left,table_width,self.sort
             ){
                 self.sort=match self.sort{
                     Some((old,false)) if old==column=>Some((column,true)),
