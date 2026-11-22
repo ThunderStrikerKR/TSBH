@@ -6899,14 +6899,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
     /// A pending receipt is only an isolated unconfirmed workspace record.
     /// Never pretend this deletes an already persisted operational order.
-    fn delete_pending_reception(&mut self,id:&str,ctx:&egui::Context){
-        let Some(row)=self.drafts.iter().find(|row|row.id==id) else{return;};
+    fn delete_pending_reception(&mut self,id:&str,ctx:&egui::Context)->bool{
+        let Some(row)=self.drafts.iter().find(|row|row.id==id) else{return false;};
         if row.working_synced || row.working_version.is_some(){
             floating_notice::publish(
                 ctx,"reception.workflow",floating_notice::Tone::Error,
                 "운영 작업본으로 저장한 주문은 주문 변경·취소 절차에서 처리하세요."
             );
-            return;
+            return false;
         }
         if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
             ReceptionJob::DeleteReception,false
@@ -6915,7 +6915,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 ctx,"reception.workflow",floating_notice::Tone::Error,
                 format!("{} 중에는 발주서를 삭제할 수 없습니다.",blocker.label())
             );
-            return;
+            return false;
         }
         // The approved delete owns this modal. Release it before selecting
         // the next receipt, otherwise navigation would conflict with the
@@ -6947,6 +6947,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             ctx,"reception.workflow",floating_notice::Tone::Success,
             "미확정 발주서를 삭제했습니다."
         );
+        true
     }
 
     /// Use the common centered/dimmed popup for every card action. The
@@ -7173,8 +7174,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         self.workflow_manage_target=target;
         self.workflow_manage_ack=ack;
         if let Some(id)=delete_pending{
-            self.delete_pending_reception(&id,ctx);
-            close=true;
+            // A conflict is not a dismissal: keep the employee's
+            // confirmation context available for a retry.
+            close=self.delete_pending_reception(&id,ctx);
         }
         if let Some((action,id,shipment,target,ack))=command{
             self.start_workflow_action(
@@ -8449,6 +8451,21 @@ mod reception_workflow_admission_integration_tests {
         app.delete_pending_reception("draft-1",&ctx);
         assert_eq!(app.drafts.len(),2);
         assert!(app.vat_change.is_some());
+    }
+
+    #[test]
+    fn conflicting_delete_leaves_confirmation_open_for_retry(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        vat_worker(&mut app);
+        app.workflow_dialog=Some(WorkflowDialog::DeletePending("draft-1".into()));
+        assert!(!app.delete_pending_reception("draft-1",&ctx));
+        assert!(app.workflow_dialog.is_some());
+        assert_eq!(app.drafts.len(),2);
+        app.vat_change=None;
+        assert!(app.delete_pending_reception("draft-1",&ctx));
+        assert!(app.workflow_dialog.is_none());
+        assert_eq!(app.drafts.len(),1);
     }
 
     #[test]
