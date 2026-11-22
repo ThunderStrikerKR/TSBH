@@ -632,8 +632,10 @@ pub const MANUAL_TABLE_NAME_COL: f32 = 150.0;
 pub const MANUAL_TABLE_ADDRESS_COL: f32 = 360.0;
 pub const MANUAL_TABLE_PHONE_COL: f32 = 160.0;
 pub const MANUAL_TABLE_NOTE_COL: f32 = 260.0;
-pub const MANUAL_TABLE_PRODUCT_COL: f32 = 780.0;
+// Keep the existing table width while adding an editable unit-price column.
+pub const MANUAL_TABLE_PRODUCT_COL: f32 = 660.0;
 pub const MANUAL_TABLE_QUANTITY_COL: f32 = 96.0;
+pub const MANUAL_TABLE_UNIT_PRICE_COL: f32 = 120.0;
 pub const MANUAL_TABLE_ACTION_COL: f32 = 120.0;
 pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
 pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
