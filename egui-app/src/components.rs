@@ -1349,7 +1349,7 @@ pub fn reception_recipient_fields(
             line.add_sized(
                 Vec2::new(width, theme::INPUT_HEIGHT),
                 reception_recipient_text_edit(value, width, active, false).interactive(false),
-            )
+            ).on_hover_cursor(egui::CursorIcon::Text)
         }).inner
     }
 
@@ -1387,7 +1387,7 @@ pub fn reception_recipient_fields(
                     let mobile_input = line.add_sized(
                         Vec2::new(mobile_width, theme::INPUT_HEIGHT),
                         reception_recipient_text_edit(mobile, mobile_width, active[2], true).interactive(false),
-                    );
+                    ).on_hover_cursor(egui::CursorIcon::Text);
                     // Only the gap between the TWO contact groups is 8pt.
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_PHONE_COLUMN_GAP;
@@ -1397,7 +1397,7 @@ pub fn reception_recipient_fields(
                     let phone_input = line.add_sized(
                         Vec2::new(phone_width, theme::INPUT_HEIGHT),
                         reception_recipient_text_edit(phone, phone_width, active[3], true).interactive(false),
-                    );
+                    ).on_hover_cursor(egui::CursorIcon::Text);
                     (mobile_input,phone_input)
                 }).inner
             }).inner;
@@ -3393,14 +3393,17 @@ fn reception_item_row_with_mode(
         cells[0], ui.make_persistent_id(("item-cell", row_id, 0)),
         if editable{Sense::click()}else{Sense::hover()},
     ).on_hover_text(name);
+    let product = if editable { product.on_hover_cursor(egui::CursorIcon::Text) } else { product };
     let quantity = ui.interact(
         cells[1], ui.make_persistent_id(("item-cell", row_id, 1)),
         if editable{Sense::click()}else{Sense::hover()},
     ).on_hover_text(quantity);
+    let quantity = if editable { quantity.on_hover_cursor(egui::CursorIcon::Text) } else { quantity };
     let amount = ui.interact(
         cells[2], ui.make_persistent_id(("item-cell", row_id, 2)),
         if editable{Sense::click()}else{Sense::hover()},
     ).on_hover_text(amount);
+    let amount = if editable { amount.on_hover_cursor(egui::CursorIcon::Text) } else { amount };
     ui.painter().line_segment(
         [egui::pos2(rect.left(), rect.bottom()),
          egui::pos2(rect.right(), rect.bottom())],
@@ -3522,6 +3525,9 @@ pub fn reception_freight_row_editable(
                         price.make_persistent_id(("edit-applied-freight",label)),
                         Sense::click()
                     );
+                    if hit.hovered() {
+                        price.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                    }
                     if hit.clicked(){
                         clicked=true;
                         amount_click_pos=hit.interact_pointer_pos();
