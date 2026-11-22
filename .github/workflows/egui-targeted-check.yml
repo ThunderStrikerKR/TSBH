@@ -19,6 +19,7 @@ on:
       - egui-app/src/http_gateway.rs
       - egui-app/src/preview_store.rs
       - egui-app/src/reception_service.rs
+      - egui-app/src/pricing_basis.rs
       - egui-app/src/native_order_change.rs
       - egui-app/src/workflow_board_ui.rs
       - egui-app/src/manual_workspace.rs
@@ -75,6 +76,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml persisted_analysis_restore_tests -- --nocapture
       - name: Verify non-price edits reuse quotes while invoice inputs invalidate
         run: cargo test --manifest-path egui-app/Cargo.toml quote_reuse_tests -- --nocapture
+      - name: Verify only actual client/product/freight master changes invalidate stored prices
+        run: cargo test --manifest-path egui-app/Cargo.toml pricing_basis::tests -- --nocapture
       - name: Verify dealer reassignment retains native manual-correction rows and links
         run: cargo test --manifest-path egui-app/Cargo.toml native_order_change::manual_rebind_tests -- --nocapture
       - name: Verify shared single-select dropdown coverage and geometry
