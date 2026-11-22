@@ -33,6 +33,7 @@ pub enum Kind {
     NavigateReception,
     /// A chooser or confirmation dialog owns pending user intent.
     ClientChooser,
+    ItemDialog,
     VatDialog,
     WorkflowDialog,
 }
@@ -65,6 +66,7 @@ impl Kind {
             Self::DeleteReception=>"발주서 삭제",
             Self::NavigateReception=>"발주서 전환",
             Self::ClientChooser=>"거래처 선택 창",
+            Self::ItemDialog=>"상품 상세 수정 창",
             Self::VatDialog=>"부가세 설정 창",
             Self::WorkflowDialog=>"주문 관리 창",
         }
@@ -125,6 +127,7 @@ pub fn admit(request:Kind, active:&[Kind], same_request:bool)->Admission{
                 Kind::WorkflowAction)
             // The matching modal is still visible on the employee's
             // approval click; only its explicitly approved action may pass.
+            | (Kind::InlineEdit,Kind::ItemDialog)
             | (Kind::VatEdit,Kind::VatDialog)
             | (Kind::WorkflowAction,Kind::WorkflowDialog)
             | (Kind::DeleteReception,Kind::WorkflowDialog)
@@ -259,12 +262,15 @@ mod tests {
 
     #[test]
     fn open_reception_modals_block_unrelated_work_but_allow_approval(){
-        for kind in [K::ClientChooser,K::VatDialog,K::WorkflowDialog]{
+        for kind in [K::ClientChooser,K::ItemDialog,K::VatDialog,K::WorkflowDialog]{
             assert_eq!(admit(K::NavigateReception,&[kind],false),A::Conflict(kind));
             assert_eq!(admit(K::SourceReplace,&[kind],false),A::Conflict(kind));
         }
         assert_eq!(admit(K::ManualClient,&[K::ClientChooser],false),
             A::Conflict(K::ClientChooser));
+        assert_eq!(admit(K::InlineEdit,&[K::ItemDialog],false),A::Start);
+        assert_eq!(admit(K::ManualClient,&[K::ItemDialog],false),
+            A::Conflict(K::ItemDialog));
         assert_eq!(admit(K::VatEdit,&[K::VatDialog],false),A::Start);
         assert_eq!(admit(K::WorkflowAction,&[K::WorkflowDialog],false),A::Start);
         assert_eq!(admit(K::DeleteReception,&[K::WorkflowDialog],false),A::Start);
