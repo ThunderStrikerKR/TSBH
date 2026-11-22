@@ -35,7 +35,8 @@ pub fn search(state: &Value, payload: &Value) -> Value {
     let suggested: Vec<String> = available.filter(|client| {
         let names=std::iter::once(field(client,"name"))
             .chain(["shortNames","identifiers"].into_iter()
-                .flat_map(|key|field(client,key).split(',')));
+                .flat_map(|key|field(client,key)
+                    .split(|ch|matches!(ch,','|';'|'|'|'\n'))));
         names.map(str::trim).any(|term|
             term.encode_utf16().count()>=2 && raw.contains(term))
     }).map(|client| field(client, "id").to_owned()).collect();
