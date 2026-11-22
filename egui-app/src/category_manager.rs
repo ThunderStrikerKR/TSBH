@@ -921,3 +921,24 @@ impl CategoryManager {
         write
     }
 }
+
+#[cfg(test)]
+mod modal_layout_contract_tests{
+    #[test]
+    fn category_editor_add_move_use_only_shared_inline_form_rows(){
+        // The form contract covers all five labeled value/input slots:
+        // edit name + parent, add target + name, and move parent selector.
+        // Keep this source-level gate confined to the dialog UI, not to the
+        // main category tree or the read-only decision/confirmation notices.
+        let source=include_str!("category_manager.rs");
+        let dialogs=source.split("    pub fn show_overlays(").nth(1).unwrap()
+            .split("#[cfg(test)]").next().unwrap();
+        let count=dialogs.matches("components::modal_labeled_row(").count();
+        assert_eq!(count,5,"category modal has a nonstandard field stack");
+        assert!(!dialogs.contains("body.label(typography::field_label("));
+        assert!(!dialogs.contains("modal.label(typography::field_label("));
+        assert!(dialogs.contains("components::management_dropdown("));
+        assert!(dialogs.contains("components::modal_action_row_split("));
+        assert!(dialogs.contains("components::modal_action_row("));
+    }
+}
