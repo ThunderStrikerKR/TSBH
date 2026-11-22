@@ -2243,36 +2243,31 @@ impl BandoEgui {
                 }
             }
         }
-        let dialog_width=(work_area.width()*0.94).clamp(560.0,1480.0)
-            .min(work_area.width().max(1.0));
-        let dialog_height=(work_area.height()*0.88).clamp(450.0,960.0)
-            .min(work_area.height().max(1.0));
+        // The OCR image review is a large, screen-centered overlay. Normal
+        // small dialogs may avoid the Kakao dock, but this comparison needs
+        // equal left and right gutters over the full application viewport.
+        let review_area=components::modal_balanced_review_area(
+            ctx.screen_rect(),work_area
+        );
+        let dialog_width=(review_area.width()*0.94).clamp(560.0,1480.0)
+            .min(review_area.width().max(1.0));
+        let dialog_height=(review_area.height()*0.88).clamp(450.0,960.0)
+            .min(review_area.height().max(1.0));
         let dialog_size=Vec2::new(dialog_width,dialog_height);
-        // The OCR master must have ONE source of screen-space geometry.
-        // An outer fixed_size plus a separately estimated inner frame size
-        // can leave its header and footer far from the visible window frame.
-        // Explicitly anchor the window's TOP-LEFT to the Kakao-safe center
-        // rect; the master will use the actual inner Ui bounds after egui
-        // applies the modal frame's real padding and border.
-        let dialog_rect=Rect::from_center_size(work_area.center(),dialog_size);
+        // Window::fixed_size specifies the OUTER frame. The common helper
+        // subtracts frame border/margins exactly once for its single inner
+        // master, so the footer ends above the visible rounded bottom edge.
+        let body_size=components::modal_master_content_size(dialog_size);
         if let Some(review)=self.ocr_review.as_mut() {
             components::modal_window(
-                "OCR 문자 인식 검토","egui-ocr-review",work_area
+                "OCR 문자 인식 검토","egui-ocr-review",review_area
             )
-                .pivot(egui::Align2::LEFT_TOP)
-                .fixed_pos(dialog_rect.min)
+                // Retain the common CENTER_CENTER pivot. The previous
+                // LEFT_TOP override and one-sided work-area center caused
+                // the modal to sit far to the right of the actual viewport.
                 .fixed_size(dialog_size)
                 .scroll([false,false])
                 .show(ctx,|ui|{
-                    // Use the real frame's content rectangle rather than
-                    // subtracting guessed margins from the outer dialog
-                    // size. The fixed header, split view and footer are
-                    // siblings inside exactly this same allocated area.
-                    let inner=ui.available_rect_before_wrap();
-                    let body_size=Vec2::new(
-                        inner.width().min(dialog_size.x).max(1.0),
-                        inner.height().min(dialog_size.y).max(1.0)
-                    );
                     let (bounds,_)=ui.allocate_exact_size(
                         body_size,Sense::hover()
                     );
