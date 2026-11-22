@@ -92,6 +92,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml freight_focus_preserves_amount_height -- --nocapture
       - name: Verify native recipient freight and remote-area edit validation
         run: cargo test --manifest-path egui-app/Cargo.toml manual_classification::tests -- --nocapture
+      - name: Verify working-order plain shipment list rows and product text
+        run: cargo test --manifest-path egui-app/Cargo.toml shipment_list_tests -- --nocapture
       - name: Verify floating notice placement at screen edges and caret anchors
         run: cargo test --manifest-path egui-app/Cargo.toml floating_notice::tests -- --nocapture
       - name: Verify Excel loading and empty-state text does not shift its table

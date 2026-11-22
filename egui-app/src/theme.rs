@@ -94,16 +94,6 @@ pub const WORKFLOW_SIGNAL_PENDING_BORDER: Color32 = Color32::from_rgb(85, 85, 85
 pub const WORKFLOW_RECIPIENT_COL: f32 = 64.0;
 pub const WORKFLOW_FREIGHT_COL: f32 = 68.0;
 pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
-// Product chips remain a distinct metadata layer on BOTH regular and
-// alternate rows: muted #373737 fill with the common soft divider border.
-// A chip must remain discernible on BOTH the base (#292929) and
-// alternate (#303030) row. Reuse the existing muted control-border tier.
-pub const WORKFLOW_CHIP_FILL: Color32 = DISABLED_ACTION_BORDER;
-pub const WORKFLOW_CHIP_BORDER: Color32 = DIVIDER;
-pub const WORKFLOW_CHIP_RADIUS: u8 = 4;
-pub const WORKFLOW_CHIP_HEIGHT: f32 = 24.0;
-pub const WORKFLOW_CHIP_PAD_X: i8 = 4;
-pub const WORKFLOW_CHIP_PAD_Y: i8 = 2;
 // At the 1920×1080 reference, the right-pane card is ~394pt wide.
 // Usable width = 394 - 2 border - (6 left + 6 right) = 380pt.
 // Upper: 12 toggle + 164 title + 104 status + 44 manage + 32 delete
@@ -125,12 +115,14 @@ pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = 30.0;
 pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
 pub const WORKFLOW_SUMMARY_LINE_HEIGHT: f32 = 18.0;
 pub const WORKFLOW_VAT_FONT_SIZE: f32 = 10.0;
-// Workflow details use the same subdued, borderless zebra roles as master lists.
-pub const WORKFLOW_DETAIL_HEADER_BG: Color32 = RAISED;
-// The nested card's base is INPUT (#292929); alternate must be lighter
-// just as PANEL -> TABLE_ROW_ALT_BG is lighter in the management master.
-pub const WORKFLOW_DETAIL_ALT_BG: Color32 = RAISED;
-pub const WORKFLOW_DETAIL_HEADER_HEIGHT: f32 = 28.0;
+// Expanded working-order shipments are a plain list, not a table.
+// All rows use one bottom-tier surface; only real hover/selection tint it.
+// The header, alternating row fills and product-chip surfaces were removed.
+pub const WORKFLOW_DETAIL_ROW_BG: Color32 = PANEL;
+pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = DIVIDER;
+pub const WORKFLOW_DETAIL_ROW_PADDING_X: f32 = SPACE_12;
+pub const WORKFLOW_DETAIL_NAME_WIDTH: f32 = 102.0;
+pub const WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT: f32 = 32.0;
 pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
 pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const BRIGHT: Color32 = Color32::WHITE;

@@ -550,152 +550,72 @@ fn workflow_details<R>(
     ui.add_space(theme::WORKFLOW_CARD_PADDING_Y);
     result
 }
-fn workflow_table_header(ui:&mut Ui){
-    let width=ui.available_width();
-    // 28pt reception compact role, rendered with the same raised header
-    // surface, 2pt inset underline and consistent content columns as masters.
-    let (rect,_)=ui.allocate_exact_size(
-        Vec2::new(width,theme::WORKFLOW_DETAIL_HEADER_HEIGHT),egui::Sense::hover()
-    );
-    ui.painter().rect_filled(rect,0.0,theme::WORKFLOW_DETAIL_HEADER_BG);
-    let content_bottom=rect.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT;
-    let first=Rect::from_min_max(
-        rect.min,Pos2::new(rect.left()+theme::WORKFLOW_RECIPIENT_COL,content_bottom)
-    );
-    let last=Rect::from_min_max(
-        Pos2::new(rect.right()-theme::WORKFLOW_FREIGHT_COL,rect.top()),
-        Pos2::new(rect.right(),content_bottom)
-    );
-    let middle=Rect::from_min_max(
-        Pos2::new(first.right()+theme::SPACE_4,rect.top()),
-        Pos2::new(last.left()-theme::SPACE_4,content_bottom)
-    );
-    for (text,cell,align_right) in [
-        ("수취인",first,false),("상품",middle,false),("운임",last,true)
-    ]{
-        if cell.width()<=0.0{continue;}
-        let galley=typography::management_table_header_galley(ui,text);
-        let x=if align_right{
-            cell.right()-theme::SPACE_4-galley.size().x
-        }else{cell.left()+theme::SPACE_4};
-        ui.painter().with_clip_rect(cell).galley(
-            Pos2::new(x,cell.center().y-galley.size().y/2.0),
-            galley,theme::SECONDARY
-        );
-    }
-    ui.painter().rect_filled(
-        Rect::from_min_max(
-            Pos2::new(rect.left(),content_bottom),rect.right_bottom()
-        ),0.0,theme::TABLE_HEADER_OUTLINE
-    );
+/// This expanded view is an intentionally plain shipment LIST, not the
+/// management master table. The products are ordinary single-line text,
+/// without the previous chip fill/border or three-column freight header.
+fn shipment_product_summary(products:&[String])->String{
+    if products.is_empty(){"◆ 상품 확인".to_owned()}
+    else{format!("◆ {}",products.join("  ·  ◆ "))}
 }
-/// One product occupies a compact chip, exactly as the React
-/// .workflow-shipment .product-chip style, not an unframed text fragment.
-fn product_chip(ui:&mut Ui,label:&str,max_width:f32){
-    // A chip may wrap to the NEXT product row, but never one letter per
-    // vertical line. Measure its unwrapped text and cap the chip itself to
-    // the allocated PRODUCT column, preserving the complete name in tooltip.
-    let natural=ui.painter().layout_no_wrap(
-        label.to_owned(),
-        egui::FontId::proportional(typography::FONT_FIELD_LABEL),
-        theme::TEXT,
-    ).size().x;
-    let width=(natural+2.0*theme::WORKFLOW_CHIP_PAD_X as f32
-        +2.0*theme::SOFT_DIVIDER_WIDTH).min(max_width).max(0.0);
-    let (rect,response)=ui.allocate_exact_size(
-        Vec2::new(width,theme::WORKFLOW_CHIP_HEIGHT),
-        egui::Sense::hover(),
-    );
-    ui.painter().rect_filled(
-        rect,theme::WORKFLOW_CHIP_RADIUS as f32,
-        theme::WORKFLOW_CHIP_FILL
-    );
-    ui.painter().rect_stroke(
-        rect,theme::WORKFLOW_CHIP_RADIUS as f32,
-        egui::Stroke::new(
-            theme::SOFT_DIVIDER_WIDTH,theme::WORKFLOW_CHIP_BORDER
-        ),egui::StrokeKind::Inside,
-    );
-    let text_rect=rect.shrink2(Vec2::new(
-        theme::WORKFLOW_CHIP_PAD_X as f32,
-        theme::WORKFLOW_CHIP_PAD_Y as f32,
-    ));
-    ui.put(
-        text_rect,egui::Label::new(typography::table_cell(label)).truncate()
-    );
-    response.on_hover_text(label);
-}
-/// React .workflow-shipment uses a 64 / flexible / 68 three-column row.
-/// No secondary boxed cards: selection is a subtle background plus a thin
-/// accent stripe, not an extra input-style border around every recipient.
+
+/// Only the row's base surface is painted; there is no striped/zebra fill.
+/// Selection and preview tint the same row without changing its geometry.
 fn shipment_line(
-    ui:&mut Ui,name:&str,products:&[String],freight:&str,
-    chosen:bool,previewed:bool,alternate:bool
+    ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool
 )->egui::Response{
     let fill=if chosen{
         theme::WORKFLOW_SELECTED_BORDER.linear_multiply(0.20)
     }else if previewed{
         theme::SELECTION.linear_multiply(0.14)
-    }else if alternate{theme::WORKFLOW_DETAIL_ALT_BG}
-    else{egui::Color32::TRANSPARENT};
+    }else{theme::WORKFLOW_DETAIL_ROW_BG};
     let outer=ui.available_width();
+    let summary=shipment_product_summary(products);
     let response=Frame::new()
         .fill(fill)
+        .stroke(egui::Stroke::new(
+            theme::SOFT_DIVIDER_WIDTH,theme::WORKFLOW_DETAIL_ROW_BORDER
+        ))
+        .corner_radius(theme::CONTROL_RADIUS)
         .inner_margin(egui::Margin::symmetric(
-            theme::SPACE_4 as i8,theme::SPACE_4 as i8
+            theme::WORKFLOW_DETAIL_ROW_PADDING_X as i8,
+            theme::SPACE_4 as i8
         ))
         .show(ui,|row|{
-            let inside=(outer-theme::SPACE_8).max(0.0);
+            let inside=(outer-2.0*theme::WORKFLOW_DETAIL_ROW_PADDING_X).max(0.0);
             row.set_min_width(inside);
             row.horizontal(|cols|{
-                cols.spacing_mut().item_spacing.x=theme::SPACE_4;
-                let name_width=theme::WORKFLOW_RECIPIENT_COL;
-                let freight_width=theme::WORKFLOW_FREIGHT_COL;
-                let product_width=(inside-name_width-freight_width
-                    -theme::SPACE_8).max(0.0);
+                cols.spacing_mut().item_spacing.x=theme::SPACE_8;
+                let name_width=theme::WORKFLOW_DETAIL_NAME_WIDTH
+                    .min((inside*0.36).max(0.0));
+                let product_width=(inside-name_width-theme::SPACE_8).max(0.0);
                 cols.add_sized(
-                    [name_width,theme::WORKFLOW_TITLE_HEIGHT],
+                    [name_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
                     egui::Label::new(typography::body(name)).truncate()
-                );
-                cols.allocate_ui_with_layout(
-                    Vec2::new(product_width,theme::WORKFLOW_TITLE_HEIGHT),
-                    Layout::top_down(Align::Min),|product_col|{
-                        product_col.set_width(product_width);
-                        product_col.horizontal_wrapped(|chips|{
-                            chips.spacing_mut().item_spacing.x=theme::SPACE_4;
-                            for product in products{
-                                product_chip(chips,product,product_width);
-                            }
-                        });
-                    }
-                );
-                cols.with_layout(Layout::right_to_left(Align::Center),|freight_col|{
-                    freight_col.add_sized(
-                        [freight_width,theme::WORKFLOW_TITLE_HEIGHT],
-                        egui::Label::new(typography::quantity(freight)).truncate()
-                    );
-                });
+                ).on_hover_text(name);
+                cols.add_sized(
+                    [product_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
+                    egui::Label::new(typography::body(&summary)).truncate()
+                ).on_hover_text(&summary);
             });
         });
     if chosen || previewed{
-        let color=if chosen{theme::WORKFLOW_SELECTED_BORDER}else{theme::SELECTION};
+        let color=if chosen{theme::WORKFLOW_SELECTED_BORDER}
+            else{theme::SELECTION};
         let rect=response.response.rect;
         ui.painter().rect_filled(Rect::from_min_max(
             Pos2::new(rect.left(),rect.top()),
-            Pos2::new(rect.left()+theme::WORKFLOW_SELECTED_STRIPE,
-                rect.bottom())
+            Pos2::new(rect.left()+theme::WORKFLOW_SELECTED_STRIPE,rect.bottom())
         ),0.0,color);
     }
     response.response
 }
 fn row(
-    ui:&mut Ui,ship:&ShipmentRow,chosen:bool,in_preview:bool,alternate:bool
+    ui:&mut Ui,ship:&ShipmentRow,chosen:bool,previewed:bool
 )->egui::Response{
     let name=if ship.recipient_name.is_empty(){
         "수취인 확인"
     }else{ship.recipient_name.as_str()};
-    let freight=if ship.collect{"착불".to_owned()}else{money(ship.freight)};
-    shipment_line(ui,name,&ship.products,&freight,chosen,in_preview,alternate)
+    shipment_line(ui,name,&ship.products,chosen,previewed)
 }
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
@@ -744,13 +664,12 @@ fn group_frame(
             workflow_details(ui,|ui|{
                 components::soft_divider(ui);
                 ui.add_space(theme::SPACE_4);
-                workflow_table_header(ui);
-            for (index,ship) in group.shipments.iter().enumerate(){
+            for ship in &group.shipments{
                 // Orange means committed selection ONLY on the base card.
                 // Blue means the temporarily hovered row ONLY in the clone.
                 let chosen=!in_preview && selected.is_some_and(|s|s.shipment_id==ship.id);
                 let previewed=in_preview && previewed_id==Some(ship.id.as_str());
-                let label=row(ui,ship,chosen,previewed,index%2==1);
+                let label=row(ui,ship,chosen,previewed);
                 let response=ui.interact(
                     label.rect,Id::new(("workflow-shipment",ship.id.as_str(),in_preview)),
                     egui::Sense::click()
@@ -833,12 +752,11 @@ fn pending_frame(
             workflow_details(ui,|ui|{
                 components::soft_divider(ui);
                 ui.add_space(theme::SPACE_4);
-                workflow_table_header(ui);
             if recipients.is_empty(){
                 let excerpt=draft.raw.lines().find(|s|!s.trim().is_empty())
                     .unwrap_or("새 발주서");
                 let response=shipment_line(ui,"수취인 확인",
-                    &[excerpt.chars().take(60).collect()],"—",false,false,false);
+                    &[excerpt.chars().take(60).collect()],false,false);
                 let action=ui.interact(response.rect,
                     Id::new(("pending-reception-row",draft.id.as_str(),0usize)),
                     egui::Sense::click());
@@ -861,7 +779,7 @@ fn pending_frame(
                             format!("{name} × {qty}")
                         }).collect::<Vec<_>>();
                     let response=shipment_line(
-                        ui,name,&products,"—",false,false,index%2==1
+                        ui,name,&products,false,false
                     );
                     let action=ui.interact(response.rect,
                         Id::new(("pending-reception-row",draft.id.as_str(),index)),
@@ -988,6 +906,52 @@ pub fn show(
         state.update_row_hover(None,ui.ctx());
     }
     event
+}
+
+#[cfg(test)]
+mod shipment_list_tests {
+    use super::*;
+    #[test]
+    fn plain_rows_display_products_as_text_without_chip_metadata(){
+        assert_eq!(
+            shipment_product_summary(&[
+                "BD 709 / 블랙 / 타공 상판 × 4".into()
+            ]),
+            "◆ BD 709 / 블랙 / 타공 상판 × 4"
+        );
+        assert_eq!(
+            shipment_product_summary(&[
+                "BD 709 × 4".into(),"BD 뮤직 트레이 × 1".into()
+            ]),
+            "◆ BD 709 × 4  ·  ◆ BD 뮤직 트레이 × 1"
+        );
+    }
+
+    #[test]
+    fn plain_list_rows_keep_same_geometry_without_zebra_background(){
+        let ctx=egui::Context::default();
+        let mut measured=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(390.0);
+                for (selected,preview) in [(false,false),(false,false),
+                    (true,false),(false,true)]{
+                    let response=shipment_line(
+                        ui,"김준희",&["BD 709 / 블랙 × 4".into()],
+                        selected,preview
+                    );
+                    measured.push(response.rect);
+                }
+            });
+        });
+        assert_eq!(measured.len(),4);
+        for rect in &measured{
+            assert_eq!(rect.width(),measured[0].width());
+            assert_eq!(rect.height(),measured[0].height());
+            assert!(rect.height()>=40.0 && rect.height()<=46.0);
+        }
+        assert_eq!(theme::WORKFLOW_DETAIL_ROW_BG,theme::PANEL);
+    }
 }
 
 #[cfg(test)]
