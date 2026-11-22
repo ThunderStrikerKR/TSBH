@@ -10,6 +10,7 @@
 use crate::{gateway::{BandoGateway,ReadOperation},preview_store::WorkingReception};
 use chrono::Utc;
 use serde_json::{json,Value};
+use std::sync::atomic::{AtomicBool,Ordering};
 
 pub struct ChangeResult {
     pub client_id: String,
@@ -47,6 +48,24 @@ fn rebind_manual_model(saved:&Value,client_id:&str,rows:&Value)->Result<Value,St
 /// The request snapshot is the precise reception at employee click time.
 pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
                target_id:&str) -> Result<ChangeResult,String> {
+    let never_cancel=AtomicBool::new(false);
+    prepare_cancellable(gateway,source,target_id,&never_cancel)
+}
+
+fn check_cancelled(cancel:&AtomicBool)->Result<(),String>{
+    if cancel.load(Ordering::Acquire){
+        Err("새 거래처 선택으로 기존 자동 계산이 취소되었습니다.".into())
+    }else{Ok(())}
+}
+
+/// Advisory automatic association is preemptible between native operations.
+/// Explicit employee edits keep using prepare() and cannot be cancelled by
+/// another UI selection while their result is pending.
+pub fn prepare_cancellable(
+    gateway:&dyn BandoGateway,source:&WorkingReception,
+    target_id:&str,cancel:&AtomicBool
+)->Result<ChangeResult,String>{
+    check_cancelled(cancel)?;
     if source.raw.trim().is_empty() {
         return Err("발주원문이 없는 주문은 거래처를 변경할 수 없습니다.".into());
     }
@@ -73,6 +92,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
             return Err("운영 작업본 또는 기존 계산 결과가 있어 격리 거래처 연결로 전환할 수 없습니다.".into());
         }
         let index=gateway.load_catalog()?;
+        check_cancelled(cancel)?;
         let exists=index.get("clients").and_then(Value::as_array)
             .is_some_and(|clients| clients.iter().any(|client|
                 client.get("id").and_then(Value::as_str)==Some(target_id) &&
@@ -100,6 +120,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
     // Never use the name-only client index or the embedded retail seed to
     // calculate actual customer prices, shipping waivers or overrides.
     let state=gateway.load_business_state()?;
+    check_cancelled(cancel)?;
     let authority_revision=state.get("revision").and_then(Value::as_u64)
         .ok_or("운영 DB revision이 유효하지 않습니다.")?;
     if state.get("orders").and_then(Value::as_array).is_some_and(|orders|
@@ -125,6 +146,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
     let evidence=gateway.execute(ReadOperation::AnalyzeOrder,json!({
         "raw":source.raw, "state":state, "client":client,
     }))?;
+    check_cancelled(cancel)?;
     if !evidence.get("recipients").is_some_and(Value::is_array) ||
        !evidence.get("candidates").is_some_and(Value::is_array) {
         return Err("선택한 거래처 기준 Rust 발주 인식 결과가 잘못되었습니다.".into());
@@ -136,11 +158,13 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         "action":"new_reception", "id":source.id,
         "clientId":"", "now":now, "orderType":source.order_type,
     }))?;
+    check_cancelled(cancel)?;
     let blank=required(&created,"order")?;
     let changed=gateway.execute(ReadOperation::ChangeOrderClient,json!({
         "action":"change_order_client", "state":state, "order":blank,
         "dealerId":target_id, "now":now,
     }))?;
+    check_cancelled(cancel)?;
     let selected=required(&changed,"order")?;
     // Only native Rust may merge recognized recipients, stable item IDs and
     // customer-specific business defaults into the Order.
@@ -149,6 +173,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
         "raw":source.raw, "clientId":target_id,
         "client":client, "state":state, "at":now,
     }))?;
+    check_cancelled(cancel)?;
     let merged_order=required(&merged,"order")?;
 
     // Manual corrections are authoritative recipient/item input, not an old
@@ -164,10 +189,12 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
             "action":"preview_manual","order":merged_order,
             "model":model,"assignmentOrder":keys,
         }))?;
+        check_cancelled(cancel)?;
         let edited=required(&applied,"order")?;
         let quote=gateway.execute(ReadOperation::CalculateReceptionQuote,json!({
             "order":edited,"state":state,"client":client,
         }))?;
+        check_cancelled(cancel)?;
         let order=required(&quote,"order")?;
         let totals=required(&quote,"totals")?;
         if order.get("id").and_then(Value::as_str)!=Some(source.id.as_str()) ||
@@ -212,6 +239,7 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
     let quote=gateway.execute(ReadOperation::CalculateReceptionQuote,json!({
         "order":merged_order,"state":state,"client":client,
     }))?;
+    check_cancelled(cancel)?;
     let order=required(&quote,"order")?;
     let totals=required(&quote,"totals")?;
     if order.get("id").and_then(Value::as_str)!=Some(source.id.as_str()) ||
