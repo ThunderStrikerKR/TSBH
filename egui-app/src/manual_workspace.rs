@@ -384,11 +384,16 @@ impl ManualWorkspace {
                     theme::MANUAL_SHEET_MIN_WIDTH+
                     theme::MANUAL_COLUMN_GAP
                 );
+                // The former 34pt+24pt approximation reserved only the
+                // footer itself, not the 12pt gap and egui row spacing.
+                // Reserve all of these before sizing the two inner panes.
+                let footer_clearance=theme::MODAL_FOOTER_HEIGHT
+                    +theme::SPACE_12+2.0*theme::SPACING;
                 let content_height=(ui.available_height().min(work_area.height())
-                    -theme::ACTION_STANDARD_HEIGHT-theme::SPACE_24)
-                    .max(3.0*theme::MANUAL_TABLE_ROW_HEIGHT);
+                    -footer_clearance).max(1.0);
                 egui::ScrollArea::horizontal()
                     .id_salt("manual-columns-horizontal-scroll")
+                    .max_height(content_height)
                     .auto_shrink([false,false])
                     .show(ui,|outer|{
                         outer.set_min_width(content_width);
