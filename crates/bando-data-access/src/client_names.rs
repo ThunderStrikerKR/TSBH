@@ -64,6 +64,19 @@ pub fn normalized(client:&Value)->Value{
 /// once. On startup subsequent calls are strictly no-op, including no backup
 /// and no revision bump. Does not touch orders, audit rows or snapshots.
 pub fn migrate_v2(conn:&mut Connection,base:&Path)->Result<usize,String>{
+    migrate_v2_inner(conn,Some(base))
+}
+
+/// Backup restore already owns a verified pre-restore safety copy and rolls
+/// back the entire database if any subsequent migration step fails.
+/// Reuse that guarantee rather than creating a second backup AFTER restoring.
+pub(crate) fn migrate_v2_with_verified_restore_backup(
+    conn:&mut Connection
+)->Result<usize,String>{
+    migrate_v2_inner(conn,None)
+}
+fn migrate_v2_inner(conn:&mut Connection,backup_base:Option<&Path>)
+    ->Result<usize,String>{
     let version:i64=conn.query_row(
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|r|r.get(0)
@@ -85,8 +98,12 @@ pub fn migrate_v2(conn:&mut Connection,base:&Path)->Result<usize,String>{
         }
     }
     if changes.is_empty(){return Ok(0);}
-    // No user data is written if a verified backup cannot be created.
-    crate::backup_service::manual_backup(conn,base)?;
+    // Standalone migration always creates a verified before-image.
+    // Restore migration instead relies on the already verified pre-restore
+    // backup and the restore engine's full rollback protection.
+    if let Some(base)=backup_base{
+        crate::backup_service::manual_backup(conn,base)?;
+    }
     let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e|e.to_string())?;
     for (id,old,new) in &changes{
