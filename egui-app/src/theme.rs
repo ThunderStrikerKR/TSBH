@@ -278,10 +278,15 @@ pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 =
 // remains a separate fixed-height strip below its own scrolling content.
 pub const RECEPTION_ITEMS_HEADER_HEIGHT: f32 = 32.0;
 pub const RECEPTION_ITEMS_ROW_HEIGHT: f32 = 42.0;
-// Extra numeric room is necessary for 16pt amounts without clipping.
-// Fits `999개` at 16pt with value padding; larger quantities use compact UI display.
-pub const RECEPTION_ITEMS_QTY_WIDTH: f32 = 76.0;
-pub const RECEPTION_ITEMS_AMOUNT_MAX_WIDTH: f32 = 136.0;
+// Reception item table: only product text ellipsizes; quantity and amount
+// columns never expand or contract with their values or the pane width.
+// On very narrow panes the fixed minimum table scrolls horizontally.
+pub const RECEPTION_ITEMS_PRODUCT_MIN_WIDTH: f32 = 180.0;
+pub const RECEPTION_ITEMS_QTY_WIDTH: f32 = 76.0; // up to 999개
+pub const RECEPTION_ITEMS_AMOUNT_MAX_WIDTH: f32 = 136.0; // up to 99,999,999원
+pub const RECEPTION_ITEMS_MIN_TABLE_WIDTH: f32 =
+    RECEPTION_ITEMS_PRODUCT_MIN_WIDTH + RECEPTION_ITEMS_QTY_WIDTH
+    + RECEPTION_ITEMS_AMOUNT_MAX_WIDTH;
 pub const RECEPTION_VAT_ROW_HEIGHT: f32 = 32.0;
 pub const RECEPTION_TOTAL_HEIGHT: f32 = 56.0;
 pub const HEADER_HEIGHT: f32 = 62.0;
