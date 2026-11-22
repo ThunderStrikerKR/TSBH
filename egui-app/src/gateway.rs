@@ -27,6 +27,7 @@ pub enum ReadOperation {
     AnalyzeOrder,
     ResolveRetailUnitPrice,
     DetectRemoteDeliveryArea,
+    ResolveRemoteDeliveryArea,
     AutoMatchReceptionClient,
     ReceptionClientCandidates,
     ClientCandidates,
@@ -63,6 +64,7 @@ impl ReadOperation {
         match self {
             Self::AnalyzeOrder => "recognition",
             Self::ResolveRetailUnitPrice | Self::DetectRemoteDeliveryArea
+            | Self::ResolveRemoteDeliveryArea
             | Self::ValidateAutomaticTemplates | Self::ValidateProvisionalProductNotices => "rules",
             Self::AutoMatchReceptionClient | Self::ReceptionClientCandidates
             | Self::ClientCandidates | Self::SearchProductsWithUrls
@@ -85,6 +87,7 @@ impl ReadOperation {
             Self::AnalyzeOrder => "analyze_order",
             Self::ResolveRetailUnitPrice => "resolve_unit_price",
             Self::DetectRemoteDeliveryArea => "detect_remote_delivery_area",
+            Self::ResolveRemoteDeliveryArea => "resolve_remote_delivery_area",
             Self::AutoMatchReceptionClient => "auto_match_reception_client",
             Self::ReceptionClientCandidates => "reception_client_candidates",
             Self::ClientCandidates => "client_candidates",
@@ -712,6 +715,7 @@ impl BandoGateway for LocalGateway {
             }
             ReadOperation::ResolveRetailUnitPrice
             | ReadOperation::DetectRemoteDeliveryArea
+            | ReadOperation::ResolveRemoteDeliveryArea
             | ReadOperation::NewReception
             | ReadOperation::MergeReceptionAnalysis
             | ReadOperation::ChangeOrderClient
