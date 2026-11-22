@@ -5921,24 +5921,23 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         if !targets.is_empty(){
                             ui.add_space(theme::SPACE_8);
                             ui.label("다시 묶을 대상");
-                            egui::ComboBox::from_id_salt(
-                                ("workflow-regroup-target",&id)
-                            ).selected_text(
-                                targets.iter().find(|g|g.id==target)
+                            components::management_dropdown(
+                                ui,targets.iter().find(|g|g.id==target)
                                     .map(|g|g.dealer_name.as_str())
-                                    .unwrap_or("같은 최초 발주서의 묶음 선택")
-                            ).show_ui(ui,|list|{
-                                list.selectable_value(&mut target,String::new(),
-                                    "대상 선택");
-                                for other in &targets{
-                                    list.selectable_value(
-                                        &mut target,other.id.clone(),
-                                        format!("{} / 배송 {}건 / {}/4",
-                                            other.dealer_name,
-                                            other.shipments.len(),other.step)
-                                    );
-                                }
-                            });
+                                    .unwrap_or("같은 최초 발주서의 묶음 선택"),
+                                theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,
+                                "배송 건을 다시 묶을 대상 선택",|list|{
+                                    components::management_dropdown_option(
+                                        list,&mut target,String::new(),"대상 선택");
+                                    for other in &targets{
+                                        components::management_dropdown_option(
+                                            list,&mut target,other.id.clone(),
+                                            &format!("{} / 배송 {}건 / {}/4",
+                                                other.dealer_name,
+                                                other.shipments.len(),other.step)
+                                        );
+                                    }
+                                });
                             ui.checkbox(&mut ack,
                                 "기존 안내액 / 입금 배분 / 변경 합계를 확인했습니다.");
                         }
