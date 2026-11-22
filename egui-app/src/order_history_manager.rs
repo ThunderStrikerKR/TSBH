@@ -864,7 +864,10 @@ fn range_date_picker_rtl(
             let edit=row.add_sized(
                 Vec2::new(HISTORY_DATE_FIELD_WIDTH,INNER_HEIGHT),
                 egui::TextEdit::singleline(date)
-                    .font(egui::TextStyle::Body)
+                    .font(typography::data_value_font(
+                        typography::DataValueKind::Date,
+                        typography::DataValueContext::Form
+                    ))
                     .frame(false)
                     .horizontal_align(Align::Center)
                     .vertical_align(Align::Center)
