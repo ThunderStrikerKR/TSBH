@@ -140,11 +140,13 @@ impl BoardUi{
                 .is_some_and(|visible|visible.order_id==order));
         if let Some(candidate)=incoming{
             self.pending_release=None;
-            if Some(&candidate)==committed ||
-                (candidate.recipient_id.is_none() &&
-                    committed.is_some_and(|current|
-                        current.order_id==candidate.order_id)){
-                // The header of the selected order is not a new preview.
+            if candidate.recipient_id.is_none() &&
+                committed.is_some_and(|current|
+                    current.order_id==candidate.order_id){
+                // The selected ORDER HEADER must not replace its recipient.
+                // The selected RECIPIENT ROW is different: hovering it must
+                // still emit the transient source/detail highlight, without
+                // committing any selection or changing the orange row state.
                 self.pending_order_hover=None;
                 if self.pending_visible.take().is_some(){ctx.request_repaint();}
                 return;
@@ -1286,6 +1288,51 @@ mod pending_hover_navigation_tests{
         // The source-panel keepalive cannot turn a preview into a click.
         assert!(board.selection.is_none());
         assert!(board.pending_content_hovered.is_none());
+    }
+
+    #[test]
+    fn hovering_committed_recipient_still_projects_evidence_without_reselecting(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let committed=PendingTarget::recipient("order-a","kim");
+        let other=PendingTarget::recipient("order-a","pyo");
+        // A different recipient has an ordinary temporary preview.
+        board.pending_order_hover=Some((
+            other.clone(),Instant::now()-PENDING_ORDER_HOVER_ENTER
+        ));
+        board.update_pending_order_hover(Some(other.clone()),Some(&committed),&ctx);
+        assert_eq!(board.pending_preview(),Some(&other));
+        // Returning to the selected row must NOT short-circuit as a click.
+        board.update_pending_order_hover(Some(committed.clone()),Some(&committed),&ctx);
+        assert_eq!(board.pending_preview(),Some(&other));
+        board.pending_order_hover=Some((
+            committed.clone(),Instant::now()-PENDING_ORDER_HOVER_ENTER
+        ));
+        board.update_pending_order_hover(Some(committed.clone()),Some(&committed),&ctx);
+        assert_eq!(board.pending_preview(),Some(&committed));
+        assert!(board.selection.is_none(),
+            "hover must never alter committed selection");
+        // A selected recipient can still generate its source span highlight.
+        assert_eq!(visible_pending_recipient(
+            "order-a",board.pending_preview(),None
+        ),Some("kim"));
+        board.update_pending_order_hover(None,Some(&committed),&ctx);
+        assert_eq!(board.pending_preview(),Some(&committed));
+        board.pending_release=Some(Instant::now()-Duration::from_millis(1));
+        board.update_pending_order_hover(None,Some(&committed),&ctx);
+        assert!(board.pending_preview().is_none());
+    }
+
+    #[test]
+    fn hovered_header_keeps_selected_order_but_clears_other_preview(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let committed=PendingTarget::recipient("order-a","kim");
+        board.pending_visible=Some(PendingTarget::recipient("order-a","pyo"));
+        board.update_pending_order_hover(
+            Some(PendingTarget::order("order-a")),Some(&committed),&ctx
+        );
+        assert!(board.pending_preview().is_none());
     }
 
     #[test]
