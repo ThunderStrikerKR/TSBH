@@ -102,6 +102,9 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "apply_shipping_action" => shipping::shipping_action(&payload),
         "shipping_read" => shipping_read::project(&payload),
         "detect_remote_delivery_area" => remote_delivery::detect(&payload),
+        "resolve_remote_delivery_area" => remote_delivery::resolve_recipient(
+            req(&payload,"recipient")?
+        ),
         "normalize_remote_freight_input" => remote_delivery::normalize_applied_input(&payload),
         "reconcile_workflow" => reconciliation::reconcile(&payload),
         "calculate_shipping" => shipping::recommend(
