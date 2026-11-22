@@ -3605,6 +3605,30 @@ mod management_toolbar_geometry_tests {
     }
 
     #[test]
+    fn inline_editor_is_in_original_cell_and_never_adds_a_layout_row(){
+        let ctx=egui::Context::default();
+        let mut measured=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let (cell,_)=ui.allocate_exact_size(
+                    Vec2::new(240.0,theme::INPUT_HEIGHT),Sense::click()
+                );
+                let before=ui.available_rect_before_wrap().min;
+                let mut text="바로 편집".to_owned();
+                let response=reception_inline_cell_editor(
+                    ui,cell,&mut text,false,false
+                );
+                let after=ui.available_rect_before_wrap().min;
+                measured=Some((cell,response.rect,before,after));
+            });
+        });
+        let (cell,input,before,after)=measured.expect("inline input layout");
+        assert!(cell.contains(input.min) && cell.contains(input.max));
+        assert_eq!(before,after,"inline TextEdit must not create a second row");
+        assert_eq!(input.height(),cell.height()-2.0*theme::SPACE_2);
+    }
+
+    #[test]
     fn reception_value_origins_share_vertical_center_and_right_edge() {
         let cell=Rect::from_min_size(
             egui::pos2(10.0,104.0),Vec2::new(76.0,34.0)
