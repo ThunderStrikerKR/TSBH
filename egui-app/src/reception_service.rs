@@ -52,6 +52,9 @@ impl ReceptionAnalysis {
             })).collect::<Vec<_>>()
         })).collect::<Vec<_>>();
         json!({
+            // The first recognition remains immutable in analysisEvidence.
+            // This is the latest dealer-specific/manual display projection.
+            "recognition":self.recognition,
             "reference":reference,
             "clientCandidates":self.client_candidates,
             "matchedClientName":self.matched_client_name,
