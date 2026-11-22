@@ -2980,6 +2980,33 @@ fn reception_compact_quantity(full:&str)->&str {
     if count.is_some_and(|n|n>=1000) {"999+"} else {full}
 }
 
+/// Actual editor rendered IN the already allocated input cell; no dialog,
+/// detached form, or second layout row. Focus and response are owned by egui.
+pub fn reception_inline_cell_editor(
+    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,numeric:bool
+)->Response{
+    let rect=cell.shrink2(egui::vec2(theme::SPACE_4,theme::SPACE_2));
+    let font=if numeric{
+        typography::data_value_font(
+            typography::DataValueKind::Money,
+            typography::DataValueContext::Reception
+        )
+    }else{
+        egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
+    };
+    let response=ui.put(
+        rect,
+        egui::TextEdit::singleline(value)
+            .font(font)
+            .vertical_align(Align::Center)
+            .horizontal_align(if numeric{Align::RIGHT}else{Align::LEFT})
+            .margin(egui::Margin::symmetric(8,2))
+            .desired_width(rect.width())
+    );
+    if request_focus {response.request_focus();}
+    response
+}
+
 pub struct ReceptionItemCells {
     pub product: Response,
     pub quantity: Response,
