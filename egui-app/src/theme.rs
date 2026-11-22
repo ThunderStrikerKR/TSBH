@@ -55,30 +55,28 @@ pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
 pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
-// Workflow cards: original React workflow.css card, not generic navigation tiles.
-// The selected stroke color follows the shared selection role.
-// Individual orders are nested INPUT cards on the shared PANEL surface.
-pub const WORKFLOW_CARD_BG: Color32 = INPUT;
+// Compact working-order cards use one 328pt-width two-band surface.
+// All coordinates are allocated from the actual right-pane width; shrinking
+// company text may never move status lamps or any action control.
+pub const WORKFLOW_CARD_BG: Color32 = Color32::from_rgb(32, 32, 32);
+pub const WORKFLOW_CARD_LOWER_BG: Color32 = INPUT;
 pub const WORKFLOW_SELECTED_BG: Color32 = Color32::from_rgb(36, 36, 36);
-// Reception cards are inner content, not a second top-level section.
-// Follow the master's soft row divider instead of duplicating PANEL borders.
 pub const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_SELECTED_BORDER: Color32 = Color32::from_rgb(245, 158, 11);
 pub const WORKFLOW_CARD_PADDING_X: f32 = 9.0;
 pub const WORKFLOW_CARD_PADDING_Y: f32 = 8.0;
 pub const WORKFLOW_CARD_RADIUS: u8 = 7;
 pub const WORKFLOW_SELECTED_STRIPE: f32 = 2.0;
-// Actual vertical gap between adjacent order-group cards, not an
-// additional gap layered over egui's implicit vertical item spacing.
-// Match the 8pt rhythm between independent master cards without enlarging
-// the fixed-size signal lamps, buttons or individual order row geometry.
 pub const WORKFLOW_CARD_GAP: f32 = SPACE_8;
-pub const WORKFLOW_TITLE_HEIGHT: f32 = 34.0;
-// At minimum dock width, move Manage/Delete to their own trailing row
-// instead of clipping a ten-Hangul-character dealer name.
-pub const WORKFLOW_TITLE_MIN_WIDTH: f32 = 184.0;
-pub const WORKFLOW_SIGNAL_WIDTH: f32 = 82.0;
-pub const WORKFLOW_SIGNAL_SIZE: f32 = 18.0;
+pub const WORKFLOW_TITLE_HEIGHT: f32 = 38.0;
+pub const WORKFLOW_BOTTOM_HEIGHT: f32 = 43.0;
+pub const WORKFLOW_BAND_DIVIDER_HEIGHT: f32 = 1.0;
+pub const WORKFLOW_CARD_SLOT_GAP: f32 = SPACE_4;
+pub const WORKFLOW_SIGNAL_WIDTH: f32 = 91.0;
+pub const WORKFLOW_SIGNAL_BLOCK_HEIGHT: f32 = 30.0;
+pub const WORKFLOW_SIGNAL_BLOCK_BG: Color32 = INPUT;
+pub const WORKFLOW_SIGNAL_BLOCK_BORDER: Color32 = DIVIDER;
+pub const WORKFLOW_SIGNAL_SIZE: f32 = 19.0;
 pub const WORKFLOW_SIGNAL_GAP: f32 = 3.0;
 pub const WORKFLOW_SIGNAL_DONE: Color32 = Color32::from_rgb(73, 166, 106);
 pub const WORKFLOW_SIGNAL_DONE_BORDER: Color32 = Color32::from_rgb(105, 198, 136);
@@ -99,15 +97,19 @@ pub const WORKFLOW_CHIP_RADIUS: u8 = 4;
 pub const WORKFLOW_CHIP_HEIGHT: f32 = 24.0;
 pub const WORKFLOW_CHIP_PAD_X: i8 = 4;
 pub const WORKFLOW_CHIP_PAD_Y: i8 = 2;
-pub const WORKFLOW_CONTROL_WIDTH: f32 = 140.0;
-pub const WORKFLOW_MANAGE_WIDTH: f32 = 52.0;
-pub const WORKFLOW_TRASH_WIDTH: f32 = 34.0;
-// The three neutral card helpers (관리 / 삭제 / 이전 단계) share the
-// Standard 34pt height instead of mixing native 36pt and borderless tiles.
-pub const WORKFLOW_AUX_CONTROL_HEIGHT: f32 = ACTION_STANDARD_HEIGHT;
-pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = ACTION_PRIMARY_HEIGHT;
+// At the reference 328pt outer card, inner width = 328-2border-18 inset =
+// 308pt. Upper: 12 +119(title)+91 +40 +30 +4*4 =308.
+// Lower: 40 +98(price)+126 +32 +3*4 =308.
+pub const WORKFLOW_CONTROL_WIDTH: f32 = 126.0;
+pub const WORKFLOW_MANAGE_WIDTH: f32 = 40.0;
+pub const WORKFLOW_TRASH_WIDTH: f32 = 30.0;
+pub const WORKFLOW_UNDO_WIDTH: f32 = 32.0;
+pub const WORKFLOW_SHIPPING_WIDTH: f32 = 40.0;
+pub const WORKFLOW_AUX_CONTROL_HEIGHT: f32 = 30.0;
+pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = 30.0;
 pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
 pub const WORKFLOW_SUMMARY_LINE_HEIGHT: f32 = 18.0;
+pub const WORKFLOW_VAT_FONT_SIZE: f32 = 10.0;
 // Workflow details use the same subdued, borderless zebra roles as master lists.
 pub const WORKFLOW_DETAIL_HEADER_BG: Color32 = RAISED;
 // The nested card's base is INPUT (#292929); alternate must be lighter
