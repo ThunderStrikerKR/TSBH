@@ -535,6 +535,9 @@ fn backup_restore(db: State<'_, Database>, filename: String) -> Result<(), Strin
     // Another app command cannot mutate the DB between those operations.
     let mut conn = lock_db(&db)?;
     backup_manager::restore_backup(&mut conn, &db.base, &filename)?;
+    // Restoring a historic v2 backup may reintroduce displayName. Convert
+    // only live clients; leave the restored order/audit snapshots intact.
+    bando_data_access::client_names::migrate_v2(&mut conn,&db.base)?;
     Ok(())
 }
 
