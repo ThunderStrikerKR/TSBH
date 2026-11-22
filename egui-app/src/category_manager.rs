@@ -689,30 +689,37 @@ impl CategoryManager {
                             }
                             body.add_space(theme::SPACE_8);
                             body.add_space(theme::SPACE_12);
+                            // The two action slots only record intent.
+                            // Apply mutations afterward to avoid simultaneous
+                            // mutable captures of the category editor state.
+                            let mut request_delete=false;
+                            let mut request_save=false;
                             components::modal_action_row_split(
                                 body,
                                 |left|{
-                                    if theme::action(left,"분류 삭제",
+                                    request_delete=theme::action(left,"분류 삭제",
                                         theme::ButtonRole::Danger,
                                         editable&&!busy&&!is_root(&current.id)
                                         &&children(&cats,&current.id).is_empty()
                                         &&direct_count(catalog,&current.id)==0
-                                    ).clicked(){
-                                        self.begin_operation(&cats,catalog,Operation::Delete);
-                                    }
+                                    ).clicked();
                                 },
                                 |right|{
-                                    if theme::action(right,"변경사항 저장",
+                                    request_save=theme::action(right,"변경사항 저장",
                                         theme::ButtonRole::Primary,
                                         editable&&!busy&&self.rename_dirty(&cats)
-                                    ).clicked(){
-                                        match self.write_request(&cats,catalog){
-                                            Ok(req)=>write=Some(req),
-                                            Err(e)=>self.error=Some(e),
-                                        }
-                                    }
+                                    ).clicked();
                                 }
                             );
+                            if request_delete {
+                                self.begin_operation(&cats,catalog,Operation::Delete);
+                            }
+                            if request_save {
+                                match self.write_request(&cats,catalog){
+                                    Ok(req)=>write=Some(req),
+                                    Err(e)=>self.error=Some(e),
+                                }
+                            }
 
                         }
                     });
