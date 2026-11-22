@@ -1826,14 +1826,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let mut none=dialog.scope(&recipients)==VatScope::None;
                 if row.add_enabled(!busy,
                     egui::Checkbox::new(&mut none,"전체 미적용")
-                ).changed(){
-                    dialog.set_all_checked(&recipients,!none);
+                ).changed() && none {
+                    // Unchecking an active global shortcut is a no-op.
+                    // Partial recipient selection leaves both shortcuts off.
+                    dialog.set_all_checked(&recipients,false);
                 }
                 let mut all=dialog.scope(&recipients)==VatScope::All;
                 if row.add_enabled(!busy,
                     egui::Checkbox::new(&mut all,"전체 적용")
-                ).changed(){
-                    dialog.set_all_checked(&recipients,all);
+                ).changed() && all {
+                    dialog.set_all_checked(&recipients,true);
                 }
             });
             ui.add_space(theme::SPACE_12);
