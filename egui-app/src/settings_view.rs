@@ -796,9 +796,9 @@ impl SettingsView{
             }
             section(form,title,|area|{
                 let value=field(&self.draft,key);
-                area.label(typography::body(
-                    if value.is_empty(){empty}else{&value}
-                ));
+                let displayed=if value.is_empty(){*empty}else{value.as_str()};
+                area.add(egui::Label::new(typography::body(displayed)).truncate())
+                    .on_hover_text(displayed);
                 area.add_space(theme::SPACE_8);
                 area.horizontal_wrapped(|buttons|{
                     if theme::action(
@@ -940,6 +940,7 @@ impl SettingsView{
                 if components::modal_header(
                     ui,"접수 원문 감사 보관함","닫기",true
                 ){self.archive_open=false;}
+                ui.spacing_mut().scroll=theme::management_scroll_style();
                 let search_width=ui.available_width();
                 components::flexible_text_field(
                     ui,&mut self.archive_query,search_width,
