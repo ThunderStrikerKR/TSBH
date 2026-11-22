@@ -12,6 +12,10 @@ fn key(raw:&str)->String{
     raw.chars().filter(|ch|!ch.is_whitespace())
         .flat_map(char::to_lowercase).collect()
 }
+fn terms(raw:&str)->impl Iterator<Item=&str>{
+    raw.split(|ch|matches!(ch,','|';'|'|'|'\n'))
+        .map(str::trim).filter(|term|!term.is_empty())
+}
 /// Idempotent conversion of ONE client. Existing search identifiers are not
 /// replaced or lost; exact and case/whitespace-equivalent aliases are not
 /// duplicated. A sender's official name never becomes an unnecessary tag.
@@ -28,13 +32,11 @@ pub fn normalize(client:&mut Value)->bool{
     let existing=map.get("shortNames").and_then(Value::as_str).unwrap_or("");
     let mut seen=std::collections::HashSet::<String>::new();
     seen.insert(key(name));
-    let split=|raw:&str|raw.split(|ch|matches!(ch,','|';'|'|'|'\n'))
-        .map(str::trim).filter(|term|!term.is_empty());
-    for tag in split(identifiers).chain(split(existing)){
+    for tag in terms(identifiers).chain(terms(existing)){
         seen.insert(key(tag));
     }
     let mut added=Vec::<String>::new();
-    for tag in split(&legacy){
+    for tag in terms(&legacy){
         let term=key(tag);
         if !term.is_empty() && seen.insert(term){added.push(tag.to_owned());}
     }
