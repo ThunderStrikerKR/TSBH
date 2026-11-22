@@ -2,7 +2,8 @@
 //! Layout uses shared management components; validation and persistence are
 //! delegated to the Rust catalog client rules via BandoGateway.
 use crate::{automatic_message_manager::AutomaticMessageManager,
-    components, gateway::{BandoGateway,ReadOperation}, theme::{self,ButtonRole}, typography};
+    client_search_tags, components, gateway::{BandoGateway,ReadOperation},
+    theme::{self,ButtonRole}, typography};
 use eframe::egui::{self,Align,Context,Layout,Ui};
 use serde_json::{json,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc},thread,time::{SystemTime,UNIX_EPOCH}};
@@ -70,6 +71,8 @@ pub struct ClientManager {
     confirm_discard:bool,
     exception_id:String,
     exception_price:String,
+    tag_input:String,
+    tag_notice:Option<String>,
     show_messages:bool,
     messages:Option<AutomaticMessageManager>,
 }
@@ -88,6 +91,7 @@ impl ClientManager {
             searching:false,sort:None,error:None,changed:false,
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
+            tag_input:String::new(),tag_notice:None,
             show_messages:false,messages:None,
         }
     }
@@ -127,6 +131,7 @@ impl ClientManager {
         self.state.get("readOnly")!=Some(&Value::Bool(true))
     }
     fn dirty(&self)->bool {
+        !self.tag_input.trim().is_empty() ||
         self.draft.as_ref().zip(self.original.as_ref())
             .is_some_and(|(draft,old)|draft!=old)
     }
@@ -142,6 +147,8 @@ impl ClientManager {
         self.confirm_discard=false;
         self.exception_id.clear();
         self.exception_price.clear();
+        self.tag_input.clear();
+        self.tag_notice=None;
     }
     fn query(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context) {
         self.generation=self.generation.wrapping_add(1);
@@ -195,6 +202,7 @@ impl ClientManager {
                 self.state=state;self.saving=None;
                 self.draft=None;self.original=None;self.confirm_delete=false;
                 self.confirm_discard=false;self.error=None;
+                self.tag_input.clear();self.tag_notice=None;
                 self.changed=true;
                 crate::floating_notice::publish(
                     ctx,"clients.action",crate::floating_notice::Tone::Success,
@@ -251,6 +259,8 @@ impl ClientManager {
         } else {
             self.draft=None;
             self.original=None;
+            self.tag_input.clear();
+            self.tag_notice=None;
         }
     }
     /// Keep the existing actions in their approved order, anchored right.
