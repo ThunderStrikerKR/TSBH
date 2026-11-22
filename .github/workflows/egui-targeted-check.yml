@@ -93,6 +93,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml recipient_focus_preserves_original_cell_geometry -- --nocapture
       - name: Verify freight focus preserves exact 36pt height and lower spacing
         run: cargo test --manifest-path egui-app/Cargo.toml freight_focus_preserves_amount_height -- --nocapture
+      - name: Verify COD selector stays a common dropdown during VAT edits
+        run: cargo test --manifest-path egui-app/Cargo.toml reception_cod_selector_tests -- --nocapture
       - name: Verify native recipient freight and remote-area edit validation
         run: cargo test --manifest-path egui-app/Cargo.toml manual_classification::tests -- --nocapture
       - name: Verify working-order plain shipment list rows and product text

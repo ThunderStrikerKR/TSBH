@@ -3307,6 +3307,26 @@ pub fn reception_freight_row(
         ui,label,amount,collect,remote,inquiry_visible,false
     );
 }
+/// Do not swap the COD selector for a textual caption during a Rust save.
+/// The shared dropdown keeps its width, baseline, outline and chevron in
+/// BOTH states; only hit-testing is disabled while another edit is pending.
+fn reception_cod_dropdown(
+    ui:&mut Ui,collect:Option<bool>,editable:bool
+)->(bool,Response){
+    let mut selected=collect.unwrap_or(false);
+    let label=match collect {
+        Some(true)=>"착불",
+        Some(false)=>"선불",
+        None if editable=>"선불",
+        None=>"—",
+    };
+    let response=management_dropdown(ui,label,90.0,editable,"",|menu|{
+        management_dropdown_option(menu,&mut selected,false,"선불");
+        management_dropdown_option(menu,&mut selected,true,"착불");
+    });
+    (editable && selected!=collect.unwrap_or(false),response)
+}
+
 pub fn reception_freight_row_editable(
     ui:&mut Ui,label:&str,amount:Option<i64>,collect:Option<bool>,
     remote:Option<bool>,inquiry_visible:bool,editable:bool
@@ -3359,24 +3379,10 @@ pub fn reception_freight_row_editable(
                     .size(typography::FONT_RECEPTION_ITEM_TEXT));
             }
         );
-        // Management master owns the split chevron, padding and disabled
-        // states. Do not substitute a local button that only toggles labels.
-        if editable {
-            let mut selected=collect.unwrap_or(false);
-            management_dropdown(
-                line,if selected{"착불"}else{"선불"},90.0,
-                true,"",|menu|{
-                    management_dropdown_option(menu,&mut selected,false,"선불");
-                    management_dropdown_option(menu,&mut selected,true,"착불");
-                }
-            );
-            collect_clicked=Some(selected)!=collect
-                && selected!=collect.unwrap_or(false);
-        }else if let Some(collect)=collect{
-            line.label(typography::body(
-                if collect{"(착불)"}else{"(선불)"}
-            ).size(typography::FONT_RECEPTION_ITEM_TEXT));
-        }
+        // A checkbox/VAT edit temporarily disables interactions while Rust
+        // saves. Keep the SAME common dropdown instead of flashing "(선불)".
+        let (changed,_response)=reception_cod_dropdown(line,collect,editable);
+        collect_clicked=changed;
         // Right edge matches React: disabled inquiry is the rightmost
         // action and the 도서/산간 checkbox is immediately to its left.
         line.with_layout(Layout::right_to_left(Align::Center),|right|{
@@ -3394,6 +3400,36 @@ pub fn reception_freight_row_editable(
         amount_rect,amount_clicked:clicked,remote_clicked,collect_clicked
     }
 }
+#[cfg(test)]
+mod reception_cod_selector_tests {
+    use super::*;
+
+    #[test]
+    fn selector_geometry_remains_identical_while_native_edit_is_pending(){
+        let ctx=egui::Context::default();
+        let mut rects=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(400.0);
+                for (editable,collect) in [(true,Some(false)),
+                    (false,Some(false)),(true,Some(true)),
+                    (false,Some(true)),(false,None)]
+                {
+                    let (changed,response)=reception_cod_dropdown(
+                        ui,collect,editable
+                    );
+                    assert!(!changed);
+                    rects.push(response.rect);
+                }
+            });
+        });
+        for rect in &rects {
+            assert_eq!(rect.width(),90.0);
+            assert_eq!(rect.height(),theme::ACTION_STANDARD_HEIGHT);
+        }
+    }
+}
+
 /// Shared add-product action; the reception title row owns its placement.
 pub fn reception_item_add_action_editable(ui:&mut Ui,editable:bool)->bool{
     theme::action(ui,"＋ 상품 추가",theme::ButtonRole::Standard,editable)
