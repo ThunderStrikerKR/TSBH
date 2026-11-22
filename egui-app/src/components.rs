@@ -1309,6 +1309,21 @@ fn reception_recipient_text_edit(
     }else{input}
 }
 
+/// Read-only TextEdit does not reliably own the egui hover response.
+/// One shared hit target now owns field hover, I-beam cursor and inline-click
+/// handoff for both recipient details and read-only workflow views.
+fn reception_recipient_value_hit(ui:&mut Ui,display:&Response)->Response{
+    let hit=ui.interact(
+        display.rect,
+        display.id.with("recipient-value-hit"),
+        Sense::click()
+    );
+    if hit.hovered(){
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
+    hit
+}
+
 /// Every recipient field shares one 36pt baseline. The two telephone
 /// editors occupy the same FULL-WIDTH row: mobile begins at the same x
 /// coordinate as the other text inputs, and the landline fills the right.
@@ -1346,10 +1361,11 @@ pub fn reception_recipient_fields(
             let width = line.available_width().max(1.0);
             // The response belongs to the input, NOT the combined row.
             // This is read-only while retaining hover and native text layout.
-            line.add_sized(
+            let display=line.add_sized(
                 Vec2::new(width, theme::INPUT_HEIGHT),
                 reception_recipient_text_edit(value, width, active, false).interactive(false),
-            ).on_hover_cursor(egui::CursorIcon::Text)
+            );
+            reception_recipient_value_hit(line,&display)
         }).inner
     }
 
@@ -1384,20 +1400,22 @@ pub fn reception_recipient_fields(
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
                     label_cell(line, "휴대폰", theme::RECIPIENT_LABEL_WIDTH);
-                    let mobile_input = line.add_sized(
+                    let mobile_display = line.add_sized(
                         Vec2::new(mobile_width, theme::INPUT_HEIGHT),
                         reception_recipient_text_edit(mobile, mobile_width, active[2], true).interactive(false),
-                    ).on_hover_cursor(egui::CursorIcon::Text);
+                    );
+                    let mobile_input=reception_recipient_value_hit(line,&mobile_display);
                     // Only the gap between the TWO contact groups is 8pt.
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_PHONE_COLUMN_GAP;
                     label_cell(line, "전화", theme::RECIPIENT_PHONE_LABEL_WIDTH);
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
-                    let phone_input = line.add_sized(
+                    let phone_display = line.add_sized(
                         Vec2::new(phone_width, theme::INPUT_HEIGHT),
                         reception_recipient_text_edit(phone, phone_width, active[3], true).interactive(false),
-                    ).on_hover_cursor(egui::CursorIcon::Text);
+                    );
+                    let phone_input=reception_recipient_value_hit(line,&phone_display);
                     (mobile_input,phone_input)
                 }).inner
             }).inner;
