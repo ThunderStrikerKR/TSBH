@@ -1938,10 +1938,13 @@ impl BandoEgui {
                     }
                     return;
                 }
-                let edit_field=match field{
-                    "name"|"address"|"phone"|"mobile"|"note"
-                    |"quantity"|"unitPrice"=>field,
-                    "price"=>"unitPrice",
+                // The InlineTarget field is &'static str. Convert the
+                // source's dynamic link suffix into an approved fixed field.
+                let edit_field:&'static str=match field{
+                    "name"=>"name","address"=>"address",
+                    "phone"=>"phone","mobile"=>"mobile",
+                    "note"=>"note","quantity"=>"quantity",
+                    "unitPrice"|"price"=>"unitPrice",
                     _=>return
                 };
                 let target=InlineTarget{
