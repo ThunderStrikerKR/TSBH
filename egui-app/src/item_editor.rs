@@ -3,7 +3,7 @@
 //! the native manual reducer validates the actual item and recalculates price.
 
 use std::sync::Arc;
-use eframe::egui::{self, Align, Context, Layout, Ui, Vec2};
+use eframe::egui::{self,Context,Vec2};
 use serde_json::Value;
 use crate::{
     components,
@@ -103,7 +103,10 @@ impl ItemEditor{
             self.initial_price.map(components::display_won)
                 .unwrap_or_else(||"가격 확인 필요".into())
         };
+        let allow_apply=!busy && self.can_apply();
         let invalid_selection=edited && !self.can_apply();
+        let mut delete_clicked=false;
+        let mut apply_clicked=false;
         let needs_customer=self.initial["modelProposal"]["required"]==true;
         let safe_width=work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP;
         components::modal_window(
@@ -179,18 +182,20 @@ impl ItemEditor{
                     |left|{
                         if theme::action(left,"삭제",ButtonRole::Danger,!busy)
                             .clicked(){
-                            self.confirm_delete=true;
+                            delete_clicked=true;
                         }
                     },
                     |right|{
                         if theme::action(
-                            right,"적용",ButtonRole::Primary,!busy && self.can_apply()
+                            right,"적용",ButtonRole::Primary,allow_apply
                         ).clicked(){
-                            result=self.replacement.clone().map(Event::Apply);
+                            apply_clicked=true;
                         }
                     }
                 );
             });
+        if delete_clicked{self.confirm_delete=true;}
+        if apply_clicked{result=self.replacement.clone().map(Event::Apply);}
         if self.search.is_some() || self.confirm_delete || self.confirm_discard{
             components::modal_backdrop(ctx,"reception-item-nested-backdrop",true);
         }
