@@ -6335,7 +6335,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             self.vat_change.is_none() && self.client_chooser.is_none() &&
                             self.client_change.is_none() && self.working_sync.is_none() &&
                             self.workflow_dialog.is_none() && !self.ocr_processing,
-                        active_recipient
+                        active_recipient,
+                        self.link_hover.active.as_ref().map(|key|key.recipient_id.as_str())
                     );
                 });
         });
