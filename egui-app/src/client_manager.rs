@@ -726,26 +726,29 @@ impl ClientManager {
         ui.columns(2,|cols|{
             cols[0].label(typography::field_label("가격 등급"));
             let mut tier=field(draft,"tier").to_owned();
-            egui::ComboBox::from_id_salt("client-manager-tier")
-                .width(cols[0].available_width())
-                .selected_text(components::client_tier_label(&tier))
-                .show_ui(&mut cols[0],|ui|{
+            let width=cols[0].available_width();
+            components::management_dropdown(
+                &mut cols[0],components::client_tier_label(&tier),
+                width,true,"가격 등급 선택",|ui|{
                     for (key,label) in [
                         ("wholesale","도매"),("semi","반도매"),
                         ("retail","소매"),("special","특수")
                     ] {
-                        ui.selectable_value(&mut tier,key.to_owned(),label);
+                        components::management_dropdown_option(
+                            ui,&mut tier,key.to_owned(),label);
                     }
                 });
             draft["tier"]=json!(tier);
             cols[1].label(typography::field_label("결제 방식"));
             let mut payment=field(draft,"payment").to_owned();
-            egui::ComboBox::from_id_salt("client-manager-payment")
-                .width(cols[1].available_width())
-                .selected_text(if payment=="POSTPAID"{"후불"}else{"선입금"})
-                .show_ui(&mut cols[1],|ui|{
-                    ui.selectable_value(&mut payment,"PREPAID".into(),"선입금");
-                    ui.selectable_value(&mut payment,"POSTPAID".into(),"후불");
+            let width=cols[1].available_width();
+            components::management_dropdown(
+                &mut cols[1],if payment=="POSTPAID"{"후불"}else{"선입금"},
+                width,true,"결제 방식 선택",|ui|{
+                    components::management_dropdown_option(
+                        ui,&mut payment,"PREPAID".into(),"선입금");
+                    components::management_dropdown_option(
+                        ui,&mut payment,"POSTPAID".into(),"후불");
                 });
             draft["payment"]=json!(payment);
         });
@@ -759,15 +762,15 @@ impl ClientManager {
             let selected_label=accounts.iter()
                 .find(|a|field(a,"id")==selected)
                 .map(|a|field(a,"name")).unwrap_or("미지정");
-            egui::ComboBox::from_id_salt("client-manager-account")
-                .width(ui.available_width())
-                .selected_text(selected_label)
-                .show_ui(ui,|ui|{
-                    ui.selectable_value(&mut selected,String::new(),"미지정");
+            let width=ui.available_width();
+            components::management_dropdown(
+                ui,selected_label,width,true,"주 사용 입금계좌 선택",|ui|{
+                    components::management_dropdown_option(
+                        ui,&mut selected,String::new(),"미지정");
                     for account in &accounts {
                         let id=field(account,"id").to_owned();
                         let label=field(account,"name");
-                        ui.selectable_value(&mut selected,id,label);
+                        components::management_dropdown_option(ui,&mut selected,id,label);
                     }
                 });
             draft["preferredAccountId"]=if selected.is_empty(){Value::Null}
@@ -811,14 +814,16 @@ impl ClientManager {
                 }
             }
             ui.horizontal(|row|{
-                egui::ComboBox::from_id_salt("client-manager-exception-variant")
-                    .selected_text(variants.iter()
+                components::management_dropdown(
+                    row,variants.iter()
                         .find(|(id,_)|id==&self.exception_id)
                         .map(|(_,label)|label.as_str())
-                        .unwrap_or("예외 품목 / 색상 선택"))
-                    .show_ui(row,|ui|{
+                        .unwrap_or("예외 품목 / 색상 선택"),
+                    theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,
+                    "특수 단가 적용 품목 선택",|ui|{
                         for (id,label) in &variants {
-                            ui.selectable_value(&mut self.exception_id,id.clone(),label);
+                            components::management_dropdown_option(
+                                ui,&mut self.exception_id,id.clone(),label);
                         }
                     });
                 row.label(typography::field_label("특수 단가"));
