@@ -138,18 +138,29 @@ pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
 pub const SPACE_4: f32 = 4.0;
 pub const SPACE_8: f32 = 8.0;
 pub const SETTINGS_HELP_ICON_SIZE: f32 = 22.0;
-pub const SETTINGS_TOP_TWO_COL_MIN_WIDTH: f32 = 760.0;
-pub const SETTINGS_SENDER_THREE_COL_MIN_WIDTH: f32 = 1120.0;
-pub const SETTINGS_GRID_GAP_X: f32 = 16.0;
-pub const SETTINGS_TOP_COL_RATIOS: [f32;2] = [1.0,1.4];
-pub const SETTINGS_SENDER_COL_RATIOS: [f32;3] = [1.1,1.6,0.8];
-// React account-row: bank / number / holder / 112px delete button.
-pub const SETTINGS_ACCOUNT_ROW_MIN_WIDTH: f32 = 600.0;
-pub const SETTINGS_ACCOUNT_COL_RATIOS: [f32;3] = [1.0,1.3,1.0];
-pub const SETTINGS_ACCOUNT_DELETE_WIDTH: f32 = 112.0;
-pub const SETTINGS_ACCOUNT_RECOMMENDATION_MIN_WIDTH: f32 = 560.0;
-/// Prevent recommendation account selectors from stretching across the full settings card.
-pub const SETTINGS_ACCOUNT_PICKER_MAX_WIDTH: f32 = 420.0;
+// Settings/Basic compresses the form into three shared section cards.
+// Above the split threshold, the two information cards remain left of the
+// independently scrolling account card. These are logical egui points.
+pub const SETTINGS_BASIC_SPLIT_MIN_WIDTH:f32=1040.0;
+pub const SETTINGS_BASIC_LEFT_PANE_WIDTH:f32=410.0;
+pub const SETTINGS_BASIC_SAVE_RESERVE:f32=50.0;
+pub const SETTINGS_OPERATOR_FIELD_WIDTH:f32=112.0;
+pub const SETTINGS_SENDER_WIDE_MIN_WIDTH:f32=660.0;
+pub const SETTINGS_SENDER_NAME_WIDTH:f32=164.0;
+pub const SETTINGS_SENDER_POSTCODE_WIDTH:f32=106.0;
+pub const SETTINGS_SENDER_PHONE_WIDTH:f32=160.0;
+pub const SETTINGS_SENDER_ADDRESS_WIDTH:f32=500.0;
+// Input boxes have content-appropriate capped widths; they must not
+// stretch with a wide Settings panel or become three equal-width columns.
+pub const SETTINGS_ACCOUNT_ROW_MIN_WIDTH:f32=490.0;
+pub const SETTINGS_ACCOUNT_FIELD_WIDTHS:[f32;3]=[118.0,194.0,112.0];
+pub const SETTINGS_ACCOUNT_DELETE_WIDTH:f32=102.0;
+pub const SETTINGS_ACCOUNT_PICKER_MAX_WIDTH:f32=278.0;
+// Cap only the account rows' scroll viewport, never the whole Settings page.
+pub const SETTINGS_ACCOUNT_LIST_MIN_HEIGHT:f32=48.0;
+pub const SETTINGS_ACCOUNT_LIST_MAX_HEIGHT:f32=260.0;
+pub const SETTINGS_ACCOUNT_PANEL_FIXED_HEIGHT:f32=190.0;
+pub const SETTINGS_ACCOUNT_STACKED_EXTRA_HEIGHT:f32=62.0;
 pub const SPACE_12: f32 = 12.0;
 pub const SPACE_16: f32 = 16.0;
 pub const SPACE_24: f32 = 24.0;
