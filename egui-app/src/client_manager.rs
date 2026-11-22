@@ -768,8 +768,11 @@ impl ClientManager {
                 if components::modal_header(ui,title,"취소",!busy){
                     close=true;
                 }
-                let body_height=theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT
-                    .min((work_area.height()-theme::SPACE_24*4.0).max(100.0));
+                // Reserve the native header, footer, gap and outer frame
+                // before allocating the only scrollable editor region.
+                let body_height=components::modal_editor_body_max_height(
+                    work_area.height()
+                );
                 egui::ScrollArea::vertical()
                     .id_salt("native-client-manager-fields")
                     .max_height(body_height)

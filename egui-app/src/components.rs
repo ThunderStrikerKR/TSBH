@@ -779,6 +779,21 @@ pub fn modal_action_row<R>(
     )
 }
 
+/// Maximum scrollable editor body height after reserving the OCR-master
+/// header/footer and the native modal's fixed outer margins. Screen modules
+/// must not independently subtract arbitrary offsets from the full work area:
+/// doing so can push the final 58pt action row outside a short window.
+pub fn modal_editor_body_max_height(work_area_height:f32)->f32 {
+    let fixed=2.0*theme::MODAL_PANEL_PADDING_Y
+        +2.0*theme::FRAME_STROKE_WIDTH
+        +theme::MODAL_HEADER_HEIGHT
+        +theme::MODAL_FOOTER_HEIGHT
+        +theme::SPACE_12
+        +3.0*theme::SPACING;
+    (work_area_height-fixed).max(1.0)
+        .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
+}
+
 /// Two-ended footer for an editor with both a contextual/danger action
 /// and a final Save/Apply action. The OCR-master surface, rule, height and
 /// button hitbox still belong to `modal_action_row`.
