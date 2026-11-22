@@ -132,7 +132,7 @@ impl ModelGroupManager {
         self.draft[&id]=json!({"name":name,"productIds":[],"representativeProductId":""});
         self.selected=id;self.new_name.clear();self.status.clear();
     }
-    pub fn poll(&mut self,ctx:&Context)->Option<Value>{
+    pub fn poll(&mut self,_ctx:&Context)->Option<Value>{
         let response=self.write.as_ref().map(|rx|rx.try_recv());
         match response{
             Some(Ok(Ok(catalog)))=>{
@@ -155,7 +155,7 @@ impl ModelGroupManager {
             }
             // The write worker calls ctx.request_repaint() immediately after
             // sending its result. No 100ms polling frames are required.
-            Some(Err(TryRecvError::Empty))=>None
+            Some(Err(TryRecvError::Empty))=>None,
             None=>None,
         }
     }
