@@ -8787,6 +8787,19 @@ mod reception_workflow_admission_integration_tests {
     }
 
     #[test]
+    fn legacy_operating_copy_metadata_does_not_block_local_draft_delete(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.drafts[0].working_version=Some(2);
+        app.drafts[0].working_synced=true;
+        app.workflow_dialog=Some(WorkflowDialog::DeletePending("draft-1".into()));
+        assert!(app.delete_pending_reception("draft-1",&ctx));
+        assert_eq!(app.active_id.as_deref(),Some("draft-2"));
+        assert_eq!(app.drafts.len(),1);
+        assert!(app.workflow_dialog.is_none());
+    }
+
+    #[test]
     fn approved_delete_closes_its_modal_before_switching_to_next_draft(){
         let ctx=egui::Context::default();
         let mut app=app();
