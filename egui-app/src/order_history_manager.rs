@@ -1700,6 +1700,11 @@ impl OrderHistoryManager {
                     let response=section.interact(cell,
                         section.make_persistent_id(("order-history-sort",index)),
                         Sense::click());
+                    if response.hovered(){
+                        components::management_master_header_sort_hover(
+                            section,cell
+                        );
+                    }
                     if response.clicked(){
                         next_sort=Some(Sort::next(self.sort,column));
                     }
