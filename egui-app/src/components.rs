@@ -1032,14 +1032,16 @@ pub fn manual_table_cell(ui:&mut Ui,value:&str,width:f32,selected:bool)->Respons
         // double 2pt border on every table column.
         Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
     };
-    ui.add_sized(
+    let response=ui.add_sized(
         Vec2::new(width,theme::MANUAL_TABLE_ROW_HEIGHT),
         egui::Button::new(typography::table_cell(label))
             .truncate()
             .fill(if selected{theme::RAISED}else{theme::INPUT})
             .stroke(border)
             .corner_radius(0),
-    )
+    );
+    theme::paint_button_hover(ui,&response,0.0);
+    response
 }
 pub fn manual_table_heading(ui:&mut Ui,label:&str,width:f32){
     ui.add_sized(
@@ -1130,6 +1132,7 @@ pub fn reception_recipient_navigator(
                     if enabled{theme::RECEPTION_RECIPIENT_NAV_ACTIVE_ICON}
                     else{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
                 );
+                if enabled{theme::paint_button_hover(row,&response,0.0);}
                 if enabled{response.on_hover_text(hint)}else{response}
             };
 
@@ -1583,6 +1586,9 @@ fn calendar_nav_button(
             &painter,response.rect.center(),direction,ink
         );
     }
+    theme::paint_button_hover(
+        ui,&response,theme::CONTROL_RADIUS as f32
+    );
     response.clicked()
 }
 
@@ -1665,7 +1671,13 @@ pub fn date_calendar(
                             }else if *date==today{
                                 button=button.stroke(Stroke::new(1.0,theme::BORDER));
                             }
-                            if grid.add_sized(egui::vec2(width,width),button).clicked(){
+                            let response=grid.add_sized(
+                                egui::vec2(width,width),button
+                            );
+                            theme::paint_button_hover(
+                                grid,&response,theme::CONTROL_RADIUS as f32
+                            );
+                            if response.clicked(){
                                 chosen=Some(*date);
                                 grid.close();
                             }
@@ -2068,9 +2080,14 @@ pub fn management_master_header_finish(ui:&Ui,header_rect:Rect){
 /// The caller supplies the column intersected with the 34pt text area.
 pub fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
     if hit.width()>0.0 && hit.height()>0.0 {
-        ui.painter().with_clip_rect(hit).rect_stroke(
+        let painter=ui.painter().with_clip_rect(hit);
+        painter.rect_filled(
+            hit,2.0,egui::Color32::from_rgba_unmultiplied(112,180,255,20)
+        );
+        painter.rect_stroke(
             hit.shrink(1.0),2.0,
-            Stroke::new(1.0,theme::BORDER),
+            Stroke::new(theme::SOFT_DIVIDER_WIDTH,
+                theme::SELECTION.linear_multiply(0.82)),
             egui::StrokeKind::Inside
         );
     }
@@ -2238,6 +2255,11 @@ pub fn management_dropdown(
         &painter,egui::pos2(rect.right()-15.0,rect.center().y),
         ManagementChevronDirection::Down,arrow_ink
     );
+    if interactive {
+        theme::paint_button_hover(
+            ui,&trigger,theme::CONTROL_RADIUS as f32
+        );
+    }
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
@@ -2315,6 +2337,11 @@ pub fn management_chooser_row(
         egui::pos2(x,y+lines-secondary.size().y),
         secondary,theme::MUTED
     );
+    if !selected {
+        theme::paint_button_hover(
+            ui,&response,theme::CONTROL_RADIUS as f32
+        );
+    }
     response.on_hover_text(format!("{title} / {status}"))
 }
 
