@@ -6,7 +6,9 @@ publish = false
 description = "Shared BANDO HUB v2 relational read projection"
 
 [dependencies]
-rusqlite = { version = "0.32", features = ["backup"] }
+# Tests and the standalone egui host must link the same self-contained
+# SQLite engine as the Tauri runtime, including on clean Windows runners.
+rusqlite = { version = "0.32", features = ["backup", "bundled"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 url = "2"
