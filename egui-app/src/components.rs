@@ -2379,6 +2379,18 @@ fn paint_client_line(
     );
 }
 
+/// Split the rendered condition string without changing the persisted
+/// transaction rules. Payment and VAT receive independent fixed text slots
+/// so the following labels never shift with proportional glyph widths.
+fn client_condition_parts(terms:&str)->(&str,&str,&str){
+    let mut segments=terms.splitn(3," / ");
+    (
+        segments.next().unwrap_or(""),
+        segments.next().unwrap_or(""),
+        segments.next().unwrap_or("")
+    )
+}
+
 /// Shared management-table column separators. Freight Assignment and
 /// Client Management both call this painter for header and body instead
 /// of leaving vertical rules to independently implemented screen widgets.
@@ -2580,11 +2592,56 @@ fn management_row_impl(
                     egui::pos2((badge.right()+theme::SPACE_8).min(cell.right()),cell.top()),
                     cell.max
                 );
+                let (payment,vat,extras)=client_condition_parts(secondary);
+                let measured=|text:&str|{
+                    typography::client_table_metadata_galley(
+                        ui,text,theme::MUTED
+                    ).size().x
+                };
+                // Use real font metrics rather than assuming Hangul letters
+                // and punctuation all occupy identical visual widths.
+                let payment_slot=measured("선입금").max(measured("후불"));
+                let vat_slot=measured("부가세 포함")
+                    .max(measured("부가세 별도"));
+                let separator=" / ";
+                let separator_width=measured(separator);
+                let payment_x=second.left();
+                let vat_x=payment_x+payment_slot+separator_width;
+                let extras_x=vat_x+vat_slot+separator_width;
                 paint_client_line(
-                    ui,second,second.left(),
-                    typography::client_table_metadata_galley(ui,secondary,theme::MUTED),
-                    theme::MUTED
+                    ui,second,payment_x,
+                    typography::client_table_metadata_galley(
+                        ui,payment,theme::MUTED
+                    ),theme::MUTED
                 );
+                if !vat.is_empty(){
+                    paint_client_line(
+                        ui,second,payment_x+payment_slot,
+                        typography::client_table_metadata_galley(
+                            ui,separator,theme::MUTED
+                        ),theme::MUTED
+                    );
+                    paint_client_line(
+                        ui,second,vat_x,
+                        typography::client_table_metadata_galley(
+                            ui,vat,theme::MUTED
+                        ),theme::MUTED
+                    );
+                }
+                if !extras.is_empty(){
+                    paint_client_line(
+                        ui,second,vat_x+vat_slot,
+                        typography::client_table_metadata_galley(
+                            ui,separator,theme::MUTED
+                        ),theme::MUTED
+                    );
+                    paint_client_line(
+                        ui,second,extras_x,
+                        typography::client_table_metadata_galley(
+                            ui,extras,theme::MUTED
+                        ),theme::MUTED
+                    );
+                }
             }
         }else{
             // Only the primary value is visible in a name/address/phone cell.
@@ -2635,6 +2692,15 @@ fn management_row_impl(
 #[cfg(test)]
 mod management_client_column_divider_tests{
     use super::*;
+    #[test]
+    fn payment_and_vat_stay_in_separate_fixed_slots(){
+        assert_eq!(client_condition_parts("선입금 / 부가세 별도"),
+            ("선입금","부가세 별도",""));
+        assert_eq!(client_condition_parts("후불 / 부가세 별도 / 운임 청구 제외"),
+            ("후불","부가세 별도","운임 청구 제외"));
+        assert_eq!(client_condition_parts("선입금 / 부가세 포함 / 거래 중지"),
+            ("선입금","부가세 포함","거래 중지"));
+    }
     #[test]
     fn address_gains_all_extra_width(){
         assert_eq!(management_client_column_widths(900.0),
