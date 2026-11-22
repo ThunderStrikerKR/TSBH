@@ -1184,6 +1184,43 @@ pub fn flexible_text_field(
     ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
 }
 
+/// Search inputs are append-first: a normal pointer click to resume an
+/// existing filter places the caret after its last Unicode character, even
+/// when the click lands over the first character. This does NOT alter ordinary
+/// TextEdit or inline editing: double-click selection, dragging, modifier
+/// selection and keyboard caret navigation retain their native behavior.
+fn management_search_append_click(response:&Response,ui:&Ui,text:&str){
+    if !response.clicked_by(egui::PointerButton::Primary)
+        || response.double_clicked()
+        || response.triple_clicked()
+        || response.dragged()
+        || ui.input(|input| {
+            let modifiers=input.modifiers;
+            modifiers.shift || modifiers.ctrl || modifiers.alt || modifiers.mac_cmd
+        })
+    {
+        return;
+    }
+    if let Some(mut state)=egui::TextEdit::load_state(ui.ctx(),response.id){
+        let end=text.chars().count();
+        state.cursor.set_char_range(Some(
+            egui::text::CCursorRange::one(egui::text::CCursor::new(end))
+        ));
+        state.store(ui.ctx(),response.id);
+        ui.ctx().request_repaint();
+    }
+}
+
+/// Same shared 36pt search field geometry, but a deliberate end-of-query
+/// caret policy instead of TextEdit's pointer-position-based initial caret.
+pub fn management_search_field(
+    ui:&mut Ui,text:&mut String,width:f32,placeholder:&str
+)->Response {
+    let response=flexible_text_field(ui,text,width,placeholder);
+    management_search_append_click(&response,ui,text);
+    response
+}
+
 /// Shared compact spreadsheet cell. Selection is an inset border;
 /// hovered cells do not resize the row, and a selected cell does not
 /// borrow the main navigation style.
@@ -4045,6 +4082,85 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
 }
 
 // Narrow geometry contract check only, not a business-data regression suite.
+#[cfg(test)]
+mod management_search_caret_tests {
+    use super::*;
+
+    #[test]
+    fn clicking_existing_query_resumes_at_the_end_not_the_first_character(){
+        let ctx=egui::Context::default();
+        let mut query="709".to_owned();
+        let mut rect=Rect::NOTHING;
+        let mut field_id=None;
+        let mut draw=|ctx:&egui::Context|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(320.0);
+                let response=management_search_field(
+                    ui,&mut query,240.0,"모델명 / 상품명 검색"
+                );
+                rect=response.rect;
+                field_id=Some(response.id);
+            });
+        };
+        let mut input=egui::RawInput::default();
+        input.screen_rect=Some(Rect::from_min_size(
+            egui::Pos2::ZERO,Vec2::new(360.0,180.0)
+        ));
+        ctx.run(input,|ctx|draw(ctx));
+        let pointer=egui::pos2(rect.left()+8.0,rect.center().y);
+        ctx.run(egui::RawInput{
+            events:vec![
+                egui::Event::PointerMoved(pointer),
+                egui::Event::PointerButton{
+                    pos:pointer,button:egui::PointerButton::Primary,
+                    pressed:true,modifiers:egui::Modifiers::NONE
+                },
+            ],
+            ..Default::default()
+        },|ctx|draw(ctx));
+        ctx.run(egui::RawInput{
+            events:vec![egui::Event::PointerButton{
+                pos:pointer,button:egui::PointerButton::Primary,
+                pressed:false,modifiers:egui::Modifiers::NONE
+            }],
+            ..Default::default()
+        },|ctx|draw(ctx));
+        let state=egui::TextEdit::load_state(&ctx,field_id.unwrap())
+            .expect("search edit state after click");
+        let range=state.cursor.char_range().expect("search caret after click");
+        assert_eq!(range.primary.index,3);
+        assert_eq!(range.secondary.index,3);
+        assert_eq!(query,"709");
+    }
+    #[test]
+    fn unicode_search_cursor_end_uses_character_index_not_bytes(){
+        let ctx=egui::Context::default();
+        let mut value="보면대709".to_owned();
+        let mut id=None;
+        ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                id=Some(management_search_field(
+                    ui,&mut value,240.0,"검색"
+                ).id);
+            });
+        });
+        let id=id.unwrap();
+        let mut state=egui::TextEdit::load_state(&ctx,id).unwrap();
+        let response=egui::Response::new(&ctx,egui::LayerId::background(),
+            id,Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(240.0,36.0)),
+            egui::Sense::click());
+        // The end index is 6 Unicode scalar values, not UTF-8 bytes.
+        let end=value.chars().count();
+        assert_eq!(end,6);
+        state.cursor.set_char_range(Some(
+            egui::text::CCursorRange::one(egui::text::CCursor::new(end))
+        ));
+        state.store(&ctx,response.id);
+        assert_eq!(egui::TextEdit::load_state(&ctx,id).unwrap()
+            .cursor.char_range().unwrap().primary.index,6);
+    }
+}
+
 #[cfg(test)]
 mod inline_first_click_caret_tests {
     use super::*;
