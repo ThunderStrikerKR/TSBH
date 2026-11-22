@@ -2451,8 +2451,22 @@ impl BandoEgui {
                                         let outcome=(||{
                                             let spellings=preview_store::PreviewStore
                                                 ::list_ocr_feedback(1000)?;
-                                            let layouts=preview_store::PreviewStore
-                                                ::list_ocr_layout_examples(1000)?;
+                                            // Two independent learned domains:
+                                            // (1) repeated OCR mistakes across
+                                            // verified staff corrections;
+                                            // (2) form layout examples ONLY
+                                            // from a manually confirmed client.
+                                            // Both corpora continue recording
+                                            // regardless of this analysis toggle.
+                                            let layouts=if let Some(client_id)=
+                                                template_client.as_deref(){
+                                                preview_store::PreviewStore
+                                                    ::list_ocr_layout_examples_for_client(
+                                                        client_id,1000
+                                                    )?
+                                            }else{
+                                                Vec::new()
+                                            };
                                             Ok::<_,String>(ocr_learning::suggest_with_layout(
                                                 &initial,&spellings,&layouts,
                                                 template_client.as_deref()
