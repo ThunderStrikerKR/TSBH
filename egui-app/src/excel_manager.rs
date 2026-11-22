@@ -785,7 +785,7 @@ impl ExcelManager{
                 |search|{
                     search.set_clip_rect(search_rect);
                     search.set_width(search_rect.width());
-                    if components::flexible_text_field(
+                    if components::management_search_field(
                         search,&mut self.query,
                         theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                         if history_tab{
