@@ -7713,7 +7713,11 @@ mod reception_visible_selection_regression_tests{
         app.active_id=Some("draft".into());
         app.analysis=Some(two_recipients());
         app.selected_recipient=0;
-        app.link_hover.active=Some(source_highlight::key("pyo","pyo","name"));
+        let ctx=egui::Context::default();
+        let linked=source_highlight::key("pyo","pyo","name");
+        app.link_hover.update_for("draft",Some(linked.clone()),&ctx);
+        std::thread::sleep(Duration::from_millis(55));
+        app.link_hover.update_for("draft",Some(linked),&ctx);
         assert_eq!(app.visible_recipient_index(),1);
         assert_eq!(app.selected_recipient,0);
         app.link_hover.clear();
