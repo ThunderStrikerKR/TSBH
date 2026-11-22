@@ -138,8 +138,19 @@ fn set_item(payload:&Value,value:&str)->Result<Value,String>{
             str_field(c,"id")==str_field(req(payload,"order").unwrap_or(&Value::Null),"clientId"))
             .cloned().unwrap_or_else(||json!({"id":"","tier":"wholesale",
                 "payment":"PREPAID","overrides":{},"shippingFeeExcluded":false}));
-        super::catalog_item::make(&json!({"product":product,"client":client,
-            "newItemId":iid,"quantity":null}))?["item"].clone()
+        // React passes the chosen independent variant and color to
+        // create_catalog_item. Without these fields, a valid sole Black
+        // variant may be rejected whenever defaultColor is absent.
+        let variants=rows(field(product,"variants"));
+        let variant=if variants.len()==1 &&
+            field(product,"requiresOption")!=&Value::Bool(true){
+            variants.first()
+        }else{None};
+        super::catalog_item::make(&json!({
+            "product":product,"client":client,"newItemId":iid,"quantity":null,
+            "variantId":variant.map(|v|field(v,"id")),
+            "color":variant.and_then(|v|v.get("color"))
+        }))?["item"].clone()
     }else if value.is_empty(){Value::Null}else{
         let state=req(payload,"state")?;
         let client=rows(field(state,"clients")).iter().find(|c|
