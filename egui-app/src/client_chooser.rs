@@ -212,27 +212,32 @@ impl ClientChooser {
                 if let Some(error)=self.error.as_deref() {
                     results_panel.label(egui::RichText::new(error).color(theme::DANGER));
                 }
-                if !self.loaded||self.searching {
-                    results_panel.label(typography::caption("검색 중"));
+                // Keep the result viewport allocated during asynchronous
+                // searches too; only its contents change, never the card size.
+                let ids:Vec<&str>=if self.query.trim().is_empty() {
+                    self.clients.iter().map(|c|text(c,"id")).collect()
                 } else {
-                    let ids:Vec<&str>=if self.query.trim().is_empty() {
-                        self.clients.iter().map(|c|text(c,"id")).collect()
-                    } else {
-                        self.results.iter().map(String::as_str).collect()
-                    };
-                    results_panel.label(typography::caption(&format!("{}개 거래처",ids.len())));
-                    // Use the actual space left in the fixed dialog. The
-                    // former content-driven 390pt cap let the whole popup
-                    // collapse until only three result rows were visible.
-                    let results_height=(results_panel.available_height()
-                        -theme::SPACE_8)
-                        .max(1.0)
-                        .min(theme::CLIENT_CHOOSER_RESULTS_MAX_HEIGHT);
-                    egui::ScrollArea::vertical()
-                        .id_salt("egui-all-clients-scroll")
-                        .max_height(results_height)
-                        .auto_shrink([false,false])
-                        .show(results_panel,|ui|{
+                    self.results.iter().map(String::as_str).collect()
+                };
+                if self.loaded&&!self.searching {
+                    results_panel.label(typography::caption(
+                        &format!("{}개 거래처",ids.len())
+                    ));
+                } else {
+                    results_panel.label(typography::caption("검색 중"));
+                }
+                let results_height=(results_panel.available_height()
+                    -theme::SPACE_8)
+                    .max(1.0)
+                    .min(theme::CLIENT_CHOOSER_RESULTS_MAX_HEIGHT);
+                egui::ScrollArea::vertical()
+                    .id_salt("egui-all-clients-scroll")
+                    .max_height(results_height)
+                    .auto_shrink([false,false])
+                    .show(results_panel,|ui|{
+                        if !self.loaded||self.searching {
+                            ui.label(typography::caption("검색 중"));
+                        } else {
                             for id in ids {
                                 if let Some(row)=self.clients.iter().find(|c|text(c,"id")==id) {
                                     let name=text(row,"name");
@@ -298,8 +303,8 @@ impl ClientChooser {
                                     !self.searching {
                                 ui.label(typography::caption("검색 결과가 없습니다."));
                             }
-                        });
-                }
+                        }
+                    });
                 });
                 });
             });
