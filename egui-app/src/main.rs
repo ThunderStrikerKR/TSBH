@@ -1164,6 +1164,9 @@ impl BandoEgui {
     /// Read-only projection of another unsaved receipt. Never replace the
     /// employee's active source, analysis, inline editor or autosave owner.
     fn visible_pending_other(&self)->Option<(preview_store::WorkingReception,serde_json::Value,usize)>{
+        // React precedence: a hovered native stage is above pending-card
+        // preview, while the committed selection remains below both.
+        if self.workflow_ui.active_preview().is_some(){return None;}
         let preview=self.workflow_ui.pending_preview()?;
         if self.active_id.as_deref()==Some(preview.order_id.as_str()){return None;}
         let draft=self.drafts.iter().find(|row|row.id==preview.order_id)?;
@@ -4177,28 +4180,38 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     fn visible_workflow_group(&self)->Option<(
         workflow_board::GroupRow,workflow_board::ShipmentRow
     )>{
-        // A temporary pending-order preview takes priority over committed
-        // native workflow selection; both remain completely read-only.
-        if self.workflow_ui.pending_preview().is_some(){return None;}
-        let group_id=self.workflow_ui.active_preview()
-            .or_else(||self.workflow_ui.selection.as_ref()
-                .map(|selection|selection.group_id.as_str()))?;
+        let stage=self.workflow_ui.active_preview();
+        if stage.is_none() && self.workflow_ui.pending_preview().is_some(){
+            return None;
+        }
         let board=self.workflow_snapshot.as_ref()?;
+        let committed=self.workflow_ui.selection.as_ref();
+        // Linked recipient evidence can identify a shipment in ANOTHER
+        // workflow group of the same confirmed order. Never match on name.
+        let linked=if stage.is_none(){
+            self.link_hover.active.as_ref().and_then(|key|
+                committed.and_then(|selected|board.groups.iter()
+                    .flat_map(|group|group.shipments.iter()
+                        .map(move |shipment|(group,shipment)))
+                    .find(|(_group,shipment)|
+                        shipment.order_id==selected.order_id &&
+                        shipment.recipient_id==key.recipient_id))
+            )
+        }else{None};
+        let group_id=stage
+            .or_else(||linked.map(|(group,_)|group.id.as_str()))
+            .or_else(||committed.map(|selection|selection.group_id.as_str()))?;
         let group=board.groups.iter().find(|g|g.id==group_id)?;
-        let previewed=self.workflow_ui.active_preview()
-            .filter(|active|*active==group.id)
+        let previewed=stage.filter(|active|*active==group.id)
             .and_then(|_|self.workflow_ui.preview_shipment.as_deref())
             .and_then(|id|group.shipments.iter().find(|ship|ship.id==id));
-        let selected=self.workflow_ui.selection.as_ref()
-            .filter(|s|s.group_id==group.id)
-            .and_then(|s|group.shipments.iter().find(|ship|
-                ship.id==s.shipment_id&&ship.order_id==s.order_id));
-        let linked=self.link_hover.active.as_ref()
-            .and_then(|key|group.shipments.iter().find(|ship|
-                ship.recipient_id==key.recipient_id &&
-                selected.is_some_and(|committed|
-                    committed.order_id==ship.order_id)));
-        let ship=previewed.or(linked).or(selected)
+        let linked_ship=linked.filter(|(g,_)|g.id==group.id)
+            .map(|(_,ship)|ship);
+        let selected=committed.filter(|selection|selection.group_id==group.id)
+            .and_then(|selection|group.shipments.iter().find(|ship|
+                ship.id==selection.shipment_id &&
+                ship.order_id==selection.order_id));
+        let ship=previewed.or(linked_ship).or(selected)
             .or_else(||group.shipments.first())?;
         Some((group.clone(),ship.clone()))
     }
@@ -4287,8 +4300,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // recipient/item spans. Do not identify recipients by name text:
             // duplicate names in one document must remain independent.
             let raw=&shipment.source_raw;
-            let recognition=serde_json::json!({"recipients":group.shipments
-                .iter().filter(|row|row.order_id==shipment.order_id)
+            let recognition=serde_json::json!({"recipients":
+                self.workflow_snapshot.as_ref().into_iter()
+                .flat_map(|snapshot|snapshot.groups.iter())
+                .flat_map(|g|g.shipments.iter())
+                .filter(|row|row.order_id==shipment.order_id &&
+                    row.source_raw==shipment.source_raw)
                 .map(|row|row.recipient.clone()).collect::<Vec<_>>()});
             let spans=source_highlight::collect(raw,&recognition);
             let selected_id=Some(shipment.recipient_id.as_str());
@@ -6782,12 +6799,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_ui.selection=None;
                 self.workflow_ui.folded=None;
                 self.workflow_ui.stop_preview();
+                self.link_hover.clear();
+                self.source_hover=None;
                 self.select_reception(&id,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectPendingRecipient(target))=>{
                 self.workflow_ui.selection=None;
                 self.workflow_ui.folded=None;
                 self.workflow_ui.stop_preview();
+                self.link_hover.clear();
+                self.source_hover=None;
                 self.focus_pending_recipient(&target,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectShipment(selection))=>{
