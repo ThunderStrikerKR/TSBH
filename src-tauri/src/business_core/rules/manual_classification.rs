@@ -284,6 +284,36 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
         }
         return Ok(json!({"model":model}));
     }
+    if action == "set_manual_unit_price" {
+        let mut model=req(payload,"model")?.clone();
+        let cell=req(payload,"cell")?;
+        let rid=required_str(cell,"recipientId")?;
+        let iid=required_str(cell,"itemId")?;
+        let value=payload.get("value").ok_or("수정 단가 입력이 없습니다.")?;
+        let parsed=if value.is_null(){None}
+            else{Some(super::safe(value)
+                .ok_or("단가는 0 이상의 안전한 정수여야 합니다.")?)};
+        let row=model["rows"].as_array_mut().ok_or("배송 행 목록 오류")?
+            .iter_mut().find(|r|str_field(r,"id")==rid)
+            .ok_or("수취인 ID를 확인하세요.")?;
+        let item=row["items"].as_array_mut().ok_or("상품 목록 오류")?
+            .iter_mut().find(|i|str_field(i,"id")==iid)
+            .ok_or("상품 ID를 확인하세요.")?;
+        if str_field(item,"productId").is_empty() || str_field(item,"variantId").is_empty(){
+            return Err("등록된 상품·옵션을 확인한 뒤 단가를 수정하세요.".into());
+        }
+        if let Some(price)=parsed{
+            // Explicit staff override, never a new customer tariff.
+            // Repricing honours this field only in an editable draft.
+            set(item,"manualUnitPrice",json!(price))?;
+            set(item,"unitPrice",json!(price))?;
+        }else{
+            item.as_object_mut().ok_or("상품 데이터 오류")?.remove("manualUnitPrice");
+            // The catalog price is resolved again by the native repricer.
+            set(item,"unitPrice",Value::Null)?;
+        }
+        return Ok(json!({"model":model}));
+    }
     if action == "set_manual_delivery_option" {
         // The manual editor may change an UNCONFIRMED recipient only.
         // Freight amounts are normalized through the same Rust 2x rule
@@ -443,6 +473,24 @@ mod tests {
         })).unwrap();
         assert_eq!(result["model"]["rows"][0]["name"],"");
         assert_eq!(result["model"]["rows"][0]["confirmedFields"],json!(["name"]));
+    }
+    #[test]
+    fn manual_unit_price_is_explicit_validated_and_reversible() {
+        let base=json!({"rows":[{"id":"r1","items":[{"id":"i1",
+            "productId":"p1","variantId":"v1","unitPrice":12000,"quantity":2}]}]});
+        let req=|model:Value,value:Value|json!({
+            "action":"set_manual_unit_price","model":model,
+            "cell":{"recipientId":"r1","itemId":"i1"},"value":value
+        });
+        let changed=apply(&req(base.clone(),json!(9900))).unwrap()["model"].clone();
+        assert_eq!(changed["rows"][0]["items"][0]["manualUnitPrice"],9900);
+        assert_eq!(changed["rows"][0]["items"][0]["unitPrice"],9900);
+        assert_eq!(changed["rows"][0]["items"][0]["quantity"],2);
+        assert!(apply(&req(base.clone(),json!(-1))).is_err());
+        assert!(apply(&req(base,json!(9_007_199_254_740_992_i64))).is_err());
+        let reset=apply(&req(changed,Value::Null)).unwrap()["model"].clone();
+        assert!(reset["rows"][0]["items"][0].get("manualUnitPrice").is_none());
+        assert!(reset["rows"][0]["items"][0]["unitPrice"].is_null());
     }
     #[test]
     fn delivery_options_reuse_native_remote_double_freight_and_guard_fields() {
