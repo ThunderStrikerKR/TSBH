@@ -230,7 +230,7 @@ export function ClientManager({
                 onChange={(e) => setEdit({ ...edit, name: e.target.value })}
               />
                   </Field>
-
+                  </div>
                   <div className="client-editor-wide">
                   <Field label="검색 태그" help={{ purpose: "거래처를 다른 이름이나 약칭으로도 쉽게 찾을 수 있도록 합니다.", when: "거래처 이름 외에 자주 사용하는 호칭이 있을 때 사용합니다.", steps: ["검색에 사용할 이름이나 약칭을 쉼표로 구분하여 입력합니다.", "거래처를 저장합니다.", "거래처 검색창에서 등록한 단어로 검색합니다."], result: "검색할 때 거래처를 더 쉽게 찾을 수 있습니다." }}>
               <input
