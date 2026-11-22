@@ -245,7 +245,7 @@ impl ClientChooser {
                         workspace,"거래처 검색",|search_panel|{
                             let response=search_panel.add_enabled_ui(true,|field|{
                                 let width=field.available_width();
-                                components::flexible_text_field(
+                                components::management_search_field(
                                     field,&mut self.query,width,
                                     "거래처명 / 검색 태그 / 주소 / 전화번호 검색"
                                 )
