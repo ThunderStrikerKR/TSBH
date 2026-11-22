@@ -216,6 +216,21 @@ struct PendingAutomaticClient {
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
 }
 
+struct PendingWorkflowAction {
+    group_id: String,
+    action: String,
+    receiver: Receiver<Result<serde_json::Value,String>>,
+}
+
+#[derive(Clone)]
+enum WorkflowDialog {
+    ManageGroup(String),
+    ManagePending(String),
+    DeleteGroup(String),
+    DeletePending(String),
+    PaymentNotice(String),
+}
+
 struct PendingWorkingSync {
     order_id: String,
     source_raw: String,
@@ -294,6 +309,10 @@ struct BandoEgui {
     workflow_receiver: Option<Receiver<Result<workflow_board::BoardSnapshot,String>>>,
     workflow_last_fetch: Option<Instant>,
     workflow_ui: workflow_board_ui::BoardUi,
+    workflow_action: Option<PendingWorkflowAction>,
+    workflow_dialog: Option<WorkflowDialog>,
+    workflow_manage_target: String,
+    workflow_manage_ack: bool,
     // Transient name-only directory: resolve selected dealer ID in ALL
     // pending cards, not from an advisory match discarded on manual edits.
     client_names: HashMap<String,String>,
@@ -373,6 +392,10 @@ impl Default for BandoEgui {
             workflow_receiver: None,
             workflow_last_fetch: None,
             workflow_ui: workflow_board_ui::BoardUi::default(),
+            workflow_action: None,
+            workflow_dialog: None,
+            workflow_manage_target: String::new(),
+            workflow_manage_ack: false,
             client_names: HashMap::new(),
             client_names_receiver: None,
             client_names_last_refresh: None,
@@ -4412,11 +4435,54 @@ impl BandoEgui {
                         ui,self.workflow_snapshot.as_ref(),&self.drafts,
                         self.active_id.as_deref(),
                         &self.client_names,active_selected,
-                        &mut self.workflow_ui
+                        &mut self.workflow_ui,
+                        self.gateway.workflow_write_enabled()
                     );
                 });
         });
         match event{
+            Some(workflow_board_ui::Event::ManageGroup(id))=>{
+                self.workflow_ui.stop_preview();
+                self.workflow_manage_target.clear();
+                self.workflow_manage_ack=false;
+                self.workflow_dialog=Some(WorkflowDialog::ManageGroup(id));
+            }
+            Some(workflow_board_ui::Event::DeleteGroup(id))=>{
+                self.workflow_ui.stop_preview();
+                self.workflow_dialog=Some(WorkflowDialog::DeleteGroup(id));
+            }
+            Some(workflow_board_ui::Event::AdvanceGroup(id))=>{
+                if self.workflow_action.is_none(){
+                    if self.workflow_snapshot.as_ref().and_then(|board|
+                        board.groups.iter().find(|group|group.id==id)
+                    ).is_some_and(|group|
+                        group.step==2 || (group.needs_notice && group.step>=2)
+                    ){
+                        self.workflow_dialog=Some(WorkflowDialog::PaymentNotice(id));
+                    }else{
+                        let action=self.workflow_snapshot.as_ref().and_then(|board|
+                            board.groups.iter().find(|group|group.id==id)
+                        ).map(|group|
+                            if group.step>=4 && !group.needs_notice{"process_group"}
+                            else if group.step==3 && !group.needs_notice{
+                                "confirm_group_payment"
+                            }else{"advance_group"}
+                        );
+                        if let Some(action)=action{
+                            self.start_workflow_action(action,&id,None,None,false,ui.ctx());
+                        }
+                    }
+                }
+            }
+            Some(workflow_board_ui::Event::UndoGroup(id))=>{
+                self.start_workflow_action("undo_group",&id,None,None,false,ui.ctx());
+            }
+            Some(workflow_board_ui::Event::ManagePending(id))=>{
+                self.workflow_dialog=Some(WorkflowDialog::ManagePending(id));
+            }
+            Some(workflow_board_ui::Event::DeletePending(id))=>{
+                self.workflow_dialog=Some(WorkflowDialog::DeletePending(id));
+            }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
                 self.workflow_ui.selection=None;
                 self.workflow_ui.folded=None;
@@ -4773,6 +4839,8 @@ impl eframe::App for BandoEgui {
             self.workflow_last_fetch=None;
             self.workflow_ui.selection=None;
             self.workflow_ui.stop_preview();
+            self.workflow_action=None;
+            self.workflow_dialog=None;
             self.client_manager=None;
             self.freight_manager=None;
             self.order_history_manager=None;
@@ -4785,6 +4853,7 @@ impl eframe::App for BandoEgui {
             self.source_clear_job=None;
             self.clear_source_analysis();
         }
+        self.poll_workflow_action(ctx);
         self.poll_workflow_board(ctx);
         self.poll_client_names(ctx);
         self.poll_client_change(ctx);
@@ -4832,7 +4901,8 @@ impl eframe::App for BandoEgui {
         let work_area=self.modal_work_area(ctx);
         if self.ocr_review.is_some() || self.pending_replace.is_some() || self.source_clear_confirm.is_some() ||
             (self.page==Page::Reception &&
-                (self.client_chooser.is_some() || self.manual_workspace.is_some())) {
+                (self.client_chooser.is_some() || self.manual_workspace.is_some() ||
+                self.workflow_dialog.is_some())) {
             components::modal_backdrop(
                 ctx,"bando-workspace-modal-backdrop",false
             );
@@ -4843,6 +4913,7 @@ impl eframe::App for BandoEgui {
         if self.page == Page::Reception {
             self.show_client_chooser(ctx,work_area);
             self.show_manual_workspace(ctx,work_area);
+            self.show_workflow_dialog(ctx,work_area);
         } else if self.page==Page::History {
             if let Some(history)=self.order_history_manager.as_mut(){
                 history.show_order_detail_modal(ctx,work_area);
