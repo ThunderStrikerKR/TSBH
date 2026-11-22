@@ -2428,6 +2428,24 @@ pub(crate) fn paint_collapsing_header_icon(
     );
 }
 
+/// Configure the shared SINGLE-SELECT popup only. Never recolor
+/// unrelated checkboxes, tables, global widget hover, or order selection.
+fn management_dropdown_option_palette(ui:&mut Ui){
+    let visuals=ui.visuals_mut();
+    // egui::selectable_value uses selection.bg_fill for the current value.
+    // Keep that persistent state darker than the pointer's transient hover.
+    visuals.selection.bg_fill=theme::MANAGEMENT_DROPDOWN_SELECTED_BG;
+    visuals.selection.stroke=Stroke::new(1.0,theme::TEXT);
+    visuals.widgets.hovered.bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
+    visuals.widgets.hovered.weak_bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
+    visuals.widgets.hovered.bg_stroke=Stroke::new(
+        theme::SOFT_DIVIDER_WIDTH,theme::SELECTION.linear_multiply(0.8)
+    );
+    visuals.widgets.hovered.fg_stroke=Stroke::new(1.5,theme::TEXT);
+    visuals.widgets.active.bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
+    visuals.widgets.active.weak_bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
+}
+
 /// Reference "접수일 기준" dropdown: 34pt dark trigger, separated
 /// right-hand chevron, 1pt outline, 6pt corner radius. This replaces native
 /// ComboBox triggers where management screens need the same visual language.
@@ -2496,6 +2514,7 @@ pub fn management_dropdown(
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
             menu.set_min_width(width);
+            management_dropdown_option_palette(menu);
             // The popup frame already provides a compact inset (~4pt).
             // Match the vertical gap between option highlights to that inset
             // rather than inheriting egui's wider default item spacing.
@@ -4367,5 +4386,34 @@ mod management_dropdown_unification_tests {
             assert_eq!(rect.height(),theme::ACTION_STANDARD_HEIGHT);
         }
         assert_eq!(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT,320.0);
+    }
+
+    #[test]
+    fn selected_and_hovered_options_have_distinct_scoped_colors(){
+        assert_ne!(
+            theme::MANAGEMENT_DROPDOWN_SELECTED_BG,
+            theme::MANAGEMENT_DROPDOWN_HOVER_BG
+        );
+        let ctx=egui::Context::default();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let original_selection=ui.visuals().selection.bg_fill;
+                let original_hover=ui.visuals().widgets.hovered.weak_bg_fill;
+                ui.scope(|popup|{
+                    management_dropdown_option_palette(popup);
+                    assert_eq!(popup.visuals().selection.bg_fill,
+                        theme::MANAGEMENT_DROPDOWN_SELECTED_BG);
+                    assert_eq!(popup.visuals().selection.stroke.color,theme::TEXT);
+                    assert_eq!(popup.visuals().widgets.hovered.weak_bg_fill,
+                        theme::MANAGEMENT_DROPDOWN_HOVER_BG);
+                    assert_eq!(popup.visuals().widgets.hovered.bg_fill,
+                        theme::MANAGEMENT_DROPDOWN_HOVER_BG);
+                    assert_eq!(popup.visuals().widgets.active.weak_bg_fill,
+                        theme::MANAGEMENT_DROPDOWN_HOVER_BG);
+                });
+                assert_eq!(ui.visuals().selection.bg_fill,original_selection);
+                assert_eq!(ui.visuals().widgets.hovered.weak_bg_fill,original_hover);
+            });
+        });
     }
 }
