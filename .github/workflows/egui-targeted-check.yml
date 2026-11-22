@@ -188,6 +188,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml auto_database_location_tests -- --nocapture
       - name: Verify egui product-price input conversion and non-mutating category choices
         run: cargo test --manifest-path egui-app/Cargo.toml product_manager::tests -- --nocapture
+      - name: Verify actual egui modal boundary rects and 16pt workspace spacing
+        run: cargo test --manifest-path egui-app/Cargo.toml modal_editor_workspace_geometry_tests -- --nocapture
       - name: Verify unified product Excel V2 import-export roundtrip and review approval
         run: |
           cargo test --manifest-path egui-app/Cargo.toml product_excel::tests -- --nocapture
