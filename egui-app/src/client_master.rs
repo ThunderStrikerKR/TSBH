@@ -81,7 +81,8 @@ pub fn mutate(expected:u64,action:&str,client:Value)->Result<Value,String>{
     let saved=current["clients"].as_array().into_iter().flatten()
         .find(|row|row["id"].as_str()==Some(id))
         .ok_or("거래처 저장 후 실제 목록에서 대상을 찾지 못했습니다.")?;
-    if action=="upsert_client" && saved!=&client {
+    if action=="upsert_client" &&
+        saved!=&bando_data_access::client_names::normalized(&client) {
         return Err("거래처는 저장됐지만 최신 데이터가 입력 내용과 일치하지 않습니다. 다시 확인하세요.".into());
     }
     if action=="archive_client" && saved["deletedAt"].is_null(){
