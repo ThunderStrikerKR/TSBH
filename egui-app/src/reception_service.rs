@@ -60,6 +60,53 @@ impl ReceptionAnalysis {
         })
     }
 
+    /// Apply a native manual reducer result without rerunning OCR or price
+    /// calculations. Reference-only retail suggestions are cleared when the
+    /// product rows change; remote decisions are retained only for the exact
+    /// same recipient/address/manual override.
+    pub fn apply_edited_recipients(&mut self,raw:&str,rows:&Value) {
+        let old=recipients(&self.recognition).to_vec();
+        let references=std::mem::take(&mut self.reference);
+        self.reference=rows.as_array().into_iter().flatten().enumerate()
+            .map(|(index,recipient)|{
+                let previous=old.get(index);
+                let mut reference=references.get(index)
+                    .filter(|_|previous.is_some_and(|old|
+                        old.get("id")==recipient.get("id")))
+                    .map(|old|RecipientReference {
+                        remote:old.remote.clone(),
+                        remote_error:old.remote_error.clone(),
+                        item_prices:old.item_prices.iter().map(|p|PriceReference{
+                            retail:p.retail,error:p.error.clone()
+                        }).collect(),
+                    })
+                    .unwrap_or(RecipientReference {
+                        remote:None,remote_error:None,item_prices:Vec::new()
+                    });
+                if previous.and_then(|row|row.get("items"))!=recipient.get("items") {
+                    reference.item_prices=recipient.get("items")
+                        .and_then(Value::as_array).into_iter().flatten().map(|_|{
+                            PriceReference{retail:None,error:None}
+                        }).collect();
+                }
+                if reference.item_prices.len()!=recipient.get("items")
+                    .and_then(Value::as_array).map(Vec::len).unwrap_or(0) {
+                    reference.item_prices=recipient.get("items")
+                        .and_then(Value::as_array).into_iter().flatten().map(|_|{
+                            PriceReference{retail:None,error:None}
+                        }).collect();
+                }
+                if reference.remote.as_ref().is_some_and(|decision|
+                    !remote_reference_matches(recipient,decision)) {
+                    reference.remote=None;
+                    reference.remote_error=None;
+                }
+                reference
+            }).collect();
+        self.recognition["recipients"]=rows.clone();
+        self.linked_spans=source_highlight::collect(raw,&self.recognition);
+    }
+
     pub fn from_cached_view(
         raw:&str,recognition:Value,client_match:Value,view:&Value
     )->Option<Self>{
