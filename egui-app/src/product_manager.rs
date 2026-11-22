@@ -1355,7 +1355,6 @@ impl ProductManager {
                 self.photos.clear();
             }
         });
-        ui.label(typography::caption("로컬에 저장된 이미지 사용"));
     }
     fn detail_overview_column(
         ui:&mut Ui,draft:&mut Value,
