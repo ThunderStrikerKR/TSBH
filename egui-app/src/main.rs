@@ -3873,7 +3873,7 @@ impl BandoEgui {
                                 let mut note = reception_service::text(&ship.recipient,"note").to_owned();
                                 components::reception_recipient_fields(
                                     contents, &mut name, &mut address, &mut mobile,
-                                    &mut phone, &mut note,
+                                    &mut phone, &mut note, [false;5],
                                 );
                             });
                         }
@@ -3947,7 +3947,7 @@ impl BandoEgui {
                                                 components::reception_item_row(
                                                     contents,
                                                     &reception_service::item_title(item),
-                                                    &quantity, &amount,
+                                                    &quantity, &amount, [false;3],
                                                 );
                                             }
                                         }
@@ -4171,9 +4171,15 @@ impl BandoEgui {
                                     .min(ui.available_height().max(0.0)))
                                 .auto_shrink([false, false])
                                 .show(ui, |fields| {
+                                    let active_fields=[
+                                        "name","address","mobile","phone","note"
+                                    ].map(|field| source_highlight::is_active(
+                                        self.link_hover.active.as_ref(),
+                                        &source_highlight::key(recipient_id,recipient_id,field),
+                                    ));
                                     let responses = components::reception_recipient_fields(
                                         fields, &mut name, &mut address, &mut mobile,
-                                        &mut phone, &mut note,
+                                        &mut phone, &mut note, active_fields,
                                     );
                                     for (response, field) in responses.into_iter().zip([
                                         "name", "address", "mobile", "phone", "note",
@@ -4273,10 +4279,16 @@ impl BandoEgui {
                                                     .and_then(serde_json::Value::as_i64)
                                                     .map(components::display_won)
                                                     .unwrap_or_else(||"—".to_owned());
+                                                let active_fields=[
+                                                    "product","quantity","price"
+                                                ].map(|field| source_highlight::is_active(
+                                                    self.link_hover.active.as_ref(),
+                                                    &source_highlight::key(recipient_id,item_id,field),
+                                                ));
                                                 let cells=components::reception_item_row(
                                                     items_ui,
                                                     &reception_service::item_title(item),
-                                                    &quantity,&amount,
+                                                    &quantity,&amount,active_fields,
                                                 );
                                                 for (response,field) in [
                                                     (&cells.product,"product"),
