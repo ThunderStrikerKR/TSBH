@@ -108,6 +108,72 @@ pub struct InlineRequest {
     pub field:String,
     pub value:Value,
 }
+/// Native pricing depends on these ordered line/recipient values and
+/// shipment/VAT options, NOT on recipient name, phone, note or OCR source
+/// assignment metadata. This is a comparison of Rust business inputs only;
+/// no monetary arithmetic is performed in the UI.
+fn price_input_snapshot(order:&Value)->Value{
+    let root=|name:&str|order.get(name).cloned().unwrap_or(Value::Null);
+    let recipients=list(order,"recipients").iter().map(|recipient|{
+        let get=|name:&str|recipient.get(name).cloned().unwrap_or(Value::Null);
+        let items=list(recipient,"items").iter().map(|item|{
+            let item_get=|name:&str|item.get(name).cloned().unwrap_or(Value::Null);
+            json!({
+                "id":item_get("id"),"productId":item_get("productId"),
+                "variantId":item_get("variantId"),"quantity":item_get("quantity"),
+                "unitPrice":item_get("unitPrice"),
+                "manualUnitPrice":item_get("manualUnitPrice"),
+                "origin":item_get("origin"),"freightCode":item_get("freightCode"),
+                "shippingGroupId":item_get("shippingGroupId")
+            })
+        }).collect::<Vec<_>>();
+        json!({
+            "id":get("id"),"address":get("address"),
+            "dispatchOrigin":get("dispatchOrigin"),
+            "freightCode":get("freightCode"),
+            "shippingCharges":get("shippingCharges"),
+            "shippingCharge":get("shippingCharge"),
+            "remoteDelivery":get("remoteDelivery"),
+            "vatOverride":get("vatOverride"),
+            "vatRateBps":get("vatRateBps"),
+            "items":items
+        })
+    }).collect::<Vec<_>>();
+    json!({
+        "applyVat":root("applyVat"),
+        "vatRateBps":root("vatRateBps"),
+        "freightCode":root("freightCode"),
+        "recipients":recipients
+    })
+}
+
+/// Convert a previously calculated, complete native quote back to the
+/// worker response shape. No rules are duplicated and no amounts changed.
+/// Explicit edits that affect any pricing input always call native Rust.
+fn reuse_native_quote(saved:Option<&Value>,updated:&Value)->Option<Value>{
+    let saved=saved?;
+    if !saved.get("authorityRevision").is_some_and(Value::is_u64) ||
+       !saved.get("pendingRecipients").is_some_and(Value::is_array) ||
+       !saved.get("freightLines").is_some_and(Value::is_array) ||
+       !saved.get("linePrices").and_then(Value::as_array)
+           .is_some_and(|lines|lines.iter().all(|row|row.get("amount").is_some())) {
+        return None;
+    }
+    let mut order=updated.clone();
+    order["shippingFee"]=saved.get("shippingFee").cloned().unwrap_or(Value::Null);
+    order["shippingVersion"]=saved.get("shippingVersion").cloned().unwrap_or(Value::Null);
+    Some(json!({
+        "order":order,"authorityRevision":saved["authorityRevision"],
+        "totals":{
+            "subtotal":saved.get("subtotal"),
+            "vat":saved.get("vatAmount"),"total":saved.get("total"),
+            "pendingRecipients":saved.get("pendingRecipients")
+        },
+        "linePrices":saved.get("linePrices"),
+        "freightLines":saved.get("freightLines")
+    }))
+}
+
 pub fn apply_inline(
     gateway:&dyn BandoGateway,source:&WorkingReception,change:&InlineRequest
 )->Result<Event,String>{
@@ -191,7 +257,14 @@ pub fn apply_inline(
     let updated=applied.get("order").filter(|v|v.is_object())
         .ok_or("Rust 수정 적용 결과에 주문 데이터가 없습니다.")?.clone();
     let (quote,quote_error)=if let Some(id)=source.client_id.as_deref(){
+        // Contact/name/memo-only changes preserve the exact native totals.
+        // Changed product, quantity, price, address, shipment or VAT inputs
+        // cannot reuse a previous quote.
+        let reused=if price_input_snapshot(&order)==price_input_snapshot(&updated){
+            reuse_native_quote(source.pricing_preview.as_ref(),&updated)
+        }else{None};
         let result=(||->Result<Value,String>{
+            if let Some(quote)=reused{return Ok(quote);}
             let state=gateway.load_business_state()?;
             let client=state["clients"].as_array().and_then(|clients|
                 clients.iter().find(|client|client["id"].as_str()==Some(id))
@@ -225,6 +298,7 @@ pub struct ManualWorkspace {
     client_id:Option<String>,
     gateway:Arc<dyn BandoGateway>,
     base_order:Option<Value>,
+    cached_quote:Option<Value>,
     model:Option<Value>,
     assignment_order:Vec<String>,
     remote_rows:Vec<RemoteRow>,
@@ -275,7 +349,8 @@ impl ManualWorkspace {
         });
         Self {
             order_id:source.id,raw:source.raw,order_type:source.order_type,
-            client_id:source.client_id,gateway,base_order:None,model:None,
+            client_id:source.client_id,gateway,base_order:None,
+            cached_quote:source.pricing_preview,model:None,
             assignment_order:Vec::new(),remote_rows:Vec::new(),
             selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
@@ -463,6 +538,7 @@ impl ManualWorkspace {
         if self.busy(){return;}
         let (Some(model),Some(order))=(self.model.clone(),self.base_order.clone())
             else{return};
+        let cached_quote=self.cached_quote.clone();
         let keys=self.assignment_order.clone();
         let service=Arc::clone(&self.gateway);
         let selected_client=self.client_id.clone();
@@ -482,12 +558,18 @@ impl ManualWorkspace {
                     "action":"apply_manual","order":order.clone(),
                     "model":model.clone(),"assignmentOrder":keys.clone()
                 }))?;
-                let order=applied.get("order").filter(|v|v.is_object())
+                let updated=applied.get("order").filter(|v|v.is_object())
                     .ok_or("Rust 수동 분류 적용 결과가 올바르지 않습니다.")?.clone();
-                // Preview and final SQLite commit use the identical native
-                // pricing + shipping operation, with no egui arithmetic.
+                // Original and updated native orders are compared on money,
+                // freight and VAT inputs. Pure source-label reassignment and
+                // contact edits reuse the already committed preview.
+                let reused=if price_input_snapshot(&order)==price_input_snapshot(&updated){
+                    reuse_native_quote(cached_quote.as_ref(),&updated)
+                }else{None};
+                let order=updated;
                 let (quote,quote_error)=if let Some(id)=selected_client.as_deref(){
                     let result=(||->Result<Value,String>{
+                        if let Some(quote)=reused{return Ok(quote);}
                         let state=service.load_business_state()?;
                         let client=state["clients"].as_array()
                             .and_then(|clients|clients.iter().find(|client|
