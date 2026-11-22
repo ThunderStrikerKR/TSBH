@@ -105,6 +105,12 @@ fn visible_clients<'a>(
 
 impl ClientChooser {
     pub fn new(order_id: String, gateway: Arc<dyn BandoGateway>, ctx: Context) -> Self {
+        // New popup sessions must not inherit stale error deduplication from
+        // the previously closed chooser.
+        floating_notice::sync(
+            &ctx,"reception.client_chooser.error",
+            "reception.client_chooser",Tone::Error,None
+        );
         let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
             let result = gateway.load_catalog().and_then(|state| {
@@ -427,9 +433,21 @@ impl ClientChooser {
                 });
             });
         if let Some(id)=chosen {
-            if self.contains(&id){return Some(Choice::Selected(id));}
+            if self.contains(&id){
+                floating_notice::sync(
+                    ctx,"reception.client_chooser.error",
+                    "reception.client_chooser",Tone::Error,None
+                );
+                return Some(Choice::Selected(id));
+            }
         }
-        if !is_open && !busy{return Some(Choice::Closed);}
+        if !is_open && !busy{
+            floating_notice::sync(
+                ctx,"reception.client_chooser.error",
+                "reception.client_chooser",Tone::Error,None
+            );
+            return Some(Choice::Closed);
+        }
         None
     }
 }
