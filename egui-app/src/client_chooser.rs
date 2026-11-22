@@ -295,10 +295,12 @@ impl ClientChooser {
                                 self.searching,self.sort
                             );
                             let loading=!self.loaded||self.searching;
-                            results_panel.label(typography::caption(
-                                if loading{"검색 중".to_owned()}
-                                else{format!("{}개 거래처",clients.len())}
-                            ));
+                            let count_label=if loading{
+                                "검색 중".to_owned()
+                            }else{
+                                format!("{}개 거래처",clients.len())
+                            };
+                            results_panel.label(typography::caption(&count_label));
                             let viewport_width=results_panel.available_width().max(1.0);
                             let gutter=results_panel.spacing().scroll.allocated_width();
                             let table_width=(viewport_width-gutter)
