@@ -6076,8 +6076,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             Layout::top_down(Align::Min),
                             |area| {
                                 area.set_min_height(list_height);
-                                let table_width=area.available_width()
-                                    .max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH);
+                                let table_width=
+                                    components::reception_items_scroll_content_width(area);
                                 egui::ScrollArea::both()
                                     .scroll_bar_visibility(
                                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
@@ -6309,8 +6309,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 Layout::top_down(Align::Min),
                                 |area|{
                                     area.set_min_height(available);
-                                    let table_width=area.available_width()
-                                        .max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH);
+                                    let table_width=
+                                        components::reception_items_scroll_content_width(area);
                                     egui::ScrollArea::both()
                                         .id_salt(("pending-hover-products",draft.id.as_str()))
                                         .max_height(available).auto_shrink([false,false])
@@ -6673,8 +6673,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         Layout::top_down(Align::Min),
                         |list_area|{
                             list_area.set_min_height(list_height);
-                            let table_width=list_area.available_width()
-                                .max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH);
+                            let table_width=
+                                components::reception_items_scroll_content_width(list_area);
                             egui::ScrollArea::both()
                                 .scroll_bar_visibility(
                                     egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
