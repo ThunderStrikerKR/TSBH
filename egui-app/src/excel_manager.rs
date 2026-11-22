@@ -1035,11 +1035,11 @@ impl ExcelManager{
                                     .unwrap_or_default();
                                 let draft=self.freight_drafts.entry(id.to_owned())
                                     .or_insert_with(||source.clone());
-                                line.label(typography::field_label(
-                                    if self.tab==Tab::Factory{
+                                components::form_field_label(
+                                    line,if self.tab==Tab::Factory{
                                         "공장 실제 출고 운임"
                                     }else{"매장 실제 출고 운임"}
-                                ));
+                                );
                                 components::money_field(
                                     line,draft,!busy&&self.gateway.excel_write_enabled()
                                 );
