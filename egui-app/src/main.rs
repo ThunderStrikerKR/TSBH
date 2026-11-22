@@ -7082,3 +7082,130 @@ fn main() -> eframe::Result<()> {
         }),
     )
 }
+
+#[cfg(test)]
+mod client_chooser_async_handoff_tests {
+    use super::*;
+    use serde_json::{json,Value};
+    use std::sync::{Condvar,Mutex};
+    use std::time::Duration;
+
+    // Block the native identity lookup so popup closure can be asserted
+    // BEFORE any business worker can possibly return its result.
+    struct GatedGateway {
+        gate:Arc<(Mutex<bool>,Condvar)>,
+        fail:bool,
+    }
+    impl gateway::BandoGateway for GatedGateway {
+        fn label(&self)->&'static str{"gated-client-choice"}
+        fn isolated_client_identity_link(&self)->bool{true}
+        fn load_catalog(&self)->Result<Value,String>{
+            let (lock,ready)=&*self.gate;
+            let mut open=lock.lock().unwrap();
+            while !*open {
+                open=ready.wait(open).unwrap();
+            }
+            if self.fail{return Err("synthetic dealer lookup error".into());}
+            Ok(json!({"clients":[{"id":"new","name":"새 거래처","active":true}]}))
+        }
+        fn load_working_source(&self)->Result<WorkingSource,String>{
+            Err("not used in chooser handoff".into())
+        }
+        fn save_working_source(&self,_source:&WorkingSource)->Result<u64,String>{
+            Err("not used in chooser handoff".into())
+        }
+        fn execute(&self,_op:gateway::ReadOperation,_value:Value)
+            ->Result<Value,String>{
+            Err("native price rules are not needed in isolated ID fixture".into())
+        }
+    }
+
+    fn create_app(gateway:Arc<dyn gateway::BandoGateway>,
+                  ctx:&egui::Context)->BandoEgui{
+        let mut app=BandoEgui::default();
+        app.gateway=Arc::clone(&gateway);
+        app.raw_source="첫 발주 원문".into();
+        app.order_type=OrderType::Agency;
+        app.active_id=Some("draft-1".into());
+        app.drafts=vec![WorkingReception{
+            id:"draft-1".into(),raw:"첫 발주 원문".into(),
+            order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:Some("첫 발주 원문".into()),
+            analysis_evidence:Some(json!({
+                "recipients":[],"candidates":[],"unassigned":[]
+            })),
+            analysis_view:None,client_match:Some(json!({})),
+            chat_handle:None,chat_title:None,
+            client_id:Some("old".into()),client_selection:Some("MANUAL".into()),
+            pricing_preview:None,working_version:None,
+            working_synced:false,manual_model:None,edit_history:Vec::new(),
+        }];
+        app.client_chooser=Some(ClientChooser::new(
+            "draft-1".into(),gateway,ctx.clone()
+        ));
+        app
+    }
+
+    fn release(gate:&Arc<(Mutex<bool>,Condvar)>){
+        let (lock,ready)=&**gate;
+        *lock.lock().unwrap()=true;
+        ready.notify_all();
+    }
+
+    fn poll_until_done(app:&mut BandoEgui,ctx:&egui::Context){
+        for _ in 0..200{
+            app.poll_client_change(ctx);
+            if app.client_change.is_none(){return;}
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("pending dealer computation never completed");
+    }
+
+    #[test]
+    fn verified_click_closes_chooser_before_calculation_and_blocks_reopening(){
+        let ctx=egui::Context::default();
+        let gate=Arc::new((Mutex::new(false),Condvar::new()));
+        let adapter:Arc<dyn gateway::BandoGateway>=Arc::new(GatedGateway{
+            gate:Arc::clone(&gate),fail:false
+        });
+        let mut app=create_app(adapter,&ctx);
+        app.accept_client_chooser_selection("new",false,&ctx);
+        assert!(app.client_chooser.is_some(),"unverified result cannot dismiss modal");
+        assert!(app.client_change.is_none());
+        app.accept_client_chooser_selection("new",true,&ctx);
+        assert!(app.client_chooser.is_none(),
+            "chooser must close in the click frame, not native completion");
+        assert!(app.client_change.is_some(),"Rust request must run independently");
+        assert_eq!(app.drafts[0].client_id.as_deref(),Some("old"),
+            "an unconfirmed quote cannot replace the selected dealer");
+        app.open_client_chooser(&ctx);
+        assert!(app.client_chooser.is_none(),
+            "a second popup must not open while the first request is pending");
+        release(&gate);
+        poll_until_done(&mut app,&ctx);
+        assert_eq!(app.drafts[0].client_id.as_deref(),Some("new"));
+        assert_eq!(app.drafts[0].client_selection.as_deref(),Some("MANUAL"));
+        assert!(app.client_chooser.is_none(),"completion must not reopen the modal");
+    }
+
+    #[test]
+    fn calculation_failure_keeps_old_client_and_reports_without_reopening(){
+        let ctx=egui::Context::default();
+        let gate=Arc::new((Mutex::new(false),Condvar::new()));
+        let adapter:Arc<dyn gateway::BandoGateway>=Arc::new(GatedGateway{
+            gate:Arc::clone(&gate),fail:true
+        });
+        let mut app=create_app(adapter,&ctx);
+        app.accept_client_chooser_selection("new",true,&ctx);
+        assert!(app.client_chooser.is_none());
+        assert!(app.client_change.is_some());
+        release(&gate);
+        poll_until_done(&mut app,&ctx);
+        assert_eq!(app.drafts[0].client_id.as_deref(),Some("old"));
+        assert_eq!(app.drafts[0].client_selection.as_deref(),Some("MANUAL"));
+        assert!(app.client_chooser.is_none());
+        assert!(app.source_save_error.as_deref()
+            .is_some_and(|message|message.contains("synthetic dealer lookup error")));
+    }
+}
