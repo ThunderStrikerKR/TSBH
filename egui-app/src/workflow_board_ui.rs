@@ -302,8 +302,10 @@ fn workflow_summary(
             );
             summary.add_sized(
                 Vec2::new(width,theme::WORKFLOW_SUMMARY_LINE_HEIGHT),
-                egui::Label::new(typography::body(&amount)
-                    .line_height(Some(theme::WORKFLOW_SUMMARY_LINE_HEIGHT)))
+                egui::Label::new(typography::data_value_text(
+                    &amount,typography::DataValueKind::Money,
+                    typography::DataValueContext::CompactCard
+                ).line_height(Some(theme::WORKFLOW_SUMMARY_LINE_HEIGHT)))
                     .halign(Align::RIGHT).truncate()
             ).on_hover_text(&amount);
         }
