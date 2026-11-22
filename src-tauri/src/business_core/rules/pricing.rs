@@ -140,6 +140,15 @@ pub(super) fn reprice_order(payload: &Value) -> Result<Value, String> {
         let items = recipient.get_mut("items").and_then(Value::as_array_mut)
             .ok_or_else(|| "상품 목록을 확인하세요.".to_string())?;
         for item in items {
+            if let Some(override_price)=item.get("manualUnitPrice") {
+                // A staff-confirmed override belongs to this order line
+                // only. Never rewrite the catalog, and never silently
+                // overwrite an explicit unit price during native repricing.
+                let price=safe(override_price)
+                    .ok_or("직접 수정한 상품 단가가 0 이상의 안전한 정수가 아닙니다.")?;
+                set(item,"unitPrice",json!(price))?;
+                continue;
+            }
             let pid = str_field(item, "productId").to_string();
             let vid = str_field(item, "variantId").to_string();
             if vid.is_empty() { continue; }
@@ -163,6 +172,25 @@ pub(super) fn reprice_order(payload: &Value) -> Result<Value, String> {
 #[cfg(test)]
 mod migration_tests {
     use super::*;
+    #[test]
+    fn manual_unit_price_survives_reprice_but_auto_lines_follow_catalog() {
+        let state=json!({"products":[{"id":"p","variants":[{"id":"v",
+            "wholesale":12000}]}],"workflow":{"shipments":[]}});
+        let order=json!({"id":"draft","recipients":[{"id":"r","items":[
+            {"id":"a","productId":"p","variantId":"v",
+             "unitPrice":9900,"manualUnitPrice":9900,"quantity":2},
+            {"id":"b","productId":"p","variantId":"v",
+             "unitPrice":8000,"quantity":1}
+        ]}]});
+        let result=reprice_order(&json!({"order":order,"state":state,
+            "client":{"id":"c","tier":"wholesale"},"explicitEdit":true}))
+            .unwrap()["order"].clone();
+        assert_eq!(result["recipients"][0]["items"][0]["unitPrice"],9900);
+        assert_eq!(result["recipients"][0]["items"][1]["unitPrice"],12000);
+        assert_eq!(totals(&json!({"recipients":result["recipients"],
+            "shippingFee":3000,"applyVat":false}),
+            &json!({"id":"c"})).unwrap()["subtotal"],31800);
+    }
     #[test]
     fn passive_catalog_reprice_keeps_frozen_shipments_at_original_price() {
         let state=json!({
