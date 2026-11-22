@@ -780,23 +780,24 @@ impl ClientManager {
                         });
                     });
                 ui.add_space(theme::SPACE_12);
-                components::modal_action_row(ui,|footer|{
-                    footer.with_layout(Layout::left_to_right(Align::Center),|row|{
-                        if exists && theme::action(row,"거래처 삭제",
+                components::modal_action_row_split(
+                    ui,
+                    |left|{
+                        if exists && theme::action(left,"거래처 삭제",
                             ButtonRole::Danger,editable && !busy).clicked(){
                             delete=true;
                         }
-                        row.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                            let label=if exists {"변경사항 저장"}else{"거래처 등록"};
-                            let dirty=self.original.as_ref()
-                                .is_some_and(|old|*old!=draft);
-                            if theme::action(buttons,label,ButtonRole::Primary,
-                                editable && !busy && (!exists || dirty)).clicked(){
-                                save=true;
-                            }
-                        });
-                    });
-                });
+                    },
+                    |right|{
+                        let label=if exists {"변경사항 저장"}else{"거래처 등록"};
+                        let dirty=self.original.as_ref()
+                            .is_some_and(|old|*old!=draft);
+                        if theme::action(right,label,ButtonRole::Primary,
+                            editable && !busy && (!exists || dirty)).clicked(){
+                            save=true;
+                        }
+                    }
+                );
             });
         if ctx.input(|input|input.key_pressed(egui::Key::Escape)) {
             if self.confirm_delete || self.confirm_discard {
