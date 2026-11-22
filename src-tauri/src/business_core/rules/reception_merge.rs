@@ -201,7 +201,7 @@ fn apply(payload:&Value)->Result<Value,String>{
             }
         }
         for key in ["confirmedFields","dispatchOrigin","actualFreight","freightCode",
-                    "vatDefault","vatOverride","shippingCharges"]{
+                    "vatDefault","vatOverride","vatRateBps","shippingCharges"]{
             clone_field(recipient,prior,key)?;
         }
         if rows(field(prior,"confirmedFields")).iter().any(|v|v=="address"){
