@@ -7437,6 +7437,48 @@ mod vat_settings_ui_tests {
     }
 }
 #[cfg(test)]
+mod reception_visible_selection_regression_tests{
+    use super::*;
+    fn two_recipients()->reception_service::ReceptionAnalysis{
+        reception_service::ReceptionAnalysis{
+            recognition:serde_json::json!({"recipients":[
+                {"id":"kim","name":"김준희","items":[{"id":"i1"}]},
+                {"id":"pyo","name":"표시나","items":[{"id":"i2"}]}
+            ]}),
+            reference:vec![],client_match:serde_json::Value::Null,
+            client_candidates:vec![],matched_client_name:None,
+            chosen_client_name:None,directory_count:0,linked_spans:vec![]
+        }
+    }
+    #[test]
+    fn same_order_recipient_click_commits_by_id_after_analysis(){
+        let mut app=BandoEgui::default();
+        app.active_id=Some("draft".into());
+        app.requested_recipient_focus=Some(("draft".into(),"pyo".into()));
+        let ctx=egui::Context::default();
+        app.apply_requested_recipient_focus(&ctx);
+        assert_eq!(app.selected_recipient,0);
+        assert!(app.requested_recipient_focus.is_some());
+        app.analysis=Some(two_recipients());
+        app.apply_requested_recipient_focus(&ctx);
+        assert_eq!(app.selected_recipient,1);
+        assert!(app.requested_recipient_focus.is_none());
+    }
+    #[test]
+    fn hover_changes_visible_recipient_without_changing_committed_selection(){
+        let mut app=BandoEgui::default();
+        app.active_id=Some("draft".into());
+        app.analysis=Some(two_recipients());
+        app.selected_recipient=0;
+        app.link_hover.active=Some(source_highlight::key("pyo","pyo","name"));
+        assert_eq!(app.visible_recipient_index(),1);
+        assert_eq!(app.selected_recipient,0);
+        app.link_hover.clear();
+        assert_eq!(app.visible_recipient_index(),0);
+    }
+}
+
+#[cfg(test)]
 mod inline_single_click_handoff_tests {
     use super::*;
 
