@@ -611,6 +611,9 @@ impl ManualWorkspace {
                                                     grid,"수량",theme::MANUAL_TABLE_QUANTITY_COL
                                                 );
                                                 components::manual_table_heading(
+                                                    grid,"단가",theme::MANUAL_TABLE_UNIT_PRICE_COL
+                                                );
+                                                components::manual_table_heading(
                                                     grid,"행 동작",theme::MANUAL_TABLE_ACTION_COL*2.0
                                                 );
                                                 grid.end_row();
@@ -634,6 +637,22 @@ impl ManualWorkspace {
                                                         selected && self.selected_field=="quantity"
                                                     ).clicked() {
                                                         self.select_cell(index,Some(item_id.into()),"quantity");
+                                                    }
+                                                    let price=item.get("unitPrice")
+                                                        .and_then(Value::as_i64)
+                                                        .map(components::display_won)
+                                                        .unwrap_or_else(||"—".into());
+                                                    if components::manual_table_cell(
+                                                        grid,&price,
+                                                        theme::MANUAL_TABLE_UNIT_PRICE_COL,
+                                                        selected && self.selected_field=="unitPrice"
+                                                    ).on_hover_text(if item.get("manualUnitPrice")
+                                                        .is_some(){"직접 수정된 단가"}
+                                                        else{"상품·거래처 기준 단가"})
+                                                        .clicked(){
+                                                        self.select_cell(
+                                                            index,Some(item_id.into()),"unitPrice"
+                                                        );
                                                     }
                                                     grid.horizontal(|actions|{
                                                         if theme::action(actions,"검색",
