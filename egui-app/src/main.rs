@@ -161,19 +161,6 @@ struct PendingClipboardClear {
     sequence:Option<u32>,
 }
 
-// Keep deletion bound to the exact unconfirmed receipt and raw text. The
-// Rust rule must approve the reset before any egui preview state changes.
-struct SourceClearRequest {
-    order_id: String,
-    source_raw: String,
-    order_type: String,
-    client_id: Option<String>,
-}
-struct PendingSourceClear {
-    request: SourceClearRequest,
-    receiver: Receiver<Result<(), String>>,
-}
-
 /// A drag always measures displacement from the initial pane widths.
 #[derive(Clone, Copy)]
 struct HorizontalSplitDrag {
@@ -455,8 +442,6 @@ struct BandoEgui {
     discard_ocr_confirm: bool,
     pending_replace: Option<PendingReplace>,
     pending_clipboard_clear: Option<PendingClipboardClear>,
-    source_clear_confirm: Option<SourceClearRequest>,
-    source_clear_job: Option<PendingSourceClear>,
     source_autosave: Option<source_autosave::SourceAutosave>,
     source_save_error: Option<String>,
     client_chooser: Option<ClientChooser>,
@@ -557,8 +542,6 @@ impl Default for BandoEgui {
             discard_ocr_confirm: false,
             pending_replace: None,
             pending_clipboard_clear: None,
-            source_clear_confirm: None,
-            source_clear_job: None,
             source_autosave: None,
             source_save_error: None,
             client_chooser: None,
@@ -3205,143 +3188,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
     }
 
-    // The old React "내용 삭제" operation calls Rust replace_reception,
-    // which clears the dealer and classification when the new source is empty.
-    fn request_source_clear(&mut self) {
-        if self.source_clear_job.is_some() || self.client_change.is_some() ||
-           self.working_sync.is_some() || self.manual_workspace.is_some() ||
-           self.clipboard_busy || self.ocr_review.is_some() || self.pending_replace.is_some() {
-            return;
-        }
-        let Some(row)=self.active_id.as_deref()
-            .and_then(|id|self.drafts.iter().find(|row|row.id==id))
-        else {return;};
-        if self.raw_source.trim().is_empty() {return;}
-        self.source_clear_confirm=Some(SourceClearRequest {
-            order_id:row.id.clone(),
-            source_raw:self.raw_source.clone(),
-            order_type:self.order_type.as_str().to_owned(),
-            client_id:row.client_id.clone(),
-        });
-    }
-
-    fn show_source_clear_confirmation(&mut self,ctx:&egui::Context,work_area:Rect) {
-        if self.source_clear_confirm.is_none() {return;}
-        let mut accept=false;
-        let mut cancel=false;
-        components::decision_window(
-            "발주원문 삭제 확인","egui-clear-source-confirm",work_area
-        ).show(ctx,|ui|{
-            cancel=components::modal_header(ui,"발주원문 삭제 확인","취소",true);
-            ui.label("현재 미확정 원문과 분석 결과를 비울까요?");
-            components::modal_action_row(ui,|actions|{
-                if theme::action(actions,"내용 삭제",ButtonRole::Danger,true).clicked(){
-                    accept=true;
-                }
-            });
-        });
-        if cancel {
-            self.source_clear_confirm=None;
-        } else if accept {
-            let Some(request)=self.source_clear_confirm.take() else {return;};
-            let valid=self.active_id.as_deref()==Some(request.order_id.as_str()) &&
-                self.raw_source==request.source_raw &&
-                self.order_type.as_str()==request.order_type &&
-                self.drafts.iter().any(|row|
-                    row.id==request.order_id && row.raw==request.source_raw &&
-                    row.client_id==request.client_id);
-            if !valid {
-                self.source_save_error=Some(
-                    "발주서 내용이 변경되었습니다. 삭제하려면 다시 확인하세요.".into()
-                );
-                return;
-            }
-            let gateway=Arc::clone(&self.gateway);
-            let (sender,receiver)=mpsc::channel();
-            let context=ctx.clone();
-            let order_id=request.order_id.clone();
-            let source_raw=request.source_raw.clone();
-            let order_type=request.order_type.clone();
-            let client_id=request.client_id.clone();
-            std::thread::spawn(move||{
-                // An isolated preview receipt is projected into the same
-                // domain contract as React's nativeReplaceReception.
-                let original=serde_json::json!({
-                    "id":order_id,"raw":source_raw,"clientId":client_id,
-                    "orderType":order_type,
-                    "createdAt":chrono::Utc::now().to_rfc3339()
-                });
-                let result=gateway.execute(gateway::ReadOperation::NewReception,
-                    serde_json::json!({
-                        "action":"replace_reception","order":original,
-                        "raw":"","now":chrono::Utc::now().to_rfc3339()
-                    })
-                ).and_then(|value|{
-                    let cleared=value.get("order").ok_or(
-                        "Rust 원문 삭제 결과에 주문 정보가 없습니다.")?;
-                    if cleared.get("raw").and_then(serde_json::Value::as_str)!=Some("") ||
-                       cleared.get("clientId").and_then(serde_json::Value::as_str)!=Some("") {
-                        return Err("Rust 원문 삭제 결과가 올바르지 않습니다.".into());
-                    }
-                    Ok(())
-                });
-                let _=sender.send(result);
-                context.request_repaint();
-            });
-            self.source_clear_job=Some(PendingSourceClear{request,receiver});
-        }
-    }
-
-    fn poll_source_clear(&mut self,ctx:&egui::Context) {
-        let received=self.source_clear_job.as_ref()
-            .map(|job|job.receiver.try_recv());
-        let outcome=match received {
-            Some(Ok(outcome))=>Some(outcome),
-            Some(Err(mpsc::TryRecvError::Disconnected))=>
-                Some(Err("Rust 원문 삭제 요청이 중단되었습니다.".into())),
-            _=>None,
-        };
-        let Some(outcome)=outcome else {
-            if self.source_clear_job.is_some() {
-                ctx.request_repaint_after(Duration::from_millis(100));
-            }
-            return;
-        };
-        let Some(job)=self.source_clear_job.take() else {return;};
-        // Ignore late replies when a different receipt or edited source is open.
-        let valid=self.active_id.as_deref()==Some(job.request.order_id.as_str()) &&
-            self.raw_source==job.request.source_raw &&
-            self.order_type.as_str()==job.request.order_type &&
-            self.drafts.iter().any(|row|
-                row.id==job.request.order_id &&
-                row.raw==job.request.source_raw &&
-                row.client_id==job.request.client_id);
-        if !valid {return;}
-        match outcome {
-            Ok(())=>{
-                self.raw_source.clear();
-                self.source_editing=false;
-                self.direct_source_entry=false;
-                self.clear_source_analysis();
-                if let Some(row)=self.drafts.iter_mut().find(|row|
-                    row.id==job.request.order_id
-                ){
-                    row.client_id=None;
-                    row.client_selection=None;
-                    row.source_input_method=None;
-                    row.last_input_method=None;
-                    row.chat_handle=None;
-                    row.chat_title=None;
-                }
-                self.queue_source_save();
-                ctx.request_repaint();
-            }
-            Err(error)=>{
-                self.source_save_error=Some(format!("원문 삭제 실패: {error}"));
-            }
-        }
-    }
-
     fn handle_header_drag(
         ctx: &egui::Context,
         response: &egui::Response,
@@ -4044,7 +3890,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let mut start_region_capture=false;
         let mut open_client_chooser = false;
         let mut open_manual_workspace = false;
-        let mut request_source_clear = false;
         let can_receive_clipboard =
             self.clipboard_monitor.kind().has_intake() && !self.clipboard_busy;
         let ocr_processing = self.ocr_processing;
@@ -4389,8 +4234,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }
                     }
                     // Finish explicit direct entry on blur. Afterwards the
-                    // accepted source is immutable until a new intake action
-                    // or the existing confirmed delete/replacement workflow.
+                    // accepted source is immutable. Discard a pending receipt
+                    // through the workflow list's trash action.
                     if self.direct_source_entry && editor.lost_focus() &&
                         !self.raw_source.trim().is_empty(){
                         self.direct_source_entry=false;
@@ -4419,30 +4264,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             actions.set_clip_rect(actions_rect);
                             if theme::action(actions,"수동 분류",ButtonRole::Standard,
                                 ready && self.manual_workspace.is_none() &&
-                                self.client_change.is_none() && self.working_sync.is_none() &&
-                                self.source_clear_job.is_none()
+                                self.client_change.is_none() && self.working_sync.is_none()
                             ).clicked() {
                                 open_manual_workspace=true;
-                            }
-                        },
-                    );
-                    // Two independent ends of the existing fixed action row;
-                    // never move the manual button or the source/editor frame.
-                    ui.scope_builder(
-                        UiBuilder::new()
-                            .id_salt("source-clear-action-fixed-slot")
-                            .max_rect(actions_rect)
-                            .layout(Layout::left_to_right(Align::Center)),
-                        |actions| {
-                            actions.set_clip_rect(actions_rect);
-                            if theme::action(actions,"내용 삭제",ButtonRole::Standard,
-                                actions_rect.width()>=200.0 &&
-                                self.source_clear_job.is_none() &&
-                                self.manual_workspace.is_none() &&
-                                self.client_change.is_none() && self.working_sync.is_none() &&
-                                !self.clipboard_busy
-                            ).clicked() {
-                                request_source_clear=true;
                             }
                         },
                     );
@@ -4605,9 +4429,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
         if open_manual_workspace {
             self.open_manual_workspace(ui.ctx());
-        }
-        if request_source_clear {
-            self.request_source_clear();
         }
         if begin_input {
             if self.active_id.is_none() {
@@ -5187,7 +5008,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             && self.inline_change.is_none()
             && self.vat_change.is_none()
             && self.vat_dialog.is_none()
-            && self.source_clear_job.is_none();
+;
         let recipient_nav=self.analysis.as_ref()
             .map(|analysis|reception_service::recipients(analysis))
             .filter(|recipients|recipients.len()>1)
@@ -5846,7 +5667,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             return;
         }
         if self.working_sync.is_some() || self.client_change.is_some() ||
-            self.auto_client_change.is_some() || self.source_clear_job.is_some() ||
+            self.auto_client_change.is_some() ||
             self.manual_workspace.is_some() || self.ocr_review.is_some() ||
             self.clipboard_busy || self.pending_replace.is_some(){
             floating_notice::publish(
@@ -6556,9 +6377,6 @@ impl eframe::App for BandoEgui {
             self.vat_dialog=None;
             self.client_change=None;
             self.auto_client_change=None;
-            // Invalidate deletion replies from a different restored DB/catalog.
-            self.source_clear_confirm=None;
-            self.source_clear_job=None;
             self.clear_source_analysis();
         }
         self.poll_workflow_action(ctx);
@@ -6569,7 +6387,6 @@ impl eframe::App for BandoEgui {
         self.poll_inline_change(ctx);
         self.poll_vat_change(ctx);
         self.poll_remote_recheck(ctx);
-        self.poll_source_clear(ctx);
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
         // HWND ownership now handles HUB activation. Only the 350ms
@@ -6610,7 +6427,7 @@ impl eframe::App for BandoEgui {
             self.other_page(ctx);
         }
         let work_area=self.modal_work_area(ctx);
-        if self.ocr_review.is_some() || self.pending_replace.is_some() || self.source_clear_confirm.is_some() ||
+        if self.ocr_review.is_some() || self.pending_replace.is_some() ||
             (self.page==Page::Reception &&
                 (self.client_chooser.is_some() || self.manual_workspace.is_some() ||
                 self.edit_history_open || self.workflow_dialog.is_some()
@@ -6621,7 +6438,6 @@ impl eframe::App for BandoEgui {
         }
         self.show_ocr_review(ctx,work_area);
         self.show_replacement_confirmation(ctx,work_area);
-        self.show_source_clear_confirmation(ctx,work_area);
         if self.page == Page::Reception {
             self.show_client_chooser(ctx,work_area);
             self.show_manual_workspace(ctx,work_area);
