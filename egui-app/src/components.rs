@@ -1426,7 +1426,17 @@ fn reception_text_editor_at_click(
     let mut output=edit.show(&mut placed);
     if request_focus{
         output.response.request_focus();
-        if let Some(pointer)=click_at.filter(|point|cell.contains(*point)){
+        // The product/amount editor can be inset a few points from the
+        // clickable read-only cell. Clamp clicks in that border to the
+        // nearest valid text position rather than falling back to the end.
+        if let Some(pointer)=click_at.filter(|point|
+            cell.expand2(egui::vec2(theme::SPACE_4,theme::SPACE_2))
+                .contains(*point)
+        ){
+            let pointer=egui::pos2(
+                pointer.x.clamp(cell.left(),cell.right()),
+                pointer.y.clamp(cell.top(),cell.bottom())
+            );
             // Galley coordinates honor Hangul widths, left/right align,
             // font choice, margins and horizontal text scrolling.
             let cursor=output.galley.cursor_from_pos(
