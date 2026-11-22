@@ -5660,6 +5660,30 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 .is_some_and(|analysis|analysis.linked_spans.iter()
                     .any(|span|span.key==*key)));
         self.link_hover.update(linked,ui.ctx());
+        // Source evidence is an interactive recipient navigator, not merely
+        // a paint highlight. Once its 50ms hover is active, display the exact
+        // recognized recipient without requiring a click or mutating order data.
+        // Field-to-source hover still scrolls the document; source-to-field
+        // hover must NOT scroll the document under a stationary mouse.
+        if let (Some(source),Some(active),Some(analysis))=(
+            self.source_hover.as_ref(),
+            self.link_hover.active.as_ref(),
+            self.analysis.as_ref()
+        ){
+            if source==active && self.inline_editor.is_none() &&
+                self.inline_change.is_none() && source_matches {
+                if let Some(index)=reception_service::recipients(analysis)
+                    .iter().position(|row|
+                        reception_service::text(row,"id")==source.recipient_id
+                    ){
+                    if self.selected_recipient!=index {
+                        self.selected_recipient=index;
+                        ui.ctx().request_repaint();
+                    }
+                }
+                self.link_hover.scroll_to=None;
+            }
+        }
         if inline_cancel{
             self.inline_editor=None;
         }else if let Some((target,text,click_at))=inline_open {
