@@ -371,6 +371,28 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
                 }
                 set(recipient,"vatOverride",value.clone())?;
             },
+            "shippingBaseCharge" => {
+                // The same native reducer replays an employee's persisted
+                // base charge inside the SQLite transaction. This is not an
+                // applied (possibly doubled) UI amount; do not halve twice.
+                let amount=if value.is_null(){None}else{
+                    Some(super::safe(value)
+                        .ok_or("저장할 기본 운임은 안전한 정수여야 합니다.")?)
+                };
+                let origin=recipient.get("dispatchOrigin")
+                    .and_then(Value::as_str).unwrap_or("FACTORY").to_owned();
+                if !matches!(origin.as_str(),"FACTORY"|"STORE"){
+                    return Err("발송지 정보를 확인하세요.".into());
+                }
+                if super::remote_delivery::multiply(amount,recipient).is_none()
+                    && amount.is_some() {
+                    return Err("도서/산간 적용 운임이 허용 범위를 초과했습니다.".into());
+                }
+                let mut charges=recipient.get("shippingCharges")
+                    .and_then(Value::as_object).cloned().unwrap_or_default();
+                charges.insert(origin,value.clone());
+                set(recipient,"shippingCharges",Value::Object(charges))?;
+            },
             "shippingCharge" => {
                 if value.as_i64().is_none() && !value.is_null(){
                     return Err("운임은 0 이상의 정수로 입력하세요.".into());
