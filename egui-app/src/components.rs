@@ -2795,7 +2795,8 @@ pub fn reception_freight_row(
                             .font(egui::FontId::proportional(
                                 typography::FONT_RECEPTION_ITEM_TEXT
                             ))
-                            .align(egui::Align2::RIGHT_CENTER)
+                            .horizontal_align(Align::RIGHT)
+                            .vertical_align(Align::Center)
                             .margin(egui::Margin::symmetric(8,2))
                             .desired_width(84.0),
                     )
