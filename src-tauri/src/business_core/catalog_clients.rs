@@ -169,10 +169,11 @@ fn apply_client_workbook(state: &Value, preview: &Value) -> Result<Value, String
         let status = field(row, "status");
         if status != "ADD" && status != "UPDATE" { continue; }
         let Some(client) = row.get("client").filter(|c| !c.is_null()) else { continue };
-        validate_client(&next, client)?;
+        let canonical=bando_data_access::client_names::normalized(client);
+        validate_client(&next, &canonical)?;
         let clients = next.get_mut("clients").and_then(Value::as_array_mut)
             .ok_or("거래처 목록이 없습니다.")?;
-        let id = field(client, "id");
+        let id = field(&canonical, "id");
         if status == "ADD" {
             if clients.iter().any(|c| field(c, "id") == id) {
                 return Err("거래처 ID 충돌입니다.".into());
