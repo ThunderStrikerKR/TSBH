@@ -432,16 +432,16 @@ pub fn modal_balanced_review_area(viewport:Rect,workflow_area:Rect)->Rect{
     )
 }
 
-/// egui Window::fixed_size is the OUTER size, including the modal frame's
-/// margin and border. Use the corresponding inner size for the master rect.
-/// Never read the auto-layout's available_rect_before_wrap to position the
-/// fixed OCR footer: it may not represent the fixed-size content contract.
-pub fn modal_master_content_size(outer:Vec2)->Vec2{
-    let frame_x=theme::MODAL_PANEL_PADDING_X+theme::FRAME_STROKE_WIDTH;
-    let frame_y=theme::MODAL_PANEL_PADDING_Y+theme::FRAME_STROKE_WIDTH;
+/// OCR's fixed-size master must use the measured inner Ui and its clip.
+/// A fixed outer Window size does not guarantee the frame's inner clip
+/// matches a manually margin-subtracted prediction.
+pub fn modal_master_visible_content_size(
+    available:Rect,clip:Rect,outer:Vec2
+)->Vec2{
+    let visible=available.intersect(clip);
     Vec2::new(
-        (outer.x-2.0*frame_x).max(1.0),
-        (outer.y-2.0*frame_y).max(1.0)
+        visible.width().max(1.0).min(outer.x.max(1.0)),
+        visible.height().max(1.0).min(outer.y.max(1.0))
     )
 }
 /// Native modal geometry belongs here, not to individual screens.
@@ -3859,22 +3859,36 @@ mod modal_safe_position_tests {
     }
 
     #[test]
-    fn ocr_master_footer_ends_above_the_rounded_outer_frame(){
+    fn ocr_master_uses_visible_inner_area_not_outer_margin_guess(){
         let outer=Vec2::new(1400.0,800.0);
-        let inner=modal_master_content_size(outer);
-        assert_eq!(inner,Vec2::new(1362.0,766.0));
-        let bounds=Rect::from_min_size(egui::pos2(19.0,17.0),inner);
+        let available=Rect::from_min_size(
+            egui::pos2(19.0,17.0),Vec2::new(1362.0,710.0)
+        );
+        let clip=Rect::from_min_size(
+            egui::pos2(19.0,17.0),Vec2::new(1362.0,680.0)
+        );
+        let inner=modal_master_visible_content_size(available,clip,outer);
+        assert_eq!(inner,Vec2::new(1362.0,680.0));
+        let bounds=Rect::from_min_size(available.min,inner);
         let layout=modal_master_layout(
             bounds,theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT,
             theme::MODAL_FOOTER_HEIGHT,theme::MODAL_MASTER_WORKSPACE_GAP
         );
         assert_eq!(layout.footer.bottom(),bounds.bottom());
-        // Footer is inside the 17pt bottom frame, never clipped at the
-        // actual window's outer lower rounded corner.
-        assert_eq!(outer.y-layout.footer.bottom(),17.0);
+        assert!(layout.footer.bottom()<=clip.bottom());
         assert!(layout.workspace.bottom()<=layout.footer.top());
     }
-
+    #[test]
+    fn clipped_content_does_not_expand_to_requested_outer_size(){
+        let outer=Vec2::new(1400.0,900.0);
+        let available=Rect::from_min_size(
+            egui::pos2(10.0,10.0),Vec2::new(640.0,440.0)
+        );
+        assert_eq!(
+            modal_master_visible_content_size(available,available,outer),
+            Vec2::new(640.0,440.0)
+        );
+    }
     #[test]
     fn popup_pivot_uses_exact_safe_area_center_without_double_header_offset(){
         for (width,height) in [(240.0,180.0),(600.0,360.0),(1200.0,860.0)] {
