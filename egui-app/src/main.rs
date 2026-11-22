@@ -4603,21 +4603,9 @@ impl BandoEgui {
                                             .and_then(|decision|decision["checked"].as_bool());
                                         let origin=ship.recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
-                                        // Previously billed legacy shipments keep their
-                                        // historical charge; never label them as a staff
-                                        // override or a newly doubled charge.
-                                        if let Some(decision)=ship.remote.as_ref()
-                                            .filter(|value|value["legacy"]!=true)
-                                        {
-                                            if let Some(message)=
-                                                reception_service::remote_delivery_notice(decision)
-                                            {
-                                                contents.add_space(theme::SPACE_4);
-                                                contents.label(typography::status(
-                                                    &message,theme::SELECTED_ORDER
-                                                ));
-                                            }
-                                        }
+                                        contents.add_space(theme::SPACE_8);
+                                        components::reception_item_add_action_editable(contents,false);
+                                        contents.add_space(theme::SPACE_8);
                                         components::reception_freight_row(
                                             contents,"운임",
                                             if ship.collect {None} else {ship.freight},
@@ -4625,7 +4613,9 @@ impl BandoEgui {
                                             origin==Some("FACTORY"),
                                         );
                                         contents.add_space(theme::SPACE_8);
-                                        components::reception_item_actions(contents,origin);
+                                        components::reception_item_origin_action_editable(
+                                            contents,origin,false
+                                        );
                                     });
                             }
                         );
@@ -5125,26 +5115,19 @@ impl BandoEgui {
                                             recipient_id:recipient_id.to_owned(),
                                             item_id:None,field:"shippingCharge"
                                         };
-                                        if let Some(decision)=remote_result{
-                                            if let Some(message)=
-                                                reception_service::remote_delivery_notice(decision)
-                                            {
-                                                items_ui.add_space(theme::SPACE_4);
-                                                items_ui.label(typography::status(
-                                                    &message,theme::SELECTED_ORDER
-                                                ));
-                                            }
-                                        }else if let Some(error)=self.analysis.as_ref()
-                                            .and_then(|analysis|
-                                                analysis.reference.get(self.selected_recipient))
-                                            .and_then(|reference|reference.remote_error.as_ref())
-                                        {
-                                            items_ui.add_space(theme::SPACE_4);
-                                            items_ui.label(typography::status(
-                                                &format!("도서/산간 판정 실패 · {error}"),
-                                                theme::SELECTED_ORDER
+                                        // Automatic locality selection belongs to the
+                                        // checkbox; no explanatory text is rendered here.
+                                        if components::reception_item_add_action_editable(
+                                            items_ui,editable
+                                        ){
+                                            inline_command=Some((
+                                                InlineTarget{
+                                                    recipient_id:recipient_id.to_owned(),
+                                                    item_id:None,field:"addItem"
+                                                },"".to_owned()
                                             ));
                                         }
+                                        items_ui.add_space(theme::SPACE_8);
                                         let freight_actions=components::reception_freight_row_editable(
                                             items_ui,"운임",line_fee,cod,remote,
                                             true,editable
@@ -5192,20 +5175,16 @@ impl BandoEgui {
                                             }
                                         }
                                         items_ui.add_space(theme::SPACE_8);
-                                        if let Some(command)=components::reception_item_actions_editable(
-                                            items_ui,origin,editable
-                                        ){
-                                            let (field,value)=match command{
-                                                components::ReceptionItemAction::AddItem=>
-                                                    ("addItem","".to_owned()),
-                                                components::ReceptionItemAction::Origin(value)=>
-                                                    ("dispatchOrigin",value.to_owned())
-                                            };
+                                        if let Some(value)=
+                                            components::reception_item_origin_action_editable(
+                                                items_ui,origin,editable
+                                            )
+                                        {
                                             inline_command=Some((
                                                 InlineTarget{
                                                     recipient_id:recipient_id.to_owned(),
-                                                    item_id:None,field
-                                                },value
+                                                    item_id:None,field:"dispatchOrigin"
+                                                },value.to_owned()
                                             ));
                                         }
                                     } else {

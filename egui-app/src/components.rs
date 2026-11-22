@@ -3318,11 +3318,10 @@ pub fn reception_freight_row_editable(
     let mut amount_text=amount
         .map(|value|display_won(value).trim_end_matches('원').to_owned())
         .unwrap_or_else(||"—".to_owned());
-    ui.horizontal_wrapped(|line| {
+    // Use the same predictable 36pt row for both ordinary and active cells.
+    // The parent already provides horizontal scrolling for narrow viewports.
+    ui.horizontal(|line| {
         line.spacing_mut().item_spacing=Vec2::new(theme::SPACE_4,theme::SPACE_4);
-        // Keep the label, 36pt input, and its currency unit together in a
-        // single centered row. The options may wrap independently as before.
-        // 8pt left inset matches product/header text in the item grid.
         line.allocate_ui_with_layout(
             Vec2::new(168.0,theme::INPUT_HEIGHT),
             Layout::left_to_right(Align::Center),
@@ -3341,11 +3340,8 @@ pub fn reception_freight_row_editable(
                     egui::pos2(
                         label_rect.left(),
                         label_rect.center().y-galley.size().y/2.0
-                    ),
-                    galley,theme::TEXT
+                    ),galley,theme::TEXT
                 );
-                // The exact amount (including the unknown '—') is
-                // right-aligned. It remains a disabled, native 36pt input.
                 let displayed=price.add_enabled_ui(false,|cell|{
                     cell.add_sized(
                         Vec2::new(84.0,theme::INPUT_HEIGHT),
@@ -3353,8 +3349,6 @@ pub fn reception_freight_row_editable(
                     )
                 }).inner;
                 amount_rect=Some(displayed.rect);
-                // React disallows editing the freight amount for COD.
-                // Keep COD and remote controls independent and editable.
                 if editable && collect!=Some(true) && price.interact(
                     displayed.rect,
                     price.make_persistent_id(("edit-applied-freight",label)),
@@ -3364,115 +3358,102 @@ pub fn reception_freight_row_editable(
                     .size(typography::FONT_RECEPTION_ITEM_TEXT));
             }
         );
+        // Management master owns the split chevron, padding and disabled
+        // states. Do not substitute a local button that only toggles labels.
         if editable {
-            if theme::action(
-                line,
-                if collect.unwrap_or(false){"착불"}else{"선불"},
-                theme::ButtonRole::TableSecondary,true
-            ).clicked(){collect_clicked=true;}
+            let mut selected=collect.unwrap_or(false);
+            management_dropdown(
+                line,if selected{"착불"}else{"선불"},90.0,
+                true,"",|menu|{
+                    management_dropdown_option(menu,&mut selected,false,"선불");
+                    management_dropdown_option(menu,&mut selected,true,"착불");
+                }
+            );
+            collect_clicked=Some(selected)!=collect
+                && selected!=collect.unwrap_or(false);
         }else if let Some(collect)=collect{
             line.label(typography::body(
-                if collect {"(착불)"} else {"(선불)"}
+                if collect{"(착불)"}else{"(선불)"}
             ).size(typography::FONT_RECEPTION_ITEM_TEXT));
         }
-        // Always present the checkbox, including while classification is
-        // pending. A resolved, checked engine decision is drawn CHECKED even
-        // when no manual remoteDelivery field exists on the recognition row.
-        let mut checked=remote.unwrap_or(false);
-        if line.add_enabled(editable && remote.is_some(),
-            egui::Checkbox::new(&mut checked,"도서/산간")
-        ).changed(){
-            remote_clicked=true;
-        }
-        // Deliberately a non-functional, disabled placeholder. Do not hide
-        // it behind the selected factory/store origin or an inquiry result.
-        let _=inquiry_visible;
-        theme::action(
-            line,"공장에 운임 문의",theme::ButtonRole::Standard,false
-        );
+        // Right edge matches React: disabled inquiry is the rightmost
+        // action and the 도서/산간 checkbox is immediately to its left.
+        line.with_layout(Layout::right_to_left(Align::Center),|right|{
+            let _=inquiry_visible;
+            theme::action(right,"공장에 운임 문의",theme::ButtonRole::Standard,false);
+            let mut checked=remote.unwrap_or(false);
+            if right.add_enabled(editable && remote.is_some(),
+                egui::Checkbox::new(&mut checked,"도서/산간")
+            ).changed(){
+                remote_clicked=true;
+            }
+        });
     });
     ReceptionFreightEdit {
         amount_rect,amount_clicked:clicked,remote_clicked,collect_clicked
     }
 }
+/// Keep add-product above freight, exactly below the product table.
+pub fn reception_item_add_action_editable(ui:&mut Ui,editable:bool)->bool{
+    theme::action(ui,"＋ 상품 추가",theme::ButtonRole::Standard,editable)
+        .clicked()
+}
 
-/// Original React lower action row. Keep its already-approved actions
-/// visible but disabled until the actual native editing commands are wired.
-pub fn reception_item_actions(ui: &mut Ui, dispatch_origin: Option<&str>) {
-    let _=reception_item_actions_editable(ui,dispatch_origin,false);
-}
-/// For an unconfirmed draft, each visible control opens the native manual
-/// editor rather than pretending the read-only projection was mutated.
-pub enum ReceptionItemAction {
-    AddItem,
-    Origin(&'static str),
-}
-pub fn reception_item_actions_editable(
+/// Dispatch origin is a separate right-aligned row below freight.
+/// A selected action remains visually active, not disabled-looking.
+pub fn reception_item_origin_action_editable(
     ui:&mut Ui,dispatch_origin:Option<&str>,editable:bool
-)->Option<ReceptionItemAction>{
-    let mut selected=None;
-    ui.horizontal_wrapped(|bar|{
-        bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-        if theme::action(bar,"＋ 상품 추가",theme::ButtonRole::Standard,editable)
-            .clicked(){selected=Some(ReceptionItemAction::AddItem);}
+)->Option<&'static str>{
+    let mut selection=None;
+    ui.horizontal(|bar|{
         bar.with_layout(Layout::right_to_left(Align::Center),|right|{
             let button=|right:&mut Ui,label:&str,selected:bool|{
                 let response=right.add_enabled(editable,
                     egui::Button::new(typography::action_label(
                         label,typography::FONT_STANDARD_ACTION,false,
-                        if selected{theme::TEXT}else{theme::MUTED}
+                        if selected{theme::TEXT}else{theme::SECONDARY}
                     ))
                     .min_size(Vec2::new(42.0,theme::ACTION_STANDARD_HEIGHT))
                     .fill(if selected{theme::RAISED}else{theme::PANEL})
                     .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,
-                        if selected{theme::BORDER}else{theme::DIVIDER}))
+                        if selected{theme::SELECTION}else{theme::DIVIDER}))
                     .corner_radius(theme::CONTROL_RADIUS)
                 );
-                theme::paint_button_hover(right,&response,theme::CONTROL_RADIUS as f32);
+                theme::paint_button_hover(
+                    right,&response,theme::CONTROL_RADIUS as f32
+                );
                 response.clicked()
             };
             if button(right,"매장",dispatch_origin==Some("STORE")){
-                selected=Some(ReceptionItemAction::Origin("STORE"));
+                selection=Some("STORE");
             }
             if button(right,"공장",dispatch_origin==Some("FACTORY")){
-                selected=Some(ReceptionItemAction::Origin("FACTORY"));
+                selection=Some("FACTORY");
             }
             right.label(typography::caption("발송지:"));
         });
     });
-    selected
+    selection
 }
 
 pub fn reception_vat_row(ui: &mut Ui, vat_included: Option<bool>) {
     let _=reception_vat_row_editable(ui,vat_included,false);
 }
 pub fn reception_vat_row_editable(
-    ui:&mut Ui,vat_included:Option<bool>,editable:bool
-)->bool {
-    let mut clicked=false;
-    let width = ui.available_width();
+    ui: &mut Ui,vat_included:Option<bool>,editable:bool
+)->bool{
+    let mut selected=vat_included.unwrap_or(false);
+    let mut changed=false;
+    let width=ui.available_width();
     ui.allocate_ui_with_layout(
-        Vec2::new(width, theme::RECEPTION_VAT_ROW_HEIGHT),
-        Layout::left_to_right(Align::Center), |line| {
-            if let Some(included) = vat_included {
-                let mut readonly = included;
-                let display=line.add_enabled(false,
-                    egui::Checkbox::new(&mut readonly, "부가세 포함")
-                );
-                if editable && line.interact(
-                    display.rect,line.make_persistent_id("edit-vat-toggle"),
-                    Sense::click()
-                ).clicked(){clicked=true;}
-            } else if editable {
-                if theme::action(
-                    line,"부가세 설정",theme::ButtonRole::TableSecondary,true
-                ).clicked(){clicked=true;}
-            } else {
-                line.label(typography::caption("부가세 확인 전"));
-            }
+        Vec2::new(width,theme::RECEPTION_VAT_ROW_HEIGHT),
+        Layout::left_to_right(Align::Center),|line|{
+            changed=line.add_enabled(editable,
+                egui::Checkbox::new(&mut selected,"부가세 포함")
+            ).changed();
         }
     );
-    clicked
+    changed
 }
 
 /// React's pinned 56px total: first line is title / fixed right amount,
