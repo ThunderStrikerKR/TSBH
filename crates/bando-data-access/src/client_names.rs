@@ -201,6 +201,9 @@ mod tests{
         let historical_text:String=conn.query_row(
             "SELECT payload FROM core_orders WHERE id='o'",[],
             |r|r.get(0)).unwrap();
+        // A real legacy backup must remain restorable even after the new
+        // program migrates the client; restored history is immutable.
+        let legacy_backup=crate::backup_service::manual_backup(&conn,&base).unwrap();
         assert_eq!(migrate_v2(&mut conn,&base).unwrap(),1);
         let text:String=conn.query_row("SELECT payload FROM core_clients WHERE id='c'",
             [],|r|r.get(0)).unwrap();
@@ -219,7 +222,30 @@ mod tests{
             [],|r|r.get(0)).unwrap();
         assert_eq!(after,envelope);
         let backups=std::fs::read_dir(base.join("backups")).unwrap().count();
-        assert_eq!(backups,1);
+        assert_eq!(backups,2);
+        crate::backup_service::restore_backup(
+            &mut conn,&base,&legacy_backup
+        ).unwrap();
+        let restored:String=conn.query_row(
+            "SELECT payload FROM core_clients WHERE id='c'",
+            [],|r|r.get(0)
+        ).unwrap();
+        let restored:Value=serde_json::from_str(&restored).unwrap();
+        assert_eq!(restored["name"],"테스트상사");
+        assert_eq!(restored["shortNames"],"기존태그, 내부상호");
+        assert!(restored.get("displayName").is_none());
+        let order_after:String=conn.query_row(
+            "SELECT payload FROM core_orders WHERE id='o'",[],
+            |r|r.get(0)
+        ).unwrap();
+        assert_eq!(order_after,historical_text);
+        let revision:Value=crate::recovery::get_snapshot(&conn).unwrap();
+        // Restore increments the revision, and conversion increments once
+        // more so stale editors cannot overwrite normalized records.
+        assert_eq!(revision["revision"],10);
+        assert_eq!(migrate_v2(&mut conn,&base).unwrap(),0);
+        let backups=std::fs::read_dir(base.join("backups")).unwrap().count();
+        assert_eq!(backups,3);
         drop(conn);
         std::fs::remove_dir_all(&base).unwrap();
     }
