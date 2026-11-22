@@ -1246,6 +1246,127 @@ impl BandoEgui {
                 }
     }
 
+    fn begin_inline_edit(&mut self,target:InlineTarget,original:String){
+        if self.inline_change.is_some(){return;}
+        if self.inline_editor.as_ref().is_some_and(|editor|editor.target==target){
+            return;
+        }
+        // A different field is never allowed to discard uncommitted typing.
+        if self.inline_editor.as_ref().is_some_and(|editor|
+            editor.text!=editor.original){
+            self.source_save_error=Some(
+                "현재 셀 편집을 Enter로 확정하거나 Esc로 취소하세요.".into()
+            );
+            return;
+        }
+        self.inline_editor=Some(InlineReceptionEditor{
+            target,original:original.clone(),text:original,focus_next:true
+        });
+    }
+
+    fn submit_inline_edit(&mut self,ctx:&egui::Context){
+        if self.inline_change.is_some(){return;}
+        let Some(editor)=self.inline_editor.take() else{return};
+        if editor.text==editor.original{return;}
+        let Some(source)=self.active_id.as_deref().and_then(|id|
+            self.drafts.iter().find(|row|row.id==id)
+        ).cloned() else{return};
+        if source.analysis_raw.as_deref()!=Some(source.raw.as_str()) ||
+            source.analysis_evidence.is_none() ||
+            self.working_sync.is_some() || self.client_change.is_some(){
+            self.source_save_error=Some("현재 주문은 수정할 수 없습니다.".into());
+            self.inline_editor=Some(editor);
+            return;
+        }
+        let field=editor.target.field;
+        let value=if matches!(field,"quantity"|"unitPrice"|"shippingCharge"){
+            let digits=editor.text.trim().replace(',',"");
+            if digits.is_empty() && field!="quantity"{
+                serde_json::Value::Null
+            }else if let Ok(number)=digits.parse::<i64>(){
+                if !(0..=9_007_199_254_740_991).contains(&number)
+                    || (field=="quantity" && number==0) {
+                    self.source_save_error=Some(
+                        "수량은 1 이상, 단가·운임은 0 이상의 안전한 정수여야 합니다.".into()
+                    );
+                    self.inline_editor=Some(editor);
+                    return;
+                }
+                serde_json::json!(if field=="quantity"{
+                    number.to_string()
+                }else{digits})
+            }else{
+                self.source_save_error=Some("숫자 입력값을 확인하세요.".into());
+                self.inline_editor=Some(editor);
+                return;
+            }
+        }else{serde_json::json!(editor.text)};
+        let value=if matches!(field,"unitPrice"|"shippingCharge")
+            && !value.is_null(){
+            // The native reducer receives a numeric JSON value, never
+            // employee-formatted currency text.
+            serde_json::json!(editor.text.trim().replace(',','')
+                .parse::<i64>().unwrap_or(0))
+        }else{value};
+        let request=manual_workspace::InlineRequest{
+            recipient_id:editor.target.recipient_id.clone(),
+            item_id:editor.target.item_id.clone(),
+            field:field.to_string(),value
+        };
+        let order_id=source.id.clone();
+        let raw=source.raw.clone();
+        let (tx,receiver)=mpsc::channel();
+        let gateway=Arc::clone(&self.gateway);
+        self.inline_change=Some(PendingInlineChange{
+            order_id,raw,target:editor.target.clone(),editor,receiver
+        });
+        let context=ctx.clone();
+        std::thread::spawn(move||{
+            let result=manual_workspace::apply_inline(
+                gateway.as_ref(),&source,&request
+            );
+            let _=tx.send(result);
+            context.request_repaint();
+        });
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+
+    fn poll_inline_change(&mut self,ctx:&egui::Context){
+        let complete=self.inline_change.as_ref().map(|pending|
+            pending.receiver.try_recv());
+        let result=match complete {
+            Some(Ok(value))=>Some(value),
+            Some(Err(mpsc::TryRecvError::Disconnected))=>
+                Some(Err("Rust 직접 수정 연결이 중단되었습니다.".into())),
+            _=>None
+        };
+        let Some(result)=result else{
+            if self.inline_change.is_some(){
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+            return;
+        };
+        let Some(pending)=self.inline_change.take() else{return};
+        if self.active_id.as_deref()!=Some(pending.order_id.as_str()) ||
+            self.raw_source!=pending.raw{
+            self.source_save_error=Some(
+                "편집 중 다른 발주서로 이동하여 이전 셀 수정 결과를 적용하지 않았습니다.".into()
+            );
+            return;
+        }
+        match result {
+            Ok(event)=>{
+                self.source_save_error=None;
+                self.apply_manual_event(event);
+            },
+            Err(error)=>{
+                self.source_save_error=Some(format!("셀 수정 실패: {error}"));
+                self.inline_editor=Some(pending.editor);
+            }
+        }
+        ctx.request_repaint();
+    }
+
     fn show_edit_history(&mut self,ctx:&egui::Context,work_area:Rect){
         if !self.edit_history_open{return;}
         let receipt=self.active_id.as_deref()
@@ -5550,6 +5671,7 @@ impl eframe::App for BandoEgui {
         self.poll_client_names(ctx);
         self.poll_client_change(ctx);
         self.poll_working_sync(ctx);
+        self.poll_inline_change(ctx);
         self.poll_source_clear(ctx);
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
