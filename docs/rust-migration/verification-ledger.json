@@ -3567,5 +3567,36 @@
     },
     "verdict": "PATCH_COMMITTED__FULL_VERIFICATION_OPEN",
     "risks": "Legacy quotes without complete pendingRecipients or v2 basis trigger one native backfill. Operating working-version and concurrent external master updates require live reconciliation testing; compiler/test job completion not yet verified."
+  },
+  "eguiClientChooserImmediateDismiss20261123": {
+    "date": "2026-11-23",
+    "features": [
+      "F05",
+      "F07"
+    ],
+    "scope": "egui full dealer chooser click acceptance and async native calculation handoff",
+    "userContract": "A verified client-row click immediately dismisses the chooser in the same frame. Native change/price processing runs in the background; users cannot reopen or select another dealer while that exact request is pending. Success applies the guarded result and saves; errors keep prior dealer/quote, report a floating reception notice without resurrecting the chooser.",
+    "patches": [
+      "egui-app/src/main.rs",
+      "egui-app/src/client_chooser.rs",
+      ".github/workflows/egui-targeted-check.yml"
+    ],
+    "commits": [
+      "7365fd0ddecb4a75336fa86627dbe99958cdfeaa",
+      "358f293373fe87c78ccec188508190483459eb5c",
+      "7f095da02e012236bfa190191a79386823739fab",
+      "d4262b4f06ac7ebffe400de2ee8c5e99b47e50ae",
+      "1439b28d83759c554d6d3c96b463c9689a2fa40b",
+      "56d87a7b00770b7234b721ee21ef398c9ed68039"
+    ],
+    "verification": {
+      "PATCH": "COMMITTED_MAIN: modal closes immediately upon verified selection; background worker isolated from chooser state; same-order new chooser blocked while in flight; error displayed via shared floating notice.",
+      "UNIT": "ADDED, NOT YET VERIFIED: client_chooser_async_handoff_tests (gated fake gateway tests that assert dismissal before worker completion, blocked reopen, valid apply and failed rollback).",
+      "DIFF": "NOT_EXECUTED: pinned historical React comparison pending.",
+      "ACTION": "NOT_EXECUTED: physical GUI click→instant close→native result/reopen validation pending.",
+      "CI": "PENDING: https://github.com/ThunderStrikerKR/TSBH/actions/runs/45040481656",
+      "WINDOWS": "NOT_EXECUTED: live Windows GUI verification pending."
+    },
+    "verdict": "PATCH_COMMITTED__FULL_VERIFICATION_OPEN"
   }
 }
