@@ -4391,6 +4391,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         order_id:target.order_id.clone(),
                         shipment_id:target.id.clone()
                     });
+                    self.link_hover.clear();
+                    self.source_hover=None;
                 }
             }
             if new_clicked{
@@ -4731,6 +4733,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     reception_service::text(row,"id")==clicked.recipient_id
                                 ) {
                                 self.selected_recipient=index;
+                                self.workflow_ui.stop_preview();
+                                self.link_hover.clear();
                             }
                         }
                     }
@@ -5274,6 +5278,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 order_id:target.order_id.clone(),
                                 shipment_id:target.id.clone(),
                             });
+                            // Click is authoritative even if the old source
+                            // hover is still inside its 150ms release grace.
+                            self.link_hover.clear();
+                            self.source_hover=None;
                             pane.ctx().request_repaint();
                         }
                     }
@@ -5901,6 +5909,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if let Some(index) = next_recipient {
             self.selected_recipient = index;
             self.workflow_ui.stop_preview();
+            self.link_hover.clear();
+            self.source_hover=None;
             if self.inline_editor.is_some(){inline_commit=true;}
         }
         let selected = self.analysis.as_ref().and_then(|analysis| {
