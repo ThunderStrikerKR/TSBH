@@ -921,7 +921,9 @@ impl BandoEgui {
     /// relevant product/variant and freight masters are compared off-thread.
     /// Unrelated state revisions and contact edits never trigger repricing.
     fn start_pricing_basis_check(&mut self,ctx:&egui::Context){
-        if self.pricing_basis_check.is_some(){return;}
+        if self.reception_job_admission(
+            ReceptionJob::PricingBasis,self.pricing_basis_check.is_some()
+        )!=JobAdmission::Start{return;}
         let Some(row)=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
             .cloned()
@@ -1332,9 +1334,17 @@ impl BandoEgui {
         &mut self,client_id:&str,ctx:&egui::Context,
         reprice_selection:Option<String>
     ){
-        if self.client_change.is_some() {
-            self.source_save_error = Some("이전 거래처 변경 계산이 끝난 뒤 다시 선택하세요.".into());
-            return;
+        let duplicate=self.client_change.as_ref().is_some_and(|pending|
+            pending.order_id==self.active_id.as_deref().unwrap_or("") &&
+            pending.client_id==client_id
+        );
+        match self.reception_job_admission(ReceptionJob::ManualClient,duplicate){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::ManualClient,blocker);
+                return;
+            }
         }
         let Some(id) = self.active_id.as_deref() else { return; };
         let Some(row) = self.drafts.iter().find(|row| row.id == id).cloned() else { return; };
@@ -1353,6 +1363,7 @@ impl BandoEgui {
         // Employee selection overrides any still-running automatic match.
         // Dropping its receiver prevents a late auto quote from taking over.
         self.auto_client_change=None;
+        self.pricing_basis_check=None;
         let target=client_id.to_owned();
         let order_id=row.id.clone();
         let source_raw=row.raw.clone();
@@ -1361,7 +1372,7 @@ impl BandoEgui {
         let (sender,receiver)=mpsc::channel();
         let context=ctx.clone();
         self.client_change=Some(PendingClientChange {
-            order_id,source_raw,order_type,
+            order_id,client_id:target.clone(),source_raw,order_type,
             chat_handle:row.chat_handle.clone(),
             chat_title:row.chat_title.clone(),
             manual_model:row.manual_model.clone(),reprice_selection,receiver,
@@ -2355,9 +2366,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn open_client_chooser(&mut self, ctx: &egui::Context) {
-        // The chosen dealer is being priced in the background. Until that
-        // request resolves, no second chooser can submit an overlapping edit.
-        if self.client_change.is_some(){return;}
+        // Do not display a chooser that could submit a conflicting request.
+        if self.reception_job_admission(
+            ReceptionJob::ManualClient,false
+        )!=JobAdmission::Start{return;}
         let Some(order_id) = &self.active_id else { return; };
         self.client_chooser = Some(ClientChooser::new(
             order_id.clone(), Arc::clone(&self.gateway), ctx.clone()
@@ -2583,9 +2595,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// → calculate_price rules after Rust title/raw matching, before marking
     /// an automatic dealer as applied. No UI-side billing or fake totals.
     fn start_auto_client_change(&mut self, client_id:&str, ctx:&egui::Context) {
-        if self.client_change.is_some() || self.auto_client_change.is_some() {
-            return;
-        }
+        let duplicate=self.auto_client_change.as_ref().is_some_and(|pending|
+            pending.order_id==self.active_id.as_deref().unwrap_or("") &&
+            pending.client_id==client_id &&
+            pending.request==self.analysis_request
+        );
+        if self.reception_job_admission(
+            ReceptionJob::AutomaticClient,duplicate
+        )!=JobAdmission::Start{return;}
         let Some(row)=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
             .cloned()
