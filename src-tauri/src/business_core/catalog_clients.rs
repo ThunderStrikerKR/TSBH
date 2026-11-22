@@ -55,6 +55,7 @@ fn normalized_color(value: &str) -> String {
     let trimmed = value.trim();
     let key = trimmed.to_lowercase();
     match key.as_str() {
+        "색상 미표기" | "색상미표기" => "단일".into(),
         "gold" | "골드" => "Gold".into(),
         "rose gold" | "로즈골드" => "Rose Gold".into(),
         "cosmo black" | "cosmoblack" | "코스모블랙" => "Cosmo Black".into(),
