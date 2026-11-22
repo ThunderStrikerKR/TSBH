@@ -288,6 +288,10 @@ struct BandoEgui {
     clipboard_chat: Option<ChatWindow>,
     clipboard_busy: bool,
     ocr_processing: bool,
+    // Thumbnail is delivered as soon as clipboard/capture decoding finishes,
+    // before the slower PaddleOCR worker returns its recognition result.
+    ocr_preview_receiver: Option<Receiver<ClipboardImage>>,
+    ocr_processing_preview: Option<(egui::TextureHandle,usize,usize)>,
     clipboard_cancel: Arc<AtomicBool>,
     clipboard_receiver: Option<Receiver<(OrderType, Result<ClipboardReceipt, String>)>>,
     clipboard_error: Option<String>,
@@ -385,6 +389,8 @@ impl Default for BandoEgui {
             clipboard_chat: None,
             clipboard_busy: false,
             ocr_processing: false,
+            ocr_preview_receiver: None,
+            ocr_processing_preview: None,
             clipboard_cancel: Arc::new(AtomicBool::new(false)),
             clipboard_receiver: None,
             clipboard_error: None,
@@ -1978,6 +1984,9 @@ impl BandoEgui {
         self.clipboard_cancel.store(false,Ordering::Release);
         let cancelled=Arc::clone(&self.clipboard_cancel);
         let (tx,rx)=mpsc::channel();
+        let (preview_tx,preview_rx)=mpsc::channel();
+        self.ocr_preview_receiver=Some(preview_rx);
+        self.ocr_processing_preview=None;
         self.clipboard_receiver=Some(rx);
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         let worker_context=ctx.clone();
@@ -1993,6 +2002,9 @@ impl BandoEgui {
                 if cancelled.load(Ordering::Acquire){
                     return Err("OCR_CANCELLED".into());
                 }
+                let _=preview_tx.send(
+                    clipboard_intake::preview_thumbnail(&image,640)
+                );
                 let text=clipboard_intake::recognize_image(&image,&cancelled)?;
                 Ok(ClipboardReceipt::Ocr{text,image,sequence})
             });
@@ -2013,6 +2025,9 @@ impl BandoEgui {
         self.clipboard_cancel.store(false, Ordering::Release);
         let cancelled = Arc::clone(&self.clipboard_cancel);
         let (tx, rx) = mpsc::channel();
+        let (preview_tx,preview_rx)=mpsc::channel();
+        self.ocr_preview_receiver=Some(preview_rx);
+        self.ocr_processing_preview=None;
         self.clipboard_receiver = Some(rx);
         // Clipboard image decoding and PaddleOCR never block the UI thread.
         std::thread::spawn(move || {
@@ -2021,6 +2036,11 @@ impl BandoEgui {
                     ClipboardPayload::Text(text)=>
                         Ok(ClipboardReceipt::Text{text,sequence}),
                     ClipboardPayload::Image(image)=>{
+                        // Send the small preview first; OCR and the approval
+                        // workflow continue using the unchanged original.
+                        let _=preview_tx.send(
+                            clipboard_intake::preview_thumbnail(&image,640)
+                        );
                         let text=clipboard_intake::recognize_image(&image,&cancelled)?;
                         Ok(ClipboardReceipt::Ocr{text,image,sequence})
                     }
@@ -2117,12 +2137,39 @@ impl BandoEgui {
     }
 
     fn poll_clipboard_intake(&mut self, ctx: &egui::Context) {
+        let preview=self.ocr_preview_receiver.as_ref()
+            .map(|rx|rx.try_recv());
+        match preview{
+            Some(Ok(image))=>{
+                self.ocr_preview_receiver=None;
+                if self.ocr_processing
+                    && !self.clipboard_cancel.load(Ordering::Acquire){
+                    let texture=ctx.load_texture(
+                        "source-ocr-processing-thumbnail",
+                        egui::ColorImage::from_rgba_unmultiplied(
+                            [image.width,image.height],&image.rgba
+                        ),
+                        egui::TextureOptions::LINEAR
+                    );
+                    self.ocr_processing_preview=Some((
+                        texture,image.width,image.height
+                    ));
+                    ctx.request_repaint();
+                }
+            }
+            Some(Err(mpsc::TryRecvError::Disconnected))=>{
+                self.ocr_preview_receiver=None;
+            }
+            _=>{}
+        }
         let next = self.clipboard_receiver.as_ref().map(|rx| rx.try_recv());
         match next {
             Some(Ok((order_type, result))) => {
                 self.clipboard_receiver = None;
                 self.clipboard_busy = false;
                 self.ocr_processing = false;
+                self.ocr_preview_receiver=None;
+                self.ocr_processing_preview=None;
                 let intake_chat = self.clipboard_chat.take();
                 if self.clipboard_cancel.swap(false, Ordering::AcqRel) {
                     // User cancellation wins even if a completed OCR result
@@ -2185,6 +2232,8 @@ impl BandoEgui {
                 self.clipboard_receiver = None;
                 self.clipboard_busy = false;
                 self.ocr_processing = false;
+                self.ocr_preview_receiver=None;
+                self.ocr_processing_preview=None;
                 self.clipboard_chat = None;
                 if self.clipboard_cancel.swap(false, Ordering::AcqRel) {
                     return;
