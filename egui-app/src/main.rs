@@ -1967,7 +1967,11 @@ impl BandoEgui {
         &mut self,target:InlineTarget,original:String,
         click_at:Option<egui::Pos2>
     ){
-        if self.inline_change.is_some(){return;}
+        // Even entering edit mode is a write intent: an older automatic
+        // dealer quote must never land while the employee is typing.
+        if self.reception_job_admission(
+            ReceptionJob::InlineEdit,false
+        )!=JobAdmission::Start{return;}
         if self.inline_editor.as_ref().is_some_and(|editor|
             Some(editor.source_id.as_str())!=self.active_id.as_deref()){
             self.inline_editor=None;
