@@ -155,7 +155,7 @@ fn synchronize(order:&mut Value)->Result<(),String>{
     }
     set(order,"issueResolutions",Value::Object(next))
 }
-fn apply_final(payload:&Value)->Result<Value,String>{
+fn apply_final(payload:&Value,draft_preview:bool)->Result<Value,String>{
     let order=req(payload,"order")?;
     let model=req(payload,"model")?;
     if has_value(field(order,"confirmedAt")){
@@ -163,11 +163,16 @@ fn apply_final(payload:&Value)->Result<Value,String>{
     }
     let model_rows=req(model,"rows")?.as_array().ok_or("배송 행이 없습니다.")?;
     if model_rows.is_empty(){return Err("배송 건수를 설정하세요.".into());}
-    for row in model_rows {
-        for item in rows(field(row,"items")){
-            if (!str_field(item,"productId").is_empty() || !str_field(item,"name").trim().is_empty())
-                && !valid_quantity_item(item) {
-                return Err("선택한 상품의 수량을 먼저 확정하세요.".into());
+    if !draft_preview {
+        // The authoritative order commit and the explicit final manual
+        // apply still require every product quantity to be confirmed.
+        for row in model_rows {
+            for item in rows(field(row,"items")){
+                if (!str_field(item,"productId").is_empty()
+                    || !str_field(item,"name").trim().is_empty())
+                    && !valid_quantity_item(item) {
+                    return Err("선택한 상품의 수량을 먼저 확정하세요.".into());
+                }
             }
         }
     }
@@ -437,10 +442,13 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
         return Ok(json!({"quantityConfirmed":!quantity.is_null(),
             "quantity":quantity}));
     }
-    if action != "apply_manual" {
+    if !matches!(action,"apply_manual"|"preview_manual") {
         return Err(format!("지원하지 않는 수동 분류 명령: {action}"));
     }
-    apply_final(payload)
+    // preview_manual never commits to operational SQLite. It permits a
+    // partially entered product row in an unconfirmed screen; the normal
+    // apply_manual path remains strict for actual order persistence.
+    apply_final(payload,action=="preview_manual")
 }
 
 #[cfg(test)]
@@ -556,6 +564,21 @@ mod tests {
             ("",Value::Null)] {
             assert_eq!(quantity_from_input(input),expected,"{input}");
         }
+    }
+    #[test]
+    fn inline_draft_can_show_new_product_before_quantity_but_final_apply_refuses() {
+        let order=json!({"id":"draft","raw":"검증 원문","confirmedAt":null,
+            "orderType":"AGENCY","clientId":"c","recipients":[]});
+        let model=json!({"rows":[{"id":"r","name":"김가상","items":[{
+            "id":"i","name":"709","productId":"p",
+            "variantId":"v","quantity":null,"quantityConfirmed":false
+        }]}],"blocks":[],"assignments":{}});
+        let preview=apply(&json!({"action":"preview_manual",
+            "order":order,"model":model,"assignmentOrder":[]}))
+            .expect("editable draft projection");
+        assert_eq!(preview["order"]["recipients"][0]["items"][0]["name"],"709");
+        assert!(apply(&json!({"action":"apply_manual",
+            "order":order,"model":model,"assignmentOrder":[]})).is_err());
     }
     #[test]
     fn rejects_confirmed_and_missing_quantities() {
