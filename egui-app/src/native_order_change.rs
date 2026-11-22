@@ -285,4 +285,118 @@ mod manual_rebind_tests {
         assert!(rebind_manual_model(&saved,"new",&json!({})).is_err());
         assert!(rebind_manual_model(&json!({}),"new",&json!([])).is_err());
     }
+
+    // Exercise the complete adapter request chain with deterministic native
+    // gateway responses. Core pricing and manual reducer rules have their
+    // own native tests; this verifies that the adapter actually invokes them.
+    struct PreviewGateway;
+    impl BandoGateway for PreviewGateway {
+        fn label(&self)->&'static str{"manual-price-preview-test"}
+        fn load_catalog(&self)->Result<Value,String>{Ok(json!({}))}
+        fn load_working_source(&self)
+            ->Result<crate::preview_store::WorkingSource,String>{
+            Err("unused".into())
+        }
+        fn save_working_source(&self,_:&crate::preview_store::WorkingSource)
+            ->Result<u64,String>{Err("unused".into())}
+        fn load_business_state(&self)->Result<Value,String>{
+            Ok(json!({"revision":7,"orders":[],
+                "clients":[{"id":"new","active":true}],
+                "products":[]}))
+        }
+        fn execute(&self,op:ReadOperation,payload:Value)->Result<Value,String>{
+            match op {
+                ReadOperation::AnalyzeOrder=>Ok(json!({
+                    "recipients":[],"candidates":[]
+                })),
+                ReadOperation::NewReception=>Ok(json!({"order":{
+                    "id":payload["id"],"clientId":payload["clientId"],
+                    "orderType":payload["orderType"],"recipients":[]
+                }})),
+                ReadOperation::ChangeOrderClient=>Ok(json!({"order":{
+                    "id":payload["order"]["id"],"clientId":payload["dealerId"],
+                    "orderType":payload["order"]["orderType"],
+                    "recipients":[]
+                }})),
+                ReadOperation::MergeReceptionAnalysis=>Ok(json!({"order":{
+                    "id":payload["previous"]["id"],
+                    "clientId":payload["clientId"],
+                    "orderType":payload["previous"]["orderType"],
+                    "raw":payload["raw"],"status":"REVIEW","recipients":[]
+                }})),
+                ReadOperation::ManualClassification=>{
+                    assert_eq!(payload["action"],"preview_manual");
+                    assert_eq!(payload["order"]["clientId"],"new");
+                    assert_eq!(payload["model"]["rows"][0]["name"],"직접 수정한 이름");
+                    let mut order=payload["order"].clone();
+                    order["recipients"]=payload["model"]["rows"].clone();
+                    Ok(json!({"order":order}))
+                }
+                ReadOperation::CalculateReceptionQuote=>{
+                    assert_eq!(payload["client"]["id"],"new");
+                    let mut order=payload["order"].clone();
+                    let rows=order["recipients"].as_array_mut().unwrap();
+                    for row in rows {
+                        for item in row["items"].as_array_mut().unwrap() {
+                            item["unitPrice"]=item.get("manualUnitPrice")
+                                .filter(|price|!price.is_null())
+                                .cloned().unwrap_or_else(||json!(5000));
+                        }
+                    }
+                    order["shippingFee"]=json!(2500);
+                    Ok(json!({"order":order,
+                        "totals":{"subtotal":24800,"vat":0,
+                            "total":27300,"pendingRecipients":[]},
+                        "linePrices":[],"freightLines":[]}))
+                }
+                _=>Err(format!("Unexpected operation: {:?}",op))
+            }
+        }
+    }
+
+    #[test]
+    fn changing_dealer_requotes_manual_rows_without_losing_edits(){
+        let raw="김가상\\n테스트 발주";
+        let model=json!({"rows":[{
+            "id":"recipient-1","name":"직접 수정한 이름",
+            "address":"직접 수정한 주소",
+            "items":[
+                {"id":"manual-line","productId":"p","variantId":"v",
+                    "quantity":2,"manualUnitPrice":9900,"unitPrice":9900},
+                {"id":"catalog-line","productId":"p","variantId":"v",
+                    "quantity":1,"unitPrice":1000}
+            ]}],
+            "blocks":[{"id":"0:2","text":"김가"}],
+            "assignments":{}
+        });
+        let row=WorkingReception{
+            id:"order-1".into(),raw:raw.into(),
+            order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:Some(raw.into()),
+            analysis_evidence:Some(json!({"recipients":[]})),
+            client_match:None,chat_handle:None,chat_title:None,
+            client_id:Some("old".into()),
+            client_selection:Some("MANUAL".into()),
+            pricing_preview:None,working_version:None,
+            working_synced:false,
+            manual_model:Some(json!({"sourceRaw":raw,
+                "orderType":"AGENCY","clientId":"old",
+                "model":model,"assignmentOrder":[]})),
+            edit_history:vec![json!({"beforeRows":[],"afterRows":[1]})],
+        };
+        let result=prepare(&PreviewGateway,&row,"new").unwrap();
+        let manual=result.manual_model.unwrap();
+        assert_eq!(result.client_id,"new");
+        assert_eq!(result.pricing_preview.unwrap()["total"],27300);
+        assert_eq!(manual["clientId"],"new");
+        assert_eq!(manual["model"]["rows"][0]["name"],"직접 수정한 이름");
+        assert_eq!(manual["model"]["rows"][0]["address"],"직접 수정한 주소");
+        assert_eq!(manual["model"]["rows"][0]["items"][0]["unitPrice"],9900);
+        assert_eq!(manual["model"]["rows"][0]["items"][1]["unitPrice"],5000);
+        assert_eq!(manual["model"]["blocks"],model["blocks"]);
+        assert_eq!(manual["model"]["assignments"],model["assignments"]);
+        assert_eq!(row.edit_history.len(),1);
+        assert_eq!(row.client_id.as_deref(),Some("old"));
+    }
 }
