@@ -3305,6 +3305,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let _=preview_tx.send(
                     clipboard_intake::preview_thumbnail(&image,640)
                 );
+                // Let the user see the captured thumbnail immediately;
+                // PaddleOCR may continue for significantly longer.
+                worker_context.request_repaint();
                 let text=clipboard_intake::recognize_image(&image,&cancelled)?;
                 Ok(ClipboardReceipt::Ocr{text,image,sequence})
             });
@@ -3349,6 +3352,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         let _=preview_tx.send(
                             clipboard_intake::preview_thumbnail(&image,640)
                         );
+                        // The preview has arrived even if native OCR is busy.
+                        ctx.request_repaint();
                         let text=clipboard_intake::recognize_image(&image,&cancelled)?;
                         Ok(ClipboardReceipt::Ocr{text,image,sequence})
                     }
