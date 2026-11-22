@@ -4372,12 +4372,21 @@ impl BandoEgui {
                 });
             },
         );
-        // Hovering details highlights the exact Rust source span after 200ms.
-        // Leaving the field retains the last link for 250ms so the cursor
-        // can cross panel gutters without flicker.
-        self.link_hover.update(
-            hovered_detail.or_else(||self.source_hover.clone()),ui.ctx()
-        );
+        // Only authoritative Rust source spans may drive a linked hover.
+        // A recognized field with no source evidence must not flash blue as
+        // though a corresponding token were found in the original document.
+        // Source and recipient/item panes share 100ms enter / 150ms exit;
+        // working-order overlay previews deliberately retain 250ms timing.
+        let source_matches=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+            .is_some_and(|row|
+                row.analysis_raw.as_deref()==Some(self.raw_source.as_str())
+            );
+        let linked=hovered_detail.or_else(||self.source_hover.clone())
+            .filter(|key|source_matches && self.analysis.as_ref()
+                .is_some_and(|analysis|analysis.linked_spans.iter()
+                    .any(|span|span.key==*key)));
+        self.link_hover.update(linked,ui.ctx());
     }
 
     fn orders_pane(&mut self, ui: &mut Ui) {
