@@ -57,7 +57,7 @@ fn queue_issues(order: &Value, client: &Value, total: &Value) -> Vec<String> {
     let name = str_field(client,"name");
     if name.is_empty() || str_field(client,"address").is_empty() ||
         (str_field(client,"phone").is_empty() && str_field(client,"mobile").is_empty()) {
-        issues.push("거래처 송장 상호 / 주소 / 전화번호 등록 필요".into());
+        issues.push("거래처명 / 주소 / 전화번호 등록 필요".into());
     }
     issues
 }
