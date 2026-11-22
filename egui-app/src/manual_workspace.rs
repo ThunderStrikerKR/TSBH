@@ -198,6 +198,8 @@ pub fn apply_inline(
     let mut action=if change.item_id.is_some(){
         match change.field.as_str(){
             "quantity"=>"native_confirm_quantity",
+            "approveOne"=>"native_approve_one",
+            "cancelApproval"=>"native_cancel_approval",
             "unitPrice"=>"set_manual_unit_price",
             "product"=>"set_manual_product",
             _=>return Err("지원하지 않는 품목 입력 항목입니다.".into())
@@ -229,7 +231,43 @@ pub fn apply_inline(
         payload["state"]=state;
         payload["candidateIds"]=json!((0..20).map(|_|unique_id()).collect::<Vec<_>>());
     }
-    let response=if action=="native_confirm_quantity"{
+    let response=if action=="native_approve_one" || action=="native_cancel_approval"{
+        let rid=change.recipient_id.as_str();
+        let iid=change.item_id.as_deref()
+            .ok_or("수량 승인 대상 품목이 없습니다.")?;
+        let chosen=model["rows"].as_array_mut()
+            .and_then(|rows|rows.iter_mut().find(|row|
+                text(row,"id")==rid))
+            .and_then(|row|row["items"].as_array_mut())
+            .and_then(|items|items.iter_mut().find(|item|
+                text(item,"id")==iid))
+            .ok_or("수량 승인 대상이 최신 주문에 없습니다.")?;
+        if action=="native_approve_one"{
+            // The authoritative Rust issue predicate decides eligibility.
+            // Copy its exact approved item (including quantityApproval)
+            // into the native manual model; never emulate approval in UI.
+            let approved=gateway.execute(ReadOperation::ApplyIssueAction,json!({
+                "action":"approve_missing_quantity","order":&order,
+                "recipientId":rid,"itemId":iid,
+                "actor":"사용자","now":chrono::Utc::now().to_rfc3339()
+            }))?;
+            let approved_item=approved["order"]["recipients"].as_array()
+                .into_iter().flatten().find(|row|text(row,"id")==rid)
+                .and_then(|row|row["items"].as_array())
+                .into_iter().flatten().find(|item|text(item,"id")==iid)
+                .ok_or("Rust 수량 승인 결과가 현재 품목과 일치하지 않습니다.")?;
+            *chosen=approved_item.clone();
+        }else{
+            // React cancels the provisional decision by deleting only its
+            // approval record; the existing quantity stays unconfirmed.
+            if chosen.get("quantityApproval").is_none_or(Value::is_null){
+                return Err("취소할 잠정 승인 기록이 없습니다.".into());
+            }
+            chosen.as_object_mut().ok_or("품목 형식이 올바르지 않습니다.")?
+                .remove("quantityApproval");
+        }
+        json!({"model":model})
+    }else if action=="native_confirm_quantity"{
         let first=rule(gateway,json!({
             "action":"set_manual_quantity_draft","model":model,
             "cell":payload["cell"],"value":payload["value"]
