@@ -2568,7 +2568,8 @@ pub fn reception_items_header(ui: &mut Ui) {
     ui.painter().rect_filled(rect,0.0,theme::RAISED);
     let columns = reception_item_columns(rect);
     for (index, label) in ["품목", "수량", "금액"].iter().enumerate() {
-        let cell = columns[index].shrink2(egui::vec2(theme::SPACE_4, 0.0));
+        // Match the text anchors: column inset 4pt plus value-inner inset 4pt.
+        let cell = columns[index].shrink2(egui::vec2(theme::SPACE_8, 0.0));
         let galley = typography::management_table_header_galley(ui, label);
         // The product header starts at the same LEFT edge as product text;
         // quantity and amount end at the same RIGHT edges as their values.
@@ -2652,10 +2653,10 @@ pub fn reception_item_row(
     ).on_hover_text(name);
     let quantity = ui.interact(
         cells[1], ui.make_persistent_id(("item-cell", row_id, 1)), Sense::hover(),
-    );
+    ).on_hover_text(quantity);
     let amount = ui.interact(
         cells[2], ui.make_persistent_id(("item-cell", row_id, 2)), Sense::hover(),
-    );
+    ).on_hover_text(amount);
     ui.painter().line_segment(
         [egui::pos2(rect.left(), rect.bottom()),
          egui::pos2(rect.right(), rect.bottom())],
