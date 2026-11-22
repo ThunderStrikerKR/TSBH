@@ -28,6 +28,7 @@ pub struct ClientChooser {
     searching: bool,
     error: Option<String>,
     selecting: Option<String>,
+    focus_search: bool,
 }
 
 fn text<'a>(row:&'a Value,key:&str)->&'a str {
@@ -58,6 +59,7 @@ impl ClientChooser {
             clients:Vec::new(),results:Vec::new(),loaded:false,
             loading:receiver,search_result:None,generation:0,
             searching:false,error:None,selecting:None,
+            focus_search:true,
         }
     }
 
@@ -153,10 +155,18 @@ impl ClientChooser {
         let mut is_open=true;
         let mut chosen:Option<String>=None;
         let busy=self.selecting.is_some();
+        // A search workflow needs a real results viewport. Keep the dialog
+        // centered and fixed like the OCR master, and shrink only when the
+        // available Kakao-safe work area is smaller than the ideal size.
+        let gutter=2.0*theme::MODAL_VIEWPORT_GUTTER;
+        let dialog_size=egui::vec2(
+            theme::CLIENT_CHOOSER_DIALOG_WIDTH
+                .min((work_area.width()-gutter).max(1.0)),
+            theme::CLIENT_CHOOSER_DIALOG_HEIGHT
+                .min((work_area.height()-gutter).max(1.0))
+        );
         components::modal_window("거래처 변경","egui-reception-client-chooser",work_area)
-            
-            .default_width(460.0_f32.min(work_area.width()))
-            .min_width(340.0_f32.min(work_area.width()))
+            .fixed_size(dialog_size)
             .show(ctx,|ui| {
                 if components::modal_header_chrome(ui,"거래처 변경","닫기",!busy){
                     is_open=false;
@@ -167,18 +177,29 @@ impl ClientChooser {
                 components::modal_master_body(ui,|workspace|{
                 components::modal_master_body_section(
                     workspace,"거래처 검색",|search_panel|{
-                let currently=self.clients.iter()
-                    .find(|c|Some(text(c,"id"))==current_id)
-                    .map(|c|text(c,"name")).unwrap_or("미선택");
-                search_panel.label(typography::body(&format!("현재 거래처: {currently}")));
-                let response=search_panel.add_enabled(!busy,
-                    egui::TextEdit::singleline(&mut self.query)
-                        .hint_text("상호 / 별칭 / 주소 / 전화번호 검색")
-                        .desired_width(search_panel.available_width())
-                );
+                // Search is the first and largest interactive control.
+                // Reuse the 36pt field geometry of every management input.
+                let response=search_panel.add_enabled_ui(!busy,|field|{
+                    let width=field.available_width();
+                    components::flexible_text_field(
+                        field,&mut self.query,width,
+                        "상호 / 별칭 / 주소 / 전화번호 검색"
+                    )
+                }).inner;
+                if self.focus_search {
+                    response.request_focus();
+                    self.focus_search=false;
+                }
                 if response.changed()&&self.loaded {
                     self.search(Arc::clone(&gateway),ctx.clone());
                 }
+                let currently=self.clients.iter()
+                    .find(|c|Some(text(c,"id"))==current_id)
+                    .map(|c|text(c,"name")).unwrap_or("미선택");
+                let current_label=format!("현재 거래처: {currently}");
+                search_panel.add(
+                    egui::Label::new(typography::caption(&current_label)).truncate()
+                ).on_hover_text(current_label);
                 });
                 workspace.add_space(theme::SPACE_16);
                 components::modal_master_body_section(
@@ -191,20 +212,32 @@ impl ClientChooser {
                 if let Some(error)=self.error.as_deref() {
                     results_panel.label(egui::RichText::new(error).color(theme::DANGER));
                 }
-                if !self.loaded||self.searching {
-                    results_panel.label(typography::caption("검색 중"));
+                // Keep the result viewport allocated during asynchronous
+                // searches too; only its contents change, never the card size.
+                let ids:Vec<&str>=if self.query.trim().is_empty() {
+                    self.clients.iter().map(|c|text(c,"id")).collect()
                 } else {
-                    let ids:Vec<&str>=if self.query.trim().is_empty() {
-                        self.clients.iter().map(|c|text(c,"id")).collect()
-                    } else {
-                        self.results.iter().map(String::as_str).collect()
-                    };
-                    results_panel.label(typography::caption(&format!("{}개 거래처",ids.len())));
-                    egui::ScrollArea::vertical()
-                        .id_salt("egui-all-clients-scroll")
-                        .max_height((work_area.height()-310.0).max(80.0).min(390.0))
-                        .auto_shrink([false,false])
-                        .show(results_panel,|ui|{
+                    self.results.iter().map(String::as_str).collect()
+                };
+                if self.loaded&&!self.searching {
+                    results_panel.label(typography::caption(
+                        &format!("{}개 거래처",ids.len())
+                    ));
+                } else {
+                    results_panel.label(typography::caption("검색 중"));
+                }
+                let results_height=(results_panel.available_height()
+                    -theme::SPACE_8)
+                    .max(1.0)
+                    .min(theme::CLIENT_CHOOSER_RESULTS_MAX_HEIGHT);
+                egui::ScrollArea::vertical()
+                    .id_salt("egui-all-clients-scroll")
+                    .max_height(results_height)
+                    .auto_shrink([false,false])
+                    .show(results_panel,|ui|{
+                        if !self.loaded||self.searching {
+                            ui.label(typography::caption("검색 중"));
+                        } else {
                             for id in ids {
                                 if let Some(row)=self.clients.iter().find(|c|text(c,"id")==id) {
                                     let name=text(row,"name");
@@ -217,25 +250,35 @@ impl ClientChooser {
                                     // looked like static data in the old chooser.
                                     // Keep details as labels and provide a
                                     // visible, standard action on EVERY row.
-                                    let info_width=(ui.available_width()-110.0).max(150.0);
+                                    // Give the business name, address and
+                                    // phone their own readable lines. The
+                                    // selection stays pinned to the right.
                                     ui.horizontal(|line|{
+                                        line.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                        let info_width=(line.available_width()
+                                            -theme::SPACE_8-88.0).max(1.0);
                                         line.allocate_ui_with_layout(
                                             egui::vec2(info_width,
-                                                theme::MANAGEMENT_CHOOSER_ROW_HEIGHT),
+                                                theme::CLIENT_CHOOSER_ROW_HEIGHT),
                                             egui::Layout::top_down(egui::Align::Min),
                                             |details|{
                                                 details.spacing_mut().item_spacing.y=
                                                     theme::SPACE_4;
                                                 details.add(egui::Label::new(
-                                                    typography::body(name)).truncate());
-                                                let contact=format!("{} / {}",
-                                                    if address.is_empty(){"주소 미등록"}
-                                                    else{address},
-                                                    if phone.is_empty(){"전화 미등록"}
-                                                    else{phone});
+                                                    typography::section_heading(name)
+                                                ).truncate()).on_hover_text(name);
+                                                let visible_address=if address.is_empty(){
+                                                    "주소 미등록"
+                                                }else{address};
                                                 details.add(egui::Label::new(
-                                                    typography::caption(&contact)).truncate())
-                                                    .on_hover_text(contact);
+                                                    typography::body(visible_address)
+                                                ).truncate()).on_hover_text(visible_address);
+                                                details.add(egui::Label::new(
+                                                    typography::caption(
+                                                        if phone.is_empty(){"전화 미등록"}
+                                                        else{phone}
+                                                    )
+                                                ).truncate());
                                             },
                                         );
                                         line.with_layout(
@@ -260,8 +303,8 @@ impl ClientChooser {
                                     !self.searching {
                                 ui.label(typography::caption("검색 결과가 없습니다."));
                             }
-                        });
-                }
+                        }
+                    });
                 });
                 });
             });
