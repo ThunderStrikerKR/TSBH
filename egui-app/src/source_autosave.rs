@@ -276,3 +276,134 @@ impl Drop for SourceAutosave {
         }
     }
 }
+
+#[cfg(test)]
+mod source_delta_tests{
+    use super::*;
+    use serde_json::json;
+
+    fn draft(id:&str)->WorkingReception{
+        WorkingReception{
+            id:id.into(),raw:"old".into(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:Some("old".into()),
+            analysis_evidence:Some(json!({"recipients":[{"id":"r1"}]})),
+            analysis_view:Some(json!({"cached":true})),
+            client_match:Some(json!({"clientId":"auto"})),
+            chat_handle:None,chat_title:None,
+            client_id:Some("auto".into()),client_selection:Some("AUTO".into()),
+            pricing_preview:Some(json!({"total":42})),
+            working_version:None,working_synced:true,
+            manual_model:Some(json!({"model":"old"})),
+            edit_history:vec![json!({"id":"immutable-audit"})],
+        }
+    }
+    fn snapshot()->WorkingSource{
+        WorkingSource{
+            raw:"old".into(),order_type:"AGENCY".into(),revision:12,
+            active_id:Some("first".into()),
+            drafts:vec![draft("first"),draft("second")]
+        }
+    }
+    fn edit(text:&str)->SourceTextEdit{
+        SourceTextEdit{
+            order_id:"first".into(),raw:text.into(),order_type:"AGENCY".into(),
+            source_input_method:Some("DIRECT".into()),
+            last_input_method:Some("DIRECT".into())
+        }
+    }
+
+    #[test]
+    fn repeated_keystrokes_only_mutate_active_draft_and_keep_immutable_audit(){
+        let mut state=snapshot();
+        let untouched=state.drafts[1].clone();
+        let mut feedback=Vec::new();
+        for raw in ["o","or","ord","order"]{
+            assert!(merge_command(
+                &mut state,&mut feedback,Command::Edit(edit(raw))
+            ).unwrap());
+        }
+        assert_eq!(state.raw,"order");
+        assert_eq!(state.revision,12);
+        assert_eq!(state.drafts[0].raw,"order");
+        assert_eq!(state.drafts[0].source_input_method.as_deref(),Some("DIRECT"));
+        assert!(state.drafts[0].analysis_evidence.is_none());
+        assert!(state.drafts[0].pricing_preview.is_none());
+        assert!(state.drafts[0].manual_model.is_none());
+        assert!(state.drafts[0].client_id.is_none());
+        assert!(state.drafts[0].client_selection.is_none());
+        assert_eq!(state.drafts[0].edit_history[0]["id"],"immutable-audit");
+        assert_eq!(state.drafts[1].raw,untouched.raw);
+        assert_eq!(state.drafts[1].analysis_evidence,untouched.analysis_evidence);
+        assert_eq!(state.drafts[1].pricing_preview,untouched.pricing_preview);
+    }
+
+    #[test]
+    fn full_snapshot_and_delta_keep_fifo_order_and_ocr_feedback(){
+        let mut state=snapshot();
+        let mut feedback=Vec::new();
+        let correction=OcrFeedback{
+            id:"fb".into(),order_id:"first".into(),client_id:None,
+            original_text:"O".into(),corrected_text:"o".into(),
+            learning_used:false,model_suggestion:None
+        };
+        let mut full=snapshot();
+        full.drafts.push(draft("third"));
+        full.drafts[0].client_selection=Some("MANUAL".into());
+        full.drafts[0].client_id=Some("staff".into());
+        assert!(merge_command(
+            &mut state,&mut feedback,Command::Save{
+                source:full,feedback:vec![correction]
+            }
+        ).unwrap());
+        assert!(merge_command(
+            &mut state,&mut feedback,Command::Edit(edit("after save"))
+        ).unwrap());
+        assert_eq!(feedback.len(),1);
+        assert_eq!(feedback[0].id,"fb");
+        assert_eq!(state.drafts.len(),3);
+        assert_eq!(state.drafts[0].raw,"after save");
+        assert_eq!(state.drafts[0].client_id.as_deref(),Some("staff"));
+        assert_eq!(state.drafts[0].client_selection.as_deref(),Some("MANUAL"));
+        assert!(merge_command(
+            &mut state,&mut feedback,Command::Save{
+                source:snapshot(),feedback:Vec::new()
+            }
+        ).unwrap());
+        assert_eq!(state.raw,"old","later full snapshot supersedes edits");
+        assert_eq!(feedback.len(),1,"OCR feedback survives coalescing");
+    }
+
+    #[test]
+    fn stale_or_missing_draft_patch_refuses_without_mutating_state(){
+        let mut state=snapshot();
+        let mut feedback=Vec::new();
+        let original=state.drafts[0].raw.clone();
+        let mut wrong=edit("new");
+        wrong.order_id="missing".into();
+        assert!(merge_command(&mut state,&mut feedback,Command::Edit(wrong))
+            .is_err());
+        assert_eq!(state.raw,"old");
+        assert_eq!(state.drafts[0].raw,original);
+        state.active_id=Some("missing".into());
+        assert!(merge_command(
+            &mut state,&mut feedback,Command::Edit(SourceTextEdit{
+                order_id:"missing".into(),..edit("new")
+            })
+        ).is_err());
+        assert_eq!(state.raw,"old");
+    }
+
+    #[test]
+    fn shutdown_signal_preserves_last_pending_delta_for_worker_flush(){
+        let mut state=snapshot();
+        let mut feedback=Vec::new();
+        assert!(merge_command(
+            &mut state,&mut feedback,Command::Edit(edit("final keystroke"))
+        ).unwrap());
+        assert!(!merge_command(
+            &mut state,&mut feedback,Command::Shutdown
+        ).unwrap());
+        assert_eq!(state.raw,"final keystroke");
+    }
+}
