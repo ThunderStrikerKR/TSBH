@@ -1,6 +1,6 @@
 //! Single Rust owner for full client searching in both Tauri and egui.
 //! Keep the established query semantics from queries.rs::client_search:
-//! ignore whitespace/case; look at name, displayName, phone, mobile,
+//! ignore whitespace/case; look at name, phone, mobile,
 //! address, shortNames, identifiers; never return deleted clients.
 //! This module does not change any client or order.
 
@@ -28,16 +28,17 @@ pub fn search(state: &Value, payload: &Value) -> Value {
     );
     let ids: Vec<String> = available.clone().filter(|client| {
         !query.is_empty() &&
-        ["name", "displayName", "phone", "mobile", "address",
+        ["name", "phone", "mobile", "address",
          "shortNames", "identifiers"].iter()
             .any(|key| compact(field(client, key)).contains(&query))
     }).map(|client| field(client, "id").to_owned()).collect();
-    let suggested: Vec<String> = available.filter(|client|
-        ["name", "displayName"].iter().any(|key| {
-            let term = field(client, key).trim();
-            term.encode_utf16().count() >= 2 && raw.contains(term)
-        })
-    ).map(|client| field(client, "id").to_owned()).collect();
+    let suggested: Vec<String> = available.filter(|client| {
+        let names=std::iter::once(field(client,"name"))
+            .chain(["shortNames","identifiers"].into_iter()
+                .flat_map(|key|field(client,key).split(',')));
+        names.map(str::trim).any(|term|
+            term.encode_utf16().count()>=2 && raw.contains(term))
+    }).map(|client| field(client, "id").to_owned()).collect();
     json!({"ids": ids, "suggestedIds": suggested})
 }
 
@@ -63,5 +64,12 @@ mod tests {
         }
         assert_eq!(search(&state, &json!({"query":"0109876"}))["ids"], json!(["b"]));
         assert_eq!(search(&state, &json!({"query":"삭제"}))["ids"], json!([]));
+        let legacy_already_migrated=json!({"clients":[{"id":"d",
+            "name":"공식상호","shortNames":"오래된 송장상호, 과거 업체명",
+            "identifiers":"내부코드"}]});
+        assert_eq!(search(&legacy_already_migrated,
+            &json!({"query":"송장상호"}))["ids"],json!(["d"]));
+        assert_eq!(search(&legacy_already_migrated,
+            &json!({"raw":"오래된 송장상호 발주"}))["suggestedIds"],json!(["d"]));
     }
 }
