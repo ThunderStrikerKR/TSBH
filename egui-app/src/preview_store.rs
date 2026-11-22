@@ -901,7 +901,7 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
         if let Some(price)=&draft.pricing_preview {
             let keys=["sourceRaw","orderId","orderType","clientId","authorityRevision",
                 "status","shippingFee","shippingVersion","vatAmount",
-                "subtotal","total","notified","paid","linePrices"];
+                "subtotal","total","notified","paid","linePrices","freightLines"];
             let map=price.as_object()
                 .ok_or("Rust 가격 계산 결과는 JSON 객체여야 합니다.")?;
             if map.keys().any(|key|!keys.contains(&key.as_str())) ||
@@ -914,10 +914,28 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
                 return Err("Rust 주문 가격 근거가 원문 또는 거래처와 일치하지 않습니다.".into());
             }
             for line in price["linePrices"].as_array().into_iter().flatten() {
-                let allowed=["itemId","productId","variantId","quantity","unitPrice"];
+                let allowed=["recipientId","itemId","productId","variantId",
+                    "quantity","unitPrice","manualUnitPrice","amount"];
                 let fields=line.as_object().ok_or("Rust 주문 품목 가격 결과 오류")?;
                 if fields.keys().any(|key|!allowed.contains(&key.as_str())) {
                     return Err("Rust 계산 결과에 허용하지 않은 개인정보가 포함됐습니다.".into());
+                }
+            }
+            if let Some(freight)=price.get("freightLines"){
+                let rows=freight.as_array().ok_or("수취인별 운임 계산 형식 오류")?;
+                for line in rows{
+                    let columns=line.as_object().ok_or("수취인 운임 행 오류")?;
+                    if columns.keys().any(|key|!matches!(key.as_str(),
+                        "recipientId"|"origin"|"appliedCharge"|"billableCharge"
+                        |"freightCode"|"source")) {
+                        return Err("허용되지 않은 운임 계산 필드입니다.".into());
+                    }
+                    if !matches!(line["origin"].as_str(),"Some") {
+                        // Preserve only the normal factory/store discriminator.
+                        if !matches!(line["origin"].as_str(),Some("FACTORY")|Some("STORE")) {
+                            return Err("계산된 운임 발송지를 확인하세요.".into());
+                        }
+                    }
                 }
             }
             analysis_bytes=analysis_bytes.checked_add(price.to_string().len())
