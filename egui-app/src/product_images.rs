@@ -198,6 +198,24 @@ mod tests{
         assert!(historical_filename(&json!({"siteId":"../../foo"})).is_none());
     }
     #[test]
+    fn bd709_seed_product_resolves_to_an_actual_bundled_photo(){
+        // Regression for the screenshot: BD 709 black perforated top,
+        // catalog siteId=48, has an existing versioned 48.jpg photo.
+        let original:Value=serde_json::from_str(include_str!(
+            "../../src-tauri/resources/state-seed.json"
+        )).expect("valid catalog seed");
+        let product=original["products"].as_array().unwrap().iter()
+            .find(|p|text(p,"name")=="BD 709 / 블랙 / 타공 상판")
+            .expect("registered BD 709");
+        assert_eq!(text(product,"siteId"),"48");
+        assert_eq!(historical_filename(product).as_deref(),Some("48.jpg"));
+        let path=Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../public/product-images/48.jpg");
+        let bytes=fs::read(path).expect("bundle image remains present");
+        assert!(decode(&bytes).is_some(),"actual BD 709 image must be decodable");
+    }
+
+    #[test]
     fn react_image_override_semantics_are_preserved(){
         let bytes="data:image/png;base64,aGVsbG8=";
         let manual=json!({"imageOverride":"MANUAL","imageData":bytes});
