@@ -321,7 +321,7 @@ export function WorkflowQueue({
                     <td>
                       {ctx.order.orderType === "RETAIL"
                         ? "반도스탠드"
-                        : ctx.client?.displayName || ctx.client?.name || "거래처 확인 필요"}
+                        : ctx.client?.name || "거래처 확인 필요"}
                       <small>
                         {ctx.order.orderType === "RETAIL"
                           ? "소매 주문"
