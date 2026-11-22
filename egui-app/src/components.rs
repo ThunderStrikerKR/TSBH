@@ -2539,7 +2539,7 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
 /// The name receives all width not reserved for the two narrow numeric columns.
 fn reception_item_columns(rect: Rect) -> [Rect; 3] {
     let qty = (rect.width() * 0.22).min(theme::RECEPTION_ITEMS_QTY_MAX_WIDTH).max(52.0);
-    let amount = (rect.width() * 0.30)
+    let amount = (rect.width() * 0.34)
         .min(theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH).max(74.0);
     let name_right = (rect.right() - qty - amount).max(rect.left() + 12.0);
     let qty_right = (name_right + qty).min(rect.right());
@@ -2605,17 +2605,20 @@ pub fn reception_item_row(
         Vec2::new(width, theme::RECEPTION_ITEMS_ROW_HEIGHT), Sense::hover()
     );
     let columns = reception_item_columns(rect);
+    // A 42pt row previously lost 8pt top and bottom, leaving a 26pt
+    // highlight rectangle. Give 16pt glyphs a 34pt value surface instead;
+    // the 4pt inset keeps both rounded corners and the border inside the row.
     let padded = |index: usize| columns[index].shrink2(
-        egui::vec2(theme::SPACE_4, theme::SPACE_8)
+        egui::vec2(theme::SPACE_4, theme::SPACE_4)
     );
     let cells = [padded(0), padded(1), padded(2)];
     // Use explicit column anchors for all three text cells. Ui::put(Label)
     // was moving text toward the center inside the row, while the table
     // header used another alignment calculation.
     for (index, (text, font, color)) in [
-        (name, egui::FontId::proportional(typography::FONT_BODY), theme::TEXT),
-        (quantity, egui::FontId::monospace(typography::FONT_FIELD_LABEL), theme::SECONDARY),
-        (amount, egui::FontId::monospace(typography::FONT_FIELD_LABEL), theme::TEXT),
+        (name, egui::FontId::proportional(typography::FONT_RECEPTION_ITEM_TEXT), theme::TEXT),
+        (quantity, egui::FontId::monospace(typography::FONT_RECEPTION_ITEM_TEXT), theme::SECONDARY),
+        (amount, egui::FontId::monospace(typography::FONT_RECEPTION_ITEM_TEXT), theme::TEXT),
     ].into_iter().enumerate() {
         let cell = cells[index];
         let right = index != 0;
@@ -2624,8 +2627,15 @@ pub fn reception_item_row(
         if active[index] {
             source_highlight::paint_active_background(ui,cell);
         }
-        ui.painter().with_clip_rect(cell).text(
-            egui::pos2(if right { cell.right() } else { cell.left() }, cell.center().y),
+        // Text must stay clear of the 2pt inset outline. Keeping the
+        // value clip and its anchor inside the highlighted cell also stops
+        // the last digit / descender from touching a blue edge.
+        let value_clip=cell.shrink2(egui::vec2(theme::SPACE_4,0.0));
+        ui.painter().with_clip_rect(value_clip).text(
+            egui::pos2(
+                if right { value_clip.right() } else { value_clip.left() },
+                value_clip.center().y
+            ),
             if right { egui::Align2::RIGHT_CENTER } else { egui::Align2::LEFT_CENTER },
             text,
             font,
@@ -2663,7 +2673,7 @@ pub fn reception_freight_row(
 ) {
     ui.horizontal_wrapped(|line| {
         line.spacing_mut().item_spacing = Vec2::new(theme::SPACE_4, theme::SPACE_4);
-        line.label(typography::field_label(label));
+        line.label(typography::body(label).size(typography::FONT_RECEPTION_ITEM_TEXT));
         let mut amount_text = amount
             .map(|value| display_won(value).trim_end_matches('원').to_owned())
             .unwrap_or_else(||"—".to_owned());
@@ -2673,17 +2683,17 @@ pub fn reception_freight_row(
             cell.add_sized(
                 Vec2::new(84.0, theme::INPUT_HEIGHT),
                 egui::TextEdit::singleline(&mut amount_text)
-                    .font(typography::numeric_editor_font())
+                    .font(egui::FontId::monospace(typography::FONT_RECEPTION_ITEM_TEXT))
                     .vertical_align(Align::Center)
                     .margin(egui::Margin::symmetric(8, 2))
                     .desired_width(84.0),
             )
         });
-        line.label(typography::caption("원"));
+        line.label(typography::body("원").size(typography::FONT_RECEPTION_ITEM_TEXT));
         if let Some(collect) = collect {
-            line.label(typography::caption(
+            line.label(typography::body(
                 if collect { "(착불)" } else { "(선불)" }
-            ));
+            ).size(typography::FONT_RECEPTION_ITEM_TEXT));
         }
         if let Some(checked) = remote {
             let mut read_only = checked;
