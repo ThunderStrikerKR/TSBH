@@ -5743,15 +5743,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     contents,&mut name,&mut address,&mut mobile,
                                     &mut phone,&mut note,highlighted
                                 );
-                                for (index,(response,field)) in
-                                    responses.iter().zip(fields).enumerate(){
+                                for (response,field) in responses.iter().zip(fields){
                                     let key=source_highlight::key(id,id,field);
                                     if response.hovered(){
                                         hovered_detail=Some(key);
                                     }
-                                    source_highlight::paint_active_if(
-                                        contents,response,highlighted[index]
-                                    );
                                 }
                             });
                         }
@@ -5846,18 +5842,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     &reception_service::item_title(item),
                                                     &quantity,&amount,highlighted
                                                 );
-                                                for (index,(response,field)) in [
+                                                for (response,field) in [
                                                     (&cells.product,"product"),
                                                     (&cells.quantity,"quantity"),
                                                     (&cells.amount,"price")
-                                                ].into_iter().enumerate() {
+                                                ] {
                                                     let key=source_highlight::key(
                                                         &ship.recipient_id,item_id,field
                                                     );
                                                     if response.hovered(){hovered_detail=Some(key);}
-                                                    source_highlight::paint_active_if(
-                                                        contents,response,highlighted[index]
-                                                    );
                                                 }
                                             }
                                         }
@@ -6004,13 +5997,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             contents,&mut name,&mut address,&mut mobile,
                                             &mut phone,&mut note,active_fields
                                         );
-                                        for (index,(response,field)) in
-                                            responses.iter().zip(fields).enumerate(){
+                                        for (response,field) in responses.iter().zip(fields){
                                             let key=source_highlight::key(recipient_id,recipient_id,field);
                                             if response.hovered(){hovered_detail=Some(key);}
-                                            source_highlight::paint_active_if(
-                                                contents,response,active_fields[index]
-                                            );
                                         }
                                     });
                             }
@@ -6075,18 +6064,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             &reception_service::item_title(item),
                                                             &quantity,&amount,active_fields
                                                         );
-                                                        for (index,(response,field)) in [
+                                                        for (response,field) in [
                                                             (&cells.product,"product"),
                                                             (&cells.quantity,"quantity"),
                                                             (&cells.amount,"price")
-                                                        ].into_iter().enumerate(){
+                                                        ] {
                                                             let key=source_highlight::key(
                                                                 recipient_id,item_id,field
                                                             );
                                                             if response.hovered(){hovered_detail=Some(key);}
-                                                            source_highlight::paint_active_if(
-                                                                contents,response,active_fields[index]
-                                                            );
                                                         }
                                                     }
                                                 }
@@ -6327,10 +6313,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         name.as_str(),address.as_str(),mobile.as_str(),
                                         phone.as_str(),note.as_str()
                                     ];
-                                    for (index,((response,field),initial)) in
+                                    for ((response,field),initial) in
                                         responses.into_iter().zip([
                                             "name","address","mobile","phone","note"
-                                        ]).zip(values).enumerate() {
+                                        ]).zip(values) {
                                         let target=InlineTarget{
                                             recipient_id:recipient_id.to_owned(),
                                             item_id:None,field
@@ -6351,9 +6337,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             recipient_id,recipient_id,field
                                         );
                                         if response.hovered(){hovered_detail=Some(key.clone());}
-                                        source_highlight::paint_active_if(
-                                            fields,&response,active_fields[index]
-                                        );
                                         if let Some(editor)=self.inline_editor.as_mut()
                                             .filter(|edit|edit.target==target) {
                                             let edit_response=components::reception_recipient_inline_cell_editor(
@@ -6487,11 +6470,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         &quantity,&amount,active_fields
                                                     )
                                                 };
-                                                for (index,(response,field)) in [
+                                                for (response,field) in [
                                                     (&cells.product,"product"),
                                                     (&cells.quantity,"quantity"),
                                                     (&cells.amount,"price"),
-                                                ].into_iter().enumerate() {
+                                                ] {
                                                     let key=source_highlight::key(
                                                         recipient_id,item_id,field
                                                     );
@@ -6528,9 +6511,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             response.interact_pointer_pos()
                                                         ));
                                                     }
-                                                    source_highlight::paint_active_if(
-                                                        items_ui,response,active_fields[index],
-                                                    );
                                                     if let Some(editor)=self.inline_editor.as_mut()
                                                         .filter(|editor|editor.target==target) {
                                                         let result=components::reception_inline_cell_editor(
