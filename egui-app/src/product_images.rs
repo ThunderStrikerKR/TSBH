@@ -92,6 +92,63 @@ fn decode(bytes:&[u8])->Option<egui::ColorImage>{
     ))
 }
 
+/// React ProductManager image registration parity. The picker never writes
+/// to SQLite directly: it returns only staged imageData for the existing
+/// product-upsert CAS boundary, after bounded validation/optimization.
+pub fn choose_and_optimize_photo()->Result<Option<String>,String>{
+    #[cfg(not(windows))]
+    {
+        Err("상품 이미지 선택은 현재 Windows egui에서 사용할 수 있습니다.".into())
+    }
+    #[cfg(windows)]
+    {
+        let path=rfd::FileDialog::new()
+            .add_filter("상품 이미지",&["jpg","jpeg","png","webp"])
+            .pick_file();
+        let Some(path)=path else{return Ok(None)};
+        let metadata=fs::metadata(&path).map_err(|err|
+            format!("선택한 이미지 정보를 읽을 수 없습니다: {err}")
+        )?;
+        if metadata.len()==0 || metadata.len()>5*1024*1024{
+            return Err("이미지는 JPG, PNG, WEBP 형식이며 5MB 이하여야 합니다.".into());
+        }
+        let ext=path.extension().and_then(|x|x.to_str())
+            .unwrap_or("").to_ascii_lowercase();
+        if !matches!(ext.as_str(),"jpg"|"jpeg"|"png"|"webp"){
+            return Err("이미지는 JPG, PNG, WEBP 형식이어야 합니다.".into());
+        }
+        let bytes=fs::read(&path).map_err(|err|
+            format!("상품 이미지를 읽을 수 없습니다: {err}")
+        )?;
+        let image=image::load_from_memory(&bytes).map_err(|_|
+            "이미지를 열 수 없습니다. 파일 형식을 확인하세요.".to_owned()
+        )?;
+        if image.width()==0 || image.height()==0 ||
+            (image.width() as u64)*(image.height() as u64)>30_000_000{
+            return Err("해상도가 너무 높은 이미지입니다. 크기를 줄인 뒤 다시 등록하세요.".into());
+        }
+        // Use the same descending dimension limits as React. WebP is
+        // encoded locally, including alpha; no external image host is used.
+        for edge in [1024,840,700,560]{
+            let scale=(edge as f64 / image.width().max(image.height()) as f64)
+                .min(1.0);
+            let width=((image.width() as f64*scale).round() as u32).max(1);
+            let height=((image.height() as f64*scale).round() as u32).max(1);
+            let scaled=image.resize_exact(
+                width,height,image::imageops::FilterType::Lanczos3
+            );
+            let mut output=std::io::Cursor::new(Vec::new());
+            if scaled.write_to(&mut output,image::ImageFormat::WebP).is_ok(){
+                let encoded=format!(
+                    "data:image/webp;base64,{}",STANDARD.encode(output.into_inner())
+                );
+                if encoded.len()<=1_500_000{return Ok(Some(encoded));}
+            }
+        }
+        Err("압축 후에도 이미지가 큽니다. 다른 사진을 선택하세요.".into())
+    }
+}
+
 #[derive(Default)]
 pub struct ProductImageCache{
     textures:HashMap<String,Option<TextureHandle>>,
