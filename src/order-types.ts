@@ -4,7 +4,6 @@ export const companyClient = (settings: Settings): Client => ({
   postcode: settings.senderPostcode || "",
   id: "",
   name: settings.senderName?.trim() || "반도스탠드",
-  displayName: settings.senderName?.trim() || "반도스탠드",
   address: settings.senderAddress || "",
   phone: settings.senderPhone || "",
   mobile: settings.senderMobile || "",
