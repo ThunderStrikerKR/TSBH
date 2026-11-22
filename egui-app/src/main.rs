@@ -4944,7 +4944,7 @@ impl BandoEgui {
                                             {
                                                 items_ui.add_space(theme::SPACE_4);
                                                 items_ui.label(typography::status(
-                                                    message,theme::SELECTED_ORDER
+                                                    &message,theme::SELECTED_ORDER
                                                 ));
                                             }
                                         }else if let Some(error)=self.analysis.as_ref()
@@ -4954,7 +4954,7 @@ impl BandoEgui {
                                         {
                                             items_ui.add_space(theme::SPACE_4);
                                             items_ui.label(typography::status(
-                                                format!("도서/산간 판정 실패 · {error}"),
+                                                &format!("도서/산간 판정 실패 · {error}"),
                                                 theme::SELECTED_ORDER
                                             ));
                                         }
