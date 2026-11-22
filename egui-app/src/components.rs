@@ -771,6 +771,29 @@ pub fn modal_action_row<R>(
     )
 }
 
+/// Two-ended footer for an editor with both a contextual/danger action
+/// and a final Save/Apply action. The OCR-master surface, rule, height and
+/// button hitbox still belong to `modal_action_row`.
+///
+/// Independent LEFT and RIGHT slots prevent the primary action from being
+/// pushed off-screen by a longer destructive label or variable-width status.
+pub fn modal_action_row_split(
+    ui:&mut Ui,
+    leading:impl FnOnce(&mut Ui),
+    trailing:impl FnOnce(&mut Ui),
+) {
+    modal_action_row(ui,|footer|{
+        footer.columns(2,|columns|{
+            columns[0].with_layout(
+                Layout::left_to_right(Align::Center),|left|leading(left)
+            );
+            columns[1].with_layout(
+                Layout::right_to_left(Align::Center),|right|trailing(right)
+            );
+        });
+    });
+}
+
 pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
     let (rect,_)=ui.allocate_exact_size(
         Vec2::new(ui.available_width(),theme::MODAL_FOOTER_HEIGHT),
