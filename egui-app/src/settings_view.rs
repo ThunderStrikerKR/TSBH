@@ -529,9 +529,11 @@ impl SettingsView{
             return;
         }
         if self.source.is_null(){return;}
-        // The basic options have no page-level vertical scroll. Only the
-        // potentially unbounded bank-account list owns a scroll viewport.
-        components::align_management_primary_card(ui,page_origin_y);
+        // Basic needs no KPI-alignment spacer above its compact cards.
+        // Other management tabs retain their master-card alignment.
+        if self.tab!=SettingsTab::Basic{
+            components::align_management_primary_card(ui,page_origin_y);
+        }
         let editable=!self.read_only() && !self.busy();
         if self.tab==SettingsTab::Basic{
             self.show_basic(ui,editable,Arc::clone(&gateway));
@@ -729,19 +731,14 @@ impl SettingsView{
                     if theme::action(
                         form,"＋ 계좌 추가",ButtonRole::Standard,true
                     ).clicked(){
-                        let accounts=self.draft.get_mut("accounts")
-                            .and_then(Value::as_array_mut);
-                        if let Some(accounts)=accounts{
-                            accounts.push(json!({
-                                "id":settings_store::new_account_id(),
-                                "bank":"","number":"","holder":""
-                            }));
-                        }else{
-                            self.draft["accounts"]=json!([{
-                                "id":settings_store::new_account_id(),
-                                "bank":"","number":"","holder":""
-                            }]);
-                        }
+                        let mut accounts=self.draft.get("accounts")
+                            .and_then(Value::as_array).cloned()
+                            .unwrap_or_default();
+                        accounts.push(json!({
+                            "id":settings_store::new_account_id(),
+                            "bank":"","number":"","holder":""
+                        }));
+                        self.draft["accounts"]=json!(accounts);
                     }
                     form.add_space(theme::SPACE_8);
                     components::soft_divider(form);
