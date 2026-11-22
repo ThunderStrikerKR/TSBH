@@ -4561,6 +4561,250 @@ impl BandoEgui {
         );
     }
 
+    /// Use the common centered/dimmed popup for every card action. The
+    /// modal owns no prices or operational state; it only selects validated
+    /// IDs and emits native workflow commands after the employee clicks.
+    fn show_workflow_dialog(&mut self,ctx:&egui::Context,work_area:Rect){
+        let Some(dialog)=self.workflow_dialog.clone() else{return;};
+        let mut close=false;
+        let mut select_pending:Option<String>=None;
+        let mut delete_pending:Option<String>=None;
+        let mut command:Option<(
+            String,String,Option<String>,Option<String>,bool
+        )>=None;
+        let busy=self.workflow_action.is_some();
+        let writable=self.gateway.workflow_write_enabled();
+        let mut target=self.workflow_manage_target.clone();
+        let mut ack=self.workflow_manage_ack;
+        match dialog{
+            WorkflowDialog::ManageGroup(id)=>{
+                let group=self.workflow_snapshot.as_ref()
+                    .and_then(|board|board.groups.iter().find(|g|g.id==id))
+                    .cloned();
+                if let Some(group)=group{
+                    let targets=self.workflow_snapshot.as_ref()
+                        .map(|board|board.groups.iter().filter(|other|
+                            other.id!=id && !other.transferred &&
+                            other.source_id==group.source_id &&
+                            other.dealer_id==group.dealer_id
+                        ).cloned().collect::<Vec<_>>()).unwrap_or_default();
+                    components::decision_window(
+                        "배송 건 묶음 관리","egui-workflow-group-manage",work_area
+                    ).show(ctx,|ui|{
+                        close=components::modal_header(
+                            ui,"배송 건 묶음 관리","닫기",true
+                        );
+                        ui.label(format!(
+                            "{} / 배송 {}건 / {}",
+                            group.dealer_name,group.shipments.len(),
+                            group.total.map(components::display_won)
+                                .unwrap_or_else(||"금액 미확정".to_owned())
+                        ));
+                        if !targets.is_empty(){
+                            ui.add_space(theme::SPACE_8);
+                            ui.label("다시 묶을 대상");
+                            egui::ComboBox::from_id_salt(
+                                ("workflow-regroup-target",&id)
+                            ).selected_text(
+                                targets.iter().find(|g|g.id==target)
+                                    .map(|g|g.dealer_name.as_str())
+                                    .unwrap_or("같은 최초 발주서의 묶음 선택")
+                            ).show_ui(ui,|list|{
+                                list.selectable_value(&mut target,String::new(),
+                                    "대상 선택");
+                                for other in &targets{
+                                    list.selectable_value(
+                                        &mut target,other.id.clone(),
+                                        format!("{} / 배송 {}건 / {}/4",
+                                            other.dealer_name,
+                                            other.shipments.len(),other.step)
+                                    );
+                                }
+                            });
+                            ui.checkbox(&mut ack,
+                                "기존 안내액 / 입금 배분 / 변경 합계를 확인했습니다.");
+                        }
+                        ui.add_space(theme::SPACE_8);
+                        egui::ScrollArea::vertical()
+                            .max_height(work_area.height()*0.45)
+                            .show(ui,|list|{
+                                for ship in &group.shipments{
+                                    list.horizontal(|line|{
+                                        line.label(format!(
+                                            "{} / {}종 / {}/4",
+                                            if ship.recipient_name.is_empty(){
+                                                "수취인 확인"
+                                            }else{ship.recipient_name.as_str()},
+                                            ship.products.len(),group.step
+                                        ));
+                                        if theme::action(
+                                            line,"이 배송 건 분리",
+                                            ButtonRole::Standard,
+                                            writable&&!busy &&
+                                                group.shipments.len()>1 &&
+                                                !group.transferred
+                                        ).clicked(){
+                                            command=Some((
+                                                "detach_shipment".to_owned(),
+                                                group.id.clone(),
+                                                Some(ship.id.clone()),None,false
+                                            ));
+                                        }
+                                        if !target.is_empty() && theme::action(
+                                            line,"다시 묶기",ButtonRole::Standard,
+                                            writable&&!busy&&!group.transferred
+                                        ).clicked(){
+                                            command=Some((
+                                                "regroup_shipment".to_owned(),
+                                                group.id.clone(),
+                                                Some(ship.id.clone()),
+                                                Some(target.clone()),ack
+                                            ));
+                                        }
+                                    });
+                                    components::soft_divider(list);
+                                }
+                            });
+                        if !writable{
+                            ui.label(typography::caption(
+                                "운영 DB 변경 권한이 없어 조회만 가능합니다."
+                            ));
+                        }
+                    });
+                }else{close=true;}
+            }
+            WorkflowDialog::ManagePending(id)=>{
+                let draft=self.drafts.iter().find(|row|row.id==id).cloned();
+                if let Some(draft)=draft{
+                    components::decision_window(
+                        "배송 건 묶음 관리","egui-workflow-pending-manage",work_area
+                    ).show(ctx,|ui|{
+                        close=components::modal_header(
+                            ui,"배송 건 묶음 관리","닫기",true
+                        );
+                        ui.label("거래처를 확인해야 실제 배송 묶음 및 업무 이력이 생성됩니다.");
+                        ui.label("거래처 지정 후 배송 건 분리와 다시 묶기를 사용할 수 있습니다.");
+                        if let Some(rows)=draft.analysis_evidence.as_ref()
+                            .and_then(|v|v.get("recipients"))
+                            .and_then(serde_json::Value::as_array){
+                            for recipient in rows{
+                                let name=recipient.get("name")
+                                    .and_then(serde_json::Value::as_str)
+                                    .filter(|s|!s.is_empty())
+                                    .unwrap_or("수취인 확인");
+                                let count=recipient.get("items")
+                                    .and_then(serde_json::Value::as_array)
+                                    .map(Vec::len).unwrap_or(0);
+                                ui.label(format!("{name} / 상품 {count}종"));
+                            }
+                        }
+                        components::modal_action_row(ui,|buttons|{
+                            if theme::action(buttons,"거래처 확인하기",
+                                ButtonRole::Primary,true).clicked(){
+                                select_pending=Some(id.clone());
+                            }
+                        });
+                    });
+                }else{close=true;}
+            }
+            WorkflowDialog::DeleteGroup(id)=>{
+                let group=self.workflow_snapshot.as_ref().and_then(|board|
+                    board.groups.iter().find(|g|g.id==id)
+                ).cloned();
+                if let Some(group)=group{
+                    components::decision_window(
+                        "주문 묶음 삭제","egui-workflow-delete-group",work_area
+                    ).show(ctx,|ui|{
+                        close=components::modal_header(
+                            ui,"주문 묶음 삭제","취소",true
+                        );
+                        ui.label(format!(
+                            "{} / 배송 {}건 묶음을 삭제할까요?",
+                            group.dealer_name,group.shipments.len()
+                        ));
+                        ui.label("접수 원문과 감사 기록은 보존됩니다.");
+                        components::modal_action_row(ui,|buttons|{
+                            if theme::action(
+                                buttons,"묶음 삭제",ButtonRole::Danger,
+                                writable && !busy && !group.transferred
+                            ).clicked(){
+                                command=Some((
+                                    "delete_group".into(),id.clone(),
+                                    None,None,false
+                                ));
+                            }
+                        });
+                    });
+                }else{close=true;}
+            }
+            WorkflowDialog::DeletePending(id)=>{
+                let draft=self.drafts.iter().find(|d|d.id==id).cloned();
+                if let Some(draft)=draft{
+                    components::decision_window(
+                        "미확정 발주서 삭제","egui-workflow-delete-pending",work_area
+                    ).show(ctx,|ui|{
+                        close=components::modal_header(
+                            ui,"미확정 발주서 삭제","취소",true
+                        );
+                        ui.label("미확정 발주서를 삭제할까요?");
+                        if draft.working_version.is_some(){
+                            ui.label("운영 작업본으로 저장된 주문은 여기서 삭제할 수 없습니다.");
+                        }
+                        components::modal_action_row(ui,|buttons|{
+                            if theme::action(
+                                buttons,"발주서 삭제",ButtonRole::Danger,
+                                !busy && draft.working_version.is_none()
+                            ).clicked(){
+                                delete_pending=Some(id.clone());
+                            }
+                        });
+                    });
+                }else{close=true;}
+            }
+            WorkflowDialog::PaymentNotice(id)=>{
+                components::decision_window(
+                    "계좌 안내 완료 확인","egui-workflow-payment-confirm",work_area
+                ).show(ctx,|ui|{
+                    close=components::modal_header(
+                        ui,"계좌 안내 완료 확인","돌아가기",true
+                    );
+                    ui.label(
+                        "계좌 안내 메시지를 복사한 기록이 없습니다. 다른 방법으로 안내하셨나요?"
+                    );
+                    components::modal_action_row(ui,|buttons|{
+                        if theme::action(
+                            buttons,"전달 완료로 처리",ButtonRole::Primary,
+                            writable && !busy
+                        ).clicked(){
+                            command=Some((
+                                "advance_group".into(),id.clone(),
+                                None,None,false
+                            ));
+                        }
+                    });
+                });
+            }
+        }
+        self.workflow_manage_target=target;
+        self.workflow_manage_ack=ack;
+        if let Some(id)=select_pending{
+            self.select_reception(&id,ctx);
+            self.open_client_chooser(ctx);
+            close=true;
+        }
+        if let Some(id)=delete_pending{
+            self.delete_pending_reception(&id,ctx);
+            close=true;
+        }
+        if let Some((action,id,shipment,target,ack))=command{
+            self.start_workflow_action(
+                &action,&id,shipment.as_deref(),target.as_deref(),ack,ctx
+            );
+            close=true;
+        }
+        if close{self.workflow_dialog=None;}
+    }
+
     fn orders_pane(&mut self, ui: &mut Ui) {
         let height=ui.available_height();
         let mut event=None;
