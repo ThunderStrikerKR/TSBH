@@ -772,6 +772,7 @@ impl BandoEgui {
                active.order_type != self.order_type.as_str() {
                 active.analysis_raw = None;
                 active.analysis_evidence = None;
+                active.analysis_view = None;
                 active.client_match = None;
                 active.pricing_preview = None;
                 active.manual_model = None;
@@ -789,6 +790,19 @@ impl BandoEgui {
             active.raw.clone_from(&self.raw_source);
             active.order_type = self.order_type.as_str().to_owned();
         }
+        // Capture a screen-only projection alongside the immutable source
+        // evidence. Saving unrelated state must not destroy a valid snapshot.
+        if let (Some(active_id),Some(analysis))=(
+            self.active_id.as_deref(),self.analysis.as_ref()
+        ){
+            if let Some(row)=self.drafts.iter_mut().find(|row|
+                row.id==active_id &&
+                row.raw==self.raw_source &&
+                row.analysis_raw.as_deref()==Some(self.raw_source.as_str())
+            ){
+                row.analysis_view=Some(analysis.cached_view());
+            }
+        }
         let source = WorkingSource {
             raw: self.raw_source.clone(),
             order_type: self.order_type.as_str().to_owned(),
@@ -805,6 +819,41 @@ impl BandoEgui {
         } else {
             self.source_save_error = Some("격리 원문 저장소가 초기화되지 않았습니다.".to_owned());
         }
+    }
+
+    /// Restore exact Rust recognition and its display references from the
+    /// source-bound SQLite snapshot. No matcher, OCR or price engine runs on
+    /// an unchanged reception. A missing/old snapshot safely falls back to
+    /// the regular native analysis worker.
+    fn restore_cached_analysis(&mut self)->bool {
+        let Some(row)=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|item|item.id==id))
+        else{return false};
+        if row.raw!=self.raw_source ||
+           row.order_type!=self.order_type.as_str() ||
+           row.analysis_raw.as_deref()!=Some(self.raw_source.as_str()) {
+            return false;
+        }
+        let (Some(evidence),Some(matched),Some(view))=(
+            row.analysis_evidence.as_ref(),
+            row.client_match.as_ref(),
+            row.analysis_view.as_ref(),
+        )else{return false};
+        let mut recognition=evidence.clone();
+        if let Some(rows)=row.manual_model.as_ref()
+            .and_then(|model|model.pointer("/model/rows"))
+            .filter(|rows|rows.is_array()) {
+            recognition["recipients"]=rows.clone();
+        }
+        let Some(restored)=reception_service::ReceptionAnalysis::from_cached_view(
+            &self.raw_source,recognition,matched.clone(),view
+        )else{return false};
+        self.analysis=Some(restored);
+        self.analysis_pending=false;
+        self.analysis_error=None;
+        self.analysis_due_at=None;
+        self.selected_recipient=0;
+        true
     }
 
     // Every reception has its own source. Selecting an existing one never
@@ -965,7 +1014,7 @@ impl BandoEgui {
         self.source_editing = !self.raw_source.is_empty();
         self.direct_source_entry = false;
         self.clear_source_analysis();
-        if !self.raw_source.trim().is_empty() {
+        if !self.restore_cached_analysis() && !self.raw_source.trim().is_empty() {
             self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
             ctx.request_repaint_after(Duration::from_millis(260));
         }
@@ -1004,6 +1053,7 @@ impl BandoEgui {
                     item.chat_title = Some(chat.title);
                     item.analysis_raw = None;
                     item.analysis_evidence = None;
+                    item.analysis_view = None;
                     item.client_match = None;
                     item.pricing_preview = None;
                     item.manual_model = None;
@@ -1135,11 +1185,14 @@ impl BandoEgui {
                         // Preserve the immutable first Rust recognition for
                         // edited rows and their before/after audit history.
                         // A fresh selected-client analysis is still scheduled.
+                        // Keep the immutable first evidence and its matching
+                        // advisory together for manually corrected drafts.
                         if row.manual_model.is_none() {
                             row.analysis_raw=None;
                             row.analysis_evidence=None;
+                            row.client_match=None;
                         }
-                        row.client_match=None;
+                        row.analysis_view=None;
                     }
                     self.clear_source_analysis();
                     if !self.raw_source.trim().is_empty() {
@@ -1325,6 +1378,14 @@ impl BandoEgui {
                             "paid":false,
                             "linePrices":result.get("linePrices"),
                             "freightLines":result.get("freightLines"),
+                            "pendingRecipients":result.get("pendingRecipients")
+                                .filter(|rows|rows.is_array()).cloned()
+                                .or_else(||row.pricing_preview.as_ref()
+                                    .and_then(|quote|quote.get("pendingRecipients"))
+                                    .filter(|rows|rows.is_array()).cloned())
+                                .or_else(||result.get("total")
+                                    .filter(|total|total.is_number())
+                                    .map(|_|serde_json::json!([]))),
                         }));
                     }
                     row.working_synced=same_input && row.pricing_preview.is_some();
@@ -2135,7 +2196,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             id: id.clone(), raw: String::new(),
             order_type: OrderType::Agency.as_str().to_owned(),
             source_input_method: None, last_input_method: None,
-            analysis_raw: None, analysis_evidence: None, client_match: None,
+            analysis_raw: None, analysis_evidence: None,
+            analysis_view:None, client_match: None,
             chat_handle: None, chat_title: None,
             client_id: None, client_selection: None, pricing_preview: None,
             working_version: None, working_synced: false, manual_model: None,
@@ -2465,11 +2527,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             changed_snapshot = true;
                         }
                     }
+                    self.analysis = Some(analysis);
+                    self.analysis_error = None;
                     if changed_snapshot {
                         self.queue_source_save();
                     }
-                    self.analysis = Some(analysis);
-                    self.analysis_error = None;
                     self.selected_recipient = 0;
                     if let Some(target)=auto_target {
                         self.start_auto_client_change(&target,ctx);
@@ -6832,8 +6894,7 @@ fn main() -> eframe::Result<()> {
                     std::process::exit(2);
                 }
             };
-            if source_editing { cc.egui_ctx.request_repaint_after(Duration::from_millis(260)); }
-            Ok(Box::new(BandoEgui {
+            let mut app=BandoEgui {
                 brand_texture: Some(brand_texture),
                 gateway: backend,
                 raw_source: restored.raw,
@@ -6842,11 +6903,13 @@ fn main() -> eframe::Result<()> {
                 source_editing,
                 order_type: saved_type,
                 source_autosave: Some(autosave),
-                analysis_due_at: if source_editing {
-                    Some(Instant::now() + Duration::from_millis(250))
-                } else { None },
                 ..BandoEgui::default()
-            }))
+            };
+            if source_editing && !app.restore_cached_analysis() {
+                app.analysis_due_at=Some(Instant::now()+Duration::from_millis(250));
+                cc.egui_ctx.request_repaint_after(Duration::from_millis(260));
+            }
+            Ok(Box::new(app))
         }),
     )
 }
