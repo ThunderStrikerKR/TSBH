@@ -10,6 +10,7 @@ serde_json = "1"
 regex = "1"
 scraper = "0.23"
 url = "2"
+bando-data-access = { path = "../../../crates/bando-data-access" }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 [workspace]
