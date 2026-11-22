@@ -1889,17 +1889,19 @@ mod tests {
         assert!(!composition.contains("modal.add_space(theme::SPACE_12)"));
         assert!(!composition.contains("components::soft_divider(body)"));
         assert_eq!(theme::MODAL_MASTER_WORKSPACE_GAP,16.0);
+        assert_eq!(theme::MODAL_SECTION_PADDING,16.0);
+        assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,16.0);
     }
     #[test]
     fn product_detail_reacts_to_actual_kakao_safe_modal_width(){
         // All three sections have the SAME approved inset/frame thickness,
         // so the 320pt image and inline 36pt price fields may not clip.
-        for width in [420.0,893.0,930.0,937.0]{
+        for width in [420.0,893.0,938.0,940.0,945.0]{
             assert!(ProductManager::detail_columns(width).is_none());
         }
         let inset=2.0*(theme::MODAL_SECTION_PADDING+
             theme::FRAME_STROKE_WIDTH);
-        for width in [938.0,940.0,970.0,1000.0,1100.0]{
+        for width in [946.0,970.0,1000.0,1100.0]{
             let (overview,price,image)=ProductManager::detail_columns(width).unwrap();
             assert_eq!(image,theme::PRODUCT_DETAIL_IMAGE_SIZE+inset);
             assert!(overview>=310.0 && price>=240.0 && price<=255.0);
