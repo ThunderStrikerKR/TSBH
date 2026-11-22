@@ -279,15 +279,16 @@ impl AliasManager {
                             .unwrap_or("거래처 확인 필요")
                     };
                     v.add_enabled_ui(editable&&!busy,|input|{
-                        egui::ComboBox::from_id_salt("alias-client-scope")
-                            .width(theme::MANAGEMENT_SEARCH_MIN_WIDTH)
-                            .selected_text(scope_name)
-                            .show_ui(input,|choices|{
-                                choices.selectable_value(&mut self.form.scope,
+                        components::management_dropdown(
+                            input,scope_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
+                            true,"적용할 거래처 선택",|choices|{
+                                components::management_dropdown_option(
+                                    choices,&mut self.form.scope,
                                     "common".to_owned(),"회사 공통 별칭");
                                 for client in rows(&catalog["clients"])
                                     .iter().filter(|c|is_client_active(c)){
-                                    choices.selectable_value(&mut self.form.scope,
+                                    components::management_dropdown_option(
+                                        choices,&mut self.form.scope,
                                         field(client,"id").to_owned(),field(client,"name"));
                                 }
                             });
@@ -413,20 +414,21 @@ impl AliasManager {
                                 filters,label,text_width,
                                 typography::CategoryPathFont::Body
                             );
-                            egui::ComboBox::from_id_salt(("alias-product-category",depth))
-                                .width(picker_width)
-                                .selected_text(visible).show_ui(filters,|choice|{
-                                    choice.selectable_value(&mut value,String::new(),
+                            components::management_dropdown(
+                                filters,&visible,picker_width,true,label,|choice|{
+                                    components::management_dropdown_option(
+                                        choice,&mut value,String::new(),
                                         if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
                                     for (id,name) in &children{
                                         let visible=typography::fit_category_path(
                                             choice,name,text_width,
                                             typography::CategoryPathFont::Body
                                         );
-                                        choice.selectable_value(&mut value,id.clone(),visible)
-                                            .on_hover_text(name.as_str());
+                                        components::management_dropdown_option(
+                                            choice,&mut value,id.clone(),&visible
+                                        ).on_hover_text(name.as_str());
                                     }
-                                }).response.on_hover_text(label);
+                                });
                             if value!=selected{
                                 self.category=if value.is_empty(){
                                     parent.unwrap_or_default()
@@ -441,17 +443,19 @@ impl AliasManager {
                         let brand=rows(&catalog["brands"]).iter()
                             .find(|b|field(b,"id")==selected_brand)
                             .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
-                        egui::ComboBox::from_id_salt("alias-product-brand")
-                            .selected_text(brand).show_ui(filters,|choice|{
-                                choice.selectable_value(&mut self.brand,
-                                    String::new(),"전체 브랜드");
+                        components::management_dropdown(
+                            filters,brand,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
+                            true,brand,|choice|{
+                                components::management_dropdown_option(
+                                    choice,&mut self.brand,String::new(),"전체 브랜드");
                                 for b in rows(&catalog["brands"])
                                     .iter().filter(|b|{
                                         available.contains(field(b,"id")) ||
                                             field(b,"id")==selected_brand
                                     }){
-                                    choice.selectable_value(&mut self.brand,
-                                        field(b,"id").to_owned(),field(b,"name"));
+                                    components::management_dropdown_option(
+                                        choice,&mut self.brand,field(b,"id").to_owned(),
+                                        field(b,"name"));
                                 }
                             });
                         if !self.category.is_empty() &&
