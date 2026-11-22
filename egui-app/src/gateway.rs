@@ -35,6 +35,7 @@ pub enum ReadOperation {
     ChangeOrderClient,
     RepriceOrder,
     CalculatePrice,
+    CalculateReceptionQuote,
     ManualClassification,
     SearchProductsWithUrls,
     ManagementProducts,
@@ -68,7 +69,7 @@ impl ReadOperation {
             | Self::ManagementProducts => "catalog_clients",
             Self::NewReception | Self::MergeReceptionAnalysis
             | Self::ChangeOrderClient | Self::RepriceOrder
-            | Self::CalculatePrice | Self::ManualClassification
+            | Self::CalculatePrice | Self::CalculateReceptionQuote | Self::ManualClassification
             | Self::PreviewWorkflow | Self::PreviewOrder
             | Self::ReadShipments | Self::ListOrderHistoryView | Self::ListOrderHistory
             | Self::FactoryReplyReviewStatuses | Self::ShippingManagerView
@@ -92,6 +93,7 @@ impl ReadOperation {
             Self::ChangeOrderClient => "order_edit_rules",
             Self::RepriceOrder => "reprice_order",
             Self::CalculatePrice => "calculate_price",
+            Self::CalculateReceptionQuote => "calculate_reception_quote",
             Self::ManualClassification => "apply_manual_classification",
             Self::SearchProductsWithUrls => "search_products_with_urls",
             Self::ManagementProducts => "management_products",
@@ -715,6 +717,7 @@ impl BandoGateway for LocalGateway {
             | ReadOperation::ChangeOrderClient
             | ReadOperation::RepriceOrder
             | ReadOperation::CalculatePrice
+            | ReadOperation::CalculateReceptionQuote
             | ReadOperation::ManualClassification
             | ReadOperation::PreviewWorkflow
             | ReadOperation::PreviewOrder
