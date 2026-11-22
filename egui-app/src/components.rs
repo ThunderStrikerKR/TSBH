@@ -1409,19 +1409,52 @@ pub fn reception_recipient_fields(
     }).inner
 }
 
+/// Place an inline editor in the same exact frame as Ui::place, while
+/// retaining its native galley so the initial pointer position becomes a
+/// real character cursor instead of forcing the end of the text.
+fn reception_text_editor_at_click(
+    ui:&mut Ui,cell:Rect,edit:egui::TextEdit<'_>,
+    request_focus:bool,click_at:Option<egui::Pos2>
+)->Response{
+    let mut placed=ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(cell)
+            .layout(egui::Layout::centered_and_justified(
+                egui::Direction::TopDown
+            ))
+    );
+    let mut output=edit.show(&mut placed);
+    if request_focus{
+        output.response.request_focus();
+        if let Some(pointer)=click_at.filter(|point|cell.contains(*point)){
+            // Galley coordinates honor Hangul widths, left/right align,
+            // font choice, margins and horizontal text scrolling.
+            let cursor=output.galley.cursor_from_pos(
+                pointer-output.galley_pos
+            );
+            output.state.cursor.set_char_range(Some(
+                egui::text::CCursorRange::one(cursor)
+            ));
+            output.state.store(ui.ctx(),output.response.id);
+            ui.ctx().request_repaint();
+        }
+    }
+    output.response
+}
+
 /// Edit over the original 36pt input rectangle without shrinking it.
 /// Ui::place never advances the parent layout cursor (Ui::put does).
 /// The readonly control and focused control share the same builder, so the text
 /// baseline, inset and phone font do not change when focus is acquired.
 pub fn reception_recipient_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    phone_number:bool,active:bool
+    click_at:Option<egui::Pos2>,phone_number:bool,active:bool
 )->Response{
-    let response=ui.place(
-        cell,reception_recipient_text_edit(value,cell.width(),active,phone_number)
-    );
-    if request_focus {response.request_focus();}
-    response
+    reception_text_editor_at_click(
+        ui,cell,
+        reception_recipient_text_edit(value,cell.width(),active,phone_number),
+        request_focus,click_at
+    )
 }
 
 /// The source editor and automatic-message canvas use the SAME surface
@@ -3070,7 +3103,8 @@ fn reception_compact_quantity(full:&str)->&str {
 /// Actual editor rendered IN the already allocated input cell; no dialog,
 /// detached form, or second layout row. Focus and response are owned by egui.
 pub fn reception_inline_cell_editor(
-    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,numeric:bool
+    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
+    click_at:Option<egui::Pos2>,numeric:bool
 )->Response{
     let rect=cell.shrink2(egui::vec2(theme::SPACE_4,theme::SPACE_2));
     let font=if numeric{
@@ -3081,17 +3115,16 @@ pub fn reception_inline_cell_editor(
     }else{
         egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
     };
-    let response=ui.place(
-        rect,
+    reception_text_editor_at_click(
+        ui,rect,
         egui::TextEdit::singleline(value)
             .font(font)
             .vertical_align(Align::Center)
             .horizontal_align(if numeric{Align::RIGHT}else{Align::LEFT})
             .margin(egui::Margin::symmetric(8,2))
-            .desired_width(rect.width())
-    );
-    if request_focus {response.request_focus();}
-    response
+            .desired_width(rect.width()),
+        request_focus,click_at
+    )
 }
 
 pub struct ReceptionItemCells {
@@ -3272,6 +3305,7 @@ fn reception_item_row_with_mode(
 pub struct ReceptionFreightEdit {
     pub amount_rect:Option<Rect>,
     pub amount_clicked:bool,
+    pub amount_click_pos:Option<egui::Pos2>,
     pub remote_clicked:bool,
     pub collect_clicked:bool,
 }
@@ -3293,11 +3327,12 @@ fn reception_freight_amount_text_edit(value:&mut String)->egui::TextEdit<'_>{
 }
 
 pub fn reception_freight_inline_cell_editor(
-    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool
+    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
+    click_at:Option<egui::Pos2>
 )->Response{
-    let response=ui.place(cell,reception_freight_amount_text_edit(value));
-    if request_focus {response.request_focus();}
-    response
+    reception_text_editor_at_click(
+        ui,cell,reception_freight_amount_text_edit(value),request_focus,click_at
+    )
 }
 pub fn reception_freight_row(
     ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
@@ -3332,6 +3367,7 @@ pub fn reception_freight_row_editable(
     remote:Option<bool>,inquiry_visible:bool,editable:bool
 )->ReceptionFreightEdit{
     let mut clicked=false;
+    let mut amount_click_pos=None;
     let mut remote_clicked=false;
     let mut collect_clicked=false;
     let mut amount_rect=None;
@@ -3370,11 +3406,17 @@ pub fn reception_freight_row_editable(
                         .interactive(false),
                 );
                 amount_rect=Some(displayed.rect);
-                if editable && collect!=Some(true) && price.interact(
-                    displayed.rect,
-                    price.make_persistent_id(("edit-applied-freight",label)),
-                    Sense::click()
-                ).clicked(){clicked=true;}
+                if editable && collect!=Some(true){
+                    let hit=price.interact(
+                        displayed.rect,
+                        price.make_persistent_id(("edit-applied-freight",label)),
+                        Sense::click()
+                    );
+                    if hit.clicked(){
+                        clicked=true;
+                        amount_click_pos=hit.interact_pointer_pos();
+                    }
+                }
                 price.label(typography::body("원")
                     .size(typography::FONT_RECEPTION_ITEM_TEXT));
             }
@@ -3397,7 +3439,8 @@ pub fn reception_freight_row_editable(
         });
     });
     ReceptionFreightEdit {
-        amount_rect,amount_clicked:clicked,remote_clicked,collect_clicked
+        amount_rect,amount_clicked:clicked,amount_click_pos,
+        remote_clicked,collect_clicked
     }
 }
 #[cfg(test)]
@@ -3624,6 +3667,40 @@ pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
 
 // Narrow geometry contract check only, not a business-data regression suite.
 #[cfg(test)]
+mod inline_first_click_caret_tests {
+    use super::*;
+    #[test]
+    fn hangul_and_right_aligned_amount_use_native_galley_cursor(){
+        let ctx=egui::Context::default();
+        let mut selections=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                for (value,numeric) in [("가나다라마바사",false),("12000",true)]{
+                    let (cell,_)=ui.allocate_exact_size(
+                        Vec2::new(220.0,theme::INPUT_HEIGHT),Sense::hover()
+                    );
+                    let click=egui::pos2(
+                        if numeric{cell.right()-29.0}else{cell.left()+16.0},
+                        cell.center().y
+                    );
+                    let mut editing=value.to_owned();
+                    let response=reception_inline_cell_editor(
+                        ui,cell,&mut editing,true,Some(click),numeric
+                    );
+                    let state=egui::TextEdit::load_state(ui.ctx(),response.id)
+                        .expect("native caret state");
+                    let range=state.cursor.char_range().expect("first caret");
+                    assert_eq!(range.primary.index,range.secondary.index);
+                    assert!(range.primary.index<=value.chars().count());
+                    selections.push(range.primary.index);
+                }
+            });
+        });
+        assert_eq!(selections.len(),2);
+    }
+}
+
+#[cfg(test)]
 mod management_toolbar_geometry_tests {
     use super::*;
     #[test]
@@ -3721,7 +3798,7 @@ mod management_toolbar_geometry_tests {
                     let before=ui.available_rect_before_wrap().min;
                     let mut editing=value.to_owned();
                     let active=reception_recipient_inline_cell_editor(
-                        ui,original.rect,&mut editing,false,phone,false
+                        ui,original.rect,&mut editing,false,None,phone,false
                     );
                     measured.push((original.rect,active.rect,before,
                         ui.available_rect_before_wrap().min));
@@ -3758,7 +3835,7 @@ mod management_toolbar_geometry_tests {
                 let before=ui.available_rect_before_wrap().min;
                 let mut editing="6000".to_owned();
                 let active=reception_freight_inline_cell_editor(
-                    ui,original.rect,&mut editing,false
+                    ui,original.rect,&mut editing,false,None
                 );
                 measured=Some((original.rect,active.rect,before,
                     ui.available_rect_before_wrap().min));
@@ -3783,7 +3860,7 @@ mod management_toolbar_geometry_tests {
                 let before=ui.available_rect_before_wrap().min;
                 let mut text="바로 편집".to_owned();
                 let response=reception_inline_cell_editor(
-                    ui,cell,&mut text,false,false
+                    ui,cell,&mut text,false,None,false
                 );
                 let after=ui.available_rect_before_wrap().min;
                 measured=Some((cell,response.rect,before,after));

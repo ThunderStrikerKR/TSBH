@@ -245,6 +245,8 @@ struct InlineReceptionEditor {
     original:String,
     text:String,
     focus_next:bool,
+    /// Saved pointer-up coordinate for first-click native caret placement.
+    click_at:Option<egui::Pos2>,
 }
 struct PendingRemoteRecheck{
     order_id:String,
@@ -258,7 +260,7 @@ struct PendingInlineChange {
     editor:InlineReceptionEditor,
     /// Captured from the SAME click that blurs the previous field.
     /// Never discard this intent merely because native saving is async.
-    next:Option<InlineTarget>,
+    next:Option<(InlineTarget,Option<egui::Pos2>)>,
     receiver:Receiver<Result<manual_workspace::Event,String>>,
 }
 
@@ -1388,7 +1390,10 @@ impl BandoEgui {
         ctx.request_repaint();
     }
 
-    fn begin_inline_edit(&mut self,target:InlineTarget,original:String){
+    fn begin_inline_edit(
+        &mut self,target:InlineTarget,original:String,
+        click_at:Option<egui::Pos2>
+    ){
         if self.inline_change.is_some(){return;}
         if self.inline_editor.as_ref().is_some_and(|editor|
             Some(editor.source_id.as_str())!=self.active_id.as_deref()){
@@ -1407,14 +1412,16 @@ impl BandoEgui {
         }
         self.inline_editor=Some(InlineReceptionEditor{
             source_id:self.active_id.clone().unwrap_or_default(),
-            target,original:original.clone(),text:original,focus_next:true
+            target,original:original.clone(),text:original,
+            focus_next:true,click_at
         });
     }
 
     /// One click on B commits dirty A, retains B as the next target and
     /// automatically focuses B when Rust returns. Clean A switches immediately.
     fn switch_inline_edit(
-        &mut self,target:InlineTarget,original:String,ctx:&egui::Context
+        &mut self,target:InlineTarget,original:String,
+        click_at:Option<egui::Pos2>,ctx:&egui::Context
     ){
         if self.inline_change.is_some(){return;}
         if self.inline_editor.as_ref().is_some_and(|editor|
@@ -1425,12 +1432,12 @@ impl BandoEgui {
         ){
             self.submit_inline_edit(ctx);
             if let Some(pending)=self.inline_change.as_mut(){
-                pending.next=Some(target);
+                pending.next=Some((target,click_at));
             }
             return;
         }
         self.inline_editor=None;
-        self.begin_inline_edit(target,original);
+        self.begin_inline_edit(target,original,click_at);
         ctx.request_repaint();
     }
 
@@ -1547,7 +1554,7 @@ impl BandoEgui {
                 if self.source_save_error.is_none() &&
                     self.page==Page::Reception
                 {
-                    if let Some(target)=pending.next {
+                    if let Some((target,click_at))=pending.next {
                         let displayed_recipient=self.analysis.as_ref()
                             .and_then(|analysis|
                                 reception_service::recipients(analysis)
@@ -1562,7 +1569,7 @@ impl BandoEgui {
                                 current_inline_value(&analysis.recognition,quote,&target)
                             });
                             if let Some(value)=refreshed{
-                                self.begin_inline_edit(target,value);
+                                self.begin_inline_edit(target,value,click_at);
                             }
                         }
                     }
@@ -4782,7 +4789,7 @@ impl BandoEgui {
         }
 
         let mut next_recipient = None;
-        let mut inline_open:Option<(InlineTarget,String)>=None;
+        let mut inline_open:Option<(InlineTarget,String,Option<egui::Pos2>)>=None;
         let mut inline_commit=false;
         let mut inline_cancel=false;
         let mut inline_command:Option<(InlineTarget,String)>=None;
@@ -4862,13 +4869,19 @@ impl BandoEgui {
                                         };
                                         let is_editing=self.inline_editor.as_ref()
                                             .is_some_and(|edit|edit.target==target);
-                                        if editable && !is_editing && fields.interact(
-                                            response.rect,
-                                            fields.make_persistent_id((
-                                                "recipient-inline-edit",recipient_id,field
-                                            )),Sense::click()
-                                        ).clicked(){
-                                            inline_open=Some((target.clone(),initial.to_owned()));
+                                        if editable && !is_editing{
+                                            let hit=fields.interact(
+                                                response.rect,
+                                                fields.make_persistent_id((
+                                                    "recipient-inline-edit",recipient_id,field
+                                                )),Sense::click()
+                                            );
+                                            if hit.clicked(){
+                                                inline_open=Some((
+                                                    target.clone(),initial.to_owned(),
+                                                    hit.interact_pointer_pos()
+                                                ));
+                                            }
                                         }
                                         let key=source_highlight::key(
                                             recipient_id,recipient_id,field
@@ -4882,6 +4895,7 @@ impl BandoEgui {
                                             let edit_response=components::reception_recipient_inline_cell_editor(
                                                 fields,response.rect,&mut editor.text,
                                                 editor.focus_next,
+                                                editor.click_at.take(),
                                                 matches!(field,"mobile"|"phone"),
                                                 source_highlight::is_active(
                                                     self.link_hover.active.as_ref(),&key
@@ -5049,7 +5063,10 @@ impl BandoEgui {
                                                     let is_editing=self.inline_editor.as_ref()
                                                         .is_some_and(|editor|editor.target==target);
                                                     if editable && !is_editing && response.clicked(){
-                                                        inline_open=Some((target.clone(),original));
+                                                        inline_open=Some((
+                                                            target.clone(),original,
+                                                            response.interact_pointer_pos()
+                                                        ));
                                                     }
                                                     source_highlight::paint_active(
                                                         items_ui,response,&key,
@@ -5059,7 +5076,9 @@ impl BandoEgui {
                                                         .filter(|editor|editor.target==target) {
                                                         let result=components::reception_inline_cell_editor(
                                                             items_ui,response.rect,&mut editor.text,
-                                                            editor.focus_next,field!="product"
+                                                            editor.focus_next,
+                                                            editor.click_at.take(),
+                                                            field!="product"
                                                         );
                                                         editor.focus_next=false;
                                                         if result.has_focus() && items_ui.input(|input|
@@ -5131,7 +5150,8 @@ impl BandoEgui {
                                         if freight_actions.amount_clicked{
                                             inline_open=Some((
                                                 freight_target.clone(),
-                                                line_fee.map(|n|n.to_string()).unwrap_or_default()
+                                                line_fee.map(|n|n.to_string()).unwrap_or_default(),
+                                                freight_actions.amount_click_pos
                                             ));
                                         }
                                         if freight_actions.remote_clicked{
@@ -5158,7 +5178,8 @@ impl BandoEgui {
                                             freight_actions.amount_rect
                                         ){
                                             let result=components::reception_freight_inline_cell_editor(
-                                                items_ui,rect,&mut editor.text,editor.focus_next
+                                                items_ui,rect,&mut editor.text,editor.focus_next,
+                                                editor.click_at.take()
                                             );
                                             editor.focus_next=false;
                                             if result.has_focus() && items_ui.input(|input|
@@ -5274,11 +5295,11 @@ impl BandoEgui {
         self.link_hover.update(linked,ui.ctx());
         if inline_cancel{
             self.inline_editor=None;
-        }else if let Some((target,text))=inline_open {
+        }else if let Some((target,text,click_at))=inline_open {
             // B's click and A's blur happen on the same egui frame.
             // Click intent must win over the A blur, otherwise B needs
             // a second click after the pending native save.
-            self.switch_inline_edit(target,text,ui.ctx());
+            self.switch_inline_edit(target,text,click_at,ui.ctx());
         }else if inline_commit{
             self.submit_inline_edit(ui.ctx());
         }else if let Some((target,value))=inline_command{
@@ -5286,7 +5307,7 @@ impl BandoEgui {
                 self.inline_editor=Some(InlineReceptionEditor{
                     source_id:self.active_id.clone().unwrap_or_default(),
                     target,original:"__previous__".into(),
-                    text:value,focus_next:false
+                    text:value,focus_next:false,click_at:None
                 });
                 self.submit_inline_edit(ui.ctx());
             }

@@ -87,6 +87,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml manual_remote_row_tests -- --nocapture
       - name: Verify one-click cell handoff uses the committed Rust values
         run: cargo test --manifest-path egui-app/Cargo.toml inline_single_click_handoff_tests -- --nocapture
+      - name: Verify first-click caret position in Hangul and numeric text fields
+        run: cargo test --manifest-path egui-app/Cargo.toml inline_first_click_caret_tests -- --nocapture
       - name: Verify inline edits stay inside the original input cell
         run: cargo test --manifest-path egui-app/Cargo.toml inline_editor_is_in_original_cell -- --nocapture
       - name: Verify recipient focus keeps all five input positions and contact font
