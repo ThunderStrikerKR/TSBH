@@ -42,6 +42,7 @@ pub enum ReadOperation {
     ManagementProducts,
     PreviewWorkflow,
     PreviewOrder,
+    OrderIssuesWithActions,
     ReadShipments,
     ListOrderHistoryView,
     ListOrderHistory,
@@ -73,7 +74,7 @@ impl ReadOperation {
             | Self::ChangeOrderClient | Self::RepriceOrder
             | Self::CalculatePrice | Self::CalculateReceptionQuote | Self::ManualClassification
             | Self::PreviewWorkflow | Self::PreviewOrder
-            | Self::ReadShipments | Self::ListOrderHistoryView | Self::ListOrderHistory
+            | Self::OrderIssuesWithActions | Self::ReadShipments | Self::ListOrderHistoryView | Self::ListOrderHistory
             | Self::FactoryReplyReviewStatuses | Self::ShippingManagerView
             | Self::ProductFreightView | Self::DefaultProductRule => "rules",
             Self::RenderAutomaticMessage | Self::DecorateAutomaticCopy
@@ -102,6 +103,7 @@ impl ReadOperation {
             Self::ManagementProducts => "management_products",
             Self::PreviewWorkflow => "preview_workflow",
             Self::PreviewOrder => "preview_order",
+            Self::OrderIssuesWithActions => "order_issues_with_actions",
             Self::ReadShipments => "read_shipments",
             Self::ListOrderHistoryView => "list_order_history_view",
             Self::ListOrderHistory => "list_order_history",
@@ -725,6 +727,7 @@ impl BandoGateway for LocalGateway {
             | ReadOperation::ManualClassification
             | ReadOperation::PreviewWorkflow
             | ReadOperation::PreviewOrder
+            | ReadOperation::OrderIssuesWithActions
             | ReadOperation::ReadShipments
             | ReadOperation::ListOrderHistoryView
             | ReadOperation::ListOrderHistory
