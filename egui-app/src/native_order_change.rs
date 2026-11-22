@@ -281,7 +281,7 @@ mod manual_rebind_tests {
             source_input_method:None,last_input_method:None,
             analysis_raw:Some("원문".into()),
             analysis_evidence:Some(json!({"recipients":[],"candidates":[]})),
-            client_match:None,chat_handle:None,chat_title:None,
+            analysis_view:None,client_match:None,chat_handle:None,chat_title:None,
             client_id:None,client_selection:None,pricing_preview:None,
             working_version:None,working_synced:false,manual_model:None,
             edit_history:vec![]
@@ -392,7 +392,7 @@ mod manual_rebind_tests {
             source_input_method:None,last_input_method:None,
             analysis_raw:Some(raw.into()),
             analysis_evidence:Some(json!({"recipients":[]})),
-            client_match:None,chat_handle:None,chat_title:None,
+            analysis_view:None,client_match:None,chat_handle:None,chat_title:None,
             client_id:Some("old".into()),
             client_selection:Some("MANUAL".into()),
             pricing_preview:None,working_version:None,
