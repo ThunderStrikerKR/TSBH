@@ -105,6 +105,24 @@ pub fn admit(request:Kind, active:&[Kind], same_request:bool)->Admission{
                 Kind::ManualClient | Kind::AutomaticClient | Kind::PricingBasis
                 | Kind::Analysis | Kind::RemoteRecheck | Kind::SourceEntry)
             | (Kind::RemoteRecheck,Kind::RemoteRecheck)
+            // Source acquisition is still read-only until the employee
+            // approves OCR/text. Native preview jobs may run concurrently;
+            // the eventual replacement invalidates their snapshots.
+            | (Kind::SourceIntake,
+                Kind::ManualClient | Kind::AutomaticClient |
+                Kind::PricingBasis | Kind::Analysis |
+                Kind::RemoteRecheck | Kind::WorkflowAction)
+            // Operational workflow writes use separate revision-checked
+            // group state. Uncommitted-reception advisory reads and OCR
+            // acquisition never need to stall that independent workflow.
+            | (Kind::WorkflowAction,
+                Kind::ManualClient | Kind::AutomaticClient |
+                Kind::PricingBasis | Kind::Analysis |
+                Kind::RemoteRecheck | Kind::SourceIntake)
+            | (Kind::AutomaticClient | Kind::PricingBasis |
+                Kind::Analysis | Kind::RemoteRecheck,Kind::WorkflowAction)
+            | (Kind::SourceReplace | Kind::DeleteReception,
+                Kind::WorkflowAction)
             // The matching modal is still visible on the employee's
             // approval click; only its explicitly approved action may pass.
             | (Kind::VatEdit,Kind::VatDialog)
@@ -181,8 +199,7 @@ mod tests {
     fn all_source_and_workflow_employee_writes_conflict_with_existing_writes(){
         let writers=[
             K::ManualClient,K::InlineEdit,K::VatEdit,K::WorkingSync,
-            K::ManualWorkspace,K::InlineEditor,K::WorkflowAction,
-            K::SourceIntake,K::SourceEntry
+            K::ManualWorkspace,K::InlineEditor,K::SourceEntry
         ];
         for first in writers {
             for second in writers {
@@ -197,6 +214,33 @@ mod tests {
     }
 
     #[test]
+    fn clipboard_acquisition_and_operational_workflow_are_not_delayed_by_advice(){
+        let advisory=[
+            K::ManualClient,K::AutomaticClient,K::PricingBasis,
+            K::Analysis,K::RemoteRecheck
+        ];
+        for advice in advisory {
+            assert_eq!(admit(K::SourceIntake,&[advice],false),A::Start);
+            assert_eq!(admit(K::WorkflowAction,&[advice],false),A::Start);
+        }
+        for reader in [
+            K::AutomaticClient,K::PricingBasis,K::Analysis,K::RemoteRecheck
+        ] {
+            assert_eq!(admit(reader,&[K::WorkflowAction],false),A::Start);
+        }
+        assert_eq!(admit(K::WorkflowAction,&[K::SourceIntake],false),A::Start);
+        assert_eq!(admit(K::SourceIntake,&[K::WorkflowAction],false),A::Start);
+        assert_eq!(admit(K::SourceReplace,&[K::WorkflowAction],false),A::Start);
+        assert_eq!(admit(K::DeleteReception,&[K::WorkflowAction],false),A::Start);
+        for committed in [K::InlineEdit,K::VatEdit,K::WorkingSync] {
+            assert_eq!(admit(K::SourceIntake,&[committed],false),
+                A::Conflict(committed));
+            assert_eq!(admit(K::WorkflowAction,&[committed],false),
+                A::Conflict(committed));
+        }
+    }
+
+    #[test]
     fn source_approval_supersedes_advice_but_never_staff_writes(){
         for advisory in [
             K::SourceReview,K::AutomaticClient,K::PricingBasis,
@@ -206,7 +250,7 @@ mod tests {
         }
         for writer in [
             K::ManualClient,K::InlineEdit,K::VatEdit,K::WorkingSync,
-            K::ManualWorkspace,K::InlineEditor,K::WorkflowAction,K::SourceIntake,
+            K::ManualWorkspace,K::InlineEditor,K::SourceIntake,
             K::SourceEntry
         ]{
             assert_eq!(admit(K::SourceReplace,&[writer],false),A::Conflict(writer));
@@ -254,7 +298,7 @@ mod tests {
         }
         for commit in [
             K::WorkingSync,K::InlineEdit,K::VatEdit,K::ManualWorkspace,
-            K::InlineEditor,K::SourceIntake,K::SourceReview,K::WorkflowAction
+            K::InlineEditor,K::SourceIntake,K::SourceReview
         ]{
             assert_eq!(admit(K::DeleteReception,&[commit],false),
                 A::Conflict(commit));
