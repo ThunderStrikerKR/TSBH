@@ -309,6 +309,42 @@ fn same_target(left:&LinkKey,right:&LinkKey)->bool {
     left.target_id==right.target_id && left.field==right.field
 }
 
+/// Hit-test the visible glyph cells, NOT TextEdit's insertion cursor.
+/// cursor_from_pos snaps to the next insertion index on the right half of
+/// a character, making the final glyph of a source name lose its link.
+/// Match the exact Rust evidence ownership, including wrapped/newline rows.
+pub fn hovered_key_at_pointer(
+    raw:&str,spans:&[LinkedSpan],galley:&egui::Galley,
+    galley_pos:egui::Pos2,pointer:egui::Pos2
+)->Option<LinkKey>{
+    let characters:Vec<char>=raw.chars().collect();
+    let mut row_start=0usize;
+    for (row_index,placed) in galley.rows.iter().enumerate(){
+        let top=galley_pos.y+placed.pos.y;
+        let glyphs=&placed.row.glyphs;
+        if pointer.y>=top && pointer.y<top+placed.row.size.y {
+            for (index,glyph) in glyphs.iter().enumerate(){
+                if glyph.chr=='\n' {continue;}
+                let left=galley_pos.x+placed.pos.x+glyph.pos.x;
+                let right=left+glyph.advance_width;
+                if pointer.x>=left && pointer.x<right {
+                    let char_index=row_start+index;
+                    return spans.iter().find(|span|
+                        span.start_char<=char_index && char_index<span.end_char
+                    ).map(|span|span.key.clone());
+                }
+            }
+            return None;
+        }
+        row_start+=glyphs.len();
+        if row_index+1<galley.rows.len() &&
+            characters.get(row_start)==Some(&'\n'){
+            row_start+=1;
+        }
+    }
+    None
+}
+
 // The React source token palette is intentionally quiet in this dark theme.
 // 16pt SUIT stays unchanged; only the recognized text receives 4pt rounded
 // blocks (3pt horizontal / 1pt vertical visual padding).
@@ -546,6 +582,35 @@ mod tests {
         assert_eq!(spans.len(),1);
         assert_eq!(&raw[spans[0].start..spans[0].end],"나");
         assert_eq!(spans[0].start_char,2);
+    }
+
+    #[test]
+    fn right_half_of_last_name_glyph_keeps_its_recipient_link(){
+        let raw="김준희\n표시나";
+        let evidence=json!({"recipients":[
+            {"id":"first","sources":[{"field":"name","targetId":"first",
+                "start":0,"end":3,"text":"김준희"}]},
+            {"id":"second","sources":[{"field":"name","targetId":"second",
+                "start":4,"end":7,"text":"표시나"}]}
+        ]});
+        let spans=collect(raw,&evidence);
+        let ctx=egui::Context::default();
+        let mut result=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            let job=layout(raw,&spans,None,None,500.0,
+                FontId::proportional(16.0),Color32::WHITE);
+            let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
+            assert_eq!(galley.rows.len(),2);
+            let placed=&galley.rows[1];
+            let glyph=placed.row.glyphs.last().unwrap();
+            let pos=egui::pos2(
+                placed.pos.x+glyph.pos.x+glyph.advance_width*0.75,
+                placed.pos.y+placed.row.size.y*0.5,
+            );
+            result=hovered_key_at_pointer(raw,&spans,&galley,
+                egui::Pos2::ZERO,pos);
+        });
+        assert_eq!(result.unwrap().recipient_id,"second");
     }
 
     #[test]
