@@ -37,7 +37,7 @@ fn option_text(product: &Value, variant: &Value) -> String {
     let mut parts = Vec::new();
     if field(product, "colorStatus") != "NOT_REQUIRED" {
         let color = field(variant, "color");
-        if !color.is_empty() && color != "단일" {
+        if !color.is_empty() && color != "단일" && color != "색상 미표기" {
             parts.push(color);
         }
     }
