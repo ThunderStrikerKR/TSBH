@@ -452,6 +452,23 @@ pub fn modal_master_content_from_ui(available:Rect,outer:Vec2)->Vec2{
     )
 }
 
+/// The OCR master is painted in a fixed overlay child. Its parent
+/// reserves exactly the content rect once; independently positioned header,
+/// image, editor and footer must NOT expand the enclosing Window's min_rect.
+/// Using scope_builder directly on that parent caused the window to outgrow
+/// fixed_size and lose its lower rounded frame to viewport clipping.
+pub fn modal_master_overlay_ui(parent:&mut Ui,bounds:Rect,id:&'static str)->Ui{
+    let inherited_clip=parent.clip_rect();
+    let mut overlay=parent.new_child(
+        egui::UiBuilder::new()
+            .id_salt(id)
+            .max_rect(bounds)
+            .layout(Layout::top_down(Align::Min))
+    );
+    overlay.set_clip_rect(bounds.intersect(inherited_clip));
+    overlay
+}
+
 /// A split OCR review needs room for fixed header, footer, toolbar, inset
 /// and real image/text viewports. If the window is only in a sizing pass,
 /// skip child construction instead of passing a negative size into egui.
