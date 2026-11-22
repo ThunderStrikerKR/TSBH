@@ -555,12 +555,14 @@ pub fn block_shapes(
                     if rect.width()<=0.0 {continue;}
                 }
                 if !rect.intersects(clip) {continue;}
-                let radius=if block.focused {3.0} else {2.0};
+                let radius=if block.focused {ACTIVE_RADIUS} else {2.0};
                 let background=egui::Shape::rect_filled(rect,radius,block.fill);
                 if block.focused {
                     focused.push(background);
                     outlines.push(egui::Shape::rect_stroke(
-                        rect,radius,egui::Stroke::new(2.0,SOURCE_ACTIVE_BORDER),
+                        rect,radius,egui::Stroke::new(
+                            ACTIVE_BORDER_WIDTH,ACTIVE_BORDER
+                        ),
                         egui::StrokeKind::Inside
                     ));
                 } else {
@@ -756,6 +758,25 @@ mod tests {
         let active=compact_block_rect(5.0,15.0,10.0,20.0,true).unwrap();
         assert_eq!(active.width(),a.width());
         assert!(active.height()>a.height());
+    }
+
+    #[test]
+    fn source_focus_uses_the_same_palette_as_recipient_and_item_highlights(){
+        let raw="표시나";
+        let recognition=json!({"recipients":[{
+            "id":"r1","sources":[source(raw,raw,"name","r1")]
+        }]});
+        let spans=collect(raw,&recognition);
+        let active=key("r1","r1","name");
+        let blocks=visual_blocks(raw,&spans,Some("r1"),Some(&active));
+        assert_eq!(blocks.len(),1);
+        assert!(blocks[0].focused);
+        assert_eq!(blocks[0].fill,ACTIVE_FILL);
+        assert_eq!(SOURCE_ACTIVE,ACTIVE_FILL);
+        assert_eq!(SOURCE_ACTIVE_TEXT,ACTIVE_TEXT);
+        assert_eq!(SOURCE_ACTIVE_BORDER,ACTIVE_BORDER);
+        assert_eq!(ACTIVE_RADIUS,4.0);
+        assert_eq!(ACTIVE_BORDER_WIDTH,2.0);
     }
 
     #[test]
