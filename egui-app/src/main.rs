@@ -4444,7 +4444,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .unwrap_or_default();
                     let selected_id=self.analysis.as_ref()
                         .and_then(|analysis|reception_service::recipients(analysis)
-                            .get(self.selected_recipient))
+                            .get(self.visible_recipient_index()))
                         .and_then(|recipient|recipient.get("id"))
                         .and_then(serde_json::Value::as_str)
                         .map(str::to_owned);
@@ -4946,6 +4946,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn details_and_freight(&mut self, ui: &mut Ui) {
+        let visible_index=self.visible_recipient_index();
         let full_height = ui.available_height();
         // The review, recipient and items sections own two independent
         // draggable boundaries; adjacent columns no longer dictate their sizes.
@@ -5373,6 +5374,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
             .is_some_and(|row|row.analysis_raw.as_deref()==Some(self.raw_source.as_str())
                 && row.analysis_evidence.is_some())
+            && visible_index==self.selected_recipient
+            && self.workflow_ui.pending_preview().is_none()
             && self.manual_workspace.is_none()
             && self.client_change.is_none()
             && self.working_sync.is_none()
@@ -5383,7 +5386,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .map(|analysis|reception_service::recipients(analysis))
             .filter(|recipients|recipients.len()>1)
             .map(|recipients|{
-                let index=self.selected_recipient.min(recipients.len()-1);
+                let index=visible_index.min(recipients.len()-1);
                 let name=reception_service::text(&recipients[index],"name")
                     .to_owned();
                 (name,index,recipients.len())
@@ -5408,7 +5411,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     },|ui|{
                     if let Some(analysis) = &self.analysis {
                         let recipients = reception_service::recipients(analysis);
-                        if let Some(recipient) = recipients.get(self.selected_recipient) {
+                        if let Some(recipient) = recipients.get(visible_index) {
                             let mut name = reception_service::text(recipient, "name").to_owned();
                             let mut address = reception_service::text(recipient, "address").to_owned();
                             let mut mobile = reception_service::text(recipient, "mobile").to_owned();
@@ -5493,10 +5496,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         );
         if let Some(index) = next_recipient {
             self.selected_recipient = index;
+            self.workflow_ui.stop_preview();
             if self.inline_editor.is_some(){inline_commit=true;}
         }
         let selected = self.analysis.as_ref().and_then(|analysis| {
-            reception_service::recipients(analysis).get(self.selected_recipient)
+            reception_service::recipients(analysis).get(visible_index)
         });
 
         let remaining = bottom_rect.height();
@@ -5675,7 +5679,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         // hiding the checkbox for auto zones.
                                         let remote_result=self.analysis.as_ref()
                                             .and_then(|analysis|
-                                                analysis.reference.get(self.selected_recipient))
+                                                analysis.reference.get(visible_index))
                                             .and_then(|reference|reference.remote.as_ref())
                                             .filter(|result|
                                                 reception_service::remote_reference_matches(
@@ -5863,29 +5867,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 .is_some_and(|analysis|analysis.linked_spans.iter()
                     .any(|span|span.key==*key)));
         self.link_hover.update(linked,ui.ctx());
-        // Source evidence is an interactive recipient navigator, not merely
-        // a paint highlight. Once its 50ms hover is active, display the exact
-        // recognized recipient without requiring a click or mutating order data.
-        // Field-to-source hover still scrolls the document; source-to-field
-        // hover must NOT scroll the document under a stationary mouse.
-        if let (Some(source),Some(active),Some(analysis))=(
-            self.source_hover.as_ref(),
-            self.link_hover.active.as_ref(),
-            self.analysis.as_ref()
-        ){
-            if source==active && self.inline_editor.is_none() &&
-                self.inline_change.is_none() && source_matches {
-                if let Some(index)=reception_service::recipients(analysis)
-                    .iter().position(|row|
-                        reception_service::text(row,"id")==source.recipient_id
-                    ){
-                    if self.selected_recipient!=index {
-                        self.selected_recipient=index;
-                        ui.ctx().request_repaint();
-                    }
-                }
-                self.link_hover.scroll_to=None;
-            }
+        // React parity: hovering linked source evidence only changes the
+        // visible projection; it must not replace the clicked recipient.
+        if self.source_hover.is_some() && self.link_hover.active.is_some(){
+            self.link_hover.scroll_to=None;
         }
         if inline_cancel{
             self.inline_editor=None;
