@@ -1321,8 +1321,9 @@ impl ProductManager {
             row.label(typography::field_label(label));
             let mut value=field(draft,key).to_owned();
             row.add_enabled_ui(enabled,|input|{
+                let width=input.available_width();
                 if components::flexible_text_field(
-                    input,&mut value,input.available_width(),label
+                    input,&mut value,width,label
                 ).changed(){
                     draft[key]=json!(value);
                 }
@@ -1374,8 +1375,9 @@ impl ProductManager {
             let label=brands.iter().find(|b|field(b,"id")==brand_id)
                 .map(|b|field(b,"name")).unwrap_or("브랜드 미지정");
             line.add_enabled_ui(editable&&!busy,|input|{
+                let width=input.available_width();
                 components::management_dropdown(
-                    input,label,input.available_width(),true,
+                    input,label,width,true,
                     "브랜드 선택",|choices|{
                         components::management_dropdown_option(
                             choices,&mut brand_id,String::new(),"브랜드 미지정");
@@ -1397,9 +1399,10 @@ impl ProductManager {
             let before=field(draft,"origin").to_owned();
             let mut origin=before.clone();
             line.add_enabled_ui(editable&&!busy,|input|{
+                let width=input.available_width();
                 components::management_dropdown(
                     input,if origin=="STORE"{"매장"}else{"공장"},
-                    input.available_width(),true,"발송지 선택",|options|{
+                    width,true,"발송지 선택",|options|{
                         components::management_dropdown_option(
                             options,&mut origin,"FACTORY".into(),"공장");
                         components::management_dropdown_option(
