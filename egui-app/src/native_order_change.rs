@@ -88,8 +88,11 @@ pub fn prepare_cancellable(
     // the current Rust catalog; no pricing or production order mutation.
     // This is an intentional separate scope from full change_order_client.
     if gateway.isolated_client_identity_link() {
-        if source.working_version.is_some() || source.pricing_preview.is_some() {
-            return Err("운영 작업본 또는 기존 계산 결과가 있어 격리 거래처 연결로 전환할 수 없습니다.".into());
+        if source.pricing_preview.is_some() {
+            // Do not silently downgrade an existing native pricing result
+            // into a name-only association. Historical bridge-version
+            // metadata alone must not lock a local reception, however.
+            return Err("기존 Rust 계산 결과가 있어 격리 거래처 연결로 전환할 수 없습니다.".into());
         }
         let index=gateway.load_catalog()?;
         check_cancelled(cancel)?;
