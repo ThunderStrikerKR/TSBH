@@ -1569,7 +1569,7 @@ impl ProductManager {
             .show(ctx,|modal|{
                 components::modal_master_controlled_spacing(modal);
                 let dialog_title=if is_new{"상품 등록"}else{"상품 상세 관리"};
-                if components::modal_header(
+                if components::modal_header_with_workspace_gap(
                     modal,dialog_title,"취소",!busy
                 ){request_close=true;}
                 egui::ScrollArea::vertical()
@@ -1878,6 +1878,7 @@ mod tests {
         let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
             .split("        self.selected=Some(draft.clone());").next().unwrap();
         assert!(composition.contains("modal_master_controlled_spacing(modal)"));
+        assert!(composition.contains("modal_header_with_workspace_gap("));
         assert!(composition.contains("modal_master_controlled_spacing(body)"));
         assert!(composition.contains("modal_master_spaced_divider(body)"));
         assert!(composition.contains("top.spacing_mut().item_spacing.x="));
