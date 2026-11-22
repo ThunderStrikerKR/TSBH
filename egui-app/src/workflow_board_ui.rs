@@ -1366,7 +1366,7 @@ mod pending_hover_navigation_tests{
         let other=PendingTarget::recipient("order","pyo");
         for i in 0..100{
             let incoming=if i%2==0{&committed}else{&other};
-            board.update_pending_order_hover(Some(incoming.clone()),Some(&committed),&ctx);
+            board.update_pending_order_hover(Some((*incoming).clone()),Some(&committed),&ctx);
             assert!(board.pending_preview().is_none(),
                 "fast mouse transitions should keep the original selection visible");
             assert_eq!(
