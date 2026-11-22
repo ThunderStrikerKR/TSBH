@@ -136,9 +136,14 @@ impl ManualWorkspace {
     /// Open the existing native editor on the recipient currently selected
     /// in the main intake pane, not silently on the first shipment.
     pub fn focus_recipient(&mut self,index:usize){
+        self.focus_cell(index,None,"name");
+    }
+    pub fn focus_cell(&mut self,index:usize,item:Option<String>,field:&str){
+        // Called before the asynchronous native model is initialized. The
+        // Initial outcome then loads this exact cell's current value.
         self.selected_recipient=index;
-        self.selected_item=None;
-        self.selected_field="name".to_owned();
+        self.selected_item=item;
+        self.selected_field=field.to_owned();
     }
     fn busy(&self)->bool {self.receiver.is_some()}
     fn poll(&mut self) {
