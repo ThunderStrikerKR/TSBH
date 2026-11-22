@@ -222,6 +222,7 @@ export function ClientManager({
               <section className="client-editor-section">
                 <h3>거래처 식별</h3>
                 <div className="client-editor-grid">
+                  <div className="client-editor-wide">
                   <Field label="거래처명" help={{ purpose: "거래처를 검색하고 주문을 관리할 때 사용할 이름을 정합니다.", when: "새 거래처를 등록하거나 기존 거래처의 이름을 변경할 때 사용합니다.", steps: ["실제 거래처 상호를 입력합니다.", "다른 필수 정보를 입력한 후 거래처를 저장합니다."], result: "접수 화면과 거래처 목록에 이 이름으로 표시됩니다." }}>
               <input
                 value={edit.name}
