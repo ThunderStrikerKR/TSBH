@@ -66,7 +66,7 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml pricing::migration_tests -- --nocapture
       - name: Verify complete multi-recipient receipt totals with VAT and doubled freight
         run: cargo test --manifest-path egui-app/Cargo.toml two_recipients_with_complete_freight -- --nocapture
-      - name: Verify incomplete recipient freight never becomes a false final total
+      - name: Verify recipient freight completes the entire order total automatically
         run: cargo test --manifest-path egui-app/Cargo.toml incomplete_second_recipient -- --nocapture
       - name: Verify native recipient freight is quoted and collected exactly once
         run: cargo test --manifest-path egui-app/Cargo.toml reception_manual_freight -- --nocapture

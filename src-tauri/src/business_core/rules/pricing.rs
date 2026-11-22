@@ -181,6 +181,7 @@ fn reception_totals(order:&Value,client:&Value,freight:&Value)->Result<Value,Str
     let mut subtotals=Vec::with_capacity(recipients.len());
     let mut shippings=Vec::with_capacity(recipients.len());
     let mut vats=Vec::with_capacity(recipients.len());
+    let mut pending_recipients=Vec::new();
     for recipient in recipients{
         let items=rows(field(recipient,"items"));
         let subtotal=if items.is_empty(){None}else{
@@ -213,6 +214,14 @@ fn reception_totals(order:&Value,client:&Value,freight:&Value)->Result<Value,Str
                     .map(|base|((base as f64)*0.1).round() as i64)
                     .filter(|n|*n<=MAX_SAFE)
             };
+        if subtotal.is_none() || shipping.is_none() || vat.is_none(){
+            pending_recipients.push(json!({
+                "recipientId":field(recipient,"id"),
+                "product":subtotal.is_none(),
+                "freight":shipping.is_none(),
+                "vat":vat.is_none()
+            }));
+        }
         subtotals.push(subtotal);
         shippings.push(shipping);
         vats.push(vat);
@@ -225,7 +234,10 @@ fn reception_totals(order:&Value,client:&Value,freight:&Value)->Result<Value,Str
         .and_then(checked_sum);
     let total=subtotal.zip(shipping).zip(vat)
         .and_then(|((items,shipping),vat)|checked_sum([items,shipping,vat]));
-    Ok(json!({"subtotal":subtotal,"shipping":shipping,"vat":vat,"total":total}))
+    Ok(json!({
+        "subtotal":subtotal,"shipping":shipping,"vat":vat,"total":total,
+        "pendingRecipients":pending_recipients
+    }))
 }
 
 /// Read-only pricing projection for an employee-modified, unconfirmed intake.
@@ -342,6 +354,7 @@ mod migration_tests {
         assert_eq!(quote["totals"]["shipping"],8500);
         assert_eq!(quote["totals"]["vat"],24200);
         assert_eq!(quote["totals"]["total"],327700);
+        assert_eq!(quote["totals"]["pendingRecipients"],json!([]));
     }
     #[test]
     fn incomplete_second_recipient_does_not_show_false_final_total(){
@@ -359,6 +372,18 @@ mod migration_tests {
         assert_eq!(amounts["subtotal"],295000);
         assert_eq!(amounts["shipping"],Value::Null);
         assert_eq!(amounts["total"],Value::Null);
+        assert_eq!(amounts["pendingRecipients"],json!([{
+            "recipientId":"r2","product":false,"freight":true,"vat":false
+        }]));
+        // When the final shipping charge becomes known, the same Rust quote
+        // returns the complete order total automatically.
+        let completed=json!({"bundles":[
+            {"recipientId":"r1","billableCharge":6000},
+            {"recipientId":"r2","billableCharge":2500}
+        ]});
+        let complete=reception_totals(&order,&json!({"id":"c"}),&completed).unwrap();
+        assert_eq!(complete["total"],303500);
+        assert_eq!(complete["pendingRecipients"],json!([]));
     }
     #[test]
     fn manual_unit_price_survives_reprice_but_auto_lines_follow_catalog() {

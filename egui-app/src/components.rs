@@ -3342,12 +3342,13 @@ pub fn reception_freight_row_editable(
                         label_rect.center().y-galley.size().y/2.0
                     ),galley,theme::TEXT
                 );
-                let displayed=price.add_enabled_ui(false,|cell|{
-                    cell.add_sized(
-                        Vec2::new(84.0,theme::INPUT_HEIGHT),
-                        reception_freight_amount_text_edit(&mut amount_text),
-                    )
-                }).inner;
+                // Prevent editing without greying out an already entered
+                // amount. The disabled parent Ui was dimming valid freight.
+                let displayed=price.add_sized(
+                    Vec2::new(84.0,theme::INPUT_HEIGHT),
+                    reception_freight_amount_text_edit(&mut amount_text)
+                        .interactive(false),
+                );
                 amount_rect=Some(displayed.rect);
                 if editable && collect!=Some(true) && price.interact(
                     displayed.rect,
@@ -3393,7 +3394,7 @@ pub fn reception_freight_row_editable(
         amount_rect,amount_clicked:clicked,remote_clicked,collect_clicked
     }
 }
-/// Keep add-product above freight, exactly below the product table.
+/// Shared add-product action; the reception title row owns its placement.
 pub fn reception_item_add_action_editable(ui:&mut Ui,editable:bool)->bool{
     theme::action(ui,"＋ 상품 추가",theme::ButtonRole::Standard,editable)
         .clicked()

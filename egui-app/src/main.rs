@@ -1285,6 +1285,7 @@ impl BandoEgui {
                                 "vatAmount":totals.get("vat"),
                                 "subtotal":totals.get("subtotal"),
                                 "total":totals.get("total"),
+                                "pendingRecipients":totals.get("pendingRecipients"),
                                 "notified":false,"paid":false,
                                 "linePrices":calculation.get("linePrices"),
                                 "freightLines":calculation.get("freightLines")
@@ -4535,7 +4536,10 @@ impl BandoEgui {
                     pane.set_clip_rect(bottom_rect);
                     pane.set_width(bottom_rect.width());
                     pane.set_height(bottom_rect.height());
-                    Self::section(pane,"품목 및 운임",bottom_rect.height(),|ui|{
+                    Self::section_with_header(pane,"품목 및 운임",bottom_rect.height(),
+                        |header|{
+                            components::reception_item_add_action_editable(header,false);
+                        },|ui|{
                         // Footer slots must consume EXACTLY their reserved
                         // heights, with no hidden egui spacing added between.
                         ui.spacing_mut().item_spacing.y=0.0;
@@ -4603,8 +4607,6 @@ impl BandoEgui {
                                             .and_then(|decision|decision["checked"].as_bool());
                                         let origin=ship.recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
-                                        contents.add_space(theme::SPACE_8);
-                                        components::reception_item_add_action_editable(contents,false);
                                         contents.add_space(theme::SPACE_8);
                                         components::reception_freight_row(
                                             contents,"운임",
@@ -4918,8 +4920,13 @@ impl BandoEgui {
                 pane.set_clip_rect(bottom_rect);
                 pane.set_width(bottom_rect.width());
                 pane.set_height(bottom_rect.height());
+                let mut header_add_item=false;
                 Self::section_with_header(pane,"품목 및 운임",remaining,
-                    |_header|{},|ui| {
+                    |header|{
+                        header_add_item=components::reception_item_add_action_editable(
+                            header,editable && selected.is_some()
+                        );
+                    },|ui| {
                     // In intake standby, do not draw empty table headings,
                     // freight controls, VAT text or a fictitious zero total.
                     // Keep the section frame and divider exactly as-is.
@@ -5115,19 +5122,8 @@ impl BandoEgui {
                                             recipient_id:recipient_id.to_owned(),
                                             item_id:None,field:"shippingCharge"
                                         };
-                                        // Automatic locality selection belongs to the
-                                        // checkbox; no explanatory text is rendered here.
-                                        if components::reception_item_add_action_editable(
-                                            items_ui,editable
-                                        ){
-                                            inline_command=Some((
-                                                InlineTarget{
-                                                    recipient_id:recipient_id.to_owned(),
-                                                    item_id:None,field:"addItem"
-                                                },"".to_owned()
-                                            ));
-                                        }
-                                        items_ui.add_space(theme::SPACE_8);
+                                        // Adding products belongs to the section header,
+                                        // not to the scrollable freight and item content.
                                         let freight_actions=components::reception_freight_row_editable(
                                             items_ui,"운임",line_fee,cod,remote,
                                             true,editable
@@ -5236,10 +5232,29 @@ impl BandoEgui {
                             else if inclusive>0{"부가세 포함/별도"}
                             else{"부가세 별도"})
                     }).unwrap_or("—");
+                    let pending=preview
+                        .and_then(|quote|quote.get("pendingRecipients"))
+                        .and_then(serde_json::Value::as_array);
+                    let footer_note=if total.is_none(){
+                        if let Some(rows)=pending.filter(|rows|!rows.is_empty()){
+                            format!("{note} · 배송 {}건 중 {}건 상품금액 또는 운임 미확정",
+                                shipment_count.unwrap_or(0),rows.len())
+                        }else{note.to_owned()}
+                    }else{note.to_owned()};
                     components::reception_total_footer(
-                        ui,total,shipment_count,vat_label,note
+                        ui,total,shipment_count,vat_label,&footer_note
                     );
                 });
+                if header_add_item{
+                    if let Some(recipient)=selected{
+                        inline_command=Some((
+                            InlineTarget{
+                                recipient_id:reception_service::text(recipient,"id").to_owned(),
+                                item_id:None,field:"addItem"
+                            },"".to_owned()
+                        ));
+                    }
+                }
             },
         );
         // Only authoritative Rust source spans may drive a linked hover.
