@@ -2471,11 +2471,12 @@ fn client_card_name_limit(
     name_width.min((available-reserved).max(0.0))
 }
 
-/// Compact Reception client reference. Does not use the 900pt table grid;
-/// the original reserved rectangle remains exactly 70pt at normal height.
+/// Single-line Reception client reference. It shares the management badge
+/// and exceptional terms but does not reserve a redundant status/header row
+/// or use the 900pt-wide management table geometry.
 pub fn reception_client_summary_card(
     ui:&mut Ui,rect:Rect,linked:bool,
-    summary:Option<&ClientDisplaySummary>,fallback:&str,state:&str,
+    summary:Option<&ClientDisplaySummary>,fallback:&str,
 )->bool{
     paint_reception_client_summary_surface(ui,rect);
     if rect.width()<40.0||rect.height()<18.0{return false;}
@@ -2489,35 +2490,13 @@ pub fn reception_client_summary_card(
         button_x-theme::SPACE_8
     }else{rect.right()-inset};
     let left=rect.left()+inset;
-    let top=rect.top()+theme::SPACE_8;
-    let heading=Rect::from_min_max(
-        egui::pos2(left,top),
-        egui::pos2(text_right,(top+typography::METADATA_LINE_HEIGHT)
-            .min(rect.bottom()))
-    );
-    if heading.width()>0.0&&heading.height()>0.0{
-        let caption=typography::client_table_metadata_galley(
-            ui,"현재 거래처",theme::MUTED
-        );
-        paint_client_line(ui,heading,left,caption.clone(),theme::MUTED);
-        let state_x=left+caption.size().x+theme::SPACE_8;
-        if !state.is_empty()&&state_x<heading.right(){
-            let cell=Rect::from_min_max(
-                egui::pos2(state_x,heading.top()),heading.right_bottom()
-            );
-            paint_client_line(
-                ui,cell,state_x,
-                typography::client_table_metadata_galley(ui,state,theme::SECONDARY),
-                theme::SECONDARY
-            );
-        }
-    }
-    let row_top=(top+typography::METADATA_LINE_HEIGHT+theme::SPACE_4)
-        .min(rect.bottom());
-    let row_bottom=(rect.bottom()-theme::SPACE_8).max(row_top);
+    // Only one visible line: badge, client name, exceptional terms.
+    // Center it vertically alongside the standard change/search action.
+    // Clip inside the existing card so short panes cannot overlap the source.
     let row=Rect::from_min_max(
-        egui::pos2(left,row_top),egui::pos2(text_right,row_bottom)
-    );
+        egui::pos2(left,rect.top()),
+        egui::pos2(text_right,rect.bottom())
+    ).intersect(rect);
     if row.width()>0.0&&row.height()>0.0{
         let mut x=row.left();
         if let Some(data)=summary.filter(|c|!c.tier.is_empty()){
