@@ -52,7 +52,16 @@ pub struct ProductSearch{
 }
 impl ProductSearch{
     pub fn new(recipient_id:String,item_id:String,client_id:String,gateway:Arc<dyn BandoGateway>,ctx:Context)->Self{
-        let mut state=Self{recipient_id,item_id,query:String::new(),major:String::new(),
+        Self::with_query(recipient_id,item_id,client_id,
+            String::new(),gateway,ctx)
+    }
+    /// Reuse React's initial model-based query in the item-detail dialog.
+    /// Rust still decides product inclusion and variant eligibility.
+    pub fn with_query(
+        recipient_id:String,item_id:String,client_id:String,query:String,
+        gateway:Arc<dyn BandoGateway>,ctx:Context
+    )->Self{
+        let mut state=Self{recipient_id,item_id,query,major:String::new(),
             brand:String::new(),client_id,catalog:None,products:Vec::new(),
             detail_ids:Vec::new(),receiver:None,error:None};
         state.reload(gateway,ctx);
