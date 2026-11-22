@@ -25,6 +25,20 @@ pub fn editable()->bool{
 
 pub fn load()->Result<Value,String>{
     if external_business(){
+        if editable(){
+            // The egui host can run without the Tauri initializer. Retire
+            // legacy sender overrides the first time an authorized client
+            // master is opened, using the identical backed-up v2 migration.
+            // Read-only previews never open an operational DB for writes.
+            let path=crate::business_state::authorized_client_write_path()?;
+            let base=path.parent().ok_or("거래처 DB 폴더를 확인할 수 없습니다.")?;
+            let mut conn=Connection::open_with_flags(
+                &path,OpenFlags::SQLITE_OPEN_READ_WRITE
+            ).map_err(|e|e.to_string())?;
+            conn.busy_timeout(Duration::from_secs(5))
+                .map_err(|e|e.to_string())?;
+            bando_data_access::client_names::migrate_v2(&mut conn,base)?;
+        }
         // Read directly from the same relational business DB as order pricing.
         let state=crate::business_state::load_catalog()?;
         return Ok(json!({
