@@ -8102,6 +8102,51 @@ mod client_chooser_async_handoff_tests {
     }
 
     #[test]
+    fn explicit_client_choice_cancels_superseded_auto_quote(){
+        let ctx=egui::Context::default();
+        let gate=Arc::new((Mutex::new(false),Condvar::new()));
+        let adapter:Arc<dyn gateway::BandoGateway>=Arc::new(GatedGateway{
+            gate:Arc::clone(&gate),fail:false
+        });
+        let mut app=create_app(adapter,&ctx);
+        let cancelled=Arc::new(AtomicBool::new(false));
+        let (_tx,receiver)=mpsc::channel();
+        app.auto_client_change=Some(PendingAutomaticClient{
+            request:app.analysis_request,order_id:"draft-1".into(),
+            source_raw:"첫 발주 원문".into(),order_type:"AGENCY".into(),
+            chat_handle:None,chat_title:None,client_id:"old".into(),
+            working_version:None,price_snapshot:None,
+            cancel:Arc::clone(&cancelled),receiver
+        });
+        app.apply_manual_client("new",&ctx);
+        assert!(app.client_change.is_some());
+        assert!(app.auto_client_change.is_none());
+        assert!(cancelled.load(Ordering::Acquire),
+            "superseded auto quote must not continue with later native operations");
+        release(&gate);
+        poll_until_done(&mut app,&ctx);
+        assert_eq!(app.drafts[0].client_id.as_deref(),Some("new"));
+    }
+
+    #[test]
+    fn repeated_analysis_request_for_the_same_source_does_not_spawn_twice(){
+        let ctx=egui::Context::default();
+        let gate=Arc::new((Mutex::new(false),Condvar::new()));
+        let adapter:Arc<dyn gateway::BandoGateway>=Arc::new(GatedGateway{
+            gate:Arc::clone(&gate),fail:false
+        });
+        let mut app=create_app(adapter,&ctx);
+        app.start_source_analysis(ctx.clone());
+        assert!(app.analysis_pending);
+        let first=app.analysis_request;
+        let key=app.analysis_running_key.clone();
+        app.start_source_analysis(ctx.clone());
+        assert_eq!(app.analysis_request,first);
+        assert_eq!(app.analysis_running_key,key);
+        release(&gate);
+    }
+
+    #[test]
     fn native_client_success_reuses_selected_recognition_without_reanalysis(){
         let ctx=egui::Context::default();
         let gate=Arc::new((Mutex::new(true),Condvar::new()));
