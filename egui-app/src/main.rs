@@ -4876,6 +4876,13 @@ impl BandoEgui {
             Some(workflow_board_ui::Event::DeletePending(id))=>{
                 self.workflow_dialog=Some(WorkflowDialog::DeletePending(id));
             }
+            Some(workflow_board_ui::Event::ConfirmPending(id))=>{
+                self.workflow_ui.selection=None;
+                self.workflow_ui.folded=None;
+                self.workflow_ui.stop_preview();
+                self.select_reception(&id,ui.ctx());
+                self.open_client_chooser(ui.ctx());
+            }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
                 self.workflow_ui.selection=None;
                 self.workflow_ui.folded=None;
