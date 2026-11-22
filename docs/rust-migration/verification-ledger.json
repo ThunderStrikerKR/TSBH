@@ -3672,7 +3672,7 @@
       "UNIT": "ADDED_NOT_YET_PASSED: reception_jobs::tests, client_chooser_async_handoff_tests, native_order_change::manual_rebind_tests",
       "DIFF": "NOT_EXECUTED: no TypeScript-vs-Rust replay",
       "ACTION": "NOT_EXECUTED: no Windows real GUI full flow",
-      "CI": "PENDING: https://github.com/ThunderStrikerKR/TSBH/actions/runs/45043444178",
+      "CI": "PENDING: https://github.com/ThunderStrikerKR/TSBH/actions/runs/45043672106",
       "WINDOWS": "NOT_EXECUTED: live device/desktop not available"
     },
     "verdict": "CODE_COMMITTED__REGRESSION_VERIFICATION_OPEN"
