@@ -661,48 +661,13 @@ impl BandoGateway for LocalGateway {
         }
         Ok(written)
     }
-    fn working_commit_enabled(&self) -> bool {
-        std::env::var("BANDO_EGUI_ENABLE_WORKING_COMMIT")
-            .ok().as_deref()==Some("1") &&
-        crate::business_state::authorized_business_write_path().is_ok()
-    }
-    fn commit_working_reception(&self, request: Value) -> Result<Value,String> {
-        use rusqlite::{Connection,OpenFlags};
-        if !self.working_commit_enabled() {
-            return Err("운영 접수 저장에는 기존 업무 DB와 명시적인 쓰기 허용 설정이 필요합니다.".into());
-        }
-        let path=crate::business_state::authorized_business_write_path()?;
-        let bytes=serde_json::to_vec(&request)
-            .map_err(|_|"운영 접수 요청 형식이 잘못되었습니다.".to_owned())?;
-        if bytes.is_empty() || bytes.len()>2_000_000 {
-            return Err("운영 접수 요청 한도를 초과했습니다.".into());
-        }
-        let mut conn=Connection::open_with_flags(
-            path,OpenFlags::SQLITE_OPEN_READ_WRITE
-        ).map_err(|_|"업무 DB를 쓰기 모드로 열 수 없습니다.".to_owned())?;
-        conn.busy_timeout(std::time::Duration::from_secs(5))
-            .map_err(|e|e.to_string())?;
-        conn.execute_batch("PRAGMA foreign_keys=ON;")
-            .map_err(|e|e.to_string())?;
-        // Reuse the original native recognition, manual-edit, repricing and
-        // freight rules inside ONE IMMEDIATE SQLite working-reception commit.
-        // This path cannot create confirmed orders or mutate financial history.
-        let ack=bando_data_access::commit_reception_v2(&mut conn,&request)?;
-        let id=ack["orderId"].as_str().ok_or("접수 결과 ID가 없습니다.")?;
-        let persisted:String=conn.query_row(
-            "SELECT payload FROM reception_working_orders WHERE id=?1",
-            [id],|row|row.get(0),
-        ).map_err(|_|"접수는 저장됐지만 실제 작업본을 재조회하지 못했습니다.".to_owned())?;
-        let saved:Value=serde_json::from_str(&persisted)
-            .map_err(|_|"운영 작업본 JSON 형식이 손상됐습니다.".to_owned())?;
-        if saved["id"]!=ack["orderId"] ||
-           saved["_eguiBridgeVersion"]!=ack["workingVersion"] ||
-           saved["_eguiBridgeAuthorityRevision"]!=ack["authorityRevision"] ||
-           saved["clientId"]!=ack["clientId"] ||
-           saved["confirmedAt"].as_str().is_some_and(|value|!value.is_empty()) {
-            return Err("접수는 저장됐지만 최신 작업본의 버전이나 내용이 다릅니다. 다시 조회하세요.".into());
-        }
-        Ok(ack)
+    // The egui intake is a local autosaved draft, NOT a separate
+    // operational working-order write. The old opt-in bridge was not part
+    // of the approved intake workflow; keep it disabled even if an older
+    // launcher still sets BANDO_EGUI_ENABLE_WORKING_COMMIT=1.
+    fn working_commit_enabled(&self) -> bool { false }
+    fn commit_working_reception(&self, _request: Value) -> Result<Value,String> {
+        Err("egui에서 별도 운영 작업본 저장은 지원하지 않습니다.".into())
     }
 
     fn load_working_source(&self) -> Result<WorkingSource, String> {
