@@ -208,11 +208,13 @@ fn workflow_auxiliary_at(
         ),egui::StrokeKind::Inside
     );
     match action{
-        components::WorkflowAuxiliaryAction::Manage=>painter.text(
-            rect.center(),egui::Align2::CENTER_CENTER,"관리",
-            egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-            theme::DISABLED_ACTION_TEXT
-        ),
+        components::WorkflowAuxiliaryAction::Manage=>{
+            painter.text(
+                rect.center(),egui::Align2::CENTER_CENTER,"관리",
+                egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
+                theme::DISABLED_ACTION_TEXT
+            );
+        }
         components::WorkflowAuxiliaryAction::Delete=>{
             components::paint_workflow_icon(
                 painter,rect.center(),components::WorkflowIcon::Trash,
