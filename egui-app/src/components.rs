@@ -925,14 +925,29 @@ pub fn modal_master_body<R>(
         }).inner
 }
 
-/// A simple heading and one divider WITHIN the same master work surface.
-/// No additional per-section fill, rounded card, or duplicate outline.
+/// Shared modal-section heading geometry. Both margins around its
+/// 1pt rule are explicit 12pt, independent of egui's default item spacing.
+/// Its content gets a separate scope to prevent an implicit extra 8pt gap.
+fn modal_section_heading_with_rule(ui:&mut Ui,title:&str){
+    ui.spacing_mut().item_spacing.y=0.0;
+    ui.label(typography::section_heading(title));
+    ui.add_space(theme::MODAL_SECTION_HEADER_RULE_GAP);
+    soft_divider(ui);
+    ui.add_space(theme::MODAL_SECTION_HEADER_RULE_GAP);
+}
+
+/// A heading and one divider within the modal master work surface.
+/// Uses the same heading-rule-content geometry as the boxed modal section.
 pub fn modal_master_body_section<R>(
     ui:&mut Ui,title:&str,contents:impl FnOnce(&mut Ui)->R
 )->R {
-    ui.label(typography::section_heading(title));
-    theme::divider(ui);
-    contents(ui)
+    ui.scope(|section|{
+        modal_section_heading_with_rule(section,title);
+        section.scope(|body|{
+            body.spacing_mut().item_spacing.y=theme::SPACING;
+            contents(body)
+        }).inner
+    }).inner
 }
 
 /// One coherent nested information section, visually related to Freight
@@ -952,12 +967,11 @@ pub fn modal_section<R>(
         .inner_margin(theme::MODAL_SECTION_PADDING)
         .show(ui,|section|{
             section.set_min_width(inner_width);
-            // Content spacing remains consistent even when the outer modal
-            // uses exact (zero-implicit-gap) structural layout.
-            section.spacing_mut().item_spacing.y=theme::SPACING;
-            section.label(typography::section_heading(title));
-            theme::divider(section);
-            contents(section)
+            modal_section_heading_with_rule(section,title);
+            section.scope(|body|{
+                body.spacing_mut().item_spacing.y=theme::SPACING;
+                contents(body)
+            }).inner
         }).inner
 }
 
@@ -5053,5 +5067,28 @@ mod money_live_format_tests{
             let pretty=formatted_money_input(raw).unwrap();
             assert_eq!(parse_money_input(&pretty),parse_money_input(raw));
         }
+    }
+}
+
+// Modal section heading geometry is a shared contract, not a product-specific
+// offset. Regression tests guard against returning to implicit egui spacing.
+#[cfg(test)]
+mod modal_section_heading_spacing_tests {
+    use super::*;
+    #[test]
+    fn same_explicit_gap_both_sides_of_section_heading_rule(){
+        assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,12.0);
+        assert_eq!(theme::SOFT_DIVIDER_WIDTH,1.0);
+        let source=include_str!("components.rs");
+        let helper=source.split("fn modal_section_heading_with_rule(").nth(1).unwrap()
+            .split("/// A heading and one divider").next().unwrap();
+        assert!(helper.contains("ui.spacing_mut().item_spacing.y=0.0;"));
+        assert_eq!(helper.matches("ui.add_space(theme::MODAL_SECTION_HEADER_RULE_GAP)").count(),2);
+        assert!(helper.contains("soft_divider(ui);"));
+        let boxed=source.split("pub fn modal_section<R>(").nth(1).unwrap()
+            .split("/// Structural spacing").next().unwrap();
+        assert!(boxed.contains("modal_section_heading_with_rule(section,title)"));
+        assert!(!boxed.contains("theme::divider(section)"));
+        assert!(boxed.contains("section.scope(|body|"));
     }
 }
