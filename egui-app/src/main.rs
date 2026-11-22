@@ -4421,16 +4421,26 @@ impl BandoEgui {
             egui::pos2(bounds.left(), recipient_rect.bottom()),
             Vec2::new(full_width, layout::SPLITTER),
         );
-        let bottom_rect = Rect::from_min_size(
-            egui::pos2(bounds.left(), second_sep.bottom()),
-            Vec2::new(
-                full_width, (bounds.bottom() - second_sep.bottom()).max(0.0)
-            ),
+        let bottom_area=Rect::from_min_size(
+            egui::pos2(bounds.left(),second_sep.bottom()),
+            Vec2::new(full_width,(bounds.bottom()-second_sep.bottom()).max(0.0))
+        );
+        let summary_height=theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT
+            .min(bottom_area.height().max(0.0));
+        let items_height=(bottom_area.height()-summary_height
+            -theme::RECEPTION_ORDER_TOTAL_SECTION_GAP).max(0.0);
+        let bottom_rect=Rect::from_min_size(
+            bottom_area.min,Vec2::new(full_width,items_height)
+        );
+        let summary_rect=Rect::from_min_size(
+            egui::pos2(bounds.left(),bottom_rect.bottom()
+                +theme::RECEPTION_ORDER_TOTAL_SECTION_GAP),
+            Vec2::new(full_width,summary_height)
         );
 
         // Register both middle-column splitters in the parent UI so they are
         // draggable in both working-order and empty/new-order states.
-        let initial_heights = [review_height, recipient_height, bottom_rect.height()];
+        let initial_heights = [review_height, recipient_height, bottom_area.height()];
         for (index, splitter_rect) in [(0, first_sep), (1, second_sep)] {
             let id = ui.make_persistent_id(("detail-splitter", index));
             let response = ui.interact(splitter_rect, id, Sense::click_and_drag());
@@ -4558,10 +4568,7 @@ impl BandoEgui {
                         let available = components::docked_section_body_height(
                             bottom_rect.height()
                         ).min(ui.available_height().max(0.0));
-                        let list_height = (available
-                            - theme::RECEPTION_VAT_ROW_HEIGHT
-                            - theme::RECEPTION_TOTAL_HEIGHT
-                            - 2.0 * theme::SPACE_4).max(0.0);
+                        let list_height=available;
                         ui.allocate_ui_with_layout(
                             Vec2::new(ui.available_width(), list_height),
                             Layout::top_down(Align::Min),
@@ -4628,19 +4635,33 @@ impl BandoEgui {
                                     });
                             }
                         );
-                        ui.add_space(theme::SPACE_4);
-                        components::reception_vat_row(ui,ship.vat_included);
-                        ui.add_space(theme::SPACE_4);
-                        let vat_label=match ship.vat_included {
-                            Some(true)=>"부가세 포함",
-                            Some(false)=>"부가세 별도",
-                            None=>"—",
-                        };
-                        components::reception_total_footer(
-                            ui,ship.order_total,Some(ship.shipment_count),
-                            vat_label,"",
-                        );
+                        // Whole-order billing is rendered in its own section.
+                        // Only this shipment's goods/transport live here.
                     });
+                }
+            );
+            ui.scope_builder(
+                UiBuilder::new().id_salt("native-workflow-order-total")
+                    .max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
+                |pane|{
+                    pane.set_clip_rect(summary_rect);
+                    pane.set_width(summary_rect.width());
+                    pane.set_height(summary_rect.height());
+                    Self::section_with_header(
+                        pane,"발주서 합계",summary_rect.height(),
+                        |header|{theme::action(
+                            header,"부가세 설정",ButtonRole::Standard,false
+                        );},
+                        |body|{
+                            let vat=if group.vat_included>0 && group.vat_excluded>0{
+                                "부가세 일부 포함"
+                            }else if group.vat_included>0{"부가세 포함"}
+                            else{"부가세 별도"};
+                            components::reception_total_footer(
+                                body,ship.order_total,Some(ship.shipment_count),vat,""
+                            );
+                        }
+                    );
                 }
             );
             return;
@@ -4958,10 +4979,7 @@ impl BandoEgui {
                             ==Some(self.raw_source.as_str()));
                     let available=components::docked_section_body_height(remaining)
                         .min(ui.available_height().max(0.0));
-                    let list_height=(available
-                        -theme::RECEPTION_TOTAL_HEIGHT
-                        -theme::RECEPTION_VAT_ROW_HEIGHT
-                        -2.0*theme::SPACE_4).max(0.0);
+                    let list_height=available;
                     ui.allocate_ui_with_layout(
                         Vec2::new(ui.available_width(),list_height),
                         Layout::top_down(Align::Min),
@@ -5213,23 +5231,34 @@ impl BandoEgui {
                                 });
                         }
                     );
-                    ui.add_space(theme::SPACE_4);
-                    // A working reception is not a confirmed bill. Its quote
-                    // has no authoritative VAT-included flag at this point.
-                    let vat_current=selected.and_then(|row|
-                        row.get("vatOverride")).and_then(serde_json::Value::as_bool);
-                    if components::reception_vat_row_editable(ui,vat_current,editable){
-                        if let Some(row)=selected{
-                            inline_command=Some((
-                                InlineTarget{
-                                    recipient_id:reception_service::text(row,"id").to_owned(),
-                                    item_id:None,field:"vatOverride"
-                                },
-                                (!vat_current.unwrap_or(false)).to_string()
-                            ));
-                        }
+                    // The goods section does not own the entire-order VAT
+                    // policy or total; those are docked in the card below.
+                });
+                if header_add_item{
+                    if let Some(recipient)=selected{
+                        inline_command=Some((
+                            InlineTarget{
+                                recipient_id:reception_service::text(recipient,"id").to_owned(),
+                                item_id:None,field:"addItem"
+                            },"".to_owned()
+                        ));
                     }
-                    ui.add_space(theme::SPACE_4);
+                }
+            },
+        );
+        ui.scope_builder(
+            UiBuilder::new().id_salt("details-order-total")
+                .max_rect(summary_rect).layout(Layout::top_down(Align::Min)),
+            |pane|{
+                pane.set_clip_rect(summary_rect);
+                pane.set_width(summary_rect.width());
+                pane.set_height(summary_rect.height());
+                Self::section_with_header(pane,"발주서 합계",summary_rect.height(),
+                    |header|{
+                        theme::action(header,"부가세 설정",ButtonRole::Standard,
+                            editable && self.analysis.is_some());
+                    },|body|{
+
                     let synced=self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|row|row.id==id))
                         .is_some_and(|row|row.working_synced);
@@ -5250,7 +5279,7 @@ impl BandoEgui {
                             row["vatOverride"].as_bool()==Some(true)
                         ).count();
                         Some(if inclusive==rows.len(){"부가세 포함"}
-                            else if inclusive>0{"부가세 포함/별도"}
+                            else if inclusive>0{"부가세 일부 포함"}
                             else{"부가세 별도"})
                     }).unwrap_or("—");
                     let pending=preview
@@ -5263,20 +5292,11 @@ impl BandoEgui {
                         }else{note.to_owned()}
                     }else{note.to_owned()};
                     components::reception_total_footer(
-                        ui,total,shipment_count,vat_label,&footer_note
+                        body,total,shipment_count,vat_label,&footer_note
                     );
-                });
-                if header_add_item{
-                    if let Some(recipient)=selected{
-                        inline_command=Some((
-                            InlineTarget{
-                                recipient_id:reception_service::text(recipient,"id").to_owned(),
-                                item_id:None,field:"addItem"
-                            },"".to_owned()
-                        ));
-                    }
-                }
-            },
+
+                    });
+            }
         );
         // Only authoritative Rust source spans may drive a linked hover.
         // A recognized field with no source evidence must not flash blue as
@@ -5618,6 +5638,10 @@ impl BandoEgui {
                                 ui.label(format!("{name} / 상품 {count}종"));
                             }
                         }
+                        components::modal_action_row(ui,|buttons|{
+                            theme::action(buttons,"거래처 확인하기",
+                                ButtonRole::Primary,false);
+                        });
                     });
                 }else{close=true;}
             }

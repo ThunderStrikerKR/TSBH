@@ -19,7 +19,8 @@ const LEGACY_DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.0, 29.0, 29.0, 22.0];
 // The lower horizontal divider is shared with the source/message column.
 pub const DETAIL_REVIEW_RATIO: f32 = 0.264;
 pub const DETAIL_SECOND_RATIO: f32 = 0.5;
-pub const DETAIL_MIN_HEIGHTS: [f32; 3] = [130.0, 145.0, 170.0];
+// Reserve a usable product viewport above the independent order-total card.
+pub const DETAIL_MIN_HEIGHTS: [f32; 3] = [130.0, 145.0, 240.0];
 pub const SOURCE_MIN: f32 = 275.0;
 pub const MESSAGE_MIN: f32 = 160.0;
 pub const VERTICAL_DEFAULT: f32 = 0.5;

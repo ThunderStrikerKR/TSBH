@@ -753,13 +753,11 @@ fn pending_frame(
                 .and_then(|v|v.get("recipients"))
                 .and_then(|v|v.as_array()).map(Vec::as_slice).unwrap_or(&[])
         }else{&[]};
-        // No manual "거래처 확인" step: a verified native client ID is
-        // applied automatically by the reception matching pipeline.
-        // Keep the compact amount/shipment summary while omitting the
-        // stage and undo controls until a real workflow group exists.
+        // Keep the familiar workflow action slot, but dealer matching is
+        // fully automatic and never a manually executable stage.
         let _=workflow_action_line(
-            ui,bottom,&draft.id,recipients.len(),None,None,None,
-            false,false,false
+            ui,bottom,&draft.id,recipients.len(),None,None,
+            Some("거래처 확인"),false,false,false
         );
         if open{
             workflow_details(ui,|ui|{
