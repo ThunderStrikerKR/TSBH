@@ -219,7 +219,16 @@ struct PendingAutomaticClient {
     chat_handle: Option<String>,
     chat_title: Option<String>,
     client_id: String,
+    cancel: Arc<AtomicBool>,
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
+}
+
+// Discarding an advisory auto-match always requests cooperative cancellation.
+// Dropped egui receivers alone cannot stop the Rust computation in progress.
+impl Drop for PendingAutomaticClient {
+    fn drop(&mut self){
+        self.cancel.store(true,Ordering::Release);
+    }
 }
 
 struct PendingWorkflowAction {
@@ -2710,6 +2719,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             return;
         }
         let (sender,receiver)=mpsc::channel();
+        let cancel=Arc::new(AtomicBool::new(false));
         self.auto_client_change=Some(PendingAutomaticClient {
             request:self.analysis_request,
             order_id:row.id.clone(),
@@ -2717,13 +2727,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             order_type:row.order_type.clone(),
             chat_handle:row.chat_handle.clone(),
             chat_title:row.chat_title.clone(),
-            client_id:client_id.to_owned(),receiver,
+            client_id:client_id.to_owned(),cancel:Arc::clone(&cancel),receiver,
         });
         let gateway=Arc::clone(&self.gateway);
         let target=client_id.to_owned();
         let context=ctx.clone();
         std::thread::spawn(move||{
-            let result=native_order_change::prepare(gateway.as_ref(),&row,&target);
+            let result=native_order_change::prepare_cancellable(
+                gateway.as_ref(),&row,&target,cancel.as_ref()
+            );
             let _=sender.send(result);
             context.request_repaint();
         });
