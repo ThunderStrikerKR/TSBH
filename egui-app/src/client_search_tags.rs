@@ -100,6 +100,17 @@ mod tests{
         assert_eq!(client["identifiers"],"내부코드");
     }
     #[test]
+    fn repeated_input_preserves_exact_original_identifiers(){
+        let mut client=json!({"name":"정식 거래처","shortNames":"",
+            "identifiers":"고유-ID|실무 별칭"});
+        assert_eq!(add(&mut client,"새 이름,새이름"),(1,1));
+        let saved=client.clone();
+        assert_eq!(add(&mut client,"새이름,정식거래처,고유-ID"),(0,3));
+        assert_eq!(client,saved);
+        assert_eq!(client["identifiers"],"고유-ID|실무 별칭");
+        assert_eq!(labels(&client),vec!["새 이름","고유-ID","실무 별칭"]);
+    }
+    #[test]
     fn removing_duplicate_alias_clears_only_its_entries(){
         let mut client=json!({"shortNames":"A, 기존 값; 남길태그",
             "identifiers":"기존값|중요한식별자"});
