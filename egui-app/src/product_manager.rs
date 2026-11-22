@@ -1664,51 +1664,53 @@ impl ProductManager {
                             .icon(components::paint_collapsing_header_icon)
                             .show(body,|advanced|{
                                 advanced.add_space(theme::SPACE_8);
-                                advanced.vertical(|group_ui|{
-                                    group_ui.label(typography::field_label("배송 그룹"));
-                                    let before=field(&draft,"shippingGroupId").to_owned();
-                                    let mut group=before.clone();
-                                    let label=groups.iter().find(|g|field(g,"id")==group)
-                                        .map(|g|field(g,"name")).unwrap_or("미지정");
-                                    let width=group_ui.available_width().max(1.0);
-                                    group_ui.add_enabled_ui(editable&&!busy,|input|{
-                                        components::management_dropdown(
-                                            input,label,width,true,"배송 그룹 선택",|choices|{
-                                                components::management_dropdown_option(
-                                                    choices,&mut group,String::new(),"미지정");
-                                                for row in &groups{
+                                components::modal_labeled_row(
+                                    advanced,"배송 그룹",|group_ui|{
+                                        let before=field(&draft,"shippingGroupId").to_owned();
+                                        let mut group=before.clone();
+                                        let label=groups.iter().find(|g|field(g,"id")==group)
+                                            .map(|g|field(g,"name")).unwrap_or("미지정");
+                                        group_ui.add_enabled_ui(editable&&!busy,|input|{
+                                            let width=input.available_width().max(1.0);
+                                            components::management_dropdown(
+                                                input,label,width,true,"배송 그룹 선택",|choices|{
                                                     components::management_dropdown_option(
-                                                        choices,&mut group,field(row,"id").to_owned(),
-                                                        field(row,"name"));
-                                                }
-                                            });
-                                    });
-                                    if group!=before{
-                                        draft["shippingGroupId"]=if group.is_empty(){
-                                            Value::Null
-                                        }else{json!(group)};
+                                                        choices,&mut group,String::new(),"미지정");
+                                                    for row in &groups{
+                                                        components::management_dropdown_option(
+                                                            choices,&mut group,field(row,"id").to_owned(),
+                                                            field(row,"name"));
+                                                    }
+                                                });
+                                        });
+                                        if group!=before{
+                                            draft["shippingGroupId"]=if group.is_empty(){
+                                                Value::Null
+                                            }else{json!(group)};
+                                        }
                                     }
-                                });
+                                );
                                 advanced.add_space(theme::SPACE_12);
-                                advanced.vertical(|origin_ui|{
-                                    origin_ui.label(typography::field_label("발송지"));
-                                    let before=field(&draft,"origin").to_owned();
-                                    let mut origin=before.clone();
-                                    origin_ui.add_enabled_ui(editable&&!busy,|input|{
-                                        let width=input.available_width();
-                                        components::management_dropdown(
-                                            input,if origin=="STORE"{"매장"}else{"공장"},
-                                            width,true,"발송지 선택",|options|{
-                                                components::management_dropdown_option(
-                                                    options,&mut origin,
-                                                    "FACTORY".into(),"공장");
-                                                components::management_dropdown_option(
-                                                    options,&mut origin,
-                                                    "STORE".into(),"매장");
-                                            });
-                                    });
-                                    if origin!=before{draft["origin"]=json!(origin);}
-                                });
+                                components::modal_labeled_row(
+                                    advanced,"발송지",|origin_ui|{
+                                        let before=field(&draft,"origin").to_owned();
+                                        let mut origin=before.clone();
+                                        origin_ui.add_enabled_ui(editable&&!busy,|input|{
+                                            let width=input.available_width().max(1.0);
+                                            components::management_dropdown(
+                                                input,if origin=="STORE"{"매장"}else{"공장"},
+                                                width,true,"발송지 선택",|options|{
+                                                    components::management_dropdown_option(
+                                                        options,&mut origin,
+                                                        "FACTORY".into(),"공장");
+                                                    components::management_dropdown_option(
+                                                        options,&mut origin,
+                                                        "STORE".into(),"매장");
+                                                });
+                                        });
+                                        if origin!=before{draft["origin"]=json!(origin);}
+                                    }
+                                );
                                 if let Some(variant)=draft["variants"].as_array_mut()
                                     .and_then(|variants|variants.first_mut()){
                                     Self::detail_wide_text(
