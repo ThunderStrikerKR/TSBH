@@ -400,14 +400,14 @@ pub fn layout(
 //// The source is 16pt, but egui's row height includes line leading.
 /// A gray evidence mark should hug the letter ink rather than fill the row.
 /// Deflate normal tokens horizontally to keep a visible gap between neighbors.
-/// Gray tokens use a 1.5pt row inset and 1.5pt horizontal expansion per side.
+/// Gray tokens use a 1.0pt row inset and 2.0pt horizontal expansion per side.
 fn compact_block_rect(
     text_left:f32,text_right:f32,row_top:f32,row_height:f32,focused:bool
 )->Option<egui::Rect> {
     if row_height<=0.0 {return None;}
-    let horizontal=1.5;
-    let vertical=if focused {1.0_f32.min(row_height*0.12)}
-        else {1.5_f32.min(row_height*0.20)};
+    let horizontal=2.0;
+    let vertical=if focused {0.5_f32.min(row_height*0.12)}
+        else {1.0_f32.min(row_height*0.20)};
     let left=text_left-horizontal;
     let right=text_right+horizontal;
     let top=row_top+vertical;
@@ -420,8 +420,8 @@ fn compact_block_rect(
 /// At boundaries between adjacent classified ranges, trim only their shared
 /// edges to leave a 0.5pt gap, preserving full padding on open edges.
 fn separate_touching_blocks(mut rect:egui::Rect,left:bool,right:bool)->egui::Rect {
-    if left {rect.min.x+=1.75;}
-    if right {rect.max.x-=1.75;}
+    if left {rect.min.x+=2.25;}
+    if right {rect.max.x-=2.25;}
     rect
 }
 
@@ -612,15 +612,15 @@ mod tests {
         let a=compact_block_rect(5.0,15.0,10.0,20.0,false).unwrap();
         let b=compact_block_rect(15.0,25.0,10.0,20.0,false).unwrap();
         let next=compact_block_rect(5.0,15.0,30.0,20.0,false).unwrap();
-        assert_eq!(a.right(),16.5);
-        assert_eq!(b.left(),13.5);
+        assert_eq!(a.right(),17.0);
+        assert_eq!(b.left(),13.0);
         let first=separate_touching_blocks(a,false,true);
         let second=separate_touching_blocks(b,true,false);
         assert_eq!(first.right(),14.75);
         assert_eq!(second.left(),15.25);
         assert!(first.right()<second.left());
-        assert_eq!(a.top(),11.5);
-        assert_eq!(a.bottom(),28.5);
+        assert_eq!(a.top(),11.0);
+        assert_eq!(a.bottom(),29.0);
         assert!(a.bottom()<next.top());
         // A focused blue block is deliberately larger than its quiet peers.
         let active=compact_block_rect(5.0,15.0,10.0,20.0,true).unwrap();
