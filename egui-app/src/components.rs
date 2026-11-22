@@ -138,8 +138,8 @@ pub enum WorkflowAuxiliaryAction {
 pub fn workflow_auxiliary_button(ui: &mut Ui, action: WorkflowAuxiliaryAction) -> Response {
     let width = match action {
         WorkflowAuxiliaryAction::Manage => theme::WORKFLOW_MANAGE_WIDTH,
-        WorkflowAuxiliaryAction::Delete | WorkflowAuxiliaryAction::PreviousStage =>
-            theme::WORKFLOW_TRASH_WIDTH,
+        WorkflowAuxiliaryAction::Delete => theme::WORKFLOW_TRASH_WIDTH,
+        WorkflowAuxiliaryAction::PreviousStage => theme::WORKFLOW_UNDO_WIDTH,
     };
     let response = ui.scope(|ui| {
         ui.spacing_mut().button_padding = Vec2::ZERO;
@@ -153,7 +153,7 @@ pub fn workflow_auxiliary_button(ui: &mut Ui, action: WorkflowAuxiliaryAction) -
                 .stroke(Stroke::new(
                     theme::FRAME_STROKE_WIDTH,theme::DISABLED_ACTION_BORDER
                 ))
-                .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS)),
+                .corner_radius(egui::CornerRadius::same(5)),
         )
     }).inner;
 
