@@ -26,6 +26,9 @@ pub struct GroupRow {
     pub id: String,
     pub created_at: String,
     pub dealer_name: String,
+    pub source_id: String,
+    pub dealer_id: String,
+    pub transferred: bool,
     pub step: usize,
     pub needs_notice: bool,
     pub total: Option<i64>,
@@ -42,6 +45,7 @@ pub struct GroupRow {
 }
 #[derive(Clone, Debug, Default)]
 pub struct BoardSnapshot {
+    pub revision: Option<u64>,
     pub groups: Vec<GroupRow>,
 }
 fn rows(value:&Value)->&[Value]{
@@ -180,6 +184,11 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
             id:group_id.to_owned(),
             created_at:text(group,"createdAt").to_owned(),
             dealer_name,
+            source_id:text(group,"sourceId").to_owned(),
+            dealer_id:text(group,"dealerId").to_owned(),
+            transferred:rows(all_shipments).iter().any(|ship|
+                text(ship,"groupId")==group_id &&
+                field(ship,"transferred")==&Value::Bool(true)),
             step,
             needs_notice:field(native,"needsNotice")==&Value::Bool(true),
             total:field(field(native,"totals"),"total").as_i64(),
@@ -190,7 +199,9 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
         });
     }
     groups.sort_by(|a,b|b.created_at.cmp(&a.created_at));
-    Ok(BoardSnapshot{groups})
+    Ok(BoardSnapshot{
+        revision:state["revision"].as_u64(),groups
+    })
 }
 
 #[cfg(test)]
