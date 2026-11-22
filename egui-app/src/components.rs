@@ -3346,6 +3346,19 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
 fn reception_item_table_width(available:f32)->f32 {
     available.max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH)
 }
+/// The vertically scrolling item list reserves a native scrollbar rail.
+/// Using the OUTER ScrollArea width for the three columns made the table
+/// overflow by exactly that rail width whenever many products were added,
+/// causing a spurious horizontal scrollbar even in a 1080p workspace.
+/// Keep this rail reserved in both short and long lists so the item/header
+/// columns do not jump sideways when vertical overflow first appears.
+pub fn reception_items_scroll_content_width(ui:&Ui)->f32 {
+    management_table_data_width(
+        ui.available_width(),
+        ui.spacing().scroll.allocated_width(),
+        theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH
+    )
+}
 fn reception_item_columns(rect: Rect) -> [Rect; 3] {
     let qty=theme::RECEPTION_ITEMS_QTY_WIDTH;
     let amount=theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH;
@@ -4224,6 +4237,36 @@ mod management_toolbar_geometry_tests {
         );
         assert_eq!(
             reception_item_text_clip(columns[2],2),columns[2]
+        );
+    }
+
+    #[test]
+    fn item_list_reserves_the_scrollbar_before_measuring_three_columns(){
+        let gutter=theme::management_table_scroll_style().allocated_width();
+        assert!(gutter>0.0);
+        // A 1080p desktop can leave ~480-520pt for this docked card.
+        // Adding the fifth, tenth or twentieth row must NOT change the
+        // declared table width when the vertical scrollbar appears.
+        for viewport in [480.0,500.0,520.0,700.0] {
+            let content=management_table_data_width(
+                viewport,gutter,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH
+            );
+            assert_eq!(content,viewport-gutter);
+            assert!(content>=theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH);
+            let columns=reception_item_columns(
+                Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(content,42.0))
+            );
+            assert_eq!(columns[2].right(),content);
+            assert_eq!(columns[1].width(),theme::RECEPTION_ITEMS_QTY_WIDTH);
+            assert_eq!(columns[2].width(),theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH);
+        }
+        // Horizontal scrolling is correct only when there is not enough
+        // width for the three approved minimum columns PLUS the rail.
+        let narrow=theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+gutter-1.0;
+        assert_eq!(
+            management_table_data_width(
+                narrow,gutter,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH
+            ),theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH
         );
     }
 
