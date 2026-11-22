@@ -827,10 +827,12 @@ impl ClientManager {
                         }
                     });
                 components::form_field_label(row,"특수 단가");
-                components::field(
-                    row,&mut self.exception_price,components::FieldKind::Money,true
-                );
-                let amount=self.exception_price.parse::<u64>().ok();
+                components::money_field(row,&mut self.exception_price,true);
+                // The common editor formats even while focused; the
+                // business override still receives an unpunctuated integer.
+                let amount=components::parse_money_input(
+                    &self.exception_price
+                ).and_then(|value|u64::try_from(value).ok());
                 if theme::action(row,"예외 추가",ButtonRole::Standard,
                     !self.exception_id.is_empty() && amount.is_some()
                 ).clicked(){
