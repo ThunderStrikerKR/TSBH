@@ -10,6 +10,7 @@ mod layout;
 mod components;
 mod floating_notice;
 mod reception_service;
+mod review_panel;
 mod gateway;
 mod http_gateway;
 mod preview_store;
@@ -598,6 +599,7 @@ struct BandoEgui {
     working_sync: Option<PendingWorkingSync>,
     working_sync_error: Option<String>,
     analysis: Option<reception_service::ReceptionAnalysis>,
+    review_panel: review_panel::ReviewPanel,
     analysis_error: Option<String>,
     selected_recipient: usize,
     requested_recipient_focus:Option<(String,String)>,
@@ -700,6 +702,7 @@ impl Default for BandoEgui {
             working_sync: None,
             working_sync_error: None,
             analysis: None,
+            review_panel: review_panel::ReviewPanel::default(),
             analysis_error: None,
             selected_recipient: 0,
             requested_recipient_focus:None,
@@ -1797,6 +1800,120 @@ impl BandoEgui {
         self.manual_workspace=Some(editor);
     }
 
+    /// React StaffChecks routing: navigate to the exact recipient/item
+    /// rather than opening an unrelated manual screen or creating UI rules.
+    fn handle_review_action(
+        &mut self,action:review_panel::Action,ctx:&egui::Context
+    ){
+        if !self.review_panel.ready(){return;}
+        match action{
+            review_panel::Action::ChooseClient(id)=>{
+                self.select_client_candidate(&id,ctx);
+                return;
+            }
+            review_panel::Action::Candidate{recipient_id,field,value}=>{
+                let index=self.analysis.as_ref()
+                    .and_then(|analysis|reception_service::recipients(analysis)
+                        .iter().position(|row|
+                            reception_service::text(row,"id")==recipient_id))
+                    ;
+                let Some(index)=index else{return};
+                if self.inline_change.is_some() || self.inline_editor.is_some(){
+                    self.source_save_error=Some(
+                        "현재 셀 편집을 먼저 확정하거나 취소하세요.".into()
+                    );return;
+                }
+                self.selected_recipient=index;
+                self.workflow_ui.stop_preview();
+                self.link_hover.clear();
+                let target=InlineTarget{
+                    recipient_id,item_id:None,
+                    field:match field.as_str(){
+                        "name"=>"name","address"=>"address",
+                        "phone"=>"phone","mobile"=>"mobile",_=>return
+                    }
+                };
+                let current=self.analysis.as_ref()
+                    .and_then(|analysis|current_inline_value(
+                        &analysis.recognition,None,&target
+                    )).unwrap_or_default();
+                self.begin_inline_edit(target.clone(),current,None);
+                if let Some(editor)=self.inline_editor.as_mut()
+                    .filter(|editor|editor.target==target){
+                    editor.text=value;
+                    self.submit_inline_edit(ctx);
+                }
+                return;
+            }
+            review_panel::Action::Navigate{
+                kind,recipient_id,item_id,link_key
+            }=>{
+                if recipient_id.is_empty(){
+                    self.open_client_chooser(ctx);
+                    return;
+                }
+                let Some(index)=self.analysis.as_ref().and_then(|analysis|
+                    reception_service::recipients(analysis).iter()
+                        .position(|row|
+                            reception_service::text(row,"id")==recipient_id)
+                )else{return};
+                self.selected_recipient=index;
+                self.workflow_ui.stop_preview();
+                self.link_hover.clear();
+                self.source_hover=None;
+                let field=link_key.as_deref()
+                    .and_then(|key|key.rsplit_once(':').map(|(_,field)|field))
+                    .unwrap_or(if item_id.is_some(){"product"}else{"name"});
+                let manual=matches!(kind.as_str(),
+                    "UNASSIGNED_EVIDENCE"|"ITEM"|"OPTION"|
+                    "MODEL"|"MODEL_CHOICE"|"ALIAS_CONFLICT"|
+                    "CATEGORY_CONFLICT"|"QUANTITY_LINK"|"MODEL_CONFIRM");
+                if manual{
+                    self.open_manual_workspace(ctx);
+                    if let Some(editor)=self.manual_workspace.as_mut(){
+                        editor.focus_cell(
+                            index,item_id,
+                            if field=="product"{"product"}else{field}
+                        );
+                    }
+                    return;
+                }
+                let edit_field=match field{
+                    "name"|"address"|"phone"|"mobile"|"note"
+                    |"quantity"|"unitPrice"=>field,
+                    "price"=>"unitPrice",
+                    _=>return
+                };
+                let target=InlineTarget{
+                    recipient_id:recipient_id.clone(),item_id,
+                    field:edit_field
+                };
+                let quote=self.active_id.as_deref().and_then(|id|
+                    self.drafts.iter().find(|row|row.id==id))
+                    .and_then(|row|row.pricing_preview.as_ref());
+                if let Some(original)=self.analysis.as_ref()
+                    .and_then(|analysis|current_inline_value(
+                        &analysis.recognition,quote,&target)){
+                    // A click commits the selection immediately; the visual
+                    // source link still uses the shared four-panel state.
+                    let source_field=if edit_field=="unitPrice"{"price"}else{edit_field};
+                    let link=source_highlight::key(
+                        &recipient_id,
+                        target.item_id.as_deref().unwrap_or(&recipient_id),
+                        source_field
+                    );
+                    if let Some(id)=self.active_id.as_deref(){
+                        self.link_hover.update_for(id,Some(link.clone()),ctx);
+                        self.link_hover.active=Some(link.clone());
+                        self.link_hover.scroll_to=Some(link);
+                    }
+                    self.switch_inline_edit(target,original,None,ctx);
+                }
+            }
+        }
+        ctx.request_repaint();
+    }
+
     /// The only coordinate owner for every reception modal. KakaoTalk is an
     /// externally owned Windows surface: keep modal bodies outside its area.
     fn modal_work_area(&self,ctx:&egui::Context)->Rect {
@@ -2792,6 +2909,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         self.analysis_running_key=None;
         self.analysis_pending = false;
         self.analysis = None;
+        self.review_panel.clear();
         self.analysis_error = None;
         self.selected_recipient = 0;
         self.source_hover=None;
@@ -6040,7 +6158,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             return;
         }
-        let mut client_choice: Option<String> = None;
+        let mut review_action:Option<review_panel::Action>=None;
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
         let linked_active=self.active_id.as_deref()
             .and_then(|id|self.link_hover.active_for(id)).cloned();
@@ -6096,94 +6214,30 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                         }
                     }
-                    if self.analysis_error.is_some() {
-                        // Failed analysis stays internal; do not show stale output.
-                    } else if let Some(analysis) = &self.analysis {
-                        let selected=self.active_id.as_deref()
-                            .and_then(|id|self.drafts.iter().find(|row|row.id==id));
-                        let manually_selected=selected.is_some_and(|row|
-                            row.client_selection.as_deref()==Some("MANUAL"));
-                        // A Rust suggestion is not an applied dealer until
-                        // the exact native change/reprice result is accepted.
-                        let automatically_selected=selected.is_some_and(|row|
-                            row.client_selection.as_deref()==Some("AUTO") &&
-                            row.client_id.as_deref()==analysis.client_match.get("clientId")
-                                .and_then(serde_json::Value::as_str));
-                        let matching_pending=self.auto_client_change.as_ref()
-                            .is_some_and(|pending|
-                                self.active_id.as_deref()==Some(pending.order_id.as_str()));
-                        let changing_client=self.client_change.as_ref()
-                            .is_some_and(|pending|
-                                self.active_id.as_deref()==Some(pending.order_id.as_str()));
-                        if changing_client {
+                    if let Some(analysis)=&self.analysis {
+                        if self.client_change.is_some() {
                             components::reception_review_status(
                                 ui,"거래처 변경 계산 중"
                             );
-                        } else if analysis.directory_count == 0 {
-                            components::reception_review_status(
-                                ui,"거래처 명단 미연결 · 자동 매칭 확인 필요"
-                            );
-                        } else if manually_selected {
-                            if let Some(name) = &analysis.chosen_client_name {
-                                ui.label(typography::body(
-                                    &format!("거래처 직접 선택 · {name}")
-                                ));
-                            }
-                        } else if automatically_selected {
-                            if let Some(name)=&analysis.matched_client_name {
-                                ui.label(typography::body(
-                                    &format!("거래처 자동 인식 · {name}")
-                                ));
-                            }
-                        } else {
-                            components::reception_review_status(
-                                ui,if matching_pending {"거래처 확인 중"}
-                                else {"거래처 확인 필요"}
-                            );
                         }
-                        if !analysis.client_candidates.is_empty() {
-                            ui.label(typography::caption("거래처 후보 선택"));
-                            for candidate in &analysis.client_candidates {
-                                let id = reception_service::text(candidate, "clientId");
-                                let name = reception_service::text(candidate, "name");
-                                if !id.is_empty() && !name.is_empty() &&
-                                    theme::action(ui,name,ButtonRole::Quiet,
-                                        self.client_change.is_none()).clicked() {
-                                    client_choice = Some(id.to_owned());
-                                }
-                            }
-                        }
-                        let unidentified = analysis.get("unassigned")
-                            .and_then(serde_json::Value::as_array)
-                            .map(Vec::len).unwrap_or(0);
-                        let candidates = analysis.get("candidates")
-                            .and_then(serde_json::Value::as_array)
-                            .map(Vec::len).unwrap_or(0);
-                        if unidentified > 0 || candidates > 0 {
-                            components::reception_review_status(
-                                ui,&format!("미분류 {unidentified}건 · 확인 후보 {candidates}건")
-                            );
-                        }
-                        let issue_count: usize = reception_service::recipients(analysis).iter()
-                            .flat_map(|recipient| recipient.get("items")
-                                .and_then(serde_json::Value::as_array)
-                                .into_iter().flatten())
-                            .map(|item| item.get("issues")
-                                .and_then(serde_json::Value::as_array)
-                                .map(Vec::len).unwrap_or(0))
-                            .sum();
-                        if issue_count > 0 {
-                            components::reception_review_status(
-                                ui,&format!("상품 확인 {issue_count}건")
-                            );
-                        }
+                        let can_act=self.inline_change.is_none()
+                            &&self.inline_editor.is_none()
+                            &&self.manual_workspace.is_none()
+                            &&self.vat_change.is_none()
+                            &&self.vat_dialog.is_none()
+                            &&self.client_change.is_none()
+                            &&self.working_sync.is_none()
+                            &&self.workflow_ui.pending_preview().is_none();
+                        review_action=self.review_panel.show(
+                            ui,analysis,self.selected_recipient,can_act
+                        );
                     }
                         });
                 });
             },
         );
-        if let Some(client_id) = client_choice {
-            self.select_client_candidate(&client_id, ui.ctx());
+        if let Some(action)=review_action {
+            self.handle_review_action(action,ui.ctx());
         }
         if let Some(client_id)=refresh_price {
             self.apply_manual_client(&client_id,ui.ctx());
@@ -7666,6 +7720,15 @@ impl eframe::App for BandoEgui {
             if !self.raw_source.trim().is_empty() {
                 self.start_source_analysis(ctx.clone());
             }
+        }
+        // Refresh native staff issues only when the actual source-bound order
+        // input changes. The background worker rejects all stale replies.
+        if self.page==Page::Reception {
+            let active=self.active_id.as_deref()
+                .and_then(|id|self.drafts.iter().find(|row|row.id==id));
+            self.review_panel.refresh(
+                ctx,Arc::clone(&self.gateway),active,self.analysis.as_ref()
+            );
         }
         self.top_bar(ctx);
         self.poll_inbox_folder(ctx);
