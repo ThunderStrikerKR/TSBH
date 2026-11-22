@@ -68,6 +68,8 @@ jobs:
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify dealer reassignment retains native manual-correction rows and links
         run: cargo test --manifest-path egui-app/Cargo.toml native_order_change::manual_rebind_tests -- --nocapture
+      - name: Verify shared single-select dropdown coverage and geometry
+        run: cargo test --manifest-path egui-app/Cargo.toml management_dropdown_unification_tests -- --nocapture
       - name: Verify editable Rust order lines, manual price overrides and remote freight totals
         run: cargo test --manifest-path egui-app/Cargo.toml pricing::migration_tests -- --nocapture
       - name: Verify complete multi-recipient receipt totals with VAT and doubled freight
