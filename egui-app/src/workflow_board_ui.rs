@@ -832,6 +832,18 @@ fn pending_dealer_title(
         .to_owned()
 }
 
+/// Both pending read-only panes and workflow rows resolve recipient hover
+/// from the same order-scoped link, never from matching display names.
+pub fn visible_pending_recipient<'a>(
+    order_id:&str,preview:Option<&'a PendingTarget>,
+    linked_selection:Option<(&'a str,&'a str>)
+)->Option<&'a str>{
+    linked_selection.and_then(|(source_order,id)|
+        (source_order==order_id).then_some(id)
+    ).or_else(||preview.filter(|target|target.order_id==order_id)
+        .and_then(|target|target.recipient_id.as_deref()))
+}
+
 fn pending_frame(
     ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,in_preview:bool,
     dealer_name:&str,committed_recipient:Option<&str>,
@@ -911,11 +923,9 @@ fn pending_frame(
                         .and_then(|value|value.as_str()).unwrap_or("");
                     let chosen=selected && !recipient_id.is_empty() &&
                         committed_recipient==Some(recipient_id);
-                    let linked=linked_selection.and_then(|(order,id)|
-                        (order==draft.id).then_some(id));
-                    let displayed=linked.or_else(||preview
-                        .filter(|target|target.order_id==draft.id)
-                        .and_then(|target|target.recipient_id.as_deref()));
+                    let displayed=visible_pending_recipient(
+                        &draft.id,preview,linked_selection
+                    );
                     let previewed=displayed==Some(recipient_id)
                         && !recipient_id.is_empty() && !chosen;
                     let response=shipment_line(ui,name,&products,chosen,previewed);
@@ -1201,6 +1211,20 @@ mod pending_matching_tests {
 #[cfg(test)]
 mod pending_hover_navigation_tests{
     use super::*;
+    #[test]
+    fn common_preview_resolver_prioritizes_scoped_evidence_without_cross_order_leak(){
+        let preview=PendingTarget::recipient("order-a","r1");
+        assert_eq!(visible_pending_recipient(
+            "order-a",Some(&preview),Some(("order-a","r2"))
+        ),Some("r2"));
+        assert_eq!(visible_pending_recipient(
+            "order-a",Some(&preview),Some(("order-b","r2"))
+        ),Some("r1"));
+        assert_eq!(visible_pending_recipient(
+            "order-b",Some(&preview),Some(("order-a","r2"))
+        ),None);
+    }
+
     #[test]
     fn hover_previews_recipient_without_committing_and_restores_on_leave(){
         let ctx=egui::Context::default();
