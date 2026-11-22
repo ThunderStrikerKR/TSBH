@@ -941,10 +941,38 @@ pub fn modal_section<R>(
         .inner_margin(theme::MODAL_SECTION_PADDING)
         .show(ui,|section|{
             section.set_min_width(inner_width);
+            // Content spacing remains consistent even when the outer modal
+            // uses exact (zero-implicit-gap) structural layout.
+            section.spacing_mut().item_spacing.y=theme::SPACING;
             section.label(typography::section_heading(title));
             theme::divider(section);
             contents(section)
         }).inner
+}
+
+/// Structural spacing for an explicitly managed modal workspace.
+///
+/// Eguis default item_spacing is additive to manual add_space() calls.
+/// A controlled modal sets vertical spacing to zero, and structural gaps
+/// are then allocated exactly once by the master components below.
+/// Keep normal 8pt spacing *inside* ordinary modal_section field content.
+pub fn modal_master_controlled_spacing(ui:&mut Ui){
+    ui.spacing_mut().item_spacing.y=0.0;
+}
+
+/// One shared 16pt space / 1pt divider / 16pt space sequence. Call from a
+/// modal_master_controlled_spacing surface to prevent implicit extra gaps.
+pub fn modal_master_spaced_divider(ui:&mut Ui){
+    let gap=theme::MODAL_MASTER_WORKSPACE_GAP;
+    let thickness=theme::SOFT_DIVIDER_WIDTH;
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),2.0*gap+thickness),Sense::hover()
+    );
+    let y=rect.top()+gap+thickness/2.0;
+    ui.painter().line_segment(
+        [egui::pos2(rect.left(),y),egui::pos2(rect.right(),y)],
+        Stroke::new(thickness,theme::DIVIDER)
+    );
 }
 
 /// Same nested-section surface for absolute-layout dialogs such as OCR.
