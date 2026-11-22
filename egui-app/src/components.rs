@@ -2569,7 +2569,8 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
 /// Geometry shared by recognized working orders and native workflow rows.
 /// The name receives all width not reserved for the two narrow numeric columns.
 fn reception_item_columns(rect: Rect) -> [Rect; 3] {
-    let qty = (rect.width() * 0.22).min(theme::RECEPTION_ITEMS_QTY_MAX_WIDTH).max(52.0);
+    // Exactly three digits plus `개` fit at 16pt; values >= 1,000 use `999+`.
+    let qty = theme::RECEPTION_ITEMS_QTY_WIDTH;
     // The amount column only needs to fit the tens-of-millions range,
     // e.g. "99,999,999원" in 16pt mono. Reserve its existing 136pt cap
     // even in a narrower pane; do not let it collapse to 74pt and clip digits.
@@ -2604,6 +2605,14 @@ fn reception_ellipsized_product(
         else {high=mid-1;}
     }
     format!("{}…",full[..boundaries[low]].trim_end())
+}
+
+/// A deliberately compact presentation for exceptional quantities.
+/// Backend quantities, pricing and full-value tooltips remain untouched.
+fn reception_compact_quantity(full:&str)->&str {
+    let count=full.strip_suffix('개')
+        .and_then(|digits|digits.parse::<u64>().ok());
+    if count.is_some_and(|n|n>=1000) {"999+"} else {full}
 }
 
 pub struct ReceptionItemCells {
@@ -2668,6 +2677,7 @@ pub fn reception_item_row(
         egui::vec2(theme::SPACE_4, theme::SPACE_4)
     );
     let cells = [padded(0), padded(1), padded(2)];
+    let compact_quantity=reception_compact_quantity(quantity);
     // Use explicit column anchors for all three text cells. Ui::put(Label)
     // was moving text toward the center inside the row, while the table
     // header used another alignment calculation.
@@ -2678,6 +2688,7 @@ pub fn reception_item_row(
     ].into_iter().enumerate() {
         let cell = cells[index];
         let right = index != 0;
+        let row_text=if index==1 {compact_quantity} else {text};
         // Draw the same blue fill as recipient TextEdit, before value glyphs.
         // No header, label, surrounding table row or column divider is filled.
         if active[index] {
@@ -2701,7 +2712,7 @@ pub fn reception_item_row(
                 value_clip.center().y
             ),
             if right { egui::Align2::RIGHT_CENTER } else { egui::Align2::LEFT_CENTER },
-            visible_product.as_deref().unwrap_or(text),
+            visible_product.as_deref().unwrap_or(row_text),
             font,
             if active[index] {source_highlight::ACTIVE_TEXT} else {color},
         );
@@ -3020,6 +3031,20 @@ mod management_toolbar_geometry_tests {
             assert_eq!(rect.top()-cell.top(),cell.bottom()-rect.bottom());
             assert!(cell.contains(rect.min)&&cell.contains(rect.max));
         }
+    }
+
+    #[test]
+    fn reception_quantity_displays_up_to_999_then_uses_compact_indicator() {
+        assert_eq!(reception_compact_quantity("1개"),"1개");
+        assert_eq!(reception_compact_quantity("999개"),"999개");
+        assert_eq!(reception_compact_quantity("1000개"),"999+");
+        assert_eq!(reception_compact_quantity("12345개"),"999+");
+        assert_eq!(reception_compact_quantity("—"),"—");
+        assert_eq!(reception_compact_quantity("0개"),"0개");
+        let row=Rect::from_min_size(egui::pos2(0.0,0.0),Vec2::new(600.0,42.0));
+        let columns=reception_item_columns(row);
+        assert_eq!(columns[1].width(),theme::RECEPTION_ITEMS_QTY_WIDTH);
+        assert_eq!(columns[2].width(),theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH);
     }
 
     #[test]
