@@ -4508,10 +4508,14 @@ impl BandoEgui {
                                             .and_then(serde_json::Value::as_bool);
                                         let origin=recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
-                                        components::reception_freight_row(
+                                        if components::reception_freight_row_editable(
                                             items_ui,"운임",None,None,remote,
-                                            origin==Some("FACTORY"),
-                                        );
+                                            origin==Some("FACTORY"),editable
+                                        ){
+                                            edit_target=Some((
+                                                self.selected_recipient,None,"shippingCharge"
+                                            ));
+                                        }
                                         items_ui.add_space(theme::SPACE_8);
                                         if components::reception_item_actions_editable(
                                             items_ui,origin,editable
@@ -4530,7 +4534,9 @@ impl BandoEgui {
                     ui.add_space(theme::SPACE_4);
                     // A working reception is not a confirmed bill. Its quote
                     // has no authoritative VAT-included flag at this point.
-                    components::reception_vat_row(ui,None);
+                    if components::reception_vat_row_editable(ui,None,editable){
+                        edit_from_pane=true;
+                    }
                     ui.add_space(theme::SPACE_4);
                     let synced=self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|row|row.id==id))
