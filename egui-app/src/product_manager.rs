@@ -1279,19 +1279,6 @@ impl ProductManager {
             self.new_product();
         }
     }
-    fn edit_text(ui:&mut Ui,draft:&mut Value,key:&str,label:&str,enabled:bool){
-        ui.horizontal_wrapped(|line|{
-            components::form_field_label(line,label);
-            let mut value=field(draft,key).to_owned();
-            line.add_enabled_ui(enabled,|input|{
-                if components::flexible_text_field(
-                    input,&mut value,theme::MANAGEMENT_SEARCH_MIN_WIDTH,label
-                ).changed(){
-                    draft[key]=json!(value);
-                }
-            });
-        });
-    }
     fn product_price_candidate(
         draft:&Value,inputs:&HashMap<String,String>,
     )->Result<Value,String>{
@@ -1799,6 +1786,20 @@ impl ProductManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn product_detail_reacts_to_actual_kakao_safe_modal_width(){
+        // React's 2-column image/price section becomes a stacked layout
+        // only when the native dialog's *content* width is insufficient.
+        assert!(ProductManager::detail_columns(659.0).is_none());
+        for width in [660.0,680.0,760.0,824.0,880.0] {
+            let (image,details)=ProductManager::detail_columns(width).unwrap();
+            assert!(image>=210.0 && image<=260.0);
+            assert!(details>=300.0);
+            assert!(image+details+theme::SPACE_16+theme::SPACE_8
+                <=width+0.01,"columns overflow {width}pt");
+        }
+        assert!(ProductManager::detail_columns(420.0).is_none());
+    }
     #[test]
     fn price_draft_uses_react_price_cell_zero_as_unregistered(){
         let empty=PriceDraft{original:None,input:"0".into()};
