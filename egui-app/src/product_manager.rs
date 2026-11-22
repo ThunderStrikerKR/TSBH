@@ -1385,7 +1385,10 @@ impl ProductManager {
                 ){request_close=true;}
                 egui::ScrollArea::vertical()
                     .id_salt("egui-product-detail-content")
-                    .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
+                    .max_height(components::modal_editor_body_max_height(
+                        work_area.height()
+                    ))
+                    .auto_shrink([false,false])
                     .show(modal,|body|{
                         body.label(typography::section_heading("상품 정보"));
                         Self::edit_text(body,&mut draft,"name","상품명",editable&&!busy);
