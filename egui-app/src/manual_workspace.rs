@@ -202,6 +202,7 @@ pub fn apply_inline(
             "cancelApproval"=>"native_cancel_approval",
             "unitPrice"=>"set_manual_unit_price",
             "product"=>"set_manual_product",
+            "removeItem"=>"remove_manual_item",
             _=>return Err("지원하지 않는 품목 입력 항목입니다.".into())
         }
     }else{
@@ -222,7 +223,24 @@ pub fn apply_inline(
         payload["recipientId"]=json!(change.recipient_id);
         payload["itemId"]=json!(unique_id());
     }
+    if action=="remove_manual_item"{
+        payload["recipientId"]=json!(change.recipient_id);
+        payload["itemId"]=json!(change.item_id.as_deref()
+            .ok_or("삭제할 품목을 확인하세요.")?);
+    }
     if action=="set_manual_product"{
+        // React's product dialog sends a verified catalog row rather than
+        // free text. Rust owns the independent variant, pricing and model.
+        // An existing row retains its confirmed quantity and original source.
+        if let Some(product)=change.value.get("product").filter(|v|v.is_object()){
+            let title=product.get("name").and_then(Value::as_str)
+                .or_else(||product.get("code").and_then(Value::as_str))
+                .filter(|name|!name.trim().is_empty())
+                .ok_or("선택한 상품에 이름이 없습니다.")?.to_owned();
+            payload["value"]=json!(title);
+            payload["product"]=product.clone();
+            payload["preserveExistingQuantity"]=json!(true);
+        }
         // Follow the original native editor's catalog/recognition path.
         let state=if std::env::var_os("BANDO_EGUI_BUSINESS_DB")
             .is_some_and(|value|!value.is_empty()){
