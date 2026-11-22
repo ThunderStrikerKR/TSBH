@@ -279,9 +279,10 @@ pub fn apply_inline(
             )?;
             projected["authorityRevision"]=state.get("revision").cloned()
                 .unwrap_or(Value::Null);
-            projected["pricingBasis"]=crate::pricing_basis::snapshot(
+            let quoted_basis=crate::pricing_basis::snapshot(
                 &state,client,projected.get("order").unwrap_or(&updated)
             );
+            projected["pricingBasis"]=quoted_basis;
             Ok(projected)
         })();
         match result{
@@ -592,9 +593,10 @@ impl ManualWorkspace {
                             json!({"order":&order,"state":&state,"client":client})
                         )?;
                         quote["authorityRevision"]=json!(revision);
-                        quote["pricingBasis"]=crate::pricing_basis::snapshot(
+                        let quoted_basis=crate::pricing_basis::snapshot(
                             &state,client,quote.get("order").unwrap_or(&order)
                         );
+                        quote["pricingBasis"]=quoted_basis;
                         Ok(quote)
                     })();
                     match result{
