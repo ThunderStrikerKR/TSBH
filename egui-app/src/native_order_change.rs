@@ -156,9 +156,9 @@ pub fn prepare(gateway:&dyn BandoGateway, source:&WorkingReception,
     // native Rust reducer used by the in-place editor; then reprice all
     // non-overridden lines, freight and VAT with the selected client.
     if let Some(saved)=source.manual_model.as_ref(){
-        let model=saved.get("model").filter(Value::is_object)
+        let model=saved.get("model").filter(|value|value.is_object())
             .ok_or("저장된 수동 수정 작업본이 올바르지 않습니다.")?;
-        let keys=saved.get("assignmentOrder").filter(Value::is_array)
+        let keys=saved.get("assignmentOrder").filter(|value|value.is_array())
             .ok_or("수동 수정 원문 연결 순서가 없습니다.")?;
         let applied=gateway.execute(ReadOperation::ManualClassification,json!({
             "action":"preview_manual","order":merged_order,
