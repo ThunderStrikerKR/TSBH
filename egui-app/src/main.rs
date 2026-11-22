@@ -1788,8 +1788,11 @@ impl BandoEgui {
             ui.horizontal(|row|{
                 row.label(typography::field_label("부가세율"));
                 row.add_enabled(!busy,
+                    // Width for three whole-number digits (100) and field inset.
+                    // Do not truncate typed decimals: the rate parser still
+                    // accepts fractions such as 7.5 or 10.25 percent.
                     egui::TextEdit::singleline(&mut dialog.rate_text)
-                        .desired_width(85.0)
+                        .desired_width(48.0)
                 );
                 row.label(typography::body("%"));
             });
@@ -1835,7 +1838,6 @@ impl BandoEgui {
                                 dialog.set_recipient_checked(id,checked);
                             }
                         });
-                        components::soft_divider(list);
                     }
                 });
             if let Some(error)=dialog.error.as_deref(){
