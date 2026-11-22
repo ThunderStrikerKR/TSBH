@@ -29,8 +29,21 @@ fn val_or_empty<'a>(v:&'a Value,k:&str)->Value{
     v.get(k).filter(|x| !x.is_null()).cloned().unwrap_or(json!(""))
 }
 fn is_deleted(v:&Value)->bool {v.get("deletedAt").is_some_and(|x| !x.is_null() && x!=false && x!="")}
-fn cells<'a>(row:&'a Value)->Vec<&'a str>{
-    arr(row,"cells").iter().map(|v|v.as_str().unwrap_or("")).collect()
+fn cells(row:&Value)->Vec<String>{
+    let mut values=arr(row,"cells").iter()
+        .map(|v|v.as_str().unwrap_or("").to_owned()).collect::<Vec<_>>();
+    // Legacy 18-column workbooks may also be handed directly to the native
+    // preview API, without passing through the TypeScript Excel reader.
+    // Convert them to the current 17-column index before any validation.
+    if values.len()==18{
+        let old=bando_data_access::client_names::normalized(&json!({
+            "name":values[1].clone(),"displayName":values[2].clone(),
+            "shortNames":values[14].clone(),"identifiers":values[15].clone()
+        }));
+        values.remove(2);
+        values[13]=old["shortNames"].as_str().unwrap_or("").to_owned();
+    }
+    values
 }
 fn at<'a>(cells:&[&'a str],i:usize)->&'a str{cells.get(i).copied().unwrap_or("")}
 fn flag(raw:&str,before:bool)->Result<bool,String>{
@@ -150,7 +163,8 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
     let mut rows=vec![];
     let mut seen_new:Vec<Value>=vec![];
     for (idx,entry) in input.iter().enumerate(){
-        let cells=cells(entry);
+        let cell_values=cells(entry);
+        let cells=cell_values.iter().map(String::as_str).collect::<Vec<_>>();
         if cells.iter().all(|v|v.trim().is_empty()){continue}
         let id=at(&cells,0).trim();
         let original=if id.is_empty(){None}else{existing.iter().find(|c|strv(c,"id")==id)};
@@ -241,4 +255,24 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
     let listed=rows.iter().map(|r|strv(r,"id")).collect::<HashSet<_>>();
     let missing=existing.iter().filter(|c|!listed.contains(strv(c,"id"))).count();
     Ok(json!({"revision":revision,"rows":rows,"missing":missing}))
+}
+
+#[cfg(test)]
+mod client_name_excel_compat_tests {
+    use super::*;
+    #[test]
+    fn old_workbook_sender_name_moves_to_alias_column(){
+        let entry=json!({"cells":[
+            "client-01","테스트상사","테스트 납품처 01","서울","12345",
+            "02-123","010-234","담당자","메모","도매","선입금",
+            "아니오","아니오","거래중","기존 태그","내부코드","", "사용"
+        ]});
+        let columns=cells(&entry);
+        assert_eq!(columns.len(),17);
+        assert_eq!(columns[1],"테스트상사");
+        assert_eq!(columns[2],"서울");
+        assert_eq!(columns[13],"기존 태그, 테스트 납품처 01");
+        assert_eq!(columns[14],"내부코드");
+        assert_eq!(columns[16],"사용");
+    }
 }
