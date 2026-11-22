@@ -27,11 +27,11 @@ fn embedded_data(value:&str)->Option<Vec<u8>>{
 }
 fn historical_filename(product:&Value)->Option<String>{
     let map:Value=serde_json::from_str(BUNDLED).ok()?;
-    let id=product.get("siteId").or_else(||product.get("sourceProductId"))?
-        .as_str().or_else(||product.get("siteId")
-            .or_else(||product.get("sourceProductId"))
-            .and_then(Value::as_u64).map(|_|""))?;
-    let filename=map.get(id)?.as_str()?;
+    let source=product.get("siteId").filter(|v|!v.is_null())
+        .or_else(||product.get("sourceProductId"))?;
+    let id=source.as_str().map(str::to_owned)
+        .or_else(||source.as_u64().map(|n|n.to_string()))?;
+    let filename=map.get(id.as_str())?.as_str()?;
     // The file names come from our fixed, versioned React bundle map.
     // Restrict them even if future catalog values are untrusted.
     let path=Path::new(filename);
