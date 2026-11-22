@@ -951,17 +951,21 @@ pub fn modal_backdrop(
 /// Disabled preview controls cannot edit business data.
 pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
     let width = kind.preferred_width().min(ui.available_width().max(60.0));
-    let editor_font = match kind {
-        FieldKind::Money | FieldKind::Quantity => {
-            egui::FontSelection::FontId(typography::numeric_editor_font())
-        }
-        // Preserve the regular Korean body face for names, addresses,
-        // telephone and free-form text. Only explicitly numeric data
-        // fields use the Consolas / monospace family.
-        _ => egui::FontSelection::Style(egui::TextStyle::Body),
+    let semantic=match kind {
+        FieldKind::Money=>Some(typography::DataValueKind::Money),
+        FieldKind::Quantity=>Some(typography::DataValueKind::Quantity),
+        FieldKind::Telephone=>Some(typography::DataValueKind::Phone),
+        _=>None,
     };
+    let editor_font=semantic.map_or(
+        egui::FontSelection::Style(egui::TextStyle::Body),
+        |role|egui::FontSelection::FontId(
+            typography::data_value_font(role,typography::DataValueContext::Form)
+        )
+    );
     let field = egui::TextEdit::singleline(value)
         .font(editor_font)
+        .horizontal_align(semantic.map_or(Align::LEFT,typography::data_value_align))
         .vertical_align(Align::Center)
         .margin(egui::Margin::symmetric(8, 2))
         .desired_width(width);
@@ -970,7 +974,7 @@ pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) ->
     }).inner
 }
 
-/// UI-only money input: same 36pt control and Consolas font as `field`.
+/// UI-only money input: same 36pt control and semantic UI font as `field`.
 /// Uses the React MoneyInput rule: digits (including zero) or an empty
 /// unconfirmed amount, with thousands separators only when unfocused.
 /// Invalid keystrokes never become business rules; the Rust command still
@@ -2729,7 +2733,17 @@ pub fn reception_item_row(
         (quantity, theme::SECONDARY),
         (amount, theme::TEXT),
     ].into_iter().enumerate() {
-        let font=egui::FontId::proportional(typography::FONT_RECEPTION_ITEM_TEXT);
+        let font=match index {
+            1=>typography::data_value_font(
+                typography::DataValueKind::Quantity,
+                typography::DataValueContext::Reception
+            ),
+            2=>typography::data_value_font(
+                typography::DataValueKind::Money,
+                typography::DataValueContext::Reception
+            ),
+            _=>egui::FontId::proportional(typography::FONT_RECEPTION_ITEM_TEXT),
+        };
         let cell = cells[index];
         let right = index != 0;
         let row_text=if index==1 {compact_quantity} else {text};
@@ -2822,10 +2836,13 @@ pub fn reception_freight_row(
                     cell.add_sized(
                         Vec2::new(84.0,theme::INPUT_HEIGHT),
                         egui::TextEdit::singleline(&mut amount_text)
-                            .font(egui::FontId::proportional(
-                                typography::FONT_RECEPTION_ITEM_TEXT
+                            .font(typography::data_value_font(
+                                typography::DataValueKind::Money,
+                                typography::DataValueContext::Reception
                             ))
-                            .horizontal_align(Align::RIGHT)
+                            .horizontal_align(typography::data_value_align(
+                                typography::DataValueKind::Money
+                            ))
                             .vertical_align(Align::Center)
                             .margin(egui::Margin::symmetric(8,2))
                             .desired_width(84.0),
