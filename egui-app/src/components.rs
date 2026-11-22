@@ -2603,44 +2603,60 @@ fn management_dropdown_inner(
     trigger
 }
 
-/// Select a value and close its popup on the same click. All selectors share
-/// this action so menus don't remain open after immediate per-row autosave.
-pub fn management_dropdown_option<T:PartialEq>(
-    ui:&mut Ui,current:&mut T,value:T,label:&str
-)->Response {
-    let response=ui.selectable_value(current,value,label);
-    if response.clicked(){ui.close();}
-    response
-}
-
-/// Explicit width for short menus. Keep egui's native selectable visual
-/// states, keyboard click semantics and changed flag, with a 28pt hit area.
-pub fn management_dropdown_compact_option<T:PartialEq>(
-    ui:&mut Ui,current:&mut T,value:T,label:&str,width:f32
-)->Response {
-    let selected=*current==value;
-    // Native selectable buttons own keyboard focus, click, and background.
-    // Paint only the glyphs separately so the -1pt optical correction
-    // cannot move the 28pt hit target or selected/hover highlight.
-    let mut response=ui.add_sized(
-        Vec2::new(width,theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
-        egui::Button::selectable(selected,"")
-    );
+/// Paint only the option glyphs using the shared -1pt optical correction.
+/// Native widgets still own row sizing, selection fill, hover, focus and clicks.
+/// Normal options stay left-aligned; short two-choice menus stay centered.
+fn management_dropdown_option_glyph(
+    ui:&Ui,response:&Response,label:&str,compact:bool
+){
     let galley=ui.painter().layout_no_wrap(
         label.to_owned(),
         egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
         theme::TEXT,
     );
     let row=response.rect;
+    let x=if compact{
+        row.center().x-galley.size().x*0.5
+    }else{
+        row.left()+theme::SPACE_8
+    };
     ui.painter().with_clip_rect(row.shrink(2.0)).galley(
         egui::pos2(
-            row.center().x-galley.size().x*0.5,
-            row.top()+typography::management_dropdown_option_text_y(
+            x,row.top()+typography::management_dropdown_option_text_y(
                 row.height(),galley.size().y
             ),
         ),
         galley,theme::TEXT,
     );
+}
+
+/// Long-name options retain native selectable_value sizing and selection
+/// semantics. Invisible native text reserves its original width while our
+/// shared painter controls the glyph baseline.
+pub fn management_dropdown_option<T:PartialEq>(
+    ui:&mut Ui,current:&mut T,value:T,label:&str
+)->Response {
+    let response=ui.selectable_value(
+        current,value,egui::RichText::new(label).color(Color32::TRANSPARENT)
+    );
+    management_dropdown_option_glyph(ui,&response,label,false);
+    if response.clicked(){ui.close();}
+    response
+}
+
+/// Compact options use the same glyph baseline, but preserve their fixed
+/// width and centered caption independently of long-name management menus.
+pub fn management_dropdown_compact_option<T:PartialEq>(
+    ui:&mut Ui,current:&mut T,value:T,label:&str,width:f32
+)->Response {
+    let selected=*current==value;
+    let mut response=ui.add_sized(
+        Vec2::new(width,theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
+        egui::Button::selectable(
+            selected,egui::RichText::new(label).color(Color32::TRANSPARENT)
+        )
+    );
+    management_dropdown_option_glyph(ui,&response,label,true);
     if response.clicked(){
         if *current!=value {
             *current=value;
@@ -4523,6 +4539,37 @@ mod management_dropdown_unification_tests {
             assert_eq!(rect.height(),theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
         }
         assert!(theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT>=28.0);
+    }
+
+    #[test]
+    fn long_and_compact_options_share_the_glyph_baseline_without_resizing_rows(){
+        let ctx=egui::Context::default();
+        let mut normal=Rect::NOTHING;
+        let mut compact=Rect::NOTHING;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.scope(|options|{
+                    options.spacing_mut().interact_size.y=
+                        theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
+                    let mut group=String::new();
+                    normal=management_dropdown_option(
+                        options,&mut group,"test".to_owned(),
+                        "[TEST] 배송 그룹 03 · 접이식"
+                    ).rect;
+                    let mut cod=false;
+                    compact=management_dropdown_compact_option(
+                        options,&mut cod,false,"선불",90.0
+                    ).rect;
+                });
+            });
+        });
+        assert_eq!(normal.height(),theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
+        assert_eq!(compact.height(),theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
+        assert_eq!(compact.width(),90.0);
+        assert!(normal.width()>compact.width());
+        assert_eq!(
+            typography::management_dropdown_option_text_y(28.0,18.0),4.0
+        );
     }
 
     #[test]
