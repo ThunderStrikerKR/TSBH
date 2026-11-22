@@ -154,7 +154,8 @@ fn workflow_card<R>(
     }
     response.inner
 }
-/// Reserve the common 9pt left and right inset for BOTH compact rows.
+/// Reserve the common 6pt left and right inset for BOTH compact rows.
+/// Their horizontal inset matches the 6pt vertical control clearance.
 fn workflow_row_content(rect:Rect)->Rect{
     rect.shrink2(Vec2::new(theme::WORKFLOW_CARD_PADDING_X,0.0))
 }
@@ -260,9 +261,10 @@ fn workflow_compact_rows(ui:&mut Ui)->(Rect,Rect){
     (upper,lower)
 }
 /// All five upper controls occupy stable x positions at every card width.
-/// The 1920×1080 reference card (394pt outer) gets a 166pt dealer slot and a
-/// trailing 188pt signal/manage/delete group, matching the bottom action
-/// group exactly. Long dealer names are clipped inside their OWN slot.
+/// The 1920×1080 reference card (394pt outer) gets a 164pt dealer slot and
+/// a trailing 192pt signal/manage/delete group. The lower stage/undo group
+/// is also 192pt, and every horizontal inter-control gap is precisely 6pt.
+/// Long dealer names are clipped inside their OWN slot.
 fn workflow_header(
     ui:&mut Ui,row:Rect,id:&str,title:&str,open:bool,step:usize,notice:bool
 )->egui::Response{
@@ -277,6 +279,9 @@ fn workflow_header(
     let signal=workflow_cell(title_rect.right()+gap,theme::WORKFLOW_SIGNAL_WIDTH,row);
     let manage=workflow_cell(signal.right()+gap,theme::WORKFLOW_MANAGE_WIDTH,row);
     let delete=workflow_cell(manage.right()+gap,theme::WORKFLOW_TRASH_WIDTH,row);
+    debug_assert!((content.right()-delete.right()).abs()<=0.01);
+    debug_assert!((manage.left()-signal.right()-gap).abs()<=0.01);
+    debug_assert!((delete.left()-manage.right()-gap).abs()<=0.01);
 
     components::paint_workflow_icon(
         ui.painter(),arrow.center(),
@@ -354,7 +359,7 @@ fn stage_name(step:usize,notice:bool)->&'static str{
 fn money(amount:Option<i64>)->String{
     amount.map(components::display_won).unwrap_or_else(||"—".to_owned())
 }
-/// Compact one-touch button, 152×30pt at the 1080p reference, preserving
+/// Compact one-touch button, 154×30pt at the 1080p reference, preserving
 /// every stage label including "계좌 재안내 완료" without shrinking text.
 /// This uses the shared Emphasized/disabled palette and 13pt action type,
 /// but not egui's minimum text padding (which could enlarge the rectangle).
@@ -388,10 +393,10 @@ fn workflow_primary_at(
 }
 /// The lower band is a true full-bleed #292929 surface. Shipping and money
 /// share the bottom glyph edge, VAT appears above the amount only when used.
-/// At the 394pt 1080p reference: shipping 44, price 134, one-touch 152,
-/// undo 32, and gaps 4×3. Signal block left aligns to one-touch left;
-/// delete and undo share a right edge. Currency text has 8pt clearance to
-/// the one-touch button, not just the minimum 4pt column gutter.
+/// At the 394pt 1080p reference: shipping 44, price 132, one-touch 154,
+/// undo 32, and gaps 6×3. Signal block left aligns to one-touch left;
+/// delete and undo share a right edge. Currency text has 10pt clearance to
+/// the one-touch button (6pt slot gap + 4pt inner ink inset).
 fn workflow_action_line(
     ui:&mut Ui,lower:Rect,id:&str,shipments:usize,total:Option<i64>,
     vat:Option<&str>,button_text:&str,enabled:bool
@@ -408,6 +413,7 @@ fn workflow_action_line(
     let action=workflow_cell(price.right()+gap,action_width,lower);
     let undo=workflow_cell(action.right()+gap,undo_width,lower);
     debug_assert!((content.right()-undo.right()).abs()<=0.01);
+    debug_assert!((undo.left()-action.right()-gap).abs()<=0.01);
     // signal + manage + delete total width matches one-touch + undo.
     let upper_right_width=theme::WORKFLOW_SIGNAL_WIDTH
         +theme::WORKFLOW_MANAGE_WIDTH+theme::WORKFLOW_TRASH_WIDTH+2.0*gap;
