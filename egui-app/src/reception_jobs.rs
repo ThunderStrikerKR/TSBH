@@ -79,6 +79,12 @@ pub fn admit(request:Kind, active:&[Kind], same_request:bool)->Admission{
             (request,*kind),
             (Kind::ManualClient,
                 Kind::AutomaticClient | Kind::PricingBasis | Kind::RemoteRecheck)
+            // A locality check only updates display-only reference data. An
+            // employee write may continue; acceptance checks recipient ID
+            // and address, so a changed destination never inherits old hints.
+            | (Kind::InlineEdit | Kind::VatEdit | Kind::WorkingSync |
+                Kind::ManualWorkspace | Kind::InlineEditor | Kind::WorkflowAction,
+                Kind::RemoteRecheck)
             | (Kind::SourceReplace,
                 Kind::SourceReview | Kind::AutomaticClient | Kind::PricingBasis
                 | Kind::Analysis | Kind::RemoteRecheck)
@@ -196,6 +202,14 @@ mod tests {
         assert_eq!(admit(K::RemoteRecheck,&[K::WorkingSync],false),
             A::Conflict(K::WorkingSync));
         assert_eq!(admit(K::ManualClient,&[K::RemoteRecheck],false),A::Start);
+        for writer in [
+            K::InlineEdit,K::VatEdit,K::WorkingSync,
+            K::ManualWorkspace,K::InlineEditor,K::WorkflowAction
+        ]{
+            assert_eq!(admit(writer,&[K::RemoteRecheck],false),A::Start);
+        }
+        assert_eq!(admit(K::DeleteReception,&[K::RemoteRecheck],false),
+            A::Conflict(K::RemoteRecheck));
     }
 
     #[test]
