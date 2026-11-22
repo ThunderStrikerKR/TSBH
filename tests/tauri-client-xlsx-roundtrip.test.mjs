@@ -25,8 +25,11 @@ const load = (path) => {
 };
 const oracle = load("tests/rust-migration/oracles/client-workbook.ts");
 const live = load("src/client-workbook.ts");
-const exports = { ...oracle, exportClientWorkbook: live.exportClientWorkbook,
-  readClientWorkbookRows: live.readClientWorkbookRows };
+const exports = { ...oracle, ...live };
+// Keep the historically frozen 18-column TypeScript business oracle intact.
+// Exercise the live 17-column Excel parser first, then reconstruct only its
+// retired (blank) displayName column at the test adapter boundary. Native
+// Rust preview's V1/V2 column conversion is verified in its own Rust test.
 
 function fixture() {
   return {
@@ -58,7 +61,11 @@ async function previewWorkbook(state, workbook) {
   const file = new File([Buffer.from(buffer)], "거래처_전체.xlsx", {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-  return exports.previewClientWorkbook(state, file);
+  const {sourceRevision,cells}=await live.readClientWorkbookRows(state,file);
+  const oracleRows=cells.map(({row,cells:values})=>({
+    row,cells:[values[0],values[1],"",...values.slice(2)]
+  }));
+  return oracle.previewClientRows(state,sourceRevision,oracleRows);
 }
 
 test("real XLSX binary roundtrip: unchanged full export means zero DB updates", async () => {
@@ -69,7 +76,7 @@ test("real XLSX binary roundtrip: unchanged full export means zero DB updates", 
   assert.ok(wb.getWorksheet("입금 계좌 안내"));
   assert.ok(wb.getWorksheet("특수 단가 참고"));
   assert.equal(wb.getWorksheet("__반도허브_관리정보").getCell("B2").value, 19);
-  assert.equal(wb.getWorksheet("거래처 목록").getCell("E2").value, "03123");
+  assert.equal(wb.getWorksheet("거래처 목록").getCell("D2").value, "03123");
   const preview = await previewWorkbook(state, wb);
   assert.deepEqual(Array.from(preview.rows, r=>r.status), ["UNCHANGED","UNCHANGED"]);
   assert.equal(preview.missing, 0);
@@ -83,11 +90,11 @@ test("real XLSX: correct ID updates one client, blank ID creates one, missing ro
   const state = fixture();
   const workbook = await makeWorkbook(state);
   const sheet = workbook.getWorksheet("거래처 목록");
-  sheet.getCell("D2").value = "서울 종로구 45";
+  sheet.getCell("C2").value = "서울 종로구 45";
   sheet.spliceRows(3,1); // client-2 omitted; remains in DB
   const row = new Array(exports.CLIENT_HEADERS.length).fill("");
-  row[1] = "신규 지점"; row[3] = "경기 성남시 1"; row[5] = "031-500-6000";
-  row[9] = "소매"; row[10] = "후불";
+  row[1] = "신규 지점"; row[2] = "경기 성남시 1"; row[4] = "031-500-6000";
+  row[8] = "소매"; row[9] = "후불";
   sheet.addRow(row);
   const preview = await previewWorkbook(state, workbook);
   assert.deepEqual(Array.from(preview.rows, r=>r.status), ["UPDATE","ADD"]);
@@ -116,7 +123,7 @@ test("real XLSX: corrupted existing ID and duplicated phone cannot be applied", 
   assert.throws(() => exports.applyClientWorkbook(state, preview1), /중복 또는 오류/);
   sh.getCell("A2").value = "client-1";
   const row = new Array(exports.CLIENT_HEADERS.length).fill("");
-  row[1]="가짜 중복"; row[3]="서울 강남구 3"; row[5]="02-1234-5678";
+  row[1]="가짜 중복"; row[2]="서울 강남구 3"; row[4]="02-1234-5678";
   sh.addRow(row);
   const preview2 = await previewWorkbook(state, wb);
   assert.equal(preview2.rows.at(-1).status,"HOLD");
@@ -134,8 +141,19 @@ test("real XLSX: Excel formula cells are blocked and numeric phone fields reject
   const state = fixture();
   const wb = await makeWorkbook(state);
   const sh = wb.getWorksheet("거래처 목록");
-  sh.getCell("F2").value = {formula: "1+1", result: 2};
+  sh.getCell("E2").value = {formula: "1+1", result: 2};
   await assert.rejects(() => previewWorkbook(state,wb), /수식이나 병합된 셀/);
-  sh.getCell("F2").value = 212345678;
+  sh.getCell("E2").value = 212345678;
   await assert.rejects(() => previewWorkbook(state,wb), /앞자리 0이 사라질 수 있습니다/);
+});
+
+test("V2 workbook keeps 17 columns without a sender-name override", async () => {
+  const wb=await makeWorkbook(fixture());
+  const ws=wb.getWorksheet("거래처 목록");
+  assert.equal(exports.CLIENT_HEADERS.length,17);
+  assert.equal(ws.getRow(1).getCell(3).value,"주소");
+  assert.equal(ws.getRow(1).getCell(5).value,"전화번호");
+  assert.equal(ws.getRow(1).getCell(17).value,"보관 상태");
+  assert.equal(wb.getWorksheet("__반도허브_관리정보").getCell("B1").value,
+    "BANDO-HUB-CLIENTS-V2");
 });
