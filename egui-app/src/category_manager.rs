@@ -377,6 +377,11 @@ impl CategoryManager {
                 if self.selected==item.id {theme::RAISED}else{theme::INPUT}
             );
         }
+        if self.selected!=item.id{
+            theme::paint_button_hover(
+                ui,&response,theme::CONTROL_RADIUS as f32
+            );
+        }
         // A very faint row rule groups one category and its counts without
         // creating table-like zebra bands. Root boundaries are a little firmer.
         let row_rule=if is_root(&item.id){theme::DIVIDER}
