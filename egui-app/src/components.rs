@@ -2382,6 +2382,9 @@ fn paint_client_line(
 /// Split the rendered condition string without changing the persisted
 /// transaction rules. Payment and VAT receive independent fixed text slots
 /// so the following labels never shift with proportional glyph widths.
+fn client_condition_center_offset(slot_width:f32,text_width:f32)->f32{
+    ((slot_width-text_width)/2.0).max(0.0)
+}
 fn client_condition_parts(terms:&str)->(&str,&str,&str){
     let mut segments=terms.splitn(3," / ");
     (
@@ -2603,20 +2606,29 @@ fn management_row_impl(
                 let payment_slot=measured("선입금").max(measured("후불"));
                 let vat_slot=measured("부가세 포함")
                     .max(measured("부가세 별도"));
-                let separator=" / ";
+                // Center short payment labels in the fixed slot, rather
+                // than leaving an oversized blank before the slash.
+                // Paint the slash with an explicit compact 4pt gap.
+                let separator="/";
+                let separator_gap=theme::SPACE_4;
                 let separator_width=measured(separator);
                 let payment_x=second.left();
-                let vat_x=payment_x+payment_slot+separator_width;
-                let extras_x=vat_x+vat_slot+separator_width;
+                let payment_text_x=payment_x+client_condition_center_offset(
+                    payment_slot,measured(payment)
+                );
+                let payment_separator_x=payment_x+payment_slot+separator_gap;
+                let vat_x=payment_separator_x+separator_width+separator_gap;
+                let vat_separator_x=vat_x+vat_slot+separator_gap;
+                let extras_x=vat_separator_x+separator_width+separator_gap;
                 paint_client_line(
-                    ui,second,payment_x,
+                    ui,second,payment_text_x,
                     typography::client_table_metadata_galley(
                         ui,payment,theme::MUTED
                     ),theme::MUTED
                 );
                 if !vat.is_empty(){
                     paint_client_line(
-                        ui,second,payment_x+payment_slot,
+                        ui,second,payment_separator_x,
                         typography::client_table_metadata_galley(
                             ui,separator,theme::MUTED
                         ),theme::MUTED
@@ -2630,7 +2642,7 @@ fn management_row_impl(
                 }
                 if !extras.is_empty(){
                     paint_client_line(
-                        ui,second,vat_x+vat_slot,
+                        ui,second,vat_separator_x,
                         typography::client_table_metadata_galley(
                             ui,separator,theme::MUTED
                         ),theme::MUTED
@@ -2692,6 +2704,12 @@ fn management_row_impl(
 #[cfg(test)]
 mod management_client_column_divider_tests{
     use super::*;
+    #[test]
+    fn shorter_payment_labels_are_centered_in_their_fixed_slot(){
+        assert_eq!(client_condition_center_offset(30.0,20.0),5.0);
+        assert_eq!(client_condition_center_offset(30.0,30.0),0.0);
+        assert_eq!(client_condition_center_offset(30.0,32.0),0.0);
+    }
     #[test]
     fn payment_and_vat_stay_in_separate_fixed_slots(){
         assert_eq!(client_condition_parts("선입금 / 부가세 별도"),
