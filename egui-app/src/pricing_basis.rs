@@ -100,7 +100,11 @@ pub fn snapshot(state:&Value,client:&Value,order:&Value)->Value{
                 "overrides":override_prices
             }));
         }
-        let standalone_rule=if group.is_empty(){
+        let group_is_active=list(shipping,"groups").iter().any(|record|
+            text(record,"id")==group &&
+            record.get("deletedAt").is_none_or(Value::is_null)
+        );
+        let standalone_rule=if !group_is_active{
             value(value(shipping,"productRules"),&pid)
         }else{&Value::Null};
         chosen_products.push(json!({
