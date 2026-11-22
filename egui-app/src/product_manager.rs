@@ -1326,8 +1326,7 @@ impl ProductManager {
         &mut self,ui:&mut Ui,draft:&mut Value,
         editable:bool,busy:bool,photo_error:&mut Option<String>
     ){
-        ui.label(typography::section_heading("상품 이미지"));
-        ui.add_space(theme::SPACE_8);
+        // The caller's shared modal_section owns the title and divider.
         // Never shrink an image to fill a narrower sibling column.
         // The responsive fallback stacks the editor instead.
         self.photos.photo(ui,draft,theme::PRODUCT_DETAIL_IMAGE_SIZE);
@@ -1579,9 +1578,9 @@ impl ProductManager {
                                 theme::MODAL_MASTER_CONTENT_INSET as i8,0
                             ))
                             .show(scroller,|body|{
-                        // Keep identification, prices, and visual reference
-                        // adjacent in the requested overview / price / image
-                        // order. Each column uses the same shared controls.
+                        // Reuse the APPROVED modal-section frame for the
+                        // three independent roles. Prior raw labels on the
+                        // modal background made them visually indistinct.
                         let content_width=body.available_width().max(1.0);
                         if let Some((overview_width,price_width,image_width))=
                             Self::detail_columns(content_width)
@@ -1589,43 +1588,69 @@ impl ProductManager {
                             body.horizontal(|top|{
                                 top.vertical(|overview|{
                                     overview.set_width(overview_width);
-                                    Self::detail_overview_column(
-                                        overview,&mut draft,&brands,&categories,
-                                        editable,busy
+                                    components::modal_section(
+                                        overview,"상품 개요",|fields|{
+                                            Self::detail_overview_column(
+                                                fields,&mut draft,&brands,&categories,
+                                                editable,busy
+                                            );
+                                        }
                                     );
                                 });
                                 top.add_space(theme::SPACE_16);
                                 top.vertical(|prices_ui|{
                                     prices_ui.set_width(price_width);
-                                    Self::detail_price_column(
-                                        prices_ui,&draft,&mut prices,
-                                        editable,busy
+                                    components::modal_section(
+                                        prices_ui,"판매 · 가격",|fields|{
+                                            Self::detail_price_column(
+                                                fields,&mut draft,&mut prices,
+                                                editable,busy
+                                            );
+                                        }
                                     );
                                 });
                                 top.add_space(theme::SPACE_16);
                                 top.vertical(|media|{
                                     media.set_width(image_width);
-                                    self.detail_image_column(
-                                        media,&mut draft,editable,busy,
-                                        &mut photo_error
+                                    components::modal_section(
+                                        media,"상품 이미지",|photos|{
+                                            self.detail_image_column(
+                                                photos,&mut draft,editable,busy,
+                                                &mut photo_error
+                                            );
+                                        }
                                     );
                                 });
                             });
                         }else{
-                            // Narrow Kakao-safe work areas stack sections;
-                            // never shrink the 320px image or clip fields.
+                            // Narrow Kakao-safe work areas stack the SAME
+                            // three boxed sections. Never regress to a
+                            // different unboxed vertical-label layout.
                             body.vertical(|stack|{
-                                Self::detail_overview_column(
-                                    stack,&mut draft,&brands,&categories,
-                                    editable,busy
+                                components::modal_section(
+                                    stack,"상품 개요",|fields|{
+                                        Self::detail_overview_column(
+                                            fields,&mut draft,&brands,&categories,
+                                            editable,busy
+                                        );
+                                    }
                                 );
                                 stack.add_space(theme::SPACE_16);
-                                Self::detail_price_column(
-                                    stack,&draft,&mut prices,editable,busy
+                                components::modal_section(
+                                    stack,"판매 · 가격",|fields|{
+                                        Self::detail_price_column(
+                                            fields,&mut draft,&mut prices,editable,busy
+                                        );
+                                    }
                                 );
                                 stack.add_space(theme::SPACE_16);
-                                self.detail_image_column(
-                                    stack,&mut draft,editable,busy,&mut photo_error
+                                components::modal_section(
+                                    stack,"상품 이미지",|photos|{
+                                        self.detail_image_column(
+                                            photos,&mut draft,editable,busy,
+                                            &mut photo_error
+                                        );
+                                    }
                                 );
                             });
                         }
