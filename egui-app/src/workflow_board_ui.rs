@@ -264,15 +264,17 @@ fn workflow_header(
         egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::WORKFLOW_SIGNAL_BLOCK_BORDER),
         egui::StrokeKind::Inside
     );
-    let diameter=theme::WORKFLOW_SIGNAL_SIZE;
-    let lamp_span=diameter*STEP_NAMES.len() as f32
+    let lamp_width=theme::WORKFLOW_SIGNAL_SIZE;
+    let lamp_height=theme::WORKFLOW_SIGNAL_HEIGHT;
+    let lamp_span=lamp_width*STEP_NAMES.len() as f32
         +theme::WORKFLOW_SIGNAL_GAP*(STEP_NAMES.len()-1) as f32;
     for index in 0..STEP_NAMES.len(){
         let center=Pos2::new(
-            block.left()+(block.width()-lamp_span)/2.0+diameter/2.0
-                +index as f32*(diameter+theme::WORKFLOW_SIGNAL_GAP),
+            block.left()+(block.width()-lamp_span)/2.0+lamp_width/2.0
+                +index as f32*(lamp_width+theme::WORKFLOW_SIGNAL_GAP),
             block.center().y
         );
+        let lamp=Rect::from_center_size(center,Vec2::new(lamp_width,lamp_height));
         let (fill,border)=if index<step{
             (theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER)
         }else if index==step || (index==step && notice){
@@ -280,9 +282,12 @@ fn workflow_header(
         }else{
             (theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER)
         };
-        ui.painter().circle_filled(center,diameter/2.0,fill);
-        ui.painter().circle_stroke(center,diameter/2.0,
-            egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,border));
+        ui.painter().rect_filled(lamp,theme::WORKFLOW_SIGNAL_RADIUS,fill);
+        ui.painter().rect_stroke(
+            lamp,theme::WORKFLOW_SIGNAL_RADIUS,
+            egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,border),
+            egui::StrokeKind::Inside
+        );
     }
     workflow_auxiliary_at(ui,id,Rect::from_center_size(
         manage.center(),Vec2::new(manage.width(),theme::WORKFLOW_AUX_CONTROL_HEIGHT)
