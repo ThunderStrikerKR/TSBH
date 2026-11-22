@@ -6427,7 +6427,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
         let linked_active=self.active_id.as_deref()
             .and_then(|id|self.link_hover.active_for(id)).cloned();
-        let mut sync_clicked=false;
         let mut refresh_price:Option<String>=None;
         ui.scope_builder(
             UiBuilder::new().id_salt("details-review").max_rect(review_rect)
@@ -6442,40 +6441,22 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .max_height(components::docked_section_body_height(review_height))
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
+                    // An optional pricing retry is not a second save step.
+                    // Every accepted reception edit is already coalesced by
+                    // source_autosave into the isolated local workspace.
                     if let Some(row)=self.active_id.as_deref()
-                        .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+                        .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
                     {
-                        if row.working_version.is_some() {
-                            ui.label(typography::caption(if row.working_synced {
-                                "운영 미확정 작업본 저장됨 · 주문 확인 완료 전"
-                            } else {
-                                "운영 작업본 저장 후 변경사항 있음 · 다시 저장 필요"
-                            }));
-                        }
-                        if row.manual_model.is_some() && !row.working_synced {
-                            ui.label(typography::caption(
-                                "수동 분류 반영 대기 · 운영 미확정 작업본 저장 필요"
-                            ));
-                        }
-                        if self.gateway.working_commit_enabled() {
-                            if self.working_sync.is_some() {
-                                ui.label(typography::caption("운영 작업본 저장 중"));
-                            } else if row.client_id.is_some() && !row.raw.trim().is_empty() {
-                                if row.manual_model.is_some() ||
-                                   row.pricing_preview.is_some() {
-                                    if theme::action(
-                                        ui,"운영 작업본 저장",ButtonRole::Standard,
-                                        !row.working_synced
-                                    ).clicked() {
-                                        sync_clicked=true;
-                                    }
-                                } else if let Some(client_id)=&row.client_id {
-                                    if theme::action(
-                                        ui,"Rust 금액 다시 계산",ButtonRole::Quiet,true
-                                    ).clicked() {
-                                        refresh_price=Some(client_id.clone());
-                                    }
-                                }
+                        if let Some(client_id)=row.client_id.as_ref().filter(|_|
+                            row.pricing_preview.is_none() &&
+                            row.manual_model.is_none() &&
+                            self.client_change.is_none() &&
+                            self.auto_client_change.is_none()
+                        ){
+                            if theme::action(
+                                ui,"Rust 금액 다시 계산",ButtonRole::Quiet,true
+                            ).clicked(){
+                                refresh_price=Some(client_id.clone());
                             }
                         }
                     }
@@ -6506,9 +6487,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
         if let Some(client_id)=refresh_price {
             self.apply_manual_client(&client_id,ui.ctx());
-        }
-        if sync_clicked {
-            self.start_working_sync(ui.ctx());
         }
 
         let mut next_recipient = None;
@@ -6976,14 +6954,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .filter(|quote|quote.get("sourceRaw")
                             .and_then(serde_json::Value::as_str)
                             ==Some(self.raw_source.as_str()));
-                    let synced=self.active_id.as_deref()
-                        .and_then(|id|self.drafts.iter().find(|row|row.id==id))
-                        .is_some_and(|row|row.working_synced);
-                    let note=if synced {
-                        "Rust 참고 금액 · 운영 미확정 작업본 저장됨"
-                    } else if preview.is_some() {
-                        "Rust 재계산 참고 · 운영 작업본 저장 전"
-                    } else { "" };
+                    let note=if preview.is_some(){
+                        "Rust 계산 참고 금액"
+                    }else{""};
                     let total=preview.and_then(|v|v.get("total"))
                         .and_then(serde_json::Value::as_i64);
                     let recipients=self.analysis.as_ref()
@@ -7206,13 +7179,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// Never pretend this deletes an already persisted operational order.
     fn delete_pending_reception(&mut self,id:&str,ctx:&egui::Context)->bool{
         let Some(row)=self.drafts.iter().find(|row|row.id==id) else{return false;};
-        if row.working_synced || row.working_version.is_some(){
-            floating_notice::publish(
-                ctx,"reception.workflow",floating_notice::Tone::Error,
-                "운영 작업본으로 저장한 주문은 주문 변경·취소 절차에서 처리하세요."
-            );
-            return false;
-        }
         if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
             ReceptionJob::DeleteReception,false
         ){
@@ -7438,14 +7404,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             ui,"미확정 발주서 삭제","취소",true
                         );
                         ui.label("미확정 발주서를 삭제할까요?");
-                        if draft.working_version.is_some(){
-                            ui.label("운영 작업본으로 저장된 주문은 여기서 삭제할 수 없습니다.");
-                        }
                         components::modal_action_row(ui,|buttons|{
                             if theme::action(
                                 buttons,"발주서 삭제",ButtonRole::Danger,
-                                !busy && draft.working_version.is_none() &&
-                                !draft.working_synced
+                                !busy
                             ).clicked(){
                                 delete_pending=Some(id.clone());
                             }
