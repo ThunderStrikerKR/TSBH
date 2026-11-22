@@ -2353,7 +2353,7 @@ impl FreightManager {
         }
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|line|{
-            line.label(typography::field_label("최대 묶음포장 수량"));
+            components::form_field_label(line,"최대 묶음포장 수량");
             line.add_enabled_ui(enabled,|input|{
                 components::management_dropdown(
                     input,&editor.max_bundle
@@ -2378,7 +2378,7 @@ impl FreightManager {
         let mut removed=None;
         for (count,amount) in editor.fees.iter_mut(){
             ui.horizontal(|line|{
-                line.label(typography::field_label(&format!("{count}개 묶음")));
+                components::form_field_label(line,&format!("{count}개 묶음"));
                 components::money_field(line,amount,enabled);
                 if theme::action(line,"삭제",theme::ButtonRole::Standard,enabled).clicked(){
                     removed=Some(*count);
