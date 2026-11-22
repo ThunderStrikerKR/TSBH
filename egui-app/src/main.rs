@@ -4871,6 +4871,7 @@ impl BandoEgui {
                 self.workflow_dialog=Some(WorkflowDialog::DeleteGroup(id));
             }
             Some(workflow_board_ui::Event::AdvanceGroup(id))=>{
+                self.workflow_ui.stop_preview();
                 if self.workflow_action.is_none(){
                     if self.workflow_snapshot.as_ref().and_then(|board|
                         board.groups.iter().find(|group|group.id==id)
@@ -4894,6 +4895,7 @@ impl BandoEgui {
                 }
             }
             Some(workflow_board_ui::Event::UndoGroup(id))=>{
+                self.workflow_ui.stop_preview();
                 self.start_workflow_action("undo_group",&id,None,None,false,ui.ctx());
             }
             Some(workflow_board_ui::Event::ManagePending(id))=>{
