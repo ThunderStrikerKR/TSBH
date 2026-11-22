@@ -2639,6 +2639,17 @@ pub struct ReceptionItemCells {
     pub amount: Response,
 }
 
+/// Product value text needs extra space after the blue 2pt active outline.
+/// Use the same 4pt extra left inset for the column header and every row,
+/// so hovering never shifts the text and quantities/amounts stay untouched.
+fn reception_item_text_clip(rect:Rect,index:usize)->Rect {
+    if index==0 {
+        Rect::from_min_max(
+            egui::pos2(rect.left()+theme::SPACE_4,rect.top()),rect.max
+        )
+    }else{rect}
+}
+
 pub fn reception_items_header(ui: &mut Ui) {
     let width = reception_item_table_width(ui.available_width());
     let (rect, _) = ui.allocate_exact_size(
@@ -2650,8 +2661,10 @@ pub fn reception_items_header(ui: &mut Ui) {
     ui.painter().rect_filled(rect,0.0,theme::RAISED);
     let columns = reception_item_columns(rect);
     for (index, label) in ["품목", "수량", "금액"].iter().enumerate() {
-        // Match the text anchors: column inset 4pt plus value-inner inset 4pt.
-        let cell = columns[index].shrink2(egui::vec2(theme::SPACE_8, 0.0));
+        // Header and value cells use identical text start coordinates.
+        let cell = reception_item_text_clip(
+            columns[index].shrink2(egui::vec2(theme::SPACE_8, 0.0)),index
+        );
         let galley = typography::management_table_header_galley(ui, label);
         // The product header starts at the same LEFT edge as product text;
         // quantity and amount end at the same RIGHT edges as their values.
@@ -2728,7 +2741,9 @@ pub fn reception_item_row(
         // Text must stay clear of the 2pt inset outline. Keeping the
         // value clip and its anchor inside the highlighted cell also stops
         // the last digit / descender from touching a blue edge.
-        let value_clip=cell.shrink2(egui::vec2(theme::SPACE_4,0.0));
+        let value_clip=reception_item_text_clip(
+            cell.shrink2(egui::vec2(theme::SPACE_4,0.0)),index
+        );
         // Use the same font metrics as Painter::text, not a character-count
         // guess. Only the product column truncates; financial values do not.
         let visible_product=(index==0).then(||reception_ellipsized_product(
@@ -3106,6 +3121,31 @@ mod management_toolbar_geometry_tests {
         for pos in [quantity,short,product] {
             assert_eq!(pos.y+19.0/2.0,cell.center().y);
         }
+    }
+
+    #[test]
+    fn reception_product_text_keeps_eight_point_gap_from_active_edge() {
+        let row=Rect::from_min_size(
+            egui::pos2(0.0,0.0),Vec2::new(480.0,42.0)
+        );
+        let columns=reception_item_columns(row);
+        let highlighted=columns[0].shrink2(
+            egui::vec2(theme::SPACE_4,theme::SPACE_4)
+        );
+        let row_text=reception_item_text_clip(
+            highlighted.shrink2(egui::vec2(theme::SPACE_4,0.0)),0
+        );
+        let header_text=reception_item_text_clip(
+            columns[0].shrink2(egui::vec2(theme::SPACE_8,0.0)),0
+        );
+        assert_eq!(row_text.left()-highlighted.left(),theme::SPACE_8);
+        assert_eq!(row_text.left(),header_text.left());
+        assert_eq!(
+            reception_item_text_clip(columns[1],1),columns[1]
+        );
+        assert_eq!(
+            reception_item_text_clip(columns[2],2),columns[2]
+        );
     }
 
     #[test]
