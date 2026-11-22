@@ -5,6 +5,10 @@
 //! connection; only explicitly invoked write_v2_snapshot commits changes.
 //! Database selection, schema creation and migration remain host-owned.
 
+// Native catalog modules are compiled both inside this shared crate and
+// inside the Tauri/parity hosts. Resolve their shared names consistently.
+extern crate self as bando_data_access;
+
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::collections::HashMap;
