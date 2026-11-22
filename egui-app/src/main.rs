@@ -318,10 +318,15 @@ struct BandoEgui {
     workflow_dialog: Option<WorkflowDialog>,
     workflow_manage_target: String,
     workflow_manage_ack: bool,
-    // Transient name-only directory: resolve selected dealer ID in ALL
-    // pending cards, not from an advisory match discarded on manual edits.
+    // Names remain the sole input for pending workflow cards. Reception also
+    // keeps an ephemeral, READ-ONLY presentation index from the real client
+    // master; no operational client data is persisted in preview SQLite.
     client_names: HashMap<String,String>,
-    client_names_receiver: Option<Receiver<Result<HashMap<String,String>,String>>>,
+    client_summaries: HashMap<String,components::ClientDisplaySummary>,
+    client_names_receiver: Option<Receiver<Result<(
+        HashMap<String,String>,
+        HashMap<String,components::ClientDisplaySummary>
+    ),String>>>,
     client_names_last_refresh: Option<Instant>,
     analysis_request: u64,
     analysis_pending: bool,
@@ -404,6 +409,7 @@ impl Default for BandoEgui {
             workflow_manage_target: String::new(),
             workflow_manage_ack: false,
             client_names: HashMap::new(),
+            client_summaries: HashMap::new(),
             client_names_receiver: None,
             client_names_last_refresh: None,
             analysis_request: 0,
@@ -547,8 +553,9 @@ impl BandoEgui {
         if let Some(result)=self.client_names_receiver.as_ref()
             .map(|receiver|receiver.try_recv()){
             match result{
-                Ok(Ok(names))=>{
+                Ok(Ok((names,summaries)))=>{
                     self.client_names=names;
+                    self.client_summaries=summaries;
                     self.client_names_receiver=None;
                     ctx.request_repaint();
                 }
@@ -594,7 +601,32 @@ impl BandoEgui {
                         }
                     }
                 }
-                names
+                // The reception card needs the same tiers and conditions
+                // shown by Client Management. load_catalog() intentionally
+                // omits these, so read the canonical master via its existing
+                // read-only gateway, on this worker only.
+                let mut summaries=HashMap::new();
+                if let Ok(master)=gateway.load_client_master(){
+                    if let Some(clients)=master.get("clients")
+                        .and_then(serde_json::Value::as_array){
+                        for client in clients{
+                            if client.get("deletedAt")
+                                .is_some_and(|value|!value.is_null()){
+                                continue;
+                            }
+                            let id=client.get("id")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("");
+                            if !id.is_empty(){
+                                summaries.insert(
+                                    id.to_owned(),
+                                    components::ClientDisplaySummary::from_client(client)
+                                );
+                            }
+                        }
+                    }
+                }
+                (names,summaries)
             });
             let _=sender.send(result);
             context.request_repaint();
@@ -3318,50 +3350,39 @@ impl BandoEgui {
                         egui::pos2(body_rect.left(), body_rect.top() + gap),
                         Vec2::new(body_rect.width(), client_card_height),
                     );
-                    // The current client is supporting metadata, not
-                    // another input editor. Shared master surface treatment
-                    // changes only paint, never its reserved 70pt Rect.
-                    components::paint_reception_client_summary_surface(
-                        ui,card_rect
-                    );
-                    let client_name = self.active_id.as_deref()
-                        .and_then(|id| self.drafts.iter().find(|item| item.id == id))
-                        .and_then(|item| item.client_id.as_deref())
-                        .and_then(|id| self.analysis.as_ref().and_then(|analysis| {
-                            if reception_service::text(&analysis.client_match, "clientId") == id {
-                                analysis.matched_client_name.as_deref()
-                            } else {
-                                analysis.chosen_client_name.as_deref()
-                            }
+                    // Render a READ-ONLY 70pt reference. An advisory Rust
+                    // match is not a confirmed dealer until it has passed
+                    // the existing native order-client mutation.
+                    let active=self.active_id.as_deref()
+                        .and_then(|id|self.drafts.iter().find(|row|row.id==id));
+                    let linked_id=active.and_then(|row|row.client_id.as_deref());
+                    let display=linked_id.and_then(|id|self.client_summaries.get(id));
+                    let name=linked_id
+                        .and_then(|id|self.client_names.get(id).map(String::as_str))
+                        .or_else(||linked_id.and_then(|id|{
+                            self.analysis.as_ref().and_then(|analysis|{
+                                if reception_service::text(
+                                    &analysis.client_match,"clientId"
+                                )==id {
+                                    analysis.matched_client_name.as_deref()
+                                }else{None}
+                            })
                         }))
-                        .map(str::to_owned);
-                    let status = client_name.as_deref()
-                        .unwrap_or("거래처 확인 필요");
-                    ui.scope_builder(
-                        UiBuilder::new()
-                            .id_salt("source-current-client-band")
-                            .max_rect(card_rect.shrink2(egui::vec2(10.0, 5.0)))
-                            .layout(Layout::top_down(Align::Min)),
-                        |card| {
-                            // The outer source body uses explicit spacing,
-                            // but this 2-row card keeps its normal 8pt rhythm.
-                            card.spacing_mut().item_spacing.y = theme::SPACING;
-                            card.set_clip_rect(card_rect);
-                            card.label(typography::caption("현재 거래처"));
-                            card.horizontal(|line| {
-                                line.label(typography::body(status));
-                                line.with_layout(Layout::right_to_left(Align::Center), |right| {
-                                    let label = if client_name.is_some() {
-                                        "변경"
-                                    } else { "거래처 찾기" };
-                                    if theme::action(right, label, ButtonRole::Standard, true)
-                                        .clicked() {
-                                        open_client_chooser = true;
-                                    }
-                                });
-                            });
-                        },
-                    );
+                        .unwrap_or(if linked_id.is_some(){
+                            "거래처 확인 중"
+                        }else{"거래처 확인 필요"});
+                    let state=if linked_id.is_none(){
+                        "· 확인 필요"
+                    }else{match active.and_then(|row|row.client_selection.as_deref()){
+                        Some("MANUAL")=>"· 직접 선택",
+                        Some("AUTO")=>"· 자동 인식",
+                        _=>"· 연결됨"
+                    }};
+                    if components::reception_client_summary_card(
+                        ui,card_rect,linked_id.is_some(),display,name,state
+                    ){
+                        open_client_chooser=true;
+                    }
                 }
                 let editor_top = if has_source {
                     body_rect.top() + gap + client_card_height + gap
