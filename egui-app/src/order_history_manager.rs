@@ -1596,7 +1596,7 @@ impl OrderHistoryManager {
                                                     row_rect,&widths,spacing);
                                                 row_ui.painter().rect(
                                                     block_rect,
-                                                    theme::WORKFLOW_CHIP_RADIUS as f32,
+                                                    theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,
                                                     theme::PANEL,
                                                     Stroke::new(1.0,theme::DIVIDER),
                                                     egui::StrokeKind::Inside

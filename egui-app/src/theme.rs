@@ -123,6 +123,9 @@ pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_DETAIL_ROW_PADDING_X: f32 = SPACE_12;
 pub const WORKFLOW_DETAIL_NAME_WIDTH: f32 = 102.0;
 pub const WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT: f32 = 32.0;
+// History recipient-detail blocks are independent of workflow product chips.
+// Keep their existing 4pt corner radius even when workflow chips are removed.
+pub const ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS: f32 = 4.0;
 pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
 pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
 pub const BRIGHT: Color32 = Color32::WHITE;
