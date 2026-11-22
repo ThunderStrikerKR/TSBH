@@ -1035,7 +1035,6 @@ impl BandoEgui {
             let _=tx.send(result);
             context.request_repaint();
         });
-        ctx.request_repaint_after(Duration::from_millis(100));
     }
 
     fn poll_pricing_basis_check(&mut self,ctx:&egui::Context){
@@ -1048,9 +1047,6 @@ impl BandoEgui {
             _=>None
         };
         let Some(received)=received else{
-            if self.pricing_basis_check.is_some(){
-                ctx.request_repaint_after(Duration::from_millis(100));
-            }
             return;
         };
         let Some(pending)=self.pricing_basis_check.take() else{return};
@@ -1468,7 +1464,6 @@ impl BandoEgui {
             let _=sender.send(result);
             context.request_repaint();
         });
-        ctx.request_repaint_after(Duration::from_millis(100));
     }
 
     fn poll_client_change(&mut self, ctx:&egui::Context) {
@@ -1584,8 +1579,6 @@ impl BandoEgui {
                     );
                 }
             }
-        } else if self.client_change.is_some() {
-            ctx.request_repaint_after(Duration::from_millis(100));
         }
     }
 
@@ -1671,6 +1664,7 @@ impl BandoEgui {
             submitted_manual:manual,
             receiver,
         });
+        let context=ctx.clone();
         std::thread::spawn(move || {
             let result=(||->Result<serde_json::Value,String>{
                 if request.get("manualModel").is_some(){
@@ -1686,8 +1680,8 @@ impl BandoEgui {
                 gateway.commit_working_reception(request)
             })();
             let _=sender.send(result);
+            context.request_repaint();
         });
-        ctx.request_repaint_after(Duration::from_millis(100));
     }
 
     fn poll_working_sync(&mut self, ctx:&egui::Context) {
@@ -1781,8 +1775,6 @@ impl BandoEgui {
                     self.working_sync_error=Some(format!("운영 작업본 저장 실패: {error}"));
                 }
             }
-        } else if self.working_sync.is_some() {
-            ctx.request_repaint_after(Duration::from_millis(100));
         }
     }
 
@@ -1874,7 +1866,6 @@ impl BandoEgui {
             let _=tx.send(outcome);
             context.request_repaint();
         });
-        ctx.request_repaint_after(Duration::from_millis(100));
     }
 
     /// React StaffChecks routing: navigate to the exact recipient/item
@@ -2175,7 +2166,8 @@ impl BandoEgui {
                 // The result is advisory. Never drop the recheck because an
                 // employee write or source analysis currently owns the order.
                 self.remote_recheck_due=true;
-                ctx.request_repaint_after(Duration::from_millis(100));
+                // The conflicting worker's completion wakes egui, at which
+                // point the deferred remote check can be admitted.
                 return;
             }
             JobAdmission::Start=>{}
@@ -2209,7 +2201,6 @@ impl BandoEgui {
                 context.request_repaint();
             }
         });
-        ctx.request_repaint_after(Duration::from_millis(100));
     }
     fn poll_remote_recheck(&mut self,ctx:&egui::Context){
         let outcome=self.remote_recheck.as_ref().map(|pending|
@@ -2220,9 +2211,6 @@ impl BandoEgui {
             _=>None
         };
         let Some(values)=received else{
-            if self.remote_recheck.is_some(){
-                ctx.request_repaint_after(Duration::from_millis(100));
-            }
             return;
         };
         let Some(pending)=self.remote_recheck.take() else{return};
@@ -2408,7 +2396,6 @@ impl BandoEgui {
             let _=tx.send(result);
             context.request_repaint();
         });
-        ctx.request_repaint_after(Duration::from_millis(100));
     }
 
     fn poll_inline_change(&mut self,ctx:&egui::Context){
@@ -2421,9 +2408,6 @@ impl BandoEgui {
             _=>None
         };
         let Some(result)=result else{
-            if self.inline_change.is_some(){
-                ctx.request_repaint_after(Duration::from_millis(100));
-            }
             return;
         };
         let Some(pending)=self.inline_change.take() else{return};
@@ -2526,7 +2510,6 @@ impl BandoEgui {
             let _=tx.send(result);
             context.request_repaint();
         });
-        ctx.request_repaint_after(Duration::from_millis(100));
     }
 
     fn poll_vat_change(&mut self,ctx:&egui::Context){
@@ -2539,9 +2522,6 @@ impl BandoEgui {
             _=>None
         };
         let Some(outcome)=outcome else{
-            if self.vat_change.is_some(){
-                ctx.request_repaint_after(Duration::from_millis(100));
-            }
             return;
         };
         let Some(pending)=self.vat_change.take() else{return};
@@ -3099,9 +3079,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             _=>None,
         };
         let Some(result)=result else {
-            if self.auto_client_change.is_some() {
-                ctx.request_repaint_after(Duration::from_millis(100));
-            }
             return;
         };
         let Some(pending)=self.auto_client_change.take() else{return;};
