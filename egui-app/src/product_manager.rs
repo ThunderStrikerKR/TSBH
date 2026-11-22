@@ -1292,28 +1292,28 @@ impl ProductManager {
         }
         Ok(next)
     }
-    /// Three-column product editor: wide overview, compact price, and a
-    /// true 320pt image. Widths use the *actual* Kakao-safe scroll surface.
-    /// Two explicit add_space(16) calls in egui::horizontal each reserve
-    /// an additional 8pt of item spacing on both sides.
+    /// The section masters ADD 12pt inner padding and 1pt border on BOTH
+    /// edges. Account for that before assigning widths or the image/fields
+    /// will clip, particularly with the approved inline label + editor rows.
     fn detail_columns(width:f32)->Option<(f32,f32,f32)>{
-        let image=theme::PRODUCT_DETAIL_IMAGE_SIZE;
+        let section_inset=2.0*(theme::MODAL_SECTION_PADDING+
+            theme::FRAME_STROKE_WIDTH);
+        let image=theme::PRODUCT_DETAIL_IMAGE_SIZE+section_inset;
         let gap=theme::SPACE_16+2.0*theme::SPACE_8;
         let usable=width-image-2.0*gap;
-        if usable<510.0{return None;}
-        let price=(usable*0.38).clamp(210.0,250.0);
+        if usable<560.0{return None;}
+        let price=(usable*0.36).clamp(240.0,255.0);
         let overview=usable-price;
-        if overview<300.0{return None;}
+        if overview<310.0{return None;}
         Some((overview,price,image))
     }
     fn detail_wide_text(
         ui:&mut Ui,draft:&mut Value,key:&str,label:&str,enabled:bool
     ){
-        ui.vertical(|row|{
-            row.label(typography::field_label(label));
+        components::modal_labeled_row(ui,label,|line|{
             let mut value=field(draft,key).to_owned();
-            row.add_enabled_ui(enabled,|input|{
-                let width=input.available_width();
+            line.add_enabled_ui(enabled,|input|{
+                let width=input.available_width().max(1.0);
                 if components::flexible_text_field(
                     input,&mut value,width,label
                 ).changed(){
@@ -1363,20 +1363,13 @@ impl ProductManager {
         brands:&[Value],categories:&[(String,String)],
         editable:bool,busy:bool
     ){
-        ui.label(typography::section_heading("상품 개요"));
-        ui.add_space(theme::SPACE_8);
-        Self::detail_wide_text(
-            ui,draft,"name","상품명",editable&&!busy
-        );
+        Self::detail_wide_text(ui,draft,"name","상품명",editable&&!busy);
         ui.add_space(theme::SPACE_12);
-        // The existing subtitle field remains intact for storage/backward
-        // compatibility; the employee-facing label is "상품 옵션".
         Self::detail_wide_text(
             ui,draft,"subtitle","상품 옵션",editable&&!busy
         );
         ui.add_space(theme::SPACE_12);
-        ui.vertical(|category|{
-            category.label(typography::field_label("카테고리"));
+        components::modal_labeled_row(ui,"카테고리",|row|{
             let before=draft["categories"].as_array()
                 .and_then(|ids|ids.last())
                 .and_then(Value::as_str).unwrap_or("").to_owned();
@@ -1385,22 +1378,22 @@ impl ProductManager {
                 .find(|(id,_)|id==&category_id)
                 .map(|(_,name)|name.as_str())
                 .unwrap_or("카테고리 미지정");
-            let picker_width=category.available_width().max(1.0);
-            let visible=typography::fit_category_path(
-                category,display,
-                picker_width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING,
-                typography::CategoryPathFont::Body
-            );
-            category.add_enabled_ui(editable&&!busy,|input|{
+            row.add_enabled_ui(editable&&!busy,|input|{
+                let width=input.available_width().max(1.0);
+                let visible=typography::fit_category_path(
+                    input,display,
+                    width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING,
+                    typography::CategoryPathFont::Body
+                );
                 components::management_dropdown(
-                    input,&visible,picker_width,true,display,|choices|{
+                    input,&visible,width,true,display,|choices|{
                         components::management_dropdown_option(
                             choices,&mut category_id,
                             String::new(),"카테고리 미지정");
                         for (id,label) in categories{
                             let visible=typography::fit_category_path(
                                 choices,label,
-                                picker_width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING,
+                                width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING,
                                 typography::CategoryPathFont::Body
                             );
                             components::management_dropdown_option(
@@ -1419,22 +1412,21 @@ impl ProductManager {
             }
         });
         ui.add_space(theme::SPACE_12);
-        ui.vertical(|brand|{
-            brand.label(typography::field_label("브랜드"));
+        components::modal_labeled_row(ui,"브랜드",|row|{
             let before=field(draft,"brandId").to_owned();
             let mut brand_id=before.clone();
             let label=brands.iter().find(|b|field(b,"id")==brand_id)
                 .map(|b|field(b,"name")).unwrap_or("브랜드 미지정");
-            brand.add_enabled_ui(editable&&!busy,|input|{
-                let width=input.available_width();
+            row.add_enabled_ui(editable&&!busy,|input|{
+                let width=input.available_width().max(1.0);
                 components::management_dropdown(
                     input,label,width,true,"브랜드 선택",|choices|{
                         components::management_dropdown_option(
                             choices,&mut brand_id,String::new(),"브랜드 미지정");
-                        for row in brands{
+                        for item in brands{
                             components::management_dropdown_option(
                                 choices,&mut brand_id,
-                                field(row,"id").to_owned(),field(row,"name"));
+                                field(item,"id").to_owned(),field(item,"name"));
                         }
                     });
             });
@@ -1446,37 +1438,49 @@ impl ProductManager {
         });
     }
     fn detail_price_column(
-        ui:&mut Ui,draft:&Value,
+        ui:&mut Ui,draft:&mut Value,
         prices:&mut HashMap<String,String>,editable:bool,busy:bool
     ){
-        ui.label(typography::section_heading("판매 · 가격"));
-        ui.add_space(theme::SPACE_8);
-        ui.label(typography::field_label("판매 상태"));
-        // The current native catalog has only the active flag. Do not
-        // introduce a four-state selector until its persistence and order
-        // confirmation rules are implemented end-to-end.
-        let selling=draft["active"].as_bool()!=Some(false);
-        ui.label(egui::RichText::new(
-            if selling{"● 판매중"}else{"● 판매중지"}
-        ).color(if selling{theme::SUCCESS}else{theme::MUTED})
-         .size(typography::FONT_FIELD_LABEL));
+        components::modal_labeled_row(ui,"판매 상태",|line|{
+            // Rust catalog stores a boolean active flag, not four invented
+            // selling modes. A real shared dropdown edits that same draft.
+            let current=draft["active"].as_bool()!=Some(false);
+            let mut selected=current;
+            line.add_enabled_ui(editable&&!busy,|input|{
+                let width=input.available_width().max(1.0);
+                components::management_dropdown(
+                    input,if selected{"판매중"}else{"판매중지"},
+                    width,true,"판매 상태 선택",|options|{
+                        components::management_dropdown_option(
+                            options,&mut selected,true,"판매중");
+                        components::management_dropdown_option(
+                            options,&mut selected,false,"판매중지");
+                    });
+            });
+            if selected!=current{draft["active"]=json!(selected);}
+        });
         ui.add_space(theme::SPACE_12);
-        components::soft_divider(ui);
-        ui.add_space(theme::SPACE_8);
         for (label,tier) in [
             ("도매가","wholesale"),("반도매가","semi"),
             ("소매가","retail")
         ]{
-            ui.vertical(|section|{
-                section.label(typography::field_label(label));
-                section.horizontal(|line|{
-                    let value=prices.entry(tier.to_owned())
-                        .or_insert_with(String::new);
-                    line.add_enabled_ui(editable&&!busy,|input|{
-                        components::money_field(input,value,true);
-                    });
-                    line.label(typography::field_label("원"));
-                });
+            components::modal_labeled_row(ui,label,|line|{
+                let value=prices.entry(tier.to_owned())
+                    .or_insert_with(String::new);
+                // Reserve the '원' unit inside the same row rather than
+                // placing it below the price or beyond the modal section.
+                let unit_slot=theme::SPACE_24;
+                let width=(line.available_width()-unit_slot).max(48.0);
+                line.allocate_ui_with_layout(
+                    Vec2::new(width,theme::INPUT_HEIGHT),
+                    Layout::left_to_right(Align::Center),
+                    |input|{
+                        input.add_enabled_ui(editable&&!busy,|editor|{
+                            components::money_field(editor,value,true);
+                        });
+                    }
+                );
+                line.label(typography::field_label("원"));
             });
             ui.add_space(theme::SPACE_12);
         }
