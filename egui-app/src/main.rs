@@ -201,6 +201,8 @@ struct PendingClientChange {
     // even when the pasted text itself has not changed.
     chat_handle: Option<String>,
     chat_title: Option<String>,
+    // A later inline/manual edit must never be overwritten by an older quote.
+    manual_model: Option<serde_json::Value>,
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
 }
 
@@ -999,7 +1001,8 @@ impl BandoEgui {
         self.client_change=Some(PendingClientChange {
             order_id,source_raw,order_type,
             chat_handle:row.chat_handle.clone(),
-            chat_title:row.chat_title.clone(),receiver,
+            chat_title:row.chat_title.clone(),
+            manual_model:row.manual_model.clone(),receiver,
         });
         self.source_save_error=None;
         std::thread::spawn(move || {
@@ -1021,22 +1024,28 @@ impl BandoEgui {
             let Some(pending)=self.client_change.take() else {return;};
             // Another order or edited original may never inherit an old
             // calculation, regardless of asynchronous completion order.
-            let same_chat=self.drafts.iter().find(|row|
-                row.id==pending.order_id
-            ).is_some_and(|row|
-                row.chat_handle==pending.chat_handle &&
-                row.chat_title==pending.chat_title &&
-                row.manual_model.is_none()
-            );
-            if self.active_id.as_deref()!=Some(pending.order_id.as_str()) ||
-               self.raw_source!=pending.source_raw ||
-               self.order_type.as_str()!=pending.order_type ||
-               !same_chat {
+            let current=self.drafts.iter().find(|row|row.id==pending.order_id);
+            let stale_reason=if self.active_id.as_deref()!=Some(pending.order_id.as_str()){
+                Some("다른 발주서로 이동했습니다. 거래처를 다시 선택하세요.")
+            }else if self.raw_source!=pending.source_raw ||
+                     self.order_type.as_str()!=pending.order_type ||
+                     current.is_none_or(|row|
+                         row.raw!=pending.source_raw ||
+                         row.order_type!=pending.order_type
+                     ){
+                Some("발주서 원문 또는 접수 유형이 변경되었습니다. 거래처를 다시 선택하세요.")
+            }else if current.is_none_or(|row|
+                row.chat_handle!=pending.chat_handle ||
+                row.chat_title!=pending.chat_title
+            ){
+                Some("카카오톡 대화창이 변경되었습니다. 거래처를 다시 선택하세요.")
+            }else if current.is_none_or(|row|row.manual_model!=pending.manual_model){
+                Some("수동 수정 내역이 변경되었습니다. 거래처를 다시 선택하세요.")
+            }else{None};
+            if let Some(message)=stale_reason {
                 if let Some(chooser)=self.client_chooser.as_mut(){
                     if chooser.order_id==pending.order_id && chooser.is_selecting() {
-                        chooser.selection_failed(
-                            "발주서나 카카오톡 대화창이 변경되었습니다. 거래처를 다시 선택하세요.".into()
-                        );
+                        chooser.selection_failed(message.into());
                     }
                 }
                 return;
@@ -1049,10 +1058,15 @@ impl BandoEgui {
                         row.client_id=Some(result.client_id);
                         row.client_selection=Some("MANUAL".into());
                         row.pricing_preview=result.pricing_preview;
-                        row.manual_model=None;
+                        row.manual_model=result.manual_model;
                         row.working_synced=false;
-                        row.analysis_raw=None;
-                        row.analysis_evidence=None;
+                        // Preserve the immutable first Rust recognition for
+                        // edited rows and their before/after audit history.
+                        // A fresh selected-client analysis is still scheduled.
+                        if row.manual_model.is_none() {
+                            row.analysis_raw=None;
+                            row.analysis_evidence=None;
+                        }
                         row.client_match=None;
                     }
                     self.clear_source_analysis();
