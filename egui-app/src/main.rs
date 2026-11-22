@@ -3918,6 +3918,8 @@ impl BandoEgui {
                             Layout::top_down(Align::Min),
                             |area| {
                                 area.set_min_height(list_height);
+                                let table_width=area.available_width()
+                                    .max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH);
                                 egui::ScrollArea::both()
                                     .scroll_bar_visibility(
                                         egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
@@ -3926,6 +3928,9 @@ impl BandoEgui {
                                     .max_height(list_height)
                                     .auto_shrink([false,false])
                                     .show(area,|contents|{
+                                        // A horizontal ScrollArea may report an unbounded
+                                        // available width. Explicitly lock its child width.
+                                        contents.set_width(table_width);
                                         contents.spacing_mut().item_spacing.y=0.0;
                                         components::reception_items_header(contents);
                                         if let Some(items)=ship.recipient.get("items")
@@ -4243,6 +4248,8 @@ impl BandoEgui {
                         Layout::top_down(Align::Min),
                         |list_area|{
                             list_area.set_min_height(list_height);
+                            let table_width=list_area.available_width()
+                                .max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH);
                             egui::ScrollArea::both()
                                 .scroll_bar_visibility(
                                     egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
@@ -4251,6 +4258,7 @@ impl BandoEgui {
                                 .max_height(list_height)
                                 .auto_shrink([false,false])
                                 .show(list_area,|items_ui|{
+                                    items_ui.set_width(table_width);
                                     items_ui.spacing_mut().item_spacing.y=0.0;
                                     components::reception_items_header(items_ui);
                                     if let Some(recipient)=selected {
