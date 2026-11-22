@@ -733,7 +733,7 @@ impl BandoEgui {
     /// and operational group mutations. The CAS-serialized autosave sidecar
     /// deliberately remains independent of user-request admission.
     fn active_reception_jobs(&self,request:ReceptionJob)->Vec<ReceptionJob>{
-        let mut active=Vec::with_capacity(18);
+        let mut active=Vec::with_capacity(21);
         if self.client_change.is_some(){active.push(ReceptionJob::ManualClient);}
         if self.auto_client_change.is_some(){active.push(ReceptionJob::AutomaticClient);}
         if self.pricing_basis_check.is_some(){active.push(ReceptionJob::PricingBasis);}
@@ -754,6 +754,9 @@ impl BandoEgui {
         }
         if self.direct_source_entry{active.push(ReceptionJob::SourceEntry);}
         if self.workflow_action.is_some(){active.push(ReceptionJob::WorkflowAction);}
+        if self.client_chooser.is_some(){active.push(ReceptionJob::ClientChooser);}
+        if self.vat_dialog.is_some(){active.push(ReceptionJob::VatDialog);}
+        if self.workflow_dialog.is_some(){active.push(ReceptionJob::WorkflowDialog);}
         active
     }
 
@@ -2241,6 +2244,7 @@ impl BandoEgui {
     }
 
     fn open_vat_settings(&mut self){
+        if self.vat_dialog.is_some(){return;}
         if self.reception_job_admission(
             ReceptionJob::VatEdit,false
         )!=JobAdmission::Start{return;}
@@ -2531,6 +2535,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn open_client_chooser(&mut self, ctx: &egui::Context) {
+        if self.client_chooser.is_some(){return;}
         // Do not display a chooser that could submit a conflicting request.
         if self.reception_job_admission(
             ReceptionJob::ManualClient,false
@@ -8466,11 +8471,16 @@ mod reception_workflow_admission_integration_tests {
             group_id:"group".into(),action:"advance_group".into(),
             receiver:wrx
         });
+        app.vat_dialog=Some(VatDialog::new(
+            "draft-1".into(),"원문".into(),&[]
+        ));
+        app.workflow_dialog=Some(WorkflowDialog::ManageGroup("group".into()));
         let active=app.active_reception_jobs(ReceptionJob::DeleteReception);
         for expected in [
             ReceptionJob::Analysis,ReceptionJob::RemoteRecheck,
             ReceptionJob::SourceIntake,ReceptionJob::SourceReview,
-            ReceptionJob::SourceEntry,ReceptionJob::WorkflowAction
+            ReceptionJob::SourceEntry,ReceptionJob::WorkflowAction,
+            ReceptionJob::VatDialog,ReceptionJob::WorkflowDialog
         ]{
             assert!(active.contains(&expected),"{expected:?} absent from job inventory");
         }
