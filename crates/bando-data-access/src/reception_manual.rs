@@ -1,6 +1,8 @@
 //! Validate and replay an egui employee manual draft inside the authoritative
 //! Tauri SQLite transaction. Never trust item price, product snapshots,
 //! recipient sources, freight, or client identity supplied by the UI.
+//! Validate staff edits against fresh Rust recognition, then replay typed
+//! override values via the same native reducer. Never accept a raw unitPrice.
 //!
 //! All meaningful mutations are replayed through existing Rust reducers.
 //! UI-submitted rows provide ONLY target IDs, editable strings and quantities;
@@ -316,6 +318,90 @@ fn edit_fields(
                         "value":""
                     }))?;
                 }
+            }
+            // Unit prices supplied in the JSON model are NOT authoritative.
+            // Only a distinct validated staff override may change them.
+            if let Some(value)=desired_item.get("manualUnitPrice") {
+                if !value.is_null(){
+                    apply_step("set_manual_unit_price",native,keys,json!({
+                        "cell":{"recipientId":rid,"itemId":iid},"value":value
+                    }))?;
+                }
+            }
+        }
+        // Dispatch, COD, locality and approved base freight must also be
+        // replayed from the recipient-bound draft. Previously these fields
+        // were silently discarded on the native SQLite commit.
+        let origin=row.get("dispatchOrigin").and_then(Value::as_str)
+            .unwrap_or("FACTORY");
+        if !matches!(origin,"FACTORY"|"STORE"){
+            return Err("발송지는 공장 또는 매장이어야 합니다.".into());
+        }
+        let native_origin=s(&list(native,"rows")?[idx],"dispatchOrigin");
+        if native_origin!=origin && !(native_origin.is_empty()&&origin=="FACTORY"){
+            apply_step("set_manual_delivery_option",native,keys,json!({
+                "cell":{"recipientId":rid,"field":"dispatchOrigin"},
+                "value":origin
+            }))?;
+        }
+        let code=row.get("freightCode").and_then(Value::as_str)
+            .unwrap_or("010");
+        if !matches!(code,"010"|"020"){
+            return Err("착불·선불 구분을 확인하세요.".into());
+        }
+        let native_code=s(&list(native,"rows")?[idx],"freightCode");
+        if native_code!=code && !(native_code.is_empty()&&code=="010"){
+            apply_step("set_manual_delivery_option",native,keys,json!({
+                "cell":{"recipientId":rid,"field":"freightCode"},
+                "value":code
+            }))?;
+        }
+        if let Some(remote)=row.get("remoteDelivery").filter(|value|
+            value.get("manual")==Some(&Value::Bool(true))
+        ){
+            if remote.get("address").and_then(Value::as_str)!=Some(s(row,"address")){
+                return Err("도서산간 설정이 현재 수취인 주소와 다릅니다.".into());
+            }
+            let checked=remote.get("checked").and_then(Value::as_bool)
+                .ok_or("도서산간 적용값이 잘못되었습니다.")?;
+            apply_step("set_manual_delivery_option",native,keys,json!({
+                "cell":{"recipientId":rid,"field":"remoteDelivery"},
+                "value":checked
+            }))?;
+        }
+        if let Some(vat)=row.get("vatOverride") {
+            if !vat.is_null() && !vat.is_boolean(){
+                return Err("부가세 포함 여부가 올바르지 않습니다.".into());
+            }
+            if list(native,"rows")?[idx].get("vatOverride")!=Some(vat){
+                apply_step("set_manual_delivery_option",native,keys,json!({
+                    "cell":{"recipientId":rid,"field":"vatOverride"},
+                    "value":vat
+                }))?;
+            }
+        }
+        if let Some(charges)=row.get("shippingCharges"){
+            let map=charges.as_object().ok_or("수취인 운임 정보 형식 오류")?;
+            if map.keys().any(|key|!matches!(key.as_str(),"FACTORY"|"STORE")){
+                return Err("수취인 운임 발송지 정보 오류".into());
+            }
+            if let Some(value)=map.get(origin){
+                if !value.is_null() && super::rules::execute(
+                    "normalize_remote_freight_input",
+                    json!({"recipient":row,"shipment":{},"order":order,
+                        "appliedCharge":value})
+                ).is_err(){
+                    // This rejects unsafe numeric values while the native
+                    // set_manual_delivery_option below is the authority for
+                    // persisted undoubled (base) charges.
+                    let valid=value.as_i64().is_some_and(|n|
+                        (0..=9_007_199_254_740_991).contains(&n));
+                    if !valid {return Err("기본 운임 숫자 형식 오류".into());}
+                }
+                apply_step("set_manual_delivery_option",native,keys,json!({
+                    "cell":{"recipientId":rid,"field":"shippingBaseCharge"},
+                    "value":value
+                }))?;
             }
         }
     }
