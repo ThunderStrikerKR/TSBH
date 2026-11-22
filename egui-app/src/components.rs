@@ -4311,3 +4311,61 @@ mod management_date_group_tests{
             theme::ACTION_STANDARD_HEIGHT);
     }
 }
+
+#[cfg(test)]
+mod management_dropdown_unification_tests {
+    use super::*;
+
+    #[test]
+    fn all_ordinary_egui_single_selectors_use_the_shared_component() {
+        // These screens previously owned their own ComboBox triggers.
+        // Keep UI choice styling and popup lifecycle in one component.
+        let screens:[(&str,&str,usize);7]=[
+            ("alias_manager",include_str!("alias_manager.rs"),3),
+            ("category_manager",include_str!("category_manager.rs"),1),
+            ("client_manager",include_str!("client_manager.rs"),4),
+            ("freight_manager",include_str!("freight_manager.rs"),5),
+            ("product_manager",include_str!("product_manager.rs"),7),
+            ("manual_product_search",include_str!("manual_product_search.rs"),2),
+            ("main",include_str!("main.rs"),1),
+        ];
+        for (name,source,minimum) in screens {
+            assert!(!source.contains("ComboBox::"),
+                "{name} still contains a screen-local native ComboBox");
+            assert!(source.matches("management_dropdown(").count()>=minimum,
+                "{name} lost a shared single-select call");
+        }
+    }
+
+    #[test]
+    fn management_single_select_triggers_keep_the_shared_control_geometry() {
+        let ctx=egui::Context::default();
+        let mut rects=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(480.0);
+                for (label,width,enabled) in [
+                    ("접수일 기준",148.0,true),
+                    ("계좌 선택",240.0,true),
+                    ("비활성",148.0,false),
+                ]{
+                    let response=management_dropdown(
+                        ui,label,width,enabled,"",|choices|{
+                            let mut value=String::from("A");
+                            management_dropdown_option(
+                                choices,&mut value,String::from("A"),"선택 A");
+                            management_dropdown_option(
+                                choices,&mut value,String::from("B"),"선택 B");
+                        }
+                    );
+                    rects.push((response.rect,width));
+                }
+            });
+        });
+        for (rect,width) in rects {
+            assert_eq!(rect.width(),width);
+            assert_eq!(rect.height(),theme::ACTION_STANDARD_HEIGHT);
+        }
+        assert_eq!(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT,320.0);
+    }
+}
