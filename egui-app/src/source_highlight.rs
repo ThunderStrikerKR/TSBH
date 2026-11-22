@@ -400,13 +400,14 @@ pub fn layout(
 //// The source is 16pt, but egui's row height includes line leading.
 /// A gray evidence mark should hug the letter ink rather than fill the row.
 /// Deflate normal tokens horizontally to keep a visible gap between neighbors.
+/// The quiet gray fill gains just 1pt at the top and bottom vs. the compact baseline.
 fn compact_block_rect(
     text_left:f32,text_right:f32,row_top:f32,row_height:f32,focused:bool
 )->Option<egui::Rect> {
     if row_height<=0.0 {return None;}
     let horizontal=if focused {1.5} else {-0.5};
     let vertical=if focused {1.0_f32.min(row_height*0.12)}
-        else {2.5_f32.min(row_height*0.20)};
+        else {1.5_f32.min(row_height*0.20)};
     let left=text_left-horizontal;
     let right=text_right+horizontal;
     let top=row_top+vertical;
@@ -596,8 +597,8 @@ mod tests {
         assert_eq!(a.right(),14.5);
         assert_eq!(b.left(),15.5);
         assert!(a.right()<b.left());
-        assert_eq!(a.top(),12.5);
-        assert_eq!(a.bottom(),27.5);
+        assert_eq!(a.top(),11.5);
+        assert_eq!(a.bottom(),28.5);
         assert!(a.bottom()<next.top());
         // A focused blue block is deliberately larger than its quiet peers.
         let active=compact_block_rect(5.0,15.0,10.0,20.0,true).unwrap();
