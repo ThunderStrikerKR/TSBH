@@ -393,7 +393,7 @@ export function WorkflowBoard({
           selected = selection?.groupId === g.id,
           hovered = stageHover?.groupId === g.id,
           open = workflowGroupOpen(g.id, selection?.groupId, manuallyClosedGroup);
-        const dealerName = first.client?.displayName || first.client?.name ||
+        const dealerName = first.client?.name ||
           (shipmentRead.ready ? "거래처 확인 필요" : "거래처 확인 중");
         const label =
           g.needsNotice && step >= 2
