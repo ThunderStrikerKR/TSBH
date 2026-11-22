@@ -2568,6 +2568,17 @@ impl BandoEgui {
                                     .get(self.selected_recipient))
                             .and_then(|row|row["id"].as_str());
                         if displayed_recipient==Some(target.recipient_id.as_str()){
+                            if target.field=="product" {
+                                if let Some(item_id)=target.item_id.as_deref(){
+                                    // One click on the product while quantity
+                                    // is being edited commits quantity first,
+                                    // then opens React's product modal.
+                                    let recipient_id=target.recipient_id.clone();
+                                    let item_id=item_id.to_owned();
+                                    self.open_item_editor(&recipient_id,&item_id,ctx);
+                                }
+                                return;
+                            }
                             let refreshed=self.analysis.as_ref().and_then(|analysis|{
                                 let quote=self.active_id.as_deref()
                                     .and_then(|id|self.drafts.iter()
@@ -7026,7 +7037,21 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.link_hover.scroll_to=None;
         }
         if let Some((recipient_id,item_id))=item_popup{
-            self.open_item_editor(&recipient_id,&item_id,ui.ctx());
+            if self.inline_editor.as_ref().is_some_and(|edit|
+                edit.text!=edit.original){
+                // Respect the first-click handoff used by the other inline
+                // cells: commit the current edit before showing the modal.
+                self.submit_inline_edit(ui.ctx());
+                if let Some(pending)=self.inline_change.as_mut(){
+                    pending.next=Some((InlineTarget{
+                        recipient_id,
+                        item_id:Some(item_id),field:"product"
+                    },None));
+                }
+            }else{
+                self.inline_editor=None;
+                self.open_item_editor(&recipient_id,&item_id,ui.ctx());
+            }
         }else if inline_cancel{
             self.inline_editor=None;
         }else if let Some((target,text,click_at))=inline_open {
