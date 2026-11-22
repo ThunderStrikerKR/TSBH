@@ -549,8 +549,9 @@ impl ClientManager {
                                 row.set_clip_rect(rows_clip);
                                 if let Some(client)=rows.get(index){
                                     let name=field(client,"name");
-                                    let display=field(client,"displayName");
-                                    let description=if display!=name {display}else{""};
+                                    // Internal aliases are searchable, not a
+                                    // second invoice sender name or table label.
+                                    let description="";
                                     let address=field(client,"address");
                                     let contacts=[
                                         field(client,"phone"),field(client,"mobile")
