@@ -282,7 +282,7 @@ impl ModelGroupManager {
                         components::soft_divider(left);
                         left.horizontal(|search|{
                             components::form_field_label(search,"상품 검색");
-                            components::flexible_text_field(search,&mut self.query,
+                            components::management_search_field(search,&mut self.query,
                                 theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                                 "그룹 이름 또는 상품명 검색");
                         });
@@ -359,7 +359,7 @@ impl ModelGroupManager {
                                     components::soft_divider(body);
                                     body.label(typography::subsection_heading("상품 추가"));
                                     body.add_enabled_ui(writable&&!busy,|search|{
-                                        components::flexible_text_field(search,&mut self.search,
+                                        components::management_search_field(search,&mut self.search,
                                             theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                                             "상품명으로 찾아서 추가");
                                     });
