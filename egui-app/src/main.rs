@@ -2542,6 +2542,19 @@ impl BandoEgui {
             Ok(event)=>{
                 self.source_save_error=None;
                 self.apply_manual_event(event,ctx);
+                if self.source_save_error.is_none()
+                    && matches!(pending.target.field,"product"|"removeItem")
+                    && self.item_editor.as_ref().is_some_and(|dialog|
+                        dialog.is_same_target(
+                            &pending.order_id,&pending.raw,
+                            &pending.target.recipient_id,
+                            pending.target.item_id.as_deref().unwrap_or("")
+                        )
+                    ){
+                    // The dialog closes only after the native reducer applied
+                    // the selected product/remove result successfully.
+                    self.item_editor=None;
+                }
                 // The prior cell and source must commit successfully before
                 // opening the destination. Use the new Rust projection so a
                 // quantity edit cannot leave a stale price in the next input.
@@ -2571,7 +2584,21 @@ impl BandoEgui {
             },
             Err(error)=>{
                 self.source_save_error=Some(format!("셀 수정 실패: {error}"));
-                if !matches!(pending.target.field,"approveOne"|"cancelApproval") {
+                if matches!(pending.target.field,"product"|"removeItem")
+                    && self.item_editor.as_ref().is_some_and(|dialog|
+                        dialog.is_same_target(
+                            &pending.order_id,&pending.raw,
+                            &pending.target.recipient_id,
+                            pending.target.item_id.as_deref().unwrap_or("")
+                        )
+                    ){
+                    // Do not resurrect a hidden TextEdit when a modal submit
+                    // fails. Keep the selected product and its dialog open.
+                    if let Some(dialog)=self.item_editor.as_mut(){
+                        dialog.report_error(error);
+                    }
+                }else if !matches!(pending.target.field,
+                    "approveOne"|"cancelApproval"){
                     self.inline_editor=Some(pending.editor);
                 }
             }
