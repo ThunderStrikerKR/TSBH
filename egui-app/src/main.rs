@@ -310,6 +310,9 @@ struct BandoEgui {
     workflow_last_fetch: Option<Instant>,
     workflow_ui: workflow_board_ui::BoardUi,
     workflow_action: Option<PendingWorkflowAction>,
+    // React's original stage safety rule: repeated stage taps within 2s
+    // must not silently advance the same group twice.
+    workflow_stage_deadlines: HashMap<String, Instant>,
     workflow_dialog: Option<WorkflowDialog>,
     workflow_manage_target: String,
     workflow_manage_ack: bool,
@@ -393,6 +396,7 @@ impl Default for BandoEgui {
             workflow_last_fetch: None,
             workflow_ui: workflow_board_ui::BoardUi::default(),
             workflow_action: None,
+            workflow_stage_deadlines: HashMap::new(),
             workflow_dialog: None,
             workflow_manage_target: String::new(),
             workflow_manage_ack: false,
@@ -4433,6 +4437,15 @@ impl BandoEgui {
             );
             return;
         }
+        if matches!(action,"advance_group"|"confirm_group_payment"|"process_group")
+            && self.workflow_stage_deadlines.get(group_id)
+                .is_some_and(|deadline|Instant::now()<*deadline){
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "단계 변경 직후입니다. 잠시 후 다시 진행하세요."
+            );
+            return;
+        }
         let Some(revision)=self.workflow_snapshot.as_ref()
             .and_then(|snapshot|snapshot.revision) else{
             floating_notice::publish(
@@ -4471,6 +4484,14 @@ impl BandoEgui {
         match result{
             Ok(Ok(_saved))=>{
                 self.workflow_action=None;
+                if matches!(action.as_str(),
+                    "advance_group"|"confirm_group_payment"|"process_group"
+                ){
+                    self.workflow_stage_deadlines.insert(
+                        group_id.clone(),Instant::now()+Duration::from_secs(2)
+                    );
+                    ctx.request_repaint_after(Duration::from_secs(2));
+                }
                 if action=="delete_group" ||
                     matches!(action.as_str(),"detach_shipment"|"regroup_shipment")
                 {
@@ -4832,7 +4853,8 @@ impl BandoEgui {
                         self.active_id.as_deref(),
                         &self.client_names,active_selected,
                         &mut self.workflow_ui,
-                        self.gateway.workflow_write_enabled()
+                        self.gateway.workflow_write_enabled() &&
+                            self.workflow_action.is_none()
                     );
                 });
         });
@@ -5243,6 +5265,7 @@ impl eframe::App for BandoEgui {
             self.workflow_ui.selection=None;
             self.workflow_ui.stop_preview();
             self.workflow_action=None;
+            self.workflow_stage_deadlines.clear();
             self.workflow_dialog=None;
             self.client_manager=None;
             self.freight_manager=None;
