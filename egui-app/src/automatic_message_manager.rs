@@ -462,7 +462,7 @@ impl AutomaticMessageManager {
         ui.add_space(theme::SPACE_8);
         ui.label(typography::field_label("안내문을 등록할 상품 검색"));
         let width=ui.available_width();
-        components::flexible_text_field(
+        components::management_search_field(
             ui,&mut self.product_search,width,"상품명 검색"
         );
         ui.add_space(theme::SPACE_8);
