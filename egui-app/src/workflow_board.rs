@@ -15,6 +15,8 @@ pub struct ShipmentRow {
     pub products: Vec<String>,
     pub source_raw: String,
     pub recipient: Value,
+    /// Exact Rust workflow preview decision (auto/review/staff/legacy), not a raw manual flag.
+    pub remote: Option<Value>,
     pub freight: Option<i64>,
     pub collect: bool,
     pub vat_included: Option<bool>,
@@ -77,6 +79,12 @@ fn product_label(item:&Value)->String{
         None=>format!("{label} × ?"),
     }
 }
+/// Do not derive the displayed checkbox from the optional staff override.
+/// The native workflow preview has already resolved the exact shipment state.
+fn projected_remote(ship:&Value)->Option<Value>{
+    ship.get("remoteDelivery").filter(|value|value.is_object()).cloned()
+}
+
 /// React's workflow-view::groupShipments is a read-only join.
 /// Business prices, freight code, VAT and stage are ALWAYS Rust projections.
 pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
@@ -141,6 +149,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 products,
                 source_raw:text(order,"raw").to_owned(),
                 recipient:recipient.clone(),
+                remote:projected_remote(native_ship),
                 freight:field(field(native_ship,"totals"),"shipping").as_i64(),
                 collect:text(native_ship,"freightCode")=="020",
                 vat_included: field(native_ship, "vatIncluded").as_bool(),
@@ -213,5 +222,24 @@ mod tests{
         assert_eq!(product_label(&row),"708 × 3");
         let unknown=json!({"raw":"709-1"});
         assert_eq!(product_label(&unknown),"709-1 × ?");
+    }
+    #[test]
+    fn native_remote_preview_is_not_replaced_by_optional_manual_checkbox(){
+        let auto=json!({"remoteDelivery":{"status":"auto","checked":true,
+            "matchedPath":"제주특별자치도","address":"제주특별자치도 제주시 1"}});
+        let decision=projected_remote(&auto).expect("native automatic result");
+        assert_eq!(decision["checked"],true);
+        assert!(crate::reception_service::remote_delivery_notice(&decision)
+            .unwrap().contains("운임 2배"));
+        let manual=json!({"remoteDelivery":{"status":"auto","checked":false,
+            "manual":true,"address":"제주특별자치도 제주시 1"}});
+        assert_eq!(projected_remote(&manual).unwrap()["checked"],false);
+        let review=json!({"remoteDelivery":{"status":"review","checked":false,
+            "matchedPath":"군산시 옥도면"}});
+        assert_eq!(projected_remote(&review).unwrap()["status"],"review");
+        let legacy=json!({"remoteDelivery":{"status":"auto","checked":false,
+            "legacy":true}});
+        assert_eq!(projected_remote(&legacy).unwrap()["legacy"],true);
+        assert!(projected_remote(&json!({"shipmentId":"ordinary"})).is_none());
     }
 }
