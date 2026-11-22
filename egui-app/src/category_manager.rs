@@ -812,21 +812,20 @@ impl CategoryManager {
                                     modal,&current_path,path_width,
                                     typography::CategoryPathFont::Body
                                 );
-                                egui::ComboBox::from_id_salt("category-parent-options")
-                                    .width(theme::CATEGORY_PATH_PICKER_WIDTH)
-                                    .selected_text(selected_text)
-                                    .show_ui(modal,|ui|{
+                                components::management_dropdown(
+                                    modal,&selected_text,theme::CATEGORY_PATH_PICKER_WIDTH,
+                                    true,&current_path,|ui|{
                                         for option in choices{
                                             let full=path_text(&cats,&option.id);
                                             let visible=typography::fit_category_path(
                                                 ui,&full,path_width,
                                                 typography::CategoryPathFont::Body
                                             );
-                                            ui.selectable_value(&mut self.target,
-                                                option.id.clone(),visible)
-                                                .on_hover_text(full);
+                                            components::management_dropdown_option(
+                                                ui,&mut self.target,option.id.clone(),&visible
+                                            ).on_hover_text(full);
                                         }
-                                    }).response.on_hover_text(current_path);
+                                    });
                             }
                             Operation::Delete=>{
                                 modal.label(typography::body(
