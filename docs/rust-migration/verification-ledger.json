@@ -3641,5 +3641,40 @@
       "WINDOWS": "NOT_EXECUTED: live Windows GUI verification pending."
     },
     "verdict": "PATCH_COMMITTED__FULL_VERIFICATION_OPEN"
+  },
+  "eguiReceptionAsyncJobGateDedup20261123": {
+    "date": "2026-11-23",
+    "features": [
+      "F04",
+      "F05",
+      "F06",
+      "F07",
+      "F12"
+    ],
+    "scope": "Unify async worker admission for reception, prevent duplicate dealer/analysis runs and stale overwrites",
+    "userContract": "Employee dealer selection closes chooser immediately and computes internally; repeated same request coalesces; manual selection supersedes auto matching, but all employee writes (dealer, inline cells, VAT, working-order save, manual workspace) are mutually exclusive. Late async results never overwrite a changed source/client quote/working version.",
+    "patches": [
+      "egui-app/src/reception_jobs.rs",
+      "egui-app/src/main.rs",
+      "egui-app/src/native_order_change.rs",
+      ".github/workflows/egui-targeted-check.yml"
+    ],
+    "implementation": [
+      "Pure Rust reception_jobs::admit(Start/Duplicate/Conflict) shared by all entry points",
+      "Manual selection cancels advisory auto/basis jobs; PendingAutomaticClient::Drop sends cooperative AtomicBool cancellation between native pipeline operations",
+      "PendingClientChange and automatic quote results capture input and quote/working-version snapshots; stale revisions rejected on arrival",
+      "Source analysis dedupes same order/raw/type pending key; late response identity guard; reanalysis deferred while writes active",
+      "Manual dealer quote carries selected-client native recognition, updates current view and SQLite cached analysis without full duplicate AnalyzeOrder when view available",
+      "Reverse-order working save/client edit conflicts and repeated identical dealer click behavior covered by tests"
+    ],
+    "verification": {
+      "PATCH": "COMMITTED_MAIN",
+      "UNIT": "ADDED_NOT_YET_PASSED: reception_jobs::tests, client_chooser_async_handoff_tests, native_order_change::manual_rebind_tests",
+      "DIFF": "NOT_EXECUTED: no TypeScript-vs-Rust replay",
+      "ACTION": "NOT_EXECUTED: no Windows real GUI full flow",
+      "CI": "PENDING: https://github.com/ThunderStrikerKR/TSBH/actions/runs/45043444178",
+      "WINDOWS": "NOT_EXECUTED: live device/desktop not available"
+    },
+    "verdict": "CODE_COMMITTED__REGRESSION_VERIFICATION_OPEN"
   }
 }
