@@ -3397,6 +3397,41 @@
         "별도 전체 테스트 실패 3개",
         "전체 TS 차등 및 CI"
       ]
+    },
+    {
+      "id": "LIVE-20261123-EGUI-LINKED-SELECTION-72",
+      "scope": "72차 React↔egui 처리 중인 주문 클릭/호버, 발주원문·수취인·품목 및 운임 연결 하이라이트",
+      "status": "PATCHED_CI_PENDING_WINDOWS_UNVERIFIED",
+      "description": "72차 main 소스에서 React의 committed selection과 temporary preview 분리는 이식되었으나 최초 감사 기준 다른 그룹의 동일 주문 수취인 원문 클릭이 현재 그룹 검색으로 제한되어 불일치. 2026-11-23 동일 ID 조회 헬퍼(find_recipient_shipment)를 호버/원문 클릭에 함께 사용하도록 수정. 처리 중인 미확정 타 발주서 읽기 전용 미리보기의 원문·상세 역방향 호버는 여전히 별도 확인/보완 대상. 코드 커밋은 GUI 행동의 완료 증거가 아님.",
+      "baseline": [
+        "src/workspace-selection.ts",
+        "src/HubWorkspace.tsx",
+        "src/WorkflowBoard.tsx"
+      ],
+      "rust": [
+        "egui-app/src/workflow_board.rs",
+        "egui-app/src/workflow_board_ui.rs",
+        "egui-app/src/source_highlight.rs",
+        "egui-app/src/main.rs"
+      ],
+      "patches": [
+        "87109d6394d67193bf61dc4e836b191790bd7868",
+        "5f8773edd9a40eb5bd34ac282d2252227341706d",
+        "717548db3b08fcd07069cb7009ed4fa246584c5e"
+      ],
+      "gates": {
+        "patch": "COMMITTED_MAIN",
+        "unit": "ADDED cross-group and preferred-shipment tests; result pending latest-head CI",
+        "differential": "SOURCE-LEVEL ONLY: React selection precedence reviewed, no executable parity run",
+        "action": "NOT_VERIFIED: Windows actual pointer enter/leave/click/fold/multigroup route",
+        "ci": "PENDING: https://github.com/ThunderStrikerKR/TSBH/actions/runs/45042132809 ; previous 1d52e58 test compilation blocked by missing WorkingReception.analysis_view fixture (patched 717548d)",
+        "windows": "NOT_VERIFIED"
+      },
+      "remaining": [
+        "새 head의 egui targeted CI 통과 확인",
+        "다른 미확정 주문 read-only source/detail의 역방향 호버와 미리보기 유지 동작",
+        "Windows 실기기에서 2명/동명이인/복수 배송그룹/수동 수정 중 클릭 전환 검수"
+      ]
     }
   ],
   "reviewOnlyNotProvenDefects": [
