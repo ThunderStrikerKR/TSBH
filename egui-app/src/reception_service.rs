@@ -40,6 +40,63 @@ pub struct ReceptionAnalysis {
     pub linked_spans: Vec<source_highlight::LinkedSpan>,
 }
 
+/// Persist only display references and the native candidate projection.
+/// The source-bound Rust recognition and client match remain the canonical
+/// copies in WorkingReception, so reopening never calls AnalyzeOrder again.
+impl ReceptionAnalysis {
+    pub fn cached_view(&self)->Value {
+        let reference=self.reference.iter().map(|row|json!({
+            "remote":row.remote,"remoteError":row.remote_error,
+            "itemPrices":row.item_prices.iter().map(|item|json!({
+                "retail":item.retail,"error":item.error
+            })).collect::<Vec<_>>()
+        })).collect::<Vec<_>>();
+        json!({
+            "reference":reference,
+            "clientCandidates":self.client_candidates,
+            "matchedClientName":self.matched_client_name,
+            "chosenClientName":self.chosen_client_name,
+            "directoryCount":self.directory_count
+        })
+    }
+
+    pub fn from_cached_view(
+        raw:&str,recognition:Value,client_match:Value,view:&Value
+    )->Option<Self>{
+        let recipients=recipients(&recognition);
+        let saved=view.get("reference")?.as_array()?;
+        if saved.len()!=recipients.len(){return None;}
+        let reference=saved.iter().zip(recipients).map(|(row,recipient)|{
+            let prices=row.get("itemPrices")?.as_array()?;
+            if prices.len()!=recipient.get("items").and_then(Value::as_array)
+                .map(Vec::len).unwrap_or(0){return None;}
+            let item_prices=prices.iter().map(|item|Some(PriceReference{
+                retail:item.get("retail").and_then(Value::as_i64),
+                error:item.get("error").and_then(Value::as_str)
+                    .map(str::to_owned)
+            })).collect::<Option<Vec<_>>>()?;
+            let remote=row.get("remote").filter(|v|!v.is_null()).cloned()
+                .filter(|decision|remote_reference_matches(recipient,decision));
+            Some(RecipientReference{
+                remote,remote_error:row.get("remoteError").and_then(Value::as_str)
+                    .map(str::to_owned),
+                item_prices
+            })
+        }).collect::<Option<Vec<_>>>()?;
+        let client_candidates=view.get("clientCandidates")?.as_array()?.clone();
+        let directory_count=usize::try_from(view.get("directoryCount")?.as_u64()?).ok()?;
+        Some(Self {
+            linked_spans:source_highlight::collect(raw,&recognition),
+            recognition,reference,client_match,client_candidates,
+            matched_client_name:view.get("matchedClientName").and_then(Value::as_str)
+                .map(str::to_owned),
+            chosen_client_name:view.get("chosenClientName").and_then(Value::as_str)
+                .map(str::to_owned),
+            directory_count,
+        })
+    }
+}
+
 impl Deref for ReceptionAnalysis {
     type Target = Value;
 
