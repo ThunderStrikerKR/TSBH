@@ -2817,6 +2817,20 @@ pub fn reception_item_row(
     ui: &mut Ui, name: &str, quantity: &str, amount: &str,
     active: [bool; 3],
 ) -> ReceptionItemCells {
+    reception_item_row_with_mode(ui,name,quantity,amount,active,false)
+}
+/// The underlying view is still the native Rust snapshot. Clicking a field
+/// opens the manual reducer with the exact recipient/item identity.
+pub fn reception_item_row_editable(
+    ui: &mut Ui, name: &str, quantity: &str, amount: &str,
+    active: [bool; 3],
+) -> ReceptionItemCells {
+    reception_item_row_with_mode(ui,name,quantity,amount,active,true)
+}
+fn reception_item_row_with_mode(
+    ui: &mut Ui, name: &str, quantity: &str, amount: &str,
+    active: [bool; 3],editable:bool,
+) -> ReceptionItemCells {
     let width = reception_item_table_width(ui.available_width());
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_ROW_HEIGHT), Sense::hover()
@@ -2885,13 +2899,16 @@ pub fn reception_item_row(
     // alone would not necessarily advance for manually painted cells.
     let row_id = (rect.top().to_bits(), rect.left().to_bits());
     let product = ui.interact(
-        cells[0], ui.make_persistent_id(("item-cell", row_id, 0)), Sense::hover(),
+        cells[0], ui.make_persistent_id(("item-cell", row_id, 0)),
+        if editable{Sense::click()}else{Sense::hover()},
     ).on_hover_text(name);
     let quantity = ui.interact(
-        cells[1], ui.make_persistent_id(("item-cell", row_id, 1)), Sense::hover(),
+        cells[1], ui.make_persistent_id(("item-cell", row_id, 1)),
+        if editable{Sense::click()}else{Sense::hover()},
     ).on_hover_text(quantity);
     let amount = ui.interact(
-        cells[2], ui.make_persistent_id(("item-cell", row_id, 2)), Sense::hover(),
+        cells[2], ui.make_persistent_id(("item-cell", row_id, 2)),
+        if editable{Sense::click()}else{Sense::hover()},
     ).on_hover_text(amount);
     ui.painter().line_segment(
         [egui::pos2(rect.left(), rect.bottom()),
@@ -2981,30 +2998,41 @@ pub fn reception_freight_row(
 /// Original React lower action row. Keep its already-approved actions
 /// visible but disabled until the actual native editing commands are wired.
 pub fn reception_item_actions(ui: &mut Ui, dispatch_origin: Option<&str>) {
+    let _=reception_item_actions_editable(ui,dispatch_origin,false);
+}
+/// For an unconfirmed draft, each visible control opens the native manual
+/// editor rather than pretending the read-only projection was mutated.
+pub fn reception_item_actions_editable(
+    ui:&mut Ui,dispatch_origin:Option<&str>,editable:bool
+)->bool{
+    let mut edit=false;
     ui.horizontal_wrapped(|bar| {
-        bar.spacing_mut().item_spacing.x = theme::SPACE_4;
-        theme::action(bar, "＋ 상품 추가", theme::ButtonRole::Standard, false);
-        bar.with_layout(Layout::right_to_left(Align::Center), |right| {
-            let button = |right: &mut Ui, label: &str, selected: bool| {
-                right.add_enabled(false,
+        bar.spacing_mut().item_spacing.x=theme::SPACE_4;
+        if theme::action(
+            bar,"＋ 상품 추가",theme::ButtonRole::Standard,editable
+        ).clicked(){edit=true;}
+        bar.with_layout(Layout::right_to_left(Align::Center),|right|{
+            let mut button=|right:&mut Ui,label:&str,selected:bool|{
+                let response=right.add_enabled(editable,
                     egui::Button::new(typography::action_label(
-                        label, typography::FONT_STANDARD_ACTION, false,
-                        if selected { theme::TEXT } else { theme::MUTED }
+                        label,typography::FONT_STANDARD_ACTION,false,
+                        if selected{theme::TEXT}else{theme::MUTED}
                     ))
-                    .min_size(Vec2::new(42.0, theme::ACTION_STANDARD_HEIGHT))
-                    .fill(if selected { theme::RAISED } else { theme::PANEL })
+                    .min_size(Vec2::new(42.0,theme::ACTION_STANDARD_HEIGHT))
+                    .fill(if selected{theme::RAISED}else{theme::PANEL})
                     .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,
-                        if selected { theme::BORDER } else { theme::DIVIDER }))
+                        if selected{theme::BORDER}else{theme::DIVIDER}))
                     .corner_radius(theme::CONTROL_RADIUS)
                 );
+                theme::paint_button_hover(right,&response,theme::CONTROL_RADIUS as f32);
+                if response.clicked(){edit=true;}
             };
-            // right-to-left construction keeps the complete label at the
-            // left of the choice pair in the final visual order.
-            button(right, "매장", dispatch_origin == Some("STORE"));
-            button(right, "공장", dispatch_origin == Some("FACTORY"));
+            button(right,"매장",dispatch_origin==Some("STORE"));
+            button(right,"공장",dispatch_origin==Some("FACTORY"));
             right.label(typography::caption("발송지:"));
         });
     });
+    edit
 }
 
 pub fn reception_vat_row(ui: &mut Ui, vat_included: Option<bool>) {
