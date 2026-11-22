@@ -2619,9 +2619,27 @@ pub fn management_dropdown_compact_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str,width:f32
 )->Response {
     let selected=*current==value;
+    // Native selectable buttons own keyboard focus, click, and background.
+    // Paint only the glyphs separately so the -1pt optical correction
+    // cannot move the 28pt hit target or selected/hover highlight.
     let mut response=ui.add_sized(
         Vec2::new(width,theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
-        egui::Button::selectable(selected,label)
+        egui::Button::selectable(selected,"")
+    );
+    let galley=ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
+        theme::TEXT,
+    );
+    let row=response.rect;
+    ui.painter().with_clip_rect(row.shrink(2.0)).galley(
+        egui::pos2(
+            row.center().x-galley.size().x*0.5,
+            row.top()+typography::management_dropdown_option_text_y(
+                row.height(),galley.size().y
+            ),
+        ),
+        galley,theme::TEXT,
     );
     if response.clicked(){
         if *current!=value {
