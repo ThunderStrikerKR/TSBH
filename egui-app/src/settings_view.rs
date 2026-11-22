@@ -1038,7 +1038,7 @@ impl SettingsView{
                 ){self.archive_open=false;}
                 ui.spacing_mut().scroll=theme::management_scroll_style();
                 let search_width=ui.available_width();
-                components::flexible_text_field(
+                components::management_search_field(
                     ui,&mut self.archive_query,search_width,
                     "원문 / 담당자 / 주문 ID 검색"
                 );
