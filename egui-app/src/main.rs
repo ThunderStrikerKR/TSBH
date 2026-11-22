@@ -2230,9 +2230,14 @@ impl BandoEgui {
     ){
         // Even entering edit mode is a write intent: an older automatic
         // dealer quote must never land while the employee is typing.
-        if self.reception_job_admission(
-            ReceptionJob::InlineEdit,false
-        )!=JobAdmission::Start{return;}
+        match self.reception_job_admission(ReceptionJob::InlineEdit,false){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::InlineEdit,blocker);
+                return;
+            }
+        }
         if self.inline_editor.as_ref().is_some_and(|editor|
             Some(editor.source_id.as_str())!=self.active_id.as_deref()){
             self.inline_editor=None;
@@ -2434,9 +2439,14 @@ impl BandoEgui {
 
     fn open_vat_settings(&mut self){
         if self.vat_dialog.is_some(){return;}
-        if self.reception_job_admission(
-            ReceptionJob::VatEdit,false
-        )!=JobAdmission::Start{return;}
+        match self.reception_job_admission(ReceptionJob::VatEdit,false){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::VatEdit,blocker);
+                return;
+            }
+        }
         let Some(order_id)=self.active_id.clone() else{return};
         let Some(analysis)=self.analysis.as_ref() else{return};
         let rows=reception_service::recipients(analysis);
@@ -2726,9 +2736,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     fn open_client_chooser(&mut self, ctx: &egui::Context) {
         if self.client_chooser.is_some(){return;}
         // Do not display a chooser that could submit a conflicting request.
-        if self.reception_job_admission(
-            ReceptionJob::ManualClient,false
-        )!=JobAdmission::Start{return;}
+        match self.reception_job_admission(ReceptionJob::ManualClient,false){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::ManualClient,blocker);
+                return;
+            }
+        }
         let Some(order_id) = &self.active_id else { return; };
         self.client_chooser = Some(ClientChooser::new(
             order_id.clone(), Arc::clone(&self.gateway), ctx.clone()
@@ -8542,6 +8557,35 @@ mod reception_workflow_admission_integration_tests {
         app.delete_pending_reception("draft-1",&ctx);
         assert_eq!(app.drafts.len(),2);
         assert!(app.vat_change.is_some());
+    }
+
+    #[test]
+    fn blocked_manual_controls_report_reason_instead_of_ignoring_click(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        vat_worker(&mut app);
+        app.open_client_chooser(&ctx);
+        assert!(app.client_chooser.is_none());
+        assert!(app.source_save_error.as_deref().is_some_and(|text|
+            text.contains("부가세 변경") && text.contains("거래처 변경")
+        ));
+        app.source_save_error=None;
+        app.begin_inline_edit(
+            InlineTarget{
+                recipient_id:"r1".into(),item_id:None,field:"name"
+            },
+            "기존값".into(),None
+        );
+        assert!(app.inline_editor.is_none());
+        assert!(app.source_save_error.as_deref().is_some_and(|text|
+            text.contains("부가세 변경") && text.contains("셀 수정")
+        ));
+        app.source_save_error=None;
+        app.open_vat_settings();
+        assert!(app.vat_dialog.is_none());
+        assert!(app.source_save_error.as_deref().is_some_and(|text|
+            text.contains("부가세 변경")
+        ));
     }
 
     #[test]
