@@ -628,10 +628,7 @@ impl ClientManager {
     }
     fn editor_fields(&mut self,ui:&mut Ui,draft:&mut Value) {
         ui.label(typography::section_heading("거래처 식별"));
-        ui.columns(2,|cols|{
-            label_edit(&mut cols[0],draft,"name","거래처명");
-            label_edit(&mut cols[1],draft,"displayName","송장 표시 상호");
-        });
+        label_edit(ui,draft,"name","거래처명");
         ui.vertical(|ui|{
             ui.label(typography::field_label("검색 태그"));
             let mut tags=[
