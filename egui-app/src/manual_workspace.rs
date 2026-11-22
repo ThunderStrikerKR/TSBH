@@ -164,6 +164,7 @@ fn reuse_native_quote(saved:Option<&Value>,updated:&Value)->Option<Value>{
     order["shippingVersion"]=saved.get("shippingVersion").cloned().unwrap_or(Value::Null);
     Some(json!({
         "order":order,"authorityRevision":saved["authorityRevision"],
+        "pricingBasis":saved.get("pricingBasis"),
         "totals":{
             "subtotal":saved.get("subtotal"),
             "vat":saved.get("vatAmount"),"total":saved.get("total"),
@@ -257,24 +258,30 @@ pub fn apply_inline(
     let updated=applied.get("order").filter(|v|v.is_object())
         .ok_or("Rust 수정 적용 결과에 주문 데이터가 없습니다.")?.clone();
     let (quote,quote_error)=if let Some(id)=source.client_id.as_deref(){
-        // Contact/name/memo-only changes preserve the exact native totals.
-        // Changed product, quantity, price, address, shipment or VAT inputs
-        // cannot reuse a previous quote.
-        let reused=if price_input_snapshot(&order)==price_input_snapshot(&updated){
-            reuse_native_quote(source.pricing_preview.as_ref(),&updated)
-        }else{None};
         let result=(||->Result<Value,String>{
-            if let Some(quote)=reused{return Ok(quote);}
             let state=gateway.load_business_state()?;
             let client=state["clients"].as_array().and_then(|clients|
                 clients.iter().find(|client|client["id"].as_str()==Some(id))
             ).ok_or("거래처의 가격 기준이 없습니다.")?;
+            let basis=crate::pricing_basis::snapshot(&state,client,&updated);
+            // The native PRICE MASTER must also be unchanged. An unrelated
+            // database revision does not alter this order-scoped dependency.
+            if price_input_snapshot(&order)==price_input_snapshot(&updated) &&
+               source.pricing_preview.as_ref().is_some_and(|saved|
+                   saved.get("pricingBasis")==Some(&basis)) {
+                if let Some(reused)=reuse_native_quote(
+                    source.pricing_preview.as_ref(),&updated
+                ){return Ok(reused);}
+            }
             let mut projected=gateway.execute(
                 ReadOperation::CalculateReceptionQuote,
                 json!({"order":&updated,"state":&state,"client":client})
             )?;
             projected["authorityRevision"]=state.get("revision").cloned()
                 .unwrap_or(Value::Null);
+            projected["pricingBasis"]=crate::pricing_basis::snapshot(
+                &state,client,projected.get("order").unwrap_or(&updated)
+            );
             Ok(projected)
         })();
         match result{
@@ -560,21 +567,24 @@ impl ManualWorkspace {
                 }))?;
                 let updated=applied.get("order").filter(|v|v.is_object())
                     .ok_or("Rust 수동 분류 적용 결과가 올바르지 않습니다.")?.clone();
-                // Original and updated native orders are compared on money,
-                // freight and VAT inputs. Pure source-label reassignment and
-                // contact edits reuse the already committed preview.
-                let reused=if price_input_snapshot(&order)==price_input_snapshot(&updated){
-                    reuse_native_quote(cached_quote.as_ref(),&updated)
-                }else{None};
+                let price_inputs_unchanged=
+                    price_input_snapshot(&order)==price_input_snapshot(&updated);
                 let order=updated;
                 let (quote,quote_error)=if let Some(id)=selected_client.as_deref(){
                     let result=(||->Result<Value,String>{
-                        if let Some(quote)=reused{return Ok(quote);}
                         let state=service.load_business_state()?;
                         let client=state["clients"].as_array()
                             .and_then(|clients|clients.iter().find(|client|
                                 client["id"].as_str()==Some(id)))
                             .ok_or("선택한 거래처의 단가 기준을 찾지 못했습니다.")?;
+                        let basis=crate::pricing_basis::snapshot(&state,client,&order);
+                        if price_inputs_unchanged &&
+                           cached_quote.as_ref().is_some_and(|saved|
+                               saved.get("pricingBasis")==Some(&basis)) {
+                            if let Some(reused)=reuse_native_quote(
+                                cached_quote.as_ref(),&order
+                            ){return Ok(reused);}
+                        }
                         let revision=state["revision"].as_u64()
                             .ok_or("Rust 기준 revision이 없습니다.")?;
                         let mut quote=service.execute(
@@ -582,6 +592,9 @@ impl ManualWorkspace {
                             json!({"order":&order,"state":&state,"client":client})
                         )?;
                         quote["authorityRevision"]=json!(revision);
+                        quote["pricingBasis"]=crate::pricing_basis::snapshot(
+                            &state,client,quote.get("order").unwrap_or(&order)
+                        );
                         Ok(quote)
                     })();
                     match result{
