@@ -873,13 +873,19 @@ fn range_date_picker_rtl(
                     .vertical_align(Align::Center)
                     // Match the *visible* digit center, not only the
                     // TextEdit's glyph line box; keep caret and hint aligned.
-                    .margin(typography::management_date_text_margin())
+                    // Numeric font glyphs already receive the shared -1pt
+                    // Consolas correction; do not stack the old body-font
+                    // date margin correction on top.
+                    .margin(egui::Margin::symmetric(2,2))
                     .hint_text(if all_dates{"전체"}else{"YYYY-MM-DD"})
                     .desired_width(HISTORY_DATE_FIELD_WIDTH)
             ).on_hover_text(&format!("{label} 직접 입력"));
             crate::floating_notice::sized_text_caret(
                 row,"history.date",&edit,date,
-                egui::FontId::proportional(typography::FONT_BODY),
+                typography::data_value_font(
+                    typography::DataValueKind::Date,
+                    typography::DataValueContext::Form
+                ),
                 true,2.0
             );
             changed|=edit.changed();
