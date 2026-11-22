@@ -7,9 +7,9 @@ use eframe::egui::{self, Color32, FontId};
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
-// Approved source-document linkage: 100ms enter / 150ms release.
+// Source-document linkage: 50ms enter / 150ms release.
 // This is distinct from the 250ms working-order foreground preview.
-pub const HOVER_ENTER: Duration = Duration::from_millis(100);
+pub const HOVER_ENTER: Duration = Duration::from_millis(50);
 pub const HOVER_EXIT: Duration = Duration::from_millis(150);
 const MAX_SPANS: usize = 4096;
 
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn source_link_delays_match_approved_ui_behavior() {
-        assert_eq!(HOVER_ENTER,Duration::from_millis(100));
+        assert_eq!(HOVER_ENTER,Duration::from_millis(50));
         assert_eq!(HOVER_EXIT,Duration::from_millis(150));
     }
 
