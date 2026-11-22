@@ -6135,7 +6135,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         &self.client_names,active_selected,
                         &mut self.workflow_ui,
                         self.gateway.workflow_write_enabled() &&
-                            self.workflow_action.is_none()
+                            self.workflow_action.is_none(),
+                        // Hover navigation must never switch the active receipt
+                        // while a staff edit, dialog or pending write is open.
+                        self.inline_editor.is_none() && self.inline_change.is_none() &&
+                            self.manual_workspace.is_none() && self.vat_dialog.is_none() &&
+                            self.vat_change.is_none() && self.client_chooser.is_none() &&
+                            self.client_change.is_none() && self.working_sync.is_none() &&
+                            self.workflow_dialog.is_none() && !self.ocr_processing
                     );
                 });
         });
