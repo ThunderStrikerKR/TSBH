@@ -15,6 +15,22 @@ pub enum Kind {
     ManualWorkspace,
     InlineEditor,
     Analysis,
+    /// Read-only recipient locality lookup; a newer address snapshot wins.
+    RemoteRecheck,
+    /// Clipboard/screen-capture acquisition (before employee approval).
+    SourceIntake,
+    /// Approved OCR review or pending original-source replacement dialog.
+    SourceReview,
+    /// A verified source replacement invalidates advisory native reads.
+    SourceReplace,
+    /// Direct typing owns the source until the input loses focus.
+    SourceEntry,
+    /// Native operational group write (revision-checked in SQLite).
+    WorkflowAction,
+    /// Deleting a draft must never race any running reception job.
+    DeleteReception,
+    /// Navigation may abandon advisory reads, but not employee writes.
+    NavigateReception,
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -36,25 +52,43 @@ impl Kind {
             Self::ManualWorkspace=>"수동 분류",
             Self::InlineEditor=>"셀 입력",
             Self::Analysis=>"발주원문 분석",
+            Self::RemoteRecheck=>"도서산간 재확인",
+            Self::SourceIntake=>"클립보드·이미지 접수",
+            Self::SourceReview=>"발주원문 검토",
+            Self::SourceReplace=>"발주원문 교체",
+            Self::SourceEntry=>"발주원문 직접 입력",
+            Self::WorkflowAction=>"주문 업무 변경",
+            Self::DeleteReception=>"발주서 삭제",
+            Self::NavigateReception=>"발주서 전환",
         }
     }
 }
 
-/// All requests are exclusive except that an explicit employee dealer
-/// selection has priority over an advisory automatic match and an in-flight
-/// read-only pricing-basis check. Both outdated results are disconnected by
-/// the owner; they never commit after the employee's choice.
+/// A single policy for both native jobs and source/workflow UI transitions.
+/// In-flight staff writes are exclusive. Employee-approved changes/navigation
+/// may supersede read-only/advisory results, which the owner must invalidate.
+/// Remote lookups can replace a previous DIFFERENT snapshot without waiting
+/// for obsolete IO. Autosave is a separate CAS-serialized persistence sidecar,
+/// not a competing user operation.
 pub fn admit(request:Kind, active:&[Kind], same_request:bool)->Admission{
     if active.contains(&request) && same_request {
         return Admission::Duplicate;
     }
-    let other=active.iter().copied().find(|kind|{
+    let blocker=active.iter().copied().find(|kind|{
         !matches!(
             (request,*kind),
-            (Kind::ManualClient,Kind::AutomaticClient | Kind::PricingBasis)
+            (Kind::ManualClient,
+                Kind::AutomaticClient | Kind::PricingBasis | Kind::RemoteRecheck)
+            | (Kind::SourceReplace,
+                Kind::SourceReview | Kind::AutomaticClient | Kind::PricingBasis
+                | Kind::Analysis | Kind::RemoteRecheck)
+            | (Kind::NavigateReception,
+                Kind::ManualClient | Kind::AutomaticClient | Kind::PricingBasis
+                | Kind::Analysis | Kind::RemoteRecheck | Kind::WorkflowAction)
+            | (Kind::RemoteRecheck,Kind::RemoteRecheck)
         )
     });
-    match other {
+    match blocker {
         Some(kind)=>Admission::Conflict(kind),
         None=>Admission::Start,
     }
@@ -119,4 +153,68 @@ mod tests {
         }
         assert_eq!(admit(K::ManualClient,&[],false),A::Start);
     }
+    #[test]
+    fn all_source_and_workflow_employee_writes_conflict_with_existing_writes(){
+        let writers=[
+            K::ManualClient,K::InlineEdit,K::VatEdit,K::WorkingSync,
+            K::ManualWorkspace,K::InlineEditor,K::WorkflowAction,
+            K::SourceIntake,K::SourceEntry,K::DeleteReception
+        ];
+        for first in writers {
+            for second in writers {
+                if first==second {
+                    assert_eq!(admit(second,&[first],true),A::Duplicate);
+                }else{
+                    assert_eq!(admit(second,&[first],false),A::Conflict(first),
+                        "unexpected overlap {first:?} -> {second:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn source_approval_supersedes_advice_but_never_staff_writes(){
+        for advisory in [
+            K::SourceReview,K::AutomaticClient,K::PricingBasis,
+            K::Analysis,K::RemoteRecheck
+        ] {
+            assert_eq!(admit(K::SourceReplace,&[advisory],false),A::Start);
+        }
+        for writer in [
+            K::ManualClient,K::InlineEdit,K::VatEdit,K::WorkingSync,
+            K::ManualWorkspace,K::InlineEditor,K::WorkflowAction,K::SourceIntake,
+            K::SourceEntry
+        ]{
+            assert_eq!(admit(K::SourceReplace,&[writer],false),A::Conflict(writer));
+        }
+    }
+
+    #[test]
+    fn remote_recheck_deduplicates_or_supersedes_older_snapshot(){
+        assert_eq!(admit(K::RemoteRecheck,&[K::RemoteRecheck],true),A::Duplicate);
+        assert_eq!(admit(K::RemoteRecheck,&[K::RemoteRecheck],false),A::Start);
+        assert_eq!(admit(K::RemoteRecheck,&[K::WorkingSync],false),
+            A::Conflict(K::WorkingSync));
+        assert_eq!(admit(K::ManualClient,&[K::RemoteRecheck],false),A::Start);
+    }
+
+    #[test]
+    fn navigation_abandons_advice_but_never_discards_uncommitted_edits(){
+        for cancellable in [
+            K::ManualClient,K::AutomaticClient,K::PricingBasis,
+            K::Analysis,K::RemoteRecheck,K::WorkflowAction
+        ] {
+            assert_eq!(admit(K::NavigateReception,&[cancellable],false),A::Start);
+        }
+        for blocking in [
+            K::SourceIntake,K::SourceReview,K::SourceEntry,K::InlineEdit,
+            K::VatEdit,K::WorkingSync,K::ManualWorkspace,K::InlineEditor
+        ] {
+            assert_eq!(admit(K::NavigateReception,&[blocking],false),
+                A::Conflict(blocking));
+            assert_eq!(admit(K::DeleteReception,&[blocking],false),
+                A::Conflict(blocking));
+        }
+    }
+
 }
