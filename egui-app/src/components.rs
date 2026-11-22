@@ -1283,6 +1283,32 @@ pub fn reception_recipient_navigator(
     selected
 }
 
+/// The READ and EDIT renderers of recipient fields must use exactly one
+/// typography/padding definition. Contact numbers retain the numeric Consolas
+/// font while the other three fields use the 16pt proportional family.
+fn reception_recipient_text_edit(
+    value:&mut String,width:f32,active:bool,phone_number:bool
+)->egui::TextEdit<'_>{
+    let font=if phone_number {
+        typography::data_value_font(
+            typography::DataValueKind::Phone,
+            typography::DataValueContext::Reception
+        )
+    }else{
+        egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
+    };
+    let input=egui::TextEdit::singleline(value)
+        .font(font)
+        .horizontal_align(Align::LEFT)
+        .vertical_align(Align::Center)
+        .margin(egui::Margin::symmetric(8,2))
+        .desired_width(width);
+    if active {
+        input.background_color(source_highlight::ACTIVE_FILL)
+            .text_color(source_highlight::ACTIVE_TEXT)
+    }else{input}
+}
+
 /// Every recipient field shares one 36pt baseline. The two telephone
 /// editors occupy the same FULL-WIDTH row: mobile begins at the same x
 /// coordinate as the other text inputs, and the landline fills the right.
@@ -1300,28 +1326,6 @@ pub fn reception_recipient_fields(
     note: &mut String,
     active: [bool; 5],
 ) -> [Response; 5] {
-    fn editor(
-        value:&mut String,width:f32,active:bool,phone_number:bool
-    )->egui::TextEdit<'_>{
-        let font=if phone_number {
-            typography::data_value_font(
-                typography::DataValueKind::Phone,
-                typography::DataValueContext::Reception
-            )
-        }else{
-            egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
-        };
-        let input=egui::TextEdit::singleline(value)
-            .font(font)
-            .horizontal_align(Align::LEFT)
-            .vertical_align(Align::Center)
-            .margin(egui::Margin::symmetric(8, 2))
-            .desired_width(width);
-        if active {
-            input.background_color(source_highlight::ACTIVE_FILL)
-                .text_color(source_highlight::ACTIVE_TEXT)
-        } else {input}
-    }
 
     fn label_cell(ui: &mut Ui, text: &str, width: f32) -> Response {
         let (rect, response) = ui.allocate_exact_size(
@@ -1344,7 +1348,7 @@ pub fn reception_recipient_fields(
             // This is read-only while retaining hover and native text layout.
             line.add_sized(
                 Vec2::new(width, theme::INPUT_HEIGHT),
-                editor(value, width, active, false).interactive(false),
+                reception_recipient_text_edit(value, width, active, false).interactive(false),
             )
         }).inner
     }
@@ -1382,7 +1386,7 @@ pub fn reception_recipient_fields(
                     label_cell(line, "휴대폰", theme::RECIPIENT_LABEL_WIDTH);
                     let mobile_input = line.add_sized(
                         Vec2::new(mobile_width, theme::INPUT_HEIGHT),
-                        editor(mobile, mobile_width, active[2], true).interactive(false),
+                        reception_recipient_text_edit(mobile, mobile_width, active[2], true).interactive(false),
                     );
                     // Only the gap between the TWO contact groups is 8pt.
                     line.spacing_mut().item_spacing.x =
@@ -1392,7 +1396,7 @@ pub fn reception_recipient_fields(
                         theme::RECIPIENT_LABEL_GAP;
                     let phone_input = line.add_sized(
                         Vec2::new(phone_width, theme::INPUT_HEIGHT),
-                        editor(phone, phone_width, active[3], true).interactive(false),
+                        reception_recipient_text_edit(phone, phone_width, active[3], true).interactive(false),
                     );
                     (mobile_input,phone_input)
                 }).inner
@@ -1403,6 +1407,20 @@ pub fn reception_recipient_fields(
             mobile_response, phone_response, note_response,
         ]
     }).inner
+}
+
+/// Edit over the original 36pt input rectangle without shrinking it. The
+/// readonly control and focused control share the same builder, so the text
+/// baseline, inset and phone font do not change when focus is acquired.
+pub fn reception_recipient_inline_cell_editor(
+    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
+    phone_number:bool,active:bool
+)->Response{
+    let response=ui.put(
+        cell,reception_recipient_text_edit(value,cell.width(),active,phone_number)
+    );
+    if request_focus {response.request_focus();}
+    response
 }
 
 /// The source editor and automatic-message canvas use the SAME surface
@@ -3256,6 +3274,30 @@ pub struct ReceptionFreightEdit {
     pub remote_clicked:bool,
     pub collect_clicked:bool,
 }
+/// Both resting and focused freight controls are the SAME 84×36pt TextEdit.
+/// A smaller overlay would reduce the perceived lower inset and move its
+/// right-aligned numeric baseline on click.
+fn reception_freight_amount_text_edit(value:&mut String)->egui::TextEdit<'_>{
+    egui::TextEdit::singleline(value)
+        .font(typography::data_value_font(
+            typography::DataValueKind::Money,
+            typography::DataValueContext::Reception
+        ))
+        .horizontal_align(typography::data_value_align(
+            typography::DataValueKind::Money
+        ))
+        .vertical_align(Align::Center)
+        .margin(egui::Margin::symmetric(8,2))
+        .desired_width(84.0)
+}
+
+pub fn reception_freight_inline_cell_editor(
+    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool
+)->Response{
+    let response=ui.put(cell,reception_freight_amount_text_edit(value));
+    if request_focus {response.request_focus();}
+    response
+}
 pub fn reception_freight_row(
     ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
     remote: Option<bool>, inquiry_visible: bool,
@@ -3306,17 +3348,7 @@ pub fn reception_freight_row_editable(
                 let displayed=price.add_enabled_ui(false,|cell|{
                     cell.add_sized(
                         Vec2::new(84.0,theme::INPUT_HEIGHT),
-                        egui::TextEdit::singleline(&mut amount_text)
-                            .font(typography::data_value_font(
-                                typography::DataValueKind::Money,
-                                typography::DataValueContext::Reception
-                            ))
-                            .horizontal_align(typography::data_value_align(
-                                typography::DataValueKind::Money
-                            ))
-                            .vertical_align(Align::Center)
-                            .margin(egui::Margin::symmetric(8,2))
-                            .desired_width(84.0),
+                        reception_freight_amount_text_edit(&mut amount_text),
                     )
                 }).inner;
                 amount_rect=Some(displayed.rect);
@@ -3647,6 +3679,77 @@ mod management_toolbar_geometry_tests {
             assert_eq!(rect.top()-cell.top(),cell.bottom()-rect.bottom());
             assert!(cell.contains(rect.min)&&cell.contains(rect.max));
         }
+    }
+
+    #[test]
+    fn recipient_focus_preserves_original_cell_geometry_and_contact_font_token(){
+        let ctx=egui::Context::default();
+        let mut measured=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                for (phone,value) in [
+                    (false,"김준희"),(false,"전라남도 순천시"),
+                    (true,"010-4801-4727"),(true,"061-123-4567"),
+                    (false,"문 앞에 놓아주세요")
+                ]{
+                    let mut readonly=value.to_owned();
+                    let original=ui.add_sized(
+                        Vec2::new(260.0,theme::INPUT_HEIGHT),
+                        reception_recipient_text_edit(
+                            &mut readonly,260.0,false,phone
+                        ).interactive(false)
+                    );
+                    let before=ui.available_rect_before_wrap().min;
+                    let mut editing=value.to_owned();
+                    let active=reception_recipient_inline_cell_editor(
+                        ui,original.rect,&mut editing,false,phone,false
+                    );
+                    measured.push((original.rect,active.rect,before,
+                        ui.available_rect_before_wrap().min));
+                }
+            });
+        });
+        for (original,focused,before,after) in measured{
+            assert_eq!(focused,original,
+                "focused recipient editor must not move or shrink its text box");
+            assert_eq!(before,after,
+                "focused recipient editor must not add another layout row");
+        }
+        assert_eq!(
+            typography::data_value_font(
+                typography::DataValueKind::Phone,
+                typography::DataValueContext::Reception
+            ),
+            egui::FontId::monospace(typography::FONT_RECEPTION_RECIPIENT_TEXT)
+        );
+    }
+
+    #[test]
+    fn freight_focus_preserves_amount_height_and_bottom_inset(){
+        let ctx=egui::Context::default();
+        let mut measured=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let mut readonly="6,000".to_owned();
+                let original=ui.add_sized(
+                    Vec2::new(84.0,theme::INPUT_HEIGHT),
+                    reception_freight_amount_text_edit(&mut readonly)
+                        .interactive(false)
+                );
+                let before=ui.available_rect_before_wrap().min;
+                let mut editing="6000".to_owned();
+                let active=reception_freight_inline_cell_editor(
+                    ui,original.rect,&mut editing,false
+                );
+                measured=Some((original.rect,active.rect,before,
+                    ui.available_rect_before_wrap().min));
+            });
+        });
+        let (original,focused,before,after)=measured.expect("freight geometry");
+        assert_eq!(original,focused);
+        assert_eq!(original.height(),theme::INPUT_HEIGHT);
+        assert_eq!(before,after,
+            "freight focus cannot consume the following row's vertical padding");
     }
 
     #[test]

@@ -4794,9 +4794,13 @@ impl BandoEgui {
                                         );
                                         if let Some(editor)=self.inline_editor.as_mut()
                                             .filter(|edit|edit.target==target) {
-                                            let edit_response=components::reception_inline_cell_editor(
+                                            let edit_response=components::reception_recipient_inline_cell_editor(
                                                 fields,response.rect,&mut editor.text,
-                                                editor.focus_next,false
+                                                editor.focus_next,
+                                                matches!(field,"mobile"|"phone"),
+                                                source_highlight::is_active(
+                                                    self.link_hover.active.as_ref(),&key
+                                                )
                                             );
                                             editor.focus_next=false;
                                             if edit_response.has_focus() && fields.input(|input|
@@ -5081,8 +5085,8 @@ impl BandoEgui {
                                                 .filter(|edit|edit.target==freight_target),
                                             freight_actions.amount_rect
                                         ){
-                                            let result=components::reception_inline_cell_editor(
-                                                items_ui,rect,&mut editor.text,editor.focus_next,true
+                                            let result=components::reception_freight_inline_cell_editor(
+                                                items_ui,rect,&mut editor.text,editor.focus_next
                                             );
                                             editor.focus_next=false;
                                             if result.has_focus() && items_ui.input(|input|

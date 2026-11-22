@@ -80,6 +80,10 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml manual_remote_row_tests -- --nocapture
       - name: Verify inline edits stay inside the original input cell
         run: cargo test --manifest-path egui-app/Cargo.toml inline_editor_is_in_original_cell -- --nocapture
+      - name: Verify recipient focus keeps all five input positions and contact font
+        run: cargo test --manifest-path egui-app/Cargo.toml recipient_focus_preserves_original_cell_geometry -- --nocapture
+      - name: Verify freight focus preserves exact 36pt height and lower spacing
+        run: cargo test --manifest-path egui-app/Cargo.toml freight_focus_preserves_amount_height -- --nocapture
       - name: Verify native recipient freight and remote-area edit validation
         run: cargo test --manifest-path egui-app/Cargo.toml manual_classification::tests -- --nocapture
       - name: Verify floating notice placement at screen edges and caret anchors
