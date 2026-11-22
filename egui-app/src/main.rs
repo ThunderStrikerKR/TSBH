@@ -8292,3 +8292,158 @@ mod client_chooser_async_handoff_tests {
         assert!(app.drafts[0].analysis_view.is_some());
     }
 }
+
+
+#[cfg(test)]
+mod reception_workflow_admission_integration_tests {
+    use super::*;
+
+    fn draft(id:&str)->WorkingReception {
+        WorkingReception {
+            id:id.into(),raw:"원문".into(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:None,analysis_evidence:None,analysis_view:None,
+            client_match:None,chat_handle:None,chat_title:None,
+            client_id:None,client_selection:None,pricing_preview:None,
+            working_version:None,working_synced:false,manual_model:None,
+            edit_history:Vec::new(),
+        }
+    }
+    fn app()->BandoEgui{
+        let mut app=BandoEgui::default();
+        app.drafts=vec![draft("draft-1"),draft("draft-2")];
+        app.active_id=Some("draft-1".into());
+        app.raw_source="원문".into();
+        app
+    }
+    fn vat_worker(app:&mut BandoEgui){
+        let (_tx,rx)=mpsc::channel();
+        app.vat_change=Some(PendingVatChange{
+            order_id:"draft-1".into(),source_raw:"원문".into(),receiver:rx
+        });
+    }
+    fn inline_worker(app:&mut BandoEgui){
+        let (_tx,rx)=mpsc::channel();
+        let target=InlineTarget{
+            recipient_id:"r1".into(),item_id:None,field:"name"
+        };
+        app.inline_change=Some(PendingInlineChange{
+            order_id:"draft-1".into(),raw:"원문".into(),
+            target:target.clone(),
+            editor:InlineReceptionEditor{
+                source_id:"draft-1".into(),target,
+                original:"A".into(),text:"B".into(),
+                focus_next:false,click_at:None
+            },
+            next:None,receiver:rx
+        });
+    }
+    fn remote_analysis()->reception_service::ReceptionAnalysis{
+        reception_service::ReceptionAnalysis{
+            recognition:serde_json::json!({"recipients":[
+                {"id":"r1","address":""}
+            ]}),
+            reference:Vec::new(),client_match:serde_json::Value::Null,
+            client_candidates:Vec::new(),matched_client_name:None,
+            chosen_client_name:None,directory_count:0,
+            linked_spans:Vec::new(),
+        }
+    }
+
+    #[test]
+    fn pending_inline_and_vat_jobs_both_prevent_deleting_a_draft(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        inline_worker(&mut app);
+        app.delete_pending_reception("draft-1",&ctx);
+        assert_eq!(app.drafts.len(),2);
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+        app.inline_change=None;
+        vat_worker(&mut app);
+        app.delete_pending_reception("draft-1",&ctx);
+        assert_eq!(app.drafts.len(),2);
+        assert!(app.vat_change.is_some());
+    }
+
+    #[test]
+    fn running_vat_write_blocks_source_replacement_and_navigation(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        vat_worker(&mut app);
+        app.apply_intake_text(
+            "다른 원문".into(),OrderType::Dealer,None,&ctx,
+            "TEXT_PASTE",true,None,None,false,None
+        );
+        assert_eq!(app.raw_source,"원문");
+        app.select_reception("draft-2",&ctx);
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+        assert!(app.source_save_error.as_deref()
+            .is_some_and(|s|s.contains("부가세 변경")));
+    }
+
+    #[test]
+    fn capture_and_workflow_mutation_cannot_start_during_analysis(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.analysis_pending=true;
+        app.begin_region_capture(OrderType::Agency,ctx.clone());
+        assert!(!app.clipboard_busy);
+        assert!(app.clipboard_receiver.is_none());
+        app.start_workflow_action(
+            "advance_group","group",None,None,false,&ctx
+        );
+        assert!(app.workflow_action.is_none());
+    }
+
+    #[test]
+    fn pending_clipboard_or_review_prevents_switching_drafts(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.clipboard_busy=true;
+        app.select_reception("draft-2",&ctx);
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+        app.clipboard_busy=false;
+        app.pending_replace=Some(PendingReplace{
+            text:"새 내용".into(),order_type:OrderType::Agency,
+            chat:None,input_method:"TEXT_PASTE",
+            clipboard_sequence:None,ocr_original:None,
+            ocr_learning_used:false,ocr_model_suggestion:None
+        });
+        app.select_reception("draft-2",&ctx);
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+        assert!(app.pending_replace.is_some());
+    }
+
+    #[test]
+    fn locality_lookup_dedupes_and_cancels_outdated_recipient_snapshot(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.analysis=Some(remote_analysis());
+        app.start_remote_recheck(&ctx);
+        let first=Arc::clone(&app.remote_recheck.as_ref().unwrap().cancel);
+        app.start_remote_recheck(&ctx);
+        assert!(Arc::ptr_eq(&first,&app.remote_recheck.as_ref().unwrap().cancel));
+        app.analysis.as_mut().unwrap().recognition["recipients"][0]["id"]=
+            serde_json::json!("r2");
+        app.start_remote_recheck(&ctx);
+        assert!(first.load(Ordering::Acquire),
+            "a newer recipient snapshot must cancel obsolete remote work");
+        assert!(!Arc::ptr_eq(&first,&app.remote_recheck.as_ref().unwrap().cancel));
+        assert_eq!(app.remote_recheck.as_ref().unwrap().recipients[0].0,"r2");
+    }
+
+    #[test]
+    fn locality_lookup_retries_after_a_conflicting_write_finishes(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.analysis=Some(remote_analysis());
+        vat_worker(&mut app);
+        app.start_remote_recheck(&ctx);
+        assert!(app.remote_recheck.is_none());
+        assert!(app.remote_recheck_due);
+        app.vat_change=None;
+        app.start_remote_recheck(&ctx);
+        assert!(app.remote_recheck.is_some());
+        assert!(!app.remote_recheck_due);
+    }
+}
