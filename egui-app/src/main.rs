@@ -4460,6 +4460,7 @@ impl BandoEgui {
         let mut inline_open:Option<(InlineTarget,String)>=None;
         let mut inline_commit=false;
         let mut inline_cancel=false;
+        let mut inline_command:Option<(InlineTarget,String)>=None;
         let mut open_audit=false;
         let editable=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
@@ -4793,19 +4794,63 @@ impl BandoEgui {
                                         let cod=recipient.get("freightCode")
                                             .and_then(serde_json::Value::as_str)
                                             .map(|code|code=="020");
-                                        if components::reception_freight_row_editable(
+                                        let freight_target=InlineTarget{
+                                            recipient_id:recipient_id.to_owned(),
+                                            item_id:None,field:"shippingCharge"
+                                        };
+                                        let freight_actions=components::reception_freight_row_editable(
                                             items_ui,"운임",line_fee,cod,remote,
                                             origin==Some("FACTORY"),editable
-                                        ){
-                                            edit_target=Some((
-                                                self.selected_recipient,None,"shippingCharge"
+                                        );
+                                        if freight_actions.amount_clicked{
+                                            inline_open=Some((
+                                                freight_target.clone(),
+                                                line_fee.map(|n|n.to_string()).unwrap_or_default()
                                             ));
                                         }
+                                        if freight_actions.remote_clicked{
+                                            inline_command=Some((
+                                                InlineTarget{
+                                                    recipient_id:recipient_id.to_owned(),
+                                                    item_id:None,field:"remoteDelivery"
+                                                },
+                                                (!remote.unwrap_or(false)).to_string()
+                                            ));
+                                        }
+                                        if let (Some(editor),Some(rect))=(
+                                            self.inline_editor.as_mut()
+                                                .filter(|edit|edit.target==freight_target),
+                                            freight_actions.amount_rect
+                                        ){
+                                            let result=components::reception_inline_cell_editor(
+                                                items_ui,rect,&mut editor.text,editor.focus_next,true
+                                            );
+                                            editor.focus_next=false;
+                                            if result.has_focus() && items_ui.input(|input|
+                                                input.key_pressed(egui::Key::Escape)){
+                                                inline_cancel=true;
+                                            }else if result.lost_focus() ||
+                                                (result.has_focus() && items_ui.input(|input|
+                                                    input.key_pressed(egui::Key::Enter))){
+                                                inline_commit=true;
+                                            }
+                                        }
                                         items_ui.add_space(theme::SPACE_8);
-                                        if components::reception_item_actions_editable(
+                                        if let Some(command)=components::reception_item_actions_editable(
                                             items_ui,origin,editable
                                         ){
-                                            edit_from_pane=true;
+                                            let (field,value)=match command{
+                                                components::ReceptionItemAction::AddItem=>
+                                                    ("addItem","".to_owned()),
+                                                components::ReceptionItemAction::Origin(value)=>
+                                                    ("dispatchOrigin",value.to_owned())
+                                            };
+                                            inline_command=Some((
+                                                InlineTarget{
+                                                    recipient_id:recipient_id.to_owned(),
+                                                    item_id:None,field
+                                                },value
+                                            ));
                                         }
                                     } else {
                                         items_ui.add_space(theme::SPACE_8);
@@ -4819,8 +4864,18 @@ impl BandoEgui {
                     ui.add_space(theme::SPACE_4);
                     // A working reception is not a confirmed bill. Its quote
                     // has no authoritative VAT-included flag at this point.
-                    if components::reception_vat_row_editable(ui,None,editable){
-                        edit_from_pane=true;
+                    let vat_current=selected.and_then(|row|
+                        row.get("vatOverride")).and_then(serde_json::Value::as_bool);
+                    if components::reception_vat_row_editable(ui,vat_current,editable){
+                        if let Some(row)=selected{
+                            inline_command=Some((
+                                InlineTarget{
+                                    recipient_id:reception_service::text(row,"id").to_owned(),
+                                    item_id:None,field:"vatOverride"
+                                },
+                                (!vat_current.unwrap_or(false)).to_string()
+                            ));
+                        }
                     }
                     ui.add_space(theme::SPACE_4);
                     let synced=self.active_id.as_deref()
@@ -4839,7 +4894,28 @@ impl BandoEgui {
                 });
             },
         );
-        if edit_item_header{edit_from_pane=true;}
+        if edit_item_header {
+            if let Some(row)=selected {
+                let rid=reception_service::text(row,"id").to_owned();
+                if let Some(item)=row.get("items").and_then(serde_json::Value::as_array)
+                    .and_then(|items|items.first()) {
+                    inline_open=Some((
+                        InlineTarget{
+                            recipient_id:rid,
+                            item_id:Some(reception_service::text(item,"id").to_owned()),
+                            field:"product"
+                        },
+                        reception_service::item_title(item)
+                    ));
+                }else{
+                    inline_open=Some((
+                        InlineTarget{
+                            recipient_id:rid,item_id:None,field:"shippingCharge"
+                        },String::new()
+                    ));
+                }
+            }
+        }
         // Only authoritative Rust source spans may drive a linked hover.
         // A recognized field with no source evidence must not flash blue as
         // though a corresponding token were found in the original document.
@@ -4855,13 +4931,20 @@ impl BandoEgui {
                 .is_some_and(|analysis|analysis.linked_spans.iter()
                     .any(|span|span.key==*key)));
         self.link_hover.update(linked,ui.ctx());
-        if let Some((recipient,item,field))=edit_target{
-            self.open_manual_workspace(ui.ctx());
-            if let Some(editor)=self.manual_workspace.as_mut(){
-                editor.focus_cell(recipient,item,field);
+        if inline_cancel{
+            self.inline_editor=None;
+        }else if inline_commit{
+            self.submit_inline_edit(ui.ctx());
+        }else if let Some((target,text))=inline_open {
+            self.begin_inline_edit(target,text);
+        }else if let Some((target,value))=inline_command{
+            if self.inline_editor.is_none() && self.inline_change.is_none(){
+                self.inline_editor=Some(InlineReceptionEditor{
+                    target,original:"__previous__".into(),
+                    text:value,focus_next:false
+                });
+                self.submit_inline_edit(ui.ctx());
             }
-        }else if edit_from_pane{
-            self.open_manual_workspace(ui.ctx());
         }
         if open_audit {
             self.edit_history_open=true;
