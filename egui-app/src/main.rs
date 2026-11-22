@@ -1250,6 +1250,7 @@ impl BandoEgui {
         let order_type=row.order_type.clone();
         let gateway=Arc::clone(&self.gateway);
         let (sender,receiver)=mpsc::channel();
+        let context=ctx.clone();
         self.client_change=Some(PendingClientChange {
             order_id,source_raw,order_type,
             chat_handle:row.chat_handle.clone(),
@@ -1260,6 +1261,7 @@ impl BandoEgui {
         std::thread::spawn(move || {
             let result=native_order_change::prepare(gateway.as_ref(),&row,&target);
             let _=sender.send(result);
+            context.request_repaint();
         });
         ctx.request_repaint_after(Duration::from_millis(100));
     }
@@ -1294,12 +1296,10 @@ impl BandoEgui {
             }else if current.is_none_or(|row|row.manual_model!=pending.manual_model){
                 Some("수동 수정 내역이 변경되었습니다. 거래처를 다시 선택하세요.")
             }else{None};
-            if let Some(message)=stale_reason {
-                if let Some(chooser)=self.client_chooser.as_mut(){
-                    if chooser.order_id==pending.order_id && chooser.is_selecting() {
-                        chooser.selection_failed(message.into());
-                    }
-                }
+            if stale_reason.is_some() {
+                // The chooser was dismissed at the original click. An old
+                // calculation must never resurrect it or overwrite a newer
+                // receipt, source or employee edit.
                 return;
             }
             match result {
@@ -1333,22 +1333,13 @@ impl BandoEgui {
                         ctx.request_repaint_after(Duration::from_millis(260));
                     }
                     self.queue_source_save();
-                    if self.client_chooser.as_ref().is_some_and(|chooser|
-                        chooser.order_id==pending.order_id && chooser.is_selecting()
-                    ){
-                        self.client_chooser=None;
-                    }
                 }
                 Err(error)=>{
-                    let message=format!("거래처 변경 확인 실패: {error}");
-                    if let Some(chooser)=self.client_chooser.as_mut()
-                        .filter(|chooser|
-                            chooser.order_id==pending.order_id && chooser.is_selecting()
-                        ){
-                        chooser.selection_failed(message);
-                    }else{
-                        self.source_save_error=Some(message);
-                    }
+                    // A failure is a reception-level, non-modal error. Keep
+                    // the prior confirmed client/quote and never reopen the
+                    // dismissed chooser automatically.
+                    self.source_save_error=
+                        Some(format!("거래처 변경 확인 실패: {error}"));
                 }
             }
         } else if self.client_change.is_some() {
@@ -2251,6 +2242,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn open_client_chooser(&mut self, ctx: &egui::Context) {
+        // The chosen dealer is being priced in the background. Until that
+        // request resolves, no second chooser can submit an overlapping edit.
+        if self.client_change.is_some(){return;}
         let Some(order_id) = &self.active_id else { return; };
         self.client_chooser = Some(ClientChooser::new(
             order_id.clone(), Arc::clone(&self.gateway), ctx.clone()
@@ -2277,32 +2271,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let verified = self.client_chooser.as_ref()
                     .is_some_and(|chooser| chooser.contains(&id));
                 if !verified { return; }
-                // React's current-dealer click simply closes the chooser.
-                // An unpriced quote is a separate pricing task, not grounds
-                // to re-run the client mutation without a different dealer.
+                // A verified click ends this modal NOW, not when the native
+                // repricing worker reports success. No second row can be
+                // clicked during an in-flight dealer calculation.
+                self.client_chooser=None;
+                ctx.request_repaint();
+                // A completed quote for the same dealer requires no work.
                 let complete=current_id.as_deref()==Some(id.as_str()) &&
                     self.active_id.as_deref()
                         .and_then(|active|self.drafts.iter().find(|row|row.id==active))
                         .and_then(|row|row.pricing_preview.as_ref())
                         .is_some_and(complete_reception_quote);
-                if complete {
-                    self.client_chooser=None;
-                } else if self.client_change.is_some() {
-                    if let Some(chooser)=self.client_chooser.as_mut(){
-                        chooser.selection_failed(
-                            "이전 거래처 변경이 끝난 뒤 다시 선택하세요.".into()
-                        );
-                    }
-                } else {
+                if !complete {
                     self.apply_manual_client(&id,ctx);
-                    if self.client_change.is_some() {
-                        if let Some(chooser)=self.client_chooser.as_mut(){
-                            chooser.begin_selection(&id);
-                        }
-                    } else if let Some(chooser)=self.client_chooser.as_mut(){
-                        chooser.selection_failed(self.source_save_error.clone()
-                            .unwrap_or_else(||"거래처 변경을 시작할 수 없습니다.".into()));
-                    }
                 }
             }
             Some(Choice::Closed) => { self.client_chooser = None; }
@@ -5224,7 +5205,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         let matching_pending=self.auto_client_change.as_ref()
                             .is_some_and(|pending|
                                 self.active_id.as_deref()==Some(pending.order_id.as_str()));
-                        if analysis.directory_count == 0 {
+                        let changing_client=self.client_change.as_ref()
+                            .is_some_and(|pending|
+                                self.active_id.as_deref()==Some(pending.order_id.as_str()));
+                        if changing_client {
+                            components::reception_review_status(
+                                ui,"거래처 변경 계산 중"
+                            );
+                        } else if analysis.directory_count == 0 {
                             components::reception_review_status(
                                 ui,"거래처 명단 미연결 · 자동 매칭 확인 필요"
                             );
@@ -5252,7 +5240,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 let id = reception_service::text(candidate, "clientId");
                                 let name = reception_service::text(candidate, "name");
                                 if !id.is_empty() && !name.is_empty() &&
-                                    theme::action(ui, name, ButtonRole::Quiet, true).clicked() {
+                                    theme::action(ui,name,ButtonRole::Quiet,
+                                        self.client_change.is_none()).clicked() {
                                     client_choice = Some(id.to_owned());
                                 }
                             }
