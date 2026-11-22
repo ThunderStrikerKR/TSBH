@@ -42,7 +42,6 @@ export function orderParty(order: Order, state: State) {
 export const companyParty = (settings: Settings): Client => ({
   ...companyClient(settings),
   name: "반도스탠드",
-  displayName: "반도스탠드",
 });
 
 export function companySenderMissing(settings: Settings) {
