@@ -354,9 +354,21 @@ impl ManualWorkspace {
                 let busy=self.busy();
                 let unassigned=blocks.iter().filter(|b|
                     assignments.get(text(b,"id")).is_none()).count();
-                ui.label(typography::caption(
-                    &format!("미배정됨: {unassigned}개")
-                ));
+                // Display worksheet context together. Final actions belong
+                // to the footer, not between the status and editing panes.
+                ui.horizontal(|status|{
+                    status.label(typography::caption(
+                        &format!("미배정됨: {unassigned}개")
+                    ));
+                    status.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |right|{
+                            right.label(typography::caption(
+                                "정식 접수는 주문 확인 완료"
+                            ));
+                        }
+                    );
+                });
                 ui.separator();
                 // Match React's 34:66 columns. On narrow windows keep
                 // both minimum widths and scroll the workspace horizontally
@@ -620,9 +632,7 @@ impl ManualWorkspace {
                                 self.reset_pending=true;
                             }
                         }
-                        left.label(typography::caption(
-                            "정식 접수는 주문 확인 완료"
-                        ));
+
                     },
                     |right|{
                         if theme::action(right,"초안에 적용",
