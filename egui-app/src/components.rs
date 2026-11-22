@@ -2496,6 +2496,10 @@ pub fn management_dropdown(
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
             menu.set_min_width(width);
+            // The popup frame already provides a compact inset (~4pt).
+            // Match the vertical gap between option highlights to that inset
+            // rather than inheriting egui's wider default item spacing.
+            menu.spacing_mut().item_spacing.y=theme::SPACE_4;
             options(menu);
         });
     trigger
