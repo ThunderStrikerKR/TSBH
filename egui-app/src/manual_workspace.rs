@@ -357,17 +357,23 @@ impl ManualWorkspace {
                 // Display worksheet context together. Final actions belong
                 // to the footer, not between the status and editing panes.
                 ui.horizontal(|status|{
-                    status.label(typography::caption(
+                    let count=status.label(typography::caption(
                         &format!("미배정됨: {unassigned}개")
                     ));
-                    status.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |right|{
-                            right.label(typography::caption(
-                                "정식 접수는 주문 확인 완료"
-                            ));
-                        }
-                    );
+                    if status.available_width()>=theme::MANUAL_INPUT_WIDTH {
+                        status.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |right|{
+                                right.label(typography::caption(
+                                    "정식 접수는 주문 확인 완료"
+                                ));
+                            }
+                        );
+                    }else{
+                        // The explanation remains available when the window
+                        // is too narrow for two unbroken status labels.
+                        count.on_hover_text("정식 접수는 주문 확인 완료");
+                    }
                 });
                 ui.separator();
                 // Match React's 34:66 columns. On narrow windows keep
@@ -632,7 +638,6 @@ impl ManualWorkspace {
                                 self.reset_pending=true;
                             }
                         }
-
                     },
                     |right|{
                         if theme::action(right,"초안에 적용",
