@@ -419,16 +419,16 @@ fn modal_pivot_pos(work_area:Rect)->egui::Pos2{
     work_area.center()
 }
 
-/// Wide image reviews need symmetric left/right screen gutters, unlike
-/// normal workflow dialogs, whose constrained area excludes KakaoTalk.
-/// Vertical limits still respect the application's header and status area.
-pub fn modal_balanced_review_area(viewport:Rect,workflow_area:Rect)->Rect{
-    let gutter=theme::MODAL_VIEWPORT_GUTTER;
-    let left=(viewport.left()+gutter).min(viewport.right()-1.0);
-    let right=(viewport.right()-gutter).max(left+1.0).min(viewport.right());
-    Rect::from_min_max(
-        egui::pos2(left,workflow_area.top()),
-        egui::pos2(right,workflow_area.bottom())
+/// OCR review uses the same KakaoTalk-excluded coordinate space as every
+/// other modal. Its outer frame is sized and centered entirely inside the
+/// approved work area, never the full viewport hidden behind the Kakao dock.
+pub fn modal_ocr_review_rect(work_area:Rect)->Rect{
+    let width=(work_area.width()*0.94).clamp(560.0,1480.0)
+        .min(work_area.width().max(1.0));
+    let height=(work_area.height()*0.88).clamp(450.0,960.0)
+        .min(work_area.height().max(1.0));
+    Rect::from_center_size(
+        work_area.center(),Vec2::new(width,height)
     )
 }
 
@@ -3881,19 +3881,37 @@ mod modal_safe_position_tests {
     use super::*;
 
     #[test]
-    fn image_review_is_horizontally_centered_on_whole_viewport(){
+    fn ocr_review_center_excludes_kakao_dock(){
         let viewport=Rect::from_min_size(
             egui::pos2(0.0,0.0),Vec2::new(1648.0,928.0)
         );
-        // Ordinary dialogs exclude the 340pt KakaoTalk reserve.
-        let workflow=Rect::from_min_max(
+        // Work area starts to the right of the reserved KakaoTalk column.
+        let work_area=Rect::from_min_max(
             egui::pos2(360.0,80.0),egui::pos2(1630.0,910.0)
         );
-        let review=modal_balanced_review_area(viewport,workflow);
-        assert_eq!(review.center().x,viewport.center().x);
-        assert_eq!(review.top(),workflow.top());
-        assert_eq!(review.bottom(),workflow.bottom());
-        assert!(review.left()<workflow.left());
+        let review=modal_ocr_review_rect(work_area);
+        assert_eq!(review.center(),work_area.center());
+        assert_ne!(review.center().x,viewport.center().x);
+        assert!(review.left()>=work_area.left());
+        assert!(review.right()<=work_area.right());
+        assert!(review.top()>=work_area.top());
+        assert!(review.bottom()<=work_area.bottom());
+    }
+    #[test]
+    fn ocr_review_remains_inside_narrow_work_area(){
+        for size in [
+            Vec2::new(600.0,450.0),
+            Vec2::new(1200.0,760.0),
+            Vec2::new(1650.0,1100.0)
+        ]{
+            let work_area=Rect::from_min_size(egui::pos2(340.0,70.0),size);
+            let review=modal_ocr_review_rect(work_area);
+            assert_eq!(review.center(),work_area.center());
+            assert!(review.left()>=work_area.left());
+            assert!(review.right()<=work_area.right());
+            assert!(review.top()>=work_area.top());
+            assert!(review.bottom()<=work_area.bottom());
+        }
     }
 
     #[test]
