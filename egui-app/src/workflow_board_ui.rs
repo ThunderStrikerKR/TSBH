@@ -833,16 +833,16 @@ fn pending_dealer_title(
 }
 
 fn pending_frame(
-    ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,
+    ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,in_preview:bool,
     dealer_name:&str,committed_recipient:Option<&str>,
     preview:Option<&PendingTarget>,linked_selection:Option<(&str,&str)>,
     hovered_pending:&mut Option<PendingTarget>
 )->Option<Event>{
     let mut event=None;
-    workflow_card(ui,selected,false,|ui|{
+    workflow_card(ui,selected && !in_preview,in_preview,|ui|{
         let (top,bottom)=workflow_compact_rows(ui);
         let header=workflow_header(
-            ui,top,&draft.id,dealer_name,open,0,false,false,true,true
+            ui,top,&draft.id,dealer_name,open,0,false,in_preview,true,true
         );
         if header.manage{event=Some(Event::ManagePending(draft.id.clone()));}
         if header.delete{event=Some(Event::DeletePending(draft.id.clone()));}
@@ -872,7 +872,7 @@ fn pending_frame(
         // fully automatic and never a manually executable stage.
         let _=workflow_action_line(
             ui,bottom,&draft.id,recipients.len(),None,None,
-            Some("거래처 확인"),false,false,false
+            Some("거래처 확인"),false,false,in_preview
         );
         if open{
             workflow_details(ui,|ui|{
@@ -884,7 +884,7 @@ fn pending_frame(
                 let response=shipment_line(ui,"수취인 확인",
                     &[excerpt.chars().take(60).collect()],false,false);
                 let action=ui.interact(response.rect,
-                    Id::new(("pending-reception-row",draft.id.as_str(),0usize)),
+                    Id::new(("pending-reception-row",draft.id.as_str(),0usize,in_preview)),
                     egui::Sense::click());
                 theme::paint_button_hover(ui,&action,0.0);
                 if action.hovered() {
@@ -920,7 +920,7 @@ fn pending_frame(
                         && !recipient_id.is_empty() && !chosen;
                     let response=shipment_line(ui,name,&products,chosen,previewed);
                     let action=ui.interact(response.rect,
-                        Id::new(("pending-reception-row",draft.id.as_str(),index)),
+                        Id::new(("pending-reception-row",draft.id.as_str(),index,in_preview)),
                         egui::Sense::click());
                     theme::paint_button_hover(ui,&action,0.0);
                     if action.hovered(){
@@ -959,6 +959,7 @@ pub fn show(
     let mut trigger=None;
     let mut hovered_pending=None;
     let mut overlay=None;
+    let mut pending_overlay=None;
     let selected=state.selection.clone();
     let current=selected.as_ref();
     if drafts.is_empty() && snapshot.is_none_or(|view|view.groups.is_empty()){
@@ -999,8 +1000,14 @@ pub fn show(
             draft,client_names,
             if selected{active_selected_client}else{None}
         );
+        if allow_pending_hover_switch && !selected &&
+            state.pending_visible.as_ref().is_some_and(|target|
+                target.order_id==draft.id){
+            pending_overlay=Some((draft.clone(),name.clone(),ui.cursor().min,
+                ui.available_width()));
+        }
         if let Some(value)=pending_frame(
-            ui,draft,selected,open,&name,
+            ui,draft,selected,open,false,&name,
             if selected{active_recipient_id}else{None},
             state.pending_visible.as_ref(),
             linked_selection,
@@ -1014,6 +1021,34 @@ pub fn show(
             }
         }
         ui.add_space(theme::WORKFLOW_CARD_GAP);
+    }
+    // The pending foreground clone uses the same card geometry without
+    // changing list height. Every interactive ID differs from its base card.
+    if let Some((draft,name,pos,width))=pending_overlay{
+        let pane_clip=ui.clip_rect();
+        let mut overlay_event=None;
+        let mut overlay_hover=None;
+        let area=egui::Area::new(Id::new(("pending-card-overlay",draft.id.clone())))
+            .order(egui::Order::Foreground)
+            .fixed_pos(Pos2::new(pos.x,pos.y))
+            .movable(false);
+        let response=area.show(ui.ctx(),|overlay_ui|{
+            overlay_ui.set_clip_rect(pane_clip);
+            overlay_ui.set_min_width(width);
+            overlay_ui.set_max_width(width);
+            overlay_event=pending_frame(
+                overlay_ui,&draft,false,true,true,&name,None,
+                state.pending_visible.as_ref(),linked_selection,&mut overlay_hover
+            );
+        });
+        if overlay_hover.is_some(){
+            hovered_pending=overlay_hover;
+        }else if ui.ctx().input(|input|input.pointer.hover_pos()
+            .is_some_and(|pointer|response.response.rect.contains(pointer))){
+            // Whitespace between rows is still a hover-connected surface.
+            hovered_pending=state.pending_visible.clone();
+        }
+        if let Some(value)=overlay_event{event=Some(value);}
     }
     // Hover changes display only. Only actual clicks emit SelectPending.
     if allow_pending_hover_switch && event.is_none(){
@@ -1154,7 +1189,7 @@ mod pending_matching_tests {
             egui::CentralPanel::default().show(ctx,|ui|{
                 let mut hovered=None;
                 tapped=pending_frame(
-                    ui,&draft,false,false,"확인된 거래처",None,None,
+                    ui,&draft,false,false,false,"확인된 거래처",None,None,
                     None,&mut hovered
                 );
             });
