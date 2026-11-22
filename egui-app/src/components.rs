@@ -1415,7 +1415,9 @@ pub fn reception_recipient_fields(
                 Vec2::new(width, theme::INPUT_HEIGHT),
                 reception_recipient_text_edit(value, width, active, false).interactive(false),
             );
-            reception_recipient_value_hit(line,&display)
+            let hit=reception_recipient_value_hit(line,&display);
+            source_highlight::paint_active_if(line,&hit,active);
+            hit
         }).inner
     }
 
@@ -1458,6 +1460,7 @@ pub fn reception_recipient_fields(
                         reception_recipient_text_edit(mobile, mobile_width, active[2], true).interactive(false),
                     );
                     let mobile_input=reception_recipient_value_hit(line,&mobile_display);
+                    source_highlight::paint_active_if(line,&mobile_input,active[2]);
                     // Only the gap between the TWO contact groups is 8pt.
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_PHONE_COLUMN_GAP;
@@ -1472,6 +1475,7 @@ pub fn reception_recipient_fields(
                         reception_recipient_text_edit(phone, phone_width, active[3], true).interactive(false),
                     );
                     let phone_input=reception_recipient_value_hit(line,&phone_display);
+                    source_highlight::paint_active_if(line,&phone_input,active[3]);
                     (mobile_input,phone_input)
                 }).inner
             }).inner;
@@ -3584,6 +3588,13 @@ fn reception_item_row_with_mode(
          egui::pos2(rect.right(), rect.bottom())],
         Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER)
     );
+    // The renderer owns both fill and border. Do not let reception page
+    // branches independently paint an outline: pending board previews
+    // otherwise receive blue fills without the matching blue stroke.
+    for (response,on) in [(&product,active[0]),(&quantity,active[1]),
+        (&amount,active[2])]{
+        source_highlight::paint_active_if(ui,response,on);
+    }
     ReceptionItemCells { product, quantity, amount }
 }
 
