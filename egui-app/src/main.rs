@@ -191,7 +191,18 @@ struct PendingClientChange {
     chat_title: Option<String>,
     // A later inline/manual edit must never be overwritten by an older quote.
     manual_model: Option<serde_json::Value>,
+    // A master-driven reprice keeps an AUTO decision AUTO.
+    reprice_selection: Option<String>,
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
+}
+
+struct PendingPricingBasisCheck {
+    order_id:String,
+    source_raw:String,
+    order_type:String,
+    client_id:String,
+    quote:serde_json::Value,
+    receiver:Receiver<Result<bool,String>>,
 }
 
 // An automatic match is only advisory until the same native Rust order
@@ -560,6 +571,7 @@ struct BandoEgui {
     edit_history_open: bool,
     client_change: Option<PendingClientChange>,
     auto_client_change: Option<PendingAutomaticClient>,
+    pricing_basis_check: Option<PendingPricingBasisCheck>,
     working_sync: Option<PendingWorkingSync>,
     working_sync_error: Option<String>,
     analysis: Option<reception_service::ReceptionAnalysis>,
@@ -658,6 +670,7 @@ impl Default for BandoEgui {
             edit_history_open: false,
             client_change: None,
             auto_client_change: None,
+            pricing_basis_check: None,
             working_sync: None,
             working_sync_error: None,
             analysis: None,
@@ -857,6 +870,97 @@ impl BandoEgui {
         true
     }
 
+    /// A cache hit is rendered immediately. Only the selected client's
+    /// relevant product/variant and freight masters are compared off-thread.
+    /// Unrelated state revisions and contact edits never trigger repricing.
+    fn start_pricing_basis_check(&mut self,ctx:&egui::Context){
+        if self.pricing_basis_check.is_some(){return;}
+        let Some(row)=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+            .cloned()
+        else{return};
+        let (Some(client_id),Some(quote))=(
+            row.client_id.clone(),row.pricing_preview.clone()
+        )else{return};
+        let Some(rows)=row.manual_model.as_ref()
+            .and_then(|model|model.pointer("/model/rows"))
+            .or_else(||row.analysis_evidence.as_ref()
+                .and_then(|evidence|evidence.get("recipients")))
+            .filter(|rows|rows.is_array()).cloned()
+        else{return};
+        let gateway=Arc::clone(&self.gateway);
+        let context=ctx.clone();
+        let old_quote=quote.clone();
+        let selected_id=client_id.clone();
+        let (tx,receiver)=mpsc::channel();
+        self.pricing_basis_check=Some(PendingPricingBasisCheck {
+            order_id:row.id,source_raw:row.raw,order_type:row.order_type,
+            client_id,quote,receiver
+        });
+        std::thread::spawn(move||{
+            let result=(||->Result<bool,String>{
+                let state=gateway.load_business_state()?;
+                let client=state.get("clients").and_then(serde_json::Value::as_array)
+                    .and_then(|clients|clients.iter().find(|client|
+                        client["id"].as_str()==Some(selected_id.as_str())))
+                    .ok_or("저장된 거래처의 가격 기준을 찾지 못했습니다.")?;
+                let order=serde_json::json!({"recipients":rows});
+                Ok(old_quote.get("pricingBasis")==Some(
+                    &pricing_basis::snapshot(&state,client,&order)
+                ))
+            })();
+            let _=tx.send(result);
+            context.request_repaint();
+        });
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+
+    fn poll_pricing_basis_check(&mut self,ctx:&egui::Context){
+        let answer=self.pricing_basis_check.as_ref()
+            .map(|pending|pending.receiver.try_recv());
+        let received=match answer{
+            Some(Ok(result))=>Some(result),
+            Some(Err(mpsc::TryRecvError::Disconnected))=>
+                Some(Err("저장된 가격 기준 확인 작업이 중단됐습니다.".into())),
+            _=>None
+        };
+        let Some(received)=received else{
+            if self.pricing_basis_check.is_some(){
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+            return;
+        };
+        let Some(pending)=self.pricing_basis_check.take() else{return};
+        let latest=self.drafts.iter().find(|row|row.id==pending.order_id);
+        if self.active_id.as_deref()!=Some(pending.order_id.as_str()) ||
+           self.raw_source!=pending.source_raw ||
+           self.order_type.as_str()!=pending.order_type ||
+           latest.is_none_or(|row|
+               row.client_id.as_deref()!=Some(pending.client_id.as_str()) ||
+               row.pricing_preview.as_ref()!=Some(&pending.quote))
+        {return;}
+        match received{
+            Ok(true)=>{},
+            Ok(false)=>{
+                if self.client_change.is_some() || self.auto_client_change.is_some() ||
+                   self.inline_change.is_some() || self.vat_change.is_some() ||
+                   self.working_sync.is_some() || self.manual_workspace.is_some() ||
+                   self.inline_editor.is_some(){
+                    // Do not race with an employee edit. A later source
+                    // selection/reopen will check the same saved basis.
+                    return;
+                }
+                let kind=latest.and_then(|row|row.client_selection.clone());
+                self.apply_client_with_selection(&pending.client_id,ctx,kind);
+            }
+            Err(error)=>{
+                self.source_save_error=Some(
+                    format!("저장된 견적의 가격 기준 확인 실패: {error}")
+                );
+            }
+        }
+    }
+
     // Every reception has its own source. Selecting an existing one never
     // replaces the text of a different order or merges their evidence.
     /// A strictly read-only lookup against an explicitly chosen Tauri v2
@@ -1015,7 +1119,9 @@ impl BandoEgui {
         self.source_editing = !self.raw_source.is_empty();
         self.direct_source_entry = false;
         self.clear_source_analysis();
-        if !self.restore_cached_analysis() && !self.raw_source.trim().is_empty() {
+        if self.restore_cached_analysis(){
+            self.start_pricing_basis_check(ctx);
+        }else if !self.raw_source.trim().is_empty() {
             self.analysis_due_at = Some(Instant::now() + Duration::from_millis(250));
             ctx.request_repaint_after(Duration::from_millis(260));
         }
@@ -1095,15 +1201,23 @@ impl BandoEgui {
     // It computes a full repricing preview, but production state_save and
     // workflow reconciliation are not exposed in this isolated egui app.
     fn apply_manual_client(&mut self, client_id: &str, ctx: &egui::Context) {
+        self.apply_client_with_selection(client_id,ctx,None);
+    }
+
+    fn apply_client_with_selection(
+        &mut self,client_id:&str,ctx:&egui::Context,
+        reprice_selection:Option<String>
+    ){
         if self.client_change.is_some() {
             self.source_save_error = Some("이전 거래처 변경 계산이 끝난 뒤 다시 선택하세요.".into());
             return;
         }
         let Some(id) = self.active_id.as_deref() else { return; };
         let Some(row) = self.drafts.iter().find(|row| row.id == id).cloned() else { return; };
-        if row.client_id.as_deref() == Some(client_id) &&
+        if reprice_selection.is_none() &&
+           row.client_id.as_deref() == Some(client_id) &&
            row.pricing_preview.as_ref().is_some_and(complete_reception_quote) {
-            return; // Same dealer with a complete native quote.
+            return; // Same dealer with an already complete native quote.
         }
         if row.analysis_raw.as_deref() != Some(row.raw.as_str()) ||
             row.analysis_evidence.is_none() {
@@ -1125,7 +1239,7 @@ impl BandoEgui {
             order_id,source_raw,order_type,
             chat_handle:row.chat_handle.clone(),
             chat_title:row.chat_title.clone(),
-            manual_model:row.manual_model.clone(),receiver,
+            manual_model:row.manual_model.clone(),reprice_selection,receiver,
         });
         self.source_save_error=None;
         std::thread::spawn(move || {
@@ -1179,7 +1293,10 @@ impl BandoEgui {
                         r.id==pending.order_id && r.raw==pending.source_raw
                     ) {
                         row.client_id=Some(result.client_id);
-                        row.client_selection=Some("MANUAL".into());
+                        row.client_selection=Some(
+                            pending.reprice_selection.clone()
+                                .unwrap_or_else(||"MANUAL".into())
+                        );
                         row.pricing_preview=result.pricing_preview;
                         row.manual_model=result.manual_model;
                         row.working_synced=false;
@@ -6544,6 +6661,7 @@ impl eframe::App for BandoEgui {
         }
         self.poll_source_analysis(ctx);
         self.poll_auto_client_change(ctx);
+        self.poll_pricing_basis_check(ctx);
         if self.settings_view.as_mut().is_some_and(|view|view.take_restored()){
             // A restored operational DB invalidates every prior projected
             // price/client/order snapshot. Never keep stale native matches.
@@ -6942,9 +7060,13 @@ fn main() -> eframe::Result<()> {
                 source_autosave: Some(autosave),
                 ..BandoEgui::default()
             };
-            if source_editing && !app.restore_cached_analysis() {
-                app.analysis_due_at=Some(Instant::now()+Duration::from_millis(250));
-                cc.egui_ctx.request_repaint_after(Duration::from_millis(260));
+            if source_editing {
+                if app.restore_cached_analysis(){
+                    app.start_pricing_basis_check(&cc.egui_ctx);
+                }else{
+                    app.analysis_due_at=Some(Instant::now()+Duration::from_millis(250));
+                    cc.egui_ctx.request_repaint_after(Duration::from_millis(260));
+                }
             }
             Ok(Box::new(app))
         }),
