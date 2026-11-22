@@ -924,7 +924,7 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
         if let Some(price)=&draft.pricing_preview {
             let keys=["sourceRaw","orderId","orderType","clientId","authorityRevision",
                 "status","shippingFee","shippingVersion","vatAmount",
-                "subtotal","total","pendingRecipients","notified","paid","linePrices","freightLines"];
+                "subtotal","total","pendingRecipients","notified","paid","linePrices","freightLines","pricingBasis"];
             let map=price.as_object()
                 .ok_or("Rust 가격 계산 결과는 JSON 객체여야 합니다.")?;
             if map.keys().any(|key|!keys.contains(&key.as_str())) ||
@@ -935,6 +935,11 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
                price.get("authorityRevision").and_then(Value::as_u64).is_none() ||
                price.get("linePrices").and_then(Value::as_array).is_none() {
                 return Err("Rust 주문 가격 근거가 원문 또는 거래처와 일치하지 않습니다.".into());
+            }
+            if let Some(basis)=price.get("pricingBasis"){
+                if !basis.is_object() || basis.get("schema")!=Some(&json!(1)){
+                    return Err("거래처·상품·운임 계산 기준 스냅샷이 올바르지 않습니다.".into());
+                }
             }
             if let Some(pending)=price.get("pendingRecipients"){
                 if !pending.is_array(){
