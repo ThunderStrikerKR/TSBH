@@ -4276,16 +4276,26 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             return;
         }
-        if let Some((_group,shipment))=self.visible_workflow_group(){
+        if let Some((group,shipment))=self.visible_workflow_group(){
+            // Source and workflow shipment rows share the same authoritative
+            // recipient/item spans. Do not identify recipients by name text:
+            // duplicate names in one document must remain independent.
+            let raw=&shipment.source_raw;
+            let recognition=serde_json::json!({"recipients":group.shipments
+                .iter().filter(|row|row.order_id==shipment.order_id)
+                .map(|row|row.recipient.clone()).collect::<Vec<_>>()});
+            let spans=source_highlight::collect(raw,&recognition);
+            let selected_id=Some(shipment.recipient_id.as_str());
+            let active=self.link_hover.active.clone().filter(|key|
+                spans.iter().any(|span|span.key==*key));
+            let mut hovered_source=None;
+            let mut clicked_source=None;
             let mut new_clicked=false;
             Self::section_with_header(ui,"발주 원문",height,|header|{
                 if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,true).clicked(){
                     new_clicked=true;
                 }
             },|body|{
-                // Read-only source and generated message are both documents.
-                // Reserve the same bordered INPUT canvas and 4pt inner inset;
-                // only the source's selectable content differs from a message.
                 body.spacing_mut().item_spacing.y=0.0;
                 let available=components::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
@@ -4293,36 +4303,79 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Vec2::new(body.available_width(),available),Sense::hover()
                 );
                 components::paint_source_document_surface(body,document_rect);
-                if available>0.0 {
+                if available>0.0{
                     let inner=document_rect.shrink(theme::SPACE_4);
                     body.scope_builder(
                         UiBuilder::new()
                             .id_salt(("workflow-source-read-only",shipment.order_id.as_str()))
-                            .max_rect(inner)
-                            .layout(Layout::top_down(Align::Min)),
+                            .max_rect(inner).layout(Layout::top_down(Align::Min)),
                         |canvas|{
                             canvas.set_clip_rect(inner);
                             canvas.set_width(inner.width());
                             canvas.set_height(inner.height());
                             egui::ScrollArea::vertical()
                                 .id_salt(("workflow-source-lines",shipment.order_id.as_str()))
-                                .max_height(inner.height())
-                                .auto_shrink([false,false])
+                                .max_height(inner.height()).auto_shrink([false,false])
                                 .show(canvas,|content|{
-                                    content.add(
-                                        egui::Label::new(typography::reception_source_text(
-                                            &shipment.source_raw
-                                        )).selectable(true)
+                                    let mut immutable=raw.as_str();
+                                    let mut layouter=|layout_ui:&egui::Ui,
+                                        buffer:&dyn egui::TextBuffer,width:f32|{
+                                        let job=source_highlight::layout(
+                                            buffer.as_str(),&spans,
+                                            selected_id,active.as_ref(),width,
+                                            egui::FontId::proportional(
+                                                typography::FONT_RECEPTION_SOURCE_TEXT),
+                                            theme::TEXT
+                                        );
+                                        layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
+                                    };
+                                    let under=content.painter().add(egui::Shape::Noop);
+                                    let output=egui::TextEdit::multiline(&mut immutable)
+                                        .frame(false)
+                                        .font(egui::FontId::proportional(
+                                            typography::FONT_RECEPTION_SOURCE_TEXT))
+                                        .desired_width(content.available_width())
+                                        .layouter(&mut layouter).show(content);
+                                    let (normal,focused)=source_highlight::block_shapes(
+                                        raw,&output.galley,output.galley_pos,&spans,
+                                        selected_id,active.as_ref(),
+                                        content.clip_rect().intersect(output.text_clip_rect),
                                     );
+                                    content.painter().set(under,egui::Shape::Vec(normal));
+                                    content.painter().add(egui::Shape::Vec(focused));
+                                    if output.response.hovered(){
+                                        if let Some(pointer)=content.input(|i|i.pointer.hover_pos()){
+                                            hovered_source=source_highlight::hovered_key_at_pointer(
+                                                raw,&spans,&output.galley,output.galley_pos,pointer
+                                            );
+                                            if output.response.clicked(){
+                                                clicked_source=hovered_source.clone();
+                                            }
+                                        }
+                                    }
                                 });
                         }
                     );
                 }
             });
+            self.source_hover=hovered_source;
+            if let Some(clicked)=clicked_source{
+                if let Some(target)=group.shipments.iter().find(|ship|
+                    ship.order_id==shipment.order_id &&
+                    ship.recipient_id==clicked.recipient_id){
+                    self.workflow_ui.select(workflow_board_ui::Selection{
+                        group_id:group.id.clone(),
+                        order_id:target.order_id.clone(),
+                        shipment_id:target.id.clone()
+                    });
+                }
+            }
             if new_clicked{
                 self.workflow_ui.selection=None;
                 self.workflow_ui.folded=None;
                 self.workflow_ui.stop_preview();
+                self.link_hover.clear();
+                self.source_hover=None;
                 self.new_reception(ui.ctx());
             }
             return;
