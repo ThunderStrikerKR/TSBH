@@ -1048,9 +1048,11 @@ impl BandoEgui {
         // A dealer choice is NOT required for assigning recipient/source
         // evidence. Pricing and business-state reconciliation remain native
         // Rust responsibilities when a dealer is subsequently selected.
-        self.manual_workspace=Some(manual_workspace::ManualWorkspace::new(
+        let mut editor=manual_workspace::ManualWorkspace::new(
             row,Arc::clone(&self.gateway),ctx.clone()
-        ));
+        );
+        editor.focus_recipient(self.selected_recipient);
+        self.manual_workspace=Some(editor);
     }
 
     /// The only coordinate owner for every reception modal. KakaoTalk is an
