@@ -78,6 +78,8 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify shared money input live commas and caret-safe editing
+        run: cargo test --manifest-path egui-app/Cargo.toml money_live_format_tests -- --nocapture
       - name: Verify product details dialog scope, choice and quantity-gated Apply
         run: cargo test --manifest-path egui-app/Cargo.toml item_editor::tests -- --nocapture
       - name: Verify catalog image source, hidden/manual override, and stable native texture identity
