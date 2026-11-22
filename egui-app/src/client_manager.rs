@@ -282,7 +282,7 @@ impl ClientManager {
         // left-hand rectangle, so no guesswork about button widths here.
         let width=ui.available_width().max(60.0)
             .min(theme::MANAGEMENT_CLIENT_SEARCH_MAX_WIDTH);
-        if components::flexible_text_field(
+        if components::management_search_field(
             ui,&mut self.search,width,"상호 / 주소 / 전화번호 / 별칭 검색"
         ).changed(){
             self.query(gateway,ui.ctx().clone());
