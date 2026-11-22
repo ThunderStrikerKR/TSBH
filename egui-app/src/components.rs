@@ -2639,14 +2639,12 @@ pub struct ReceptionItemCells {
     pub amount: Response,
 }
 
-/// Product value text needs extra space after the blue 2pt active outline.
-/// Use the same 4pt extra left inset for the column header and every row,
-/// so hovering never shifts the text and quantities/amounts stay untouched.
+/// Product text needs equal breathing room on both sides of the blue
+/// outline. Header and rows use the same 4pt extra horizontal inset;
+/// quantity/amount alignment and highlight geometry remain untouched.
 fn reception_item_text_clip(rect:Rect,index:usize)->Rect {
     if index==0 {
-        Rect::from_min_max(
-            egui::pos2(rect.left()+theme::SPACE_4,rect.top()),rect.max
-        )
+        rect.shrink2(egui::vec2(theme::SPACE_4,0.0))
     }else{rect}
 }
 
@@ -3124,7 +3122,7 @@ mod management_toolbar_geometry_tests {
     }
 
     #[test]
-    fn reception_product_text_keeps_eight_point_gap_from_active_edge() {
+    fn reception_product_text_keeps_eight_point_gaps_on_both_sides() {
         let row=Rect::from_min_size(
             egui::pos2(0.0,0.0),Vec2::new(480.0,42.0)
         );
@@ -3139,7 +3137,9 @@ mod management_toolbar_geometry_tests {
             columns[0].shrink2(egui::vec2(theme::SPACE_8,0.0)),0
         );
         assert_eq!(row_text.left()-highlighted.left(),theme::SPACE_8);
+        assert_eq!(highlighted.right()-row_text.right(),theme::SPACE_8);
         assert_eq!(row_text.left(),header_text.left());
+        assert_eq!(row_text.right(),header_text.right());
         assert_eq!(
             reception_item_text_clip(columns[1],1),columns[1]
         );
