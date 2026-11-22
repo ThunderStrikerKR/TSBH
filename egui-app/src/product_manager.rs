@@ -1024,18 +1024,16 @@ impl ProductManager {
                                             controls.set_clip_rect(
                                                 variant_cell.intersect(row_clip)
                                             );
-                                            egui::ComboBox::from_id_salt(
-                                                ("egui-product-variant",product_id)
-                                            )
-                                                .width((variant_cell.width()-theme::SPACE_8).max(1.0))
-                                                .selected_text(
-                                                    if current_label.is_empty(){"기본"}
-                                                    else{&current_label}
-                                                ).show_ui(controls,|choices|{
+                                            components::management_dropdown(
+                                                controls,
+                                                if current_label.is_empty(){"기본"}
+                                                else{&current_label},
+                                                (variant_cell.width()-theme::SPACE_8).max(1.0),
+                                                true,"상품 옵션 선택",|choices|{
                                                     for variant in variants{
                                                         let label=option_text(product,variant);
-                                                        choices.selectable_value(
-                                                            &mut selected_id,
+                                                        components::management_dropdown_option(
+                                                            choices,&mut selected_id,
                                                             field(variant,"id").to_owned(),
                                                             if label.is_empty(){"기본"}else{&label}
                                                         );
@@ -1410,22 +1408,21 @@ impl ProductManager {
                                 line,display,text_width,typography::CategoryPathFont::Body
                             );
                             line.add_enabled_ui(editable&&!busy,|input|{
-                                egui::ComboBox::from_id_salt("product-detail-category")
-                                    .width(picker_width)
-                                    .selected_text(visible)
-                                    .show_ui(input,|choices|{
-                                        choices.selectable_value(&mut category_id,
+                                components::management_dropdown(
+                                    input,&visible,picker_width,true,display,|choices|{
+                                        components::management_dropdown_option(
+                                            choices,&mut category_id,
                                             String::new(),"카테고리 미지정");
                                         for (id,label) in &categories{
                                             let visible=typography::fit_category_path(
                                                 choices,label,text_width,
                                                 typography::CategoryPathFont::Body
                                             );
-                                            choices.selectable_value(
-                                                &mut category_id,id.clone(),visible
+                                            components::management_dropdown_option(
+                                                choices,&mut category_id,id.clone(),&visible
                                             ).on_hover_text(label);
                                         }
-                                    }).response.on_hover_text(display);
+                                    });
                             });
                             if category_id!=before{
                                 draft["categories"]=if category_id.is_empty(){
@@ -1443,13 +1440,14 @@ impl ProductManager {
                             let label=brands.iter().find(|b|field(b,"id")==brand_id)
                                 .map(|b|field(b,"name")).unwrap_or("브랜드 미지정");
                             line.add_enabled_ui(editable&&!busy,|input|{
-                                egui::ComboBox::from_id_salt("product-detail-brand")
-                                    .selected_text(label).show_ui(input,|choices|{
-                                        choices.selectable_value(&mut brand_id,
-                                            String::new(),"브랜드 미지정");
+                                components::management_dropdown(
+                                    input,label,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
+                                    true,"브랜드 선택",|choices|{
+                                        components::management_dropdown_option(
+                                            choices,&mut brand_id,String::new(),"브랜드 미지정");
                                         for brand in &brands{
-                                            choices.selectable_value(&mut brand_id,
-                                                field(brand,"id").to_owned(),
+                                            components::management_dropdown_option(
+                                                choices,&mut brand_id,field(brand,"id").to_owned(),
                                                 field(brand,"name"));
                                         }
                                     });
@@ -1465,13 +1463,14 @@ impl ProductManager {
                             let mut origin=field(&draft,"origin").to_owned();
                             let before=origin.clone();
                             line.add_enabled_ui(editable&&!busy,|input|{
-                                egui::ComboBox::from_id_salt("product-detail-origin")
-                                    .selected_text(if origin=="STORE"{"매장"}else{"공장"})
-                                    .show_ui(input,|options|{
-                                        options.selectable_value(
-                                            &mut origin,"FACTORY".into(),"공장");
-                                        options.selectable_value(
-                                            &mut origin,"STORE".into(),"매장");
+                                components::management_dropdown(
+                                    input,if origin=="STORE"{"매장"}else{"공장"},
+                                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
+                                    true,"발송지 선택",|options|{
+                                        components::management_dropdown_option(
+                                            options,&mut origin,"FACTORY".into(),"공장");
+                                        components::management_dropdown_option(
+                                            options,&mut origin,"STORE".into(),"매장");
                                     });
                             });
                             if origin!=before{draft["origin"]=json!(origin);}
@@ -1483,13 +1482,14 @@ impl ProductManager {
                             let label=groups.iter().find(|g|field(g,"id")==group)
                                 .map(|g|field(g,"name")).unwrap_or("미지정");
                             line.add_enabled_ui(editable&&!busy,|input|{
-                                egui::ComboBox::from_id_salt("product-detail-shipping")
-                                    .selected_text(label).show_ui(input,|choices|{
-                                        choices.selectable_value(
-                                            &mut group,String::new(),"미지정");
+                                components::management_dropdown(
+                                    input,label,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
+                                    true,"배송 그룹 선택",|choices|{
+                                        components::management_dropdown_option(
+                                            choices,&mut group,String::new(),"미지정");
                                         for row in &groups{
-                                            choices.selectable_value(
-                                                &mut group,field(row,"id").to_owned(),
+                                            components::management_dropdown_option(
+                                                choices,&mut group,field(row,"id").to_owned(),
                                                 field(row,"name"));
                                         }
                                     });
