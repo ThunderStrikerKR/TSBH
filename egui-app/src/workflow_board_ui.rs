@@ -581,7 +581,11 @@ fn shipment_line(
             theme::SPACE_4 as i8
         ))
         .show(ui,|row|{
-            let inside=(outer-2.0*theme::WORKFLOW_DETAIL_ROW_PADDING_X).max(0.0);
+            // Inner margins do not include the 1pt frame stroke on either
+            // edge. Reserve both strokes so neighboring rows have exactly
+            // the same width and the list never grows a horizontal rail.
+            let inside=(outer-2.0*theme::WORKFLOW_DETAIL_ROW_PADDING_X
+                -2.0*theme::SOFT_DIVIDER_WIDTH).max(0.0);
             row.set_min_width(inside);
             row.horizontal(|cols|{
                 cols.spacing_mut().item_spacing.x=theme::SPACE_8;
