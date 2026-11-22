@@ -397,7 +397,26 @@ pub fn layout(
     job
 }
 
-/// Rounded blocks are painted beneath the editor glyphs, but the blue focus
+//// The source is 16pt, but egui's row height includes line leading.
+/// A gray evidence mark should hug the letter ink rather than fill the row.
+/// Deflate normal tokens horizontally to keep a visible gap between neighbors.
+fn compact_block_rect(
+    text_left:f32,text_right:f32,row_top:f32,row_height:f32,focused:bool
+)->Option<egui::Rect> {
+    if row_height<=0.0 {return None;}
+    let horizontal=if focused {1.5} else {-0.5};
+    let vertical=if focused {1.0_f32.min(row_height*0.12)}
+        else {2.5_f32.min(row_height*0.20)};
+    let left=text_left-horizontal;
+    let right=text_right+horizontal;
+    let top=row_top+vertical;
+    let bottom=row_top+row_height-vertical;
+    (right>left && bottom>top).then(||egui::Rect::from_min_max(
+        egui::pos2(left,top),egui::pos2(right,bottom)
+    ))
+}
+
+// Rounded blocks are painted beneath the editor glyphs, but the blue focus
 /// border is painted over all blocks. In particular, a later gray token must
 /// never hide the active blue field when adjacent token padding overlaps.
 /// Glyph positions come from egui; source bytes and character cursors stay
@@ -431,22 +450,18 @@ pub fn block_shapes(
                 } else {
                     glyphs[last].pos.x+glyphs[last].advance_width
                 };
-                // Active outlines get a small amount of breathing room while
-                // normal gray tokens do not intrude into neighbouring fields.
-                let hpad=if block.focused {2.0} else {0.5};
-                let left=galley_pos.x+placed.pos.x+glyphs[first].pos.x-hpad;
-                let right=galley_pos.x+placed.pos.x+end_x+hpad;
-                if right<=left {continue;}
-                let rect=egui::Rect::from_min_max(
-                    egui::pos2(left,y-1.0),
-                    egui::pos2(right,y+height+1.0)
-                );
+                let text_left=galley_pos.x+placed.pos.x+glyphs[first].pos.x;
+                let text_right=galley_pos.x+placed.pos.x+end_x;
+                let Some(rect)=compact_block_rect(
+                    text_left,text_right,y,height,block.focused
+                ) else {continue};
                 if !rect.intersects(clip) {continue;}
-                let background=egui::Shape::rect_filled(rect,4.0,block.fill);
+                let radius=if block.focused {3.0} else {2.0};
+                let background=egui::Shape::rect_filled(rect,radius,block.fill);
                 if block.focused {
                     focused.push(background);
                     outlines.push(egui::Shape::rect_stroke(
-                        rect,4.0,egui::Stroke::new(2.0,SOURCE_ACTIVE_BORDER),
+                        rect,radius,egui::Stroke::new(2.0,SOURCE_ACTIVE_BORDER),
                         egui::StrokeKind::Inside
                     ));
                 } else {
@@ -569,6 +584,25 @@ mod tests {
         let second_product=spans.iter().find(|s|s.key.recipient_id=="r2" && s.key.field=="product").unwrap();
         assert!(first_product.start<second_product.start);
         assert!(second_product.start>=second);
+    }
+
+    #[test]
+    fn gray_source_blocks_keep_a_gap_between_adjacent_fields_and_lines() {
+        // Adjacent recognized fields share glyph boundaries. Even then their
+        // quiet gray rectangles must never touch or intrude into the next row.
+        let a=compact_block_rect(5.0,15.0,10.0,20.0,false).unwrap();
+        let b=compact_block_rect(15.0,25.0,10.0,20.0,false).unwrap();
+        let next=compact_block_rect(5.0,15.0,30.0,20.0,false).unwrap();
+        assert_eq!(a.right(),14.5);
+        assert_eq!(b.left(),15.5);
+        assert!(a.right()<b.left());
+        assert_eq!(a.top(),12.5);
+        assert_eq!(a.bottom(),27.5);
+        assert!(a.bottom()<next.top());
+        // A focused blue block is deliberately larger than its quiet peers.
+        let active=compact_block_rect(5.0,15.0,10.0,20.0,true).unwrap();
+        assert!(active.width()>a.width());
+        assert!(active.height()>a.height());
     }
 
     #[test]
