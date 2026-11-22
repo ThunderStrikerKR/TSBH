@@ -4457,8 +4457,9 @@ impl BandoEgui {
         }
 
         let mut next_recipient = None;
-        let mut edit_from_pane=false;
-        let mut edit_target:Option<(usize,Option<String>,&'static str)>=None;
+        let mut inline_open:Option<(InlineTarget,String)>=None;
+        let mut inline_commit=false;
+        let mut inline_cancel=false;
         let mut open_audit=false;
         let editable=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
@@ -4467,6 +4468,7 @@ impl BandoEgui {
             && self.manual_workspace.is_none()
             && self.client_change.is_none()
             && self.working_sync.is_none()
+            && self.inline_change.is_none()
             && self.source_clear_job.is_none();
         let has_audit=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
@@ -4491,7 +4493,18 @@ impl BandoEgui {
                     pane,"수취인별 주문 정보",recipient_height,
                     |header|{
                         if theme::action(header,"수정",ButtonRole::Standard,editable).clicked(){
-                            edit_from_pane=true;
+                            if let Some(analysis)=self.analysis.as_ref(){
+                                if let Some(recipient)=reception_service::recipients(analysis)
+                                    .get(self.selected_recipient) {
+                                    inline_open=Some((
+                                        InlineTarget{
+                                            recipient_id:reception_service::text(recipient,"id").into(),
+                                            item_id:None,field:"name"
+                                        },
+                                        reception_service::text(recipient,"name").into()
+                                    ));
+                                }
+                            }
                         }
                         if theme::action(header,"이력",ButtonRole::TableSecondary,has_audit)
                             .clicked(){open_audit=true;}
@@ -4528,31 +4541,50 @@ impl BandoEgui {
                                         fields, &mut name, &mut address, &mut mobile,
                                         &mut phone, &mut note, active_fields,
                                     );
-                                    for (response, field) in responses.into_iter().zip([
-                                        "name", "address", "mobile", "phone", "note",
-                                    ]) {
-                                        // Read-only styled fields open the
-                                        // native manual editor on click. They
-                                        // never write ephemeral UI strings.
-                                        if editable && fields.interact(
+                                    let values=[
+                                        name.as_str(),address.as_str(),mobile.as_str(),
+                                        phone.as_str(),note.as_str()
+                                    ];
+                                    for ((response,field),initial) in responses.into_iter().zip([
+                                        "name","address","mobile","phone","note"
+                                    ]).zip(values) {
+                                        let target=InlineTarget{
+                                            recipient_id:recipient_id.to_owned(),
+                                            item_id:None,field
+                                        };
+                                        let is_editing=self.inline_editor.as_ref()
+                                            .is_some_and(|edit|edit.target==target);
+                                        if editable && !is_editing && fields.interact(
                                             response.rect,
                                             fields.make_persistent_id((
                                                 "recipient-inline-edit",recipient_id,field
-                                            )),
-                                            Sense::click()
+                                            )),Sense::click()
                                         ).clicked(){
-                                            edit_target=Some((self.selected_recipient,None,field));
+                                            inline_open=Some((target.clone(),initial.to_owned()));
                                         }
-                                        let key = source_highlight::key(
-                                            recipient_id, recipient_id, field,
+                                        let key=source_highlight::key(
+                                            recipient_id,recipient_id,field
                                         );
-                                        if response.hovered() {
-                                            hovered_detail = Some(key.clone());
-                                        }
+                                        if response.hovered(){hovered_detail=Some(key.clone());}
                                         source_highlight::paint_active(
-                                            fields, &response, &key,
-                                            self.link_hover.active.as_ref(),
+                                            fields,&response,&key,self.link_hover.active.as_ref()
                                         );
+                                        if let Some(editor)=self.inline_editor.as_mut()
+                                            .filter(|edit|edit.target==target) {
+                                            let edit_response=components::reception_inline_cell_editor(
+                                                fields,response.rect,&mut editor.text,
+                                                editor.focus_next,false
+                                            );
+                                            editor.focus_next=false;
+                                            if edit_response.has_focus() && fields.input(|input|
+                                                input.key_pressed(egui::Key::Escape)){
+                                                inline_cancel=true;
+                                            }else if edit_response.lost_focus() ||
+                                                (edit_response.has_focus() && fields.input(|input|
+                                                    input.key_pressed(egui::Key::Enter))) {
+                                                inline_commit=true;
+                                            }
+                                        }
                                     }
                                 });
                         }
@@ -4562,6 +4594,7 @@ impl BandoEgui {
         );
         if let Some(index) = next_recipient {
             self.selected_recipient = index;
+            if self.inline_editor.is_some(){inline_commit=true;}
         }
         let selected = self.analysis.as_ref().and_then(|analysis| {
             reception_service::recipients(analysis).get(self.selected_recipient)
