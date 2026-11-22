@@ -1783,6 +1783,121 @@ impl BandoEgui {
         }
     }
 
+    /// React OrderItemEditor: product name opens a dedicated modal, never a
+    /// TextEdit suggestion popup. Selection is staged until explicit Apply.
+    fn open_item_editor(
+        &mut self,recipient_id:&str,item_id:&str,ctx:&egui::Context
+    ){
+        if self.item_editor.is_some(){return;}
+        if self.inline_editor.as_ref().is_some_and(|edit|
+            edit.text!=edit.original){
+            self.source_save_error=Some(
+                "현재 셀 편집을 Enter로 확정하거나 Esc로 취소하세요.".into()
+            );
+            return;
+        }
+        match self.reception_job_admission(ReceptionJob::InlineEdit,false){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::InlineEdit,blocker);
+                return;
+            }
+        }
+        let Some(row)=self.active_id.as_deref().and_then(|id|
+            self.drafts.iter().find(|row|row.id==id)
+        )else{return};
+        if row.analysis_raw.as_deref()!=Some(self.raw_source.as_str()) ||
+            row.analysis_evidence.is_none(){
+            self.source_save_error=Some(
+                "발주원문 인식이 완료된 뒤 품목을 수정하세요.".into()
+            );
+            return;
+        }
+        let Some(item)=self.analysis.as_ref().and_then(|analysis|
+            reception_service::recipients(analysis).iter().find(|recipient|
+                reception_service::text(recipient,"id")==recipient_id)
+        ).and_then(|recipient|recipient["items"].as_array())
+            .and_then(|items|items.iter().find(|item|
+                reception_service::text(item,"id")==item_id
+            )).cloned()
+        else{
+            self.source_save_error=Some("선택한 품목이 현재 발주서에 없습니다.".into());
+            return;
+        };
+        let price=row.pricing_preview.as_ref().and_then(|quote|
+            quoted_item_line(quote,item_id)
+        ).and_then(|line|line["unitPrice"].as_i64())
+        .or_else(||item.get("unitPrice").and_then(serde_json::Value::as_i64));
+        self.inline_editor=None;
+        self.item_editor=Some(item_editor::ItemEditor::new(
+            row.id.clone(),row.raw.clone(),recipient_id.into(),
+            item,row.client_id.clone().unwrap_or_default(),price
+        ));
+        ctx.request_repaint();
+    }
+
+    fn show_item_editor(&mut self,ctx:&egui::Context,work_area:Rect){
+        let valid=self.item_editor.as_ref().is_some_and(|dialog|
+            self.active_id.as_deref()==Some(dialog.order_id.as_str())
+            && self.raw_source==dialog.source_raw
+        );
+        if !valid{
+            self.item_editor=None;
+            return;
+        }
+        let busy=self.inline_change.is_some();
+        let event=self.item_editor.as_mut().and_then(|dialog|
+            dialog.show(ctx,Arc::clone(&self.gateway),work_area,busy)
+        );
+        match event{
+            Some(item_editor::Event::Closed)=>{
+                self.item_editor=None;
+            },
+            Some(item_editor::Event::Apply(product))=>{
+                if let Some(dialog)=self.item_editor.as_ref(){
+                    let target=InlineTarget{
+                        recipient_id:dialog.recipient_id.clone(),
+                        item_id:Some(dialog.item_id.clone()),field:"product"
+                    };
+                    self.start_review_inline_action(
+                        target,serde_json::json!({"product":product}),ctx
+                    );
+                    if self.inline_change.is_none(){
+                        if let Some(error)=self.source_save_error.clone(){
+                            if let Some(dialog)=self.item_editor.as_mut(){
+                                dialog.report_error(error);
+                            }
+                        }
+                    }else if let Some(dialog)=self.item_editor.as_mut(){
+                        dialog.clear_error();
+                    }
+                }
+            },
+            Some(item_editor::Event::Remove)=>{
+                if let Some(dialog)=self.item_editor.as_ref(){
+                    let target=InlineTarget{
+                        recipient_id:dialog.recipient_id.clone(),
+                        item_id:Some(dialog.item_id.clone()),field:"removeItem"
+                    };
+                    self.start_review_inline_action(
+                        target,serde_json::Value::Null,ctx
+                    );
+                    if self.inline_change.is_none(){
+                        if let Some(error)=self.source_save_error.clone(){
+                            if let Some(dialog)=self.item_editor.as_mut(){
+                                dialog.report_error(error);
+                            }
+                        }
+                    }else if let Some(dialog)=self.item_editor.as_mut(){
+                        dialog.clear_error();
+                    }
+                }
+            },
+            None=>{}
+        }
+    }
+
     fn open_manual_workspace(&mut self,ctx:&egui::Context) {
         match self.reception_job_admission(
             ReceptionJob::ManualWorkspace,self.manual_workspace.is_some()
@@ -6358,6 +6473,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
         let mut next_recipient = None;
         let mut inline_open:Option<(InlineTarget,String,Option<egui::Pos2>)>=None;
+        let mut item_popup:Option<(String,String)>=None;
         let mut inline_commit=false;
         let mut inline_cancel=false;
         let mut inline_command:Option<(InlineTarget,String)>=None;
@@ -6630,10 +6746,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     let is_editing=self.inline_editor.as_ref()
                                                         .is_some_and(|editor|editor.target==target);
                                                     if editable && !is_editing && response.clicked(){
-                                                        inline_open=Some((
-                                                            target.clone(),original,
-                                                            response.interact_pointer_pos()
-                                                        ));
+                                                        if field=="product"{
+                                                            // React used the product-detail dialog,
+                                                            // not a text-edit suggestion list.
+                                                            item_popup=Some((
+                                                                recipient_id.to_owned(),
+                                                                item_id.to_owned()
+                                                            ));
+                                                        }else{
+                                                            inline_open=Some((
+                                                                target.clone(),original,
+                                                                response.interact_pointer_pos()
+                                                            ));
+                                                        }
                                                     }
                                                     if let Some(editor)=self.inline_editor.as_mut()
                                                         .filter(|editor|editor.target==target) {
@@ -6873,7 +6998,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if self.source_hover.is_some() && self.link_hover.active.is_some(){
             self.link_hover.scroll_to=None;
         }
-        if inline_cancel{
+        if let Some((recipient_id,item_id))=item_popup{
+            self.open_item_editor(&recipient_id,&item_id,ui.ctx());
+        }else if inline_cancel{
             self.inline_editor=None;
         }else if let Some((target,text,click_at))=inline_open {
             // B's click and A's blur happen on the same egui frame.
@@ -7850,7 +7977,7 @@ impl eframe::App for BandoEgui {
             (self.page==Page::Reception &&
                 (self.client_chooser.is_some() || self.manual_workspace.is_some() ||
                 self.edit_history_open || self.workflow_dialog.is_some()
-                 || self.vat_dialog.is_some())) {
+                 || self.vat_dialog.is_some() || self.item_editor.is_some())) {
             components::modal_backdrop(
                 ctx,"bando-workspace-modal-backdrop",false
             );
@@ -7860,6 +7987,7 @@ impl eframe::App for BandoEgui {
         if self.page == Page::Reception {
             self.show_client_chooser(ctx,work_area);
             self.show_manual_workspace(ctx,work_area);
+            self.show_item_editor(ctx,work_area);
             self.show_vat_settings(ctx,work_area);
             self.show_edit_history(ctx,work_area);
             self.show_workflow_dialog(ctx,work_area);
