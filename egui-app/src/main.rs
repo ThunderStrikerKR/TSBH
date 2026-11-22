@@ -270,7 +270,6 @@ enum VatScope { None, All, Partial }
 struct VatDialog {
     order_id:String,
     source_raw:String,
-    scope:VatScope,
     recipients:std::collections::HashSet<String>,
     rate_text:String,
     error:Option<String>
@@ -307,16 +306,33 @@ impl VatDialog {
             row["vatOverride"].as_bool()==Some(true)
         ).filter_map(|row|row["id"].as_str().map(str::to_owned))
             .collect::<std::collections::HashSet<_>>();
-        let scope=if recipients.is_empty(){VatScope::None}
-            else if recipients.len()==rows.len(){VatScope::All}
-            else{VatScope::Partial};
         let bps=rows.iter().filter_map(|row|row["vatRateBps"].as_i64())
             .find(|bps|(0..=10_000).contains(bps)).unwrap_or(1000);
-        Self{order_id,source_raw,scope,recipients,
+        Self{order_id,source_raw,recipients,
             rate_text:vat_rate_text(bps),error:None}
     }
-    /// Checkbox state maps directly to the selected recipient IDs; the
-    /// order-level Apply action is the only point that writes to Rust.
+    /// The global checkbox state is derived from recipients, never stored
+    /// as an independent mode that can disagree with the individual rows.
+    fn scope(&self,rows:&[serde_json::Value])->VatScope {
+        let count=rows.iter().filter_map(|row|row["id"].as_str())
+            .filter(|id|self.recipients.contains(*id)).count();
+        if count==0{VatScope::None}
+        else if count==rows.len(){VatScope::All}
+        else{VatScope::Partial}
+    }
+    /// Both top-level checkboxes update the same selection set used by the
+    /// always-visible per-recipient checkboxes.
+    fn set_all_checked(&mut self,rows:&[serde_json::Value],checked:bool){
+        if checked {
+            self.recipients=rows.iter().filter_map(|row|
+                row["id"].as_str().filter(|id|!id.is_empty())
+            ).map(str::to_owned).collect();
+        }else{
+            self.recipients.clear();
+        }
+        self.error=None;
+    }
+    /// Individual selection is only committed by the modal's Apply action.
     fn set_recipient_checked(&mut self,id:&str,checked:bool){
         if checked{self.recipients.insert(id.to_owned());}
         else{self.recipients.remove(id);}
@@ -327,18 +343,17 @@ impl VatDialog {
     {
         if rows.is_empty(){return Err("부가세 적용 배송건이 없습니다.".into());}
         let rate=parse_vat_rate(&self.rate_text)?;
-        let selected=rows.iter().filter_map(|row|{
-            let id=row["id"].as_str()?;
-            (self.scope==VatScope::Partial && self.recipients.contains(id))
-                .then_some(id.to_owned())
-        }).collect::<Vec<_>>();
-        if self.scope==VatScope::Partial &&
-            (selected.is_empty() || selected.len()==rows.len()){
-            return Err("일부 적용할 배송건을 선택하세요.".into());
-        }
-        let scope=match self.scope{
-            VatScope::None=>"none",VatScope::All=>"all",VatScope::Partial=>"partial"
+        let scope=match self.scope(rows){
+            VatScope::None=>"none",
+            VatScope::All=>"all",
+            VatScope::Partial=>"partial"
         };
+        let selected=if scope=="partial" {
+            rows.iter().filter_map(|row|{
+                let id=row["id"].as_str()?;
+                self.recipients.contains(id).then_some(id.to_owned())
+            }).collect::<Vec<_>>()
+        }else{Vec::new()};
         Ok(manual_workspace::InlineRequest{
             recipient_id:String::new(),item_id:None,
             field:"vatSettings".into(),value:serde_json::json!({
@@ -1770,50 +1785,49 @@ impl BandoEgui {
             );
             ui.label(typography::field_label("적용 범위"));
             ui.horizontal_wrapped(|row|{
-                row.spacing_mut().item_spacing.x=theme::SPACE_8;
-                for (label,scope) in [
-                    ("전체 미적용",VatScope::None),
-                    ("전체 적용",VatScope::All),
-                    ("일부 적용",VatScope::Partial)
-                ]{
-                    let role=if dialog.scope==scope{
-                        ButtonRole::TableSecondary
-                    }else{ButtonRole::Standard};
-                    if theme::action(row,label,role,!busy).clicked(){
-                        dialog.scope=scope;
-                        dialog.error=None;
-                    }
+                row.spacing_mut().item_spacing.x=theme::SPACE_12;
+                // These are mutually exclusive whole-order shortcuts,
+                // not a separate 3-state mode. Their checked state
+                // always follows the visible recipient checkboxes.
+                let mut none=dialog.scope(&recipients)==VatScope::None;
+                if row.add_enabled(!busy,
+                    egui::Checkbox::new(&mut none,"전체 미적용")
+                ).changed(){
+                    dialog.set_all_checked(&recipients,!none);
+                }
+                let mut all=dialog.scope(&recipients)==VatScope::All;
+                if row.add_enabled(!busy,
+                    egui::Checkbox::new(&mut all,"전체 적용")
+                ).changed(){
+                    dialog.set_all_checked(&recipients,all);
                 }
             });
-            if dialog.scope==VatScope::Partial{
-                ui.add_space(theme::SPACE_12);
-                egui::ScrollArea::vertical()
-                    .max_height((work_area.height()*0.36).min(280.0))
-                    .id_salt("order-vat-select-recipients")
-                    .show(ui,|list|{
-                        for (index,recipient) in recipients.iter().enumerate(){
-                            let id=reception_service::text(recipient,"id");
-                            if id.is_empty(){continue;}
-                            let name=reception_service::text(recipient,"name");
-                            let mut checked=dialog.recipients.contains(id);
-                            let label=format!(
-                                "{} · {}",index+1,
-                                if name.is_empty(){"수취인 확인"}else{name}
-                            );
-                            // Click the checkbox OR its recipient label.
-                            // Unlike the old '적용/제외' button, the selected
-                            // state remains visible at a glance.
-                            list.push_id(("order-vat-recipient",id),|row|{
-                                if row.add_enabled(!busy,
-                                    egui::Checkbox::new(&mut checked,label)
-                                ).changed(){
-                                    dialog.set_recipient_checked(id,checked);
-                                }
-                            });
-                            components::soft_divider(list);
-                        }
-                    });
-            }
+            ui.add_space(theme::SPACE_12);
+            egui::ScrollArea::vertical()
+                .max_height((work_area.height()*0.36).min(280.0))
+                .id_salt("order-vat-select-recipients")
+                .show(ui,|list|{
+                    // The list is always present: selecting one or two
+                    // recipients naturally creates an implicit partial scope.
+                    for (index,recipient) in recipients.iter().enumerate(){
+                        let id=reception_service::text(recipient,"id");
+                        if id.is_empty(){continue;}
+                        let name=reception_service::text(recipient,"name");
+                        let mut checked=dialog.recipients.contains(id);
+                        let label=format!(
+                            "{} · {}",index+1,
+                            if name.is_empty(){"수취인 확인"}else{name}
+                        );
+                        list.push_id(("order-vat-recipient",id),|row|{
+                            if row.add_enabled(!busy,
+                                egui::Checkbox::new(&mut checked,label)
+                            ).changed(){
+                                dialog.set_recipient_checked(id,checked);
+                            }
+                        });
+                        components::soft_divider(list);
+                    }
+                });
             ui.add_space(theme::SPACE_12);
             ui.horizontal(|row|{
                 row.label(typography::field_label("부가세율"));
@@ -6618,14 +6632,42 @@ mod vat_settings_ui_tests {
         let mut draft=VatDialog::new(
             "order".into(),"raw".into(),rows.as_array().unwrap()
         );
-        assert_eq!(draft.scope,VatScope::Partial);
-        let request=draft.request(rows.as_array().unwrap()).unwrap();
+        let recipients=rows.as_array().unwrap();
+        assert_eq!(draft.scope(recipients),VatScope::Partial);
+        let request=draft.request(recipients).unwrap();
         assert_eq!(request.field,"vatSettings");
         assert_eq!(request.value["scope"],"partial");
         assert_eq!(request.value["recipientIds"],serde_json::json!(["a"]));
-        draft.scope=VatScope::All;
-        assert_eq!(draft.request(rows.as_array().unwrap()).unwrap()
-            .value["scope"],"all");
+        draft.set_all_checked(recipients,true);
+        assert_eq!(draft.scope(recipients),VatScope::All);
+        assert_eq!(draft.request(recipients).unwrap().value["scope"],"all");
+        draft.set_all_checked(recipients,false);
+        assert_eq!(draft.scope(recipients),VatScope::None);
+        assert_eq!(draft.request(recipients).unwrap().value["scope"],"none");
+        draft.set_recipient_checked("b",true);
+        assert_eq!(draft.scope(recipients),VatScope::Partial);
+        assert_eq!(draft.request(recipients).unwrap().value["recipientIds"],
+            serde_json::json!(["b"]));
+    }
+    #[test]
+    fn global_vat_checkboxes_reflect_each_individual_selection(){
+        let rows=serde_json::json!([
+            {"id":"a","vatOverride":false},
+            {"id":"b","vatOverride":false},
+            {"id":"c","vatOverride":false}
+        ]);
+        let recipients=rows.as_array().unwrap();
+        let mut dialog=VatDialog::new("id".into(),"raw".into(),recipients);
+        assert_eq!(dialog.scope(recipients),VatScope::None);
+        dialog.set_recipient_checked("a",true);
+        assert_eq!(dialog.scope(recipients),VatScope::Partial);
+        dialog.set_recipient_checked("b",true);
+        dialog.set_recipient_checked("c",true);
+        assert_eq!(dialog.scope(recipients),VatScope::All);
+        dialog.set_recipient_checked("b",false);
+        assert_eq!(dialog.scope(recipients),VatScope::Partial);
+        dialog.set_all_checked(recipients,false);
+        assert_eq!(dialog.scope(recipients),VatScope::None);
     }
     #[test]
     fn partial_vat_checkbox_updates_only_selected_recipient_and_can_toggle_back(){
@@ -6637,7 +6679,7 @@ mod vat_settings_ui_tests {
         let mut draft=VatDialog::new(
             "order".into(),"raw".into(),rows.as_array().unwrap()
         );
-        assert_eq!(draft.scope,VatScope::Partial);
+        assert_eq!(draft.scope(rows.as_array().unwrap()),VatScope::Partial);
         draft.set_recipient_checked("a",false);
         draft.set_recipient_checked("b",true);
         assert!(!draft.recipients.contains("a"));
