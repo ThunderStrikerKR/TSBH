@@ -15,6 +15,20 @@ fn displayed_phone(client:&Value)->&str {
     let phone=field(client,"phone");
     if phone.trim().is_empty(){field(client,"mobile")}else{phone}
 }
+/// List display: default PREPAID and VAT-excluded are implicit.
+/// This summary does not alter the saved transaction rules.
+fn client_condition_summary(client:&Value)->String {
+    let mut flags=Vec::new();
+    if field(client,"payment")=="POSTPAID"{flags.push("후불");}
+    if client.get("defaultApplyVat").and_then(Value::as_bool)
+        .unwrap_or(false){flags.push("부가세 포함");}
+    if client.get("shippingFeeExcluded").and_then(Value::as_bool)
+        .unwrap_or(false){flags.push("운임 청구 제외");}
+    if client.get("active")==Some(&Value::Bool(false)){
+        flags.push("거래 중지");
+    }
+    flags.join(" / ")
+}
 fn readable_tier(tier:&str)->&'static str {
     match tier {"wholesale"=>"도매","semi"=>"반도매",
         "retail"=>"소매","special"=>"특수",_=>"미지정"}
@@ -580,26 +594,7 @@ impl ClientManager {
                                         && !mobile.trim().is_empty() && mobile!=phone{
                                         mobile
                                     }else{""};
-                                    let conditions=[
-                                        if field(client,"payment")=="POSTPAID"{
-                                            "후불"
-                                        }else{"선입금"},
-                                        if client.get("defaultApplyVat")
-                                            .and_then(Value::as_bool)
-                                            .unwrap_or(false){
-                                            "부가세 포함"
-                                        }else{"부가세 별도"},
-                                        if client.get("shippingFeeExcluded")
-                                            .and_then(Value::as_bool)
-                                            .unwrap_or(false){
-                                            "운임 청구 제외"
-                                        }else{""},
-                                        if client.get("active")==Some(
-                                            &Value::Bool(false)){
-                                            "거래 중지"
-                                        }else{""}
-                                    ].into_iter().filter(|v|!v.is_empty())
-                                        .collect::<Vec<_>>().join(" / ");
+                                    let conditions=client_condition_summary(client);
                                     if components::management_row_striped(
                                         row,field(client,"id"),[
                                             (name,description),
@@ -1022,5 +1017,32 @@ impl ClientManager {
                 }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod client_condition_summary_tests{
+    use super::*;
+    #[test]
+    fn normal_client_does_not_repeat_default_conditions(){
+        let client=json!({"payment":"PREPAID","defaultApplyVat":false,
+            "shippingFeeExcluded":false,"active":true});
+        assert_eq!(client_condition_summary(&client),"");
+    }
+    #[test]
+    fn exceptional_client_terms_have_no_empty_separators(){
+        let postpaid=json!({"payment":"POSTPAID","defaultApplyVat":false,
+            "shippingFeeExcluded":false,"active":true});
+        assert_eq!(client_condition_summary(&postpaid),"후불");
+        let vat=json!({"payment":"PREPAID","defaultApplyVat":true,
+            "shippingFeeExcluded":false,"active":true});
+        assert_eq!(client_condition_summary(&vat),"부가세 포함");
+        let extra=json!({"payment":"PREPAID","defaultApplyVat":false,
+            "shippingFeeExcluded":true,"active":false});
+        assert_eq!(client_condition_summary(&extra),"운임 청구 제외 / 거래 중지");
+        let all=json!({"payment":"POSTPAID","defaultApplyVat":true,
+            "shippingFeeExcluded":true,"active":false});
+        assert_eq!(client_condition_summary(&all),
+            "후불 / 부가세 포함 / 운임 청구 제외 / 거래 중지");
     }
 }
