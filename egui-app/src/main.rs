@@ -41,6 +41,7 @@ mod workflow_board_ui;
 mod manual_workspace;
 mod catalog_query_bridge;
 mod manual_product_search;
+mod item_editor;
 mod manual_source_view;
 mod kakao_context;
 mod kakao_dock;
@@ -586,6 +587,7 @@ struct BandoEgui {
     settings_pending_page: Option<Page>,
     settings_pending_save: bool,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
+    item_editor:Option<item_editor::ItemEditor>,
     inline_editor:Option<InlineReceptionEditor>,
     inline_change:Option<PendingInlineChange>,
     vat_dialog:Option<VatDialog>,
@@ -689,6 +691,7 @@ impl Default for BandoEgui {
             settings_pending_page: None,
             settings_pending_save: false,
             manual_workspace: None,
+            item_editor:None,
             inline_editor:None,
             inline_change:None,
             vat_dialog:None,
@@ -744,6 +747,7 @@ impl BandoEgui {
         if self.vat_change.is_some(){active.push(ReceptionJob::VatEdit);}
         if self.working_sync.is_some(){active.push(ReceptionJob::WorkingSync);}
         if self.manual_workspace.is_some(){active.push(ReceptionJob::ManualWorkspace);}
+        if self.item_editor.is_some(){active.push(ReceptionJob::ItemDialog);}
         // A changed cell is uncommitted employee input. A clean, unchanged
         // editor may be dismissed by navigation or an approved draft delete;
         // other actions keep their existing edit-focus protection.
@@ -1313,6 +1317,7 @@ impl BandoEgui {
         // dropping its receiver ensures it cannot publish into the next order.
         self.client_change=None;
         self.inline_editor=None;
+        self.item_editor=None;
         self.active_id = Some(item.id);
         self.requested_recipient_focus=None;
         self.raw_source = item.raw;
@@ -7048,6 +7053,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // intake after this employee-approved deletion.
             self.client_change=None;
             self.inline_editor=None;
+            self.item_editor=None;
             self.active_id=None;
             self.raw_source.clear();
             self.source_editing=false;
@@ -7770,6 +7776,7 @@ impl eframe::App for BandoEgui {
             self.freight_manager=None;
             self.order_history_manager=None;
             self.client_chooser=None;
+            self.item_editor=None;
             self.working_sync=None;
             self.vat_change=None;
             self.vat_dialog=None;
