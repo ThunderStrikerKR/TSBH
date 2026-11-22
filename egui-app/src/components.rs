@@ -2329,6 +2329,39 @@ fn paint_client_line(
     );
 }
 
+/// Shared management-table column separators. Freight Assignment paints
+/// these column boundaries inline; other table screens reuse this painter
+/// instead of silently omitting vertical rules when using the master frame.
+///
+/// The caller supplies DATA coordinates, not window coordinates. `region`
+/// clips the header before its scrollbar gutter and keeps body rules inside
+/// each virtualized row. Header bottom 2pt outline remains owned by the
+/// existing `management_master_header_finish` function.
+pub fn management_master_column_rules(
+    ui:&Ui,region:Rect,boundaries:&[f32]
+){
+    let clip=region.intersect(ui.clip_rect());
+    if clip.width()<=0.0 || clip.height()<=0.0{return;}
+    let painter=ui.painter().with_clip_rect(clip);
+    for &x in boundaries{
+        if x>clip.left() && x<clip.right() {
+            painter.line_segment(
+                [egui::pos2(x,region.top()),egui::pos2(x,region.bottom())],
+                Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+            );
+        }
+    }
+}
+
+/// The client header and row share the same 30/38/32 column positions,
+/// including the scroll-offset table origin. Do not recompute these from
+/// the fixed header rect, which stays in place while body rows scroll.
+fn management_client_column_edges(table_left:f32,table_width:f32)->[f32;2]{
+    let first=table_left+table_width*theme::MANAGEMENT_CLIENT_COLS[0];
+    let second=first+table_width*theme::MANAGEMENT_CLIENT_COLS[1];
+    [first,second]
+}
+
 /// Client columns share the EXACT 36pt / 34pt text / 2pt footer band
 /// of Freight Assignment. Column widths and 12pt label starts still
 /// belong to the client row contract; only the master chrome is reused.
@@ -2396,6 +2429,10 @@ pub fn management_client_header(
         }
         x+=col_width;
     }
+    management_master_column_rules(
+        ui,text_row,
+        &management_client_column_edges(table_left,table_width)
+    );
     management_master_header_finish(ui,header);
     selected
 }
@@ -2564,7 +2601,36 @@ fn management_row_impl(
         }
         x+=col_width;
     }
+    management_master_column_rules(
+        ui,rect,
+        &management_client_column_edges(rect.left(),rect.width())
+    );
     response
+}
+
+#[cfg(test)]
+mod management_client_column_divider_tests{
+    use super::*;
+    #[test]
+    fn table_header_and_rows_share_the_same_three_column_edges(){
+        let expected=[130.0,320.0];
+        // 30/38/32 shares at width 500.0. The header follows the
+        // horizontally scrolled row origin rather than its fixed outer edge.
+        assert_eq!(management_client_column_edges(-20.0,500.0),
+            [-20.0+150.0,-20.0+340.0]);
+        assert_eq!(management_client_column_edges(0.0,500.0),
+            [150.0,340.0]);
+        assert_eq!(expected,management_client_column_edges(-20.0,500.0));
+    }
+    #[test]
+    fn narrow_table_keeps_boundaries_ordered_and_inside_data_width(){
+        for width in [theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH,900.0,1200.0]{
+            let edges=management_client_column_edges(25.0,width);
+            assert!(edges[0]>25.0);
+            assert!(edges[1]>edges[0]);
+            assert!(edges[1]<25.0+width);
+        }
+    }
 }
 
 /// Display-only won formatting. No business price or rounding decisions live
