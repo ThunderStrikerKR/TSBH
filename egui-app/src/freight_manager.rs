@@ -2355,13 +2355,16 @@ impl FreightManager {
         ui.horizontal(|line|{
             line.label(typography::field_label("최대 묶음포장 수량"));
             line.add_enabled_ui(enabled,|input|{
-                egui::ComboBox::from_id_salt("freight-rate-max")
-                    .selected_text(editor.max_bundle
-                        .map(|v|format!("{v}개")).unwrap_or_else(||"미확정".into()))
-                    .show_ui(input,|choice|{
-                        choice.selectable_value(&mut editor.max_bundle,None,"미확정");
+                components::management_dropdown(
+                    input,&editor.max_bundle
+                        .map(|v|format!("{v}개")).unwrap_or_else(||"미확정".into()),
+                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,
+                    "최대 묶음포장 수량 선택",|choice|{
+                        components::management_dropdown_option(
+                            choice,&mut editor.max_bundle,None,"미확정");
                         for n in 1..=6 {
-                            choice.selectable_value(&mut editor.max_bundle,Some(n),format!("{n}개"));
+                            components::management_dropdown_option(
+                                choice,&mut editor.max_bundle,Some(n),&format!("{n}개"));
                         }
                     });
             });
@@ -2395,13 +2398,16 @@ impl FreightManager {
         if !available.is_empty(){
             ui.horizontal(|line|{
                 line.add_enabled_ui(enabled,|input|{
-                    egui::ComboBox::from_id_salt("freight-rate-add-count")
-                        .selected_text(editor.add_count
-                            .map(|n|format!("{n}개")).unwrap_or_else(||"묶음 수량 선택".into()))
-                        .show_ui(input,|choice|{
+                    components::management_dropdown(
+                        input,&editor.add_count
+                            .map(|n|format!("{n}개"))
+                            .unwrap_or_else(||"묶음 수량 선택".into()),
+                        theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,
+                        "운임 구간 수량 선택",|choice|{
                             for count in &available{
-                                choice.selectable_value(
-                                    &mut editor.add_count,Some(*count),format!("{count}개")
+                                components::management_dropdown_option(
+                                    choice,&mut editor.add_count,
+                                    Some(*count),&format!("{count}개")
                                 );
                             }
                         });
