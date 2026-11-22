@@ -8332,6 +8332,9 @@ mod client_chooser_async_handoff_tests {
             gate:Arc::clone(&gate),fail:false
         });
         let mut app=create_app(adapter,&ctx);
+        // Simulate the real chooser click handoff: the modal is closed
+        // synchronously before its native calculation starts.
+        app.client_chooser=None;
         app.apply_manual_client("new",&ctx);
         assert_eq!(app.client_change.as_ref().map(|job|job.client_id.as_str()),
             Some("new"));
@@ -8385,6 +8388,7 @@ mod client_chooser_async_handoff_tests {
             gate:Arc::clone(&gate),fail:false
         });
         let mut app=create_app(adapter,&ctx);
+        app.client_chooser=None;
         let cancelled=Arc::new(AtomicBool::new(false));
         let (_tx,receiver)=mpsc::channel();
         app.auto_client_change=Some(PendingAutomaticClient{
@@ -8412,6 +8416,9 @@ mod client_chooser_async_handoff_tests {
             gate:Arc::clone(&gate),fail:false
         });
         let mut app=create_app(adapter,&ctx);
+        // Background analysis is scheduled without an unrelated chooser
+        // covering reception; a visible chooser intentionally blocks it.
+        app.client_chooser=None;
         app.start_source_analysis(ctx.clone());
         assert!(app.analysis_pending);
         let first=app.analysis_request;
