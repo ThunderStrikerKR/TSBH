@@ -811,7 +811,7 @@ fn pending_dealer_title(
 fn pending_frame(
     ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,
     dealer_name:&str,committed_recipient:Option<&str>,
-    preview:Option<&PendingTarget>,
+    preview:Option<&PendingTarget>,linked_recipient:Option<&str>,
     hovered_pending:&mut Option<PendingTarget>
 )->Option<Event>{
     let mut event=None;
@@ -877,10 +877,11 @@ fn pending_frame(
                         .and_then(|value|value.as_str()).unwrap_or("");
                     let chosen=selected && !recipient_id.is_empty() &&
                         committed_recipient==Some(recipient_id);
-                    let previewed=preview.is_some_and(|target|
+                    let previewed=(preview.is_some_and(|target|
                         target.order_id==draft.id &&
-                        target.recipient_id.as_deref()==Some(recipient_id) &&
-                        !recipient_id.is_empty());
+                        target.recipient_id.as_deref()==Some(recipient_id)) ||
+                        (selected && linked_recipient==Some(recipient_id)))
+                        && !recipient_id.is_empty() && !chosen;
                     let response=shipment_line(ui,name,&products,chosen,previewed);
                     let action=ui.interact(response.rect,
                         Id::new(("pending-reception-row",draft.id.as_str(),index)),
@@ -912,7 +913,7 @@ pub fn show(
     client_names:&HashMap<String,String>,
     active_selected_client:Option<(&str,&str)>,
     state:&mut BoardUi,writable:bool,allow_pending_hover_switch:bool,
-    active_recipient_id:Option<&str>
+    active_recipient_id:Option<&str>,linked_recipient_id:Option<&str>
 )->Option<Event>{
     // Prevent implicit vertical item spacing from doubling the explicit
     // WORKFLOW_CARD_GAP between order bundles. This is scoped to the list
@@ -965,7 +966,9 @@ pub fn show(
         if let Some(value)=pending_frame(
             ui,draft,selected,open,&name,
             if selected{active_recipient_id}else{None},
-            state.pending_visible.as_ref(),&mut hovered_pending
+            state.pending_visible.as_ref(),
+            if selected{linked_recipient_id}else{None},
+            &mut hovered_pending
         ){
             match value{
                 Event::TogglePending(_)=>{
@@ -1114,7 +1117,7 @@ mod pending_matching_tests {
                 let mut hovered=None;
                 tapped=pending_frame(
                     ui,&draft,false,false,"확인된 거래처",None,None,
-                    &mut hovered
+                    None,&mut hovered
                 );
             });
         });
