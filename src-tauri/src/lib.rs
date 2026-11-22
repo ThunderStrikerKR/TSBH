@@ -295,6 +295,9 @@ fn initialize_database(path: &Path) -> Result<Connection, String> {
     // One-time, backed-up migration of the obsolete invoice sender override.
     // It touches only live client rows, never historic order snapshots.
     bando_data_access::client_names::migrate_v2(&mut conn,data_root)?;
+    // Retire the invalid catalog placeholder in existing operational SQLite,
+    // not just in new-install seed JSON. Verified backup and CAS revision.
+    bando_data_access::product_colors::migrate_v2(&mut conn,data_root)?;
     relational_store::verify(&conn)?;
     Ok(conn)
 }
