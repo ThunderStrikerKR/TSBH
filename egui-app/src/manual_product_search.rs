@@ -130,51 +130,55 @@ impl ProductSearch{
                             let visible=typography::fit_category_path(
                                 ui,label,text_width,typography::CategoryPathFont::Body
                             );
-                            egui::ComboBox::from_id_salt(("manual-product-category",depth))
-                                .width(width)
-                                .selected_text(visible)
-                                .show_ui(ui,|ui|{
-                                    let reset=if depth==0{String::new()}else{parent.clone()};
-                                    if ui.selectable_label(selected.is_empty(),
-                                        if depth==0{"전체 카테고리"}else{"현재 분류 전체"})
-                                        .clicked() {
-                                        self.major=reset;
-                                        changed=true;
-                                    }
+                            let mut value=selected.clone();
+                            components::management_dropdown(
+                                ui,&visible,width,true,label,|choices|{
+                                    components::management_dropdown_option(
+                                        choices,&mut value,String::new(),
+                                        if depth==0{"전체 카테고리"}else{"현재 분류 전체"}
+                                    );
                                     for row in &children {
                                         let id=field(row,"id");
                                         let full=field(row,"name");
                                         let visible=typography::fit_category_path(
-                                            ui,full,text_width,
+                                            choices,full,text_width,
                                             typography::CategoryPathFont::Body
                                         );
-                                        if !id.is_empty() &&
-                                            ui.selectable_label(selected==id,visible)
-                                                .on_hover_text(full).clicked() {
-                                            self.major=id.to_owned();
-                                            changed=true;
+                                        if !id.is_empty(){
+                                            components::management_dropdown_option(
+                                                choices,&mut value,id.to_owned(),&visible
+                                            ).on_hover_text(full);
                                         }
                                     }
-                                }).response.on_hover_text(label);
+                                });
+                            if value!=selected {
+                                self.major=if value.is_empty(){parent}else{value};
+                                changed=true;
+                            }
                         }
                         if !self.major.is_empty() &&
                             theme::action(ui,"카테고리 초기화",ButtonRole::Quiet,true).clicked() {
                             self.major.clear();
                             changed=true;
                         }
-                        egui::ComboBox::from_id_salt("native-product-brand")
-                            .selected_text(brands.iter().find(|b|field(b,"id")==self.brand)
-                                .map(|v|field(v,"name")).unwrap_or("전체 브랜드"))
-                            .show_ui(ui,|ui|{
-                                if ui.selectable_value(&mut self.brand,String::new(),
-                                    "전체 브랜드").changed(){changed=true;}
+                        let previous_brand=self.brand.clone();
+                        components::management_dropdown(
+                            ui,brands.iter().find(|b|field(b,"id")==self.brand)
+                                .map(|v|field(v,"name")).unwrap_or("전체 브랜드"),
+                            theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,
+                            "브랜드 필터",|choices|{
+                                components::management_dropdown_option(
+                                    choices,&mut self.brand,String::new(),"전체 브랜드");
                                 for row in &brands {
                                     let id=field(row,"id");
-                                    if !id.is_empty() && ui.selectable_value(
-                                        &mut self.brand,id.to_owned(),field(row,"name")
-                                    ).changed(){changed=true;}
+                                    if !id.is_empty(){
+                                        components::management_dropdown_option(
+                                            choices,&mut self.brand,id.to_owned(),
+                                            field(row,"name"));
+                                    }
                                 }
                             });
+                        if self.brand!=previous_brand {changed=true;}
                     });
                 }
                 // Always allocate one result viewport. The search state
