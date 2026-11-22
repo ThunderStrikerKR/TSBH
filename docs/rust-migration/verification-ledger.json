@@ -3448,5 +3448,41 @@
     },
     "verdict": "CODE_REFLECTED_STATIC_PASS__LATEST_CI_AND_ACTION_NOT_VERIFIED",
     "remaining": "Check target cargo compilation for final SHA and verify save/reload in operating and isolated modes; no claim of Windows pixel parity."
+  },
+  "eguiClientManualReassignment20261122": {
+    "date": "2026-11-22",
+    "features": [
+      "F04",
+      "F05",
+      "F06",
+      "F07",
+      "F12"
+    ],
+    "scope": "egui receipt client reassignment after in-place/manual corrections",
+    "baseline": "Current approved intake workflow: explicit employee edits (recipient fields, items, quantities, manual unit prices, freight/VAT and source assignments) must not be lost on dealer selection; subsequent pricing belongs to native Rust",
+    "paths": [
+      "egui-app/src/main.rs",
+      "egui-app/src/native_order_change.rs",
+      ".github/workflows/egui-targeted-check.yml"
+    ],
+    "patchCommits": [
+      "b33932099bbb81c2a82c06381c64fb72e4c6cbe7",
+      "b053543e0b4dc39f77ca219c83c6347d3b443721",
+      "99c3145729e69f2ab024ced4882ca41153322ea4",
+      "f038b0cda06b9ce8b6536e932d6020d58b228e35",
+      "a818781ca240079269b9f4afa5b20056681cb7dc",
+      "17c12ac964e10f1379451ee029cc7748bdef034e"
+    ],
+    "behavior": "ManualClassification preview_manual reapplies retained employee-edited model on the newly selected native client order; CalculateReceptionQuote reprices unmodified product lines, freight and VAT. Explicit manual unit-price overrides remain intact. Existing source links and edit history remain unchanged. Async reply checks exact source/chat/type/manual snapshot separately and displays the actual stale reason.",
+    "verification": {
+      "PATCH": "COMMITTED_MAIN: 17c12ac964e10f1379451ee029cc7748bdef034e",
+      "UNIT": "TESTS_ADDED_NOT_YET_VERIFIED: native_order_change::manual_rebind_tests (3 tests) including deterministic adapter repricing",
+      "DIFF": "NOT_EXECUTED: reference React vs compiled Rust sequence not reproduced",
+      "ACTION": "NOT_EXECUTED: full paste→edit→reassign→save/reopen action not tested",
+      "CI": "PENDING: https://github.com/ThunderStrikerKR/TSBH/actions/runs/45031521644 (earlier compile at b053543 failed on E0631; corrected at 17c12)",
+      "WINDOWS": "NOT_EXECUTED: live egui, Kakao, DPI validation outstanding"
+    },
+    "verdict": "PATCH_COMMITTED__FULL_VERIFICATION_OPEN",
+    "remaining": "Confirm new adapter regression tests and full egui compilation at latest SHA; inspect any unrelated prior CI failures separately; perform live Windows handoff including persisted work order."
   }
 }
