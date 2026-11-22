@@ -785,14 +785,33 @@ pub(crate) fn date_range_error(from:&str,to:&str)->Option<&'static str>{
     }
     None
 }
+/// Only the two external edges of a compound date control are rounded.
+/// Its interior segments are square and share one outer border.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum HistoryDateSegmentEdge{Leading,Middle,Trailing}
+fn history_date_segment_corners(
+    edge:HistoryDateSegmentEdge
+)->egui::CornerRadius{
+    let r=theme::CONTROL_RADIUS.saturating_sub(
+        theme::FRAME_STROKE_WIDTH as u8
+    );
+    match edge {
+        HistoryDateSegmentEdge::Leading=>egui::CornerRadius{
+            nw:r,ne:0,sw:r,se:0
+        },
+        HistoryDateSegmentEdge::Middle=>egui::CornerRadius::same(0),
+        HistoryDateSegmentEdge::Trailing=>egui::CornerRadius{
+            nw:0,ne:r,sw:0,se:r
+        },
+    }
+}
 /// Flat segment, sized by egui itself. Never use Ui::put here:
 /// Ui::put advances the parent's RTL layout cursor and previously collapsed
 /// the remaining date controls onto the right edge.
 fn history_date_segment(
-    ui:&mut Ui,label:&str,width:f32
+    ui:&mut Ui,label:&str,width:f32,edge:HistoryDateSegmentEdge
 )->egui::Response{
-    // Use the same drawn chevron as the dropdown, rotated horizontally.
-    // Keep calendar text and the segment's click geometry unchanged.
+    let corners=history_date_segment_corners(edge);
     let direction=match label {
         "‹"=>Some(components::ManagementChevronDirection::Left),
         "›"=>Some(components::ManagementChevronDirection::Right),
@@ -806,15 +825,17 @@ fn history_date_segment(
         ))
             .fill(theme::INPUT)
             .stroke(Stroke::NONE)
-            .corner_radius(0)
+            .corner_radius(corners)
     );
+    // Highlight and fill share the same asymmetrical corners. Never draw a
+    // rectangular hover border across the group's rounded diagonal ends.
+    theme::paint_button_hover_corners(ui,&response,corners);
     if let Some(direction)=direction {
         let painter=ui.painter().with_clip_rect(response.rect);
         components::paint_management_chevron(
             &painter,response.rect.center(),direction
         );
     }
-    theme::paint_button_hover(ui,&response,0.0);
     response
 }
 /// Reserve exactly one 36pt outer row. Frame::show combined with an
@@ -856,8 +877,12 @@ fn range_date_picker_rtl(
         |row|{
             row.set_width(inner.width());
             row.set_height(inner.height());
+            // Keep all hover paint inside this 34pt compound-control body.
+            row.set_clip_rect(row.clip_rect().intersect(inner));
             row.spacing_mut().item_spacing=Vec2::ZERO;
-            let prev=history_date_segment(row,"‹",PREV)
+            let prev=history_date_segment(
+                row,"‹",PREV,HistoryDateSegmentEdge::Leading
+            )
                 .on_hover_text(&format!("{label} 하루 전"));
             if prev.clicked(){
                 *date=move_date(date,-1);
@@ -891,14 +916,18 @@ fn range_date_picker_rtl(
                 true,2.0
             );
             changed|=edit.changed();
-            let next=history_date_segment(row,"›",NEXT)
+            let next=history_date_segment(
+                row,"›",NEXT,HistoryDateSegmentEdge::Middle
+            )
                 .on_hover_text(&format!("{label} 하루 뒤"));
             debug_assert!((prev.rect.width()-next.rect.width()).abs()<0.01);
             if next.clicked(){
                 *date=move_date(date,1);
                 changed=true;
             }
-            let trigger=history_date_segment(row,"📅",CALENDAR)
+            let trigger=history_date_segment(
+                row,"📅",CALENDAR,HistoryDateSegmentEdge::Trailing
+            )
                 .on_hover_text(&format!("{label}을 달력에서 선택"));
             if trigger.clicked(){
                 let day=NaiveDate::parse_from_str(date,"%Y-%m-%d")
@@ -1993,6 +2022,15 @@ mod tests{
         assert_eq!(move_date("2026-11-01",-1),"2026-10-31");
         assert_eq!(HistoryDateBasis::Reception.key(),"RECEPTION");
         assert_eq!(HistoryDateBasis::Payment.label(),"입금일 기준");
+        let first=history_date_segment_corners(HistoryDateSegmentEdge::Leading);
+        let middle=history_date_segment_corners(HistoryDateSegmentEdge::Middle);
+        let last=history_date_segment_corners(HistoryDateSegmentEdge::Trailing);
+        let rounded=theme::CONTROL_RADIUS-1;
+        assert_eq!((first.nw,first.ne,first.sw,first.se),
+            (rounded,0,rounded,0));
+        assert_eq!((middle.nw,middle.ne,middle.sw,middle.se),(0,0,0,0));
+        assert_eq!((last.nw,last.ne,last.sw,last.se),
+            (0,rounded,0,rounded));
         assert!(date_range_error("2026-11-01","2026-11-30").is_none());
         assert!(date_range_error("2026-11-30","2026-11-01").is_some());
         assert!(date_range_error("2026-02-30","").is_some());
