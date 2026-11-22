@@ -1011,6 +1011,7 @@ impl BandoEgui {
                             "notified":false,
                             "paid":false,
                             "linePrices":result.get("linePrices"),
+                            "freightLines":result.get("freightLines"),
                         }));
                     }
                     row.working_synced=same_input && row.pricing_preview.is_some();
@@ -1092,7 +1093,8 @@ impl BandoEgui {
                 self.manual_workspace=None;
             }
             Some(manual_workspace::Event::Applied {
-                order_id,raw,order_type,client_id,model,assignment_order,order
+                order_id,raw,order_type,client_id,model,assignment_order,order,
+                quote,quote_error
             })=>{
                 self.manual_workspace=None;
                 if self.active_id.as_deref()!=Some(order_id.as_str()) ||
@@ -1134,8 +1136,33 @@ impl BandoEgui {
                             "clientId":client_id,"model":model,
                             "assignmentOrder":assignment_order
                         }));
-                        row.pricing_preview=None;
+                        row.pricing_preview=quote.as_ref().and_then(|calculation|{
+                            let revision=calculation["authorityRevision"].as_u64()?;
+                            let totals=calculation.get("totals")?;
+                            let native_order=calculation.get("order")?;
+                            Some(serde_json::json!({
+                                "sourceRaw":raw,
+                                "orderId":order_id,
+                                "orderType":order_type,
+                                "clientId":client_id,
+                                "authorityRevision":revision,
+                                "status":"REVIEW",
+                                "shippingFee":native_order.get("shippingFee"),
+                                "shippingVersion":native_order.get("shippingVersion"),
+                                "vatAmount":totals.get("vat"),
+                                "subtotal":totals.get("subtotal"),
+                                "total":totals.get("total"),
+                                "notified":false,"paid":false,
+                                "linePrices":calculation.get("linePrices"),
+                                "freightLines":calculation.get("freightLines")
+                            }))
+                        });
                         row.working_synced=false;
+                    }
+                    if let Some(error)=quote_error {
+                        self.working_sync_error=Some(error);
+                    }else{
+                        self.working_sync_error=None;
                     }
                     if let Some(analysis)=self.analysis.as_mut() {
                         analysis.recognition["recipients"]=recips.clone();
@@ -4479,7 +4506,11 @@ impl BandoEgui {
                                                         edit_target=Some((
                                                             self.selected_recipient,
                                                             Some(item_id.to_owned()),
-                                                            if field=="quantity"{"quantity"}else{"product"}
+                                                            match field {
+                                                                "quantity"=>"quantity",
+                                                                "price"=>"unitPrice",
+                                                                _=>"product"
+                                                            }
                                                         ));
                                                     }
                                                     source_highlight::paint_active(
@@ -4501,16 +4532,25 @@ impl BandoEgui {
                                             }
                                         }
                                         items_ui.add_space(theme::SPACE_8);
-                                        // The saved quote's shippingFee is an ORDER
-                                        // total, not a per-recipient applied freight.
-                                        // Do not mislabel it as this recipient's fee.
+                                        // The ORDER total is not a recipient fee.
+                                        // Show only the native per-recipient amount.
                                         let remote=recipient.get("remoteDelivery")
                                             .and_then(|v|v.get("checked"))
                                             .and_then(serde_json::Value::as_bool);
                                         let origin=recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
+                                        let line_fee=preview.and_then(|quote|
+                                            quote.get("freightLines"))
+                                            .and_then(serde_json::Value::as_array)
+                                            .and_then(|lines|lines.iter().find(|line|
+                                                line["recipientId"].as_str()==Some(recipient_id)
+                                                && line["origin"].as_str()==origin))
+                                            .and_then(|line|line["appliedCharge"].as_i64());
+                                        let cod=recipient.get("freightCode")
+                                            .and_then(serde_json::Value::as_str)
+                                            .map(|code|code=="020");
                                         if components::reception_freight_row_editable(
-                                            items_ui,"운임",None,None,remote,
+                                            items_ui,"운임",line_fee,cod,remote,
                                             origin==Some("FACTORY"),editable
                                         ){
                                             edit_target=Some((
