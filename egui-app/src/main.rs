@@ -2324,8 +2324,14 @@ impl BandoEgui {
     }
 
 fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
-    let wanted=(count.min(theme::RECEPTION_VAT_LIST_VISIBLE_ROWS).max(1) as f32)
-        *theme::RECEPTION_VAT_LIST_ROW_HEIGHT;
+    // Always reserve five checkbox rows, even for one or two recipients.
+    // Grow through ten rows; on smaller windows, protect the modal footer
+    // by capping the viewport height and allowing the list to scroll.
+    let visible_rows=count.clamp(
+        theme::RECEPTION_VAT_LIST_MIN_VISIBLE_ROWS,
+        theme::RECEPTION_VAT_LIST_VISIBLE_ROWS
+    );
+    let wanted=visible_rows as f32*theme::RECEPTION_VAT_LIST_ROW_HEIGHT;
     wanted.min((work_area_height-theme::RECEPTION_VAT_LIST_SCREEN_RESERVE)
         .max(theme::RECEPTION_VAT_LIST_ROW_HEIGHT))
 }
@@ -2390,8 +2396,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 recipients.len(),work_area.height()
             );
             // The tinted bordered surface marks the exact scrollable region.
-            // With a standard viewport it displays ten generously spaced
-            // recipients; the eleventh is reached by scrolling inside here.
+            // Reserve five rows for short orders, expand to ten recipients,
+            // then scroll within the same surface for additional orders.
             egui::Frame::new()
                 .fill(theme::INPUT)
                 .stroke(egui::Stroke::new(
@@ -7722,13 +7728,19 @@ impl eframe::App for BandoEgui {
 mod vat_settings_ui_tests {
     use super::*;
     #[test]
-    fn recipient_list_shows_ten_rows_before_scroll_when_height_allows(){
+    fn recipient_list_reserves_five_rows_and_scrolls_after_ten(){
         let row=theme::RECEPTION_VAT_LIST_ROW_HEIGHT;
-        assert_eq!(BandoEgui::vat_recipient_list_height(2,900.0),2.0*row);
+        for count in [0,1,2,3,4,5]{
+            assert_eq!(BandoEgui::vat_recipient_list_height(count,900.0),5.0*row);
+        }
+        assert_eq!(BandoEgui::vat_recipient_list_height(6,900.0),6.0*row);
         assert_eq!(BandoEgui::vat_recipient_list_height(10,900.0),10.0*row);
         assert_eq!(BandoEgui::vat_recipient_list_height(11,900.0),10.0*row);
         assert_eq!(BandoEgui::vat_recipient_list_height(25,900.0),10.0*row);
-        assert!(BandoEgui::vat_recipient_list_height(25,460.0)<10.0*row);
+        // Compact windows must still leave room for header and action row.
+        let compact_height=460.0-theme::RECEPTION_VAT_LIST_SCREEN_RESERVE;
+        assert_eq!(BandoEgui::vat_recipient_list_height(2,460.0),compact_height);
+        assert_eq!(BandoEgui::vat_recipient_list_height(25,460.0),compact_height);
     }
     #[test]
     fn exact_percent_parser_and_formatter(){
