@@ -3182,6 +3182,11 @@ fn reception_item_row_with_mode(
 /// Presentation-only freight field: numbers and prepay/COD are supplied by
 /// native Rust. Disabled text input mirrors the React field without implying
 /// that a backend edit command exists in egui.
+pub struct ReceptionFreightEdit {
+    pub amount_rect:Option<Rect>,
+    pub amount_clicked:bool,
+    pub remote_clicked:bool,
+}
 pub fn reception_freight_row(
     ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
     remote: Option<bool>, inquiry_visible: bool,
@@ -3193,8 +3198,10 @@ pub fn reception_freight_row(
 pub fn reception_freight_row_editable(
     ui:&mut Ui,label:&str,amount:Option<i64>,collect:Option<bool>,
     remote:Option<bool>,inquiry_visible:bool,editable:bool
-)->bool{
+)->ReceptionFreightEdit{
     let mut clicked=false;
+    let mut remote_clicked=false;
+    let mut amount_rect=None;
     let mut amount_text=amount
         .map(|value|display_won(value).trim_end_matches('원').to_owned())
         .unwrap_or_else(||"—".to_owned());
@@ -3242,6 +3249,7 @@ pub fn reception_freight_row_editable(
                             .desired_width(84.0),
                     )
                 }).inner;
+                amount_rect=Some(displayed.rect);
                 if editable && price.interact(
                     displayed.rect,
                     price.make_persistent_id(("edit-applied-freight",label)),
@@ -3264,7 +3272,7 @@ pub fn reception_freight_row_editable(
             if editable && line.interact(
                 display.rect,line.make_persistent_id("edit-remote-delivery"),
                 Sense::click()
-            ).clicked(){clicked=true;}
+            ).clicked(){remote_clicked=true;}
         }
         if inquiry_visible {
             theme::action(
@@ -3272,7 +3280,9 @@ pub fn reception_freight_row_editable(
             );
         }
     });
-    clicked
+    ReceptionFreightEdit {
+        amount_rect,amount_clicked:clicked,remote_clicked
+    }
 }
 
 /// Original React lower action row. Keep its already-approved actions
