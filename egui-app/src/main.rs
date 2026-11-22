@@ -3599,6 +3599,7 @@ impl BandoEgui {
         let can_receive_clipboard =
             self.clipboard_monitor.kind().has_intake() && !self.clipboard_busy;
         let ocr_processing = self.ocr_processing;
+        let processing_preview=self.ocr_processing_preview.clone();
         let cancel_ocr = Arc::clone(&self.clipboard_cancel);
         let inbox_path = self.inbox_folder_path.clone();
         let inbox_loaded = self.inbox_folder_loaded;
@@ -3633,31 +3634,64 @@ impl BandoEgui {
                         .layout(Layout::top_down(Align::Center)),
                     |progress| {
                         progress.set_clip_rect(clip);
-                        let content_height = typography::FONT_OCR_PROGRESS_TITLE * 1.4
-                            + typography::METADATA_LINE_HEIGHT
-                            + theme::ACTION_STANDARD_HEIGHT
-                            + theme::SPACE_12 + theme::SPACE_16;
+                        // The original clipboard image is downsampled on
+                        // the OCR worker and received independently, before
+                        // recognition completes. The employee sees it right
+                        // here in the source pane, not in another popup.
+                        let image_size=processing_preview.as_ref().map(
+                            |(_,width,height)|{
+                                let max_w=(body_rect.width()
+                                    -2.0*theme::SPACE_16).max(1.0);
+                                let max_h=(body_rect.height()
+                                    -typography::FONT_OCR_PROGRESS_TITLE*1.4
+                                    -theme::ACTION_STANDARD_HEIGHT
+                                    -theme::SPACE_12
+                                    -theme::SPACE_16
+                                    -2.0*theme::SPACE_8).max(1.0);
+                                let natural=Vec2::new(
+                                    *width as f32,*height as f32
+                                );
+                                let scale=(max_w/natural.x.max(1.0))
+                                    .min(max_h/natural.y.max(1.0))
+                                    .min(1.0);
+                                natural*scale
+                            }
+                        );
+                        let image_space=image_size.map(|size|
+                            size.y+theme::SPACE_12
+                        ).unwrap_or(0.0);
+                        let content_height=typography::FONT_OCR_PROGRESS_TITLE*1.4
+                            +image_space+theme::SPACE_16
+                            +theme::ACTION_STANDARD_HEIGHT;
                         progress.add_space(
-                            ((body_rect.height() - content_height) / 2.0).max(0.0)
+                            ((body_rect.height()-content_height)/2.0).max(0.0)
                         );
                         progress.label(
-                            egui::RichText::new("OCR 처리 중…")
+                            egui::RichText::new("이미지 분석중...")
                                 .size(typography::FONT_OCR_PROGRESS_TITLE)
                                 .strong()
                                 .color(theme::TEXT)
                         );
-                        progress.add_space(theme::SPACE_12);
-                        progress.label(
-                            egui::RichText::new(
-                                "선택한 이미지에서 글자를 인식하고 있습니다."
-                            ).size(typography::FONT_FIELD_LABEL)
-                                .color(theme::SECONDARY)
-                        );
+                        if let (Some((texture,_,_)),Some(size))=
+                            (processing_preview.as_ref(),image_size){
+                            progress.add_space(theme::SPACE_12);
+                            let (image_rect,_)=progress.allocate_exact_size(
+                                size,Sense::hover()
+                            );
+                            progress.painter().image(
+                                texture.id(),image_rect,
+                                Rect::from_min_max(
+                                    egui::pos2(0.0,0.0),
+                                    egui::pos2(1.0,1.0)
+                                ),
+                                egui::Color32::WHITE
+                            );
+                        }
                         progress.add_space(theme::SPACE_16);
                         if theme::action(
-                            progress, "취소", ButtonRole::Standard, true
-                        ).clicked() {
-                            cancel_ocr.store(true, Ordering::Release);
+                            progress,"취소",ButtonRole::Standard,true
+                        ).clicked(){
+                            cancel_ocr.store(true,Ordering::Release);
                         }
                     },
                 );
