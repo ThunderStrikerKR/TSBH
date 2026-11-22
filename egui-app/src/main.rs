@@ -359,6 +359,77 @@ struct PendingVatChange {
 
 /// Resolve the value that is CURRENT after the preceding native edit,
 /// rather than copying a stale value captured before it was committed.
+// Recognition IDs are intentionally unscoped; persisted native order IDs
+// carry the order prefix for global SQLite uniqueness. Match only the exact
+// order-qualified form, never by a loose suffix or product name.
+fn quote_id_matches(
+    quote:&serde_json::Value,quoted_id:Option<&str>,source_id:&str,kind:&str
+)->bool{
+    let Some(quoted_id)=quoted_id else{return false};
+    if quoted_id==source_id{return true;}
+    if !source_id.starts_with(kind){return false;}
+    let Some(order_id)=quote.get("orderId").and_then(serde_json::Value::as_str)
+        .filter(|id|!id.is_empty()) else{return false;};
+    quoted_id.strip_prefix(order_id)
+        .and_then(|rest|rest.strip_prefix(':'))==Some(source_id)
+}
+
+fn quoted_item_line<'a>(
+    quote:&'a serde_json::Value,item_id:&str
+)->Option<&'a serde_json::Value>{
+    quote.get("linePrices")?.as_array()?.iter().find(|line|
+        quote_id_matches(
+            quote,line["itemId"].as_str(),item_id,"recognition:item:"
+        )
+    )
+}
+
+fn quoted_freight_line<'a>(
+    quote:&'a serde_json::Value,recipient_id:&str,origin:Option<&str>
+)->Option<&'a serde_json::Value>{
+    // Native reception_merge defaults an absent dispatch origin to FACTORY.
+    // Preserve that exact rule rather than inventing a freight charge here.
+    let origin=origin.filter(|s|!s.is_empty()).unwrap_or("FACTORY");
+    quote.get("freightLines")?.as_array()?.iter().find(|line|
+        quote_id_matches(
+            quote,line["recipientId"].as_str(),recipient_id,
+            "recognition:recipient:"
+        ) && line["origin"].as_str()==Some(origin)
+    )
+}
+
+#[cfg(test)]
+mod quote_identity_tests {
+    use super::*;
+
+    #[test]
+    fn native_scoped_quote_matches_unscoped_recognition_ids(){
+        let quote=serde_json::json!({
+            "orderId":"order-42",
+            "linePrices":[
+                {"itemId":"order-42:recognition:item:8:0",
+                 "unitPrice":59000,"amount":236000},
+                {"itemId":"manual-item","unitPrice":12000,"amount":12000}
+            ],
+            "freightLines":[
+                {"recipientId":"order-42:recognition:recipient:0",
+                 "origin":"FACTORY","appliedCharge":3000}
+            ]
+        });
+        assert_eq!(quoted_item_line(&quote,"recognition:item:8:0")
+            .and_then(|line|line["amount"].as_i64()),Some(236000));
+        assert_eq!(quoted_item_line(&quote,"manual-item")
+            .and_then(|line|line["unitPrice"].as_i64()),Some(12000));
+        assert_eq!(quoted_freight_line(&quote,"recognition:recipient:0",None)
+            .and_then(|line|line["appliedCharge"].as_i64()),Some(3000));
+        assert!(quoted_item_line(&quote,"recognition:item:9:0").is_none());
+        assert!(quoted_freight_line(&quote,"recognition:recipient:1",None).is_none());
+        assert!(!quote_id_matches(&quote,
+            Some("another-order:recognition:item:8:0"),
+            "recognition:item:8:0","recognition:item:"));
+    }
+}
+
 fn current_inline_value(
     recognition:&serde_json::Value,
     quote:Option<&serde_json::Value>,
@@ -378,21 +449,17 @@ fn current_inline_value(
             "unitPrice"=>Some(item.get("manualUnitPrice")
                 .or_else(||item.get("unitPrice"))
                 .and_then(serde_json::Value::as_i64)
-                .or_else(||quote.and_then(|value|value["linePrices"].as_array())
-                    .and_then(|lines|lines.iter().find(|line|
-                        line["itemId"].as_str()==Some(item_id)
-                    )).and_then(|line|line["unitPrice"].as_i64()))
+                .or_else(||quote.and_then(|value|quoted_item_line(value,item_id))
+                    .and_then(|line|line["unitPrice"].as_i64()))
                 .map(|v|v.to_string()).unwrap_or_default()),
             _=>None
         };
     }
     if target.field=="shippingCharge"{
         let origin=recipient["dispatchOrigin"].as_str();
-        return Some(quote.and_then(|value|value["freightLines"].as_array())
-            .and_then(|lines|lines.iter().find(|line|
-                line["recipientId"].as_str()==Some(target.recipient_id.as_str())
-                && line["origin"].as_str()==origin
-            )).and_then(|line|line["appliedCharge"].as_i64())
+        return Some(quote.and_then(|value|
+            quoted_freight_line(value,&target.recipient_id,origin)
+        ).and_then(|line|line["appliedCharge"].as_i64())
             .map(|v|v.to_string()).unwrap_or_default());
     }
     recipient[target.field].as_str().map(str::to_owned)
@@ -5195,17 +5262,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     .filter(|n|*n>0)
                                                     .map(|n|format!("{n}개"))
                                                     .unwrap_or_else(||"—".into());
-                                                // The egui working-reception acknowledgement
-                                                // currently supplies unitPrice, not a computed
-                                                // line amount. Do not invent an invoice amount.
-                                                let amount=preview.and_then(|quote|
-                                                    quote.get("linePrices"))
-                                                    .and_then(serde_json::Value::as_array)
-                                                    .and_then(|rows|rows.iter().find(|row|
-                                                        row.get("itemId")
-                                                            .and_then(serde_json::Value::as_str)
-                                                            ==Some(item_id)))
-                                                    .and_then(|row|row.get("amount"))
+                                                // Native quote owns unit price × quantity.
+                                                // The UI only reads its exact computed amount.
+                                                let amount=preview
+                                                    .and_then(|quote|quoted_item_line(quote,item_id))
+                                                    .and_then(|line|line.get("amount"))
                                                     .and_then(serde_json::Value::as_i64)
                                                     .map(components::display_won)
                                                     .unwrap_or_else(||"—".to_owned());
@@ -5253,12 +5314,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         "price"=>item.get("manualUnitPrice")
                                                             .or_else(||item.get("unitPrice"))
                                                             .and_then(serde_json::Value::as_i64)
-                                                            .or_else(||preview.and_then(|quote|
-                                                                quote.get("linePrices"))
-                                                                .and_then(serde_json::Value::as_array)
-                                                                .and_then(|lines|lines.iter()
-                                                                    .find(|line|line["itemId"]
-                                                                        .as_str()==Some(item_id)))
+                                                            .or_else(||preview
+                                                                .and_then(|quote|quoted_item_line(quote,item_id))
                                                                 .and_then(|line|line["unitPrice"].as_i64()))
                                                             .map(|n|n.to_string()).unwrap_or_default(),
                                                         _=>reception_service::item_title(item)
@@ -5330,12 +5387,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         );
                                         let origin=recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
-                                        let line_fee=preview.and_then(|quote|
-                                            quote.get("freightLines"))
-                                            .and_then(serde_json::Value::as_array)
-                                            .and_then(|lines|lines.iter().find(|line|
-                                                line["recipientId"].as_str()==Some(recipient_id)
-                                                && line["origin"].as_str()==origin))
+                                        let line_fee=preview
+                                            .and_then(|quote|quoted_freight_line(
+                                                quote,recipient_id,origin
+                                            ))
                                             .and_then(|line|line["appliedCharge"].as_i64());
                                         let cod=recipient.get("freightCode")
                                             .and_then(serde_json::Value::as_str)
