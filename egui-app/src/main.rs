@@ -362,6 +362,16 @@ struct PendingVatChange {
 // Recognition IDs are intentionally unscoped; persisted native order IDs
 // carry the order prefix for global SQLite uniqueness. Match only the exact
 // order-qualified form, never by a loose suffix or product name.
+// A historical quote may have only unit prices. Requote it with the new
+// shipment-aware native contract before treating it as valid.
+// Null amounts are permitted for genuinely unresolved catalog/freight data.
+fn complete_reception_quote(quote:&serde_json::Value)->bool{
+    quote.get("linePrices").and_then(serde_json::Value::as_array)
+        .is_some_and(|lines|lines.iter().all(|line|line.get("amount").is_some()))
+    && quote.get("freightLines").is_some_and(serde_json::Value::is_array)
+    && quote.get("pendingRecipients").is_some_and(serde_json::Value::is_array)
+}
+
 fn quote_id_matches(
     quote:&serde_json::Value,quoted_id:Option<&str>,source_id:&str,kind:&str
 )->bool{
@@ -422,6 +432,13 @@ mod quote_identity_tests {
             .and_then(|line|line["unitPrice"].as_i64()),Some(12000));
         assert_eq!(quoted_freight_line(&quote,"recognition:recipient:0",None)
             .and_then(|line|line["appliedCharge"].as_i64()),Some(3000));
+        assert!(complete_reception_quote(&serde_json::json!({
+            "linePrices":[{"itemId":"x","amount":null}],
+            "freightLines":[],"pendingRecipients":[{"recipientId":"r","freight":true}]
+        })));
+        assert!(!complete_reception_quote(&serde_json::json!({
+            "linePrices":[{"itemId":"x","unitPrice":1000}]
+        })));
         assert!(quoted_item_line(&quote,"recognition:item:9:0").is_none());
         assert!(quoted_freight_line(&quote,"recognition:recipient:1",None).is_none());
         assert!(!quote_id_matches(&quote,
@@ -1034,8 +1051,8 @@ impl BandoEgui {
         let Some(id) = self.active_id.as_deref() else { return; };
         let Some(row) = self.drafts.iter().find(|row| row.id == id).cloned() else { return; };
         if row.client_id.as_deref() == Some(client_id) &&
-           row.pricing_preview.is_some() {
-            return; // Same dealer with a valid quote: no unnecessary rewrite.
+           row.pricing_preview.as_ref().is_some_and(complete_reception_quote) {
+            return; // Same dealer with a complete native quote.
         }
         if row.analysis_raw.as_deref() != Some(row.raw.as_str()) ||
             row.analysis_evidence.is_none() {
@@ -2062,7 +2079,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // React's current-dealer click simply closes the chooser.
                 // An unpriced quote is a separate pricing task, not grounds
                 // to re-run the client mutation without a different dealer.
-                if current_id.as_deref()==Some(id.as_str()) {
+                let complete=current_id.as_deref()==Some(id.as_str()) &&
+                    self.active_id.as_deref()
+                        .and_then(|active|self.drafts.iter().find(|row|row.id==active))
+                        .and_then(|row|row.pricing_preview.as_ref())
+                        .is_some_and(complete_reception_quote);
+                if complete {
                     self.client_chooser=None;
                 } else if self.client_change.is_some() {
                     if let Some(chooser)=self.client_chooser.as_mut(){
@@ -2396,6 +2418,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // reception. A switched/new order invalidates this worker.
                     let mut changed_snapshot = false;
                     let mut auto_target:Option<String>=None;
+                    let mut requote_manual:Option<String>=None;
                     if let Some(active_id) = self.active_id.as_deref() {
                         if let Some(item) = self.drafts.iter_mut()
                             .find(|item| item.id == active_id) {
@@ -2410,6 +2433,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                             item.analysis_raw = Some(self.raw_source.clone());
                             item.client_match = Some(analysis.client_match.clone());
+                            if item.client_selection.as_deref()==Some("MANUAL") &&
+                                !self.gateway.isolated_client_identity_link() &&
+                                !item.pricing_preview.as_ref()
+                                    .is_some_and(complete_reception_quote) {
+                                requote_manual=item.client_id.clone();
+                            }
                             if item.client_selection.as_deref() != Some("MANUAL") &&
                                item.manual_model.is_none() {
                                 // Do NOT treat an advisory match as a completed
@@ -2420,7 +2449,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     .and_then(serde_json::Value::as_str);
                                 let same_auto=item.client_selection.as_deref()==Some("AUTO")
                                     && item.client_id.as_deref()==proposal
-                                    && (item.pricing_preview.is_some()
+                                    && (item.pricing_preview.as_ref()
+                                        .is_some_and(complete_reception_quote)
                                         || self.gateway.isolated_client_identity_link());
                                 if !same_auto {
                                     item.client_id=None;
@@ -2441,6 +2471,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     self.selected_recipient = 0;
                     if let Some(target)=auto_target {
                         self.start_auto_client_change(&target,ctx);
+                    }
+                    // Historical unpriced/manual receipts are recalculated
+                    // once after their current recognition snapshot is ready.
+                    if let Some(target)=requote_manual {
+                        self.apply_manual_client(&target,ctx);
                     }
                 }
                 Err(error) => {
