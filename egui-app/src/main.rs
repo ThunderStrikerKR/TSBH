@@ -7178,7 +7178,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// A pending receipt is only an isolated unconfirmed workspace record.
     /// Never pretend this deletes an already persisted operational order.
     fn delete_pending_reception(&mut self,id:&str,ctx:&egui::Context)->bool{
-        let Some(row)=self.drafts.iter().find(|row|row.id==id) else{return false;};
+        let Some(draft)=self.drafts.iter().find(|row|row.id==id) else{return false;};
+        // Older builds could explicitly write a separate egui bridge copy.
+        // Never turn that unrelated metadata into a ban on deleting the
+        // isolated intake draft; also never pretend to delete the other DB.
+        let prior_bridge_copy=draft.working_version.is_some();
         if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
             ReceptionJob::DeleteReception,false
         ){
@@ -7216,8 +7220,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
         self.workflow_ui.stop_preview();
         floating_notice::publish(
-            ctx,"reception.workflow",floating_notice::Tone::Success,
-            "미확정 발주서를 삭제했습니다."
+            ctx,"reception.workflow",
+            if prior_bridge_copy {floating_notice::Tone::Error}
+            else {floating_notice::Tone::Success},
+            if prior_bridge_copy {
+                "접수 작업 목록에서 삭제했습니다. 이전 운영 DB 사본은 삭제하지 않았습니다."
+            }else{
+                "미확정 발주서를 삭제했습니다."
+            }
         );
         true
     }
