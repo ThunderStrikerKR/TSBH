@@ -10,6 +10,9 @@ fn err<E:std::fmt::Display>(e:E)->String{e.to_string()}
 mod reception;
 
 pub fn write_v2_snapshot(conn: &mut Connection, mut state: Value, expected_revision: u64, validate_orders: bool) -> Result<Value, String> {
+    // Workbook imports and stale editors must not persist the retired
+    // textual color placeholder in operational SQLite.
+    crate::product_colors::normalize_products(&mut state)?;
     crate::valid_state(&state)?;
     let version:i64=conn.query_row(
         "SELECT version FROM core_schema WHERE key='business-core'",
