@@ -97,7 +97,13 @@ pub fn admit(request:Kind, active:&[Kind], same_request:bool)->Admission{
                 | Kind::Analysis | Kind::RemoteRecheck)
             | (Kind::NavigateReception,
                 Kind::ManualClient | Kind::AutomaticClient | Kind::PricingBasis
-                | Kind::Analysis | Kind::RemoteRecheck | Kind::WorkflowAction)
+                | Kind::Analysis | Kind::RemoteRecheck | Kind::WorkflowAction
+                | Kind::SourceEntry)
+            // Deleting an uncommitted receipt discards these read-only
+            // projections; no external business mutation needs to finish.
+            | (Kind::DeleteReception,
+                Kind::ManualClient | Kind::AutomaticClient | Kind::PricingBasis
+                | Kind::Analysis | Kind::RemoteRecheck | Kind::SourceEntry)
             | (Kind::RemoteRecheck,Kind::RemoteRecheck)
             // The matching modal is still visible on the employee's
             // approval click; only its explicitly approved action may pass.
@@ -176,7 +182,7 @@ mod tests {
         let writers=[
             K::ManualClient,K::InlineEdit,K::VatEdit,K::WorkingSync,
             K::ManualWorkspace,K::InlineEditor,K::WorkflowAction,
-            K::SourceIntake,K::SourceEntry,K::DeleteReception
+            K::SourceIntake,K::SourceEntry
         ];
         for first in writers {
             for second in writers {
@@ -235,8 +241,24 @@ mod tests {
         ]{
             assert_eq!(admit(writer,&[K::RemoteRecheck],false),A::Start);
         }
-        assert_eq!(admit(K::DeleteReception,&[K::RemoteRecheck],false),
-            A::Conflict(K::RemoteRecheck));
+        assert_eq!(admit(K::DeleteReception,&[K::RemoteRecheck],false),A::Start);
+    }
+
+    #[test]
+    fn deletion_of_unconfirmed_receipt_is_immediate_during_advisory_reads(){
+        for advisory in [
+            K::ManualClient,K::AutomaticClient,K::PricingBasis,
+            K::Analysis,K::RemoteRecheck,K::SourceEntry
+        ]{
+            assert_eq!(admit(K::DeleteReception,&[advisory],false),A::Start);
+        }
+        for commit in [
+            K::WorkingSync,K::InlineEdit,K::VatEdit,K::ManualWorkspace,
+            K::InlineEditor,K::SourceIntake,K::SourceReview,K::WorkflowAction
+        ]{
+            assert_eq!(admit(K::DeleteReception,&[commit],false),
+                A::Conflict(commit));
+        }
     }
 
     #[test]
@@ -248,7 +270,7 @@ mod tests {
             assert_eq!(admit(K::NavigateReception,&[cancellable],false),A::Start);
         }
         for blocking in [
-            K::SourceIntake,K::SourceReview,K::SourceEntry,K::InlineEdit,
+            K::SourceIntake,K::SourceReview,K::InlineEdit,
             K::VatEdit,K::WorkingSync,K::ManualWorkspace,K::InlineEditor
         ] {
             assert_eq!(admit(K::NavigateReception,&[blocking],false),
@@ -256,6 +278,9 @@ mod tests {
             assert_eq!(admit(K::DeleteReception,&[blocking],false),
                 A::Conflict(blocking));
         }
+        // Direct entry is autosaved on each change and finishes on switching.
+        assert_eq!(admit(K::NavigateReception,&[K::SourceEntry],false),A::Start);
+        assert_eq!(admit(K::DeleteReception,&[K::SourceEntry],false),A::Start);
     }
 
 }
