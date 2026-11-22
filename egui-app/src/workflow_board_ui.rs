@@ -2,7 +2,7 @@
 //! Native Rust provides groups, amounts, freight, stage and shipment identity.
 use eframe::egui::{self, Align, Frame, Id, Layout, Pos2, Rect, Ui, Vec2};
 use std::time::{Duration, Instant};
-use crate::{components, preview_store::WorkingReception, theme, typography};
+use crate::{components, preview_store::WorkingReception, source_highlight, theme, typography};
 use std::collections::HashMap;
 use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
 
@@ -661,18 +661,23 @@ fn shipment_product_summary(products:&[String])->String{
     else{format!("◆ {}",products.join("  ·  ◆ "))}
 }
 
-/// Only the row's base surface is painted; there is no striped/zebra fill.
-/// Selection and preview tint the same row without changing its geometry.
+/// Native shipment rows share the SAME linked-preview fill, ink and inset
+/// border as the source tokens, recipient values and item cells.
+/// Orange remains reserved for an explicitly committed workflow selection.
+/// The highlight is paint-only: no row height, width or scroll geometry changes.
 fn shipment_line(
     ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool
 )->egui::Response{
     let fill=if chosen{
         theme::WORKFLOW_SELECTED_BORDER.linear_multiply(0.20)
     }else if previewed{
-        theme::SELECTION.linear_multiply(0.14)
+        source_highlight::ACTIVE_FILL
     }else{theme::WORKFLOW_DETAIL_ROW_BG};
     let outer=ui.available_width();
     let summary=shipment_product_summary(products);
+    let preview_ink=if previewed && !chosen{
+        source_highlight::ACTIVE_TEXT
+    }else{theme::TEXT};
     let response=Frame::new()
         .fill(fill)
         .stroke(egui::Stroke::new(
@@ -697,22 +702,34 @@ fn shipment_line(
                 let product_width=(inside-name_width-theme::SPACE_8).max(0.0);
                 cols.add_sized(
                     [name_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
-                    egui::Label::new(typography::body(name)).truncate()
+                    egui::Label::new(typography::body(name).color(preview_ink)).truncate()
                 ).on_hover_text(name);
                 cols.add_sized(
                     [product_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
-                    egui::Label::new(typography::body(&summary)).truncate()
+                    egui::Label::new(typography::body(&summary).color(preview_ink)).truncate()
                 ).on_hover_text(&summary);
             });
         });
     if chosen || previewed{
         let color=if chosen{theme::WORKFLOW_SELECTED_BORDER}
-            else{theme::SELECTION};
+            else{source_highlight::ACTIVE_BORDER};
         let rect=response.response.rect;
         ui.painter().rect_filled(Rect::from_min_max(
             Pos2::new(rect.left(),rect.top()),
             Pos2::new(rect.left()+theme::WORKFLOW_SELECTED_STRIPE,rect.bottom())
         ),0.0,color);
+        if previewed && !chosen {
+            // Overlay rather than changing Frame::stroke; changing a frame
+            // stroke also changes its content width and can cause clipping.
+            ui.painter().rect_stroke(
+                rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
+                egui::Stroke::new(
+                    source_highlight::ACTIVE_BORDER_WIDTH,
+                    source_highlight::ACTIVE_BORDER
+                ),
+                egui::StrokeKind::Inside,
+            );
+        }
     }
     response.response
 }
