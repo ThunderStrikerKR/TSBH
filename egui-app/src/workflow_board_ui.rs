@@ -927,8 +927,9 @@ pub fn show(
     // Manage, trash, status indicators and workflow-stage overlay are not
     // implicit selection targets. Click events always take precedence.
     if allow_pending_hover_switch && event.is_none(){
+        let selected_pending=if state.selection.is_none(){active_id}else{None};
         if let Some(id)=state.update_pending_order_hover(
-            hovered_pending,active_id,ui.ctx()
+            hovered_pending,selected_pending,ui.ctx()
         ){
             event=Some(Event::SelectPending(id));
         }
