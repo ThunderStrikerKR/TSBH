@@ -33,6 +33,7 @@ mod client_chooser;
 mod business_state;
 mod native_order_change;
 mod pricing_basis;
+mod reception_jobs;
 mod source_highlight;
 mod workflow_board;
 mod workflow_board_ui;
@@ -61,6 +62,7 @@ use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, Order
 use preview_store::{OcrFeedback, WorkingReception, WorkingSource};
 use kakao_context::{ChatWindow, KakaoTracker};
 use client_chooser::{ClientChooser, Choice};
+use reception_jobs::{Admission as JobAdmission,Kind as ReceptionJob};
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -183,6 +185,7 @@ struct DetailSplitDrag {
 
 struct PendingClientChange {
     order_id: String,
+    client_id: String,
     source_raw: String,
     order_type: String,
     // A changed Kakao conversation invalidates the pending dealer decision,
@@ -605,6 +608,7 @@ struct BandoEgui {
     analysis_request: u64,
     analysis_pending: bool,
     analysis_due_at: Option<Instant>,
+    analysis_running_key: Option<(String,String,String)>,
     analysis_receiver: Option<Receiver<(u64, Result<reception_service::ReceptionAnalysis, String>)>>,
 }
 
@@ -697,12 +701,50 @@ impl Default for BandoEgui {
             analysis_request: 0,
             analysis_pending: false,
             analysis_due_at: None,
+            analysis_running_key: None,
             analysis_receiver: None,
         }
     }
 }
 
 impl BandoEgui {
+    /// The only admission snapshot for worker jobs operating on a reception.
+    /// A read-only price-basis check and an advisory auto-match can be
+    /// superseded by an explicit employee choice; all writes are exclusive.
+    fn active_reception_jobs(&self,request:ReceptionJob)->Vec<ReceptionJob>{
+        let mut active=Vec::with_capacity(9);
+        if self.client_change.is_some(){active.push(ReceptionJob::ManualClient);}
+        if self.auto_client_change.is_some(){active.push(ReceptionJob::AutomaticClient);}
+        if self.pricing_basis_check.is_some(){active.push(ReceptionJob::PricingBasis);}
+        if self.inline_change.is_some(){active.push(ReceptionJob::InlineEdit);}
+        if self.vat_change.is_some(){active.push(ReceptionJob::VatEdit);}
+        if self.working_sync.is_some(){active.push(ReceptionJob::WorkingSync);}
+        if self.manual_workspace.is_some(){active.push(ReceptionJob::ManualWorkspace);}
+        // An active text field must not be discarded by a dealer or VAT edit.
+        // Submitting that same field is the sole exception.
+        if request!=ReceptionJob::InlineEdit && self.inline_editor.is_some(){
+            active.push(ReceptionJob::InlineEditor);
+        }
+        if self.analysis_pending {active.push(ReceptionJob::Analysis);}
+        active
+    }
+
+    fn reception_job_admission(
+        &self,request:ReceptionJob,same_request:bool
+    )->JobAdmission{
+        reception_jobs::admit(
+            request,&self.active_reception_jobs(request),same_request
+        )
+    }
+
+    fn reception_job_conflict(&mut self,request:ReceptionJob,
+                              blocker:ReceptionJob){
+        self.source_save_error=Some(format!(
+            "{} 중에는 {} 작업을 시작할 수 없습니다.",
+            blocker.label(),request.label()
+        ));
+    }
+
     /// Project only the saved order-image inbox path into the reception UI.
     /// The Settings page owns editing/saving; this read-only projection runs
     /// asynchronously and refreshes immediately on return from other pages.
