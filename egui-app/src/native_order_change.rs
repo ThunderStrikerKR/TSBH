@@ -272,6 +272,30 @@ mod manual_rebind_tests {
     }
 
     #[test]
+    fn dealer_selection_without_manual_edits_uses_complete_native_quote(){
+        // This path formerly called CalculatePrice and omitted both the
+        // per-line amount and shipment freight data. The mock implements
+        // CalculateReceptionQuote only, so a regression fails explicitly.
+        let source=WorkingReception{
+            id:"order-1".into(),raw:"원문".into(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:Some("원문".into()),
+            analysis_evidence:Some(json!({"recipients":[],"candidates":[]})),
+            client_match:None,chat_handle:None,chat_title:None,
+            client_id:None,client_selection:None,pricing_preview:None,
+            working_version:None,working_synced:false,manual_model:None,
+            edit_history:vec![]
+        };
+        let result=prepare(&PreviewGateway,&source,"new").unwrap();
+        let preview=result.pricing_preview.unwrap();
+        assert_eq!(preview["total"],27300);
+        assert_eq!(preview["pendingRecipients"],json!([]));
+        assert_eq!(preview["linePrices"],json!([]));
+        assert_eq!(preview["freightLines"],json!([]));
+        assert_eq!(preview["clientId"],"new");
+    }
+
+    #[test]
     fn malformed_model_does_not_replace_a_valid_client_selection(){
         let saved=json!({"model":{"rows":[]}});
         assert!(rebind_manual_model(&saved,"new",&json!({})).is_err());
