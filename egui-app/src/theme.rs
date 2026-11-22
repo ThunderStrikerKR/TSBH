@@ -54,6 +54,11 @@ pub const TEXT: Color32 = Color32::from_rgb(237, 237, 237);
 pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
 pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
+// Single-select popup palette, independent of the global widget hover and
+// confirmed-order orange selection. A chosen option stays muted navy while
+// the hovered option is brighter blue; no conflicting highlight roles.
+pub const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = Color32::from_rgb(37, 62, 82);
+pub const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118);
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
 // Compact working-order cards derive every slot from the actual right pane.
 // The horizontal outer inset, inter-control gaps and vertical insets use
