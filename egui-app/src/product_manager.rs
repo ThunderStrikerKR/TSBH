@@ -1281,7 +1281,7 @@ impl ProductManager {
     }
     fn edit_text(ui:&mut Ui,draft:&mut Value,key:&str,label:&str,enabled:bool){
         ui.horizontal_wrapped(|line|{
-            line.label(typography::field_label(label));
+            components::form_field_label(line,label);
             let mut value=field(draft,key).to_owned();
             line.add_enabled_ui(enabled,|input|{
                 if components::flexible_text_field(
@@ -1393,7 +1393,7 @@ impl ProductManager {
                         Self::edit_text(body,&mut draft,"code","모델명",editable&&!busy);
                         Self::edit_text(body,&mut draft,"subtitle","상품설명",editable&&!busy);
                         body.horizontal_wrapped(|line|{
-                            line.label(typography::field_label("카테고리"));
+                            components::form_field_label(line,"카테고리");
                             let before=draft["categories"].as_array()
                                 .and_then(|ids|ids.last())
                                 .and_then(Value::as_str).unwrap_or("").to_owned();
@@ -1434,7 +1434,7 @@ impl ProductManager {
                             }
                         });
                         body.horizontal_wrapped(|line|{
-                            line.label(typography::field_label("브랜드"));
+                            components::form_field_label(line,"브랜드");
                             let mut brand_id=field(&draft,"brandId").to_owned();
                             let before=brand_id.clone();
                             let label=brands.iter().find(|b|field(b,"id")==brand_id)
@@ -1459,7 +1459,7 @@ impl ProductManager {
                             }
                         });
                         body.horizontal_wrapped(|line|{
-                            line.label(typography::field_label("발송지"));
+                            components::form_field_label(line,"발송지");
                             let mut origin=field(&draft,"origin").to_owned();
                             let before=origin.clone();
                             line.add_enabled_ui(editable&&!busy,|input|{
@@ -1476,7 +1476,7 @@ impl ProductManager {
                             if origin!=before{draft["origin"]=json!(origin);}
                         });
                         body.horizontal_wrapped(|line|{
-                            line.label(typography::field_label("배송 그룹"));
+                            components::form_field_label(line,"배송 그룹");
                             let before=field(&draft,"shippingGroupId").to_owned();
                             let mut group=before.clone();
                             let label=groups.iter().find(|g|field(g,"id")==group)
@@ -1528,7 +1528,7 @@ impl ProductManager {
                             ("소매가","retail")
                         ]{
                             body.horizontal(|line|{
-                                line.label(typography::field_label(label));
+                                components::form_field_label(line,label);
                                 let text=prices.entry(tier.to_owned())
                                     .or_insert_with(String::new);
                                 line.add_enabled_ui(editable&&!busy,|input|{
