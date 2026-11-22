@@ -8,6 +8,7 @@ use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
 
 const HOVER_ENTER:Duration=Duration::from_millis(250);
 const HOVER_EXIT:Duration=Duration::from_millis(250);
+const PENDING_ORDER_HOVER_ENTER:Duration=Duration::from_millis(250);
 const STEP_NAMES:[&str;4]=["주문 확인","운임 적용","계좌 안내","입금 확인"];
 
 /// The base card and its foreground hover preview are both painted within
@@ -34,6 +35,9 @@ pub struct BoardUi {
     pub preview_shipment:Option<String>,
     row_pending:Option<(String,Instant)>,
     row_release:Option<Instant>,
+    // Delayed hover navigation for an unconfirmed receipt, independent of
+    // the blue workflow group/stage overlay and its selection state.
+    pending_order_hover:Option<(String,Instant)>,
 }
 pub enum Event {
     SelectPending(String),
@@ -56,6 +60,7 @@ impl BoardUi{
         self.preview_shipment=None;
         self.row_pending=None;
         self.row_release=None;
+        self.pending_order_hover=None;
     }
     pub fn select(&mut self,selection:Selection){
         self.selection=Some(selection);
@@ -91,6 +96,39 @@ impl BoardUi{
             }
         }
     }
+    fn update_pending_order_hover(
+        &mut self,incoming:Option<String>,active_id:Option<&str>,
+        ctx:&egui::Context
+    )->Option<String>{
+        let Some(id)=incoming else{
+            self.pending_order_hover=None;
+            return None;
+        };
+        // The already selected receipt needs no repeated selection, autosave
+        // or re-analysis while the mouse rests on its title/recipient.
+        if active_id==Some(id.as_str()){
+            self.pending_order_hover=None;
+            return None;
+        }
+        let now=Instant::now();
+        match &self.pending_order_hover {
+            Some((candidate,at)) if candidate==&id &&
+                now.duration_since(*at)>=PENDING_ORDER_HOVER_ENTER=>{
+                    self.pending_order_hover=None;
+                    Some(id)
+                }
+            Some((candidate,_)) if candidate==&id=>{
+                ctx.request_repaint_after(PENDING_ORDER_HOVER_ENTER);
+                None
+            }
+            _=>{
+                self.pending_order_hover=Some((id,now));
+                ctx.request_repaint_after(PENDING_ORDER_HOVER_ENTER);
+                None
+            }
+        }
+    }
+
     /// Hovering a stage label previews its group after 250ms. The anchored
     /// overlay is part of the hover region and stays for 250ms on exit.
     pub fn update_hover(&mut self, incoming:Option<String>, ctx:&egui::Context){
@@ -734,7 +772,7 @@ fn pending_dealer_title(
 
 fn pending_frame(
     ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,
-    dealer_name:&str
+    dealer_name:&str,hovered_pending:&mut Option<String>
 )->Option<Event>{
     let mut event=None;
     workflow_card(ui,selected,false,|ui|{
@@ -744,6 +782,9 @@ fn pending_frame(
         );
         if header.manage{event=Some(Event::ManagePending(draft.id.clone()));}
         if header.delete{event=Some(Event::DeletePending(draft.id.clone()));}
+        if header.title.hovered() {
+            *hovered_pending=Some(draft.id.clone());
+        }
         if header.title.clicked(){
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
                 else{Event::SelectPending(draft.id.clone())});
@@ -772,6 +813,9 @@ fn pending_frame(
                     Id::new(("pending-reception-row",draft.id.as_str(),0usize)),
                     egui::Sense::click());
                 theme::paint_button_hover(ui,&action,0.0);
+                if action.hovered() {
+                    *hovered_pending=Some(draft.id.clone());
+                }
                 if action.clicked(){
                     event=Some(Event::SelectPending(draft.id.clone()));
                 }
@@ -796,6 +840,9 @@ fn pending_frame(
                         Id::new(("pending-reception-row",draft.id.as_str(),index)),
                         egui::Sense::click());
                     theme::paint_button_hover(ui,&action,0.0);
+                    if action.hovered() {
+                        *hovered_pending=Some(draft.id.clone());
+                    }
                     if action.clicked(){
                         event=Some(Event::SelectPending(draft.id.clone()));
                     }
@@ -814,7 +861,7 @@ pub fn show(
     drafts:&[WorkingReception],active_id:Option<&str>,
     client_names:&HashMap<String,String>,
     active_selected_client:Option<(&str,&str)>,
-    state:&mut BoardUi,writable:bool
+    state:&mut BoardUi,writable:bool,allow_pending_hover_switch:bool
 )->Option<Event>{
     // Prevent implicit vertical item spacing from doubling the explicit
     // WORKFLOW_CARD_GAP between order bundles. This is scoped to the list
@@ -822,6 +869,7 @@ pub fn show(
     ui.spacing_mut().item_spacing.y=0.0;
     let mut event=None;
     let mut trigger=None;
+    let mut hovered_pending=None;
     let mut overlay=None;
     let selected=state.selection.clone();
     let current=selected.as_ref();
@@ -863,7 +911,9 @@ pub fn show(
             draft,client_names,
             if selected{active_selected_client}else{None}
         );
-        if let Some(value)=pending_frame(ui,draft,selected,open,&name){
+        if let Some(value)=pending_frame(
+            ui,draft,selected,open,&name,&mut hovered_pending
+        ){
             match value{
                 Event::TogglePending(_)=>{
                     state.folded=if open{Some(key)}else{None};
@@ -872,6 +922,18 @@ pub fn show(
             }
         }
         ui.add_space(theme::WORKFLOW_CARD_GAP);
+    }
+    // Only a real source/recipient target changes the pending receipt.
+    // Manage, trash, status indicators and workflow-stage overlay are not
+    // implicit selection targets. Click events always take precedence.
+    if allow_pending_hover_switch && event.is_none(){
+        if let Some(id)=state.update_pending_order_hover(
+            hovered_pending,active_id,ui.ctx()
+        ){
+            event=Some(Event::SelectPending(id));
+        }
+    }else{
+        state.pending_order_hover=None;
     }
     let hovered=trigger.clone();
     state.update_hover(hovered,ui.ctx());
@@ -994,10 +1056,53 @@ mod pending_matching_tests {
         };
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
-                tapped=pending_frame(ui,&draft,false,false,"확인된 거래처");
+                let mut hovered=None;
+                tapped=pending_frame(
+                    ui,&draft,false,false,"확인된 거래처",&mut hovered
+                );
             });
         });
         assert!(tapped.is_none());
+    }
+}
+
+#[cfg(test)]
+mod pending_hover_navigation_tests {
+    use super::*;
+    #[test]
+    fn navigates_pending_receipts_only_after_250ms_and_never_reselects_active(){
+        let mut board=BoardUi::default();
+        let ctx=egui::Context::default();
+        assert_eq!(PENDING_ORDER_HOVER_ENTER,Duration::from_millis(250));
+        assert_eq!(
+            board.update_pending_order_hover(Some("order-b".into()),Some("order-a"),&ctx),
+            None
+        );
+        assert_eq!(
+            board.update_pending_order_hover(Some("order-c".into()),Some("order-a"),&ctx),
+            None
+        );
+        // Moving to another order restarts the deadline.
+        assert_eq!(board.pending_order_hover.as_ref().unwrap().0,"order-c");
+        board.pending_order_hover=Some((
+            "order-c".into(),Instant::now()-Duration::from_millis(260)
+        ));
+        assert_eq!(board.update_pending_order_hover(
+            Some("order-c".into()),Some("order-a"),&ctx
+        ),Some("order-c".into()));
+        // The active receipt cannot be triggered twice merely by hovering.
+        assert_eq!(board.update_pending_order_hover(
+            Some("order-c".into()),Some("order-c"),&ctx
+        ),None);
+        assert!(board.pending_order_hover.is_none());
+    }
+    #[test]
+    fn leaving_pending_order_cancels_delayed_navigation(){
+        let mut board=BoardUi::default();
+        let ctx=egui::Context::default();
+        board.update_pending_order_hover(Some("order-a".into()),None,&ctx);
+        assert_eq!(board.update_pending_order_hover(None,None,&ctx),None);
+        assert!(board.pending_order_hover.is_none());
     }
 }
 
