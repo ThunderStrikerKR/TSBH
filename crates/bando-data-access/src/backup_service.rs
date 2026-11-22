@@ -195,6 +195,9 @@ fn restore_selected(conn: &mut Connection, base: &Path, filename: &str)
         // migration reuses the verified safety copy rather than creating a
         // second backup of intermediate restored data.
         crate::client_names::migrate_v2_with_verified_restore_backup(conn)?;
+        // A restored older backup can contain the retired color placeholder.
+        // Normalize it within this restore's verified rollback boundary.
+        crate::product_colors::migrate_v2_with_verified_restore_backup(conn)?;
         validate_database(conn)
     })();
     if let Err(primary_error) = result {
