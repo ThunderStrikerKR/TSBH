@@ -534,6 +534,135 @@ pub fn modal_header_with_workspace_gap(
     close
 }
 
+/// Runtime-measured rects for the common editable modal stack.
+/// These are actual egui allocation results, not inferred pixel offsets.
+#[derive(Clone,Debug,Default)]
+pub struct ModalEditorBodyGeometry {
+    pub cards:Vec<Rect>,
+    pub divider:Option<Rect>,
+    pub advanced_header:Option<Rect>,
+}
+
+#[derive(Clone,Debug,Default)]
+pub struct ModalEditorGeometry {
+    pub header:Option<Rect>,
+    pub body:Option<Rect>,
+    pub footer:Option<Rect>,
+    pub content:ModalEditorBodyGeometry,
+}
+impl ModalEditorGeometry {
+    /// Actual boundary distances measured from allocated screen rects.
+    /// The advanced divider contains the intentional 16pt on both sides.
+    pub fn gaps(&self)->Vec<(&'static str,f32)>{
+        let mut out=Vec::new();
+        if let (Some(header),Some(card))=(self.header,self.content.cards.first()){
+            out.push(("header_to_card",card.top()-header.bottom()));
+        }
+        if self.content.cards.len()==3{
+            let cards=&self.content.cards;
+            if (cards[0].top()-cards[1].top()).abs()<1.0
+                && (cards[1].top()-cards[2].top()).abs()<1.0
+            {
+                out.push(("card_gap_1",cards[1].left()-cards[0].right()));
+                out.push(("card_gap_2",cards[2].left()-cards[1].right()));
+            }
+        }
+        if let Some(rule)=self.content.divider{
+            if !self.content.cards.is_empty(){
+                let bottom=self.content.cards.iter()
+                    .map(Rect::bottom).fold(f32::NEG_INFINITY,f32::max);
+                out.push(("card_to_rule",rule.top()
+                    +theme::MODAL_MASTER_WORKSPACE_GAP-bottom));
+            }
+            if let Some(advanced)=self.content.advanced_header{
+                out.push(("rule_to_advanced",advanced.top()
+                    -(rule.top()+theme::MODAL_MASTER_WORKSPACE_GAP
+                    +theme::SOFT_DIVIDER_WIDTH)));
+            }
+        }
+        if let (Some(body),Some(footer))=(self.body,self.footer){
+            out.push(("body_to_footer",footer.top()-body.bottom()));
+        }
+        out
+    }
+    pub fn invalid_gaps(&self,one_pixel_tolerance:f32)->Vec<(&'static str,f32)>{
+        self.gaps().into_iter()
+            .filter(|(_,actual)|{
+                (*actual-theme::MODAL_MASTER_WORKSPACE_GAP).abs()
+                    >one_pixel_tolerance.max(0.5)
+            }).collect()
+    }
+}
+
+/// One owner for the popup's title, bounded scrolling workspace, and
+/// fixed action footer. Individual editors supply only their contents.
+/// All structural gaps are allocated ONCE at the owning level.
+pub struct ModalEditorWorkspace<'a> {
+    ui:&'a mut Ui,
+    geometry:ModalEditorGeometry,
+}
+impl ModalEditorWorkspace<'_> {
+    pub fn body<R>(
+        &mut self,max_height:f32,
+        contents:impl FnOnce(&mut Ui)->(R,ModalEditorBodyGeometry),
+    )->R{
+        self.ui.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
+        let result=self.ui.scope(|host|{
+            egui::ScrollArea::vertical()
+                .id_salt("modal-editor-workspace-body")
+                .max_height(max_height)
+                .auto_shrink([false,true])
+                .show(host,|scroller|{
+                    Frame::NONE.inner_margin(egui::Margin::symmetric(
+                        theme::MODAL_MASTER_CONTENT_INSET as i8,0
+                    )).show(scroller,|body|{
+                        modal_master_controlled_spacing(body);
+                        contents(body)
+                    }).inner
+                }).inner
+        });
+        self.geometry.body=Some(result.response.rect);
+        let (value,measured)=result.inner;
+        self.geometry.content=measured;
+        value
+    }
+
+    pub fn footer(
+        &mut self,
+        leading:impl FnOnce(&mut Ui),
+        trailing:impl FnOnce(&mut Ui),
+    ){
+        self.ui.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
+        let top=self.ui.cursor().min;
+        let width=self.ui.available_width();
+        modal_action_row_split(self.ui,leading,trailing);
+        self.geometry.footer=Some(Rect::from_min_size(
+            top,Vec2::new(width,theme::MODAL_FOOTER_HEIGHT)
+        ));
+    }
+}
+
+pub fn modal_editor_workspace<R>(
+    ui:&mut Ui,title:&str,close_label:&str,enabled:bool,
+    contents:impl FnOnce(&mut ModalEditorWorkspace<'_>)->R,
+)->(bool,R,ModalEditorGeometry){
+    modal_master_controlled_spacing(ui);
+    let (header,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),theme::MODAL_HEADER_HEIGHT),
+        Sense::hover()
+    );
+    let close=modal_master_header_in_rect(
+        ui,header,title,"",close_label,enabled
+    );
+    let mut owner=ModalEditorWorkspace{
+        ui,geometry:ModalEditorGeometry{
+            header:Some(header),..Default::default()
+        },
+    };
+    let value=contents(&mut owner);
+    (close,value,owner.geometry)
+}
+
 /// Fixed popup title region with its own background and a single
 /// Freight-master DIVIDER at the bottom. This is an opt-in popup v2
 /// component during the three-screen rollout: old dialogs keep their
@@ -956,8 +1085,14 @@ pub fn modal_master_body_section<R>(
 pub fn modal_section<R>(
     ui:&mut Ui,title:&str,contents:impl FnOnce(&mut Ui)->R
 )->R {
-    // Frame::show is otherwise content-sized and the section border can
-    // become narrower when a list is empty or an error message disappears.
+    modal_section_measured(ui,title,contents).inner
+}
+
+/// Exact outer card rectangle from the same canonical section renderer.
+/// Do not estimate it from the inner body or content text size.
+pub fn modal_section_measured<R>(
+    ui:&mut Ui,title:&str,contents:impl FnOnce(&mut Ui)->R
+)->egui::InnerResponse<R>{
     let inner_width=(ui.available_width()-2.0*theme::MODAL_SECTION_PADDING
         -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
     Frame::new()
@@ -972,7 +1107,7 @@ pub fn modal_section<R>(
                 body.spacing_mut().item_spacing.y=theme::SPACING;
                 contents(body)
             }).inner
-        }).inner
+        })
 }
 
 /// Structural spacing for an explicitly managed modal workspace.
@@ -987,7 +1122,7 @@ pub fn modal_master_controlled_spacing(ui:&mut Ui){
 
 /// One shared 16pt space / 1pt divider / 16pt space sequence. Call from a
 /// modal_master_controlled_spacing surface to prevent implicit extra gaps.
-pub fn modal_master_spaced_divider(ui:&mut Ui){
+pub fn modal_master_spaced_divider(ui:&mut Ui)->Rect{
     let gap=theme::MODAL_MASTER_WORKSPACE_GAP;
     let thickness=theme::SOFT_DIVIDER_WIDTH;
     let (rect,_)=ui.allocate_exact_size(
@@ -998,6 +1133,7 @@ pub fn modal_master_spaced_divider(ui:&mut Ui){
         [egui::pos2(rect.left(),y),egui::pos2(rect.right(),y)],
         Stroke::new(thickness,theme::DIVIDER)
     );
+    rect
 }
 
 /// Same nested-section surface for absolute-layout dialogs such as OCR.
