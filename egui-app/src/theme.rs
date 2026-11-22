@@ -889,20 +889,34 @@ pub fn nested_frame() -> Frame {
 /// Paint-only hover emphasis for every actionable rectangular control,
 /// including buttons with explicit fills that bypass egui's hovered fill.
 //// No layout, font metrics, border rect or hit area changes on hover.
-pub fn paint_button_hover(ui:&Ui,response:&Response,radius:f32){
+/// Hover paint must use the SAME corner geometry as its button.
+/// A rectangular highlight inside a rounded date group leaves blue diagonal
+/// slivers and gets clipped by the group's outer border.
+pub fn paint_button_hover_corners(
+    ui:&Ui,response:&Response,corners:egui::CornerRadius
+){
     if !response.hovered(){return;}
-    let paint=ui.painter().with_clip_rect(ui.clip_rect());
     let rect=response.rect.shrink(0.5);
     if rect.width()<=1.0 || rect.height()<=1.0{return;}
+    let paint=ui.painter().with_clip_rect(
+        ui.clip_rect().intersect(response.rect)
+    );
     paint.rect_filled(
-        rect,radius,
+        rect,corners,
         Color32::from_rgba_unmultiplied(112,180,255,20)
     );
     paint.rect_stroke(
-        rect,radius,
+        rect,corners,
         Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.82)),
         egui::StrokeKind::Inside
     );
+}
+
+/// Existing buttons keep their uniform corner radius. Segmented controls can
+/// use paint_button_hover_corners without altering other components.
+pub fn paint_button_hover(ui:&Ui,response:&Response,radius:f32){
+    let radius=egui::CornerRadius::same(radius.round().clamp(0.0,255.0) as u8);
+    paint_button_hover_corners(ui,response,radius);
 }
 
 pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
