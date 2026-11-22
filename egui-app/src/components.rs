@@ -2355,6 +2355,64 @@ pub fn management_chooser_row(
     response.on_hover_text(format!("{title} / {status}"))
 }
 
+/// Read-only presentation of a canonical client. Used by both management
+/// rows and the compact Reception card; never modifies billing or matching.
+#[derive(Clone,Debug)]
+pub struct ClientDisplaySummary{
+    pub name:String,pub tier:String,pub address:String,
+    pub phone:String,pub mobile:String,pub conditions:String,
+}
+pub fn client_tier_label(tier:&str)->&'static str{
+    match tier{
+        "wholesale"=>"도매","semi"=>"반도매",
+        "retail"=>"소매","special"=>"특수",_=>"미지정"
+    }
+}
+pub fn client_exception_terms(client:&serde_json::Value)->String{
+    let mut flags=Vec::new();
+    if client["payment"].as_str()==Some("POSTPAID"){flags.push("후불");}
+    if client["defaultApplyVat"].as_bool().unwrap_or(false){
+        flags.push("부가세 포함");
+    }
+    if client["shippingFeeExcluded"].as_bool().unwrap_or(false){
+        flags.push("운임 청구 제외");
+    }
+    if client["active"]==serde_json::Value::Bool(false){
+        flags.push("거래 중지");
+    }
+    flags.join(" / ")
+}
+impl ClientDisplaySummary{
+    pub fn from_client(client:&serde_json::Value)->Self{
+        let field=|key:&str|client.get(key)
+            .and_then(serde_json::Value::as_str).unwrap_or("").to_owned();
+        let name=client.get("name").and_then(serde_json::Value::as_str)
+            .filter(|s|!s.trim().is_empty())
+            .or_else(||client.get("displayName").and_then(serde_json::Value::as_str))
+            .unwrap_or("").to_owned();
+        Self{name,tier:field("tier"),address:field("address"),
+            phone:field("phone"),mobile:field("mobile"),
+            conditions:client_exception_terms(client)}
+    }
+    pub fn primary_phone(&self)->&str{
+        if self.phone.trim().is_empty(){&self.mobile}else{&self.phone}
+    }
+    pub fn secondary_mobile(&self)->&str{
+        if self.phone.trim().is_empty() || self.mobile.trim().is_empty()
+            || self.phone==self.mobile{""}else{&self.mobile}
+    }
+    pub fn hover_details(&self)->String{
+        let mut parts=vec![self.name.clone()];
+        if !self.address.trim().is_empty(){parts.push(format!("주소: {}",self.address));}
+        if !self.phone.trim().is_empty(){parts.push(format!("전화번호: {}",self.phone));}
+        if !self.mobile.trim().is_empty()&&self.mobile!=self.phone{
+            parts.push(format!("휴대폰번호: {}",self.mobile));
+        }
+        if !self.conditions.is_empty(){parts.push(self.conditions.clone());}
+        parts.join("\n")
+    }
+}
+
 /// The tier palette belongs to the shared design system. Badge geometry is
 /// painted inside the client column and cannot expand the row's layout.
 fn client_tier_colors(tier:&str)->(Color32,Color32) {
@@ -2377,6 +2435,170 @@ fn paint_client_line(
     ui.painter().with_clip_rect(cell).galley(
         egui::pos2(x,y),galley,color
     );
+}
+
+/// Shared measured badge: the longest label (반도매) controls width.
+/// Both the management table and Reception render through this painter.
+fn paint_client_tier_badge(ui:&Ui,cell:Rect,label:&str,tier:&str)->Rect{
+    let (fill,ink)=client_tier_colors(tier);
+    let galley=typography::client_table_metadata_galley(ui,label,ink);
+    let widest=typography::client_table_metadata_galley(ui,"반도매",ink);
+    let width=(widest.size().x.max(galley.size().x)+theme::SPACE_8)
+        .min(cell.width().max(0.0));
+    let height=widest.size().y.max(galley.size().y)+theme::SPACE_4;
+    let badge=Rect::from_min_size(
+        egui::pos2(cell.left(),cell.center().y-height/2.0),
+        Vec2::new(width,height)
+    );
+    ui.painter().with_clip_rect(cell).rect_filled(
+        badge,theme::CONTROL_RADIUS as f32,fill
+    );
+    paint_client_line(
+        ui,badge,badge.left()+(badge.width()-galley.size().x)/2.0,galley,ink
+    );
+    badge
+}
+
+/// Compact Reception client reference. Does not use the 900pt table grid;
+/// the original reserved rectangle remains exactly 70pt at normal height.
+pub fn reception_client_summary_card(
+    ui:&mut Ui,rect:Rect,linked:bool,
+    summary:Option<&ClientDisplaySummary>,fallback:&str,state:&str,
+)->bool{
+    paint_reception_client_summary_surface(ui,rect);
+    if rect.width()<40.0||rect.height()<18.0{return false;}
+    let inset=theme::SPACE_12.min(rect.width()/6.0);
+    let button_label=if linked{"변경"}else{"거래처 찾기"};
+    let button_width=if linked{76.0}else{112.0};
+    let has_button=rect.width()>button_width+2.0*inset+48.0
+        && rect.height()>=theme::ACTION_STANDARD_HEIGHT;
+    let button_x=rect.right()-inset-button_width;
+    let text_right=if has_button{
+        button_x-theme::SPACE_8
+    }else{rect.right()-inset};
+    let left=rect.left()+inset;
+    let top=rect.top()+theme::SPACE_8;
+    let heading=Rect::from_min_max(
+        egui::pos2(left,top),
+        egui::pos2(text_right,(top+typography::METADATA_LINE_HEIGHT)
+            .min(rect.bottom()))
+    );
+    if heading.width()>0.0&&heading.height()>0.0{
+        let caption=typography::client_table_metadata_galley(
+            ui,"현재 거래처",theme::MUTED
+        );
+        paint_client_line(ui,heading,left,caption.clone(),theme::MUTED);
+        let state_x=left+caption.size().x+theme::SPACE_8;
+        if !state.is_empty()&&state_x<heading.right(){
+            let cell=Rect::from_min_max(
+                egui::pos2(state_x,heading.top()),heading.right_bottom()
+            );
+            paint_client_line(
+                ui,cell,state_x,
+                typography::client_table_metadata_galley(ui,state,theme::SECONDARY),
+                theme::SECONDARY
+            );
+        }
+    }
+    let row_top=(top+typography::METADATA_LINE_HEIGHT+theme::SPACE_4)
+        .min(rect.bottom());
+    let row_bottom=(rect.bottom()-theme::SPACE_8).max(row_top);
+    let row=Rect::from_min_max(
+        egui::pos2(left,row_top),egui::pos2(text_right,row_bottom)
+    );
+    if row.width()>0.0&&row.height()>0.0{
+        let mut x=row.left();
+        if let Some(data)=summary.filter(|c|!c.tier.is_empty()){
+            let badge=paint_client_tier_badge(
+                ui,row,client_tier_label(&data.tier),&data.tier
+            );
+            x=badge.right()+theme::SPACE_8;
+        }
+        if x<row.right(){
+            let name=summary.map(|data|data.name.as_str())
+                .filter(|value|!value.trim().is_empty()).unwrap_or(fallback);
+            let terms=summary.map(|data|data.conditions.as_str()).unwrap_or("");
+            let available=row.right()-x;
+            let terms_galley=typography::client_table_metadata_galley(
+                ui,terms,theme::MUTED
+            );
+            let terms_width=if !terms.is_empty()&&available>160.0{
+                terms_galley.size().x.min(available*0.45)
+            }else{0.0};
+            let name_width=(available-if terms_width>0.0{
+                terms_width+theme::SPACE_8
+            }else{0.0}).max(0.0);
+            let name_cell=Rect::from_min_max(
+                egui::pos2(x,row.top()),
+                egui::pos2(x+name_width,row.bottom())
+            );
+            // Real-font ellipsis, with full text retained in hover details.
+            let full=typography::management_table_cell_galley(
+                ui,name,typography::ManagementTableCellRole::ClientName
+            );
+            let mut shown=name.to_owned();
+            if full.size().x>name_width{
+                shown.clear();
+                for ch in name.chars(){
+                    let next=format!("{shown}{ch}…");
+                    let measured=typography::management_table_cell_galley(
+                        ui,&next,typography::ManagementTableCellRole::ClientName
+                    );
+                    if measured.size().x>name_width{break;}
+                    shown.push(ch);
+                }
+                shown.push('…');
+            }
+            if name_cell.width()>0.0{
+                paint_client_line(
+                    ui,name_cell,x,
+                    typography::management_table_cell_galley(
+                        ui,&shown,typography::ManagementTableCellRole::ClientName
+                    ),theme::TEXT
+                );
+            }
+            if terms_width>0.0{
+                let terms_x=x+name_width+theme::SPACE_8;
+                let terms_cell=Rect::from_min_max(
+                    egui::pos2(terms_x,row.top()),row.right_bottom()
+                );
+                paint_client_line(
+                    ui,terms_cell,terms_x,terms_galley,theme::MUTED
+                );
+            }
+        }
+    }
+    // Register a hover surface first; the action rendered afterward keeps
+    // its own click target and normal shared hover highlight.
+    if let Some(data)=summary{
+        ui.interact(
+            rect,ui.make_persistent_id("source-client-card-hover"),Sense::hover()
+        ).on_hover_text(data.hover_details());
+    }else if linked&&!fallback.is_empty(){
+        ui.interact(
+            rect,ui.make_persistent_id("source-client-card-hover"),Sense::hover()
+        ).on_hover_text(fallback);
+    }
+    if !has_button{return false;}
+    let button_rect=Rect::from_min_size(
+        egui::pos2(button_x,
+            rect.center().y-theme::ACTION_STANDARD_HEIGHT/2.0),
+        Vec2::new(button_width,theme::ACTION_STANDARD_HEIGHT)
+    );
+    let clip=button_rect.intersect(ui.clip_rect());
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .id_salt("source-client-card-action")
+            .max_rect(button_rect)
+            .layout(Layout::left_to_right(Align::Center)),
+        |buttons|{
+            buttons.set_clip_rect(clip);
+            theme::action_with_min_width(
+                buttons,button_label,theme::ButtonRole::Standard,
+                true,button_width
+            ).clicked()
+        }
+    ).inner
 }
 
 /// Shared management-table column separators. Freight Assignment and
@@ -2556,24 +2778,8 @@ fn management_row_impl(
                 theme::SECONDARY
             );
         }else if i==3 {
-            // Uniform badges use the measured widest grade (반도매).
-            // Condition descriptions therefore always start at the same x.
-            let (fill,ink)=client_tier_colors(tier.unwrap_or(""));
-            let badge_text=typography::client_table_metadata_galley(ui,primary,ink);
-            let widest=typography::client_table_metadata_galley(ui,"반도매",ink);
-            let badge_width=(widest.size().x.max(badge_text.size().x)
-                +theme::SPACE_8).min(cell.width());
-            let badge_height=widest.size().y.max(badge_text.size().y)
-                +theme::SPACE_4;
-            let badge=Rect::from_min_size(
-                egui::pos2(cell.left(),cell.center().y-badge_height/2.0),
-                Vec2::new(badge_width,badge_height)
-            );
-            ui.painter().rect_filled(badge,theme::CONTROL_RADIUS as f32,fill);
-            paint_client_line(
-                ui,badge,
-                badge.left()+(badge.width()-badge_text.size().x)/2.0,
-                badge_text,ink
+            let badge=paint_client_tier_badge(
+                ui,cell,primary,tier.unwrap_or("")
             );
             if !secondary.is_empty(){
                 let second=Rect::from_min_max(
@@ -2661,6 +2867,31 @@ mod management_client_column_divider_tests{
             assert!(edges[2]>edges[1]);
             assert!(edges[2]<25.0+width);
         }
+    }
+}
+
+#[cfg(test)]
+mod client_display_summary_tests{
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn shared_tier_and_default_conditions(){
+        let data=json!({"name":"테스트 상사","tier":"semi",
+            "payment":"PREPAID","defaultApplyVat":false,
+            "shippingFeeExcluded":false,"active":true,
+            "phone":"02-1111-2222","mobile":"010-1111-2222"});
+        let summary=ClientDisplaySummary::from_client(&data);
+        assert_eq!(client_tier_label(&summary.tier),"반도매");
+        assert_eq!(summary.conditions,"");
+        assert_eq!(summary.primary_phone(),"02-1111-2222");
+        assert_eq!(summary.secondary_mobile(),"010-1111-2222");
+    }
+    #[test]
+    fn exceptional_conditions_are_shared(){
+        let data=json!({"payment":"POSTPAID","defaultApplyVat":true,
+            "shippingFeeExcluded":true,"active":false});
+        assert_eq!(client_exception_terms(&data),
+            "후불 / 부가세 포함 / 운임 청구 제외 / 거래 중지");
     }
 }
 
