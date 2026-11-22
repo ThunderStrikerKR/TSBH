@@ -408,6 +408,57 @@ mod source_delta_tests{
         assert_eq!(state.raw,"old");
     }
 
+    /// A real worker-thread test, not just a model-level merge assertion.
+    /// Only the last source is written despite several queued keystrokes.
+    struct MockAutosaveGateway{
+        saved:std::sync::Mutex<Vec<WorkingSource>>
+    }
+    impl BandoGateway for MockAutosaveGateway{
+        fn label(&self)->&'static str{"source-autosave-test"}
+        fn load_catalog(&self)->Result<Value,String>{
+            Err("not needed for source-only autosave".into())
+        }
+        fn load_working_source(&self)->Result<WorkingSource,String>{
+            Err("not needed for source-only autosave".into())
+        }
+        fn save_working_source(&self,source:&WorkingSource)->Result<u64,String>{
+            let mut saved=self.saved.lock().unwrap();
+            let expected=saved.last().map(|previous|previous.revision+1)
+                .unwrap_or(12);
+            if source.revision!=expected{
+                return Err("source autosave revision conflict".into());
+            }
+            saved.push(source.clone());
+            Ok(expected+1)
+        }
+        fn execute(
+            &self,_op:ReadOperation,_request:Value
+        )->Result<Value,String>{
+            Err("not needed for source-only autosave".into())
+        }
+    }
+
+    #[test]
+    fn real_worker_coalesces_source_edits_and_flushes_on_drop(){
+        let gateway=Arc::new(MockAutosaveGateway{
+            saved:std::sync::Mutex::new(Vec::new())
+        });
+        let adapter:Arc<dyn BandoGateway>=gateway.clone();
+        let worker=SourceAutosave::new(
+            adapter,snapshot(),egui::Context::default()
+        );
+        for text in ["a","ab","abc","완료"]{
+            worker.queue_source_edit(edit(text)).unwrap();
+        }
+        drop(worker);
+        let saved=gateway.saved.lock().unwrap();
+        assert_eq!(saved.len(),1,"rapid typing must produce one disk commit");
+        assert_eq!(saved[0].raw,"완료");
+        assert_eq!(saved[0].drafts[0].raw,"완료");
+        assert_eq!(saved[0].revision,12);
+        assert_eq!(saved[0].drafts[1].raw,"old");
+    }
+
     #[test]
     fn shutdown_signal_preserves_last_pending_delta_for_worker_flush(){
         let mut state=snapshot();
