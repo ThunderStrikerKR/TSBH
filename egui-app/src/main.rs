@@ -1639,6 +1639,10 @@ impl BandoEgui {
             }
         }
         analysis.reference.truncate(current.len());
+        // Persist the newest OS/Rust remote-area reference into the cached
+        // display snapshot; reopening the draft must not recheck unchanged
+        // addresses solely to recover the indicator.
+        self.queue_source_save();
         ctx.request_repaint();
     }
 
