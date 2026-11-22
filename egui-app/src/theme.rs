@@ -452,7 +452,10 @@ pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 pub const MANAGEMENT_CHOOSER_ROW_HEIGHT: f32 = 48.0;
 // Reception client lookup is a full search-and-compare dialog, not a 460pt
 // compact confirmation. Own its geometry here instead of per-screen literals.
-pub const CLIENT_CHOOSER_DIALOG_WIDTH: f32 = 760.0;
+// The chooser reuses the full 900pt Client Management grid. Reserve enough
+// width for four columns, a native scrollbar and the modal's internal padding;
+// otherwise the old 760pt dialog forced horizontal scrolling at desktop sizes.
+pub const CLIENT_CHOOSER_DIALOG_WIDTH: f32 = 1200.0;
 pub const CLIENT_CHOOSER_DIALOG_HEIGHT: f32 = 700.0;
 pub const CLIENT_CHOOSER_ROW_HEIGHT: f32 = 78.0;
 pub const CLIENT_CHOOSER_RESULTS_MAX_HEIGHT: f32 = 460.0;
