@@ -5,18 +5,18 @@ use serde_json::{json, Value, Map};
 use std::collections::HashSet;
 const MAX_ROWS:usize=20_000;
 const EMPTY:&str="[비우기]";
-const HEADERS:[&str;18]=[
-"__거래처ID","거래처명","송장 표시 상호","주소","우편번호",
+const HEADERS:[&str;17]=[
+"__거래처ID","거래처명","주소","우편번호",
 "전화번호","휴대폰","담당자","연락처 메모","가격등급","결제방식",
 "운임 청구 제외","부가세 기본 적용","거래 상태","거래처 별칭",
 "검색 식별자","주 사용 계좌 ID","보관 상태"];
-const FIELDS:[(&str,usize);12]=[
-("name",1),("displayName",2),("address",3),("postcode",4),
-("phone",5),("mobile",6),("person",7),("contact",8),
-("shortNames",14),("identifiers",15),("preferredAccountId",16),
-("unused",17)];
-const CHANGED:[&str;17]=[
-"name","displayName","address","postcode","phone","mobile",
+const FIELDS:[(&str,usize);11]=[
+("name",1),("address",2),("postcode",3),
+("phone",4),("mobile",5),("person",6),("contact",7),
+("shortNames",13),("identifiers",14),("preferredAccountId",15),
+("unused",16)];
+const CHANGED:[&str;16]=[
+"name","address","postcode","phone","mobile",
 "person","contact","tier","payment","shippingFeeExcluded",
 "defaultApplyVat","active","shortNames","identifiers","preferredAccountId",
 "unused"];
@@ -56,7 +56,7 @@ fn payment(raw:&str,before:&str)->Result<String,String>{
     }
 }
 fn new_client(id:&str)->Value{
-    json!({"id":id,"name":"","displayName":"","address":"","postcode":"",
+    json!({"id":id,"name":"","address":"","postcode":"",
     "phone":"","mobile":"","person":"","contact":"","identifiers":"",
     "shortNames":"","tier":"wholesale","payment":"PREPAID",
     "shippingFeeExcluded":false,"defaultApplyVat":false,
@@ -66,7 +66,7 @@ fn candidate(original:Option<&Value>,cells:&[&str],id:&str)->Result<Value,String
     let is_new=original.is_none();
     let mut next=original.cloned().unwrap_or_else(||new_client(id));
     let map=next.as_object_mut().ok_or("거래처 데이터 형식 오류")?;
-    for (key,index) in FIELDS.iter().take(11){
+    for (key,index) in FIELDS.iter().take(10){
         let raw=at(cells,*index);
         if raw.is_empty() && !is_new {continue}
         let before=map.get(*key).and_then(Value::as_str).unwrap_or("");
@@ -78,23 +78,23 @@ fn candidate(original:Option<&Value>,cells:&[&str],id:&str)->Result<Value,String
         map.insert((*key).into(),json!(value));
     }
     let before_tier=map.get("tier").and_then(Value::as_str).unwrap_or("wholesale");
-    let new_tier=tier(at(cells,9),before_tier)?;
+    let new_tier=tier(at(cells,8),before_tier)?;
     map.insert("tier".into(),json!(new_tier));
     let before_pay=map.get("payment").and_then(Value::as_str).unwrap_or("PREPAID");
-    let new_pay=payment(at(cells,10),before_pay)?;
+    let new_pay=payment(at(cells,9),before_pay)?;
     map.insert("payment".into(),json!(new_pay));
     let old=map.get("shippingFeeExcluded").and_then(Value::as_bool).unwrap_or(false);
-    map.insert("shippingFeeExcluded".into(),json!(flag(at(cells,11),old)?));
-    if !at(cells,12).is_empty() || is_new{
+    map.insert("shippingFeeExcluded".into(),json!(flag(at(cells,10),old)?));
+    if !at(cells,11).is_empty() || is_new{
         let old=map.get("defaultApplyVat").and_then(Value::as_bool).unwrap_or(false);
-        map.insert("defaultApplyVat".into(),json!(flag(at(cells,12),old)?));
+        map.insert("defaultApplyVat".into(),json!(flag(at(cells,11),old)?));
     }
-    if at(cells,13)=="보관"{
+    if at(cells,12)=="보관"{
         return Err("Excel에서 거래처를 삭제하거나 보관 상태로 전환할 수 없습니다.".into())
     }
     let old=map.get("active").and_then(Value::as_bool).unwrap_or(false);
-    map.insert("active".into(),json!(flag(at(cells,13),old)?));
-    let archive=at(cells,17).trim();
+    map.insert("active".into(),json!(flag(at(cells,12),old)?));
+    let archive=at(cells,16).trim();
     let expected=if original.is_some_and(is_deleted){"보관"}else{"사용"};
     if !archive.is_empty() && archive!=expected{
         return Err("보관 상태는 Excel에서 변경할 수 없습니다.".into())
@@ -105,7 +105,7 @@ fn candidate(original:Option<&Value>,cells:&[&str],id:&str)->Result<Value,String
     Ok(next)
 }
 fn changed(before:&Value,after:&Value)->Vec<String>{
-    CHANGED.iter().take(16).filter_map(|key|{
+    CHANGED.iter().take(15).filter_map(|key|{
         let old=val_or_empty(before,key);
         let new=val_or_empty(after,key);
         if old==new{return None}
