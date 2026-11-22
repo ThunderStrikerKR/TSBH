@@ -523,6 +523,17 @@ pub fn modal_header(ui:&mut Ui,title:&str,close_label:&str,enabled:bool)->bool{
     close
 }
 
+/// Header for modal workspaces that use exact structural spacing.
+/// The compact base header already allocates 8pt after its border; top it
+/// up to the shared 16pt block gap, without changing existing popups.
+pub fn modal_header_with_workspace_gap(
+    ui:&mut Ui,title:&str,close_label:&str,enabled:bool
+)->bool{
+    let close=modal_header(ui,title,close_label,enabled);
+    ui.add_space((theme::MODAL_MASTER_WORKSPACE_GAP-theme::SPACE_8).max(0.0));
+    close
+}
+
 /// Fixed popup title region with its own background and a single
 /// Freight-master DIVIDER at the bottom. This is an opt-in popup v2
 /// component during the three-screen rollout: old dialogs keep their
