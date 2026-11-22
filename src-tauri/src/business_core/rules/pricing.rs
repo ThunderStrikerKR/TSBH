@@ -170,6 +170,64 @@ pub(super) fn reprice_order(payload: &Value) -> Result<Value, String> {
 }
 
 
+/// Reception billing is shipment-aware: each recipient may override VAT,
+/// COD, origin and remote-area shipping independently. Never substitute a
+/// partial subtotal for a final payable amount.
+fn reception_totals(order:&Value,client:&Value,freight:&Value)->Result<Value,String>{
+    let recipients=rows(field(order,"recipients"));
+    if recipients.is_empty(){
+        return Ok(json!({"subtotal":null,"shipping":null,"vat":null,"total":null}));
+    }
+    let mut subtotals=Vec::with_capacity(recipients.len());
+    let mut shippings=Vec::with_capacity(recipients.len());
+    let mut vats=Vec::with_capacity(recipients.len());
+    for recipient in recipients{
+        let items=rows(field(recipient,"items"));
+        let subtotal=if items.is_empty(){None}else{
+            items.iter().map(|item|{
+                if str_field(item,"productId").is_empty()
+                    ||str_field(item,"variantId").is_empty(){return None;}
+                let unit=safe(field(item,"unitPrice"))?;
+                let quantity=field(item,"quantity").as_i64()
+                    .filter(|n|*n>0 && *n<=MAX_SAFE)?;
+                unit.checked_mul(quantity).filter(|n|*n<=MAX_SAFE)
+            }).collect::<Option<Vec<i64>>>().and_then(checked_sum)
+        };
+        let bundles=rows(field(freight,"bundles")).iter()
+            .filter(|bundle|field(bundle,"recipientId")==field(recipient,"id"))
+            .collect::<Vec<_>>();
+        let shipping=if flag(client,"shippingFeeExcluded"){Some(0)}
+            else if bundles.is_empty(){None}
+            else{
+                bundles.iter()
+                    .map(|bundle|safe(field(bundle,"billableCharge")))
+                    .collect::<Option<Vec<i64>>>().and_then(checked_sum)
+            };
+        let vat_enabled=field(recipient,"vatOverride").as_bool()
+            .unwrap_or_else(||flag(order,"applyVat"));
+        let vat=if !vat_enabled{Some(0)}
+            else{
+                subtotal.zip(shipping)
+                    .and_then(|(items,shipping)|items.checked_add(shipping))
+                    .filter(|n|*n<=MAX_SAFE)
+                    .map(|base|((base as f64)*0.1).round() as i64)
+                    .filter(|n|*n<=MAX_SAFE)
+            };
+        subtotals.push(subtotal);
+        shippings.push(shipping);
+        vats.push(vat);
+    }
+    let subtotal=subtotals.into_iter().collect::<Option<Vec<_>>>()
+        .and_then(checked_sum);
+    let shipping=shippings.into_iter().collect::<Option<Vec<_>>>()
+        .and_then(checked_sum);
+    let vat=vats.into_iter().collect::<Option<Vec<_>>>()
+        .and_then(checked_sum);
+    let total=subtotal.zip(shipping).zip(vat)
+        .and_then(|((items,shipping),vat)|checked_sum([items,shipping,vat]));
+    Ok(json!({"subtotal":subtotal,"shipping":shipping,"vat":vat,"total":total}))
+}
+
 /// Read-only pricing projection for an employee-modified, unconfirmed intake.
 /// Both the UI preview and SQLite working-reception writer use THIS route.
 pub(super) fn reception_quote(payload:&Value)->Result<Value,String>{
@@ -191,7 +249,7 @@ pub(super) fn reception_quote(payload:&Value)->Result<Value,String>{
     };
     set(&mut order,"shippingFee",shipping)?;
     set(&mut order,"shippingVersion",field(&freight,"version").clone())?;
-    let amounts=totals(&order,client)?;
+    let amounts=reception_totals(&order,client,&freight)?;
     let mut lines=Vec::new();
     for recipient in rows(field(&order,"recipients")){
         for item in rows(field(recipient,"items")){
@@ -251,6 +309,56 @@ mod migration_tests {
         assert_eq!(quote["totals"]["subtotal"],19800);
         assert_eq!(quote["totals"]["shipping"],6000);
         assert_eq!(quote["totals"]["total"],25800);
+    }
+    #[test]
+    fn two_recipients_with_complete_freight_and_mixed_vat_get_order_total(){
+        let state=json!({"products":[{"id":"p","variants":[{"id":"v",
+            "wholesale":59000}]}],"shipping":{"epoch":1}});
+        let order=json!({"id":"draft","raw":"가상","orderType":"AGENCY",
+            "applyVat":false,"recipients":[
+              {"id":"r1","address":"제주특별자치도 제주시 연동 1",
+                "freightCode":"010","dispatchOrigin":"FACTORY",
+                "shippingCharges":{"FACTORY":3000},
+                "remoteDelivery":{"address":"제주특별자치도 제주시 연동 1",
+                    "checked":true,"manual":true},
+                "vatOverride":true,
+                "items":[{"id":"i1","productId":"p","variantId":"v",
+                    "quantity":4,"unitPrice":59000,"manualUnitPrice":59000,
+                    "origin":"FACTORY"}]},
+              {"id":"r2","address":"서울특별시 중구 세종대로 1",
+                "freightCode":"010","dispatchOrigin":"STORE",
+                "shippingCharges":{"STORE":2500},
+                "vatOverride":false,
+                "items":[{"id":"i2","productId":"p","variantId":"v",
+                    "quantity":1,"unitPrice":59000,"manualUnitPrice":59000,
+                    "origin":"STORE"}]}
+            ]});
+        let client=json!({"id":"c","tier":"wholesale"});
+        let quote=reception_quote(&json!({"order":order,"state":state,"client":client}))
+            .unwrap();
+        assert_eq!(quote["linePrices"][0]["amount"],236000);
+        assert_eq!(quote["linePrices"][1]["amount"],59000);
+        assert_eq!(quote["totals"]["subtotal"],295000);
+        assert_eq!(quote["totals"]["shipping"],8500);
+        assert_eq!(quote["totals"]["vat"],24200);
+        assert_eq!(quote["totals"]["total"],327700);
+    }
+    #[test]
+    fn incomplete_second_recipient_does_not_show_false_final_total(){
+        let order=json!({"applyVat":false,"recipients":[
+            {"id":"r1","items":[{"productId":"p","variantId":"v",
+                "quantity":4,"unitPrice":59000}]},
+            {"id":"r2","items":[{"productId":"p","variantId":"v",
+                "quantity":1,"unitPrice":59000}]}
+        ]});
+        let freight=json!({"bundles":[
+            {"recipientId":"r1","billableCharge":6000},
+            {"recipientId":"r2","billableCharge":null}
+        ]});
+        let amounts=reception_totals(&order,&json!({"id":"c"}),&freight).unwrap();
+        assert_eq!(amounts["subtotal"],295000);
+        assert_eq!(amounts["shipping"],Value::Null);
+        assert_eq!(amounts["total"],Value::Null);
     }
     #[test]
     fn manual_unit_price_survives_reprice_but_auto_lines_follow_catalog() {

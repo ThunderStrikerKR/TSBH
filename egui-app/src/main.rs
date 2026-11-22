@@ -5223,9 +5223,22 @@ impl BandoEgui {
                     } else { "" };
                     let total=preview.and_then(|v|v.get("total"))
                         .and_then(serde_json::Value::as_i64);
-                    // The native working preview does not yet project
-                    // shipmentCount or vatLabel. Keep them unknown.
-                    components::reception_total_footer(ui,total,None,"—",note);
+                    let recipients=self.analysis.as_ref()
+                        .map(|analysis|reception_service::recipients(analysis));
+                    let shipment_count=recipients
+                        .filter(|rows|!rows.is_empty()).map(|rows|rows.len());
+                    let vat_label=recipients.and_then(|rows|{
+                        if rows.is_empty(){return None;}
+                        let inclusive=rows.iter().filter(|row|
+                            row["vatOverride"].as_bool()==Some(true)
+                        ).count();
+                        Some(if inclusive==rows.len(){"부가세 포함"}
+                            else if inclusive>0{"부가세 포함/별도"}
+                            else{"부가세 별도"})
+                    }).unwrap_or("—");
+                    components::reception_total_footer(
+                        ui,total,shipment_count,vat_label,note
+                    );
                 });
             },
         );

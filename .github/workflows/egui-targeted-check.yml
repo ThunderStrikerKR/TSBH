@@ -64,6 +64,10 @@ jobs:
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify editable Rust order lines, manual price overrides and remote freight totals
         run: cargo test --manifest-path egui-app/Cargo.toml pricing::migration_tests -- --nocapture
+      - name: Verify complete multi-recipient receipt totals with VAT and doubled freight
+        run: cargo test --manifest-path egui-app/Cargo.toml two_recipients_with_complete_freight -- --nocapture
+      - name: Verify incomplete recipient freight never becomes a false final total
+        run: cargo test --manifest-path egui-app/Cargo.toml incomplete_second_recipient -- --nocapture
       - name: Verify native recipient freight is quoted and collected exactly once
         run: cargo test --manifest-path egui-app/Cargo.toml reception_manual_freight -- --nocapture
       - name: Verify submitted edits replay under authoritative SQLite pricing rules
