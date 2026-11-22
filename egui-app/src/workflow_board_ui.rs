@@ -356,6 +356,9 @@ fn workflow_header(
         components::WorkflowAuxiliaryAction::Manage);
     workflow_auxiliary_at(ui,id,workflow_control_rect(delete),
         components::WorkflowAuxiliaryAction::Delete);
+    // The header is an actionable target even when the status/control
+    // boxes beside it are inert. Hover blue; selected cards remain orange.
+    theme::paint_button_hover(ui,&title_response,theme::CONTROL_RADIUS as f32);
     title_response
 }
 fn stage_name(step:usize,notice:bool)->&'static str{
@@ -397,6 +400,9 @@ fn workflow_primary_at(
             rect.center().x-galley.size().x/2.0,
             rect.center().y-galley.size().y/2.0
         ),galley,ink);
+    // A completed workflow's stage can be disabled for click yet remains an
+    // interactive hover-preview trigger; show the preview affordance.
+    theme::paint_button_hover(ui,&response,5.0);
     response
 }
 /// The lower band is a true full-bleed #292929 surface. Shipping and money
@@ -703,6 +709,9 @@ fn group_frame(
                 if in_preview && response.hovered(){
                     *hovered_row=Some(ship.id.clone());
                 }
+                if response.hovered() && !chosen && !previewed {
+                    theme::paint_button_hover(ui,&response,0.0);
+                }
                 if response.clicked(){
                     event=Some(Event::SelectShipment(Selection{
                         group_id:group.id.clone(),order_id:ship.order_id.clone(),
@@ -779,9 +788,11 @@ fn pending_frame(
                     .unwrap_or("새 발주서");
                 let response=shipment_line(ui,"수취인 확인",
                     &[excerpt.chars().take(60).collect()],"—",false,false,false);
-                if ui.interact(response.rect,
+                let action=ui.interact(response.rect,
                     Id::new(("pending-reception-row",draft.id.as_str(),0usize)),
-                    egui::Sense::click()).clicked(){
+                    egui::Sense::click());
+                theme::paint_button_hover(ui,&action,0.0);
+                if action.clicked(){
                     event=Some(Event::SelectPending(draft.id.clone()));
                 }
             }else{
@@ -801,9 +812,11 @@ fn pending_frame(
                     let response=shipment_line(
                         ui,name,&products,"—",false,false,index%2==1
                     );
-                    if ui.interact(response.rect,
+                    let action=ui.interact(response.rect,
                         Id::new(("pending-reception-row",draft.id.as_str(),index)),
-                        egui::Sense::click()).clicked(){
+                        egui::Sense::click());
+                    theme::paint_button_hover(ui,&action,0.0);
+                    if action.clicked(){
                         event=Some(Event::SelectPending(draft.id.clone()));
                     }
                 }
