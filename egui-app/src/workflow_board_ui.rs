@@ -829,10 +829,20 @@ fn pending_frame(
             event=Some(if selected{Event::TogglePending(draft.id.clone())}
                 else{Event::SelectPending(draft.id.clone())});
         }
+        // A corrected/manual working receipt is the active view. The first
+        // OCR recognition remains immutable audit evidence, not the display
+        // source for recipient IDs or product quantities.
         let recipients=if draft.analysis_raw.as_deref()==Some(draft.raw.as_str()){
-            draft.analysis_evidence.as_ref()
-                .and_then(|v|v.get("recipients"))
-                .and_then(|v|v.as_array()).map(Vec::as_slice).unwrap_or(&[])
+            draft.manual_model.as_ref()
+                .and_then(|model|model.pointer("/model/rows"))
+                .and_then(|value|value.as_array())
+                .or_else(||draft.analysis_view.as_ref()
+                    .and_then(|view|view.pointer("/recognition/recipients"))
+                    .and_then(|value|value.as_array()))
+                .or_else(||draft.analysis_evidence.as_ref()
+                    .and_then(|value|value.get("recipients"))
+                    .and_then(|value|value.as_array()))
+                .map(Vec::as_slice).unwrap_or(&[])
         }else{&[]};
         // Keep the familiar workflow action slot, but dealer matching is
         // fully automatic and never a manually executable stage.
