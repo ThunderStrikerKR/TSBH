@@ -2251,6 +2251,27 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         ));
     }
 
+    /// A verified chooser click owns only the selection intent.
+    /// Dismiss its UI synchronously; the guarded Rust worker keeps the
+    /// original source/choice snapshot and applies it on completion.
+    fn accept_client_chooser_selection(
+        &mut self,client_id:&str,verified:bool,ctx:&egui::Context
+    ){
+        if !verified{return;}
+        // A modal must never remain interactive during asynchronous pricing.
+        self.client_chooser=None;
+        ctx.request_repaint();
+        let complete=self.active_id.as_deref()
+            .and_then(|active|self.drafts.iter().find(|row|row.id==active))
+            .is_some_and(|row|
+                row.client_id.as_deref()==Some(client_id) &&
+                row.pricing_preview.as_ref().is_some_and(complete_reception_quote)
+            );
+        if !complete {
+            self.apply_manual_client(client_id,ctx);
+        }
+    }
+
     fn show_client_chooser(&mut self, ctx: &egui::Context, work_area:Rect) {
         // The chooser belongs to one reception, not a global selection.
         if self.client_chooser.as_ref().is_some_and(|chooser|
@@ -2268,23 +2289,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         );
         match event {
             Some(Choice::Selected(id)) => {
-                let verified = self.client_chooser.as_ref()
-                    .is_some_and(|chooser| chooser.contains(&id));
-                if !verified { return; }
-                // A verified click ends this modal NOW, not when the native
-                // repricing worker reports success. No second row can be
-                // clicked during an in-flight dealer calculation.
-                self.client_chooser=None;
-                ctx.request_repaint();
-                // A completed quote for the same dealer requires no work.
-                let complete=current_id.as_deref()==Some(id.as_str()) &&
-                    self.active_id.as_deref()
-                        .and_then(|active|self.drafts.iter().find(|row|row.id==active))
-                        .and_then(|row|row.pricing_preview.as_ref())
-                        .is_some_and(complete_reception_quote);
-                if !complete {
-                    self.apply_manual_client(&id,ctx);
-                }
+                let verified=self.client_chooser.as_ref()
+                    .is_some_and(|chooser|chooser.contains(&id));
+                self.accept_client_chooser_selection(&id,verified,ctx);
             }
             Some(Choice::Closed) => { self.client_chooser = None; }
             None => {}
