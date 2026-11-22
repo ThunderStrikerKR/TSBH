@@ -478,6 +478,52 @@ mod tests{
         assert!(result["manualClassification"]["blocks"].is_array());
     }
     #[test]
+    fn sqlite_replay_keeps_staff_unit_price_quantity_and_base_freight() {
+        let rid="egui-example:recognition:recipient:0";
+        let iid="egui-example:recognition:item:0";
+        let address="제주특별자치도 제주시 연동 1";
+        let order=json!({"id":"egui-example","raw":"가상 발주",
+            "analysisRaw":"가상 발주","orderType":"AGENCY","clientId":"c",
+            "recipients":[{"id":rid,"name":"가상","address":address,
+                "phone":"","mobile":"","note":"","dispatchOrigin":"FACTORY",
+                "items":[{"id":iid,"name":"709","raw":"709","productId":"p",
+                    "variantId":"v","quantity":2,"quantityConfirmed":true,
+                    "unitPrice":12000,"origin":"FACTORY","sources":[]}],
+                "sources":[]}],"analysisEvidence":[]});
+        let initialized=rule("initial_manual",json!({"order":order})).unwrap();
+        let mut model=initialized["model"].clone();
+        model["rows"][0]["items"][0]["quantity"]=json!(3);
+        model["rows"][0]["items"][0]["quantityConfirmed"]=json!(true);
+        model["rows"][0]["items"][0]["manualUnitPrice"]=json!(9900);
+        // Deliberately forged UI field: the authoritative reducer must
+        // ignore it and derive unitPrice from explicit manualUnitPrice.
+        model["rows"][0]["items"][0]["unitPrice"]=json!(1);
+        model["rows"][0]["remoteDelivery"]=json!({
+            "address":address,"manual":true,"checked":true
+        });
+        model["rows"][0]["shippingCharges"]=json!({"FACTORY":3000});
+        let state=json!({"products":[{"id":"p","active":true,
+            "variants":[{"id":"v","wholesale":12000}]}],
+            "clients":[{"id":"c","tier":"wholesale"}],"shipping":{"epoch":1}});
+        let verified=verify_apply(
+            &order,&state,&state["clients"][0],
+            &json!({"sourceRaw":"가상 발주","orderType":"AGENCY",
+                "clientId":"c","model":model,
+                "assignmentOrder":initialized["assignmentOrder"]})
+        ).unwrap();
+        let item=&verified["recipients"][0]["items"][0];
+        assert_eq!(item["quantity"],3);
+        assert_eq!(item["manualUnitPrice"],9900);
+        assert_eq!(item["unitPrice"],9900);
+        assert_eq!(verified["recipients"][0]["shippingCharges"]["FACTORY"],3000);
+        let quote=rules::execute("calculate_reception_quote",json!({
+            "order":verified,"state":state,"client":state["clients"][0]
+        })).unwrap();
+        assert_eq!(quote["linePrices"][0]["amount"],29700);
+        assert_eq!(quote["freightLines"][0]["appliedCharge"],6000);
+        assert_eq!(quote["totals"]["total"],35700);
+    }
+    #[test]
     fn only_new_employee_ids_bypass_existing_scoped_ids(){
         assert_eq!(scoped("egui-1","recognition:recipient:0"),
             "egui-1:recognition:recipient:0");
