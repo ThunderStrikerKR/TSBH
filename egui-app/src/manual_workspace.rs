@@ -73,6 +73,120 @@ pub enum Event {
         quote:Option<Value>,quote_error:Option<String> },
 }
 
+/// A direct in-place edit from the reception pane. The visible cell owns
+/// focus and typing; the Rust business reducer remains the only mutation
+/// authority. No modal or UI-side price/quantity calculation is used.
+#[derive(Clone,Debug)]
+pub struct InlineRequest {
+    pub recipient_id:String,
+    pub item_id:Option<String>,
+    pub field:String,
+    pub value:Value,
+}
+pub fn apply_inline(
+    gateway:&dyn BandoGateway,source:&WorkingReception,change:&InlineRequest
+)->Result<Event,String>{
+    let evidence=source.analysis_evidence.as_ref()
+        .ok_or("최초 Rust 인식 결과가 없습니다.")?;
+    let order=native_order(gateway,source,evidence)?;
+    let previous=source.manual_model.as_ref();
+    let initialized=rule(gateway,json!({
+        "action":"initial_manual","order":&order,
+        "assignmentOrder":previous.and_then(|v|v.get("assignmentOrder"))
+            .cloned().unwrap_or_else(||json!([]))
+    }))?;
+    let mut model=previous.and_then(|v|v.get("model")).filter(|v|v.is_object())
+        .cloned().or_else(||initialized.get("model").cloned())
+        .ok_or("수취인 편집 작업본이 없습니다.")?;
+    let keys=previous.and_then(|v|v.get("assignmentOrder"))
+        .or_else(||initialized.get("assignmentOrder"))
+        .and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut cell=json!({"recipientId":change.recipient_id,"field":change.field});
+    if let Some(item)=change.item_id.as_deref(){cell["itemId"]=json!(item);}
+    let mut action=if change.item_id.is_some(){
+        match change.field.as_str(){
+            "quantity"=>"native_confirm_quantity",
+            "unitPrice"=>"set_manual_unit_price",
+            "product"=>"set_manual_product",
+            _=>return Err("지원하지 않는 품목 입력 항목입니다.".into())
+        }
+    }else{
+        match change.field.as_str(){
+            "name"|"address"|"mobile"|"phone"|"note"=>"set_manual_recipient_field",
+            "shippingCharge"|"dispatchOrigin"|"freightCode"|
+            "remoteDelivery"|"vatOverride"=>"set_manual_delivery_option",
+            _=>return Err("지원하지 않는 수취인 입력 항목입니다.".into())
+        }
+    };
+    let mut payload=json!({
+        "action":action,"order":&order,"model":&model,
+        "assignmentOrder":&keys,"cell":cell,"value":change.value
+    });
+    if action=="set_manual_product"{
+        // Follow the original native editor's catalog/recognition path.
+        let state=if std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .is_some_and(|value|!value.is_empty()){
+            gateway.load_business_state()?
+        }else{gateway.load_catalog()?};
+        payload["state"]=state;
+        payload["candidateIds"]=json!((0..20).map(|_|unique_id()).collect::<Vec<_>>());
+    }
+    let response=if action=="native_confirm_quantity"{
+        let first=rule(gateway,json!({
+            "action":"set_manual_quantity_draft","model":model,
+            "cell":payload["cell"],"value":payload["value"]
+        }))?;
+        rule(gateway,json!({
+            "action":"confirm_manual_quantity","model":first["model"],
+            "cell":payload["cell"],"assignmentOrder":&keys
+        }))?
+    }else{
+        rule(gateway,payload)?
+    };
+    model=response.get("model").filter(|v|v.is_object())
+        .ok_or("Rust 직접 수정 결과가 올바르지 않습니다.")?.clone();
+    let status=rule(gateway,json!({
+        "action":"manual_quantity_status","model":&model
+    }))?;
+    if status["pending"]==true{
+        // Editing the next cell must not silently commit a partly confirmed
+        // quantity. The draft still lives only in the native edit projection.
+        // Other existing quantity issues can be resolved one field at a time.
+    }
+    let applied=rule(gateway,json!({
+        "action":"apply_manual","order":&order,"model":&model,
+        "assignmentOrder":&keys
+    }))?;
+    let updated=applied.get("order").filter(|v|v.is_object())
+        .ok_or("Rust 수정 적용 결과에 주문 데이터가 없습니다.")?.clone();
+    let (quote,quote_error)=if let Some(id)=source.client_id.as_deref(){
+        let result=(||->Result<Value,String>{
+            let state=gateway.load_business_state()?;
+            let client=state["clients"].as_array().and_then(|clients|
+                clients.iter().find(|client|client["id"].as_str()==Some(id))
+            ).ok_or("거래처의 가격 기준이 없습니다.")?;
+            let mut projected=gateway.execute(
+                ReadOperation::CalculateReceptionQuote,
+                json!({"order":&updated,"state":&state,"client":client})
+            )?;
+            projected["authorityRevision"]=state.get("revision").cloned()
+                .unwrap_or(Value::Null);
+            Ok(projected)
+        })();
+        match result{
+            Ok(quote)=>(Some(quote),None),
+            Err(error)=>(None,Some(format!("Rust 재계산 실패: {error}")))
+        }
+    }else{(None,None)};
+    Ok(Event::Applied{
+        order_id:source.id.clone(),raw:source.raw.clone(),
+        order_type:source.order_type.clone(),client_id:source.client_id.clone(),
+        model,assignment_order:keys.iter().filter_map(Value::as_str)
+            .map(str::to_owned).collect(),
+        order:updated,quote,quote_error
+    })
+}
+
 pub struct ManualWorkspace {
     pub order_id:String,
     raw:String,
