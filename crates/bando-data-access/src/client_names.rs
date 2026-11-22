@@ -17,29 +17,33 @@ fn key(raw:&str)->String{
 /// duplicated. A sender's official name never becomes an unnecessary tag.
 pub fn normalize(client:&mut Value)->bool{
     let Some(map)=client.as_object_mut() else{return false};
-    let Some(legacy)=map.remove("displayName") else{return false};
-    let name=map.get("name").and_then(Value::as_str).unwrap_or("");
-    let name_key=key(name);
-    let legacy=legacy.as_str().unwrap_or("").trim();
+    // Never silently drop malformed legacy data. Normal live records use
+    // a string; an unexpected non-string value is preserved for diagnosis.
+    let Some(legacy)=map.get("displayName").and_then(Value::as_str) else{return false};
+    let legacy=legacy.trim().to_owned();
+    map.remove("displayName");
     if legacy.is_empty(){return true;}
+    let name=map.get("name").and_then(Value::as_str).unwrap_or("");
     let identifiers=map.get("identifiers").and_then(Value::as_str).unwrap_or("");
     let existing=map.get("shortNames").and_then(Value::as_str).unwrap_or("");
-    let mut tags=existing.split(',').map(str::trim)
-        .filter(|tag|!tag.is_empty()).map(str::to_owned).collect::<Vec<_>>();
     let mut seen=std::collections::HashSet::<String>::new();
-    seen.insert(name_key);
-    for tag in identifiers.split(',').map(str::trim){
-        if !tag.is_empty(){seen.insert(key(tag));}
+    seen.insert(key(name));
+    let split=|raw:&str|raw.split(|ch|matches!(ch,','|';'|'|'|'\n'))
+        .map(str::trim).filter(|term|!term.is_empty());
+    for tag in split(identifiers).chain(split(existing)){
+        seen.insert(key(tag));
     }
-    // Preserve all existing tag strings in original order. The legacy
-    // override is appended only if it adds a genuinely new search key.
-    for tag in &tags{seen.insert(key(tag));}
-    for tag in legacy.split(',').map(str::trim){
+    let mut added=Vec::<String>::new();
+    for tag in split(&legacy){
         let term=key(tag);
-        if !term.is_empty() && seen.insert(term){tags.push(tag.to_owned());}
+        if !term.is_empty() && seen.insert(term){added.push(tag.to_owned());}
     }
-    if tags.len()>existing.split(',').filter(|v|!v.trim().is_empty()).count(){
-        map.insert("shortNames".into(),json!(tags.join(", ")));
+    // Preserve the original text of existing identifiers and tags exactly:
+    // only append aliases that are genuinely new.
+    if !added.is_empty(){
+        let combined=if existing.trim().is_empty(){added.join(", ")}
+            else{format!("{}, {}",existing.trim(),added.join(", "))};
+        map.insert("shortNames".into(),json!(combined));
     }
     true
 }
@@ -123,6 +127,13 @@ mod tests{
         let duplicated=json!({"name":"테스트상사","displayName":" 테스트 납품처 01 ",
             "shortNames":"테스트납품처01"});
         assert_eq!(normalized(&duplicated)["shortNames"],"테스트납품처01");
+        let varied=json!({"name":"공식명","displayName":"과거명",
+            "shortNames":"기존;과거명","identifiers":"고유|옛상호"});
+        let result=normalized(&varied);
+        assert_eq!(result["shortNames"],"기존;과거명");
+        assert_eq!(result["identifiers"],"고유|옛상호");
+        let malformed=json!({"name":"공식명","displayName":{"unexpected":1}});
+        assert_eq!(normalized(&malformed),malformed);
     }
     #[test]
     fn existing_fields_and_historical_state_stay_intact(){
@@ -148,32 +159,29 @@ mod tests{
         std::fs::create_dir_all(&base).unwrap();
         let path=base.join("business.sqlite");
         let mut conn=Connection::open(&path).unwrap();
+        // Build an actual v2 schema from the same legacy-to-relational
+        // migration used by production, never a partial hand-made table.
         conn.execute_batch(r#"
             CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
-            CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
-            INSERT INTO core_schema VALUES('business-core',2);
-            CREATE TABLE core_products(id TEXT,position INTEGER,payload TEXT);
-            CREATE TABLE core_product_prices(product_id TEXT,payload TEXT,price_record_id TEXT);
-            CREATE TABLE core_clients(id TEXT,position INTEGER,payload TEXT);
-            CREATE TABLE core_orders(id TEXT,position INTEGER,payload TEXT);
-            CREATE TABLE core_recipients(id TEXT,order_id TEXT,position INTEGER,payload TEXT);
-            CREATE TABLE core_items(id TEXT,recipient_id TEXT,position INTEGER,payload TEXT);
             CREATE TABLE product_index(id TEXT,code TEXT,name TEXT,payload TEXT);
             CREATE TABLE order_index(id TEXT,client_id TEXT,created_at TEXT,confirmed_at TEXT,status TEXT);
             CREATE TABLE receipt_archive(id TEXT,order_id TEXT,record TEXT);
         "#).unwrap();
-        conn.execute("INSERT INTO app_state VALUES (1,?1)",
-            [json!({"revision":7,"aliases":[],"queue":[],"exports":[],
-                "settings":{}}).to_string()]).unwrap();
-        conn.execute("INSERT INTO core_clients VALUES ('c',0,?1)",
-            [json!({"id":"c","name":"테스트상사","displayName":"내부상호",
+        let initial=json!({
+            "revision":7,"products":[],"aliases":[],"queue":[],"exports":[],
+            "settings":{"accounts":[]},
+            "clients":[{"id":"c","name":"테스트상사","displayName":"내부상호",
                 "tier":"wholesale","address":"서울","phone":"02-1234",
-                "shortNames":"기존태그","identifiers":"식별코드"}).to_string()]).unwrap();
-        let historical=json!({"id":"o","clientSnapshot":{
-            "name":"테스트상사","displayName":"과거 송장 표기"}});
-        let historical_text=historical.to_string();
-        conn.execute("INSERT INTO core_orders VALUES ('o',0,?1)",
-            [&historical_text]).unwrap();
+                "shortNames":"기존태그","identifiers":"식별코드"}],
+            "orders":[{"id":"o","clientId":"c","status":"REVIEW",
+                "createdAt":"2026-11-20T00:00:00","recipients":[]}]
+        });
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",
+            [initial.to_string()]).unwrap();
+        crate::recovery::migrate(&mut conn).unwrap();
+        let historical_text:String=conn.query_row(
+            "SELECT payload FROM core_orders WHERE id='o'",[],
+            |r|r.get(0)).unwrap();
         assert_eq!(migrate_v2(&mut conn,&base).unwrap(),1);
         let text:String=conn.query_row("SELECT payload FROM core_clients WHERE id='c'",
             [],|r|r.get(0)).unwrap();
