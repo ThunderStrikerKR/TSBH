@@ -608,9 +608,10 @@ fn group_frame(
             *trigger=Some(group.id.clone());
         }
         if open || in_preview{
-            components::soft_divider(ui);
-            ui.add_space(theme::SPACE_4);
-            workflow_table_header(ui);
+            workflow_details(ui,|ui|{
+                components::soft_divider(ui);
+                ui.add_space(theme::SPACE_4);
+                workflow_table_header(ui);
             for (index,ship) in group.shipments.iter().enumerate(){
                 // Orange means committed selection ONLY on the base card.
                 // Blue means the temporarily hovered row ONLY in the clone.
@@ -631,6 +632,7 @@ fn group_frame(
                     }));
                 }
             }
+            });
         }
     });
     event
@@ -689,9 +691,10 @@ fn pending_frame(
         );
         if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
         if open{
-            components::soft_divider(ui);
-            ui.add_space(theme::SPACE_4);
-            workflow_table_header(ui);
+            workflow_details(ui,|ui|{
+                components::soft_divider(ui);
+                ui.add_space(theme::SPACE_4);
+                workflow_table_header(ui);
             if recipients.is_empty(){
                 let excerpt=draft.raw.lines().find(|s|!s.trim().is_empty())
                     .unwrap_or("새 발주서");
@@ -726,6 +729,7 @@ fn pending_frame(
                     }
                 }
             }
+            });
         }
     });
     event
