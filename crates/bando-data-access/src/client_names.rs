@@ -137,4 +137,63 @@ mod tests{
         }
         assert!(next.get("displayName").is_none());
     }
+
+    #[test]
+    fn sqlite_client_migration_is_backed_up_idempotent_and_keeps_orders(){
+        let nanos=std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let base=std::env::temp_dir().join(format!(
+            "tsbh-client-name-migration-{}-{nanos}",std::process::id()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let path=base.join("business.sqlite");
+        let mut conn=Connection::open(&path).unwrap();
+        conn.execute_batch(r#"
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
+            INSERT INTO core_schema VALUES('business-core',2);
+            CREATE TABLE core_products(id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE core_product_prices(product_id TEXT,payload TEXT,price_record_id TEXT);
+            CREATE TABLE core_clients(id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE core_orders(id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE core_recipients(id TEXT,order_id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE core_items(id TEXT,recipient_id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE product_index(id TEXT,code TEXT,name TEXT,payload TEXT);
+            CREATE TABLE order_index(id TEXT,client_id TEXT,created_at TEXT,confirmed_at TEXT,status TEXT);
+            CREATE TABLE receipt_archive(id TEXT,order_id TEXT,record TEXT);
+        "#).unwrap();
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",
+            [json!({"revision":7,"aliases":[],"queue":[],"exports":[],
+                "settings":{}}).to_string()]).unwrap();
+        conn.execute("INSERT INTO core_clients VALUES ('c',0,?1)",
+            [json!({"id":"c","name":"테스트상사","displayName":"내부상호",
+                "tier":"wholesale","address":"서울","phone":"02-1234",
+                "shortNames":"기존태그","identifiers":"식별코드"}).to_string()]).unwrap();
+        let historical=json!({"id":"o","clientSnapshot":{
+            "name":"테스트상사","displayName":"과거 송장 표기"}});
+        let historical_text=historical.to_string();
+        conn.execute("INSERT INTO core_orders VALUES ('o',0,?1)",
+            [&historical_text]).unwrap();
+        assert_eq!(migrate_v2(&mut conn,&base).unwrap(),1);
+        let text:String=conn.query_row("SELECT payload FROM core_clients WHERE id='c'",
+            [],|r|r.get(0)).unwrap();
+        let client:Value=serde_json::from_str(&text).unwrap();
+        assert_eq!(client["name"],"테스트상사");
+        assert_eq!(client["shortNames"],"기존태그, 내부상호");
+        assert!(client.get("displayName").is_none());
+        let envelope:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",
+            [],|r|r.get(0)).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&envelope).unwrap()["revision"],8);
+        let order:String=conn.query_row("SELECT payload FROM core_orders WHERE id='o'",
+            [],|r|r.get(0)).unwrap();
+        assert_eq!(order,historical_text);
+        assert_eq!(migrate_v2(&mut conn,&base).unwrap(),0);
+        let after:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",
+            [],|r|r.get(0)).unwrap();
+        assert_eq!(after,envelope);
+        let backups=std::fs::read_dir(base.join("backups")).unwrap().count();
+        assert_eq!(backups,1);
+        drop(conn);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 }
