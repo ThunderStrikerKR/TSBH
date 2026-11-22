@@ -63,7 +63,7 @@ pub enum DataValueContext { Table, Form, Reception, CompactCard, Summary }
 /// Consolas digits are optically aligned with Korean unit glyphs using
 /// one shared font-level correction. The +3pt setting looked slightly low
 /// in subsequent 1080p captures; use +2pt without altering control geometry.
-pub const DATA_NUMERIC_GLYPH_OFFSET_Y: f32 = 1.5;
+pub const DATA_NUMERIC_GLYPH_OFFSET_Y: f32 = 2.5;
 
 pub fn data_value_font(_kind:DataValueKind,context:DataValueContext)->FontId {
     let size=match context {
@@ -850,7 +850,7 @@ mod management_table_type_roles_tests {
         assert_eq!(data_value_align(DataValueKind::Quantity),egui::Align::RIGHT);
         assert_eq!(data_value_align(DataValueKind::Date),egui::Align::LEFT);
         assert_eq!(data_value_align(DataValueKind::Phone),egui::Align::LEFT);
-        assert_eq!(DATA_NUMERIC_GLYPH_OFFSET_Y,1.5);
+        assert_eq!(DATA_NUMERIC_GLYPH_OFFSET_Y,2.5);
         assert_eq!(numeric_editor_font(),
             data_value_font(DataValueKind::Money,DataValueContext::Form));
         assert_eq!(management_table_money_font(),
