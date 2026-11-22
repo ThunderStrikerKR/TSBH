@@ -4366,6 +4366,7 @@ impl BandoEgui {
         });
 
         let remaining = bottom_rect.height();
+        let mut edit_item_header=false;
         ui.scope_builder(
             UiBuilder::new().id_salt("details-items").max_rect(bottom_rect)
                 .layout(Layout::top_down(Align::Min)),
@@ -4376,7 +4377,7 @@ impl BandoEgui {
                 Self::section_with_header(pane,"품목 및 운임",remaining,
                     |header|{
                         if theme::action(header,"수정",ButtonRole::Standard,editable).clicked(){
-                            edit_from_pane=true;
+                            edit_item_header=true;
                         }
                         if theme::action(header,"이력",ButtonRole::TableSecondary,has_audit)
                             .clicked(){open_audit=true;}
@@ -4554,6 +4555,7 @@ impl BandoEgui {
                 });
             },
         );
+        if edit_item_header{edit_from_pane=true;}
         // Only authoritative Rust source spans may drive a linked hover.
         // A recognized field with no source evidence must not flash blue as
         // though a corresponding token were found in the original document.
