@@ -259,7 +259,7 @@ fn workflow_card<R>(
                 Pos2::new(r.left()+theme::WORKFLOW_SELECTED_STRIPE,
                     r.bottom()-theme::SOFT_DIVIDER_WIDTH),
             ),
-            0.0,if preview{theme::SELECTION}else{theme::WORKFLOW_SELECTED_BORDER}
+            0.0,if preview{source_highlight::ACTIVE_BORDER}else{theme::WORKFLOW_SELECTED_BORDER}
         );
     }
     response.inner
