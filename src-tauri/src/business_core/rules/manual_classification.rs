@@ -312,8 +312,9 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
                 if old!=origin {
                     if let Some(previous)=recipient.get("shippingCharges")
                         .and_then(|v|v.get(&old)).cloned() {
-                        set(recipient,"shippingCharges",
-                            json!({origin:previous}))?;
+                        let mut charges=Map::new();
+                        charges.insert(origin.to_owned(),previous);
+                        set(recipient,"shippingCharges",Value::Object(charges))?;
                     }
                 }
             },
