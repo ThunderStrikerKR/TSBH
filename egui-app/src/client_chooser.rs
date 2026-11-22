@@ -6,7 +6,9 @@
 use std::{collections::HashMap,sync::{Arc,mpsc::{self,Receiver}}, thread};
 use eframe::egui::{self, Context};
 use serde_json::{json,Value};
-use crate::{gateway::{BandoGateway,ReadOperation}, theme, typography, components};
+use crate::{gateway::{BandoGateway,ReadOperation},
+    theme, typography, components,
+    floating_notice::{self,Tone}};
 
 pub enum Choice {
     Selected(String),
@@ -267,11 +269,18 @@ impl ClientChooser {
                             results_panel.spacing_mut().scroll=
                                 theme::management_table_scroll_style();
                             results_panel.spacing_mut().item_spacing.y=0.0;
-                            if let Some(message)=self.error.as_deref(){
-                                results_panel.label(
-                                    egui::RichText::new(message).color(theme::DANGER)
-                                );
-                            }
+                            // Errors belong to the shared floating toast,
+                            // not an inline row that shifts the pinned table
+                            // header or steals space from the scroll viewport.
+                            floating_notice::section(
+                                ctx,"reception.client_chooser",
+                                results_panel.available_rect_before_wrap()
+                            );
+                            floating_notice::sync(
+                                ctx,"reception.client_chooser.error",
+                                "reception.client_chooser",
+                                Tone::Error,self.error.as_deref()
+                            );
                             if busy {
                                 results_panel.label(typography::caption("거래처 적용 중…"));
                             }
