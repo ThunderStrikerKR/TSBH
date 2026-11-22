@@ -108,7 +108,7 @@ impl ProductExcelUi {
             ctx.request_repaint();
         });
     }
-    pub fn poll(&mut self,ctx:&Context)->Option<Value>{
+    pub fn poll(&mut self,_ctx:&Context)->Option<Value>{
         let received=self.job.as_ref().map(|rx|rx.try_recv());
         match received{
             Some(Ok(Ok(event)))=>{
