@@ -141,9 +141,10 @@ export function ClientManager({
               placeholder="상호 / 주소 / 전화번호 / 별칭 검색"
               value={search} onChange={setSearch}/>
             <div className="management-section-actions" aria-label="거래처 목록 작업">
-          <button type="button" aria-expanded={excelOpen} onClick={() => setExcelOpen((open) => !open)}>Excel 관리</button>
+          <button type="button" data-ui-role="action-standard" aria-expanded={excelOpen} onClick={() => setExcelOpen((open) => !open)}>Excel 관리</button>
           <button
             className="primary"
+            data-ui-role="action-primary"
             onClick={() =>
               beginEdit({
                 id: uid(),
