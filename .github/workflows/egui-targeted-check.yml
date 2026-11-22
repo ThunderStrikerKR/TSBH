@@ -28,6 +28,7 @@ on:
       - egui-app/src/source_highlight.rs
       - egui-app/src/manual_workspace.rs
       - egui-app/src/item_editor.rs
+      - egui-app/src/product_images.rs
       - egui-app/src/manual_product_search.rs
       - src-tauri/src/business_core/rules/manual_draft.rs
       - src-tauri/src/business_core/rules/pricing.rs
@@ -79,6 +80,8 @@ jobs:
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify product details dialog scope, choice and quantity-gated Apply
         run: cargo test --manifest-path egui-app/Cargo.toml item_editor::tests -- --nocapture
+      - name: Verify catalog image source, hidden/manual override, and stable native texture identity
+        run: cargo test --manifest-path egui-app/Cargo.toml product_images::tests -- --nocapture
       - name: Verify product-row click opens correct modal and blocks dirty edits
         run: cargo test --manifest-path egui-app/Cargo.toml reception_item_editor_integration_tests -- --nocapture
       - name: Verify catalog replacement preserves source and confirmed quantity
