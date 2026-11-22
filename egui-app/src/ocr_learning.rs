@@ -8,11 +8,23 @@ use std::collections::{HashMap,HashSet};
 pub const MIN_INDEPENDENT_RECEIPTS: usize = 3;
 pub const MAX_RULES_PER_REVIEW: usize = 12;
 
+/// The two learning families are reported separately, even though the
+/// employee sees one proposed OCR text. This makes audit/debugging explicit
+/// without ever turning a candidate into a confirmed order.
+#[derive(Clone,Debug,Default,PartialEq,Eq)]
+pub struct LearningBreakdown{
+    pub repeated_error_corrections:usize,
+    pub client_form_corrections:usize,
+    pub repeated_error_patterns:usize,
+    pub client_form_patterns:usize,
+}
+
 #[derive(Clone,Debug)]
-pub struct Suggestion {
+pub struct Suggestion{
     pub text:String,
     pub replacements:usize,
     pub patterns:usize,
+    pub learning:LearningBreakdown,
 }
 
 fn is_safe_pattern(text:&str)->bool {
@@ -102,11 +114,22 @@ pub fn suggest(
             support.entry(pair).or_default().insert(order_id.clone());
         }
     }
+    // A repeated OCR error is global, but its correction must not be
+    // contradictory. Even a less-frequent competing target suppresses the
+    // automatic rule instead of allowing a majority rewrite of a name.
+    let mut targets:HashMap<String,HashSet<String>>=HashMap::new();
+    for (from,to) in support.keys(){
+        targets.entry(from.clone()).or_default().insert(to.clone());
+    }
+    let pairs:HashSet<(String,String)>=support.keys().cloned().collect();
     let mut rules=support.into_iter()
-        .filter_map(|((from,to),ids)|
-            (ids.len()>=MIN_INDEPENDENT_RECEIPTS)
+        .filter_map(|((from,to),ids)|{
+            let unambiguous=targets.get(&from).is_some_and(|v|v.len()==1);
+            let reversible=pairs.contains(&(to.clone(),from.clone()));
+            (unambiguous && !reversible
+                && ids.len()>=MIN_INDEPENDENT_RECEIPTS)
                 .then_some((from,to,ids.len()))
-        ).collect::<Vec<_>>();
+        }).collect::<Vec<_>>();
     rules.sort_by(|a,b|b.2.cmp(&a.2)
         .then_with(||b.0.chars().count().cmp(&a.0.chars().count()))
         .then_with(||a.0.cmp(&b.0)));
@@ -121,7 +144,14 @@ pub fn suggest(
             patterns+=1;
         }
     }
-    Suggestion{text:current,replacements,patterns}
+    Suggestion{
+        text:current,replacements,patterns,
+        learning:LearningBreakdown{
+            repeated_error_corrections:replacements,
+            repeated_error_patterns:patterns,
+            ..Default::default()
+        }
+    }
 }
 
 /// Conservative table-form layout learning, scoped to a verified dealer
@@ -164,10 +194,51 @@ fn layout_shape(text:&str)->Option<Vec<u8>>{
     }).collect())
 }
 
+/// Label anchors provide an additional form fingerprint. Two different
+/// order templates can share the same coarse line morphology; visible field
+/// headings help keep their learned line-wrap corrections separate.
+#[derive(Clone,Debug,PartialEq,Eq)]
+struct FormFingerprint{
+    morphology:Vec<u8>,
+    anchors:Vec<(usize,u8)>,
+}
+fn field_anchor(line:&str)->Option<u8>{
+    let leading=line.trim().chars().take(24).collect::<String>();
+    let label=leading.trim_start_matches(|ch:char|
+        matches!(ch,'['|'('|'【'|'<'|' '|'\t')
+    );
+    for (words,id) in [
+        (&["수취인","받는분","받는 사람","받으시는분"][..],1u8),
+        (&["전화번호","연락처","휴대폰","휴대전화"][..],2),
+        (&["주소","배송지","수령지"][..],3),
+        (&["품목","품명","상품명","제품명"][..],4),
+        (&["수량","주문수량"][..],5),
+        (&["비고","요청사항","배송메모"][..],6),
+    ]{
+        if words.iter().any(|word|label.starts_with(word)){
+            return Some(id);
+        }
+    }
+    None
+}
+fn form_fingerprint(text:&str)->Option<FormFingerprint>{
+    Some(FormFingerprint{
+        morphology:layout_shape(text)?,
+        anchors:text.lines().enumerate().filter_map(|(index,line)|
+            field_anchor(line).map(|id|(index,id))
+        ).collect(),
+    })
+}
+
 fn layout_suggestion(
     original:&str, examples:&[OcrLayoutExample], known_client:Option<&str>
 )->(String,usize){
-    let Some(signature)=layout_shape(original) else{
+    // A matching visual silhouette is NEVER dealer identity evidence.
+    // Only a manually verified client may activate that client's form
+    // rules. Unknown-client OCR still benefits from global typo learning.
+    let Some(verified_client)=known_client.filter(|id|!id.trim().is_empty())
+        else{return (original.to_owned(),0);};
+    let Some(signature)=form_fingerprint(original) else{
         return (original.to_owned(),0);
     };
     let (characters,original_gaps)=nonwhite_layout(original);
@@ -179,10 +250,8 @@ fn layout_suggestion(
     let mut groups:HashMap<&str,Vec<&OcrLayoutExample>>=HashMap::new();
     for example in examples {
         let Some(dealer)=example.client_id.as_deref() else{continue};
-        if known_client.is_some_and(|current|current!=dealer) {
-            continue;
-        }
-        if layout_shape(&example.original_text).as_ref()!=Some(&signature){
+        if dealer!=verified_client{continue;}
+        if form_fingerprint(&example.original_text).as_ref()!=Some(&signature){
             continue;
         }
         let (initial_chars,old_gaps)=nonwhite_layout(&example.original_text);
@@ -194,8 +263,9 @@ fn layout_suggestion(
         }
         groups.entry(dealer).or_default().push(example);
     }
-    // A known dealer always stays within that dealer. Without an assigned
-    // dealer, only ONE independently corroborated template may be used.
+    // Each verified dealer/form cohort needs three distinct approved orders.
+    // A second form from that same dealer may coexist with different anchors
+    // without contributing votes to the current layout.
     let mut eligible=groups.into_iter().filter_map(|(_,rows)|{
         let mut receipts=HashSet::new();
         let unique=rows.into_iter().filter(|row|
@@ -260,6 +330,12 @@ pub fn suggest_with_layout(
         text:ordinary.text,
         replacements:ordinary.replacements+joins,
         patterns:ordinary.patterns+usize::from(joins>0),
+        learning:LearningBreakdown{
+            repeated_error_corrections:ordinary.replacements,
+            client_form_corrections:joins,
+            repeated_error_patterns:ordinary.patterns,
+            client_form_patterns:usize::from(joins>0),
+        },
     }
 }
 
@@ -358,6 +434,59 @@ mod tests {
         assert_eq!(layout_suggestion(&incoming.original_text,&cases,None).1,0);
         assert_eq!(layout_suggestion(&incoming.original_text,&cases,Some("A")).0,
             incoming.corrected_text);
+    }
+
+    #[test]
+    fn a_unique_silhouette_is_not_enough_without_verified_client(){
+        let examples=[
+            table_example("1","A",["홍","길","동"],("010-1111-","2222"),
+                ("서울특별시 강남구 테","헤란로 3"),"1개"),
+            table_example("2","A",["김","철","수"],("010-2222-","3333"),
+                ("서울특별시 강남구 가","나다로 5"),"2개"),
+            table_example("3","A",["박","영","희"],("010-3333-","4444"),
+                ("서울특별시 강남구 나","다라로 7"),"3개"),
+        ];
+        let input=table_example("new","A",["최","민","준"],
+            ("010-4444-","5555"),("서울특별시 강남구 라","마바로 9"),"4개");
+        assert_eq!(layout_suggestion(&input.original_text,&examples,None).1,0);
+        assert_eq!(layout_suggestion(&input.original_text,&examples,Some("B")).1,0);
+        assert!(layout_suggestion(&input.original_text,&examples,Some("A")).1>0);
+    }
+    #[test]
+    fn form_headings_keep_same_shape_templates_separate(){
+        assert_eq!(layout_shape("수취인\n가\n나"),layout_shape("품목명\n가\n나"));
+        assert_ne!(form_fingerprint("수취인\n가\n나"),
+            form_fingerprint("품목명\n가\n나"));
+        assert_eq!(form_fingerprint("수취인\n가\n나"),
+            form_fingerprint("수취인\n다\n라"));
+    }
+    #[test]
+    fn conflicting_global_ocr_corrections_are_never_autorun(){
+        let mut examples=Vec::new();
+        for i in 0..3{
+            examples.push(sample(&format!("a{i}"),"서울 특별시 강남구",
+                "서울특별시 강남구"));
+        }
+        examples.push(sample("dispute","서울 특별시 강남구",
+            "서울 특별시 강남동"));
+        let text="서울 특별시 강남구";
+        let output=suggest(text,&examples);
+        assert_eq!(output.text,text);
+        assert_eq!(output.learning.repeated_error_corrections,0);
+    }
+    #[test]
+    fn proposal_reports_two_learning_families_separately(){
+        let entries=[
+            sample("s1","서울 특별시 강남구","서울특별시 강남구"),
+            sample("s2","서울 특별시 강남구","서울특별시 강남구"),
+            sample("s3","서울 특별시 강남구","서울특별시 강남구"),
+        ];
+        let suggestion=suggest_with_layout("서울 특별시 강남구",&entries,&[],None);
+        assert!(suggestion.learning.repeated_error_corrections>0);
+        assert_eq!(suggestion.learning.client_form_corrections,0);
+        assert_eq!(suggestion.replacements,
+            suggestion.learning.repeated_error_corrections
+            +suggestion.learning.client_form_corrections);
     }
 
     #[test]
