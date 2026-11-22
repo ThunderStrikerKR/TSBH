@@ -4554,7 +4554,9 @@ impl BandoEgui {
             return;
         }
         if self.working_sync.is_some() || self.client_change.is_some() ||
-            self.auto_client_change.is_some() || self.source_clear_job.is_some(){
+            self.auto_client_change.is_some() || self.source_clear_job.is_some() ||
+            self.manual_workspace.is_some() || self.ocr_review.is_some() ||
+            self.clipboard_busy || self.pending_replace.is_some(){
             floating_notice::publish(
                 ctx,"reception.workflow",floating_notice::Tone::Error,
                 "진행 중인 접수 작업이 완료된 뒤 삭제하세요."
