@@ -1362,7 +1362,7 @@ impl OrderHistoryManager {
                 |search|{
                     search.set_width(search_rect.width());
                     search.set_height(search_rect.height());
-                    if components::flexible_text_field(
+                    if components::management_search_field(
                         search,&mut self.query,search_rect.width(),
                         "거래처 / 주문 내용 검색"
                     ).changed(){changed=true;}
