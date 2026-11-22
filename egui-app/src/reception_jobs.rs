@@ -31,6 +31,10 @@ pub enum Kind {
     DeleteReception,
     /// Navigation may abandon advisory reads, but not employee writes.
     NavigateReception,
+    /// A chooser or confirmation dialog owns pending user intent.
+    ClientChooser,
+    VatDialog,
+    WorkflowDialog,
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -60,6 +64,9 @@ impl Kind {
             Self::WorkflowAction=>"주문 업무 변경",
             Self::DeleteReception=>"발주서 삭제",
             Self::NavigateReception=>"발주서 전환",
+            Self::ClientChooser=>"거래처 선택 창",
+            Self::VatDialog=>"부가세 설정 창",
+            Self::WorkflowDialog=>"주문 관리 창",
         }
     }
 }
@@ -92,6 +99,11 @@ pub fn admit(request:Kind, active:&[Kind], same_request:bool)->Admission{
                 Kind::ManualClient | Kind::AutomaticClient | Kind::PricingBasis
                 | Kind::Analysis | Kind::RemoteRecheck | Kind::WorkflowAction)
             | (Kind::RemoteRecheck,Kind::RemoteRecheck)
+            // The matching modal is still visible on the employee's
+            // approval click; only its explicitly approved action may pass.
+            | (Kind::VatEdit,Kind::VatDialog)
+            | (Kind::WorkflowAction,Kind::WorkflowDialog)
+            | (Kind::DeleteReception,Kind::WorkflowDialog)
         )
     });
     match blocker {
@@ -193,6 +205,21 @@ mod tests {
         ]{
             assert_eq!(admit(K::SourceReplace,&[writer],false),A::Conflict(writer));
         }
+    }
+
+    #[test]
+    fn open_reception_modals_block_unrelated_work_but_allow_approval(){
+        for kind in [K::ClientChooser,K::VatDialog,K::WorkflowDialog]{
+            assert_eq!(admit(K::NavigateReception,&[kind],false),A::Conflict(kind));
+            assert_eq!(admit(K::SourceReplace,&[kind],false),A::Conflict(kind));
+        }
+        assert_eq!(admit(K::ManualClient,&[K::ClientChooser],false),
+            A::Conflict(K::ClientChooser));
+        assert_eq!(admit(K::VatEdit,&[K::VatDialog],false),A::Start);
+        assert_eq!(admit(K::WorkflowAction,&[K::WorkflowDialog],false),A::Start);
+        assert_eq!(admit(K::DeleteReception,&[K::WorkflowDialog],false),A::Start);
+        assert_eq!(admit(K::DeleteReception,&[K::VatDialog],false),
+            A::Conflict(K::VatDialog));
     }
 
     #[test]
