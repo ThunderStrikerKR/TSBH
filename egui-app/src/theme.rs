@@ -399,6 +399,9 @@ pub const MODAL_HEADER_HEIGHT: f32 = 56.0;
 pub const MODAL_FOOTER_HEIGHT: f32 = 58.0;
 pub const MODAL_SECTION_PADDING: f32 = SPACE_12;
 pub const MODAL_SECTION_RADIUS: u8 = CONTROL_RADIUS;
+// Approved compact modal form row: label and editable value share one 36pt
+// line. No product-management-specific vertical label/input layout.
+pub const MODAL_FORM_LABEL_WIDTH: f32 = 80.0;
 pub const MODAL_PANEL_PADDING_X: f32 = 18.0;
 pub const MODAL_PANEL_PADDING_Y: f32 = 16.0;
 pub const MODAL_DECISION_MAX_WIDTH: f32 = 560.0;
