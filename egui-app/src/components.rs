@@ -682,16 +682,28 @@ pub fn modal_master_header_in_rect(
 }
 
 
+/// A single physical-pixel aligned footer surface for both fixed OCR
+/// dialogs and flow-based confirmations. Owning the rule in one place
+/// prevents half-clipped line segments or doubled separator strokes.
+fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) {
+    let ppp=ui.ctx().pixels_per_point().max(1.0);
+    let rect=modal_master_pixel_aligned_rect(rect,ppp);
+    ui.painter().rect_filled(rect,0.0,theme::PANEL);
+    let width=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
+    let rule_bottom=(rect.top()+width).min(rect.bottom());
+    ui.painter().rect_filled(
+        Rect::from_min_max(
+            rect.left_top(),egui::pos2(rect.right(),rule_bottom)
+        ),0.0,theme::DIVIDER
+    );
+}
+
 /// Canonical quiet modal footer: one upper divider and the final action
 /// anchored at the right, never an additional bottom Cancel button.
 pub fn modal_master_footer_in_rect(
     ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
 ) {
-    ui.painter().rect_filled(rect,0.0,theme::PANEL);
-    ui.painter().line_segment(
-        [rect.left_top(),rect.right_top()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
+    paint_modal_master_footer_surface(ui,rect);
     // Primary actions are 36pt, but standard actions are 34pt. The
     // shared footer must reserve the taller control's ACTUAL hit/paint
     // height; a 34pt clip sliced 2pt off the bottom of "적용".
@@ -745,11 +757,7 @@ pub fn modal_action_row<R>(
         Vec2::new(ui.available_width(),theme::MODAL_FOOTER_HEIGHT),
         Sense::hover()
     );
-    ui.painter().rect_filled(rect,0.0,theme::PANEL);
-    ui.painter().line_segment(
-        [rect.left_top(),rect.right_top()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
+    paint_modal_master_footer_surface(ui,rect);
     let action_height=theme::ACTION_PRIMARY_HEIGHT
         .max(theme::ACTION_STANDARD_HEIGHT);
     let area=Rect::from_min_size(
@@ -769,6 +777,29 @@ pub fn modal_action_row<R>(
             actions(buttons)
         }
     )
+}
+
+/// Two-ended footer for an editor with both a contextual/danger action
+/// and a final Save/Apply action. The OCR-master surface, rule, height and
+/// button hitbox still belong to `modal_action_row`.
+///
+/// Independent LEFT and RIGHT slots prevent the primary action from being
+/// pushed off-screen by a longer destructive label or variable-width status.
+pub fn modal_action_row_split(
+    ui:&mut Ui,
+    leading:impl FnOnce(&mut Ui),
+    trailing:impl FnOnce(&mut Ui),
+) {
+    modal_action_row(ui,|footer|{
+        footer.columns(2,|columns|{
+            columns[0].with_layout(
+                Layout::left_to_right(Align::Center),|left|leading(left)
+            );
+            columns[1].with_layout(
+                Layout::right_to_left(Align::Center),|right|trailing(right)
+            );
+        });
+    });
 }
 
 pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {

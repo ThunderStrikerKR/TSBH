@@ -4470,7 +4470,7 @@ impl BandoEgui {
                         self.freight_pending_save=true;
                     }
                 }
-                if theme::action(bar,"저장 안 함",ButtonRole::Standard,
+                if theme::action(bar,"저장 안 함",ButtonRole::Danger,
                     !manager.busy()).clicked(){
                     manager.discard_drafts();
                     self.page=next;
@@ -4515,7 +4515,7 @@ impl BandoEgui {
                     self.settings_pending_save=true;
                     view.save(Arc::clone(&self.gateway),ctx.clone());
                 }
-                if theme::action(actions,"저장 안 함",ButtonRole::Standard,
+                if theme::action(actions,"저장 안 함",ButtonRole::Danger,
                     !view.busy()).clicked(){
                     view.discard();
                     self.page=next;

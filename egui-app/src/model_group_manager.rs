@@ -555,7 +555,7 @@ impl ModelGroupManager {
                                 gateway.model_group_write_enabled()&&!self.busy()&&self.dirty()
                                 &&self.new_name.trim().is_empty()).clicked();
                             discard=theme::action(actions,"저장 안 함",
-                                theme::ButtonRole::Standard,!self.busy()).clicked();
+                                theme::ButtonRole::Danger,!self.busy()).clicked();
                         }
                     );
                 });
