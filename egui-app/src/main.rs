@@ -853,7 +853,10 @@ impl BandoEgui {
             row.client_match.as_ref(),
             row.analysis_view.as_ref(),
         )else{return false};
-        let mut recognition=evidence.clone();
+        let mut recognition=view.get("recognition")
+            .filter(|value|value.get("recipients")
+                .is_some_and(serde_json::Value::is_array))
+            .cloned().unwrap_or_else(||evidence.clone());
         if let Some(rows)=row.manual_model.as_ref()
             .and_then(|model|model.pointer("/model/rows"))
             .filter(|rows|rows.is_array()) {
@@ -893,6 +896,8 @@ impl BandoEgui {
         };
         let Some(rows)=row.manual_model.as_ref()
             .and_then(|model|model.pointer("/model/rows"))
+            .or_else(||row.analysis_view.as_ref()
+                .and_then(|view|view.pointer("/recognition/recipients")))
             .or_else(||row.analysis_evidence.as_ref()
                 .and_then(|evidence|evidence.get("recipients")))
             .filter(|rows|rows.is_array()).cloned()
