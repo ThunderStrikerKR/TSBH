@@ -134,7 +134,14 @@ impl BoardUi{
         &mut self,incoming:Option<PendingTarget>,committed:Option<&PendingTarget>,
         ctx:&egui::Context
     ){
-        let now=Instant::now();
+        self.update_pending_order_hover_at(incoming,committed,ctx,Instant::now());
+    }
+    // Only the clock is injected for deterministic 249/250ms transition
+    // tests; the user-facing hit targets and production delay are unchanged.
+    fn update_pending_order_hover_at(
+        &mut self,incoming:Option<PendingTarget>,committed:Option<&PendingTarget>,
+        ctx:&egui::Context,now:Instant
+    ){
         let keep_content=self.pending_content_hovered.take()
             .is_some_and(|order|self.pending_visible.as_ref()
                 .is_some_and(|visible|visible.order_id==order));
@@ -1433,6 +1440,55 @@ mod pending_hover_navigation_tests{
         assert_eq!(visible_pending_recipient(
             "order-a",board.pending_preview(),None
         ),None);
+    }
+
+    #[test]
+    fn deterministic_rapid_hover_respects_each_250ms_boundary_and_keeps_click(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let selected=PendingTarget::recipient("order","kim");
+        let other=PendingTarget::recipient("order","pyo");
+        let t0=Instant::now();
+        let tick=|ms|t0+Duration::from_millis(ms);
+
+        board.update_pending_order_hover_at(
+            Some(selected.clone()),Some(&selected),&ctx,tick(0));
+        assert!(board.pending_preview().is_none());
+        board.update_pending_order_hover_at(
+            Some(other.clone()),Some(&selected),&ctx,tick(100));
+        board.update_pending_order_hover_at(
+            Some(selected.clone()),Some(&selected),&ctx,tick(200));
+        board.update_pending_order_hover_at(
+            Some(other.clone()),Some(&selected),&ctx,tick(240));
+        board.update_pending_order_hover_at(
+            Some(other.clone()),Some(&selected),&ctx,tick(489));
+        assert!(board.pending_preview().is_none(),"249ms cannot activate Pyo");
+
+        board.update_pending_order_hover_at(
+            Some(other.clone()),Some(&selected),&ctx,tick(490));
+        assert_eq!(board.pending_preview(),Some(&other));
+        board.update_pending_order_hover_at(
+            Some(selected.clone()),Some(&selected),&ctx,tick(500));
+        assert!(board.pending_preview().is_none(),
+            "entering Kim must instantly remove Pyo's blue highlight");
+        board.update_pending_order_hover_at(
+            Some(selected.clone()),Some(&selected),&ctx,tick(749));
+        assert!(board.pending_preview().is_none(),"249ms cannot activate Kim");
+        board.update_pending_order_hover_at(
+            Some(selected.clone()),Some(&selected),&ctx,tick(750));
+        assert_eq!(board.pending_preview(),Some(&selected));
+
+        board.update_pending_order_hover_at(None,Some(&selected),&ctx,tick(760));
+        board.update_pending_order_hover_at(None,Some(&selected),&ctx,tick(1009));
+        assert_eq!(board.pending_preview(),Some(&selected),
+            "a pointer gap shorter than 250ms retains the preview");
+        board.update_pending_order_hover_at(None,Some(&selected),&ctx,tick(1010));
+        assert!(board.pending_preview().is_none());
+        assert_eq!(visible_pending_recipient(
+            "order",board.pending_preview(),None
+        ),None);
+        assert!(board.selection.is_none(),
+            "rapid hover cannot commit a different recipient");
     }
 
     #[test]
