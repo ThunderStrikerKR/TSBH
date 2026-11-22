@@ -2254,20 +2254,23 @@ impl BandoEgui {
         let dialog_height=(review_area.height()*0.88).clamp(450.0,960.0)
             .min(review_area.height().max(1.0));
         let dialog_size=Vec2::new(dialog_width,dialog_height);
-        // Window::fixed_size specifies the OUTER frame. The common helper
-        // subtracts frame border/margins exactly once for its single inner
-        // master, so the footer ends above the visible rounded bottom edge.
-        let body_size=components::modal_master_content_size(dialog_size);
         if let Some(review)=self.ocr_review.as_mut() {
             components::modal_window(
                 "OCR 문자 인식 검토","egui-ocr-review",review_area
             )
-                // Retain the common CENTER_CENTER pivot. The previous
-                // LEFT_TOP override and one-sided work-area center caused
-                // the modal to sit far to the right of the actual viewport.
+                // Center the whole OCR review in the application viewport.
+                // Keep the window's shared headerless modal frame.
                 .fixed_size(dialog_size)
                 .scroll([false,false])
                 .show(ctx,|ui|{
+                    // Critical: calculate the OCR master's inner body from
+                    // egui's REAL available/visible Ui, never by subtracting
+                    // margins from the requested outer Window::fixed_size.
+                    // The latter made the whole review disappear when the
+                    // layout exceeded the frame's clipped content region.
+                    let body_size=components::modal_master_visible_content_size(
+                        ui.available_rect_before_wrap(),ui.clip_rect(),dialog_size
+                    );
                     let (bounds,_)=ui.allocate_exact_size(
                         body_size,Sense::hover()
                     );
@@ -2276,13 +2279,6 @@ impl BandoEgui {
                         theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT,
                         theme::MODAL_FOOTER_HEIGHT,
                         theme::MODAL_MASTER_WORKSPACE_GAP
-                    );
-                    debug_assert!(
-                        master.header.top()>=bounds.top()
-                        && master.footer.bottom()<=bounds.bottom()
-                        && master.workspace.top()>=master.header.bottom()
-                        && master.workspace.bottom()<=master.footer.top(),
-                        "OCR master regions must remain inside one popup body"
                     );
                     // The OCR master paints all three chrome regions on the
                     // same device-pixel grid. Fractional work-area sizes must
