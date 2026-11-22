@@ -411,6 +411,13 @@ impl PreviewStore {
                 )).map_err(|e|format!("OCR 학습 이력 확장 실패 ({name}): {e}"))?;
             }
         }
+        // Form learning is always scoped to an explicitly confirmed client.
+        // Index after the non-destructive client_id migration so older local
+        // preview databases remain compatible.
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_ocr_feedback_client_form
+                ON ocr_feedback(client_id,recorded_at,id);"
+        ).map_err(|e|format!("거래처별 OCR 양식 학습 인덱스 준비 실패: {e}"))?;
         // Incrementally backfill table-layout labels for legacy corpus rows.
         // Full OCR text stays byte-for-byte unchanged, so older employee
         // corrections remain useful when the experimental model evolves.
@@ -708,25 +715,34 @@ impl PreviewStore {
         rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
     }
 
-    /// Read training examples with full, auditable text. Unreviewed
-    /// model predictions are not treated as independent human corrections.
-    pub fn list_ocr_layout_examples(limit:usize)->Result<Vec<OcrLayoutExample>,String>{
+    /// Retrieve ONLY a confirmed client's form examples. A global LIMIT
+    /// would starve infrequent clients when the shared OCR corpus grows.
+    /// Unverified dealer associations and predictions accepted without an
+    /// independent human correction cannot teach that client's layout.
+    pub fn list_ocr_layout_examples_for_client(
+        client_id:&str,limit:usize
+    )->Result<Vec<OcrLayoutExample>,String>{
+        if client_id.trim().is_empty(){return Ok(Vec::new());}
         let store=Self::initialize()?;
         let conn=store.open_connection()?;
         let mut stmt=conn.prepare(
             "SELECT order_id,client_id,original_text,corrected_text
              FROM ocr_feedback
-             WHERE (learning_used=0 OR model_suggestion IS NULL
+             WHERE client_id=?1
+               AND (learning_used=0 OR model_suggestion IS NULL
                  OR corrected_text<>model_suggestion)
                AND layout_trace_json IS NOT NULL
-             ORDER BY recorded_at DESC,id DESC LIMIT ?1"
+             ORDER BY recorded_at DESC,id DESC LIMIT ?2"
         ).map_err(|e|e.to_string())?;
-        let rows=stmt.query_map([limit.min(1000) as i64],|row|Ok(OcrLayoutExample{
-            order_id:row.get(0)?,
-            client_id:row.get(1)?,
-            original_text:row.get(2)?,
-            corrected_text:row.get(3)?,
-        })).map_err(|e|e.to_string())?;
+        let rows=stmt.query_map(
+            params![client_id,limit.min(1000) as i64],
+            |row|Ok(OcrLayoutExample{
+                order_id:row.get(0)?,
+                client_id:row.get(1)?,
+                original_text:row.get(2)?,
+                corrected_text:row.get(3)?,
+            })
+        ).map_err(|e|e.to_string())?;
         rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
     }
 
