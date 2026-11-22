@@ -1879,15 +1879,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // The tax rate applies to the whole order and precedes
             // both the bulk and the per-recipient VAT selections.
             ui.horizontal(|row|{
-                row.label(typography::field_label("부가세율"));
-                row.add_enabled(!busy,
-                    // Width for three whole-number digits (100) and field inset.
-                    // Do not truncate typed decimals: the rate parser still
-                    // accepts fractions such as 7.5 or 10.25 percent.
-                    egui::TextEdit::singleline(&mut dialog.rate_text)
-                        .desired_width(48.0)
+                components::form_field_label(row,"부가세율");
+                // Three-digit compact field; decimals remain supported by
+                // native VAT parser. The 36pt shared TextEdit centers caret,
+                // selection and glyphs together.
+                components::compact_text_field(
+                    row,&mut dialog.rate_text,48.0,!busy
                 );
-                row.label(typography::body("%"));
+                row.add_sized(
+                    egui::vec2(16.0,theme::INPUT_HEIGHT),
+                    egui::Label::new(typography::body("%")).valign(Align::Center)
+                );
             });
             ui.add_space(theme::SPACE_12);
             ui.horizontal_wrapped(|row|{
