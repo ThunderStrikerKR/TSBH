@@ -2568,20 +2568,23 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
 
 /// Geometry shared by recognized working orders and native workflow rows.
 /// The name receives all width not reserved for the two narrow numeric columns.
+/// Stable grid geometry for both the item header and rows.
+/// The product column uses remaining viewport space, but the numeric columns
+/// retain exactly 76pt and 136pt regardless of content or window dimensions.
+/// Below the minimum, the entire grid scrolls instead of compressing columns.
+fn reception_item_table_width(available:f32)->f32 {
+    available.max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH)
+}
 fn reception_item_columns(rect: Rect) -> [Rect; 3] {
-    // Exactly three digits plus `개` fit at 16pt; values >= 1,000 use `999+`.
-    let qty = theme::RECEPTION_ITEMS_QTY_WIDTH;
-    // The amount column only needs to fit the tens-of-millions range,
-    // e.g. "99,999,999원" in 16pt mono. Reserve its existing 136pt cap
-    // even in a narrower pane; do not let it collapse to 74pt and clip digits.
-    let amount = theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH;
-    let name_right = (rect.right() - qty - amount).max(rect.left() + 12.0);
-    let qty_right = (name_right + qty).min(rect.right());
+    let qty=theme::RECEPTION_ITEMS_QTY_WIDTH;
+    let amount=theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH;
+    let name_right=rect.right()-qty-amount;
+    let qty_right=name_right+qty;
     [
-        Rect::from_min_max(rect.min, egui::pos2(name_right, rect.bottom())),
-        Rect::from_min_max(egui::pos2(name_right, rect.top()),
-            egui::pos2(qty_right, rect.bottom())),
-        Rect::from_min_max(egui::pos2(qty_right, rect.top()), rect.max),
+        Rect::from_min_max(rect.min,egui::pos2(name_right,rect.bottom())),
+        Rect::from_min_max(egui::pos2(name_right,rect.top()),
+            egui::pos2(qty_right,rect.bottom())),
+        Rect::from_min_max(egui::pos2(qty_right,rect.top()),rect.max),
     ]
 }
 
@@ -2622,7 +2625,7 @@ pub struct ReceptionItemCells {
 }
 
 pub fn reception_items_header(ui: &mut Ui) {
-    let width = ui.available_width();
+    let width = reception_item_table_width(ui.available_width());
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_HEADER_HEIGHT), Sense::hover()
     );
@@ -2665,7 +2668,7 @@ pub fn reception_item_row(
     ui: &mut Ui, name: &str, quantity: &str, amount: &str,
     active: [bool; 3],
 ) -> ReceptionItemCells {
-    let width = ui.available_width();
+    let width = reception_item_table_width(ui.available_width());
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_ROW_HEIGHT), Sense::hover()
     );
@@ -3031,6 +3034,27 @@ mod management_toolbar_geometry_tests {
             assert_eq!(rect.top()-cell.top(),cell.bottom()-rect.bottom());
             assert!(cell.contains(rect.min)&&cell.contains(rect.max));
         }
+    }
+
+    #[test]
+    fn reception_item_columns_keep_numeric_widths_on_resize() {
+        // Header and every row use the same reserved width; no data value
+        // changes the column geometry.
+        for viewport in [220.0,350.0,392.0,520.0,820.0] {
+            let width=reception_item_table_width(viewport);
+            let area=Rect::from_min_size(
+                egui::pos2(0.0,0.0),Vec2::new(width,42.0)
+            );
+            let [product,quantity,amount]=reception_item_columns(area);
+            assert_eq!(quantity.width(),theme::RECEPTION_ITEMS_QTY_WIDTH);
+            assert_eq!(amount.width(),theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH);
+            assert!(product.width()>=theme::RECEPTION_ITEMS_PRODUCT_MIN_WIDTH);
+            assert_eq!(product.right(),quantity.left());
+            assert_eq!(quantity.right(),amount.left());
+            assert_eq!(amount.right(),area.right());
+        }
+        assert_eq!(reception_item_table_width(220.0),
+            theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH);
     }
 
     #[test]
