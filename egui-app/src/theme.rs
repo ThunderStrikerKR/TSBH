@@ -68,8 +68,12 @@ pub const WORKFLOW_CARD_PADDING_Y: f32 = 8.0;
 pub const WORKFLOW_CARD_RADIUS: u8 = 7;
 pub const WORKFLOW_SELECTED_STRIPE: f32 = 2.0;
 pub const WORKFLOW_CARD_GAP: f32 = SPACE_8;
-pub const WORKFLOW_TITLE_HEIGHT: f32 = 38.0;
-pub const WORKFLOW_BOTTOM_HEIGHT: f32 = 43.0;
+// Both compact card bands reserve 6pt above and below their 30pt controls.
+// Their equal heights keep upper and lower buttons visually balanced at 1080p
+// without moving the fixed-width columns or creating extra list rows.
+pub const WORKFLOW_CONTROL_VERTICAL_INSET: f32 = 6.0;
+pub const WORKFLOW_TITLE_HEIGHT: f32 = 42.0;
+pub const WORKFLOW_BOTTOM_HEIGHT: f32 = WORKFLOW_TITLE_HEIGHT;
 pub const WORKFLOW_BAND_DIVIDER_HEIGHT: f32 = 1.0;
 pub const WORKFLOW_CARD_SLOT_GAP: f32 = SPACE_4;
 pub const WORKFLOW_SIGNAL_WIDTH: f32 = 104.0;
