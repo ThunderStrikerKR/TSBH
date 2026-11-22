@@ -4892,6 +4892,26 @@ impl BandoEgui {
                                             recipient_id:recipient_id.to_owned(),
                                             item_id:None,field:"shippingCharge"
                                         };
+                                        if let Some(decision)=remote_result{
+                                            if let Some(message)=
+                                                reception_service::remote_delivery_notice(decision)
+                                            {
+                                                items_ui.add_space(theme::SPACE_4);
+                                                items_ui.label(typography::status(
+                                                    &message,theme::SELECTED_ORDER
+                                                ));
+                                            }
+                                        }else if let Some(error)=self.analysis.as_ref()
+                                            .and_then(|analysis|
+                                                analysis.reference.get(self.selected_recipient))
+                                            .and_then(|reference|reference.remote_error.as_ref())
+                                        {
+                                            items_ui.add_space(theme::SPACE_4);
+                                            items_ui.label(typography::status(
+                                                &format!("도서/산간 판정 실패 · {error}"),
+                                                theme::SELECTED_ORDER
+                                            ));
+                                        }
                                         let freight_actions=components::reception_freight_row_editable(
                                             items_ui,"운임",line_fee,cod,remote,
                                             true,editable
@@ -4937,26 +4957,6 @@ impl BandoEgui {
                                                     input.key_pressed(egui::Key::Enter))){
                                                 inline_commit=true;
                                             }
-                                        }
-                                        if let Some(decision)=remote_result{
-                                            if let Some(message)=
-                                                reception_service::remote_delivery_notice(decision)
-                                            {
-                                                items_ui.add_space(theme::SPACE_4);
-                                                items_ui.label(typography::status(
-                                                    &message,theme::SELECTED_ORDER
-                                                ));
-                                            }
-                                        }else if let Some(error)=self.analysis.as_ref()
-                                            .and_then(|analysis|
-                                                analysis.reference.get(self.selected_recipient))
-                                            .and_then(|reference|reference.remote_error.as_ref())
-                                        {
-                                            items_ui.add_space(theme::SPACE_4);
-                                            items_ui.label(typography::status(
-                                                &format!("도서/산간 판정 실패 · {error}"),
-                                                theme::SELECTED_ORDER
-                                            ));
                                         }
                                         items_ui.add_space(theme::SPACE_8);
                                         if let Some(command)=components::reception_item_actions_editable(
