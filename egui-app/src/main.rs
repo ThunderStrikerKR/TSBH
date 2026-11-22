@@ -3898,6 +3898,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 });
         }
         if let Some((raw,kind,chat,sequence,original,learned,suggestion))=apply {
+            if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
+                ReceptionJob::SourceReplace,false
+            ){
+                // Retain the verified OCR draft on a rejected approval.
+                // Losing corrections here forces a complete OCR retry.
+                self.reception_job_conflict(ReceptionJob::SourceReplace,blocker);
+            }else{
             self.ocr_review=None;
             self.discard_ocr_confirm=false;
             if !self.raw_source.trim().is_empty() && self.raw_source!=raw {
@@ -3913,6 +3920,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     raw,kind,chat,ctx,"OCR",true,sequence,
                     Some(original),learned,suggestion
                 );
+            }
             }
         } else if close {
             if self.ocr_review.as_ref().is_some_and(|review|
@@ -3949,6 +3957,25 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
     }
 
+    /// Commit an approved original replacement only when safe to mutate.
+    /// Failed admission keeps the confirmation and its full OCR audit intact.
+    fn approve_pending_replace(&mut self,ctx:&egui::Context)->bool{
+        if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
+            ReceptionJob::SourceReplace,false
+        ){
+            self.reception_job_conflict(ReceptionJob::SourceReplace,blocker);
+            return false;
+        }
+        let Some(next)=self.pending_replace.take() else{return false};
+        self.apply_intake_text(
+            next.text,next.order_type,next.chat,ctx,
+            next.input_method,true,next.clipboard_sequence,
+            next.ocr_original,next.ocr_learning_used,
+            next.ocr_model_suggestion
+        );
+        true
+    }
+
     fn show_replacement_confirmation(&mut self, ctx: &egui::Context, work_area:Rect) {
         if self.pending_replace.is_none() { return; }
         let mut accept = false;
@@ -3968,16 +3995,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 });
             });
         if accept {
-            if let Some(next) = self.pending_replace.take() {
-                // Explicit replacement starts a new original-source route;
-                // OCR appended later still preserves this first method.
-                self.apply_intake_text(
-                    next.text,next.order_type,next.chat,ctx,
-                    next.input_method,true,next.clipboard_sequence,
-                    next.ocr_original,next.ocr_learning_used,
-                    next.ocr_model_suggestion
-                );
-            }
+            // On a write conflict, preserve the pending text and confirmation.
+            self.approve_pending_replace(ctx);
         } else if cancel {
             self.pending_replace = None;
         }
@@ -8555,6 +8574,27 @@ mod reception_workflow_admission_integration_tests {
     }
 
     #[test]
+    fn replacement_approval_conflict_keeps_corrected_text_for_retry(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.pending_replace=Some(PendingReplace{
+            text:"정정된 발주원문".into(),order_type:OrderType::Dealer,
+            chat:None,input_method:"OCR",clipboard_sequence:None,
+            ocr_original:Some("오인식 원문".into()),
+            ocr_learning_used:true,ocr_model_suggestion:None
+        });
+        vat_worker(&mut app);
+        assert!(!app.approve_pending_replace(&ctx));
+        assert!(app.pending_replace.is_some());
+        assert_eq!(app.raw_source,"원문");
+        assert_eq!(app.pending_replace.as_ref().unwrap().text,"정정된 발주원문");
+        app.vat_change=None;
+        assert!(app.approve_pending_replace(&ctx));
+        assert!(app.pending_replace.is_none());
+        assert_eq!(app.raw_source,"정정된 발주원문");
+    }
+
+    #[test]
     fn running_vat_write_blocks_source_replacement_and_navigation(){
         let ctx=egui::Context::default();
         let mut app=app();
@@ -8571,10 +8611,20 @@ mod reception_workflow_admission_integration_tests {
     }
 
     #[test]
-    fn capture_and_workflow_mutation_cannot_start_during_analysis(){
+    fn advisory_analysis_allows_unrelated_work_but_employee_write_blocks_capture(){
         let ctx=egui::Context::default();
         let mut app=app();
         app.analysis_pending=true;
+        assert_eq!(
+            app.reception_job_admission(ReceptionJob::SourceIntake,false),
+            JobAdmission::Start
+        );
+        assert_eq!(
+            app.reception_job_admission(ReceptionJob::WorkflowAction,false),
+            JobAdmission::Start
+        );
+        app.analysis_pending=false;
+        vat_worker(&mut app);
         app.begin_region_capture(OrderType::Agency,ctx.clone());
         assert!(!app.clipboard_busy);
         assert!(app.clipboard_receiver.is_none());
