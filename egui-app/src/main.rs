@@ -5769,7 +5769,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // Only authoritative Rust source spans may drive a linked hover.
         // A recognized field with no source evidence must not flash blue as
         // though a corresponding token were found in the original document.
-        // Source and recipient/item panes share 100ms enter / 150ms exit;
+        // Source and recipient/item panes share 50ms enter / 150ms exit;
         // working-order overlay previews deliberately retain 250ms timing.
         let source_matches=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
