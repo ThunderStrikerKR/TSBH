@@ -1823,7 +1823,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             });
             ui.add_space(theme::SPACE_12);
-            let list_height=vat_recipient_list_height(
+            let list_height=Self::vat_recipient_list_height(
                 recipients.len(),work_area.height()
             );
             // The tinted bordered surface marks the exact scrollable region.
@@ -6652,11 +6652,11 @@ mod vat_settings_ui_tests {
     #[test]
     fn recipient_list_shows_ten_rows_before_scroll_when_height_allows(){
         let row=theme::RECEPTION_VAT_LIST_ROW_HEIGHT;
-        assert_eq!(vat_recipient_list_height(2,900.0),2.0*row);
-        assert_eq!(vat_recipient_list_height(10,900.0),10.0*row);
-        assert_eq!(vat_recipient_list_height(11,900.0),10.0*row);
-        assert_eq!(vat_recipient_list_height(25,900.0),10.0*row);
-        assert!(vat_recipient_list_height(25,460.0)<10.0*row);
+        assert_eq!(BandoEgui::vat_recipient_list_height(2,900.0),2.0*row);
+        assert_eq!(BandoEgui::vat_recipient_list_height(10,900.0),10.0*row);
+        assert_eq!(BandoEgui::vat_recipient_list_height(11,900.0),10.0*row);
+        assert_eq!(BandoEgui::vat_recipient_list_height(25,900.0),10.0*row);
+        assert!(BandoEgui::vat_recipient_list_height(25,460.0)<10.0*row);
     }
     #[test]
     fn exact_percent_parser_and_formatter(){
