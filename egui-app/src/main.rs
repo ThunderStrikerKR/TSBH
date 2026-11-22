@@ -879,9 +879,18 @@ impl BandoEgui {
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
             .cloned()
         else{return};
-        let (Some(client_id),Some(quote))=(
-            row.client_id.clone(),row.pricing_preview.clone()
-        )else{return};
+        let Some(client_id)=row.client_id.clone() else{return};
+        if self.gateway.isolated_client_identity_link(){return;}
+        let Some(quote)=row.pricing_preview.clone()
+            .filter(complete_reception_quote)
+        else{
+            // A legacy or unpriced reception is not a cache hit. The same
+            // dealer is repriced once while preserving AUTO/MANUAL ownership.
+            self.apply_client_with_selection(
+                &client_id,ctx,row.client_selection.clone()
+            );
+            return;
+        };
         let Some(rows)=row.manual_model.as_ref()
             .and_then(|model|model.pointer("/model/rows"))
             .or_else(||row.analysis_evidence.as_ref()
