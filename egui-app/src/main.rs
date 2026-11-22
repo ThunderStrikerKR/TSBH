@@ -264,6 +264,88 @@ struct PendingInlineChange {
     receiver:Receiver<Result<manual_workspace::Event,String>>,
 }
 
+/// One scope and rate update for the entire order.
+#[derive(Clone,Copy,PartialEq,Eq,Debug)]
+enum VatScope { None, All, Partial }
+struct VatDialog {
+    order_id:String,
+    source_raw:String,
+    scope:VatScope,
+    recipients:std::collections::HashSet<String>,
+    rate_text:String,
+    error:Option<String>
+}
+fn vat_rate_text(bps:i64)->String{
+    if bps%100==0{format!("{}",bps/100)}
+    else if bps%10==0{format!("{}.{}",bps/100,(bps%100)/10)}
+    else{format!("{}.{:02}",bps/100,bps%100)}
+}
+fn parse_vat_rate(text:&str)->Result<i64,String>{
+    let trimmed=text.trim().trim_end_matches('%').trim();
+    let parts=trimmed.split('.').collect::<Vec<_>>();
+    if parts.is_empty() || parts.len()>2 || parts[0].is_empty() ||
+       !parts[0].chars().all(|c|c.is_ascii_digit()){
+        return Err("세율은 0%~100% 범위에서 입력하세요.".into());
+    }
+    let whole=parts[0].parse::<i64>()
+        .map_err(|_|"세율을 확인하세요.")?;
+    let fraction=if let Some(decimals)=parts.get(1){
+        if decimals.is_empty() || decimals.len()>2 ||
+            !decimals.chars().all(|c|c.is_ascii_digit()){
+            return Err("세율은 소수점 둘째 자리까지만 입력하세요.".into());
+        }
+        format!("{decimals:0<2}").parse::<i64>()
+            .map_err(|_|"세율을 확인하세요.")?
+    }else{0};
+    whole.checked_mul(100).and_then(|x|x.checked_add(fraction))
+        .filter(|bps|(0..=10_000).contains(bps))
+        .ok_or("세율은 0%~100% 범위에서 입력하세요.".into())
+}
+impl VatDialog {
+    fn new(order_id:String,source_raw:String,rows:&[serde_json::Value])->Self{
+        let recipients=rows.iter().filter(|row|
+            row["vatOverride"].as_bool()==Some(true)
+        ).filter_map(|row|row["id"].as_str().map(str::to_owned))
+            .collect::<std::collections::HashSet<_>>();
+        let scope=if recipients.is_empty(){VatScope::None}
+            else if recipients.len()==rows.len(){VatScope::All}
+            else{VatScope::Partial};
+        let bps=rows.iter().filter_map(|row|row["vatRateBps"].as_i64())
+            .find(|bps|(0..=10_000).contains(bps)).unwrap_or(1000);
+        Self{order_id,source_raw,scope,recipients,
+            rate_text:vat_rate_text(bps),error:None}
+    }
+    fn request(&self,rows:&[serde_json::Value])
+        ->Result<manual_workspace::InlineRequest,String>
+    {
+        if rows.is_empty(){return Err("부가세 적용 배송건이 없습니다.".into());}
+        let rate=parse_vat_rate(&self.rate_text)?;
+        let selected=rows.iter().filter_map(|row|{
+            let id=row["id"].as_str()?;
+            (self.scope==VatScope::Partial && self.recipients.contains(id))
+                .then_some(id.to_owned())
+        }).collect::<Vec<_>>();
+        if self.scope==VatScope::Partial &&
+            (selected.is_empty() || selected.len()==rows.len()){
+            return Err("일부 적용할 배송건을 선택하세요.".into());
+        }
+        let scope=match self.scope{
+            VatScope::None=>"none",VatScope::All=>"all",VatScope::Partial=>"partial"
+        };
+        Ok(manual_workspace::InlineRequest{
+            recipient_id:String::new(),item_id:None,
+            field:"vatSettings".into(),value:serde_json::json!({
+                "scope":scope,"recipientIds":selected,"rateBps":rate
+            })
+        })
+    }
+}
+struct PendingVatChange {
+    order_id:String,
+    source_raw:String,
+    receiver:Receiver<Result<manual_workspace::Event,String>>
+}
+
 /// Resolve the value that is CURRENT after the preceding native edit,
 /// rather than copying a stale value captured before it was committed.
 fn current_inline_value(
@@ -375,6 +457,8 @@ struct BandoEgui {
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
     inline_editor:Option<InlineReceptionEditor>,
     inline_change:Option<PendingInlineChange>,
+    vat_dialog:Option<VatDialog>,
+    vat_change:Option<PendingVatChange>,
     remote_recheck:Option<PendingRemoteRecheck>,
     edit_history_open: bool,
     client_change: Option<PendingClientChange>,
@@ -472,6 +556,8 @@ impl Default for BandoEgui {
             manual_workspace: None,
             inline_editor:None,
             inline_change:None,
+            vat_dialog:None,
+            vat_change:None,
             remote_recheck:None,
             edit_history_open: false,
             client_change: None,
@@ -6311,6 +6397,41 @@ impl eframe::App for BandoEgui {
 }
 
 
+#[cfg(test)]
+mod vat_settings_ui_tests {
+    use super::*;
+    #[test]
+    fn exact_percent_parser_and_formatter(){
+        for (input,expected) in [
+            ("10",1000),("7.5",750),("0.01",1),
+            ("100",10_000),("10.25%",1025)
+        ]{
+            assert_eq!(parse_vat_rate(input).unwrap(),expected);
+            assert_eq!(parse_vat_rate(&vat_rate_text(expected)).unwrap(),expected);
+        }
+        for bad in ["-1","101","10.123","1e2",""]{
+            assert!(parse_vat_rate(bad).is_err());
+        }
+    }
+    #[test]
+    fn one_order_wide_request_instead_of_independent_checkbox_edits(){
+        let rows=serde_json::json!([
+            {"id":"a","vatOverride":true},
+            {"id":"b","vatOverride":false}
+        ]);
+        let mut draft=VatDialog::new(
+            "order".into(),"raw".into(),rows.as_array().unwrap()
+        );
+        assert_eq!(draft.scope,VatScope::Partial);
+        let request=draft.request(rows.as_array().unwrap()).unwrap();
+        assert_eq!(request.field,"vatSettings");
+        assert_eq!(request.value["scope"],"partial");
+        assert_eq!(request.value["recipientIds"],serde_json::json!(["a"]));
+        draft.scope=VatScope::All;
+        assert_eq!(draft.request(rows.as_array().unwrap()).unwrap()
+            .value["scope"],"all");
+    }
+}
 #[cfg(test)]
 mod inline_single_click_handoff_tests {
     use super::*;
