@@ -94,6 +94,21 @@ mod tests {
     }
 
     #[test]
+    fn native_analysis_and_master_validation_cannot_overlap_a_write(){
+        let writes=[
+            K::ManualClient,K::InlineEdit,K::VatEdit,
+            K::WorkingSync,K::ManualWorkspace,K::InlineEditor
+        ];
+        for writer in writes{
+            assert_eq!(admit(K::Analysis,&[writer],false),A::Conflict(writer));
+            assert_eq!(admit(writer,&[K::Analysis],false),
+                A::Conflict(K::Analysis));
+            assert_eq!(admit(K::PricingBasis,&[writer],false),
+                A::Conflict(writer));
+        }
+    }
+
+    #[test]
     fn identical_pending_request_is_not_reissued(){
         for kind in [
             K::ManualClient,K::AutomaticClient,K::PricingBasis,
