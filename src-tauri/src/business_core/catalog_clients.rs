@@ -178,7 +178,7 @@ fn apply_client_workbook(state: &Value, preview: &Value) -> Result<Value, String
             if clients.iter().any(|c| field(c, "id") == id) {
                 return Err("거래처 ID 충돌입니다.".into());
             }
-            clients.push(client.clone());
+            clients.push(canonical.clone());
             created += 1;
         } else {
             let index = clients.iter().position(|c| field(c, "id") == id
