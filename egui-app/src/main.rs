@@ -5177,19 +5177,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         };
                                         let is_editing=self.inline_editor.as_ref()
                                             .is_some_and(|edit|edit.target==target);
-                                        if editable && !is_editing{
-                                            let hit=fields.interact(
-                                                response.rect,
-                                                fields.make_persistent_id((
-                                                    "recipient-inline-edit",recipient_id,field
-                                                )),Sense::click()
-                                            );
-                                            if hit.clicked(){
-                                                inline_open=Some((
-                                                    target.clone(),initial.to_owned(),
-                                                    hit.interact_pointer_pos()
-                                                ));
-                                            }
+                                        // The shared recipient field hit target owns
+                                        // both reverse source-hover and inline click.
+                                        // Do not register a second overlapping click
+                                        // response: it can suppress the field hover.
+                                        if editable && !is_editing && response.clicked(){
+                                            inline_open=Some((
+                                                target.clone(),initial.to_owned(),
+                                                response.interact_pointer_pos()
+                                            ));
                                         }
                                         let key=source_highlight::key(
                                             recipient_id,recipient_id,field
