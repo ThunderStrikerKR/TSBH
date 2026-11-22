@@ -2546,6 +2546,25 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn start_source_analysis(&mut self, context: egui::Context) {
+        let key=(
+            self.active_id.clone().unwrap_or_default(),
+            self.raw_source.clone(),self.order_type.as_str().to_owned()
+        );
+        // Repeated same-source scheduling must not spawn another OCR/matcher
+        // worker. A changed source is still allowed to supersede old evidence.
+        if self.analysis_pending && self.analysis_running_key.as_ref()==Some(&key){
+            return;
+        }
+        // A worker about to commit a dealer/price or operational version may
+        // never be raced by an automatic source recheck. Recheck after it ends.
+        if self.reception_job_admission(
+            ReceptionJob::Analysis,false
+        )!=JobAdmission::Start{
+            self.analysis_due_at=Some(Instant::now()+Duration::from_millis(250));
+            context.request_repaint_after(Duration::from_millis(260));
+            return;
+        }
+        self.analysis_running_key=Some(key);
         self.auto_client_change=None;
         self.analysis_request = self.analysis_request.wrapping_add(1);
         let request = self.analysis_request;
@@ -2622,6 +2641,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         self.pricing_basis_check=None;
         self.analysis_request = self.analysis_request.wrapping_add(1);
         self.analysis_receiver = None;
+        self.analysis_running_key=None;
         self.analysis_pending = false;
         self.analysis = None;
         self.analysis_error = None;
@@ -2763,12 +2783,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .map(|receiver| receiver.try_recv());
         if let Some(Err(mpsc::TryRecvError::Disconnected)) = complete {
             self.analysis_receiver = None;
+            self.analysis_running_key=None;
             self.analysis_pending = false;
             self.analysis_error = Some("Rust 인식 작업이 중단되었습니다.".to_owned());
             return;
         }
         if let Some(Ok((request, result))) = complete {
             self.analysis_receiver = None;
+            self.analysis_running_key=None;
             if request != self.analysis_request {
                 return;
             }
