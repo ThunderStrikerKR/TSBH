@@ -54,6 +54,9 @@ pub struct BoardUi {
     pending_order_hover:Option<(PendingTarget,Instant)>,
     pending_visible:Option<PendingTarget>,
     pending_release:Option<Instant>,
+    // Source, recipient and goods panes can temporarily retain a pending
+    // card's read-only foreground preview without committing selection.
+    pending_content_hovered:Option<String>,
 }
 pub enum Event {
     SelectPending(String),
@@ -80,6 +83,13 @@ impl BoardUi{
         self.pending_order_hover=None;
         self.pending_visible=None;
         self.pending_release=None;
+        self.pending_content_hovered=None;
+    }
+    pub fn note_pending_content_hover(&mut self,order_id:&str,hovered:bool){
+        if hovered && self.pending_visible.as_ref()
+            .is_some_and(|visible|visible.order_id==order_id){
+            self.pending_content_hovered=Some(order_id.to_owned());
+        }
     }
     pub fn select(&mut self,selection:Selection){
         self.selection=Some(selection);
@@ -125,6 +135,9 @@ impl BoardUi{
         ctx:&egui::Context
     ){
         let now=Instant::now();
+        let keep_content=self.pending_content_hovered.take()
+            .is_some_and(|order|self.pending_visible.as_ref()
+                .is_some_and(|visible|visible.order_id==order));
         if let Some(candidate)=incoming{
             self.pending_release=None;
             if Some(&candidate)==committed ||
@@ -157,6 +170,10 @@ impl BoardUi{
             }
         }else{
             self.pending_order_hover=None;
+            if keep_content {
+                self.pending_release=None;
+                return;
+            }
             if self.pending_visible.is_some(){
                 let until=*self.pending_release
                     .get_or_insert(now+PENDING_ORDER_HOVER_EXIT);
@@ -710,7 +727,7 @@ fn row(
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
     open:bool,in_preview:bool,previewed_id:Option<&str>,writable:bool,
-    linked_recipient:Option<&str>,
+    linked_selection:Option<(&str,&str)>,
     trigger:&mut Option<String>,hovered_row:&mut Option<String>
 )->Option<Event>{
     let mut event=None;
@@ -759,8 +776,8 @@ fn group_frame(
                 // Orange means committed selection ONLY on the base card.
                 // Blue means the temporarily hovered row ONLY in the clone.
                 let chosen=!in_preview && selected.is_some_and(|s|s.shipment_id==ship.id);
-                let previewed=(!chosen && linked_recipient
-                    ==Some(ship.recipient_id.as_str())) ||
+                let previewed=(!chosen && linked_selection
+                    ==Some((ship.order_id.as_str(),ship.recipient_id.as_str()))) ||
                     (in_preview && previewed_id==Some(ship.id.as_str()));
                 let label=row(ui,ship,chosen,previewed);
                 let response=ui.interact(
@@ -818,7 +835,7 @@ fn pending_dealer_title(
 fn pending_frame(
     ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,
     dealer_name:&str,committed_recipient:Option<&str>,
-    preview:Option<&PendingTarget>,linked_recipient:Option<&str>,
+    preview:Option<&PendingTarget>,linked_selection:Option<(&str,&str)>,
     hovered_pending:&mut Option<PendingTarget>
 )->Option<Event>{
     let mut event=None;
@@ -894,10 +911,12 @@ fn pending_frame(
                         .and_then(|value|value.as_str()).unwrap_or("");
                     let chosen=selected && !recipient_id.is_empty() &&
                         committed_recipient==Some(recipient_id);
-                    let previewed=(preview.is_some_and(|target|
-                        target.order_id==draft.id &&
-                        target.recipient_id.as_deref()==Some(recipient_id)) ||
-                        (selected && linked_recipient==Some(recipient_id)))
+                    let linked=linked_selection.and_then(|(order,id)|
+                        (order==draft.id).then_some(id));
+                    let displayed=linked.or_else(||preview
+                        .filter(|target|target.order_id==draft.id)
+                        .and_then(|target|target.recipient_id.as_deref()));
+                    let previewed=displayed==Some(recipient_id)
                         && !recipient_id.is_empty() && !chosen;
                     let response=shipment_line(ui,name,&products,chosen,previewed);
                     let action=ui.interact(response.rect,
@@ -930,7 +949,7 @@ pub fn show(
     client_names:&HashMap<String,String>,
     active_selected_client:Option<(&str,&str)>,
     state:&mut BoardUi,writable:bool,allow_pending_hover_switch:bool,
-    active_recipient_id:Option<&str>,linked_recipient_id:Option<&str>
+    active_recipient_id:Option<&str>,linked_selection:Option<(&str,&str)>
 )->Option<Event>{
     // Prevent implicit vertical item spacing from doubling the explicit
     // WORKFLOW_CARD_GAP between order bundles. This is scoped to the list
@@ -955,7 +974,7 @@ pub fn show(
             let pos=ui.cursor().min;
             let mut ignored_row=None;
             if let Some(value)=group_frame(ui,group,current,open,false,None,
-                writable,linked_recipient_id,&mut trigger,&mut ignored_row){
+                writable,linked_selection,&mut trigger,&mut ignored_row){
                 match value{
                     Event::ToggleGroup(id)=>{
                         state.folded=if open{Some(id)}else{None};
@@ -984,7 +1003,7 @@ pub fn show(
             ui,draft,selected,open,&name,
             if selected{active_recipient_id}else{None},
             state.pending_visible.as_ref(),
-            if selected{linked_recipient_id}else{None},
+            linked_selection,
             &mut hovered_pending
         ){
             match value{
@@ -1009,6 +1028,7 @@ pub fn show(
         state.pending_order_hover=None;
         state.pending_visible=None;
         state.pending_release=None;
+        state.pending_content_hovered=None;
     }
     let hovered=trigger.clone();
     state.update_hover(hovered,ui.ctx());
@@ -1029,7 +1049,7 @@ pub fn show(
             let mut ignored_hover=None;
             overlay_event=group_frame(
                 ui,&group,current,true,true,state.preview_shipment.as_deref(),
-                writable,linked_recipient_id,&mut ignored_hover,&mut hovered_row
+                writable,linked_selection,&mut ignored_hover,&mut hovered_row
             );
         });
         state.preview_rect=Some(response.response.rect);
@@ -1168,6 +1188,24 @@ mod pending_hover_navigation_tests{
         assert_eq!(PENDING_ORDER_HOVER_ENTER,Duration::from_millis(250));
         assert_eq!(PENDING_ORDER_HOVER_EXIT,Duration::from_millis(250));
     }
+    #[test]
+    fn source_and_detail_hover_retain_pending_preview_across_panel_transition(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let preview=PendingTarget::recipient("order-b","r2");
+        board.pending_visible=Some(preview.clone());
+        board.note_pending_content_hover("order-a",true);
+        board.update_pending_order_hover(None,None,&ctx);
+        assert!(board.pending_release.is_some());
+        board.note_pending_content_hover("order-b",true);
+        board.update_pending_order_hover(None,None,&ctx);
+        assert_eq!(board.pending_preview(),Some(&preview));
+        assert!(board.pending_release.is_none());
+        // The source-panel keepalive cannot turn a preview into a click.
+        assert!(board.selection.is_none());
+        assert!(board.pending_content_hovered.is_none());
+    }
+
     #[test]
     fn hovering_selected_order_header_does_not_replace_recipient(){
         let ctx=egui::Context::default();
