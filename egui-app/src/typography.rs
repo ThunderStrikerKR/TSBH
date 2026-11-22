@@ -435,10 +435,30 @@ pub fn management_table_cell_color(role:ManagementTableCellRole)->Color32 {
 pub fn management_table_cell_galley(
     ui:&egui::Ui,text:&str,role:ManagementTableCellRole
 )->std::sync::Arc<egui::Galley>{
-    client_table_galley(
-        ui,text,Role::Body,role.emphasized(),
-        management_table_cell_color(role)
-    )
+    let numeric=match role {
+        ManagementTableCellRole::Money|ManagementTableCellRole::RowTotal=>
+            Some(DataValueKind::Money),
+        ManagementTableCellRole::Quantity=>Some(DataValueKind::Quantity),
+        _=>None,
+    };
+    if let Some(kind)=numeric {
+        let body=spec(Role::Body);
+        let format=egui::TextFormat {
+            font_id:data_value_font(kind,DataValueContext::Table),
+            color:management_table_cell_color(role),
+            extra_letter_spacing:body.tracking,
+            line_height:Some(body.line),
+            ..Default::default()
+        };
+        ui.fonts_mut(|fonts|fonts.layout_job(
+            egui::text::LayoutJob::single_section(text.to_owned(),format)
+        ))
+    }else{
+        client_table_galley(
+            ui,text,Role::Body,role.emphasized(),
+            management_table_cell_color(role)
+        )
+    }
 }
 
 /// Repeated money cells use the same 14pt family as other business data.
@@ -816,6 +836,21 @@ mod management_table_type_roles_tests {
             Weight::Monospace as u8);
         assert_eq!(spec(Role::Quantity).weight as u8,
             Weight::Monospace as u8);
+    }
+
+    #[test]
+    fn management_numeric_cell_roles_use_semantic_faces_without_bold(){
+        for role in [
+            ManagementTableCellRole::Money,ManagementTableCellRole::Quantity,
+            ManagementTableCellRole::RowTotal
+        ] {
+            assert!(!role.emphasized());
+        }
+        assert_eq!(
+            data_value_font(DataValueKind::Money,DataValueContext::Table),
+            FontId::monospace(FONT_BODY)
+        );
+        assert_eq!(management_table_money_font(),FontId::monospace(FONT_BODY));
     }
 
     #[test]
