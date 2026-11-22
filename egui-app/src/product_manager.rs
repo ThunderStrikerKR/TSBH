@@ -11,6 +11,7 @@ use crate::{
     management_queries::{self, ManagementProductRows},
     latest_job::LatestJob,
     product_excel_ui::ProductExcelUi,
+    product_images::ProductImageCache,
     settings_help, theme, typography,
 };
 use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Pos2, Vec2};
@@ -250,6 +251,7 @@ pub struct ProductManager {
     selected_variants:HashMap<String,String>,
     sort:Option<ProductSort>,
     excel:ProductExcelUi,
+    photos:ProductImageCache,
     writing:Option<ProductWrite>,
     notice:Option<String>,
     result:LatestJob<ManagementProductRows>,
@@ -277,6 +279,7 @@ impl ProductManager {
             price_mode:false,price_drafts:HashMap::new(),
             selected_variants:HashMap::new(),sort:None,
             excel:ProductExcelUi::default(),
+            photos:ProductImageCache::default(),
             writing:None,notice:None,
             result:LatestJob::default(),next_query:None,error:None,
         };
@@ -290,6 +293,7 @@ impl ProductManager {
         self.selected=None;
         self.original_selected=None;
         self.detail_prices.clear();
+        self.photos.clear();
         self.selected_variants.clear();
         self.confirm_archive=false;
         self.confirm_discard=false;
@@ -1384,7 +1388,23 @@ impl ProductManager {
                     ))
                     .auto_shrink([false,false])
                     .show(modal,|body|{
-                        body.label(typography::section_heading("상품 정보"));
+                        // Same cached local/official image source as the
+                        // reception item dialog. No model-name guesses or
+                        // web requests, and HIDDEN wins over any fallback.
+                        body.horizontal(|media|{
+                            self.photos.photo(media,&draft,128.0);
+                            media.add_space(theme::SPACE_16);
+                            media.vertical(|detail|{
+                                detail.label(typography::section_heading("상품 정보"));
+                                detail.label(typography::caption(
+                                    if field(&draft,"siteId").is_empty() &&
+                                       field(&draft,"imageData").is_empty(){
+                                        "등록된 대표이미지 없음"
+                                    }else{"등록된 상품 대표이미지"}
+                                ));
+                            });
+                        });
+                        body.add_space(theme::SPACE_8);
                         Self::edit_text(body,&mut draft,"name","상품명",editable&&!busy);
                         Self::edit_text(body,&mut draft,"code","모델명",editable&&!busy);
                         Self::edit_text(body,&mut draft,"subtitle","상품설명",editable&&!busy);
