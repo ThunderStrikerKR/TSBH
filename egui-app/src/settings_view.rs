@@ -133,17 +133,23 @@ fn recommendation_picker(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
         .cloned().unwrap_or_default();
     let preview=options.iter().find(|account|field(account,"id")==selected)
         .map(account_display).unwrap_or_else(||"계좌 선택".to_owned());
-    egui::ComboBox::from_id_salt(("settings-recommendation",key))
-        .selected_text(preview).show_ui(ui,|choices|{
-            choices.selectable_value(&mut selected,String::new(),"계좌 선택");
+    components::management_dropdown(
+        ui,&preview,
+        ui.available_width().min(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH),
+        true,"",|choices|{
+            components::management_dropdown_option(
+                choices,&mut selected,String::new(),"계좌 선택"
+            );
             for account in &options{
                 if account_complete(account){
-                    choices.selectable_value(
-                        &mut selected,field(account,"id"),account_display(account)
+                    components::management_dropdown_option(
+                        choices,&mut selected,field(account,"id"),
+                        &account_display(account)
                     );
                 }
             }
-        });
+        }
+    );
     if !draft.get("brandAccounts").is_some_and(Value::is_object){
         draft["brandAccounts"]=json!({"BANDOSTAND":"","BANDOMALL":""});
     }
@@ -516,6 +522,9 @@ impl SettingsView{
         // Settings may contain multiple cards. Align the first card's top
         // without forcing any one section to fill or hide later sections.
         components::align_management_primary_card(ui,page_origin_y);
+        // Multi-card Settings uses the solid, nonfloating management
+        // scrollbar, not the special table-header rail geometry.
+        ui.spacing_mut().scroll=theme::management_scroll_style();
         egui::ScrollArea::vertical()
             .id_salt(("settings-view",self.tab.label()))
             .auto_shrink([false,false])
@@ -567,6 +576,8 @@ impl SettingsView{
                     edit_input(cell,&mut self.draft,"operatorName","작업자 이름");
                 });
             }
+            form.add_space(theme::SPACE_12);
+            components::soft_divider(form);
             form.add_space(theme::SPACE_12);
             section(form,"반도스탠드 정보",|content|{
                 let width=content.available_width();
@@ -628,6 +639,8 @@ impl SettingsView{
                 }
             });
             form.add_space(theme::SPACE_12);
+            components::soft_divider(form);
+            form.add_space(theme::SPACE_12);
             section(form,"입금 계좌",|content|{
                 self.show_accounts(content);
             });
@@ -639,15 +652,17 @@ impl SettingsView{
         ui.label(typography::field_label("전체 UI 크기"));
         let mut scale=self.draft.get("uiScale").and_then(Value::as_u64)
             .unwrap_or(100);
-        egui::ComboBox::from_id_salt("settings-ui-scale")
-            .selected_text(format!("{scale}%"))
-            .show_ui(ui,|choices|{
+        components::management_dropdown(
+            ui,&format!("{scale}%"),
+            theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH.min(ui.available_width()),
+            !self.read_only()&&!self.busy(),"",|choices|{
                 for candidate in [90u64,100,110,125]{
-                    choices.selectable_value(
-                        &mut scale,candidate,format!("{candidate}%")
+                    components::management_dropdown_option(
+                        choices,&mut scale,candidate,&format!("{candidate}%")
                     );
                 }
-            });
+            }
+        );
         if self.draft.get("uiScale").and_then(Value::as_u64)!=Some(scale){
             self.draft["uiScale"]=json!(scale);
             // React persists only uiScale immediately. Unrelated edits
@@ -680,7 +695,9 @@ impl SettingsView{
                     ].into_iter().enumerate(){
                         let width=usable*weights[column]/total;
                         row.allocate_ui_with_layout(
-                            Vec2::new(width,theme::SPACE_24),
+                            Vec2::new(
+                                width,theme::SPACE_24+theme::INPUT_HEIGHT
+                            ),
                             Layout::top_down(Align::Min),|field_ui|{
                                 field_ui.set_width(width);
                                 edit_input(field_ui,account,key,label);
@@ -689,7 +706,7 @@ impl SettingsView{
                     }
                     row.allocate_ui_with_layout(
                         Vec2::new(theme::SETTINGS_ACCOUNT_DELETE_WIDTH,
-                            theme::SPACE_24),
+                            theme::SPACE_24+theme::INPUT_HEIGHT),
                         Layout::top_down(Align::Min),|delete_ui|{
                             // Match the bottom alignment of input control,
                             // after its field label.
@@ -772,12 +789,16 @@ impl SettingsView{
         // information groups separated by whitespace, not three boxes.
         theme::section_frame().show(ui,|form|{
         for (index,(key,title,empty,button)) in sections.iter().enumerate(){
-            if index>0{form.add_space(theme::SPACE_12);}
+            if index>0{
+                form.add_space(theme::SPACE_12);
+                components::soft_divider(form);
+                form.add_space(theme::SPACE_12);
+            }
             section(form,title,|area|{
                 let value=field(&self.draft,key);
-                area.label(typography::body(
-                    if value.is_empty(){empty}else{&value}
-                ));
+                let displayed=if value.is_empty(){*empty}else{value.as_str()};
+                area.add(egui::Label::new(typography::body(displayed)).truncate())
+                    .on_hover_text(displayed);
                 area.add_space(theme::SPACE_8);
                 area.horizontal_wrapped(|buttons|{
                     if theme::action(
@@ -809,7 +830,7 @@ impl SettingsView{
     }
     fn save_bar(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
         ui.add_space(theme::SPACE_12);
-        ui.horizontal(|bar|{
+        ui.with_layout(Layout::right_to_left(Align::Center),|bar|{
             if theme::action(
                 bar,if self.saving.is_some(){"저장 중…"}else{"설정 저장"},
                 ButtonRole::Primary,!self.read_only()&&!self.busy()
@@ -848,7 +869,9 @@ impl SettingsView{
                 }
             });
             for filename in self.backups.clone(){
+                panel.add_space(theme::SPACE_8);
                 components::soft_divider(panel);
+                panel.add_space(theme::SPACE_8);
                 let name=std::path::Path::new(&filename).file_name()
                     .and_then(|p|p.to_str()).unwrap_or(&filename);
                 let policy=if name.starts_with("monthly-"){
@@ -917,6 +940,7 @@ impl SettingsView{
                 if components::modal_header(
                     ui,"접수 원문 감사 보관함","닫기",true
                 ){self.archive_open=false;}
+                ui.spacing_mut().scroll=theme::management_scroll_style();
                 let search_width=ui.available_width();
                 components::flexible_text_field(
                     ui,&mut self.archive_query,search_width,

@@ -148,6 +148,8 @@ pub const SETTINGS_ACCOUNT_ROW_MIN_WIDTH: f32 = 600.0;
 pub const SETTINGS_ACCOUNT_COL_RATIOS: [f32;3] = [1.0,1.3,1.0];
 pub const SETTINGS_ACCOUNT_DELETE_WIDTH: f32 = 112.0;
 pub const SETTINGS_ACCOUNT_RECOMMENDATION_MIN_WIDTH: f32 = 560.0;
+/// Prevent recommendation account selectors from stretching across the full settings card.
+pub const SETTINGS_ACCOUNT_PICKER_MAX_WIDTH: f32 = 420.0;
 pub const SPACE_12: f32 = 12.0;
 pub const SPACE_16: f32 = 16.0;
 pub const SPACE_24: f32 = 24.0;
