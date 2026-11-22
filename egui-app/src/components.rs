@@ -432,14 +432,23 @@ pub fn modal_balanced_review_area(viewport:Rect,workflow_area:Rect)->Rect{
     )
 }
 
-/// Measure the master's layout from the inner Ui, not the paint clip.
-/// egui can provide an empty/intermediate clip during a window sizing pass.
-/// Intersecting it with the available layout rect collapsed the OCR body to
-/// 1pt; shrinking its image viewport by 12pt then produced -26pt and panicked.
+/// Size a fixed OCR master inside the common modal frame, not the entire
+/// Window::fixed_size rectangle. Both frame margins and the border occupy
+/// outer space. Using the outer height for content caused the window to grow
+/// past its fixed bounds and clip the rounded bottom edge. Avoid the paint
+/// clip for sizing: it may be empty during the first egui layout pass.
 pub fn modal_master_content_from_ui(available:Rect,outer:Vec2)->Vec2{
+    let frame_x=theme::MODAL_PANEL_PADDING_X
+        +theme::FRAME_STROKE_WIDTH;
+    let frame_y=theme::MODAL_PANEL_PADDING_Y
+        +theme::FRAME_STROKE_WIDTH;
+    let max_inner=Vec2::new(
+        (outer.x-2.0*frame_x).max(0.0),
+        (outer.y-2.0*frame_y).max(0.0)
+    );
     Vec2::new(
-        available.width().max(0.0).min(outer.x.max(0.0)),
-        available.height().max(0.0).min(outer.y.max(0.0))
+        available.width().max(0.0).min(max_inner.x),
+        available.height().max(0.0).min(max_inner.y)
     )
 }
 
@@ -3876,8 +3885,8 @@ mod modal_safe_position_tests {
         let available=Rect::from_min_size(
             egui::pos2(19.0,17.0),Vec2::new(1362.0,710.0)
         );
-        // Even if the paint clip is disjoint or empty, the Ui layout's
-        // available size remains 1362 × 710, not 1 × 1.
+        // Available layout space is authoritative, not a possibly empty
+        // painter clip and not the full outer window extent.
         let inner=modal_master_content_from_ui(available,outer);
         assert_eq!(inner,Vec2::new(1362.0,710.0));
         assert!(modal_master_ocr_body_is_usable(inner));
@@ -3889,6 +3898,30 @@ mod modal_safe_position_tests {
         assert_eq!(layout.footer.bottom(),bounds.bottom());
         assert!(layout.workspace.height()
             >theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT+2.0*theme::SPACE_12);
+    }
+    #[test]
+    fn ocr_master_does_not_expand_fixed_outer_frame_or_clip_round_bottom(){
+        let outer=Vec2::new(1400.0,800.0);
+        let available=Rect::from_min_size(
+            egui::pos2(19.0,17.0),outer
+        );
+        let inner=modal_master_content_from_ui(available,outer);
+        assert_eq!(inner,Vec2::new(1362.0,766.0));
+        let layout=modal_master_layout(
+            Rect::from_min_size(available.min,inner),
+            theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT,
+            theme::MODAL_FOOTER_HEIGHT,
+            theme::MODAL_MASTER_WORKSPACE_GAP
+        );
+        let inner_bottom=layout.footer.bottom();
+        let frame_bottom=outer.y;
+        assert_eq!(
+            inner_bottom+theme::MODAL_PANEL_PADDING_Y
+                +theme::FRAME_STROKE_WIDTH,
+            frame_bottom
+        );
+        assert!(inner_bottom<frame_bottom);
+        assert!(layout.workspace.bottom()<layout.footer.top());
     }
     #[test]
     fn tiny_sizing_rect_is_not_usable_for_split_ocr_viewports(){
