@@ -155,6 +155,13 @@ impl BoardUi{
                 self.pending_order_hover=None;
                 return;
             }
+            // Another recipient is now under the pointer. Do not leave the
+            // old recipient blue while the new target waits out its 250ms
+            // entrance delay. The 250ms exit grace applies only to genuine
+            // pointer gaps (incoming=None), not to A -> B row transitions.
+            if self.pending_visible.take().is_some(){
+                ctx.request_repaint();
+            }
             match &self.pending_order_hover{
                 Some((pending,at)) if pending==&candidate &&
                     now.duration_since(*at)>=PENDING_ORDER_HOVER_ENTER=>{
@@ -1321,6 +1328,106 @@ mod pending_hover_navigation_tests{
         board.pending_release=Some(Instant::now()-Duration::from_millis(1));
         board.update_pending_order_hover(None,Some(&committed),&ctx);
         assert!(board.pending_preview().is_none());
+    }
+
+    #[test]
+    fn crossing_from_other_recipient_to_selected_drops_stale_preview_immediately(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let selected=PendingTarget::recipient("order","kim");
+        let other=PendingTarget::recipient("order","pyo");
+        board.pending_visible=Some(other);
+        // Kim is already selected, but still owns a real hover target.
+        board.update_pending_order_hover(Some(selected.clone()),Some(&selected),&ctx);
+        assert!(board.pending_preview().is_none(),
+            "Pyo must stop highlighting as soon as Kim is under the pointer");
+        assert_eq!(board.pending_order_hover.as_ref().map(|(target,_)|target),
+            Some(&selected));
+        board.pending_order_hover=Some((
+            selected.clone(),Instant::now()-PENDING_ORDER_HOVER_ENTER
+        ));
+        board.update_pending_order_hover(Some(selected.clone()),Some(&selected),&ctx);
+        assert_eq!(board.pending_preview(),Some(&selected));
+        // The selected recipient is an external committed target, not
+        // changed by any of these transient board transitions.
+        assert!(board.selection.is_none());
+    }
+
+    #[test]
+    fn rapid_alternating_recipient_hover_never_activates_a_superseded_target(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let committed=PendingTarget::recipient("order","kim");
+        let other=PendingTarget::recipient("order","pyo");
+        for i in 0..100{
+            let incoming=if i%2==0{&committed}else{&other};
+            board.update_pending_order_hover(Some(incoming.clone()),Some(&committed),&ctx);
+            assert!(board.pending_preview().is_none(),
+                "fast mouse transitions should keep the original selection visible");
+            assert_eq!(
+                board.pending_order_hover.as_ref().map(|(target,_)|target),
+                Some(incoming)
+            );
+        }
+        // Only the stable final target is allowed to enter after 250ms.
+        board.pending_order_hover=Some((
+            other.clone(),Instant::now()-PENDING_ORDER_HOVER_ENTER
+        ));
+        board.update_pending_order_hover(Some(other.clone()),Some(&committed),&ctx);
+        assert_eq!(board.pending_preview(),Some(&other));
+        board.update_pending_order_hover(Some(committed.clone()),Some(&committed),&ctx);
+        assert!(board.pending_preview().is_none());
+        assert_eq!(board.pending_order_hover.as_ref().map(|(target,_)|target),
+            Some(&committed));
+    }
+
+    #[test]
+    fn brief_pointer_gap_preserves_preview_but_new_row_cancels_old_exit_grace(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let committed=PendingTarget::recipient("order","kim");
+        let other=PendingTarget::recipient("order","pyo");
+        board.pending_visible=Some(other.clone());
+        board.update_pending_order_hover(None,Some(&committed),&ctx);
+        assert_eq!(board.pending_preview(),Some(&other));
+        assert!(board.pending_release.is_some());
+        // Crossing to Kim clears Pyo and cancels its release timer.
+        board.update_pending_order_hover(Some(committed.clone()),Some(&committed),&ctx);
+        assert!(board.pending_preview().is_none());
+        assert!(board.pending_release.is_none());
+        assert_eq!(board.pending_order_hover.as_ref().map(|(target,_)|target),
+            Some(&committed));
+    }
+
+    #[test]
+    fn reentering_same_recipient_within_release_grace_does_not_flicker(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let committed=PendingTarget::recipient("order","kim");
+        let other=PendingTarget::recipient("order","pyo");
+        board.pending_visible=Some(other.clone());
+        board.update_pending_order_hover(None,Some(&committed),&ctx);
+        assert!(board.pending_release.is_some());
+        board.update_pending_order_hover(Some(other.clone()),Some(&committed),&ctx);
+        assert_eq!(board.pending_preview(),Some(&other));
+        assert!(board.pending_release.is_none());
+        assert!(board.pending_order_hover.is_none());
+    }
+
+    #[test]
+    fn same_recipient_id_in_another_order_never_inherits_hover_preview(){
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let first=PendingTarget::recipient("order-a","kim");
+        let second=PendingTarget::recipient("order-b","kim");
+        board.pending_visible=Some(first);
+        board.update_pending_order_hover(Some(second.clone()),None,&ctx);
+        assert!(board.pending_preview().is_none());
+        assert_eq!(board.pending_order_hover.as_ref().map(|(target,_)|target),
+            Some(&second));
+        assert_eq!(visible_pending_recipient(
+            "order-a",board.pending_preview(),None
+        ),None);
     }
 
     #[test]
