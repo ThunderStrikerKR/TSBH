@@ -526,12 +526,26 @@ pub struct ModalMasterWorkspace {
     pub divider_x:Option<f32>,
 }
 
+/// Align the master edges to physical pixels before painting the header,
+/// rounded workspace, or footer. Layout still owns the original dimensions;
+/// every edge moves by at most half a device pixel. All strokes and pane fills
+/// must use the SAME aligned rect so anti-aliasing cannot expose a seam.
+pub fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect {
+    let scale=pixels_per_point.max(1.0);
+    let snap=|v:f32|(v*scale).round()/scale;
+    Rect::from_min_max(
+        egui::pos2(snap(rect.left()),snap(rect.top())),
+        egui::pos2(snap(rect.right()),snap(rect.bottom()))
+    )
+}
+
 /// Paint only the single shared work-surface background. OCR paints its
 /// two content panes after this step, then uses `finish` for crisp borders.
 /// This order prevents rectangular pane fills from erasing rounded corners.
 pub fn modal_master_workspace_background(
     ui:&Ui,rect:Rect,toolbar_height:f32,split_ratio:Option<f32>
 )->ModalMasterWorkspace {
+    let rect=modal_master_pixel_aligned_rect(rect,ui.ctx().pixels_per_point());
     ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,theme::PANEL);
     let toolbar_bottom=(rect.top()+toolbar_height.max(0.0)).min(rect.bottom());
     let divider_x=split_ratio.map(|share|{
@@ -549,9 +563,11 @@ pub fn modal_master_workspace_finish(
 ) {
     let painter=ui.painter();
     let ppp=ui.ctx().pixels_per_point().max(1.0);
+    let rect=modal_master_pixel_aligned_rect(rect,ppp);
     let snap=|v:f32|(v*ppp).round()/ppp;
     let line_width=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
-    let inset=theme::FRAME_STROKE_WIDTH.max(line_width);
+    let outer_width=(theme::FRAME_STROKE_WIDTH*ppp).round().max(1.0)/ppp;
+    let inset=outer_width.max(line_width);
     let left=snap(rect.left()+inset);
     let right=snap(rect.right()-inset);
     let top=snap(rect.top()+inset);
@@ -579,7 +595,7 @@ pub fn modal_master_workspace_finish(
     }
     painter.rect_stroke(
         rect,theme::CONTROL_RADIUS,
-        Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER),
+        Stroke::new(outer_width,theme::DIVIDER),
         egui::StrokeKind::Inside
     );
 }
@@ -604,10 +620,17 @@ pub fn modal_master_header_in_rect(
     ui:&mut Ui,rect:Rect,title:&str,description:&str,
     close_label:&str,enabled:bool
 )->bool {
+    let ppp=ui.ctx().pixels_per_point().max(1.0);
+    let rect=modal_master_pixel_aligned_rect(rect,ppp);
     ui.painter().rect_filled(rect,0.0,theme::PANEL);
-    ui.painter().line_segment(
-        [rect.left_bottom(),rect.right_bottom()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    // A centered line at rect.bottom() is half clipped and can appear
+    // darker at one end. Fill exactly one pixel-aligned INNER rule instead.
+    let rule_height=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
+    ui.painter().rect_filled(
+        Rect::from_min_max(
+            egui::pos2(rect.left(),rect.bottom()-rule_height),
+            rect.right_bottom()
+        ),0.0,theme::DIVIDER
     );
     let has_description=!description.trim().is_empty();
     let heading_top=if has_description {
