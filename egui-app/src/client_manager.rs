@@ -15,24 +15,6 @@ fn displayed_phone(client:&Value)->&str {
     let phone=field(client,"phone");
     if phone.trim().is_empty(){field(client,"mobile")}else{phone}
 }
-/// List display: default PREPAID and VAT-excluded are implicit.
-/// This summary does not alter the saved transaction rules.
-fn client_condition_summary(client:&Value)->String {
-    let mut flags=Vec::new();
-    if field(client,"payment")=="POSTPAID"{flags.push("후불");}
-    if client.get("defaultApplyVat").and_then(Value::as_bool)
-        .unwrap_or(false){flags.push("부가세 포함");}
-    if client.get("shippingFeeExcluded").and_then(Value::as_bool)
-        .unwrap_or(false){flags.push("운임 청구 제외");}
-    if client.get("active")==Some(&Value::Bool(false)){
-        flags.push("거래 중지");
-    }
-    flags.join(" / ")
-}
-fn readable_tier(tier:&str)->&'static str {
-    match tier {"wholesale"=>"도매","semi"=>"반도매",
-        "retail"=>"소매","special"=>"특수",_=>"미지정"}
-}
 fn label_edit(ui:&mut Ui,draft:&mut Value,key:&str,label:&str) {
     ui.vertical(|ui|{
         // React client-editor fields use a compact label/control gap;
@@ -425,13 +407,13 @@ impl ClientManager {
                     0=>field(left,"name"),
                     1=>field(left,"address"),
                     2=>displayed_phone(left),
-                    _=>readable_tier(field(left,"tier")),
+                    _=>components::client_tier_label(field(left,"tier")),
                 };
                 let b=match column {
                     0=>field(right,"name"),
                     1=>field(right,"address"),
                     2=>displayed_phone(right),
-                    _=>readable_tier(field(right,"tier")),
+                    _=>components::client_tier_label(field(right,"tier")),
                 };
                 let compared=a.to_lowercase().cmp(&b.to_lowercase())
                     .then_with(||field(left,"id").cmp(field(right,"id")));
@@ -578,29 +560,22 @@ impl ClientManager {
                             |row|{
                                 row.set_clip_rect(rows_clip);
                                 if let Some(client)=rows.get(index){
-                                    let name=field(client,"name");
-                                    // Internal aliases are searchable, not a
-                                    // second invoice sender name or table label.
+                                    let display=components::ClientDisplaySummary::from_client(client);
+                                    let name=display.name.as_str();
                                     let description="";
-                                    let address=field(client,"address");
-                                    // Show one phone; preserve a second distinct
-                                    // mobile number in the cell's hover text.
-                                    let phone=displayed_phone(client);
+                                    let address=display.address.as_str();
+                                    let phone=display.primary_phone();
                                     let shown_phone=if phone.trim().is_empty(){
                                         "연락처 미등록"
                                     }else{phone};
-                                    let mobile=field(client,"mobile");
-                                    let extra_mobile=if !field(client,"phone").trim().is_empty()
-                                        && !mobile.trim().is_empty() && mobile!=phone{
-                                        mobile
-                                    }else{""};
-                                    let conditions=client_condition_summary(client);
+                                    let extra_mobile=display.secondary_mobile();
+                                    let conditions=display.conditions.as_str();
                                     if components::management_row_striped(
                                         row,field(client,"id"),[
                                             (name,description),
                                             (address,""),
                                             (shown_phone,extra_mobile),
-                                            (readable_tier(field(client,"tier")),&conditions)
+                                            (components::client_tier_label(&display.tier),conditions)
                                         ],Some(field(client,"tier")),index
                                     ).clicked(){
                                         chosen=Some(client.clone());
@@ -753,7 +728,7 @@ impl ClientManager {
             let mut tier=field(draft,"tier").to_owned();
             egui::ComboBox::from_id_salt("client-manager-tier")
                 .width(cols[0].available_width())
-                .selected_text(readable_tier(&tier))
+                .selected_text(components::client_tier_label(&tier))
                 .show_ui(&mut cols[0],|ui|{
                     for (key,label) in [
                         ("wholesale","도매"),("semi","반도매"),
@@ -1027,22 +1002,22 @@ mod client_condition_summary_tests{
     fn normal_client_does_not_repeat_default_conditions(){
         let client=json!({"payment":"PREPAID","defaultApplyVat":false,
             "shippingFeeExcluded":false,"active":true});
-        assert_eq!(client_condition_summary(&client),"");
+        assert_eq!(components::client_exception_terms(&client),"");
     }
     #[test]
     fn exceptional_client_terms_have_no_empty_separators(){
         let postpaid=json!({"payment":"POSTPAID","defaultApplyVat":false,
             "shippingFeeExcluded":false,"active":true});
-        assert_eq!(client_condition_summary(&postpaid),"후불");
+        assert_eq!(components::client_exception_terms(&postpaid),"후불");
         let vat=json!({"payment":"PREPAID","defaultApplyVat":true,
             "shippingFeeExcluded":false,"active":true});
-        assert_eq!(client_condition_summary(&vat),"부가세 포함");
+        assert_eq!(components::client_exception_terms(&vat),"부가세 포함");
         let extra=json!({"payment":"PREPAID","defaultApplyVat":false,
             "shippingFeeExcluded":true,"active":false});
-        assert_eq!(client_condition_summary(&extra),"운임 청구 제외 / 거래 중지");
+        assert_eq!(components::client_exception_terms(&extra),"운임 청구 제외 / 거래 중지");
         let all=json!({"payment":"POSTPAID","defaultApplyVat":true,
             "shippingFeeExcluded":true,"active":false});
-        assert_eq!(client_condition_summary(&all),
+        assert_eq!(components::client_exception_terms(&all),
             "후불 / 부가세 포함 / 운임 청구 제외 / 거래 중지");
     }
 }
