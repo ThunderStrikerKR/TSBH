@@ -119,7 +119,7 @@ impl ProductSearch{
                     open=false;
                 }
                 let width=ui.available_width();
-                if components::flexible_text_field(
+                if components::management_search_field(
                     ui,&mut self.query,width,
                     "브랜드 / 상품명 / 모델 / 별칭 검색"
                 ).changed(){changed=true;}
