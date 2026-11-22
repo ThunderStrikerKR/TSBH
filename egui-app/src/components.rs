@@ -4435,3 +4435,50 @@ mod management_dropdown_unification_tests {
         });
     }
 }
+
+#[cfg(test)]
+mod recipient_source_reverse_hover_tests {
+    use super::*;
+
+    #[test]
+    fn all_five_read_only_recipient_cells_own_hover_and_ibeam_cursor() {
+        let ctx=egui::Context::default();
+        let mut cells=[Rect::NOTHING;5];
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(740.0);
+                let (mut name,mut address,mut mobile,mut phone,mut note)=(
+                    "김준희".to_owned(),"전라남도 순천시".to_owned(),
+                    "010-1111-2222".to_owned(),"061-222-3333".to_owned(),
+                    "문 앞에 놓아주세요".to_owned()
+                );
+                let responses=reception_recipient_fields(ui,&mut name,
+                    &mut address,&mut mobile,&mut phone,&mut note,[false;5]);
+                cells=responses.map(|response|response.rect);
+            });
+        });
+        for (index,cell) in cells.iter().enumerate() {
+            assert!(cell.width()>0.0 && cell.height()>0.0);
+            let mut hovered=[false;5];
+            let output=ctx.run(egui::RawInput{
+                events:vec![egui::Event::PointerMoved(cell.center())],
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(740.0);
+                    let (mut name,mut address,mut mobile,mut phone,mut note)=(
+                        "김준희".to_owned(),"전라남도 순천시".to_owned(),
+                        "010-1111-2222".to_owned(),"061-222-3333".to_owned(),
+                        "문 앞에 놓아주세요".to_owned()
+                    );
+                    hovered=reception_recipient_fields(ui,&mut name,
+                        &mut address,&mut mobile,&mut phone,&mut note,[false;5])
+                        .map(|response|response.hovered());
+                });
+            });
+            assert!(hovered[index],"recipient field {index} lost hover");
+            assert_eq!(output.platform_output.cursor_icon,
+                egui::CursorIcon::Text,"recipient field {index} lost I-beam cursor");
+        }
+    }
+}
