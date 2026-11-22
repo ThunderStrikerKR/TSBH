@@ -50,7 +50,7 @@ fn settlement_date_toolbar(
     let mut changed=false;
     ui.horizontal_wrapped(|controls|{
         controls.spacing_mut().item_spacing.x=theme::SPACE_8;
-        controls.label(typography::field_label("결산 날짜"));
+        components::form_field_label(controls,"결산 날짜");
         if theme::action(controls,"‹",theme::ButtonRole::Standard,true).clicked(){
             *date=move_date(date,-1);
             *date_input=date.clone();
