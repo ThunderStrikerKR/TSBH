@@ -224,6 +224,10 @@ pub struct WorkingReception {
     /// The employee-approved native manual model for THIS exact raw/kind/
     /// dealer. The full Tauri Order and master client details are excluded.
     pub manual_model: Option<Value>,
+    /// Persisted snapshots of every employee-applied recipient/item edit.
+    /// Kept even if the original source is later replaced or the manual
+    /// model is invalidated; the append-only audit table is authoritative.
+    pub edit_history: Vec<Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -362,6 +366,22 @@ impl PreviewStore {
             CREATE INDEX IF NOT EXISTS idx_ocr_feedback_order
                 ON ocr_feedback(order_id,recorded_at);"
         ).map_err(|e| format!("OCR 정정 이력 테이블 준비 실패: {e}"))?;
+        // Immutable change records are committed in the SAME CAS transaction
+        // as the corrected working reception. Deleting a draft does not erase
+        // its previously accepted employee edit history.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS reception_edit_audit (
+                id TEXT PRIMARY KEY,
+                order_id TEXT NOT NULL,
+                source_raw TEXT NOT NULL,
+                initial_analysis_json TEXT NOT NULL CHECK(json_valid(initial_analysis_json)),
+                before_rows_json TEXT NOT NULL CHECK(json_valid(before_rows_json)),
+                after_rows_json TEXT NOT NULL CHECK(json_valid(after_rows_json)),
+                recorded_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_reception_edit_audit_order
+                ON reception_edit_audit(order_id,recorded_at,id);"
+        ).map_err(|e|format!("수취인/품목 수정 감사 테이블 준비 실패: {e}"))?;
         // Non-destructive migration of corpus rows already collected by
         // earlier 65th-session builds; NEVER drop original/corrected text.
         let mut stmt=conn.prepare("PRAGMA table_info(ocr_feedback)")
@@ -517,6 +537,8 @@ impl PreviewStore {
                 working_version: row.get("workingVersion").and_then(Value::as_u64),
                 working_synced: row.get("workingSynced").and_then(Value::as_bool).unwrap_or(false),
                 manual_model: row.get("manualModel").filter(|v|!v.is_null()).cloned(),
+                edit_history: row.get("editHistory").and_then(Value::as_array)
+                    .cloned().unwrap_or_default(),
             });
         }
         // Preserve a previous single-source editing session without changing
@@ -530,6 +552,7 @@ impl PreviewStore {
                 chat_handle: None, chat_title: None,
                 client_id: None, client_selection: None, pricing_preview: None,
                 working_version: None, working_synced: false, manual_model: None,
+                edit_history: Vec::new(),
             });
         }
         let active_id = if !active.is_empty() {
@@ -566,6 +589,7 @@ impl PreviewStore {
             "workingVersion": item.working_version,
             "workingSynced": item.working_synced,
             "manualModel": item.manual_model,
+            "editHistory": item.edit_history,
         })).collect());
         let encoded = payload.to_string();
         let mut conn = self.open_connection()?;
@@ -581,6 +605,28 @@ impl PreviewStore {
         ).map_err(|e| format!("egui 접수 목록 저장 실패: {e}"))?;
         if affected != 1 {
             return Err("다른 egui 창에서 원문이 변경됐습니다. 저장을 덮어쓰지 않았습니다.".into());
+        }
+        // Only audit snapshots submitted with a successful source CAS may
+        // become durable. INSERT OR IGNORE makes retry/coalescing idempotent.
+        // A saved audit is never deleted when an employee deletes the draft.
+        for receipt in &source.drafts {
+            for event in &receipt.edit_history {
+                tx.execute(
+                    "INSERT OR IGNORE INTO reception_edit_audit
+                     (id,order_id,source_raw,initial_analysis_json,
+                      before_rows_json,after_rows_json,recorded_at)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                    params![
+                        event["id"].as_str().unwrap_or(""),
+                        receipt.id.as_str(),
+                        event["sourceRaw"].as_str().unwrap_or(""),
+                        event["initialAnalysis"].to_string(),
+                        event["beforeRows"].to_string(),
+                        event["afterRows"].to_string(),
+                        event["at"].as_str().unwrap_or("")
+                    ],
+                ).map_err(|e|format!("수취인/품목 수정 감사 이력 저장 실패: {e}"))?;
+            }
         }
         tx.commit().map_err(|e| format!("egui 접수 목록 저장 확정 실패: {e}"))?;
         Ok(next as u64)
@@ -839,6 +885,18 @@ fn validate_source(source: &WorkingSource) -> Result<(), String> {
             }
             analysis_bytes=analysis_bytes.checked_add(manual.to_string().len())
                 .ok_or("수동 분류 작업본 크기 초과")?;
+        }
+        for event in &draft.edit_history {
+            if event["id"].as_str().is_none_or(|value|value.trim().is_empty()) ||
+               event["at"].as_str().is_none_or(|value|value.trim().is_empty()) ||
+               event["sourceRaw"].as_str().is_none_or(str::is_empty) ||
+               !event["initialAnalysis"]["recipients"].is_array() ||
+               !event["beforeRows"].is_array() ||
+               !event["afterRows"].is_array() {
+                return Err("수정 전후의 감사 스냅샷이 손상되었습니다.".into());
+            }
+            analysis_bytes=analysis_bytes.checked_add(event.to_string().len())
+                .ok_or("수정 이력의 크기를 확인할 수 없습니다.")?;
         }
         if let Some(price)=&draft.pricing_preview {
             let keys=["sourceRaw","orderId","orderType","clientId","authorityRevision",
