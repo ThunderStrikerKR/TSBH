@@ -601,6 +601,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let response=ui.interact(open_area,
                 ui.make_persistent_id(("order-history-toggle",id)),Sense::click())
                 .on_hover_text(format!("{summary}\n클릭하여 수취인·품목·운임 상세보기"));
+            theme::paint_button_hover(ui,&response,0.0);
             if response.clicked(){*pending_toggle=Some(id.to_owned());}
             paint_center(ui,columns[3],field(row,"status"));
             let total=won(&row["total"]);
@@ -813,6 +814,7 @@ fn history_date_segment(
             &painter,response.rect.center(),direction
         );
     }
+    theme::paint_button_hover(ui,&response,0.0);
     response
 }
 /// Reserve exactly one 36pt outer row. Frame::show combined with an
