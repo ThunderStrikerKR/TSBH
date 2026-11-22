@@ -1826,9 +1826,19 @@ impl BandoEgui {
                         theme::MODAL_FOOTER_HEIGHT,
                         theme::MODAL_MASTER_WORKSPACE_GAP
                     );
-                    let header_rect=master.header;
-                    let footer_rect=master.footer;
-                    let compare_rect=master.workspace;
+                    // The OCR master paints all three chrome regions on the
+                    // same device-pixel grid. Fractional work-area sizes must
+                    // not introduce fuzzy header rules or rounded corners.
+                    let ppp=ui.ctx().pixels_per_point();
+                    let header_rect=components::modal_master_pixel_aligned_rect(
+                        master.header,ppp
+                    );
+                    let footer_rect=components::modal_master_pixel_aligned_rect(
+                        master.footer,ppp
+                    );
+                    let compare_rect=components::modal_master_pixel_aligned_rect(
+                        master.workspace,ppp
+                    );
                     close=components::modal_master_header_in_rect(
                         ui,header_rect,"OCR 문자 인식 검토",
                         "원본 이미지와 인식된 텍스트를 대조하고 오타를 수정한 뒤 반영하세요.",
