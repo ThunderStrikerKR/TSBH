@@ -826,7 +826,7 @@ impl ClientManager {
                                 ui,&mut self.exception_id,id.clone(),label);
                         }
                     });
-                row.label(typography::field_label("특수 단가"));
+                components::form_field_label(row,"특수 단가");
                 components::field(
                     row,&mut self.exception_price,components::FieldKind::Money,true
                 );
