@@ -16,6 +16,9 @@ on:
       - egui-app/src/gateway.rs
       - egui-app/src/developer_ui_samples.rs
       - egui-app/src/main.rs
+      - egui-app/src/workflow_board_ui.rs
+      - egui-app/src/manual_workspace.rs
+      - src-tauri/src/business_core/rules/pricing.rs
       - egui-app/src/floating_notice.rs
       - egui-app/src/settings_view.rs
       - egui-app/src/client_manager.rs
