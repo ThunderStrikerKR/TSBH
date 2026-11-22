@@ -3211,6 +3211,7 @@ pub struct ReceptionFreightEdit {
     pub amount_rect:Option<Rect>,
     pub amount_clicked:bool,
     pub remote_clicked:bool,
+    pub collect_clicked:bool,
 }
 pub fn reception_freight_row(
     ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
@@ -3226,6 +3227,7 @@ pub fn reception_freight_row_editable(
 )->ReceptionFreightEdit{
     let mut clicked=false;
     let mut remote_clicked=false;
+    let mut collect_clicked=false;
     let mut amount_rect=None;
     let mut amount_text=amount
         .map(|value|display_won(value).trim_end_matches('원').to_owned())
@@ -3284,7 +3286,13 @@ pub fn reception_freight_row_editable(
                     .size(typography::FONT_RECEPTION_ITEM_TEXT));
             }
         );
-        if let Some(collect)=collect {
+        if editable {
+            if theme::action(
+                line,
+                if collect.unwrap_or(false){"착불"}else{"선불"},
+                theme::ButtonRole::TableSecondary,true
+            ).clicked(){collect_clicked=true;}
+        }else if let Some(collect)=collect{
             line.label(typography::body(
                 if collect {"(착불)"} else {"(선불)"}
             ).size(typography::FONT_RECEPTION_ITEM_TEXT));
@@ -3306,7 +3314,7 @@ pub fn reception_freight_row_editable(
         }
     });
     ReceptionFreightEdit {
-        amount_rect,amount_clicked:clicked,remote_clicked
+        amount_rect,amount_clicked:clicked,remote_clicked,collect_clicked
     }
 }
 
