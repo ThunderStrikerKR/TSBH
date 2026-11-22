@@ -271,15 +271,33 @@ pub fn key(recipient:&str,target:&str,field:&str)->LinkKey {
     LinkKey{recipient_id:recipient.into(),target_id:target.into(),field:field.into()}
 }
 
-/// Paint-only feedback on the detail field; it never changes layout,
-/// capture targets, recipient ownership or input focus.
+/// Shared evidence emphasis for source, recipient input values and item cells.
+/// All three destinations use the same blue fill, text and four-sided inset
+/// border. The source only projects native evidence; never alters ownership.
+pub const ACTIVE_FILL:Color32=Color32::from_rgb(23,67,109);       // #17436d
+pub const ACTIVE_TEXT:Color32=Color32::from_rgb(234,244,255);   // #eaf4ff
+pub const ACTIVE_BORDER:Color32=Color32::from_rgb(117,181,255); // #75b5ff
+pub const ACTIVE_RADIUS:f32=4.0;
+pub const ACTIVE_BORDER_WIDTH:f32=2.0;
+
+pub fn is_active(active:Option<&LinkKey>, key:&LinkKey)->bool {
+    active.is_some_and(|selection|same_target(selection,key))
+}
+
+/// Fill must be painted before the value text. For TextEdit use its
+/// background_color() instead, so the native editor paints behind glyphs.
+pub fn paint_active_background(ui:&egui::Ui,rect:egui::Rect) {
+    ui.painter().rect_filled(rect,ACTIVE_RADIUS,ACTIVE_FILL);
+}
+
+/// Draw only the input/column value border, never the row, title or label.
 pub fn paint_active(ui:&egui::Ui, response:&egui::Response,
                     key:&LinkKey, active:Option<&LinkKey>) {
-    if active.is_some_and(|selection|same_target(selection,key)) {
+    if is_active(active,key) {
         ui.painter().rect_stroke(
-            response.rect,3.0,
-            egui::Stroke::new(1.5,Color32::from_rgb(112,180,255)),
-            egui::StrokeKind::Outside,
+            response.rect.shrink(0.5),ACTIVE_RADIUS,
+            egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER),
+            egui::StrokeKind::Inside,
         );
     }
 }
@@ -294,9 +312,9 @@ fn same_target(left:&LinkKey,right:&LinkKey)->bool {
 // blocks (3pt horizontal / 1pt vertical visual padding).
 const SOURCE_BLOCK:Color32=Color32::from_rgb(66,66,66);        // #424242
 const SOURCE_CONTEXT:Color32=Color32::from_rgb(73,73,73);      // #494949
-const SOURCE_ACTIVE:Color32=Color32::from_rgb(23,67,109);      // #17436d
-const SOURCE_ACTIVE_TEXT:Color32=Color32::from_rgb(234,244,255);
-const SOURCE_ACTIVE_BORDER:Color32=Color32::from_rgb(117,181,255);
+const SOURCE_ACTIVE:Color32=ACTIVE_FILL;
+const SOURCE_ACTIVE_TEXT:Color32=ACTIVE_TEXT;
+const SOURCE_ACTIVE_BORDER:Color32=ACTIVE_BORDER;
 
 #[derive(Clone,Debug)]
 struct VisualBlock {
