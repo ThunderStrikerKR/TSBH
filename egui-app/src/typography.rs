@@ -60,8 +60,11 @@ pub enum DataValueContext { Table, Form, Reception, CompactCard, Summary }
 /// Pixel-level optical correction for Consolas against Korean unit glyphs.
 /// epaint::FontTweak changes only glyph placement, not line boxes, editor
 /// carets, button positions or the fixed item-table column rectangles.
-/// Start with a 1pt upward adjustment; verify it on the Windows UI capture.
-pub const DATA_NUMERIC_GLYPH_OFFSET_Y: f32 = -1.0;
+/// The 1920×1080 Windows capture shows the digit ink about 3–4pt
+/// above the Hangul unit ("원") in money rows. The former -1pt correction
+/// pushed the digits farther upward; shift them down with a +3pt offset.
+/// Adjust this one value after a rendered Windows comparison.
+pub const DATA_NUMERIC_GLYPH_OFFSET_Y: f32 = 3.0;
 
 pub fn data_value_font(_kind:DataValueKind,context:DataValueContext)->FontId {
     let size=match context {
@@ -848,7 +851,7 @@ mod management_table_type_roles_tests {
         assert_eq!(data_value_align(DataValueKind::Quantity),egui::Align::RIGHT);
         assert_eq!(data_value_align(DataValueKind::Date),egui::Align::LEFT);
         assert_eq!(data_value_align(DataValueKind::Phone),egui::Align::LEFT);
-        assert_eq!(DATA_NUMERIC_GLYPH_OFFSET_Y,-1.0);
+        assert_eq!(DATA_NUMERIC_GLYPH_OFFSET_Y,3.0);
         assert_eq!(numeric_editor_font(),
             data_value_font(DataValueKind::Money,DataValueContext::Form));
         assert_eq!(management_table_money_font(),
