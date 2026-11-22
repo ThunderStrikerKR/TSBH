@@ -42,6 +42,13 @@ on:
       - src-tauri/src/main.rs
       - src-tauri/src/lib.rs
       - src-tauri/src/workflow_sqlite_integration_tests.rs
+      - egui-app/src/client_search_tags.rs
+  pull_request:
+    paths:
+      - .github/workflows/egui-targeted-check.yml
+      - egui-app/src/client_manager.rs
+      - egui-app/src/client_search_tags.rs
+      - egui-app/src/main.rs
   workflow_dispatch:
 permissions:
   contents: read
@@ -62,6 +69,8 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify client search-tag chips: add, dedupe, delete and legacy identifiers
+        run: cargo test --manifest-path egui-app/Cargo.toml client_search_tags::tests -- --nocapture
       - name: Verify floating notice placement at screen edges and caret anchors
         run: cargo test --manifest-path egui-app/Cargo.toml floating_notice::tests -- --nocapture
       - name: Verify Excel loading and empty-state text does not shift its table
