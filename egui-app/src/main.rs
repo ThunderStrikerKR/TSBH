@@ -194,6 +194,8 @@ struct PendingClientChange {
     chat_title: Option<String>,
     // A later inline/manual edit must never be overwritten by an older quote.
     manual_model: Option<serde_json::Value>,
+    working_version:Option<u64>,
+    price_snapshot:Option<serde_json::Value>,
     // A master-driven reprice keeps an AUTO decision AUTO.
     reprice_selection: Option<String>,
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
@@ -219,6 +221,8 @@ struct PendingAutomaticClient {
     chat_handle: Option<String>,
     chat_title: Option<String>,
     client_id: String,
+    working_version:Option<u64>,
+    price_snapshot:Option<serde_json::Value>,
     cancel: Arc<AtomicBool>,
     receiver: Receiver<Result<native_order_change::ChangeResult, String>>,
 }
@@ -1391,7 +1395,10 @@ impl BandoEgui {
             order_id,client_id:target.clone(),source_raw,order_type,
             chat_handle:row.chat_handle.clone(),
             chat_title:row.chat_title.clone(),
-            manual_model:row.manual_model.clone(),reprice_selection,receiver,
+            manual_model:row.manual_model.clone(),
+            working_version:row.working_version,
+            price_snapshot:row.pricing_preview.clone(),
+            reprice_selection,receiver,
         });
         self.source_save_error=None;
         std::thread::spawn(move || {
@@ -1429,8 +1436,12 @@ impl BandoEgui {
                 row.chat_title!=pending.chat_title
             ){
                 Some("카카오톡 대화창이 변경되었습니다. 거래처를 다시 선택하세요.")
-            }else if current.is_none_or(|row|row.manual_model!=pending.manual_model){
-                Some("수동 수정 내역이 변경되었습니다. 거래처를 다시 선택하세요.")
+            }else if current.is_none_or(|row|
+                row.manual_model!=pending.manual_model ||
+                row.working_version!=pending.working_version ||
+                row.pricing_preview!=pending.price_snapshot
+            ){
+                Some("발주서 수정·운영 저장·견적 상태가 변경되어 이전 계산을 적용하지 않았습니다.")
             }else{None};
             if stale_reason.is_some() {
                 // The chooser was dismissed at the original click. An old
@@ -2733,7 +2744,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             order_type:row.order_type.clone(),
             chat_handle:row.chat_handle.clone(),
             chat_title:row.chat_title.clone(),
-            client_id:client_id.to_owned(),cancel:Arc::clone(&cancel),receiver,
+            client_id:client_id.to_owned(),
+            working_version:row.working_version,
+            price_snapshot:row.pricing_preview.clone(),
+            cancel:Arc::clone(&cancel),receiver,
         });
         let gateway=Arc::clone(&self.gateway);
         let target=client_id.to_owned();
@@ -2780,6 +2794,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 row.chat_title==pending.chat_title &&
                 row.client_selection.as_deref()!=Some("MANUAL") &&
                 row.manual_model.is_none() &&
+                row.working_version==pending.working_version &&
+                row.pricing_preview==pending.price_snapshot &&
                 row.analysis_raw.as_deref()==Some(row.raw.as_str()) &&
                 row.analysis_evidence.is_some() &&
                 row.client_match.as_ref().and_then(|match_info|
@@ -8110,6 +8126,7 @@ mod client_chooser_async_handoff_tests {
             order_id:"draft-1".into(),client_id:"new".into(),
             source_raw:"첫 발주 원문".into(),order_type:"AGENCY".into(),
             chat_handle:None,chat_title:None,manual_model:None,
+            working_version:None,price_snapshot:None,
             reprice_selection:None,receiver,
         });
         tx.send(Ok(native_order_change::ChangeResult{
