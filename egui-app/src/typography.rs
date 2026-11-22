@@ -101,6 +101,27 @@ pub const MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y: f32 = 2.0;
 /// Use the midpoint -1pt without moving control or table rectangles.
 pub const MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y: i8 = -1;
 
+/// Common form rows: label glyphs in the 19pt emphasized Korean line box
+/// look above the optical center of a 36pt field. Apply the adjustment only
+/// to inline *form labels*, never table headers, navigation or body text.
+/// The position is shared by every form using components::form_field_label.
+pub const FORM_LABEL_OPTICAL_CENTER_Y: f32 = 2.0;
+/// Move form-editing ink and its caret together. Never use the Consolas
+/// numeric glyph tweak to fix a proportional Body TextEdit baseline.
+pub const FORM_INPUT_OPTICAL_SHIFT_Y: i8 = -1;
+
+pub fn form_label_text_y(row_height:f32,galley_height:f32)->f32 {
+    (row_height-galley_height)*0.5+FORM_LABEL_OPTICAL_CENTER_Y
+}
+pub fn form_input_text_margin()->egui::Margin{
+    const VERTICAL:i8=2;
+    egui::Margin {
+        left:8,right:8,
+        top:VERTICAL+FORM_INPUT_OPTICAL_SHIFT_Y,
+        bottom:VERTICAL-FORM_INPUT_OPTICAL_SHIFT_Y,
+    }
+}
+
 /// Preserve 2pt average vertical padding, but shift the editable
 /// text area's center upward 1pt. Unlike painting text over a TextEdit,
 /// this moves the selection cursor and placeholder with the typed text.
@@ -820,6 +841,22 @@ pub fn install(ctx: &egui::Context) {
     }
 }
 
+#[cfg(test)]
+mod form_baseline_geometry_tests {
+    use super::*;
+    #[test]
+    fn form_label_centers_in_shared_36pt_control_without_changing_size(){
+        assert_eq!(form_label_text_y(36.0,19.0),10.5);
+        assert_eq!(form_label_text_y(36.0,22.0),9.0);
+        let margin=form_input_text_margin();
+        assert_eq!(margin.top,1);
+        assert_eq!(margin.bottom,3);
+        assert_eq!(margin.left,margin.right);
+        assert_eq!(margin.top+margin.bottom,4);
+        // Data-table numeric alignment is independent of form input centering.
+        assert_eq!(DATA_NUMERIC_GLYPH_OFFSET_Y,2.5);
+    }
+}
 #[cfg(test)]
 mod management_table_type_roles_tests {
     use super::*;
