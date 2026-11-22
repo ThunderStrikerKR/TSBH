@@ -1,0 +1,40 @@
+name: Client tag and freight-master table layout verification
+on:
+  push:
+    branches:
+      - ui/client-search-tag-chips-67
+      - main
+    paths:
+      - .github/workflows/egui-client-tags-layout-check.yml
+      - egui-app/src/client_search_tags.rs
+      - egui-app/src/client_manager.rs
+      - egui-app/src/components.rs
+      - egui-app/src/freight_manager.rs
+      - egui-app/src/main.rs
+  pull_request:
+    paths:
+      - .github/workflows/egui-client-tags-layout-check.yml
+      - egui-app/src/client_search_tags.rs
+      - egui-app/src/components.rs
+      - egui-app/src/freight_manager.rs
+permissions:
+  contents: read
+concurrency:
+  group: client-ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  egui-client-ui:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: egui-app -> target
+      - name: Compile native egui client management
+        run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify search-tag add, duplicate prevention and individual removal
+        run: cargo test --manifest-path egui-app/Cargo.toml client_search_tags::tests -- --nocapture
+      - name: Verify the same header and row column-divider positions
+        run: cargo test --manifest-path egui-app/Cargo.toml management_client_column_divider_tests -- --nocapture
