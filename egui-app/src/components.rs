@@ -2587,6 +2587,9 @@ fn management_row_impl(
         }
         x+=col_width;
     }
+    if !heading {
+        theme::paint_button_hover(ui,&response,0.0);
+    }
     response
 }
 
