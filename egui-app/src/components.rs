@@ -3292,17 +3292,20 @@ pub fn reception_item_actions(ui: &mut Ui, dispatch_origin: Option<&str>) {
 }
 /// For an unconfirmed draft, each visible control opens the native manual
 /// editor rather than pretending the read-only projection was mutated.
+pub enum ReceptionItemAction {
+    AddItem,
+    Origin(&'static str),
+}
 pub fn reception_item_actions_editable(
     ui:&mut Ui,dispatch_origin:Option<&str>,editable:bool
-)->bool{
-    let mut edit=false;
-    ui.horizontal_wrapped(|bar| {
+)->Option<ReceptionItemAction>{
+    let mut selected=None;
+    ui.horizontal_wrapped(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-        if theme::action(
-            bar,"＋ 상품 추가",theme::ButtonRole::Standard,editable
-        ).clicked(){edit=true;}
+        if theme::action(bar,"＋ 상품 추가",theme::ButtonRole::Standard,editable)
+            .clicked(){selected=Some(ReceptionItemAction::AddItem);}
         bar.with_layout(Layout::right_to_left(Align::Center),|right|{
-            let mut button=|right:&mut Ui,label:&str,selected:bool|{
+            let button=|right:&mut Ui,label:&str,selected:bool|{
                 let response=right.add_enabled(editable,
                     egui::Button::new(typography::action_label(
                         label,typography::FONT_STANDARD_ACTION,false,
@@ -3315,14 +3318,18 @@ pub fn reception_item_actions_editable(
                     .corner_radius(theme::CONTROL_RADIUS)
                 );
                 theme::paint_button_hover(right,&response,theme::CONTROL_RADIUS as f32);
-                if response.clicked(){edit=true;}
+                response.clicked()
             };
-            button(right,"매장",dispatch_origin==Some("STORE"));
-            button(right,"공장",dispatch_origin==Some("FACTORY"));
+            if button(right,"매장",dispatch_origin==Some("STORE")){
+                selected=Some(ReceptionItemAction::Origin("STORE"));
+            }
+            if button(right,"공장",dispatch_origin==Some("FACTORY")){
+                selected=Some(ReceptionItemAction::Origin("FACTORY"));
+            }
             right.label(typography::caption("발송지:"));
         });
     });
-    edit
+    selected
 }
 
 pub fn reception_vat_row(ui: &mut Ui, vat_included: Option<bool>) {
