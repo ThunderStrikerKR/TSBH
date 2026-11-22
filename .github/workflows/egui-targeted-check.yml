@@ -91,6 +91,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml source_autosave::source_delta_tests -- --nocapture
       - name: Verify product details dialog scope, choice and quantity-gated Apply
         run: cargo test --manifest-path egui-app/Cargo.toml item_editor::tests -- --nocapture
+      - name: Verify product-row click opens correct modal and blocks dirty edits
+        run: cargo test --manifest-path egui-app/Cargo.toml reception_item_editor_integration_tests -- --nocapture
       - name: Verify catalog replacement preserves source and confirmed quantity
         run: cargo test --manifest-path egui-app/Cargo.toml explicit_catalog_replacement_keeps_existing_quantity_and_source -- --nocapture
       - name: Verify shared reception async admission rejects every conflicting write order
