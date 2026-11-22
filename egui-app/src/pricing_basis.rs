@@ -22,6 +22,20 @@ fn rule_inputs(rule:&Value)->Value{
         "maxConfirmed":value(rule,"maxConfirmed")
     })
 }
+/// Retain only the minimal rows used to compute the native quote basis.
+/// These are from the quoted Rust Order, not a pre-client OCR projection.
+/// Never store the recipient name, address, phone or full product master here.
+pub fn order_inputs(order:&Value)->Value{
+    json!({"recipients":list(order,"recipients").iter().map(|row|json!({
+        "items":list(row,"items").iter().map(|item|json!({
+            "productId":value(item,"productId"),
+            "variantId":value(item,"variantId"),
+            "manualUnitPrice":value(item,"manualUnitPrice"),
+            "origin":value(item,"origin"),
+            "quantity":value(item,"quantity")
+        })).collect::<Vec<_>>()
+    })).collect::<Vec<_>>()})
+}
 /// Catalog dependency projection for the selected dealer, actual line variants
 /// and the shipment combinations used by THIS draft. The client's contact
 /// information, other products, other customers and unrelated freight groups
@@ -132,7 +146,8 @@ pub fn snapshot(state:&Value,client:&Value,order:&Value)->Value{
             "at":value(row,"at")
         })).collect::<Vec<_>>();
     json!({
-        "schema":1,
+        "schema":2,
+        "orderInputs":order_inputs(order),
         "client":{
             "id":value(client,"id"),"tier":value(client,"tier"),
             "shippingFeeExcluded":value(client,"shippingFeeExcluded"),
