@@ -23,6 +23,8 @@ on:
       - egui-app/src/pricing_basis.rs
       - egui-app/src/native_order_change.rs
       - egui-app/src/workflow_board_ui.rs
+      - egui-app/src/workflow_board.rs
+      - egui-app/src/source_highlight.rs
       - egui-app/src/manual_workspace.rs
       - src-tauri/src/business_core/rules/pricing.rs
       - egui-app/src/floating_notice.rs
@@ -71,6 +73,14 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify linked source hover uses authoritative recipient spans
+        run: cargo test --manifest-path egui-app/Cargo.toml source_highlight::tests -- --nocapture
+      - name: Verify 72nd-pass reversible hover and committed pending-order selection
+        run: cargo test --manifest-path egui-app/Cargo.toml pending_hover_navigation_tests -- --nocapture
+      - name: Verify cross-group evidence selection and preferred shipment identity
+        run: cargo test --manifest-path egui-app/Cargo.toml linked_recipient_selection_tests -- --nocapture
+      - name: Verify clicked recipient remains selected when linked hover ends
+        run: cargo test --manifest-path egui-app/Cargo.toml hover_changes_visible_recipient_without_changing_committed_selection -- --nocapture
       - name: Verify dealer chooser closes on click before native calculation resolves
         run: cargo test --manifest-path egui-app/Cargo.toml client_chooser_async_handoff_tests -- --nocapture
       - name: Verify saved native quote and recognition survive SQLite restart
