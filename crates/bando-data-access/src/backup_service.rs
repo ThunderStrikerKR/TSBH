@@ -190,6 +190,11 @@ fn restore_selected(conn: &mut Connection, base: &Path, filename: &str)
         recovery::strip_core(&mut restored);
         conn.execute("UPDATE app_state SET payload=?1 WHERE id=1",
             [serde_json::to_string(&restored).map_err(err)?]).map_err(err)?;
+        // Retire legacy invoice names BEFORE declaring restore success.
+        // A failure now follows the established pre-restore rollback path;
+        // migration reuses the verified safety copy rather than creating a
+        // second backup of intermediate restored data.
+        crate::client_names::migrate_v2_with_verified_restore_backup(conn)?;
         validate_database(conn)
     })();
     if let Err(primary_error) = result {
