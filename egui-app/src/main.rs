@@ -3656,15 +3656,11 @@ impl BandoEgui {
                         progress.add_space(
                             ((body_rect.height()-content_height)/2.0).max(0.0)
                         );
-                        progress.label(
-                            egui::RichText::new("이미지 분석중...")
-                                .size(typography::FONT_OCR_PROGRESS_TITLE)
-                                .strong()
-                                .color(theme::TEXT)
-                        );
+                        // Visual reading order: source image, progress
+                        // title, then Cancel. Keep the thumbnail inside the
+                        // reception source body with no additional caption.
                         if let (Some((texture,_,_)),Some(size))=
                             (processing_preview.as_ref(),image_size){
-                            progress.add_space(theme::SPACE_12);
                             let (image_rect,_)=progress.allocate_exact_size(
                                 size,Sense::hover()
                             );
@@ -3676,7 +3672,14 @@ impl BandoEgui {
                                 ),
                                 egui::Color32::WHITE
                             );
+                            progress.add_space(theme::SPACE_12);
                         }
+                        progress.label(
+                            egui::RichText::new("이미지 분석중...")
+                                .size(typography::FONT_OCR_PROGRESS_TITLE)
+                                .strong()
+                                .color(theme::TEXT)
+                        );
                         progress.add_space(theme::SPACE_16);
                         if theme::action(
                             progress,"취소",ButtonRole::Standard,true
