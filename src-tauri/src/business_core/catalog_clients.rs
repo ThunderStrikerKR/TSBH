@@ -144,7 +144,10 @@ fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
     Ok(())
 }
 fn upsert(state: &Value, entity: &Value, collection: &str) -> Result<Value, String> {
-    client_mutation::upsert(state,entity,collection)
+    let canonical=if collection=="clients" {
+        bando_data_access::client_names::normalized(entity)
+    }else{entity.clone()};
+    client_mutation::upsert(state,&canonical,collection)
 }
 /// Original oracle: src/client-workbook.ts::applyClientWorkbook.
 /// The Excel parser and per-row draft remain in TypeScript; the approved
