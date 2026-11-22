@@ -2584,6 +2584,28 @@ fn reception_item_columns(rect: Rect) -> [Rect; 3] {
     ]
 }
 
+/// Ellipsize only the displayed product label, using the exact 16pt glyph
+/// width. This does not alter the Rust item title, matching key or hover text.
+/// Unicode char boundaries prevent cutting a Hangul syllable or UTF-8 byte.
+fn reception_ellipsized_product(
+    full:&str,max_width:f32,mut measure:impl FnMut(&str)->f32
+)->String {
+    if max_width<=0.0 {return String::new();}
+    if measure(full)<=max_width {return full.to_owned();}
+    if measure("…")>max_width {return String::new();}
+    let boundaries:Vec<usize>=full.char_indices().map(|(i,_)|i)
+        .chain(std::iter::once(full.len())).collect();
+    let mut low=0usize;
+    let mut high=boundaries.len()-1;
+    while low<high {
+        let mid=low+(high-low+1)/2;
+        let candidate=format!("{}…",&full[..boundaries[mid]]);
+        if measure(&candidate)<=max_width {low=mid;}
+        else {high=mid-1;}
+    }
+    format!("{}…",full[..boundaries[low]].trim_end())
+}
+
 pub struct ReceptionItemCells {
     pub product: Response,
     pub quantity: Response,
@@ -2665,13 +2687,21 @@ pub fn reception_item_row(
         // value clip and its anchor inside the highlighted cell also stops
         // the last digit / descender from touching a blue edge.
         let value_clip=cell.shrink2(egui::vec2(theme::SPACE_4,0.0));
+        // Use the same font metrics as Painter::text, not a character-count
+        // guess. Only the product column truncates; financial values do not.
+        let visible_product=(index==0).then(||reception_ellipsized_product(
+            text,(value_clip.width()-0.5).max(0.0),
+            |candidate|ui.painter().layout_no_wrap(
+                candidate.to_owned(),font.clone(),color
+            ).size().x,
+        ));
         ui.painter().with_clip_rect(value_clip).text(
             egui::pos2(
                 if right { value_clip.right() } else { value_clip.left() },
                 value_clip.center().y
             ),
             if right { egui::Align2::RIGHT_CENTER } else { egui::Align2::LEFT_CENTER },
-            text,
+            visible_product.as_deref().unwrap_or(text),
             font,
             if active[index] {source_highlight::ACTIVE_TEXT} else {color},
         );
@@ -2990,6 +3020,16 @@ mod management_toolbar_geometry_tests {
             assert_eq!(rect.top()-cell.top(),cell.bottom()-rect.bottom());
             assert!(cell.contains(rect.min)&&cell.contains(rect.max));
         }
+    }
+
+    #[test]
+    fn reception_product_ellipsis_respects_width_and_korean_boundaries() {
+        let measure=|value:&str|value.chars().count() as f32;
+        assert_eq!(reception_ellipsized_product("연주용보면대708-1",5.0,measure),"연주용보…");
+        assert_eq!(reception_ellipsized_product("짧은품목",8.0,measure),"짧은품목");
+        assert_eq!(reception_ellipsized_product("긴품목",1.0,measure),"…");
+        assert_eq!(reception_ellipsized_product("긴품목",0.5,measure),"");
+        assert_eq!(reception_ellipsized_product("긴품목",0.0,measure),"");
     }
 
     #[test]
