@@ -101,6 +101,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml manual_classification::tests -- --nocapture
       - name: Verify working-order plain shipment list rows and product text
         run: cargo test --manifest-path egui-app/Cargo.toml shipment_list_tests -- --nocapture
+      - name: Verify unconfirmed receipts have no dealer-confirmation stage button
+        run: cargo test --manifest-path egui-app/Cargo.toml pending_matching_tests -- --nocapture
       - name: Verify floating notice placement at screen edges and caret anchors
         run: cargo test --manifest-path egui-app/Cargo.toml floating_notice::tests -- --nocapture
       - name: Verify Excel loading and empty-state text does not shift its table

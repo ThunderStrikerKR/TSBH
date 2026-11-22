@@ -37,7 +37,6 @@ pub struct BoardUi {
 }
 pub enum Event {
     SelectPending(String),
-    ConfirmPending(String),
     SelectShipment(Selection),
     ToggleGroup(String),
     TogglePending(String),
@@ -451,7 +450,7 @@ fn workflow_primary_at(
 /// the one-touch button (6pt slot gap + 4pt inner ink inset).
 fn workflow_action_line(
     ui:&mut Ui,lower:Rect,id:&str,shipments:usize,total:Option<i64>,
-    vat:Option<&str>,button_text:&str,enabled:bool,
+    vat:Option<&str>,button_text:Option<&str>,enabled:bool,
     undo_enabled:bool,in_preview:bool
 )->(bool,bool,bool){
     let content=workflow_row_content(lower);
@@ -520,15 +519,22 @@ fn workflow_action_line(
     ui.interact(price,workflow_widget_id("workflow-money",id,in_preview),
         egui::Sense::hover()).on_hover_text(&amount);
 
-    let response=workflow_primary_at(
-        ui,id,workflow_control_rect(action),button_text,enabled,in_preview
-    );
-    let undo_clicked=workflow_auxiliary_at(
-        ui,id,workflow_control_rect(undo),
-        components::WorkflowAuxiliaryAction::PreviousStage,
-        undo_enabled,in_preview
-    ).clicked();
-    (response.clicked(),response.hovered(),undo_clicked)
+    // Pending receptions are NOT a business workflow step. Matching a
+    // dealer happens asynchronously through native Rust automatically;
+    // no "confirm dealer" stage/button or undo slot is rendered for them.
+    if let Some(text)=button_text {
+        let response=workflow_primary_at(
+            ui,id,workflow_control_rect(action),text,enabled,in_preview
+        );
+        let undo_clicked=workflow_auxiliary_at(
+            ui,id,workflow_control_rect(undo),
+            components::WorkflowAuxiliaryAction::PreviousStage,
+            undo_enabled,in_preview
+        ).clicked();
+        (response.clicked(),response.hovered(),undo_clicked)
+    }else{
+        (false,false,false)
+    }
 }
 /// Keep the expanded shipment detail inset; the compact header and action
 /// bands alone are full width. Neither selected nor hover preview changes
@@ -655,7 +661,7 @@ fn group_frame(
         let (advance_clicked,stage_hovered,undo_clicked)=workflow_action_line(
             ui,bottom,&group.id,group.shipments.len(),group.total,
             if group.vat_included>0{Some(vat.as_str())}else{None},
-            stage_name(group.step,group.needs_notice),
+            Some(stage_name(group.step,group.needs_notice)),
             writable && !group.transferred,
             writable && group.step>0 && !group.transferred,in_preview
         );
@@ -747,11 +753,14 @@ fn pending_frame(
                 .and_then(|v|v.get("recipients"))
                 .and_then(|v|v.as_array()).map(Vec::as_slice).unwrap_or(&[])
         }else{&[]};
-        let (clicked,_,_)=workflow_action_line(
-            ui,bottom,&draft.id,recipients.len(),None,None,"거래처 확인",
-            true,false,false
+        // No manual "거래처 확인" step: a verified native client ID is
+        // applied automatically by the reception matching pipeline.
+        // Keep the compact amount/shipment summary while omitting the
+        // stage and undo controls until a real workflow group exists.
+        let _=workflow_action_line(
+            ui,bottom,&draft.id,recipients.len(),None,None,None,
+            false,false,false
         );
-        if clicked{event=Some(Event::ConfirmPending(draft.id.clone()));}
         if open{
             workflow_details(ui,|ui|{
                 components::soft_divider(ui);
@@ -955,6 +964,24 @@ mod shipment_list_tests {
             assert!(rect.height()>=40.0 && rect.height()<=46.0);
         }
         assert_eq!(theme::WORKFLOW_DETAIL_ROW_BG,theme::PANEL);
+    }
+}
+
+#[cfg(test)]
+mod pending_matching_tests {
+    use super::*;
+
+    #[test]
+    fn pending_receipt_never_emits_a_fake_dealer_confirmation_action(){
+        let ctx=egui::Context::default();
+        let mut tapped=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let draft=WorkingReception::default();
+                tapped=pending_frame(ui,&draft,false,false,"확인된 거래처");
+            });
+        });
+        assert!(tapped.is_none());
     }
 }
 

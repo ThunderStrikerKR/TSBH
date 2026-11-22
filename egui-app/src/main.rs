@@ -5488,7 +5488,6 @@ impl BandoEgui {
     fn show_workflow_dialog(&mut self,ctx:&egui::Context,work_area:Rect){
         let Some(dialog)=self.workflow_dialog.clone() else{return;};
         let mut close=false;
-        let mut select_pending:Option<String>=None;
         let mut delete_pending:Option<String>=None;
         let mut command:Option<(
             String,String,Option<String>,Option<String>,bool
@@ -5605,8 +5604,6 @@ impl BandoEgui {
                         close=components::modal_header(
                             ui,"배송 건 묶음 관리","닫기",true
                         );
-                        ui.label("거래처를 확인해야 실제 배송 묶음 및 업무 이력이 생성됩니다.");
-                        ui.label("거래처 지정 후 배송 건 분리와 다시 묶기를 사용할 수 있습니다.");
                         if let Some(rows)=draft.analysis_evidence.as_ref()
                             .and_then(|v|v.get("recipients"))
                             .and_then(serde_json::Value::as_array){
@@ -5621,12 +5618,6 @@ impl BandoEgui {
                                 ui.label(format!("{name} / 상품 {count}종"));
                             }
                         }
-                        components::modal_action_row(ui,|buttons|{
-                            if theme::action(buttons,"거래처 확인하기",
-                                ButtonRole::Primary,true).clicked(){
-                                select_pending=Some(id.clone());
-                            }
-                        });
                     });
                 }else{close=true;}
             }
@@ -5711,11 +5702,6 @@ impl BandoEgui {
         }
         self.workflow_manage_target=target;
         self.workflow_manage_ack=ack;
-        if let Some(id)=select_pending{
-            self.select_reception(&id,ctx);
-            self.open_client_chooser(ctx);
-            close=true;
-        }
         if let Some(id)=delete_pending{
             self.delete_pending_reception(&id,ctx);
             close=true;
@@ -5802,13 +5788,6 @@ impl BandoEgui {
             }
             Some(workflow_board_ui::Event::DeletePending(id))=>{
                 self.workflow_dialog=Some(WorkflowDialog::DeletePending(id));
-            }
-            Some(workflow_board_ui::Event::ConfirmPending(id))=>{
-                self.workflow_ui.selection=None;
-                self.workflow_ui.folded=None;
-                self.workflow_ui.stop_preview();
-                self.select_reception(&id,ui.ctx());
-                self.open_client_chooser(ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
                 self.workflow_ui.selection=None;
