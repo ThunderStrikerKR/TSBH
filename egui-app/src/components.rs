@@ -2329,27 +2329,30 @@ fn paint_client_line(
     );
 }
 
-/// Keep client-list headings visible while the rows scroll. This uses
-/// the SAME 30/38/32 column coordinates and 12pt text insets as the
-/// existing client row renderer; horizontal scroll shifts only the glyphs,
-/// never the header's fixed 36pt viewport.
+/// Client columns share the EXACT 36pt / 34pt text / 2pt footer band
+/// of Freight Assignment. Column widths and 12pt label starts still
+/// belong to the client row contract; only the master chrome is reused.
+/// The visible data rect excludes the scrollbar, and horizontally scrolled
+/// labels move together with the row data rather than with the rail.
 pub fn management_client_header(
-    ui:&mut Ui,header:Rect,table_left:f32,table_width:f32,
-    current_sort:Option<(usize,bool)>
+    ui:&mut Ui,header:Rect,header_content_rect:Rect,
+    table_left:f32,table_width:f32,current_sort:Option<(usize,bool)>
 )->Option<usize>{
     let titles=["거래처","발송인 정보","거래 조건"];
     let sort_keys=["거래처명","주소","가격 등급"];
-    let painter=ui.painter().with_clip_rect(header);
-    painter.rect_filled(header,0.0,theme::RAISED);
+    let text_row=management_master_header_begin(
+        ui,header,header_content_rect
+    );
+    let painter=ui.painter().with_clip_rect(text_row);
     let mut x=table_left;
     let mut selected=None;
     for (i,title) in titles.iter().enumerate(){
         let col_width=table_width*theme::MANAGEMENT_CLIENT_COLS[i];
         let column=Rect::from_min_max(
-            egui::pos2(x,header.top()),
-            egui::pos2(x+col_width,header.bottom())
+            egui::pos2(x,text_row.top()),
+            egui::pos2(x+col_width,text_row.bottom())
         );
-        let visible=column.intersect(header);
+        let visible=column.intersect(text_row);
         if visible.width()>0.0 {
             let response=ui.interact(
                 visible,ui.make_persistent_id(("client-management-sort",i)),
@@ -2363,18 +2366,13 @@ pub fn management_client_header(
             ));
             if response.clicked(){selected=Some(i);}
             if response.hovered(){
-                painter.rect_stroke(
-                    visible.shrink(1.0),2.0,
-                    Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
-                    egui::StrokeKind::Inside
-                );
+                management_master_header_sort_hover(ui,visible);
             }
             let text_rect=Rect::from_min_max(
-                egui::pos2(column.left()+theme::SPACE_12,header.top()),
-                egui::pos2(column.right()-theme::SPACE_12,header.bottom())
-            ).intersect(header);
+                egui::pos2(column.left()+theme::SPACE_12,text_row.top()),
+                egui::pos2(column.right()-theme::SPACE_12,text_row.bottom())
+            ).intersect(text_row);
             if text_rect.width()>0.0 {
-                // Same 14pt header hierarchy as Freight Assignment.
                 let title_galley=typography::management_table_header_galley(ui,title);
                 let (arrow,color)=match current_sort{
                     Some((col,false)) if col==i=>("▲",theme::SELECTION),
@@ -2383,24 +2381,22 @@ pub fn management_client_header(
                 };
                 let arrow_galley=typography::management_table_header_galley(ui,arrow);
                 let title_x=column.left()+theme::SPACE_12;
-                let text_clip=painter.with_clip_rect(text_rect);
-                text_clip.galley(
-                    egui::pos2(title_x,header.center().y-title_galley.size().y/2.0),
+                let clip=painter.with_clip_rect(text_rect);
+                clip.galley(
+                    egui::pos2(title_x,
+                        text_row.center().y-title_galley.size().y/2.0),
                     title_galley.clone(),theme::SECONDARY
                 );
-                text_clip.galley(
+                clip.galley(
                     egui::pos2(title_x+title_galley.size().x+theme::SPACE_4,
-                        header.center().y-arrow_galley.size().y/2.0),
+                        text_row.center().y-arrow_galley.size().y/2.0),
                     arrow_galley,color
                 );
             }
         }
         x+=col_width;
     }
-    painter.line_segment(
-        [header.left_bottom(),header.right_bottom()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
+    management_master_header_finish(ui,header);
     selected
 }
 
@@ -2439,9 +2435,15 @@ fn management_row_impl(
             theme::TABLE_ROW_ALT_BG
         }else{theme::PANEL};
     ui.painter().rect_filled(rect,0.0,bg);
-    ui.painter().line_segment(
-        [rect.left_bottom(),rect.right_bottom()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+    // Paint the 1pt row rule inside its allocated rect. A centered
+    // line_segment on bottom() was half-clipped and looked inconsistent
+    // against the master's crisp 2pt header band at fractional DPI.
+    ui.painter().rect_filled(
+        Rect::from_min_max(
+            egui::pos2(rect.left(),
+                rect.bottom()-theme::SOFT_DIVIDER_WIDTH),
+            rect.right_bottom()
+        ),0.0,theme::DIVIDER
     );
 
     let mut x=rect.left();
