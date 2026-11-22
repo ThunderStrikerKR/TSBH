@@ -37,6 +37,7 @@ pub struct BoardUi {
 }
 pub enum Event {
     SelectPending(String),
+    ConfirmPending(String),
     SelectShipment(Selection),
     ToggleGroup(String),
     TogglePending(String),
@@ -826,7 +827,7 @@ fn pending_frame(
             ui,bottom,&draft.id,recipients.len(),None,None,"거래처 확인",
             true,false,false
         );
-        if clicked{event=Some(Event::SelectPending(draft.id.clone()));}
+        if clicked{event=Some(Event::ConfirmPending(draft.id.clone()));}
         if open{
             workflow_details(ui,|ui|{
                 components::soft_divider(ui);
