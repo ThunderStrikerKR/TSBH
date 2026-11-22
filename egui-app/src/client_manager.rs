@@ -636,22 +636,102 @@ impl ClientManager {
             if let Some(client)=chosen{self.begin(client);}
         });
     }
+    fn accept_tag_text(&mut self,draft:&mut Value,text:&str){
+        let (_,duplicates)=client_search_tags::add(draft,text);
+        self.tag_notice=if duplicates>0 {
+            Some("중복된 검색 태그는 추가하지 않았습니다.".to_owned())
+        }else{None};
+    }
+    fn search_tag_editor(&mut self,ui:&mut Ui,draft:&mut Value){
+        ui.vertical(|panel|{
+            panel.spacing_mut().item_spacing.y=theme::SPACE_8;
+            panel.label(typography::field_label("검색 태그"));
+            let tags=client_search_tags::labels(draft);
+            if !tags.is_empty(){
+                let mut removed=None;
+                panel.horizontal_wrapped(|chips|{
+                    chips.spacing_mut().item_spacing=egui::vec2(
+                        theme::SPACE_8,theme::SPACE_8
+                    );
+                    for tag in &tags{
+                        // Master INPUT surface and soft outline; each chip
+                        // stays a unit while the row wraps at modal width.
+                        egui::Frame::new()
+                            .fill(theme::INPUT)
+                            .stroke(egui::Stroke::new(
+                                theme::FRAME_STROKE_WIDTH,theme::DIVIDER
+                            ))
+                            .corner_radius(egui::CornerRadius::same(
+                                theme::CONTROL_RADIUS
+                            ))
+                            .inner_margin(egui::Margin::symmetric(8,2))
+                            .show(chips,|chip|{
+                                chip.horizontal(|line|{
+                                    line.spacing_mut().item_spacing.x=theme::SPACE_4;
+                                    let visible=if tag.chars().count()>22 {
+                                        format!("{}…",tag.chars().take(22)
+                                            .collect::<String>())
+                                    }else{tag.to_owned()};
+                                    line.label(typography::body(&visible))
+                                        .on_hover_text(tag);
+                                    // The close target uses the existing
+                                    // shared 28pt navigation hit-area token.
+                                    if line.add(egui::Button::new("×")
+                                        .frame(false)
+                                        .min_size(egui::vec2(
+                                            theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH,
+                                            theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH
+                                        )))
+                                        .on_hover_text(format!("검색 태그 '{tag}' 삭제"))
+                                        .clicked(){
+                                        removed=Some(tag.to_owned());
+                                    }
+                                });
+                            });
+                    }
+                });
+                if let Some(tag)=removed{
+                    client_search_tags::remove(draft,&tag);
+                    self.tag_notice=None;
+                }
+            }
+            let (changed,submit)=panel.horizontal(|entry|{
+                entry.spacing_mut().item_spacing.x=theme::SPACE_8;
+                let button_slot=theme::INPUT_HEIGHT*2.5;
+                let width=(entry.available_width()-button_slot
+                    -theme::SPACE_8).max(60.0);
+                let response=components::flexible_text_field(
+                    entry,&mut self.tag_input,width,"검색 태그 입력"
+                );
+                let submit_by_enter=response.has_focus() &&
+                    entry.input(|input|input.key_pressed(egui::Key::Enter));
+                let submit_by_button=theme::action(
+                    entry,"추가",ButtonRole::Standard,
+                    !self.tag_input.trim().is_empty()
+                ).clicked();
+                (response.changed(),submit_by_enter||submit_by_button)
+            }).inner;
+            if changed {
+                self.tag_notice=None;
+                if let Some(completed)=client_search_tags::take_delimited(
+                    &mut self.tag_input
+                ){
+                    self.accept_tag_text(draft,&completed);
+                }
+            }
+            if submit {
+                let entered=std::mem::take(&mut self.tag_input);
+                self.accept_tag_text(draft,&entered);
+            }
+            if let Some(notice)=self.tag_notice.as_deref(){
+                panel.label(typography::caption(notice));
+            }
+        });
+    }
     fn editor_fields(&mut self,ui:&mut Ui,draft:&mut Value) {
         ui.label(typography::section_heading("거래처 식별"));
         label_edit(ui,draft,"name","거래처명");
-        ui.vertical(|ui|{
-            ui.label(typography::field_label("검색 태그"));
-            let mut tags=[
-                field(draft,"shortNames"),field(draft,"identifiers")
-            ].into_iter().filter(|v|!v.is_empty())
-                .collect::<Vec<_>>().join(", ");
-            if components::flexible_text_field(
-                ui,&mut tags,ui.available_width(),""
-            ).changed(){
-                draft["shortNames"]=json!(tags);
-                draft["identifiers"]=json!("");
-            }
-        });
+        self.search_tag_editor(ui,draft);
         components::soft_divider(ui);
         ui.label(typography::section_heading("발송인 정보"));
         label_edit(ui,draft,"address","거래처 주소");
@@ -859,7 +939,8 @@ impl ClientManager {
                     |right|{
                         let label=if exists {"변경사항 저장"}else{"거래처 등록"};
                         let dirty=self.original.as_ref()
-                            .is_some_and(|old|*old!=draft);
+                            .is_some_and(|old|*old!=draft)
+                            || !self.tag_input.trim().is_empty();
                         if theme::action(right,label,ButtonRole::Primary,
                             editable && !busy && (!exists || dirty)).clicked(){
                             save=true;
@@ -875,8 +956,18 @@ impl ClientManager {
                 close=true;
             }
         }
+        // Saving with an unfinished tag must never silently drop the input.
+        // Resolve it into the same canonical shortNames draft before CAS.
+        if save && !self.tag_input.trim().is_empty(){
+            let pending=std::mem::take(&mut self.tag_input);
+            self.accept_tag_text(&mut draft,&pending);
+        }
         self.draft=Some(draft);
-        if save {self.mutate(Arc::clone(&gateway),ctx,"upsert_client");}
+        if save && self.dirty(){
+            self.mutate(Arc::clone(&gateway),ctx,"upsert_client");
+        } else if save && !exists {
+            self.mutate(Arc::clone(&gateway),ctx,"upsert_client");
+        }
         if delete {self.confirm_delete=true;}
         if close {self.request_close();}
         if self.confirm_delete {
@@ -915,6 +1006,7 @@ impl ClientManager {
                 if cancel {self.confirm_discard=false;}
                 if approve {
                     self.confirm_discard=false;self.draft=None;self.original=None;
+                    self.tag_input.clear();self.tag_notice=None;
                 }
             });
         }
