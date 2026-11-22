@@ -1040,6 +1040,22 @@ pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
     form_field_label_sized(ui,label,width)
 }
 
+/// Approved inline modal form: label and editor occupy ONE 36pt row.
+/// The editor is responsible for its own minimum width and disabled state.
+/// Reuse this for product, client and other management dialogs instead of
+/// screen-specific vertical label/input stacks.
+pub fn modal_labeled_row<R>(
+    ui:&mut Ui,label:&str,control:impl FnOnce(&mut Ui)->R
+)->R {
+    ui.horizontal(|line|{
+        line.spacing_mut().item_spacing.x=theme::SPACE_8;
+        form_field_label_sized(
+            line,label,theme::MODAL_FORM_LABEL_WIDTH
+        );
+        control(line)
+    }).inner
+}
+
 /// Short body-text input (for rates and percentages): same caret, selection,
 /// margins and row height as every form editor. Font remains proportional,
 /// so the independent Consolas +2.5pt data-value tweak is not involved.
