@@ -2379,21 +2379,6 @@ fn paint_client_line(
     );
 }
 
-/// Split the rendered condition string without changing the persisted
-/// transaction rules. Payment and VAT receive independent fixed text slots
-/// so the following labels never shift with proportional glyph widths.
-fn client_condition_center_offset(slot_width:f32,text_width:f32)->f32{
-    ((slot_width-text_width)/2.0).max(0.0)
-}
-fn client_condition_parts(terms:&str)->(&str,&str,&str){
-    let mut segments=terms.splitn(3," / ");
-    (
-        segments.next().unwrap_or(""),
-        segments.next().unwrap_or(""),
-        segments.next().unwrap_or("")
-    )
-}
-
 /// Shared management-table column separators. Freight Assignment and
 /// Client Management both call this painter for header and body instead
 /// of leaving vertical rules to independently implemented screen widgets.
@@ -2590,70 +2575,19 @@ fn management_row_impl(
                 badge.left()+(badge.width()-badge_text.size().x)/2.0,
                 badge_text,ink
             );
-            if !secondary.is_empty() {
+            if !secondary.is_empty(){
                 let second=Rect::from_min_max(
                     egui::pos2((badge.right()+theme::SPACE_8).min(cell.right()),cell.top()),
                     cell.max
                 );
-                let (payment,vat,extras)=client_condition_parts(secondary);
-                let measured=|text:&str|{
-                    typography::client_table_metadata_galley(
-                        ui,text,theme::MUTED
-                    ).size().x
-                };
-                // Use real font metrics rather than assuming Hangul letters
-                // and punctuation all occupy identical visual widths.
-                let payment_slot=measured("선입금").max(measured("후불"));
-                let vat_slot=measured("부가세 포함")
-                    .max(measured("부가세 별도"));
-                // Center short payment labels in the fixed slot, rather
-                // than leaving an oversized blank before the slash.
-                // Paint the slash with an explicit compact 4pt gap.
-                let separator="/";
-                let separator_gap=theme::SPACE_4;
-                let separator_width=measured(separator);
-                let payment_x=second.left();
-                let payment_text_x=payment_x+client_condition_center_offset(
-                    payment_slot,measured(payment)
-                );
-                let payment_separator_x=payment_x+payment_slot+separator_gap;
-                let vat_x=payment_separator_x+separator_width+separator_gap;
-                let vat_separator_x=vat_x+vat_slot+separator_gap;
-                let extras_x=vat_separator_x+separator_width+separator_gap;
+                // Show only exceptions, left-aligned directly after the
+                // tier badge; no blank payment/VAT slots or centering.
                 paint_client_line(
-                    ui,second,payment_text_x,
+                    ui,second,second.left(),
                     typography::client_table_metadata_galley(
-                        ui,payment,theme::MUTED
+                        ui,secondary,theme::MUTED
                     ),theme::MUTED
                 );
-                if !vat.is_empty(){
-                    paint_client_line(
-                        ui,second,payment_separator_x,
-                        typography::client_table_metadata_galley(
-                            ui,separator,theme::MUTED
-                        ),theme::MUTED
-                    );
-                    paint_client_line(
-                        ui,second,vat_x,
-                        typography::client_table_metadata_galley(
-                            ui,vat,theme::MUTED
-                        ),theme::MUTED
-                    );
-                }
-                if !extras.is_empty(){
-                    paint_client_line(
-                        ui,second,vat_separator_x,
-                        typography::client_table_metadata_galley(
-                            ui,separator,theme::MUTED
-                        ),theme::MUTED
-                    );
-                    paint_client_line(
-                        ui,second,extras_x,
-                        typography::client_table_metadata_galley(
-                            ui,extras,theme::MUTED
-                        ),theme::MUTED
-                    );
-                }
             }
         }else{
             // Only the primary value is visible in a name/address/phone cell.
@@ -2704,21 +2638,6 @@ fn management_row_impl(
 #[cfg(test)]
 mod management_client_column_divider_tests{
     use super::*;
-    #[test]
-    fn shorter_payment_labels_are_centered_in_their_fixed_slot(){
-        assert_eq!(client_condition_center_offset(30.0,20.0),5.0);
-        assert_eq!(client_condition_center_offset(30.0,30.0),0.0);
-        assert_eq!(client_condition_center_offset(30.0,32.0),0.0);
-    }
-    #[test]
-    fn payment_and_vat_stay_in_separate_fixed_slots(){
-        assert_eq!(client_condition_parts("선입금 / 부가세 별도"),
-            ("선입금","부가세 별도",""));
-        assert_eq!(client_condition_parts("후불 / 부가세 별도 / 운임 청구 제외"),
-            ("후불","부가세 별도","운임 청구 제외"));
-        assert_eq!(client_condition_parts("선입금 / 부가세 포함 / 거래 중지"),
-            ("선입금","부가세 포함","거래 중지"));
-    }
     #[test]
     fn address_gains_all_extra_width(){
         assert_eq!(management_client_column_widths(900.0),
