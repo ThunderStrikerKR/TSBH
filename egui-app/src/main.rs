@@ -1764,6 +1764,13 @@ impl BandoEgui {
         ctx.request_repaint();
     }
 
+fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
+    let wanted=(count.min(theme::RECEPTION_VAT_LIST_VISIBLE_ROWS).max(1) as f32)
+        *theme::RECEPTION_VAT_LIST_ROW_HEIGHT;
+    wanted.min((work_area_height-theme::RECEPTION_VAT_LIST_SCREEN_RESERVE)
+        .max(theme::RECEPTION_VAT_LIST_ROW_HEIGHT))
+}
+
     fn show_vat_settings(&mut self,ctx:&egui::Context,work_area:Rect){
         let Some(dialog)=self.vat_dialog.as_mut() else{return};
         if self.active_id.as_deref()!=Some(dialog.order_id.as_str()) ||
@@ -1816,29 +1823,54 @@ impl BandoEgui {
                 }
             });
             ui.add_space(theme::SPACE_12);
-            egui::ScrollArea::vertical()
-                .max_height((work_area.height()*0.36).min(280.0))
-                .id_salt("order-vat-select-recipients")
-                .show(ui,|list|{
-                    // The list is always present: selecting one or two
-                    // recipients naturally creates an implicit partial scope.
-                    for (index,recipient) in recipients.iter().enumerate(){
-                        let id=reception_service::text(recipient,"id");
-                        if id.is_empty(){continue;}
-                        let name=reception_service::text(recipient,"name");
-                        let mut checked=dialog.recipients.contains(id);
-                        let label=format!(
-                            "{} · {}",index+1,
-                            if name.is_empty(){"수취인 확인"}else{name}
-                        );
-                        list.push_id(("order-vat-recipient",id),|row|{
-                            if row.add_enabled(!busy,
-                                egui::Checkbox::new(&mut checked,label)
-                            ).changed(){
-                                dialog.set_recipient_checked(id,checked);
+            let list_height=vat_recipient_list_height(
+                recipients.len(),work_area.height()
+            );
+            // The tinted bordered surface marks the exact scrollable region.
+            // With a standard viewport it displays ten generously spaced
+            // recipients; the eleventh is reached by scrolling inside here.
+            egui::Frame::new()
+                .fill(theme::INPUT)
+                .stroke(egui::Stroke::new(
+                    theme::FRAME_STROKE_WIDTH,theme::DIVIDER
+                ))
+                .corner_radius(theme::CONTROL_RADIUS)
+                .inner_margin(egui::Margin::symmetric(
+                    theme::SPACE_12 as i8,theme::SPACE_8 as i8
+                ))
+                .show(ui,|panel|{
+                    egui::ScrollArea::vertical()
+                        .max_height(list_height)
+                        .auto_shrink([false,false])
+                        .id_salt("order-vat-select-recipients")
+                        .show(panel,|list|{
+                            for (index,recipient) in recipients.iter().enumerate(){
+                                let id=reception_service::text(recipient,"id");
+                                if id.is_empty(){continue;}
+                                let name=reception_service::text(recipient,"name");
+                                let mut checked=dialog.recipients.contains(id);
+                                let label=format!(
+                                    "{} · {}",index+1,
+                                    if name.is_empty(){"수취인 확인"}else{name}
+                                );
+                                list.allocate_ui_with_layout(
+                                    egui::vec2(
+                                        list.available_width(),
+                                        theme::RECEPTION_VAT_LIST_ROW_HEIGHT
+                                    ),
+                                    Layout::left_to_right(Align::Center),
+                                    |row|{
+                                        row.push_id(("order-vat-recipient",id),|cell|{
+                                            if cell.add_enabled(!busy,
+                                                egui::Checkbox::new(&mut checked,label)
+                                            ).changed(){
+                                                dialog.set_recipient_checked(id,checked);
+                                            }
+                                        });
+                                    }
+                                );
                             }
                         });
-                    }
                 });
             if let Some(error)=dialog.error.as_deref(){
                 ui.label(typography::status(error,theme::DANGER));
@@ -6613,6 +6645,15 @@ impl eframe::App for BandoEgui {
 #[cfg(test)]
 mod vat_settings_ui_tests {
     use super::*;
+    #[test]
+    fn recipient_list_shows_ten_rows_before_scroll_when_height_allows(){
+        let row=theme::RECEPTION_VAT_LIST_ROW_HEIGHT;
+        assert_eq!(vat_recipient_list_height(2,900.0),2.0*row);
+        assert_eq!(vat_recipient_list_height(10,900.0),10.0*row);
+        assert_eq!(vat_recipient_list_height(11,900.0),10.0*row);
+        assert_eq!(vat_recipient_list_height(25,900.0),10.0*row);
+        assert!(vat_recipient_list_height(25,460.0)<10.0*row);
+    }
     #[test]
     fn exact_percent_parser_and_formatter(){
         for (input,expected) in [

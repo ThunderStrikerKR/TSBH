@@ -3622,9 +3622,9 @@ pub fn reception_item_origin_action_editable(
     selection
 }
 
-/// React's pinned 56px total: first line is title / fixed right amount,
-/// second line is shipment count / fixed right VAT. Neither line is allowed
-/// to resize the item scroller or move when the monetary text changes.
+/// In the dedicated "발주서 합계" card, show the right-aligned total amount
+/// and the second line of shipment count / VAT without a duplicate "총 주문"
+/// caption or another border: the containing card owns its header and rule.
 pub fn reception_total_footer(
     ui: &mut Ui, total: Option<i64>, count: Option<usize>, vat: &str,
     note: &str,
@@ -3633,21 +3633,12 @@ pub fn reception_total_footer(
         Vec2::new(ui.available_width(), theme::RECEPTION_TOTAL_HEIGHT),
         Sense::hover(),
     );
-    ui.painter().line_segment(
-        [rect.left_top(), rect.right_top()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER),
-    );
-    // Both summary lines occupy fixed vertical centers. The item table and
-    // VAT row no longer push this footer below the pane's bottom boundary.
+    // Both summary lines occupy fixed vertical centers. The containing
+    // order-total card already has the separating header line.
     let left = rect.left() + theme::SPACE_8;
     let right = rect.right() - theme::SPACE_8;
     let right_start = (right - 148.0).max(left + 50.0);
     let amount = total.map(display_won).unwrap_or_else(|| "—".to_owned());
-    ui.painter().text(
-        egui::pos2(left, rect.top() + 17.0), egui::Align2::LEFT_CENTER,
-        "총 주문", egui::FontId::proportional(typography::FONT_FIELD_LABEL),
-        theme::TEXT,
-    );
     let first_amount = Rect::from_min_max(
         egui::pos2(right_start, rect.top()), egui::pos2(right, rect.top() + 30.0),
     );
