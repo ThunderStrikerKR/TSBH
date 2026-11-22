@@ -44,6 +44,10 @@ struct State {
     anchors: HashMap<&'static str, Anchor>,
     seen: HashMap<&'static str, String>,
     active: Option<Notice>,
+    // Transient option-click origin for the currently open shared dropdown.
+    // It is never carried to a later frame or a different user action.
+    dropdown_popup_trigger: Option<Pos2>,
+    dropdown_selected_trigger: Option<Pos2>,
 }
 
 fn with_state<R>(ctx: &Context, f: impl FnOnce(&mut State) -> R) -> R {
@@ -60,6 +64,10 @@ fn with_state<R>(ctx: &Context, f: impl FnOnce(&mut State) -> R) -> R {
 /// management page to another; a delayed result must not point to unrelated UI.
 pub fn begin_page(ctx: &Context, page: &'static str) {
     with_state(ctx, |state| {
+        // One-shot UI dispatch information is valid for the click frame only.
+        // An uncommitted filter choice must not relocate a later button notice.
+        state.dropdown_popup_trigger = None;
+        state.dropdown_selected_trigger = None;
         if state.page != page {
             state.page = page;
             state.anchors.clear();
@@ -92,11 +100,32 @@ pub fn clicked(ctx: &Context, source: &'static str, response: &Response) {
     record(ctx, source, position, AnchorKind::Action);
 }
 
-/// For jobs dispatched by several nested buttons that all share an async
-/// receiver. Capture the *dispatch-time* pointer, not the later completion-time
-/// pointer. Explicit response-based capture remains preferable where available.
+/// The visible dropdown button, rather than a row in its popup, owns any
+/// operation feedback triggered by the selected option. Set this only while
+/// the shared popup is being rendered, immediately before its options.
+pub fn dropdown_popup_trigger(ctx: &Context, trigger: Rect) {
+    with_state(ctx, |state| {
+        state.dropdown_popup_trigger = Some(trigger.center_top());
+    });
+}
+
+/// A selected common option reserves its parent dropdown's anchor for the
+/// NEXT action dispatch in THIS frame. Pure filter choices have no dispatch;
+/// begin_page clears their unused anchor at the next frame.
+pub fn dropdown_option_selected(ctx: &Context) {
+    with_state(ctx, |state| {
+        state.dropdown_selected_trigger = state.dropdown_popup_trigger;
+    });
+}
+
+/// For jobs dispatched by several nested buttons that share an async receiver.
+/// Prefer the initiating dropdown trigger when a shared option was selected;
+/// otherwise retain the original dispatch-time pointer for ordinary actions.
 pub fn dispatch_pointer(ctx: &Context, source: &'static str) {
-    let at = ctx.input(|i| i.pointer.latest_pos()).unwrap_or_else(|| fallback(ctx));
+    let selected = with_state(ctx, |state| state.dropdown_selected_trigger.take());
+    let at = selected.unwrap_or_else(||
+        ctx.input(|i| i.pointer.latest_pos()).unwrap_or_else(|| fallback(ctx))
+    );
     record(ctx, source, at, AnchorKind::Action);
 }
 
@@ -511,6 +540,35 @@ pub fn show(ctx: &Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dropdown_selection_feedback_is_anchored_to_trigger_not_menu_row(){
+        let ctx=Context::default();
+        begin_page(&ctx,"Freight");
+        let trigger=Rect::from_min_size(
+            Pos2::new(440.0,120.0),Vec2::new(160.0,34.0)
+        );
+        dropdown_popup_trigger(&ctx,trigger);
+        dropdown_option_selected(&ctx);
+        dispatch_pointer(&ctx,"freight.action");
+        publish(&ctx,"freight.action",Tone::Success,"배송 그룹 변경 완료");
+        let notice=with_state(&ctx,|state|state.active.clone()).unwrap();
+        assert_eq!(notice.at,trigger.center_top());
+        assert_eq!(notice.kind,AnchorKind::Action);
+    }
+
+    #[test]
+    fn uncommitted_dropdown_selection_never_reanchors_a_later_action(){
+        let ctx=Context::default();
+        begin_page(&ctx,"Freight");
+        dropdown_popup_trigger(&ctx,Rect::from_min_size(
+            Pos2::new(440.0,120.0),Vec2::new(160.0,34.0)
+        ));
+        dropdown_option_selected(&ctx);
+        begin_page(&ctx,"Freight");
+        assert!(with_state(&ctx,|state|state.dropdown_selected_trigger.is_none()));
+        assert!(with_state(&ctx,|state|state.dropdown_popup_trigger.is_none()));
+    }
+
     #[test]
     fn notice_flips_when_there_is_no_room_above() {
         let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(500.0, 350.0));
