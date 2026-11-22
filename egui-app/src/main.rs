@@ -232,6 +232,26 @@ enum WorkflowDialog {
     PaymentNotice(String),
 }
 
+#[derive(Clone,Debug,PartialEq,Eq)]
+struct InlineTarget {
+    recipient_id:String,
+    item_id:Option<String>,
+    field:&'static str,
+}
+struct InlineReceptionEditor {
+    target:InlineTarget,
+    original:String,
+    text:String,
+    focus_next:bool,
+}
+struct PendingInlineChange {
+    order_id:String,
+    raw:String,
+    target:InlineTarget,
+    editor:InlineReceptionEditor,
+    receiver:Receiver<Result<manual_workspace::Event,String>>,
+}
+
 struct PendingWorkingSync {
     order_id: String,
     source_raw: String,
@@ -296,6 +316,8 @@ struct BandoEgui {
     settings_pending_page: Option<Page>,
     settings_pending_save: bool,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
+    inline_editor:Option<InlineReceptionEditor>,
+    inline_change:Option<PendingInlineChange>,
     edit_history_open: bool,
     client_change: Option<PendingClientChange>,
     auto_client_change: Option<PendingAutomaticClient>,
@@ -388,6 +410,8 @@ impl Default for BandoEgui {
             settings_pending_page: None,
             settings_pending_save: false,
             manual_workspace: None,
+            inline_editor:None,
+            inline_change:None,
             edit_history_open: false,
             client_change: None,
             auto_client_change: None,
