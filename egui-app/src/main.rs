@@ -2254,23 +2254,31 @@ impl BandoEgui {
         let dialog_height=(review_area.height()*0.88).clamp(450.0,960.0)
             .min(review_area.height().max(1.0));
         let dialog_size=Vec2::new(dialog_width,dialog_height);
+        // The LEFT_TOP + explicit coordinate variant previously displayed
+        // the OCR contents reliably. Keep that placement contract but center
+        // it on the full-screen balanced area, not the Kakao-excluded area.
+        let dialog_rect=Rect::from_center_size(review_area.center(),dialog_size);
         if let Some(review)=self.ocr_review.as_mut() {
             components::modal_window(
                 "OCR 문자 인식 검토","egui-ocr-review",review_area
             )
-                // Center the whole OCR review in the application viewport.
-                // Keep the window's shared headerless modal frame.
+                .pivot(egui::Align2::LEFT_TOP)
+                .fixed_pos(dialog_rect.min)
                 .fixed_size(dialog_size)
                 .scroll([false,false])
                 .show(ctx,|ui|{
-                    // Critical: calculate the OCR master's inner body from
-                    // egui's REAL available/visible Ui, never by subtracting
-                    // margins from the requested outer Window::fixed_size.
-                    // The latter made the whole review disappear when the
-                    // layout exceeded the frame's clipped content region.
-                    let body_size=components::modal_master_visible_content_size(
-                        ui.available_rect_before_wrap(),ui.clip_rect(),dialog_size
+                    // Paint clips are NOT layout measurements. During egui's
+                    // window sizing pass an empty clip can collapse the body
+                    // to 1pt, causing a -26pt image viewport and a panic.
+                    let body_size=components::modal_master_content_from_ui(
+                        ui.available_rect_before_wrap(),dialog_size
                     );
+                    if !components::modal_master_ocr_body_is_usable(body_size){
+                        // Do not construct split viewports from tiny sizing
+                        // frames. The next layout pass will have valid space.
+                        ui.ctx().request_repaint();
+                        return;
+                    }
                     let (bounds,_)=ui.allocate_exact_size(
                         body_size,Sense::hover()
                     );
