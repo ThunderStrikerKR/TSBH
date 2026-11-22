@@ -665,14 +665,20 @@ fn shipment_product_summary(products:&[String])->String{
 /// border as the source tokens, recipient values and item cells.
 /// Orange remains reserved for an explicitly committed workflow selection.
 /// The highlight is paint-only: no row height, width or scroll geometry changes.
+fn shipment_row_fill(chosen:bool,previewed:bool)->egui::Color32{
+    if chosen {
+        // A confirmed choice must never be overwritten by a hover preview.
+        theme::WORKFLOW_SELECTED_BORDER.linear_multiply(0.20)
+    }else if previewed {
+        source_highlight::ACTIVE_FILL
+    }else {
+        theme::WORKFLOW_DETAIL_ROW_BG
+    }
+}
 fn shipment_line(
     ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool
 )->egui::Response{
-    let fill=if chosen{
-        theme::WORKFLOW_SELECTED_BORDER.linear_multiply(0.20)
-    }else if previewed{
-        source_highlight::ACTIVE_FILL
-    }else{theme::WORKFLOW_DETAIL_ROW_BG};
+    let fill=shipment_row_fill(chosen,previewed);
     let outer=ui.available_width();
     let summary=shipment_product_summary(products);
     let preview_ink=if previewed && !chosen{
@@ -1306,6 +1312,18 @@ mod pending_hover_navigation_tests{
         assert!(board.pending_preview().is_none());
         board.stop_preview();
         assert!(board.pending_order_hover.is_none());
+    }
+}
+
+#[cfg(test)]
+mod linked_highlight_palette_tests {
+    use super::*;
+    #[test]
+    fn preview_row_matches_linked_source_recipient_and_item_palette() {
+        assert_eq!(shipment_row_fill(false,true),source_highlight::ACTIVE_FILL);
+        assert_ne!(shipment_row_fill(true,true),source_highlight::ACTIVE_FILL);
+        assert_eq!(shipment_row_fill(false,false),theme::WORKFLOW_DETAIL_ROW_BG);
+        assert_eq!(source_highlight::ACTIVE_BORDER_WIDTH,2.0);
     }
 }
 
