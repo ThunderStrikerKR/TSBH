@@ -74,7 +74,8 @@ pub const CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT:f32=144.0;
 // Popup footer navigation, breadcrumbs and Apply share the 36pt control baseline.
 pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=ACTION_PRIMARY_HEIGHT;
 pub const CATEGORY_EXPLORER_SEPARATOR_WIDTH:f32=12.0;
-pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=76.0;
+// Accommodate the full '← 상위로' caption without squeezing glyphs.
+pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=96.0;
 pub const CATEGORY_EXPLORER_ROOT_WIDTH:f32=48.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
 pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=Color32::from_rgb(90,61,33);
