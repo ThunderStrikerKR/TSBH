@@ -175,10 +175,10 @@ fn category_option_row(
     if !ancestors.is_empty(){
         painter.text(
             egui::pos2(x,rect.center().y),Align2::LEFT_CENTER,&ancestors,
-            font.clone(),theme::MUTED
+            font.clone(),theme::CATEGORY_EXPLORER_ANCESTOR_TEXT
         );
         x+=ui.painter().layout_no_wrap(
-            ancestors,font.clone(),theme::MUTED
+            ancestors,font.clone(),theme::CATEGORY_EXPLORER_ANCESTOR_TEXT
         ).size().x;
     }
     painter.text(
@@ -213,7 +213,8 @@ fn crumb(
             theme::SELECTION,theme::TEXT
         ),
         CrumbVisual::Ordinary=>(
-            Color32::TRANSPARENT,Color32::TRANSPARENT,theme::SECONDARY
+            Color32::TRANSPARENT,Color32::TRANSPARENT,
+            theme::CATEGORY_EXPLORER_ANCESTOR_TEXT
         ),
     };
     let stroke=if border==Color32::TRANSPARENT{Stroke::NONE}
@@ -502,12 +503,17 @@ fn menu_body(
             });
     }
     components::soft_divider(menu);
-    // Independent Back action on the line ABOVE the breadcrumb; no caption.
-    if category_back_button(menu,!state.path.is_empty()).clicked(){
-        state.path.pop();
-        state.search.clear();
-        state.ancestors_open=false;
-    }
+    // Use a left-to-right child Ui: placing this button directly in the
+    // menu's vertical justified Ui stretched it across the full 655pt width.
+    // The Back action must keep its intrinsic 88pt width and 36pt height.
+    menu.horizontal(|row|{
+        row.spacing_mut().item_spacing.x=theme::SPACE_4;
+        if category_back_button(row,!state.path.is_empty()).clicked(){
+            state.path.pop();
+            state.search.clear();
+            state.ancestors_open=false;
+        }
+    });
     crumbs_row(menu,state,index,selected,enabled,allow_empty,changed);
 }
 
@@ -717,13 +723,38 @@ mod tests{
         let last_section=body.rsplit("components::soft_divider(menu);")
             .next().unwrap();
         let back=last_section.find(
-            "category_back_button(menu,!state.path.is_empty())"
+            "category_back_button(row,!state.path.is_empty())"
         ).unwrap();
         let crumbs=last_section.find("crumbs_row(menu,state,index").unwrap();
         assert!(back<crumbs);
         assert!(!last_section.contains("menu.label(typography::caption("));
         assert!(!body.contains("let can_go_back="));
         assert!(!body.contains("\"{}단계\""));
+    }
+    #[test]
+    fn upper_navigation_is_compact_and_ancestors_are_visibly_dimmer(){
+        let ctx=egui::Context::default();
+        let mut back_rect=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(655.0);
+                ui.horizontal(|row|{
+                    back_rect=Some(category_back_button(row,true).rect);
+                });
+            });
+        });
+        let rect=back_rect.unwrap();
+        assert!(rect.width()<=120.0,"Back button unexpectedly stretched");
+        assert_eq!(rect.height(),theme::CATEGORY_EXPLORER_CRUMB_HEIGHT);
+        assert!(theme::CATEGORY_EXPLORER_ANCESTOR_TEXT.r()
+            <theme::MUTED.r());
+        assert!(theme::CATEGORY_EXPLORER_ANCESTOR_TEXT.r()
+            <theme::SECONDARY.r());
+        let body=include_str!("category_dropdown.rs")
+            .split("fn menu_body(").nth(1).unwrap()
+            .split("pub fn category_dropdown(").next().unwrap();
+        assert!(body.contains("menu.horizontal(|row|"));
+        assert!(body.contains("category_back_button(row,!state.path.is_empty())"));
     }
     #[test]
     fn current_category_is_plain_text_and_selected_category_remains_orange(){
