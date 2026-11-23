@@ -40,6 +40,7 @@ on:
       - egui-app/src/business_state.rs
       - DEV_WINDOWS_EGUI.cmd
       - egui-app/src/category_manager.rs
+      - egui-app/src/category_dropdown.rs
       - egui-app/src/product_manager.rs
       - egui-app/src/alias_manager.rs
       - egui-app/src/brand_manager.rs
@@ -126,6 +127,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml native_order_change::manual_rebind_tests -- --nocapture
       - name: Verify shared single-select dropdown coverage and geometry
         run: cargo test --manifest-path egui-app/Cargo.toml management_dropdown_unification_tests -- --nocapture
+      - name: Verify hierarchical category path depth, duplicate labels, cycles and applied colors
+        run: cargo test --manifest-path egui-app/Cargo.toml category_dropdown::tests -- --nocapture
       - name: Verify editable Rust order lines, manual price overrides and remote freight totals
         run: cargo test --manifest-path egui-app/Cargo.toml pricing::migration_tests -- --nocapture
       - name: Verify complete multi-recipient receipt totals with VAT and doubled freight
