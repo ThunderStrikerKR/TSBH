@@ -4867,6 +4867,19 @@ mod shared_checkbox_contract_tests {
 }
 
 #[cfg(test)]
+mod shared_ghost_action_contract_tests {
+    #[test]
+    fn category_explorer_back_uses_shared_ghost_action(){
+        let source=include_str!("category_dropdown.rs");
+        let back=source.split("fn category_back_button(").nth(1).unwrap()
+            .split("fn crumbs_row(").next().unwrap();
+        assert!(back.contains("theme::ButtonRole::Ghost"));
+        assert!(back.contains("theme::action_with_min_width("));
+        assert!(!back.contains("egui::Button::new("));
+    }
+}
+
+#[cfg(test)]
 mod shared_tag_chip_contract_tests {
     #[test]
     fn client_search_tags_use_shared_chip_and_icon_action(){
