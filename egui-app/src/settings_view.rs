@@ -522,7 +522,6 @@ impl SettingsView{
             }){
                 self.reload_confirmation=true;
             }
-            ui.add_space(theme::SPACE_8);
         }
         if !self.loaded{
             return;
