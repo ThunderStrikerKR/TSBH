@@ -1359,9 +1359,12 @@ impl ProductManager {
                                                             // whereas display text ends 8pt before
                                                             // it: 8 - 2 = 6pt suffix inset.
                                                             let (enter_pressed,tab_pressed,
+                                                                up_pressed,down_pressed,
                                                                 escape_pressed,shift_pressed)=inputs.input(|i|{
                                                                 (i.key_pressed(egui::Key::Enter),
                                                                  i.key_pressed(egui::Key::Tab),
+                                                                 i.key_pressed(egui::Key::ArrowUp),
+                                                                 i.key_pressed(egui::Key::ArrowDown),
                                                                  i.key_pressed(egui::Key::Escape),
                                                                  i.modifiers.shift)
                                                             });
@@ -1384,7 +1387,8 @@ impl ProductManager {
                                                             let escape=response.has_focus()&&escape_pressed;
                                                             let keyboard_commit=(response.has_focus()
                                                                 ||response.lost_focus())
-                                                                &&(enter_pressed||tab_pressed);
+                                                                &&(enter_pressed||tab_pressed
+                                                                    ||up_pressed||down_pressed);
                                                             if escape{
                                                                 entry.input=entry.original.map(|n|
                                                                     n.to_string()).unwrap_or_default();
@@ -1392,7 +1396,13 @@ impl ProductManager {
                                                             }else if keyboard_commit{
                                                                 let offset=if tab_pressed{
                                                                     if shift_pressed{-1}else{1}
-                                                                }else if shift_pressed{-3}else{3};
+                                                                }else if shift_pressed{
+                                                                    -3
+                                                                }else if enter_pressed||down_pressed{
+                                                                    3
+                                                                }else{
+                                                                    -3
+                                                                };
                                                                 match entry.parse(){
                                                                     Ok(value)=>{
                                                                         self.price_focus_target=
@@ -2452,6 +2462,8 @@ mod tests {
         assert!(editor.contains("response.lost_focus()"));
         assert!(editor.contains("egui::Key::Enter"));
         assert!(editor.contains("egui::Key::Tab"));
+        assert!(editor.contains("egui::Key::ArrowUp"));
+        assert!(editor.contains("egui::Key::ArrowDown"));
         assert!(editor.contains("egui::Key::Escape"));
         assert!(editor.contains("response.surrender_focus()"));
         assert!(editor.contains("response.request_focus()"));
