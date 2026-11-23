@@ -41,6 +41,21 @@
 - `order_history_manager.rs` 날짜 입력·커서 계산: 같은 `Date + Form` FontId 사용
 - 거래처·주문·Excel·일일결산에 별도 Monospace 하드코딩 없음. 비례 글꼴로 출력하는 일반 텍스트는 유지
 
+## 추가 검수: 화면에 드러나는 단독 금액 및 혼합 데이터
+
+| 화면 | 추가로 확인한 우회 | 조치 |
+| --- | --- | --- |
+| 거래처 관리 / 특수 단가 | 상품명·금액을 하나의 본문 글꼴로 처리 | 하나의 `LayoutJob` 안에서 상품명은 Proportional, 금액은 `Money + Form` |
+| 일일 결산 / 상세 지표 | `metric()`의 금액을 일반 `body` 서체로 렌더링 | `Money + Form`, 기존 22pt 줄높이 유지 |
+| 주문 상세 / 입금액·실제 운임·청구 내역 | 금액이 일반 본문 글꼴 사용 | 단독 금액을 `data_value_text(Money,...)`로 통일 |
+| 주문 상세 / 상품명 × 수량 · 단가 | 수량과 단가가 상품명과 같은 비례 글꼴 | 하나의 `LayoutJob` 안에서 수량=`Quantity`, 단가=`Money` 적용 |
+| 주문 상세 / 청구 합계 | 합계 금액에 일반 섹션 강조 서체 직접 적용 | 금액은 `Money + Summary`, 기존 23pt 줄높이 유지 |
+| 접수 품목 상세 팝업 / 가격 | 가격 텍스트에 일반 본문 글꼴 사용 | `Money + Form`으로 통일, 기존 22pt 줄높이 유지 |
+
+- '배송 1건', '3개 거래처', '미확정 2건' 등 **서술형 복합 문구와 업무 상태 라벨**은 한글 기본 글꼴을 유지한다. 단독 금액·수량 데이터 열과 구분되는 정책상 예외이며, 단순 숫자 출현만으로 전체 문장을 Consolas로 바꾸지 않는다.
+- 혼합 텍스트는 `typography::inline_body_values()` 또는 단일 금액 전용 `inline_body_money()`를 사용한다. 한 줄을 2~4개 라벨 위젯으로 쪼개지 않아 부모 레이아웃에 새 간격을 만들지 않는다.
+- CI 컴파일 로그에서 `egui::Label::wrap(false)`는 현재 egui 0.33.3에 없는 API임을 확인해 제거했다.
+
 ## 재발 방지
 
 1. `management_table_type_roles_tests::semantic_data_roles_keep_only_money_and_quantity_monospace`가 4개 의미 × 모든 표시 문맥에서 서체 종류/크기/정렬을 검증.
