@@ -2360,12 +2360,14 @@ impl FreightManager {
                 "배송 그룹 운임 수정"
             });
         });
-        if !editor.product {
-            ui.label(typography::status(
-                "이 기준을 변경하면 같은 동급 그룹에 지정한 모든 모델에 적용됩니다.",
-                theme::SELECTED_ORDER
-            ));
-        }
+        let group_note=(!editor.product).then_some(
+            "이 기준을 변경하면 같은 동급 그룹에 지정한 모든 모델에 적용됩니다."
+        );
+        let note_width=ui.available_width();
+        components::fixed_status_slot(
+            ui,note_width,typography::METADATA_LINE_HEIGHT,
+            group_note,group_note,theme::SELECTED_ORDER
+        );
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|line|{
             components::form_field_label(line,"최대 묶음포장 수량");
@@ -2397,11 +2399,12 @@ impl FreightManager {
                 if theme::action(line,"삭제",theme::ButtonRole::Standard,enabled).clicked(){
                     removed=Some(*count);
                 }
-                if editor.max_bundle.is_some_and(|max|*count>max){
-                    line.label(typography::status(
-                        "최대 묶음 수량 초과",theme::DANGER
-                    ));
-                }
+                let over_limit=editor.max_bundle.is_some_and(|max|*count>max);
+                components::fixed_status_slot(
+                    line,24.0,theme::ACTION_STANDARD_HEIGHT,
+                    over_limit.then_some("!"),
+                    over_limit.then_some("최대 묶음 수량 초과"),theme::DANGER
+                );
             });
         }
         if let Some(count)=removed{editor.fees.remove(&count);}
