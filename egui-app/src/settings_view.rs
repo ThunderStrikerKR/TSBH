@@ -165,6 +165,39 @@ fn recommendation_picker(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
     }
     draft["brandAccounts"][key]=json!(selected);
 }
+fn settings_title_row(
+    ui:&mut Ui,conflict:bool,restore_enabled:bool
+)->(bool,Option<egui::Rect>,egui::Rect,f32){
+    let mut restore=false;
+    let mut restore_rect=None;
+    let mut title_rect=egui::Rect::NOTHING;
+    let mut content_right=0.0;
+    components::management_page_title_top_gap(ui);
+    components::management_top_content(ui,|top|{
+        let width=top.available_width().max(1.0);
+        content_right=top.available_rect_before_wrap().right();
+        let row=top.allocate_ui_with_layout(
+            Vec2::new(width,theme::ACTION_PRIMARY_HEIGHT),
+            Layout::left_to_right(Align::Center),
+            |heading|{
+                heading.label(typography::page_heading("설정"));
+                if conflict{
+                    heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                        let response=theme::action(
+                            actions,"저장된 설정 불러오기",
+                            ButtonRole::Standard,restore_enabled
+                        );
+                        restore_rect=Some(response.rect);
+                        restore=response.clicked();
+                    });
+                }
+            }
+        );
+        title_rect=row.response.rect;
+    });
+    (restore,restore_rect,title_rect,content_right)
+}
+
 impl SettingsView{
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self{
         let (sender,receiver)=mpsc::channel();
@@ -496,22 +529,10 @@ impl SettingsView{
                 ||error.contains("다른 작업에서 변경된 설정")
                 ||error.contains("설정 충돌")
         );
-        components::management_page_title_top_gap(ui);
-        components::management_top_content(ui,|top|{
-            top.horizontal(|heading|{
-                heading.label(typography::page_heading("설정"));
-                if conflict{
-                    heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                        if theme::action(
-                            actions,"저장된 설정 불러오기",ButtonRole::Standard,
-                            !self.busy()
-                        ).clicked(){
-                            self.reload_confirmation=true;
-                        }
-                    });
-                }
-            });
-        });
+        let (reload,_,_,_)=settings_title_row(
+            ui,conflict,!self.busy()
+        );
+        if reload{self.reload_confirmation=true;}
         ui.add_space(theme::SPACE_8);
         let selected_tab=components::management_top_content(ui,|top|
             components::management_tabs(top,&[
@@ -1141,5 +1162,65 @@ impl SettingsView{
                 option_env!("BANDO_BUILD_ID").unwrap_or("미지정")
             )));
         });
+    }
+}
+
+#[cfg(test)]
+mod management_async_layout_tests{
+    use super::*;
+
+    #[test]
+    fn conflict_restore_action_stays_in_fixed_title_slot_without_moving_tabs(){
+        fn measure(conflict:bool)->(f32,f32,f32,egui::Rect,Option<egui::Rect>,f32){
+            let ctx=Context::default();
+            crate::typography::install(&ctx);
+            let mut measured=None;
+            let mut raw=egui::RawInput::default();
+            raw.screen_rect=Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,Vec2::new(1280.0,720.0)
+            ));
+            let _=ctx.run(raw,|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(1248.0);
+                    let (clicked,button,title,right)=settings_title_row(
+                        ui,conflict,true
+                    );
+                    assert!(!clicked);
+                    let title_bottom=ui.cursor().top();
+                    ui.add_space(theme::SPACE_8);
+                    let tabs_top=ui.cursor().top();
+                    components::management_top_content(ui,|top|{
+                        components::management_tabs(top,&[
+                            ("기본 설정",true,true),
+                            ("파일 관리",false,true),
+                            ("데이터 관리",false,true),
+                            ("시스템",false,true)
+                        ]);
+                    });
+                    let tabs_bottom=ui.cursor().top();
+                    measured=Some((
+                        title_bottom,tabs_top,tabs_bottom,title,button,right
+                    ));
+                });
+            });
+            measured.expect("settings title and tabs were rendered")
+        }
+        let normal=measure(false);
+        let conflict=measure(true);
+        let near=|a:f32,b:f32|(a-b).abs()<=0.5;
+        assert!(near(normal.0,conflict.0),
+            "conflict action changed the title row bottom");
+        assert!(near(normal.1,conflict.1),
+            "conflict action moved the settings tabs");
+        assert!(near(normal.2,conflict.2),
+            "conflict action changed the tab row height");
+        assert!(near(normal.3.top(),conflict.3.top()));
+        assert!(near(normal.3.bottom(),conflict.3.bottom()));
+        assert!(near(conflict.3.height(),theme::ACTION_PRIMARY_HEIGHT));
+        let button=conflict.4.expect("conflict state must expose restore action");
+        assert!(near(button.right(),conflict.5),
+            "restore action is not aligned to the title content's right edge");
+        assert!(near(button.height(),theme::ACTION_STANDARD_HEIGHT));
+        assert!(near(button.center().y,conflict.3.center().y));
     }
 }
