@@ -6600,12 +6600,15 @@ mod modal_input_routing_tests {
             ctx:&egui::Context,
             mut raw:egui::RawInput,
             work_area:Rect,
-            clicked:&mut bool,
-        )->Rect{
+            action_clicked:&mut bool,
+            plain_clicked:&mut bool,
+            action_hovered:&mut bool,
+            action_enabled:&mut bool,
+        )->(Rect,Rect){
             raw.screen_rect=Some(work_area);
-            let mut button_rect=Rect::NOTHING;
+            let mut action_rect=Rect::NOTHING;
+            let mut plain_rect=Rect::NOTHING;
             let _=ctx.run(raw,|ctx|{
-                // The real app already has the parent editor on Foreground.
                 modal_window("수동 분류","manual-parent-workspace",work_area)
                     .show(ctx,|ui|{
                         ui.label("parent worksheet");
@@ -6617,25 +6620,30 @@ mod modal_input_routing_tests {
                     "수동 분류 변경 취소","manual-discard-prompt",work_area
                 ).show(ctx,|ui|{
                     ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
+                    let plain=ui.button("plain pointer probe");
+                    plain_rect=plain.rect;
+                    if plain.clicked(){*plain_clicked=true;}
                     modal_action_row(ui,|actions|{
+                        *action_enabled=actions.is_enabled();
                         let response=theme::action(
                             actions,"변경 취소",theme::ButtonRole::Standard,true
                         );
-                        button_rect=response.rect;
-                        if response.clicked(){*clicked=true;}
+                        action_rect=response.rect;
+                        *action_hovered=response.hovered();
+                        if response.clicked(){*action_clicked=true;}
                     });
                 });
             });
-            let modal=ctx.memory(|memory|memory.top_modal_layer());
-            assert_eq!(modal,Some(modal_window_layer("manual-discard-prompt")));
-            let top=ctx.memory(|memory|
-                memory.areas().top_layer_id(egui::Order::Foreground)
+            assert_eq!(
+                ctx.memory(|memory|memory.top_modal_layer()),
+                Some(modal_window_layer("manual-discard-prompt"))
             );
             assert_eq!(
-                top,Some(modal_window_layer("manual-discard-prompt")),
+                ctx.memory(|memory|memory.areas().top_layer_id(egui::Order::Foreground)),
+                Some(modal_window_layer("manual-discard-prompt")),
                 "the full-screen dim Area must never remain above the decision window"
             );
-            button_rect
+            (action_rect,plain_rect)
         }
 
         let ctx=egui::Context::default();
@@ -6644,38 +6652,48 @@ mod modal_input_routing_tests {
         let work_area=Rect::from_min_size(
             egui::Pos2::ZERO,Vec2::new(800.0,600.0)
         );
-        let mut clicked=false;
-        let _=draw(&ctx,egui::RawInput::default(),work_area,&mut clicked);
-        // The first egui frame measures the centered Window. Use the stable
-        // second-frame button rect, exactly as a user does after it appears.
-        let button=draw(&ctx,egui::RawInput{
-            time:Some(0.1),
-            ..Default::default()
-        },work_area,&mut clicked);
-        assert!(button.width()>0.0 && button.height()>0.0,"the decision action must be laid out");
-        let pointer=button.center();
-        draw(&ctx,egui::RawInput{
-            events:vec![egui::Event::PointerMoved(pointer)],
-            time:Some(1.0),
-            ..Default::default()
-        },work_area,&mut clicked);
-        draw(&ctx,egui::RawInput{
-            events:vec![egui::Event::PointerButton{
-                pos:pointer,button:egui::PointerButton::Primary,
-                pressed:true,modifiers:egui::Modifiers::NONE
-            }],
-            time:Some(1.1),
-            ..Default::default()
-        },work_area,&mut clicked);
-        draw(&ctx,egui::RawInput{
-            events:vec![egui::Event::PointerButton{
-                pos:pointer,button:egui::PointerButton::Primary,
-                pressed:false,modifiers:egui::Modifiers::NONE
-            }],
-            time:Some(1.2),
-            ..Default::default()
-        },work_area,&mut clicked);
-        assert!(clicked,"the nested decision action must receive a real pointer click");
+        let mut action_clicked=false;
+        let mut plain_clicked=false;
+        let mut action_hovered=false;
+        let mut action_enabled=false;
+        let _=draw(&ctx,egui::RawInput::default(),work_area,
+            &mut action_clicked,&mut plain_clicked,&mut action_hovered,&mut action_enabled);
+        let (action_rect,plain_rect)=draw(&ctx,egui::RawInput{
+            time:Some(0.1),..Default::default()
+        },work_area,&mut action_clicked,&mut plain_clicked,
+            &mut action_hovered,&mut action_enabled);
+        assert!(action_rect.width()>0.0 && action_rect.height()>0.0);
+        assert!(plain_rect.width()>0.0 && plain_rect.height()>0.0);
+        assert!(action_enabled,"the decision footer must be enabled independently of its parent");
+        let click=|pointer:egui::Pos2,
+            action_clicked:&mut bool,plain_clicked:&mut bool,
+            action_hovered:&mut bool,action_enabled:&mut bool|{
+            let _=draw(&ctx,egui::RawInput{
+                events:vec![egui::Event::PointerMoved(pointer)],
+                time:Some(1.0),..Default::default()
+            },work_area,action_clicked,plain_clicked,action_hovered,action_enabled);
+            let _=draw(&ctx,egui::RawInput{
+                events:vec![egui::Event::PointerButton{
+                    pos:pointer,button:egui::PointerButton::Primary,
+                    pressed:true,modifiers:egui::Modifiers::NONE
+                }],
+                time:Some(1.1),..Default::default()
+            },work_area,action_clicked,plain_clicked,action_hovered,action_enabled);
+            let _=draw(&ctx,egui::RawInput{
+                events:vec![egui::Event::PointerButton{
+                    pos:pointer,button:egui::PointerButton::Primary,
+                    pressed:false,modifiers:egui::Modifiers::NONE
+                }],
+                time:Some(1.2),..Default::default()
+            },work_area,action_clicked,plain_clicked,action_hovered,action_enabled);
+        };
+        click(plain_rect.center(),&mut action_clicked,&mut plain_clicked,
+            &mut action_hovered,&mut action_enabled);
+        assert!(plain_clicked,"plain decision-window button must receive pointer input");
+        click(action_rect.center(),&mut action_clicked,&mut plain_clicked,
+            &mut action_hovered,&mut action_enabled);
+        assert!(action_clicked,
+            "shared modal footer action must receive pointer input; hovered={action_hovered}, enabled={action_enabled}");
     }
 
     #[test]
@@ -6715,24 +6733,21 @@ mod modal_input_routing_tests {
         let pointer=parent_rect.center();
         draw(egui::RawInput{
             events:vec![egui::Event::PointerMoved(pointer)],
-            time:Some(1.0),
-            ..Default::default()
+            time:Some(1.0),..Default::default()
         });
         draw(egui::RawInput{
             events:vec![egui::Event::PointerButton{
                 pos:pointer,button:egui::PointerButton::Primary,
                 pressed:true,modifiers:egui::Modifiers::NONE
             }],
-            time:Some(1.1),
-            ..Default::default()
+            time:Some(1.1),..Default::default()
         });
         draw(egui::RawInput{
             events:vec![egui::Event::PointerButton{
                 pos:pointer,button:egui::PointerButton::Primary,
                 pressed:false,modifiers:egui::Modifiers::NONE
             }],
-            time:Some(1.2),
-            ..Default::default()
+            time:Some(1.2),..Default::default()
         });
         assert!(!parent_clicked,"parent controls must remain blocked behind a decision modal");
     }
