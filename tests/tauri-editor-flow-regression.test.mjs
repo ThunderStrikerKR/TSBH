@@ -80,15 +80,16 @@ test("both freight editors display Close and disable Save when unchanged",()=>{
   }
 });
 
-test("price input preserves uncommitted edits on blur; only Save or Enter commits",()=>{
+test("price cells autosave on blur and navigate like a spreadsheet without action buttons",()=>{
   const s=src("PriceCell.tsx");
-  assert.match(s,/if \(e.key === "Enter"\) \{\s*e.preventDefault\(\);\s*void save\(\);/);
-  assert.match(s,/onClick=\{\(\) => void save\(\)\}/);
-  assert.match(s,/onClick=\{cancel\}/);
-  assert.match(s,/onBlur=\{\(\) => \{[^}]*if \(saving\.current \|\| !editing\) return;[^}]*\}/);
-  assert.doesNotMatch(s,/onBlur=\{\(\) => \{[^}]*setDraft\(/);
-  assert.doesNotMatch(s,/onBlur=\{\(\) => void save\(\)\}/);
-  assert.match(s,/if \(e.key === "Escape"\)/);
+  assert.match(s,/onBlur=\{\(\) => \{[\s\S]*?if \(pending\) \{\s*void save\(\);/);
+  assert.match(s,/if \(e.key === "Enter"\) offset = e\.shiftKey \? -3 : 3;/);
+  assert.match(s,/else if \(e.key === "Tab"\) offset = e\.shiftKey \? -1 : 1;/);
+  assert.match(s,/else if \(e.key === "ArrowDown"\) offset = 3;/);
+  assert.match(s,/else if \(e.key === "ArrowUp"\) offset = -3;/);
+  assert.match(s,/if \(e.key === "Escape"\) \{\s*e\.preventDefault\(\);\s*cancel\(\);/);
+  assert.doesNotMatch(s,/price-cell-actions|price-cell-save|price-cell-cancel|<button/);
+  assert.match(s,/const findPriceCell = \(offset: number\)/);
 });
 
 test("category change and deletion preserve edits if user declines or save fails",()=>{
@@ -133,10 +134,12 @@ test("template and notice record changes ask before switching away from a dirty 
     assert.match(component,/refreshAfterCommittedSave/);
 });
 
-test("Escape in price editing cannot cancel a future independent Enter save",()=>{
+test("Escape cancels only the current price draft and its following blur cannot autosave it",()=>{
   const cell=src("PriceCell.tsx");
-  assert.doesNotMatch(cell,/cancelled\.current/);
-  assert.match(cell,/onBlur=\{\(\) => \{[^}]*if \(saving.current/);
+  assert.match(cell,/const cancel = \(\) => \{[\s\S]*?skipBlurSave\.current = true;[\s\S]*?input\.current\?\.blur\(\);/);
+  assert.match(cell,/onBlur=\{\(\) => \{[\s\S]*?if \(skipBlurSave\.current\) \{[\s\S]*?return;[\s\S]*?if \(saving\.current \|\| !editing\) return;/);
+  assert.match(cell,/if \(e\.key === "Escape"\)[\s\S]*?cancel\(\)/);
+  assert.doesNotMatch(cell,/price-cell-actions|price-cell-save|price-cell-cancel/);
 });
 
 test("model-group switching checks the saved editor baseline",()=>{
