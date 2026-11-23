@@ -793,7 +793,7 @@ impl ClientManager {
                         // with the shared Consolas amount policy.
                         row.add(egui::Label::new(typography::inline_body_money(
                             &format!("{label} · "),&format!("{price}원")
-                        )).wrap(false));
+                        )));
                         if theme::action(row,"예외 해제",ButtonRole::Quiet,true)
                             .clicked(){remove=Some(id.clone());}
                     });
