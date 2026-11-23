@@ -297,6 +297,7 @@ fn parse_product_price(raw:&str,field_name:&str,zero_unregistered:bool)
 fn accepts_catalog_revision(current:u64,incoming:u64)->bool{
     incoming>=current
 }
+#[cfg(test)]
 fn price_navigation_key(
     enter:bool,tab:bool,left:bool,right:bool,up:bool,down:bool,shift:bool
 )->Option<CellNavigationKey>{
@@ -1412,22 +1413,27 @@ impl ProductManager {
                                                             // The field ends 2pt before its column,
                                                             // whereas display text ends 8pt before
                                                             // it: 8 - 2 = 6pt suffix inset.
-                                                            let (enter_pressed,tab_pressed,
-                                                                left_pressed,right_pressed,
-                                                                up_pressed,down_pressed,
-                                                                escape_pressed,shift_pressed)=inputs.input(|i|{
-                                                                (i.key_pressed(egui::Key::Enter),
-                                                                 i.key_pressed(egui::Key::Tab),
-                                                                 i.key_pressed(egui::Key::ArrowLeft),
-                                                                 i.key_pressed(egui::Key::ArrowRight),
-                                                                 i.key_pressed(egui::Key::ArrowUp),
-                                                                 i.key_pressed(egui::Key::ArrowDown),
-                                                                 i.key_pressed(egui::Key::Escape),
-                                                                 i.modifiers.shift)
-                                                            });
+                                                            // Capture and consume the current focused cell's
+                                                            // arrows BEFORE TextEdit treats them as caret moves.
+                                                            // Keep each variant/tier's IME state isolated.
+                                                            let editor_slot=egui::Id::new((
+                                                                "product-price-grid-editor",key.as_str()
+                                                            ));
+                                                            let navigation_key=cell_navigation::
+                                                                consume_worksheet_navigation_before_editor(
+                                                                    inputs.ctx(),editor_slot,
+                                                                    CellNavigationKey::Down,
+                                                                    CellNavigationKey::Up
+                                                                );
+                                                            let escape_pressed=inputs.input(|i|
+                                                                i.key_pressed(egui::Key::Escape)
+                                                            );
                                                             let response=components::money_field_with_unit(
                                                                 inputs,&mut entry.input,true,"원",
                                                                 theme::SPACE_8-theme::SPACE_4/2.0
+                                                            );
+                                                            cell_navigation::remember_worksheet_editor(
+                                                                inputs.ctx(),editor_slot,response.id
                                                             );
                                                             if response.gained_focus(){
                                                                 select_all_price_text(
@@ -1447,20 +1453,19 @@ impl ProductManager {
                                                                 self.price_focus_target=None;
                                                             }
                                                             let escape=response.has_focus()&&escape_pressed;
-                                                            let navigation_key=price_navigation_key(
-                                                                enter_pressed,tab_pressed,left_pressed,
-                                                                right_pressed,up_pressed,down_pressed,
-                                                                shift_pressed
-                                                            );
                                                             let navigation_target=navigation_key
                                                                 .and_then(|navigation|
                                                                     price_navigation_target(
                                                                         &price_order,&key,navigation
                                                                     )
                                                                 );
-                                                            let arrow_edge=(left_pressed||right_pressed||
-                                                                up_pressed||down_pressed)
-                                                                &&navigation_target.is_none();
+                                                            let arrow_edge=matches!(
+                                                                navigation_key,
+                                                                Some(CellNavigationKey::Left|
+                                                                    CellNavigationKey::Right|
+                                                                    CellNavigationKey::Up|
+                                                                    CellNavigationKey::Down)
+                                                            )&&navigation_target.is_none();
                                                             let keyboard_commit=(response.has_focus()
                                                                 ||response.lost_focus())
                                                                 &&navigation_key.is_some()
