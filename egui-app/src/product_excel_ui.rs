@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn review_table_rows_keep_existing_status_filter_and_message_fallback(){
         let review=serde_json::json!({"rows":[
-            {"status":"ADD","sheet":"A","row":1,"name":"신규",
+            {"status":"ERROR","sheet":"A","row":1,"name":"신규",
                 "errors":["오류 A","오류 B"]},
             {"status":"HOLD","sheet":"B","row":2,"name":"보류",
                 "errors":[],"changes":["변경 A","변경 B"]},
