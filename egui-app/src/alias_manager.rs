@@ -38,25 +38,18 @@ fn alias_diagnostic_slot(ui:&mut Ui,item:&Value,warnings:&Warnings)->Rect{
     // Always reserve the third caption line. Diagnostic arrival and message
     // length must not change this alias row's height or the next row's Y.
     let slot_width=ui.min_rect().width().max(1.0);
-    let (slot,hit)=ui.allocate_exact_size(
-        egui::vec2(
-            slot_width,typography::FONT_METADATA+theme::SPACE_4
-        ),egui::Sense::hover()
-    );
-    if let Some(issues)=warnings.get(field(item,"id")).filter(|v|!v.is_empty()){
-        let detail=format!("충돌: {} / 영향 범위: {}",
+    let detail=warnings.get(field(item,"id")).filter(|v|!v.is_empty())
+        .map(|issues|format!(
+            "충돌: {} / 영향 범위: {}",
             issues.join(" / "),
             if field(item,"clientId").is_empty(){
                 "모든 거래처의 이후 주문"
-            }else{"해당 거래처의 이후 주문"});
-        ui.painter().with_clip_rect(slot).text(
-            slot.left_center(),egui::Align2::LEFT_CENTER,&detail,
-            egui::FontId::proportional(typography::FONT_METADATA),
-            theme::MUTED
-        );
-        hit.on_hover_text(detail);
-    }
-    slot
+            }else{"해당 거래처의 이후 주문"}
+        ));
+    components::fixed_status_slot(
+        ui,slot_width,typography::FONT_METADATA+theme::SPACE_4,
+        detail.as_deref(),detail.as_deref(),theme::MUTED
+    )
 }
 fn is_client_active(v:&Value)->bool{v.get("deletedAt").is_none_or(Value::is_null)}
 fn category_levels(catalog:&Value,selected:&str)
