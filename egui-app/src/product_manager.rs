@@ -749,6 +749,8 @@ impl ProductManager {
                 if let Some(data)=self.brands.show_page(ui,catalog,can_edit,saving){
                     self.start_write("upsert_brand",data,None,ui.ctx().clone());
                 }
+            }else{
+                components::management_pending_primary_card(ui);
             }
             return;
         }
@@ -759,18 +761,24 @@ impl ProductManager {
                 ){
                     self.start_write("save_alias",data,None,ui.ctx().clone());
                 }
+            }else{
+                components::management_pending_primary_card(ui);
             }
             return;
         }
         if self.tab==2 {
             if let Some(catalog)=self.catalog.as_ref(){
                 self.model_groups.show_page(ui,catalog,Arc::clone(&self.gateway));
+            }else{
+                components::management_pending_primary_card(ui);
             }
             return;
         }
         if self.tab==1 {
             if let Some(catalog)=self.catalog.as_ref(){
                 self.category_manager.show_page(ui,catalog,can_edit,saving);
+            }else{
+                components::management_pending_primary_card(ui);
             }
             return;
         }
