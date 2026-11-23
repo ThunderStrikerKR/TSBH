@@ -388,7 +388,8 @@ mod management_async_layout_contract_tests {
         let aliases=include_str!("alias_manager.rs");
         assert!(aliases.contains("fn alias_diagnostic_slot("));
         assert!(aliases.contains("alias_diagnostic_slot(info,item,&warnings);"));
-        assert!(aliases.contains("hit.on_hover_text(detail);"));
+        assert!(aliases.contains("components::fixed_status_slot("));
+        assert!(!aliases.contains("hit.on_hover_text(detail);"));
         let settings=include_str!("settings_view.rs");
         assert!(settings.contains("if conflict{\n                    heading.with_layout("));
         assert!(!settings.contains("if conflict && components::management_top_content"));
@@ -5490,7 +5491,8 @@ mod shared_checkbox_contract_tests {
 
         // OCR learning, category transfer consent and product filtering are
         // standard checkboxes too; none may construct a local egui checkbox.
-        assert!(main.contains("components::checkbox(\n                                        option,"));
+        assert!(main.contains("changed=components::checkbox("));
+        assert!(main.contains("&mut review.learned_analysis_enabled"));
         assert!(!main.contains("option.checkbox("));
 
         let category=include_str!("category_manager.rs");
@@ -5602,7 +5604,9 @@ mod management_search_caret_tests {
             ("clients",include_str!("client_manager.rs"),1),
             ("excel",include_str!("excel_manager.rs"),1),
             ("order history",include_str!("order_history_manager.rs"),1),
-            ("categories",include_str!("category_manager.rs"),1),
+            // The narrow and wide branches are mutually exclusive render
+            // paths for the same logical search field.
+            ("categories",include_str!("category_manager.rs"),2),
             ("model groups",include_str!("model_group_manager.rs"),2),
             ("aliases",include_str!("alias_manager.rs"),1),
             ("automatic messages",include_str!("automatic_message_manager.rs"),1),
