@@ -1420,7 +1420,7 @@ impl ManualWorkspace {
                                                 ]{
                                                     if theme::action(options,label,
                                                         if code==value{ButtonRole::TableSecondary}
-                                                        else{ButtonRole::Standard},!busy).clicked(){
+                                                        else{ButtonRole::Standard},!busy && !pending_quantity_active).clicked(){
                                                         chosen=Some((
                                                             "set_manual_delivery_option".into(),
                                                             json!({"cell":{"recipientId":rid,
