@@ -292,20 +292,30 @@ impl ItemEditor{
                         });
                     }
                 });
+                // Validation and customer guidance share one fixed
+                // slot. A new error can never move the modal footer.
+                let mut status_messages=Vec::new();
+                if let Some(error)=&self.error{
+                    status_messages.push(error.clone());
+                }
                 if invalid_selection{
-                    ui.label(typography::status(
-                        "수량이 확정되고 판매 구성이 하나인 독립 상품만 적용할 수 있습니다.",
-                        theme::DANGER
-                    ));
+                    status_messages.push(
+                        "수량이 확정되고 판매 구성이 하나인 독립 상품만 적용할 수 있습니다.".to_owned()
+                    );
                 }
                 if needs_customer{
-                    ui.label(typography::caption(
-                        "추천 상품 고객 확인 필요"
-                    ));
+                    status_messages.push("추천 상품 고객 확인 필요".to_owned());
                 }
-                if let Some(error)=&self.error{
-                    ui.label(typography::status(error,theme::DANGER));
-                }
+                let status_text=status_messages.join(" · ");
+                let status_color=if self.error.is_some()||invalid_selection{
+                    theme::DANGER
+                }else{theme::SECONDARY};
+                components::fixed_status_slot(
+                    ui,ui.available_width(),typography::METADATA_LINE_HEIGHT,
+                    (!status_text.is_empty()).then_some(status_text.as_str()),
+                    (!status_text.is_empty()).then_some(status_text.as_str()),
+                    status_color
+                );
                 ui.add_space(theme::SPACE_16);
                 components::modal_action_row_split(
                     ui,
