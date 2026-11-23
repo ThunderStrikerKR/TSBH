@@ -6646,7 +6646,7 @@ mod modal_input_routing_tests {
         );
         let mut clicked=false;
         let button=draw(&ctx,egui::RawInput::default(),work_area,&mut clicked);
-        assert!(button.is_positive(),"the decision action must be laid out");
+        assert!(button.width()>0.0 && button.height()>0.0,"the decision action must be laid out");
         let pointer=button.center();
         draw(&ctx,egui::RawInput{
             events:vec![egui::Event::PointerMoved(pointer)],
@@ -6681,9 +6681,9 @@ mod modal_input_routing_tests {
             egui::Pos2::ZERO,Vec2::new(800.0,600.0)
         );
         let mut parent_clicked=false;
-        let mut parent_rect=Rect::NOTHING;
         let mut draw=|mut raw:egui::RawInput|{
             raw.screen_rect=Some(work_area);
+            let mut parent_rect=Rect::NOTHING;
             let _=ctx.run(raw,|ctx|{
                 modal_window("수동 분류","manual-parent-workspace",work_area)
                     .show(ctx,|ui|{
@@ -6703,8 +6703,9 @@ mod modal_input_routing_tests {
                     });
                 });
             });
+            parent_rect
         };
-        draw(egui::RawInput::default());
+        let parent_rect=draw(egui::RawInput::default());
         let pointer=parent_rect.center();
         draw(egui::RawInput{
             events:vec![egui::Event::PointerMoved(pointer)],
