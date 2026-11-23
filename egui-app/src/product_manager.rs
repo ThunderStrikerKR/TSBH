@@ -26,6 +26,37 @@ use std::{
 fn field<'a>(row: &'a Value, key: &str) -> &'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
 }
+
+/// Match the current React sale-status contract. The catalog 'active' bit
+/// denotes legacy activation, while 'saleStatus' holds the four user-facing
+/// sales states; do not derive sold-out status from 'active'.
+const SALE_STATES:[&str;4]=["판매중","품절","판매준비중","판매중지"];
+
+fn displayed_sale_status(product:&Value)->&str{
+    if product["active"].as_bool()==Some(false){return "판매중지";}
+    match field(product,"saleStatus"){
+        ""|"판매 표시"|"SELLING"|"판매중"=>"판매중",
+        "등록 대기"=>"판매준비중",
+        status=>status,
+    }
+}
+
+fn sale_status_color(status:&str)->egui::Color32{
+    match status{
+        "판매중"=>theme::SALE_STATUS_SELLING,
+        "품절"=>theme::SALE_STATUS_SOLD_OUT,
+        "판매준비중"=>theme::SALE_STATUS_PREPARING,
+        _=>theme::SALE_STATUS_STOPPED,
+    }
+}
+
+fn set_sale_status(product:&mut Value,status:&str){
+    product["saleStatus"]=json!(status);
+    // Keep React ProductManager's explicit status edit semantics: choosing
+    // a selling mode activates the catalog record, including '판매중지'.
+    // The sale issue check still rejects any non-selling saleStatus.
+    product["active"]=json!(true);
+}
 fn rows(value: &Value) -> &[Value] {
     value.as_array().map(Vec::as_slice).unwrap_or(&[])
 }
@@ -539,7 +570,7 @@ impl ProductManager {
             "id":"","code":"","name":"","subtitle":"",
             "category":"","categories":[],"catalog":"BANDOSTAND",
             "origin":"FACTORY","defaultColor":"단일",
-            "active":true,"saleUnit":true,"colorStatus":"NOT_REQUIRED",
+            "active":true,"saleStatus":"판매중","saleUnit":true,"colorStatus":"NOT_REQUIRED",
             "variants":[{
                 "id":"","color":"단일","option":"",
                 "wholesale":null,"semi":null,"retail":null,
@@ -1449,22 +1480,22 @@ impl ProductManager {
         prices:&mut HashMap<String,String>,editable:bool,busy:bool
     ){
         components::modal_labeled_row(ui,"판매 상태",|line|{
-            // Rust catalog stores a boolean active flag, not four invented
-            // selling modes. A real shared dropdown edits that same draft.
-            let current=draft["active"].as_bool()!=Some(false);
-            let mut selected=current;
+            let current=displayed_sale_status(draft);
+            let mut selected=current.to_owned();
             line.add_enabled_ui(editable&&!busy,|input|{
                 let width=input.available_width().max(1.0);
-                components::management_dropdown(
-                    input,if selected{"판매중"}else{"판매중지"},
-                    width,true,"판매 상태 선택",|options|{
-                        components::management_dropdown_option(
-                            options,&mut selected,true,"판매중");
-                        components::management_dropdown_option(
-                            options,&mut selected,false,"판매중지");
+                components::management_status_dropdown(
+                    input,current,width,true,"판매 상태 선택",
+                    sale_status_color(current),|options|{
+                        for state in SALE_STATES{
+                            components::management_status_dropdown_option(
+                                options,&mut selected,state.to_owned(),
+                                state,sale_status_color(state)
+                            );
+                        }
                     });
             });
-            if selected!=current{draft["active"]=json!(selected);}
+            if selected!=current{set_sale_status(draft,&selected);}
         });
         ui.add_space(theme::SPACE_16);
         for (label,tier) in [
@@ -1962,6 +1993,54 @@ mod tests {
             assert!(composition.contains(&format!(
                 "components::modal_section_measured("
             )) && composition.contains(heading));
+        }
+    }
+    #[test]
+    fn four_sales_states_restore_react_values_and_prevent_sold_out_mislabeling(){
+        assert_eq!(SALE_STATES,["판매중","품절","판매준비중","판매중지"]);
+        for (stored,expected) in [
+            ("판매 표시","판매중"),
+            ("SELLING","판매중"),
+            ("등록 대기","판매준비중"),
+            ("판매중","판매중"),
+            ("품절","품절"),
+            ("판매준비중","판매준비중"),
+            ("판매중지","판매중지"),
+        ]{
+            let item=json!({"active":true,"saleStatus":stored});
+            assert_eq!(displayed_sale_status(&item),expected, "{stored}");
+        }
+        assert_eq!(displayed_sale_status(&json!({"active":true})),"판매중");
+        assert_eq!(displayed_sale_status(&json!({
+            "active":false,"saleStatus":"품절"
+        })),"판매중지");
+        for state in SALE_STATES{
+            let color=sale_status_color(state);
+            assert_ne!(color,egui::Color32::TRANSPARENT);
+        }
+        assert_ne!(sale_status_color("품절"),sale_status_color("판매중"));
+        assert_ne!(sale_status_color("판매준비중"),sale_status_color("판매중지"));
+    }
+    #[test]
+    fn product_status_edit_persists_without_price_or_variant_loss(){
+        for status in SALE_STATES {
+            let mut item=json!({"id":"p1","active":false,"saleStatus":"판매 표시",
+                "variants":[{"id":"v1","wholesale":500,"semi":700,"retail":1000}]
+            });
+            let original_variants=item["variants"].clone();
+            set_sale_status(&mut item,status);
+            assert_eq!(item["saleStatus"],json!(status));
+            assert_eq!(item["active"],true);
+            assert_eq!(item["variants"],original_variants);
+            let inputs=HashMap::from([
+                ("wholesale".to_owned(),"500".to_owned()),
+                ("semi".to_owned(),"700".to_owned()),
+                ("retail".to_owned(),"1,000".to_owned())
+            ]);
+            let candidate=ProductManager::product_price_candidate(&item,&inputs)
+                .expect("valid product candidate");
+            assert_eq!(candidate["saleStatus"],json!(status));
+            assert_eq!(candidate["variants"],original_variants);
         }
     }
     #[test]
