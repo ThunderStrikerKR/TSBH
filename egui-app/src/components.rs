@@ -1856,12 +1856,13 @@ pub fn multiline_text_field_sized(
     font:egui::FontId,frame:bool,margin:egui::Margin,desired_rows:usize
 )->Response{
     let editor=egui::TextEdit::multiline(value)
+        .interactive(enabled)
         .font(font)
         .frame(frame)
         .margin(margin)
         .desired_width(size.x)
         .desired_rows(desired_rows);
-    ui.add_enabled_ui(enabled,|field|field.add_sized(size,editor)).inner
+    ui.add_sized(size,editor)
 }
 
 /// Search inputs are append-first: a normal pointer click to resume an
