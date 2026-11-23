@@ -2,12 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { readableError } from "./errors";
 import type { Price } from "./types";
 
-/**
- * Inline price edits are staged until the user chooses Enter or Save.
- * Blur is not permission to change financial data, but must never discard
- * the staged text. Price writes still use the native revision/expected-value
- * protected setPrice operation provided by ProductManager.
- */
+type ParsedPrice =
+  | { ok: true; value: Price }
+  | { ok: false };
+
 export function PriceCell({
   value,
   label,
@@ -29,15 +27,40 @@ export function PriceCell({
   const saving = useRef(false),
     expected = useRef(value),
     input = useRef<HTMLInputElement>(null),
+    skipBlurSave = useRef(false),
     lastReportedPending = useRef(false);
   const pendingRef = useRef(onPendingChange);
   pendingRef.current = onPendingChange;
 
-  const normalizedDraft = draft.replaceAll(",", "");
-  const pending = editing && normalizedDraft !== (expected.current === null ? "" : String(expected.current));
+  const parseDraft = (): ParsedPrice => {
+    const text = draft.replaceAll(",", "");
+    if (
+      text !== "" &&
+      (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(draft) ||
+        !Number.isSafeInteger(Number(text)))
+    ) {
+      return { ok: false };
+    }
+    return {
+      ok: true,
+      value: text === "" || Number(text) === 0 ? null : Number(text),
+    };
+  };
+
+  const isDraftDirty = () => {
+    const initial = expected.current === null ? "" : String(expected.current);
+    if (draft.replaceAll(",", "") === initial) return false;
+    const parsed = parseDraft();
+    return !parsed.ok || parsed.value !== expected.current;
+  };
+
+  const pending = editing && !busy && isDraftDirty();
 
   useEffect(() => {
-    if (!editing) setDraft(value === null ? "" : String(value));
+    if (!editing) {
+      expected.current = value;
+      setDraft(value === null ? "" : String(value));
+    }
   }, [value, editing]);
 
   // Report only transitions, not every unedited cell on initial table mount.
@@ -50,44 +73,57 @@ export function PriceCell({
     if (lastReportedPending.current) pendingRef.current?.(false);
   }, []);
 
+  const showValidationError = () => {
+    setError("원 단위 정수를 입력하세요. 0 또는 빈칸은 미등록입니다.");
+    setStatus("입력 확인");
+  };
+
   const cancel = () => {
     if (saving.current) return;
-    setDraft(value === null ? "" : value.toLocaleString("ko-KR"));
+    skipBlurSave.current = true;
+    setDraft(
+      expected.current === null
+        ? ""
+        : expected.current.toLocaleString("ko-KR"),
+    );
     setEditing(false);
     setError("");
-    setStatus("취소");
+    setStatus("");
     input.current?.blur();
   };
 
   const save = async () => {
     if (!editing || saving.current) return;
-    const text = draft.replaceAll(",", "");
-    if (
-      text !== "" &&
-      (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(draft) || !Number.isSafeInteger(Number(text)))
-    ) {
-      setError("원 단위 정수를 입력하세요. 0 또는 빈칸은 미등록입니다.");
-      setStatus("저장 실패");
+    const parsed = parseDraft();
+    if (!parsed.ok) {
+      showValidationError();
       return;
     }
-    const n = text === "" || Number(text) === 0 ? null : Number(text);
-    if (n === expected.current) {
+    const next = parsed.value;
+    if (!isDraftDirty() || next === expected.current) {
       setEditing(false);
       setError("");
-      setStatus("변경 없음");
+      setStatus("");
       return;
     }
+
     saving.current = true;
     setBusy(true);
+    if (lastReportedPending.current) {
+      lastReportedPending.current = false;
+      pendingRef.current?.(false);
+    }
     setStatus("저장 중");
+    setError("");
     try {
-      await onSave(n, expected.current);
-      expected.current = n;
-      setStatus(n === null ? "미등록으로 저장됨" : "저장됨");
+      await onSave(next, expected.current);
+      expected.current = next;
+      setStatus("저장됨");
       setError("");
       setEditing(false);
     } catch (e) {
-      // Keep the original draft and expected price for an explicit retry.
+      // Keep the cell's value and comparison baseline for an automatic retry
+      // on the next Enter, Tab, or focus change.
       setError(readableError(e));
       setStatus("저장 실패");
     } finally {
@@ -96,11 +132,28 @@ export function PriceCell({
     }
   };
 
+  const findPriceCell = (offset: number) => {
+    const current = input.current;
+    const body = current?.closest("tbody");
+    if (!current || !body) return null;
+    const cells = Array.from(
+      body.querySelectorAll<HTMLInputElement>("input[data-price-cell]"),
+    ).filter((cell) => !cell.disabled && !cell.readOnly);
+    const index = cells.indexOf(current);
+    return index < 0 ? null : cells[index + offset] ?? null;
+  };
+
   return (
     <div
-      className={"price-cell" + (error ? " invalid" : "") + (pending ? " pending" : "")}
+      className={
+        "price-cell" +
+        (error ? " invalid" : "") +
+        (pending ? " pending" : "") +
+        (busy ? " busy" : "")
+      }
       data-locked={!enabled}
       data-price-pending={pending}
+      data-price-saving={busy}
     >
       <input
         ref={input}
@@ -108,12 +161,21 @@ export function PriceCell({
         data-price-cell
         inputMode="numeric"
         readOnly={!enabled || busy}
-        title={enabled
-          ? "Enter 또는 저장 버튼으로 저장 / Esc 또는 취소 버튼으로 되돌리기 / 포커스 이동해도 입력 유지 (0은 미등록)"
-          : "가격 수정 모드를 켜세요"}
-        value={editing ? draft : value === null ? "" : value.toLocaleString("ko-KR")}
+        title={
+          enabled
+            ? "Enter 또는 다른 셀로 이동하면 자동 저장 / Esc로 현재 셀 변경 취소 (0은 미등록)"
+            : "가격 수정 모드를 켜세요"
+        }
+        value={
+          editing
+            ? draft
+            : value === null
+              ? ""
+              : value.toLocaleString("ko-KR")
+        }
         placeholder="미등록"
         onFocus={(e) => {
+          skipBlurSave.current = false;
           if (!enabled || busy) return;
           if (!editing) {
             expected.current = value;
@@ -132,42 +194,57 @@ export function PriceCell({
           }
         }}
         onBlur={() => {
-          // Focus changes must NOT silently save OR discard a price edit.
+          if (skipBlurSave.current) {
+            skipBlurSave.current = false;
+            return;
+          }
           if (saving.current || !editing) return;
-          if (pending) setStatus("미저장 · Enter 또는 저장 버튼");
+          if (pending) {
+            void save();
+          } else {
+            setEditing(false);
+          }
         }}
         onKeyDown={(e) => {
           if (!enabled || busy) return;
-          if (e.key === "Enter") {
-            e.preventDefault();
-            void save();
-          }
           if (e.key === "Escape") {
             e.preventDefault();
             cancel();
+            return;
           }
+
+          let offset: number | undefined;
+          if (e.key === "Enter") offset = e.shiftKey ? -3 : 3;
+          else if (e.key === "Tab") offset = e.shiftKey ? -1 : 1;
+          else if (e.key === "ArrowDown") offset = 3;
+          else if (e.key === "ArrowUp") offset = -3;
+          if (offset === undefined) return;
+
+          const target = findPriceCell(offset);
+          if (e.key === "Tab" && !target) return;
+          if (
+            (e.key === "ArrowDown" || e.key === "ArrowUp") &&
+            !target
+          ) {
+            return;
+          }
+
+          e.preventDefault();
+          if (!parseDraft().ok) {
+            showValidationError();
+            return;
+          }
+          void save();
+          if (target) target.focus();
+          else input.current?.blur();
         }}
       />
-      {editing && (
-        <span className="price-cell-actions">
-          <button
-            type="button"
-            className="price-cell-save"
-            aria-label={label + " 저장"}
-            disabled={busy}
-            onClick={() => void save()}
-          >저장</button>
-          <button
-            type="button"
-            className="price-cell-cancel"
-            aria-label={label + " 취소"}
-            disabled={busy}
-            onClick={cancel}
-          >취소</button>
-        </span>
-      )}
-      <small role={error ? "alert" : "status"} title={error || status} aria-live="polite">
-        {error || status}
+      <small
+        role={error ? "alert" : "status"}
+        title={error || status}
+        aria-live="polite"
+      >
+        {error || (busy ? "저장 중" : status)}
       </small>
     </div>
   );
