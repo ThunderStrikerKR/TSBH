@@ -141,6 +141,7 @@ mod fixed_layout_slot_contract_tests {
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.set_width(520.0);
                     let status_width=ui.available_width();
+                    let expected_gap=ui.spacing().item_spacing.y;
                     let slot=fixed_status_slot(
                         ui,status_width,typography::METADATA_LINE_HEIGHT,
                         message,message,theme::DANGER
@@ -148,12 +149,15 @@ mod fixed_layout_slot_contract_tests {
                     let (next,_)=ui.allocate_exact_size(
                         Vec2::new(120.0,theme::ACTION_STANDARD_HEIGHT),Sense::hover()
                     );
-                    measured.push((slot,next));
+                    measured.push((slot,next,next.top()-slot.bottom(),expected_gap));
                 });
             });
         }
         assert_eq!(measured[0].0,measured[1].0);
         assert_eq!(measured[0].1,measured[1].1);
+        assert!((measured[0].0.height()-typography::METADATA_LINE_HEIGHT).abs()<0.5);
+        assert!((measured[0].2-measured[0].3).abs()<0.5,
+            "the fixed status row must consume exactly one parent allocation");
     }
 
     #[test]
@@ -165,6 +169,7 @@ mod fixed_layout_slot_contract_tests {
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.set_width(520.0);
                     let row_width=ui.available_width();
+                    let expected_gap=ui.spacing().item_spacing.y;
                     let (row,_)=fixed_row(
                         ui,Vec2::new(row_width,theme::ACTION_STANDARD_HEIGHT),
                         Layout::left_to_right(Align::Center),|contents|{
@@ -176,12 +181,15 @@ mod fixed_layout_slot_contract_tests {
                     let (next,_)=ui.allocate_exact_size(
                         Vec2::new(120.0,theme::ACTION_STANDARD_HEIGHT),Sense::hover()
                     );
-                    measured.push((row,next));
+                    measured.push((row,next,next.top()-row.bottom(),expected_gap));
                 });
             });
         }
         assert_eq!(measured[0].0,measured[1].0);
         assert_eq!(measured[0].1,measured[1].1);
+        assert!((measured[0].0.height()-theme::ACTION_STANDARD_HEIGHT).abs()<0.5);
+        assert!((measured[0].2-measured[0].3).abs()<0.5,
+            "the fixed action row must consume exactly one parent allocation");
     }
 }
 
