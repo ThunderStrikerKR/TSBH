@@ -63,6 +63,7 @@ mod developer_ui_samples;
 
 use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
+use cell_navigation::{CellNavigationCell, CellNavigationKey};
 use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
 use preview_store::{OcrFeedback, WorkingReception, WorkingSource};
 use kakao_context::{ChatWindow, KakaoTracker};
@@ -260,6 +261,30 @@ struct InlineTarget {
     recipient_id:String,
     item_id:Option<String>,
     field:&'static str,
+}
+#[derive(Clone)]
+struct InlineNavigationEntry {
+    target:InlineTarget,
+    original:String,
+    cell:CellNavigationCell,
+}
+fn inline_target_key(target:&InlineTarget)->String{
+    format!("{}:{}:{}",target.recipient_id,
+        target.item_id.as_deref().unwrap_or(""),target.field)
+}
+fn inline_navigation_key(input:&egui::InputState)->Option<CellNavigationKey>{
+    if input.events.iter().any(|event|matches!(event,egui::Event::Ime(_))){
+        return None;
+    }
+    if input.key_pressed(egui::Key::ArrowLeft){Some(CellNavigationKey::Left)}
+    else if input.key_pressed(egui::Key::ArrowRight){Some(CellNavigationKey::Right)}
+    else if input.key_pressed(egui::Key::ArrowUp){Some(CellNavigationKey::Up)}
+    else if input.key_pressed(egui::Key::ArrowDown){Some(CellNavigationKey::Down)}
+    else if input.key_pressed(egui::Key::Tab){
+        Some(if input.modifiers.shift{CellNavigationKey::Previous}else{CellNavigationKey::Next})
+    }else if input.key_pressed(egui::Key::Enter){
+        Some(if input.modifiers.shift{CellNavigationKey::Previous}else{CellNavigationKey::Next})
+    }else{None}
 }
 struct InlineReceptionEditor {
     source_id:String,
@@ -6490,6 +6515,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
         let mut next_recipient = None;
         let mut inline_open:Option<(InlineTarget,String,Option<egui::Pos2>)>=None;
+        let mut inline_navigation:Vec<InlineNavigationEntry>=Vec::new();
+        let mut inline_navigation_request:Option<(InlineTarget,CellNavigationKey)>=None;
         let mut item_popup:Option<(String,String)>=None;
         let mut inline_commit=false;
         let mut inline_cancel=false;
@@ -6570,14 +6597,21 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         name.as_str(),address.as_str(),mobile.as_str(),
                                         phone.as_str(),note.as_str()
                                     ];
-                                    for ((response,field),initial) in
+                                    for (column,((response,field),initial)) in
                                         responses.into_iter().zip([
                                             "name","address","mobile","phone","note"
-                                        ]).zip(values) {
+                                        ]).zip(values).enumerate() {
                                         let target=InlineTarget{
                                             recipient_id:recipient_id.to_owned(),
                                             item_id:None,field
                                         };
+                                        inline_navigation.push(InlineNavigationEntry{
+                                            target:target.clone(),original:initial.to_owned(),
+                                            cell:CellNavigationCell{
+                                                id:inline_target_key(&target),row:0,column,
+                                                order:column,enabled:editable
+                                            }
+                                        });
                                         let is_editing=self.inline_editor.as_ref()
                                             .is_some_and(|edit|edit.target==target);
                                         // The shared recipient field hit target owns
@@ -6606,12 +6640,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 )
                                             );
                                             editor.focus_next=false;
+                                            let navigation=if edit_response.has_focus() ||
+                                                edit_response.lost_focus(){
+                                                fields.input(inline_navigation_key)
+                                            }else{None};
                                             if edit_response.has_focus() && fields.input(|input|
                                                 input.key_pressed(egui::Key::Escape)){
                                                 inline_cancel=true;
-                                            }else if edit_response.lost_focus() ||
-                                                (edit_response.has_focus() && fields.input(|input|
-                                                    input.key_pressed(egui::Key::Enter))) {
+                                            }else if let Some(key)=navigation{
+                                                inline_navigation_request=Some((target.clone(),key));
+                                            }else if edit_response.lost_focus(){
                                                 inline_commit=true;
                                             }
                                         }
@@ -6689,7 +6727,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         if let Some(items)=recipient.get("items")
                                             .and_then(serde_json::Value::as_array)
                                         {
-                                            for item in items {
+                                            for (item_index,item) in items.iter().enumerate() {
                                                 let item_id=reception_service::text(item,"id");
                                                 let quantity=item.get("quantity")
                                                     .and_then(serde_json::Value::as_i64)
@@ -6760,7 +6798,20 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             .map(|n|n.to_string()).unwrap_or_default(),
                                                         _=>reception_service::item_title(item)
                                                     };
-                                                    let is_editing=self.inline_editor.as_ref()
+                                                    if field!="product"{
+                                                         let column=if field=="quantity"{1}else{2};
+                                                         let field_order=if field=="quantity"{0}else{1};
+                                                         inline_navigation.push(InlineNavigationEntry{
+                                                             target:target.clone(),original:original.clone(),
+                                                             cell:CellNavigationCell{
+                                                                 id:inline_target_key(&target),
+                                                                 row:item_index+1,column,
+                                                                 order:5+item_index*2+field_order,
+                                                                 enabled:editable
+                                                             }
+                                                         });
+                                                     }
+                                                     let is_editing=self.inline_editor.as_ref()
                                                         .is_some_and(|editor|editor.target==target);
                                                     if editable && !is_editing && response.clicked(){
                                                         if field=="product"{
@@ -6786,12 +6837,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             field!="product"
                                                         );
                                                         editor.focus_next=false;
+                                                        let navigation=if result.has_focus() || result.lost_focus(){
+                                                            items_ui.input(inline_navigation_key)
+                                                        }else{None};
                                                         if result.has_focus() && items_ui.input(|input|
                                                             input.key_pressed(egui::Key::Escape)) {
                                                             inline_cancel=true;
-                                                        }else if result.lost_focus() ||
-                                                            (result.has_focus() && items_ui.input(|input|
-                                                                input.key_pressed(egui::Key::Enter))) {
+                                                        }else if let Some(key)=navigation{
+                                                            inline_navigation_request=Some((target.clone(),key));
+                                                        }else if result.lost_focus(){
                                                             inline_commit=true;
                                                         }
                                                     }
@@ -6844,6 +6898,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             recipient_id:recipient_id.to_owned(),
                                             item_id:None,field:"shippingCharge"
                                         };
+                                        inline_navigation.push(InlineNavigationEntry{
+                                            target:freight_target.clone(),
+                                            original:line_fee.map(|n|n.to_string()).unwrap_or_default(),
+                                            cell:CellNavigationCell{
+                                                id:inline_target_key(&freight_target),
+                                                row:items.len()+1,column:2,
+                                                order:5+items.len()*2,enabled:editable
+                                            }
+                                        });
                                         // Adding products belongs to the section header,
                                         // not to the scrollable freight and item content.
                                         let freight_actions=components::reception_freight_row_editable(
@@ -6885,12 +6948,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 editor.click_at.take()
                                             );
                                             editor.focus_next=false;
+                                            let navigation=if result.has_focus() || result.lost_focus(){
+                                                items_ui.input(inline_navigation_key)
+                                            }else{None};
                                             if result.has_focus() && items_ui.input(|input|
                                                 input.key_pressed(egui::Key::Escape)){
                                                 inline_cancel=true;
-                                            }else if result.lost_focus() ||
-                                                (result.has_focus() && items_ui.input(|input|
-                                                    input.key_pressed(egui::Key::Enter))){
+                                            }else if let Some(key)=navigation{
+                                                inline_navigation_request=Some((freight_target.clone(),key));
+                                            }else if result.lost_focus(){
                                                 inline_commit=true;
                                             }
                                         }
@@ -7033,6 +7099,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // Click intent must win over the A blur, otherwise B needs
             // a second click after the pending native save.
             self.switch_inline_edit(target,text,click_at,ui.ctx());
+        }else if let Some((current,key))=inline_navigation_request{
+            let cells:Vec<CellNavigationCell>=inline_navigation.iter()
+                .map(|entry|entry.cell.clone()).collect();
+            let current_id=inline_target_key(&current);
+            if let Some(next_id)=crate::cell_navigation::resolve_cell_navigation_target(
+                &cells,&current_id,key
+            ){
+                if let Some(next)=inline_navigation.iter().find(|entry|entry.cell.id==next_id){
+                    self.switch_inline_edit(next.target.clone(),next.original.clone(),None,ui.ctx());
+                }
+            }else if matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous){
+                self.submit_inline_edit(ui.ctx());
+            }
         }else if inline_commit{
             self.submit_inline_edit(ui.ctx());
         }else if let Some((target,value))=inline_command{
