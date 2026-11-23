@@ -146,7 +146,6 @@ impl ReviewPanel {
             return None;
         }
         if self.pending.is_some() && self.issues.is_empty(){
-            ui.label(typography::caption("확인 항목 분석 중"));
             return None;
         }
         let actions=self.issues.iter().filter(|issue|text(issue,"severity")!="INFO")
