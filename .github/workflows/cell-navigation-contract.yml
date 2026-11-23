@@ -1,0 +1,52 @@
+name: Cell navigation contract
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cell-navigation-contract.yml
+      - src/ui/cell-navigation.ts
+      - src/PriceCell.tsx
+      - src/ProductManager.tsx
+      - src/OrderDesk.tsx
+      - src/WorkflowFooter.tsx
+      - src/orders/ManualClassification.tsx
+      - tests/cell-navigation-contract.test.mjs
+      - tests/tauri-editor-flow-regression.test.mjs
+      - tests/tauri-price-inline-save-regression.test.mjs
+      - egui-app/src/cell_navigation.rs
+      - egui-app/src/main.rs
+      - egui-app/src/product_manager.rs
+      - egui-app/src/manual_workspace.rs
+permissions:
+  contents: read
+concurrency:
+  group: cell-navigation-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  react-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install JavaScript dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: TypeScript type check
+        run: npm run check:types
+      - name: Cell navigation contract and editor regressions
+        run: |
+          node --test tests/cell-navigation-contract.test.mjs
+          node --test tests/tauri-editor-flow-regression.test.mjs
+          node --test tests/tauri-price-inline-save-regression.test.mjs
+  egui-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile egui application and run shared cell navigation tests
+        run: |
+          cargo check --manifest-path egui-app/Cargo.toml
+          cargo test --manifest-path egui-app/Cargo.toml cell_navigation::tests -- --nocapture
