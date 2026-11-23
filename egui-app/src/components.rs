@@ -202,7 +202,7 @@ mod shared_screen_component_contract_tests {
                 _=>unreachable!(),
             });
             for token in forbidden {
-                assert!(!source.contains(token),
+                assert!(!source.contains(*token),
                     "{name} bypasses the shared UI layer with {token}");
             }
         }
