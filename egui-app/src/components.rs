@@ -1714,6 +1714,38 @@ pub fn modal_backdrop(
     });
 }
 
+/// Nested decision windows must own the modal input layer, not their dim
+/// backdrop. A backdrop and its dialog can both use Foreground ordering; if
+/// the backdrop owns the layer, egui may reject every button in the dialog.
+pub fn modal_window_layer(id:&'static str)->egui::LayerId {
+    egui::LayerId::new(egui::Order::Foreground,egui::Id::new(id))
+}
+
+/// Render a nested dim and route input to the actual Window created by
+/// modal_window/decision_window with the same stable ID.
+pub fn modal_backdrop_for_window(
+    ctx:&egui::Context,backdrop_id:&'static str,window_id:&'static str
+) {
+    let viewport=ctx.screen_rect();
+    let area=egui::Area::new(egui::Id::new(backdrop_id))
+        .order(egui::Order::Foreground)
+        .fixed_pos(viewport.min)
+        .movable(false)
+        .interactable(false)
+        .sense(egui::Sense::hover());
+    ctx.memory_mut(|memory|memory.set_modal_layer(modal_window_layer(window_id)));
+    area.show(ctx,|ui|{
+        let (rect,_)=ui.allocate_exact_size(
+            viewport.size(),egui::Sense::hover()
+        );
+        ui.painter().rect_filled(
+            rect,0.0,egui::Color32::from_black_alpha(
+                theme::MODAL_NESTED_BACKDROP_ALPHA
+            )
+        );
+    });
+}
+
 /// Reusable absolute-layout panel with a fixed title band and an
 /// independently scrolling body. The caller supplies approved geometry and
 /// stable IDs; clipping, frame paint, title placement and scroll ownership
@@ -6520,5 +6552,32 @@ mod modal_editor_workspace_geometry_tests {
         geometry.header=Some(previous.translate(Vec2::new(0.0,3.0)));
         assert!(geometry.invalid_gaps(1.0).iter()
             .any(|(label,_)|*label=="header_to_card"));
+    }
+}
+
+
+#[cfg(test)]
+mod modal_input_routing_tests {
+    use super::*;
+
+    #[test]
+    fn nested_backdrop_routes_input_to_the_decision_window_layer() {
+        let ctx=egui::Context::default();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            modal_backdrop_for_window(
+                ctx,"manual-nested-modal-backdrop","manual-discard-prompt"
+            );
+        });
+        assert_eq!(
+            ctx.memory(|memory|memory.top_modal_layer()),
+            Some(modal_window_layer("manual-discard-prompt"))
+        );
+        assert_ne!(
+            modal_window_layer("manual-discard-prompt"),
+            egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("manual-nested-modal-backdrop")
+            )
+        );
     }
 }
