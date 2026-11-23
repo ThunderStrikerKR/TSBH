@@ -1675,10 +1675,14 @@ pub fn decision_window(
     title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
     modal_window(title,id,work_area)
+        // A nested decision must paint and receive input ABOVE the
+        // foreground dim layer that covers its parent editor. Giving both
+        // surfaces Foreground made their ordering depend on Area stacking;
+        // the dim could end up above the decision and swallow every click.
+        .order(egui::Order::Tooltip)
         // Confirmation dialogs must size to their content. Enabling an outer
         // ScrollArea here makes egui greedily occupy the available height,
         // leaving a large blank panel below the final action button.
-        // Large editors keep their own explicitly bounded body scroll areas.
         .resizable(false)
         .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))
 }
