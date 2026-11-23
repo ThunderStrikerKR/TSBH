@@ -34,6 +34,8 @@ jobs:
           workspaces: egui-app -> target
       - name: Compile native egui client management
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify client preferred-account options and stored selection semantics
+        run: cargo test --manifest-path egui-app/Cargo.toml client_account_picker_tests -- --nocapture
       - name: Verify search-tag add, duplicate prevention and individual removal
         run: cargo test --manifest-path egui-app/Cargo.toml client_search_tags::tests -- --nocapture
       - name: Verify the same header and row column-divider positions
