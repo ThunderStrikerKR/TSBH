@@ -2313,7 +2313,9 @@ pub fn manual_linked_table_cell(
         // Two adjacent cells share one visual divider, not a doubled border.
         Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
     };
-    let text=typography::table_cell(label);
+    // Match the selected editor and the 16pt reception/source standard.
+    // Read-only manual fields must not shrink when focus leaves a cell.
+    let text=typography::body(label).size(typography::FONT_RECEPTION_RECIPIENT_TEXT);
     let response=ui.add_sized(
         Vec2::new(width,theme::MANUAL_TABLE_ROW_HEIGHT),
         egui::Button::new(
