@@ -47,32 +47,38 @@ pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
 
 /// Business data typography is classified by semantic value, never by the
-/// screen that happens to contain it. Digits use Consolas (monospace) for
-/// stable columns, while Korean units fall back to the regular Korean UI
-/// family. Calibrate their optical baseline at font registration, not by
-/// shifting the text or resizing individual controls.
+/// screen that happens to contain it. Monetary amounts and quantities use
+/// Consolas (monospace) for stable columns. Dates and phone identifiers use
+/// the regular proportional Korean UI family, matching normal source text.
 /// Sizes follow the approved presentation context, not digit count.
 #[derive(Clone,Copy,Debug,Eq,PartialEq)]
 pub enum DataValueKind { Money, Quantity, Date, Phone }
 #[derive(Clone,Copy,Debug,Eq,PartialEq)]
-pub enum DataValueContext { Table, Form, Reception, CompactCard, Summary }
+pub enum DataValueContext {
+    Table, Form, Reception, CompactCard, Summary, CompactCaption, ReceptionTotal
+}
 
 /// Pixel-level optical correction for Consolas against Korean unit glyphs.
 /// epaint::FontTweak changes only glyph placement, not line boxes, editor
 /// carets, button positions or the fixed item-table column rectangles.
 /// Consolas digits are optically aligned with Korean unit glyphs using
-/// one shared font-level correction. The +3pt setting looked slightly low
-/// in subsequent 1080p captures; use +2pt without altering control geometry.
+/// one shared font-level correction. The current calibrated value is +2.5pt.
+/// This does not apply to proportional date/telephone text.
 pub const DATA_NUMERIC_GLYPH_OFFSET_Y: f32 = 2.5;
 
-pub fn data_value_font(_kind:DataValueKind,context:DataValueContext)->FontId {
+pub fn data_value_font(kind:DataValueKind,context:DataValueContext)->FontId {
     let size=match context {
         DataValueContext::Table|DataValueContext::Form
         |DataValueContext::CompactCard=>FONT_BODY,
         DataValueContext::Reception=>FONT_RECEPTION_ITEM_TEXT,
         DataValueContext::Summary=>FONT_SECTION_HEADING,
+        DataValueContext::CompactCaption=>FONT_FIELD_LABEL,
+        DataValueContext::ReceptionTotal=>18.0,
     };
-    FontId::monospace(size)
+    match kind {
+        DataValueKind::Money|DataValueKind::Quantity=>FontId::monospace(size),
+        DataValueKind::Date|DataValueKind::Phone=>FontId::proportional(size),
+    }
 }
 
 /// A fixed numeric slot right-aligns even the unknown em dash; dates and
@@ -182,7 +188,6 @@ enum Role {
     TableHeader,
     TableCell,
     SummaryValue,
-    Quantity,
     Status,
 }
 
@@ -239,10 +244,6 @@ fn spec(role: Role) -> TypeSpec {
         Role::SummaryValue => TypeSpec {
             size: FONT_SECTION_HEADING, line: 23.0, tracking: 0.0,
             color: TEXT, weight: Weight::Monospace,
-        },
-        Role::Quantity => TypeSpec {
-            size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
-            color: SECONDARY, weight: Weight::Monospace,
         },
         Role::Status => TypeSpec {
             size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
@@ -700,7 +701,12 @@ pub fn summary_value_galley(
         egui::text::LayoutJob::single_section(text.to_owned(), format)
     ))
 }
-pub fn quantity(text: &str) -> RichText { render(text, Role::Quantity) }
+/// Legacy count caption: keep its original 13pt/20pt appearance while
+/// routing the font family through the central quantity policy.
+pub fn quantity(text: &str) -> RichText {
+    data_value_text(text,DataValueKind::Quantity,DataValueContext::CompactCaption)
+        .line_height(Some(20.0))
+}
 
 /// Compatibility shim for existing money/quantity editor call sites.
 pub fn numeric_editor_font() -> FontId {
@@ -878,27 +884,32 @@ mod form_baseline_geometry_tests {
 mod management_table_type_roles_tests {
     use super::*;
     #[test]
-    fn semantic_data_roles_share_the_ui_family_and_stable_alignment(){
-        for kind in [
-            DataValueKind::Money,DataValueKind::Quantity,
-            DataValueKind::Date,DataValueKind::Phone
+    fn semantic_data_roles_keep_only_money_and_quantity_monospace(){
+        for context in [
+            DataValueContext::Table,DataValueContext::Form,
+            DataValueContext::Reception,DataValueContext::CompactCard,
+            DataValueContext::Summary,DataValueContext::CompactCaption,
+            DataValueContext::ReceptionTotal
         ] {
-            assert_eq!(
-                data_value_font(kind,DataValueContext::Table),
-                FontId::monospace(FONT_BODY)
-            );
-            assert_eq!(
-                data_value_font(kind,DataValueContext::Form),
-                FontId::monospace(FONT_BODY)
-            );
-            assert_eq!(
-                data_value_font(kind,DataValueContext::Reception),
-                FontId::monospace(FONT_RECEPTION_ITEM_TEXT)
-            );
-            assert_eq!(
-                data_value_font(kind,DataValueContext::CompactCard),
-                FontId::monospace(FONT_BODY)
-            );
+            let size=match context {
+                DataValueContext::Table|DataValueContext::Form
+                |DataValueContext::CompactCard=>FONT_BODY,
+                DataValueContext::Reception=>FONT_RECEPTION_RECIPIENT_TEXT,
+                DataValueContext::Summary=>FONT_SECTION_HEADING,
+                DataValueContext::CompactCaption=>FONT_FIELD_LABEL,
+                DataValueContext::ReceptionTotal=>18.0,
+            };
+            for kind in [
+                DataValueKind::Money,DataValueKind::Quantity,
+                DataValueKind::Date,DataValueKind::Phone
+            ] {
+                let expected=match kind {
+                    DataValueKind::Money|DataValueKind::Quantity=>FontId::monospace(size),
+                    DataValueKind::Date|DataValueKind::Phone=>FontId::proportional(size),
+                };
+                assert_eq!(data_value_font(kind,context),expected,
+                    "{kind:?} in {context:?} selected the wrong font family");
+            }
         }
         assert_eq!(data_value_align(DataValueKind::Money),egui::Align::RIGHT);
         assert_eq!(data_value_align(DataValueKind::Quantity),egui::Align::RIGHT);
@@ -911,8 +922,17 @@ mod management_table_type_roles_tests {
             data_value_font(DataValueKind::Money,DataValueContext::Table));
         assert_eq!(spec(Role::SummaryValue).weight as u8,
             Weight::Monospace as u8);
-        assert_eq!(spec(Role::Quantity).weight as u8,
-            Weight::Monospace as u8);
+        assert_eq!(data_value_font(
+            DataValueKind::Quantity,DataValueContext::CompactCaption
+        ),FontId::monospace(FONT_FIELD_LABEL));
+        // Phone and date in the reception context share the same font
+        // identity as the name, address and source text fields.
+        assert_eq!(data_value_font(
+            DataValueKind::Phone,DataValueContext::Reception
+        ),FontId::proportional(FONT_RECEPTION_RECIPIENT_TEXT));
+        assert_eq!(data_value_font(
+            DataValueKind::Date,DataValueContext::Form
+        ),FontId::proportional(FONT_BODY));
     }
 
     #[test]
