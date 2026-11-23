@@ -1035,8 +1035,12 @@ mod modal_layout_contract_tests{
         assert!(!node.contains("total_count("));
         assert!(!node.contains("matches(cats"));
         assert!(node.contains("index.total(&item.id)"));
-        assert!(!source.contains("section_heading(\"카테고리 맵\")"));
-        assert!(!source.contains("분류 행을 클릭하면 하위 구성이 접히거나 펼쳐집니다."));
+        // Look only at the rendered page: the test's own expected strings
+        // must not trigger these negative assertions.
+        let page=source.split("    pub fn show_page(").nth(1).unwrap()
+            .split("    pub fn show_overlays(").next().unwrap();
+        assert!(!page.contains("section_heading(\"카테고리 맵\")"));
+        assert!(!page.contains("분류 행을 클릭하면 하위 구성이 접히거나 펼쳐집니다."));
     }
     #[test]
     fn category_editor_add_move_use_only_shared_inline_form_rows(){
