@@ -296,6 +296,15 @@ fn parse_product_price(raw:&str,field_name:&str,zero_unregistered:bool)
 fn accepts_catalog_revision(current:u64,incoming:u64)->bool{
     incoming>=current
 }
+fn price_navigation_offset(
+    enter:bool,tab:bool,up:bool,down:bool,shift:bool
+)->isize{
+    if tab{if shift{-1}else{1}}
+    else if enter{if shift{-3}else{3}}
+    else if down{3}
+    else if up{-3}
+    else{0}
+}
 fn price_navigation_target(
     order:&[String],current:&str,offset:isize
 )->Option<String>{
@@ -1191,23 +1200,30 @@ impl ProductManager {
             // The keyboard order follows the product sort and the selected
             // variant in each row. Tab moves horizontally; Enter vertically.
             let mut price_order=Vec::new();
-            for product_index in &ordered{
-                let product=&self.products[*product_index];
-                let product_id=field(product,"id");
-                let variants=rows(&product["variants"]);
-                let selected_id=self.selected_variants.get(product_id)
-                    .filter(|selected|variants.iter().any(|variant|
-                        field(variant,"id")==selected.as_str()
-                    ))
-                    .cloned()
-                    .or_else(||variants.first().map(|variant|
-                        field(variant,"id").to_owned()
-                    ));
-                if let Some(variant_id)=selected_id{
-                    for tier in ["wholesale","semi","retail"]{
-                        price_order.push(format!(
-                            "{}:{}:{}",product_id,variant_id,tier
+            let other_price_write_busy=self.writing.as_ref()
+                .is_some_and(|job|job.kind!="set_price");
+            // Match React's findPriceCell: keyboard navigation skips cells
+            // that are currently disabled by an in-flight write or mode exit.
+            if !other_price_write_busy&&!self.price_mode_exit_requested{
+                for product_index in &ordered{
+                    let product=&self.products[*product_index];
+                    let product_id=field(product,"id");
+                    let variants=rows(&product["variants"]);
+                    let selected_id=self.selected_variants.get(product_id)
+                        .filter(|selected|variants.iter().any(|variant|
+                            field(variant,"id")==selected.as_str()
+                        ))
+                        .cloned()
+                        .or_else(||variants.first().map(|variant|
+                            field(variant,"id").to_owned()
                         ));
+                    if let Some(variant_id)=selected_id{
+                        for tier in ["wholesale","semi","retail"]{
+                            let key=format!("{}:{}:{}",product_id,variant_id,tier);
+                            if !self.price_cell_busy(&key){
+                                price_order.push(key);
+                            }
+                        }
                     }
                 }
             }
@@ -1419,24 +1435,25 @@ impl ProductManager {
                                                                 self.price_focus_target=None;
                                                             }
                                                             let escape=response.has_focus()&&escape_pressed;
+                                                            let vertical_edge=(up_pressed||down_pressed)
+                                                                &&price_navigation_target(
+                                                                    &price_order,&key,
+                                                                    if up_pressed{-3}else{3}
+                                                                ).is_none();
                                                             let keyboard_commit=(response.has_focus()
                                                                 ||response.lost_focus())
                                                                 &&(enter_pressed||tab_pressed
-                                                                    ||up_pressed||down_pressed);
+                                                                    ||up_pressed||down_pressed)
+                                                                &&!vertical_edge;
                                                             if escape{
                                                                 entry.reset_to_original();
                                                                 response.surrender_focus();
                                                                 self.error=None;
                                                             }else if keyboard_commit{
-                                                                let offset=if tab_pressed{
-                                                                    if shift_pressed{-1}else{1}
-                                                                }else if shift_pressed{
-                                                                    -3
-                                                                }else if enter_pressed||down_pressed{
-                                                                    3
-                                                                }else{
-                                                                    -3
-                                                                };
+                                                                let offset=price_navigation_offset(
+                                                                    enter_pressed,tab_pressed,
+                                                                    up_pressed,down_pressed,shift_pressed
+                                                                );
                                                                 match entry.parse(){
                                                                     Ok(value)=>{
                                                                         self.price_focus_target=
@@ -2561,6 +2578,17 @@ mod tests {
         let editor=source.split("let (enter_pressed,tab_pressed,").nth(1).unwrap()
             .split("let action_rect").next().unwrap_or("");
         assert!(source.contains("||self.price_mode_exit_requested"));
+    }
+    #[test]
+    fn spreadsheet_navigation_offsets_match_enter_tab_and_arrow_semantics(){
+        assert_eq!(price_navigation_offset(true,false,false,false,false),3);
+        assert_eq!(price_navigation_offset(true,false,false,false,true),-3);
+        assert_eq!(price_navigation_offset(false,true,false,false,false),1);
+        assert_eq!(price_navigation_offset(false,true,false,false,true),-1);
+        assert_eq!(price_navigation_offset(false,false,false,true,false),3);
+        assert_eq!(price_navigation_offset(false,false,false,true,true),3);
+        assert_eq!(price_navigation_offset(false,false,true,false,false),-3);
+        assert_eq!(price_navigation_offset(false,false,true,false,true),-3);
     }
     #[test]
     fn price_grid_keyboard_navigation_matches_spreadsheet_direction(){
