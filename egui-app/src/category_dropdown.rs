@@ -127,24 +127,56 @@ fn crumb(
     );
     response.on_hover_text(label)
 }
+/// Give short ancestors only the width their text needs. When the full
+/// breadcrumb does not fit, shrink both labels within the fixed footer budget
+/// instead of allocating equal, oversized columns.
+fn fitted_crumb_widths(intrinsic:&[f32],budget:f32)->Vec<f32>{
+    if intrinsic.is_empty(){return Vec::new();}
+    let min_width=(budget/intrinsic.len() as f32).min(26.0).max(12.0);
+    let widths=intrinsic.iter().map(|width|
+        width.clamp(min_width,160.0)
+    ).collect::<Vec<_>>();
+    let sum=widths.iter().sum::<f32>();
+    if sum<=budget{return widths;}
+    let flexible=widths.iter().map(|width|width-min_width).sum::<f32>();
+    if flexible<=0.0{return vec![min_width;intrinsic.len()];}
+    let remaining=(budget-min_width*intrinsic.len() as f32).max(0.0);
+    widths.iter().map(|width|
+        min_width+(width-min_width)*remaining/flexible
+    ).collect()
+}
 fn crumbs_row(
     ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
     selected:&mut String,enabled:bool,allow_empty:bool,changed:&mut bool
 ){
     let path=state.path.clone();
     let len=path.len();
-    let visible=if len>2 {path[len-2..].to_vec()}else{path.clone()};
-    let hidden=len.saturating_sub(2);
     let row_width=ui.available_width().max(1.0);
+    // On normal popup widths preserve "전체 > ··· > 부모 > 현재".
+    // Narrow popups show only the current category beside the ellipsis.
+    let shown_count=if row_width<320.0{1}else{2};
+    let hidden=len.saturating_sub(shown_count);
+    let visible=path[hidden..].to_vec();
     let apply_width=70.0;
-    // Reserve the last control FIRST. No category name can grow the footer
-    // or push the apply button outside its right edge.
+    // Include the 4pt gap between controls and all separator labels.
+    // The Primary action's reserved slot never gets displaced by a name.
     let separators=visible.len()+usize::from(hidden>0);
+    let widget_count=2+visible.len()+2*separators+usize::from(hidden>0);
     let fixed=42.0+if hidden>0{31.0}else{0.0}
-        +separators as f32*10.0+apply_width+theme::SPACE_8;
-    let crumb_width=if visible.is_empty(){0.0}else{
-        ((row_width-fixed)/visible.len() as f32).max(18.0).min(135.0)
-    };
+        +separators as f32*10.0+apply_width+theme::SPACE_8
+        +widget_count.saturating_sub(1) as f32*theme::SPACE_4;
+    let budget=(row_width-fixed).max(0.0);
+    let intrinsic=visible.iter().map(|id|{
+        let name=index.get(id.as_str()).map(|node|node.name.as_str())
+            .unwrap_or("분류 없음");
+        let galley=ui.painter().layout_no_wrap(
+            name.to_owned(),
+            egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
+            theme::TEXT
+        );
+        galley.size().x+theme::SPACE_16
+    }).collect::<Vec<_>>();
+    let crumb_widths=fitted_crumb_widths(&intrinsic,budget);
     let mut go_to:Option<Vec<String>>=None;
     let mut toggle_ancestors=false;
     let mut apply=false;
@@ -170,7 +202,7 @@ fn crumbs_row(
             let role=if id.as_str()==selected.as_str(){CrumbVisual::Applied}
                 else if offset+hidden+1==len{CrumbVisual::Current}
                 else{CrumbVisual::Ordinary};
-            if crumb(bar,name,crumb_width,role).clicked()
+            if crumb(bar,name,crumb_widths[offset],role).clicked()
                 && role!=CrumbVisual::Current{
                 go_to=Some(path[..hidden+offset+1].to_vec());
             }
@@ -246,7 +278,9 @@ fn menu_body(
     egui::ScrollArea::vertical()
         .id_salt(("category-explorer-list",state.path.clone(),state.search.clone()))
         .max_height(list_height)
-        .auto_shrink([false,false])
+        // Zero or few children must not reserve the entire 216pt viewport.
+        // Long lists still scroll locally and leave the footer outside it.
+        .auto_shrink([false,true])
         .show(menu,|list|{
             list.spacing_mut().item_spacing.y=theme::SPACE_4;
             let list_width=list.available_width().max(1.0);
@@ -451,6 +485,24 @@ mod tests{
         let index=tree_index(&nodes);
         assert_eq!(chain(&index,"a").len(),2);
         assert_eq!(direct_children(&nodes,&index,"")[0].id,"orphan");
+    }
+    #[test]
+    fn breadcrumb_labels_use_intrinsic_width_and_shrink_only_when_needed(){
+        assert_eq!(fitted_crumb_widths(&[58.0,112.0],220.0),vec![58.0,112.0]);
+        let fitted=fitted_crumb_widths(&[58.0,112.0],120.0);
+        assert_eq!(fitted.len(),2);
+        assert!((fitted.iter().sum::<f32>()-120.0).abs()<0.01);
+        assert!(fitted[0]<fitted[1]);
+        assert!(fitted.iter().all(|width|*width>=26.0));
+        assert!(fitted_crumb_widths(&[],100.0).is_empty());
+    }
+    #[test]
+    fn category_list_preserves_only_a_max_height_and_shrinks_to_content(){
+        let source=include_str!("category_dropdown.rs");
+        let list=source.split(".id_salt((\"category-explorer-list\"").nth(1).unwrap()
+            .split("    if let Some(path)=next_path{").next().unwrap();
+        assert!(list.contains(".auto_shrink([false,true])"));
+        assert!(!list.contains(".auto_shrink([false,false])"));
     }
     #[test]
     fn selected_and_current_categories_are_distinct_color_roles(){
