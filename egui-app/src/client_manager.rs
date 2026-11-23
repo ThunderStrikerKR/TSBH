@@ -788,7 +788,12 @@ impl ClientManager {
                 for (id,price) in overrides {
                     ui.horizontal(|row|{
                         let label=self.variant_name(id);
-                        row.label(typography::body(&format!("{label} · {}원",price)));
+                        // A single LayoutJob keeps the approved row/action
+                        // spacing while rendering only the monetary tail
+                        // with the shared Consolas amount policy.
+                        row.add(egui::Label::new(typography::inline_body_money(
+                            &format!("{label} · "),&format!("{price}원")
+                        )).wrap(false));
                         if theme::action(row,"예외 해제",ButtonRole::Quiet,true)
                             .clicked(){remove=Some(id.clone());}
                     });
