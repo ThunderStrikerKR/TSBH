@@ -164,6 +164,19 @@ impl ProductSort {
         }
     }
 }
+/// The product table uses one column geometry in browse and price-edit mode.
+fn product_table_base_widths()->[f32;6]{
+    [theme::PRODUCT_TABLE_NAME_MIN_WIDTH,theme::PRODUCT_TABLE_OPTION_WIDTH,
+     theme::PRODUCT_TABLE_PRICE_WIDTH,theme::PRODUCT_TABLE_PRICE_WIDTH,
+     theme::PRODUCT_TABLE_PRICE_WIDTH,theme::PRODUCT_TABLE_ACTION_WIDTH]
+}
+
+fn product_table_column_widths(data_width:f32)->[f32;6]{
+    theme::management_single_stretch_columns(
+        product_table_base_widths(),data_width,theme::SPACE_8,0
+    )
+}
+
 fn product_table_cells(origin:Pos2,widths:&[f32;6],height:f32)->[Rect;6]{
     let mut x=origin.x;
     std::array::from_fn(|i|{
@@ -303,6 +316,7 @@ pub struct ProductManager {
     confirm_archive:bool,
     price_mode:bool,
     price_drafts:HashMap<String,PriceDraft>,
+    active_price_editor:Option<String>,
     selected_variants:HashMap<String,String>,
     sort:Option<ProductSort>,
     excel:ProductExcelUi,
@@ -332,6 +346,7 @@ impl ProductManager {
             adding:false,original_selected:None,detail_prices:HashMap::new(),
             confirm_discard:false,confirm_archive:false,
             price_mode:false,price_drafts:HashMap::new(),
+            active_price_editor:None,
             selected_variants:HashMap::new(),sort:None,
             excel:ProductExcelUi::default(),
             photos:ProductImageCache::default(),
@@ -868,6 +883,7 @@ impl ProductManager {
                             self.error=Some("저장하지 않은 가격이 있습니다. 각 가격 셀의 저장 또는 취소를 눌러주세요.".into());
                         }else{
                             self.price_mode=!self.price_mode;
+                            self.active_price_editor=None;
                             if !self.price_mode{self.price_drafts.clear();}
                         }
                     }
@@ -906,17 +922,10 @@ impl ProductManager {
             let original_spacing=panel.spacing().item_spacing.y;
             panel.spacing_mut().item_spacing.y=0.0;
             panel.spacing_mut().scroll=theme::management_table_scroll_style();
-            let option_width=theme::PRODUCT_TABLE_OPTION_WIDTH;
-            let price_width=if self.price_mode{
-                theme::PRODUCT_TABLE_EDIT_PRICE_WIDTH
-            }else{theme::PRODUCT_TABLE_PRICE_WIDTH};
-            let action_width=theme::PRODUCT_TABLE_ACTION_WIDTH;
-            let gap=theme::SPACE_8;
-            let base=[theme::PRODUCT_TABLE_NAME_MIN_WIDTH,option_width,
-                price_width,price_width,price_width,action_width];
-            let min_width=base.iter().sum::<f32>()+5.0*gap;
-            // Preserve the actual price-editing minimum and existing
-            // native scrollbar allocation while using the shared table calculator.
+            // Fixed six-column geometry: editing changes only a cell's
+            // contents, never its width, column origin or scroll range.
+            let base=product_table_base_widths();
+            let min_width=base.iter().sum::<f32>()+5.0*theme::SPACE_8;
             let min_table_width=theme::PRODUCT_TABLE_MIN_WIDTH.max(min_width);
             let layout=if direct_filter_to_header{
                 components::management_sticky_table_header(
@@ -926,9 +935,7 @@ impl ProductManager {
                 components::management_list_table_header(panel,min_table_width)
             };
             let table_width=layout.table_width;
-            let widths=theme::management_single_stretch_columns(
-                base,table_width,gap,0
-            );
+            let widths=product_table_column_widths(table_width);
             let headings=[
                 components::ManagementTableColumnLabel::ProductName.text(),
                 "색상/옵션","도매가",
@@ -1110,6 +1117,15 @@ impl ProductManager {
                                                                 &entry.input,typography::numeric_editor_font(),
                                                                 false,8.0
                                                             );
+                                                            // Open the contextual actions for
+                                                            // the most recently edited dirty cell.
+                                                            // The popup floats above the grid:
+                                                            // it cannot resize the three price
+                                                            // columns or push later table cells.
+                                                            if response.changed() ||
+                                                                (response.clicked()&&entry.dirty()){
+                                                                self.active_price_editor=Some(key.clone());
+                                                            }
                                                             let enter=response.lost_focus() &&
                                                                 inputs.input(|i|
                                                                     i.key_pressed(egui::Key::Enter));
@@ -1118,11 +1134,10 @@ impl ProductManager {
                                                                     i.key_pressed(egui::Key::Escape)){
                                                                 entry.input=entry.original.map(|n|
                                                                     n.to_string()).unwrap_or_default();
+                                                                self.active_price_editor=None;
                                                             }
                                                             if entry.dirty(){
-                                                                if theme::action(inputs,"저장",
-                                                                    theme::ButtonRole::Standard,true
-                                                                ).clicked()||enter {
+                                                                if enter{
                                                                     match entry.parse(){
                                                                         Ok(value)=>{
                                                                             price_write=Some((
@@ -1133,16 +1148,59 @@ impl ProductManager {
                                                                                     "expected":entry.original
                                                                                 })
                                                                             ));
+                                                                            self.active_price_editor=None;
                                                                         }
                                                                         Err(message)=>self.error=Some(message),
                                                                     }
                                                                 }
-                                                                if theme::action(inputs,"취소",
-                                                                    theme::ButtonRole::Quiet,true
-                                                                ).clicked(){
-                                                                    entry.input=entry.original
-                                                                        .map(|n|n.to_string())
-                                                                        .unwrap_or_default();
+                                                                if self.active_price_editor.as_deref()
+                                                                    ==Some(key.as_str()){
+                                                                    let mut menu_open=true;
+                                                                    egui::Popup::from_response(&response)
+                                                                        .align(egui::RectAlign::BOTTOM_END)
+                                                                        .open_bool(&mut menu_open)
+                                                                        .close_behavior(
+                                                                            egui::PopupCloseBehavior::CloseOnClickOutside
+                                                                        )
+                                                                        .show(|menu|{
+                                                                            menu.horizontal(|actions|{
+                                                                                actions.spacing_mut().item_spacing.x=
+                                                                                    theme::SPACE_8;
+                                                                                if theme::action(
+                                                                                    actions,"저장",
+                                                                                    theme::ButtonRole::Standard,true
+                                                                                ).clicked(){
+                                                                                    match entry.parse(){
+                                                                                        Ok(value)=>{
+                                                                                            price_write=Some((
+                                                                                                key.clone(),json!({
+                                                                                                    "productId":product_id,
+                                                                                                    "variantId":field(variant,"id"),
+                                                                                                    "tier":tier,"price":value,
+                                                                                                    "expected":entry.original
+                                                                                                })
+                                                                                            ));
+                                                                                            self.active_price_editor=None;
+                                                                                            actions.close();
+                                                                                        }
+                                                                                        Err(message)=>self.error=Some(message),
+                                                                                    }
+                                                                                }
+                                                                                if theme::action(
+                                                                                    actions,"취소",
+                                                                                    theme::ButtonRole::Quiet,true
+                                                                                ).clicked(){
+                                                                                    entry.input=entry.original
+                                                                                        .map(|n|n.to_string())
+                                                                                        .unwrap_or_default();
+                                                                                    self.active_price_editor=None;
+                                                                                    actions.close();
+                                                                                }
+                                                                            });
+                                                                        });
+                                                                    if !menu_open{
+                                                                        self.active_price_editor=None;
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -2104,6 +2162,41 @@ mod tests {
         let asc_price=ProductSort::next(None,ProductSortColumn::Wholesale).unwrap();
         assert_eq!(product_sort_order(&catalog,&selected,Some(asc_price)),vec![1,0]);
         assert_eq!(catalog,original);
+    }
+    #[test]
+    fn price_edit_mode_uses_exact_browse_column_positions_and_minimum_width(){
+        // Price edit must never add 148pt per price column, as the former
+        // inline Save/Cancel arrangement did (444pt across three columns).
+        let base=product_table_base_widths();
+        assert_eq!(base[2],theme::PRODUCT_TABLE_PRICE_WIDTH);
+        assert_eq!(base[3],base[2]);
+        assert_eq!(base[4],base[2]);
+        assert_eq!(base[5],theme::PRODUCT_TABLE_ACTION_WIDTH);
+        let min_width=theme::PRODUCT_TABLE_MIN_WIDTH.max(
+            base.iter().sum::<f32>()+5.0*theme::SPACE_8
+        );
+        for viewport in [900.0,1100.0,1300.0,1760.0]{
+            let data_width=viewport.max(min_width);
+            let browse=product_table_column_widths(data_width);
+            let edit=product_table_column_widths(data_width);
+            assert_eq!(browse,edit);
+            let browse_rects=product_table_cells(
+                egui::pos2(0.0,0.0),&browse,theme::MANAGEMENT_TABLE_HEADER_HEIGHT
+            );
+            let edit_rects=product_table_cells(
+                egui::pos2(0.0,0.0),&edit,theme::PRODUCT_TABLE_ROW_HEIGHT
+            );
+            for i in 0..6{
+                assert_eq!(browse_rects[i].left(),edit_rects[i].left());
+                assert_eq!(browse_rects[i].right(),edit_rects[i].right());
+            }
+        }
+        let source=include_str!("product_manager.rs");
+        let table=source.split("let base=product_table_base_widths();")
+            .nth(1).unwrap().split("let headings=[").next().unwrap();
+        assert!(!table.contains("self.price_mode"));
+        assert!(source.contains("egui::Popup::from_response(&response)"));
+        assert!(!source.contains("PRODUCT_TABLE_EDIT_PRICE_WIDTH"));
     }
     #[test]
     fn fixed_product_table_columns_share_identical_header_and_row_geometry(){
