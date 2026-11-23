@@ -1043,7 +1043,9 @@ impl ManualWorkspace {
                 // Keep the current BLOCKER visible, not the ambiguous
                 // "order confirmed" status while the worksheet is still open.
                 // This is guidance only; Rust still validates final apply.
-                let (guidance,blocked)=manual_apply_guidance(
+                // Keep the header geometry fixed. Apply blockers remain
+                // available as a tooltip on the count and Apply action.
+                let guidance=manual_apply_guidance(
                     busy,pending_quantity_count,
                     self.edit_text!=self.current_value()
                 );
@@ -1051,21 +1053,8 @@ impl ManualWorkspace {
                     let count=status.label(typography::caption(
                         &format!("미배정 원문: {unassigned}개")
                     ));
-                    if status.available_width()>=theme::MANUAL_INPUT_WIDTH {
-                        status.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |right|{
-                                if blocked{
-                                    right.label(typography::status(
-                                        &guidance,theme::SELECTED_ORDER
-                                    ));
-                                }else{
-                                    right.label(typography::caption(&guidance));
-                                }
-                            }
-                        );
-                    }else{
-                        count.on_hover_text(guidance);
+                    if let Some(reason)=guidance.as_deref(){
+                        count.on_hover_text(reason);
                     }
                 });
                 ui.separator();
@@ -1387,20 +1376,18 @@ impl ManualWorkspace {
                                                 decision["checked"].as_bool()
                                             ).unwrap_or(false);
                                             let remote_ready=remote_value.is_some();
-                                            if let Some(decision)=remote_value {
-                                                if let Some(message)=
-                                                    crate::reception_service::remote_delivery_notice(decision)
-                                                {
-                                                    ui.label(typography::status(
-                                                        &message,theme::SELECTED_ORDER
-                                                    ));
-                                                }
-                                            }else if let Some(Err(error))=remote_result.as_ref(){
-                                                ui.label(typography::status(
-                                                    &format!("도서/산간 판정 실패 · {error}"),
-                                                    theme::SELECTED_ORDER
-                                                ));
-                                            }
+                                            let remote_message=remote_value
+                                                .and_then(crate::reception_service::remote_delivery_notice)
+                                                .or_else(||remote_result.as_ref()
+                                                    .and_then(|result|result.as_ref().err())
+                                                    .map(|error|format!("도서/산간 판정 실패 · {error}")));
+                                            components::fixed_status_slot(
+                                                ui,ui.available_width(),
+                                                typography::METADATA_LINE_HEIGHT,
+                                                remote_message.as_deref(),
+                                                remote_message.as_deref(),
+                                                theme::SELECTED_ORDER
+                                            );
                                             ui.horizontal_wrapped(|options|{
                                                 options.spacing_mut().item_spacing.x=theme::SPACE_8;
                                                 components::form_field_label(options,"발송지");
@@ -1586,10 +1573,13 @@ impl ManualWorkspace {
                         }
                     },
                     |right|{
-                        if theme::action(right,"초안에 적용",
+                        let apply_button=theme::action(right,"초안에 적용",
                             ButtonRole::Primary,!busy && input_settled &&
-                                !has_pending_quantity
-                        ).clicked(){apply=true;}
+                                !has_pending_quantity);
+                        if let Some(reason)=guidance.as_deref(){
+                            apply_button.on_hover_text(reason);
+                        }
+                        if apply_button.clicked(){apply=true;}
                     }
                 );
             });
@@ -1861,15 +1851,15 @@ impl ManualWorkspace {
 /// currently unavailable. The final native reducer owns all validation.
 fn manual_apply_guidance(
     busy:bool,pending_quantity_count:usize,uncommitted:bool
-)->(String,bool){
+)->Option<String>{
     if busy{
-        ("변경사항 반영 중".into(),true)
+        Some("변경사항 반영 중".into())
     }else if pending_quantity_count>0{
-        (format!("수량 확인 필요: {pending_quantity_count}건"),true)
+        Some(format!("수량 확인 필요: {pending_quantity_count}건"))
     }else if uncommitted{
-        ("선택한 입력을 먼저 반영하세요".into(),true)
+        Some("선택한 입력을 먼저 반영하세요".into())
     }else{
-        ("초안 적용 후 주문 확인 필요".into(),false)
+        None
     }
 }
 
@@ -2068,15 +2058,14 @@ mod manual_workspace_modal_routing_tests {
     }
 
     #[test]
-    fn apply_guidance_explains_why_apply_is_disabled_without_extra_prompt(){
+    fn apply_guidance_only_exists_for_actual_blockers(){
         assert_eq!(manual_apply_guidance(true,0,false),
-            ("변경사항 반영 중".into(),true));
+            Some("변경사항 반영 중".into()));
         assert_eq!(manual_apply_guidance(false,2,false),
-            ("수량 확인 필요: 2건".into(),true));
+            Some("수량 확인 필요: 2건".into()));
         assert_eq!(manual_apply_guidance(false,0,true),
-            ("선택한 입력을 먼저 반영하세요".into(),true));
-        assert_eq!(manual_apply_guidance(false,0,false),
-            ("초안 적용 후 주문 확인 필요".into(),false));
+            Some("선택한 입력을 먼저 반영하세요".into()));
+        assert_eq!(manual_apply_guidance(false,0,false),None);
     }
 
     #[test]
