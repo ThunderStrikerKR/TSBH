@@ -60,11 +60,9 @@ export function PriceCell({
   useEffect(() => {
     if (!editing) {
       const optimistic = optimisticCommit.current;
-      // A list refresh may briefly return the pre-write snapshot. Keep the
-      // committed cell value until the refreshed row catches up.
-      if (optimistic && value === optimistic.previous && value !== optimistic.next) {
-        return;
-      }
+      // A list refresh may briefly return any pre-write snapshot. Keep
+      // the latest committed cell value until the row matches that commit.
+      if (optimistic && value !== optimistic.next) return;
       optimisticCommit.current = null;
       expected.current = value;
       setDraft(value === null ? "" : String(value));
