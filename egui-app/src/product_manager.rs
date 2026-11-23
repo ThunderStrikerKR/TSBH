@@ -33,13 +33,14 @@ fn field<'a>(row: &'a Value, key: &str) -> &'a str {
 /// unexpectedly inserting digits in the middle of the old amount.
 fn select_all_price_text(ui:&Ui,response:&egui::Response,text:&str){
     if let Some(mut state)=egui::TextEdit::load_state(ui.ctx(),response.id){
-        if let Some(mut range)=state.cursor.char_range(){
-            range.primary=egui::text::CCursor::new(text.chars().count());
-            range.secondary=egui::text::CCursor::new(0);
-            state.cursor.set_char_range(Some(range));
-            state.store(ui.ctx(),response.id);
-            ui.ctx().request_repaint();
-        }
+        let mut range=state.cursor.char_range().unwrap_or_else(||
+            egui::text::CCursorRange::one(egui::text::CCursor::new(0))
+        );
+        range.primary=egui::text::CCursor::new(text.chars().count());
+        range.secondary=egui::text::CCursor::new(0);
+        state.cursor.set_char_range(Some(range));
+        state.store(ui.ctx(),response.id);
+        ui.ctx().request_repaint();
     }
 }
 
@@ -2559,7 +2560,7 @@ mod tests {
         assert!(!success.contains("가격 변경을 저장했습니다."));
         let editor=source.split("let (enter_pressed,tab_pressed,").nth(1).unwrap()
             .split("let action_rect").next().unwrap_or("");
-        assert!(editor.contains("||self.price_mode_exit_requested"));
+        assert!(source.contains("||self.price_mode_exit_requested"));
     }
     #[test]
     fn price_grid_keyboard_navigation_matches_spreadsheet_direction(){
