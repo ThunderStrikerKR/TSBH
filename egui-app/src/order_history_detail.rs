@@ -49,6 +49,15 @@ fn text_kv(ui:&mut Ui,name:&str,value:&str){
         row.label(typography::body(value));
     });
 }
+fn money_kv(ui:&mut Ui,name:&str,value:&str){
+    ui.horizontal_wrapped(|row|{
+        row.label(typography::caption(name));
+        row.label(typography::data_value_text(
+            value,typography::DataValueKind::Money,
+            typography::DataValueContext::Form
+        ).line_height(Some(22.0)));
+    });
+}
 fn section_panel(
     ui:&mut Ui,rect:Rect,title:&str,id:&'static str,order_id:&str,
     body:impl FnOnce(&mut Ui)
@@ -158,7 +167,7 @@ fn payment_panel(
         if i>0{ui.separator();}
         text_kv(ui,"입금 처리일시",&kst(field(payment,"recordedAt")));
         text_kv(ui,"실제 입금일시",&kst(field(payment,"paidAt")));
-        text_kv(ui,"입금액",&money(&payment["amount"]));
+        money_kv(ui,"입금액",&money(&payment["amount"]));
         let account=&payment["account"];
         let bank=field(account,"bank");
         let number=field(account,"number");
@@ -198,7 +207,10 @@ fn billing_panel(ui:&mut Ui,order:&Value,billing:&Value){
         ui.horizontal(|line|{
             line.label(typography::body(label));
             line.with_layout(Layout::right_to_left(Align::Center),|right|{
-                right.label(typography::body(&money(&billing[key])));
+                right.label(typography::data_value_text(
+                    &money(&billing[key]),typography::DataValueKind::Money,
+                    typography::DataValueContext::Form
+                ).line_height(Some(22.0)));
             });
         });
     }
@@ -206,7 +218,10 @@ fn billing_panel(ui:&mut Ui,order:&Value,billing:&Value){
     ui.horizontal(|line|{
         line.label(typography::section_heading("청구 합계"));
         line.with_layout(Layout::right_to_left(Align::Center),|right|{
-            right.label(typography::section_heading(&money(&billing["total"])));
+            right.label(typography::data_value_text(
+                &money(&billing["total"]),typography::DataValueKind::Money,
+                typography::DataValueContext::Summary
+            ).line_height(Some(23.0)));
         });
     });
 }
@@ -259,10 +274,22 @@ fn shipment_entry(
             let name=display_or(field(item,"name"),"품목명 미확인");
             let qty=item["quantity"].as_i64().map(|v|v.to_string())
                 .unwrap_or_else(||"미확인".into());
-            let price=item["unitPrice"].as_i64()
-                .map(|amount|format!(" · 단가 {}",components::display_won(amount)))
-                .unwrap_or_default();
-            card.label(typography::body(&format!("◆ {name} × {qty}{price}")));
+            let prefix=format!("◆ {name} × ");
+            let price=item["unitPrice"].as_i64().map(components::display_won);
+            let job=if let Some(price)=price.as_deref(){
+                typography::inline_body_values(&[
+                    (prefix.as_str(),None),
+                    (qty.as_str(),Some(typography::DataValueKind::Quantity)),
+                    (" · 단가 ",None),
+                    (price,Some(typography::DataValueKind::Money)),
+                ])
+            }else{
+                typography::inline_body_values(&[
+                    (prefix.as_str(),None),
+                    (qty.as_str(),Some(typography::DataValueKind::Quantity)),
+                ])
+            };
+            card.add(egui::Label::new(job));
         }
         if rows(&recipient["items"]).is_empty(){
             card.label(typography::caption("품목 정보 없음"));
@@ -270,7 +297,7 @@ fn shipment_entry(
         card.add_space(theme::SPACE_4);
         if let Some(ship)=ship{
             let (freight,tracking)=shipment_values(ship);
-            text_kv(card,"실제 운임",&freight);
+            money_kv(card,"실제 운임",&freight);
             text_kv(card,"운송장번호",&tracking);
             let note=field(ship,"managementMemo");
             text_kv(card,"관리 메모",display_or(note,"없음"));
