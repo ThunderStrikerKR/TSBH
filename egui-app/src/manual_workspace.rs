@@ -1566,26 +1566,23 @@ impl ManualWorkspace {
                         });
                     });
                 ui.add_space(theme::SPACE_12);
+                let input_settled=self.edit_text==self.current_value();
                 components::modal_action_row_split(
                     ui,
                     |left|{
                         // Reset is a destructive worksheet operation with its
                         // existing confirmation, not a toolbar filter.
                         if theme::action(left,"초기화",ButtonRole::Danger,
-                            !busy && !pending_quantity_active &&
-                            self.edit_text==self.current_value()
+                            !busy && !pending_quantity_active && input_settled
                         ).clicked(){
-                            if self.edit_text!=self.current_value(){
-                                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
-                            }else{
+                            if input_settled {
                                 self.reset_pending=true;
                             }
                         }
                     },
                     |right|{
                         if theme::action(right,"초안에 적용",
-                            ButtonRole::Primary,!busy &&
-                                self.edit_text==self.current_value() &&
+                            ButtonRole::Primary,!busy && input_settled &&
                                 !has_pending_quantity
                         ).clicked(){apply=true;}
                     }
