@@ -75,7 +75,7 @@ pub const CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT:f32=144.0;
 pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=ACTION_PRIMARY_HEIGHT;
 pub const CATEGORY_EXPLORER_SEPARATOR_WIDTH:f32=12.0;
 // Accommodate the full '← 상위로' caption without squeezing glyphs.
-pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=96.0;
+pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=88.0;
 pub const CATEGORY_EXPLORER_ROOT_WIDTH:f32=48.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
 pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=Color32::from_rgb(90,61,33);
@@ -83,6 +83,9 @@ pub const CATEGORY_EXPLORER_APPLIED_BORDER:Color32=SELECTED_ORDER;
 // The current exploration point is plain bright text, never a filled badge.
 pub const CATEGORY_EXPLORER_CURRENT_BG:Color32=Color32::TRANSPARENT;
 pub const CATEGORY_EXPLORER_CURRENT_BORDER:Color32=Color32::TRANSPARENT;
+// Darker than the generic 185/153 grey text, without obscuring navigation.
+// Applied categories remain orange; current exploration stays bright.
+pub const CATEGORY_EXPLORER_ANCESTOR_TEXT:Color32=Color32::from_rgb(112,112,112);
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
 // Compact working-order cards derive every slot from the actual right pane.
 // The horizontal outer inset, inter-control gaps and vertical insets use
