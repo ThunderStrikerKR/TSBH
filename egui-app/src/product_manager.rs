@@ -1075,15 +1075,9 @@ impl ProductManager {
                         can_edit&&!saving
                     ).clicked(){
                         if self.price_mode{
-                            match self.queue_dirty_price_writes(actions.ctx().clone()){
-                                Ok(())=>{
-                                    // Defer exit until after the table has
-                                    // processed this frame's final keystroke
-                                    // and focus-loss commit.
-                                    self.price_mode_exit_requested=true;
-                                }
-                                Err(message)=>self.error=Some(message),
-                            }
+                            // The table commits the focused cell first; all
+                            // remaining dirty drafts are queued after render.
+                            self.price_mode_exit_requested=true;
                         }else{
                             self.price_mode=true;
                             self.price_mode_exit_requested=false;
@@ -1509,6 +1503,12 @@ impl ProductManager {
         });
         if let Some((key,data))=price_write {
             self.start_write("set_price",data,Some(key),ui.ctx().clone());
+        }
+        if self.price_mode_exit_requested{
+            if let Err(message)=self.queue_dirty_price_writes(ui.ctx().clone()){
+                self.price_mode_exit_requested=false;
+                self.error=Some(message);
+            }
         }
         self.finish_price_mode_exit_if_ready();
         if let Some(product)=open_detail {
