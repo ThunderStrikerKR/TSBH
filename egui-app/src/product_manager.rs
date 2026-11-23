@@ -776,7 +776,7 @@ impl ProductManager {
                     category_dropdown::category_dropdown(
                         filter,&category_nodes,&mut self.category,
                         theme::CATEGORY_PATH_PICKER_WIDTH,
-                        "전체 카테고리",true
+                        "전체 카테고리",true,true
                     );
                     if self.category!=before_category{
                         if self.has_pending_prices(){
@@ -1398,7 +1398,7 @@ impl ProductManager {
                 let width=input.available_width().max(1.0);
                 category_dropdown::category_dropdown(
                     input,category_nodes,&mut category_id,width,
-                    "카테고리 미지정",true
+                    "카테고리 미지정",true,true
                 );
             });
             if category_id!=before{
