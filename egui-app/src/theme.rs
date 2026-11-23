@@ -490,16 +490,14 @@ pub const MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT:f32=2.0;
 /// other compact lists. The 58pt two-line management rows are a different role.
 pub const MANAGEMENT_COMPACT_ROW_HEIGHT: f32 = 42.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
-// Product table: a full-width, single-line record per product. Wide names
-// claim the remaining width while price-editing may scroll horizontally.
+// Product table: a full-width, single-line record per product. The six
+// columns are identical in browse and edit mode; contextual Save/Cancel
+// controls float over the list instead of widening its three price columns.
 pub const PRODUCT_TABLE_ROW_HEIGHT:f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 pub const PRODUCT_TABLE_MIN_WIDTH:f32 = 1100.0;
 pub const PRODUCT_TABLE_NAME_MIN_WIDTH:f32 = 340.0;
 pub const PRODUCT_TABLE_OPTION_WIDTH:f32 = 182.0;
 pub const PRODUCT_TABLE_PRICE_WIDTH:f32 = 116.0;
-// 112pt money field, Save/Cancel buttons and standard cell spacing
-// must fit in one fixed-height edited price cell.
-pub const PRODUCT_TABLE_EDIT_PRICE_WIDTH:f32 = 264.0;
 pub const PRODUCT_TABLE_ACTION_WIDTH:f32 = 100.0;
 // Client directory explicitly uses one compact, non-wrapping record per row.
 pub const MANAGEMENT_CLIENT_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
