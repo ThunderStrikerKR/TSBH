@@ -1345,7 +1345,8 @@ impl ManualWorkspace {
                                                     }
                                                     grid.horizontal(|actions|{
                                                         if theme::action(actions,"검색",
-                                                            ButtonRole::Standard,!busy).clicked(){
+                                                            ButtonRole::Standard,
+                                                            !busy && !pending_quantity_active).clicked(){
                                                             lookup=Some((rid.to_owned(),item_id.to_owned()));
                                                         }
                                                         if theme::action(actions,"상품 제거",
