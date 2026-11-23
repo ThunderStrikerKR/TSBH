@@ -6568,77 +6568,119 @@ mod modal_editor_workspace_geometry_tests {
 mod modal_input_routing_tests {
     use super::*;
 
-    #[test]
-    fn nested_backdrop_routes_input_to_the_decision_window_layer() {
-        let ctx=egui::Context::default();
-        let _=ctx.run(egui::RawInput::default(),|ctx|{
+    fn draw(
+        ctx:&egui::Context,
+        raw:egui::RawInput,
+        work_area:Rect,
+        parent_clicked:&mut bool,
+        decision_clicked:&mut bool,
+    )->(Rect,Rect){
+        let mut parent_rect=Rect::NOTHING;
+        let mut decision_rect=Rect::NOTHING;
+        let _=ctx.run(raw,|ctx|{
+            // Reproduce the actual reception stack: the app-wide dim layer,
+            // the disabled manual workspace, then the nested decision.
+            modal_backdrop(ctx,"bando-workspace-modal-backdrop",false);
+            modal_window("수동 분류","manual-parent-workspace",work_area)
+                .show(ctx,|ui|{
+                    let response=ui.button("parent action");
+                    parent_rect=response.rect;
+                    if response.clicked(){*parent_clicked=true;}
+                    ui.disable();
+                    ui.label("disabled editor body");
+                });
             modal_backdrop_for_window(
                 ctx,"manual-nested-modal-backdrop","manual-discard-prompt"
             );
+            decision_window(
+                "수동 분류 변경 취소","manual-discard-prompt",work_area
+            ).show(ctx,|ui|{
+                modal_header(ui,"수동 분류 변경 취소","취소",true);
+                ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
+                let response=ui.button("변경 취소");
+                decision_rect=response.rect;
+                if response.clicked(){*decision_clicked=true;}
+            });
         });
         assert_eq!(
             ctx.memory(|memory|memory.top_modal_layer()),
             Some(modal_window_layer("manual-discard-prompt"))
         );
-        assert_ne!(
-            modal_window_layer("manual-discard-prompt"),
+        (parent_rect,decision_rect)
+    }
+
+    #[test]
+    fn nested_decision_uses_a_higher_layer_than_the_parent_and_dim_surface(){
+        assert_eq!(
+            modal_window_layer("manual-discard-prompt").order,
+            egui::Order::Tooltip
+        );
+        assert_eq!(
             egui::LayerId::new(
                 egui::Order::Foreground,
                 egui::Id::new("manual-nested-modal-backdrop")
-            )
+            ).order,
+            egui::Order::Foreground
+        );
+        assert!(
+            modal_window_layer("manual-discard-prompt").order
+                > egui::Order::Foreground
         );
     }
 
     #[test]
-    fn nested_decision_window_button_receives_a_real_pointer_click(){
-        fn draw(
-            ctx:&egui::Context,
-            raw:egui::RawInput,
-            work_area:Rect,
-            clicked:&mut bool,
-        )->Rect{
-            let mut button_rect=Rect::NOTHING;
-            let _=ctx.run(raw,|ctx|{
-                modal_backdrop_for_window(
-                    ctx,"manual-nested-modal-backdrop","manual-discard-prompt"
-                );
-                decision_window(
-                    "수동 분류 변경 취소","manual-discard-prompt",work_area
-                ).show(ctx,|ui|{
-                    let response=ui.button("변경 취소");
-                    button_rect=response.rect;
-                    if response.clicked(){*clicked=true;}
-                });
-            });
-            button_rect
-        }
-
+    fn nested_decision_button_receives_click_above_the_real_parent_modal_stack(){
         let ctx=egui::Context::default();
         let work_area=Rect::from_min_size(
             egui::Pos2::ZERO,Vec2::new(800.0,600.0)
         );
         let mut initial=egui::RawInput::default();
         initial.screen_rect=Some(work_area);
-        let mut clicked=false;
-        let button=draw(&ctx,initial,work_area,&mut clicked);
-        let pointer=button.center();
+        let mut parent_clicked=false;
+        let mut decision_clicked=false;
+        let (parent,decision)=draw(
+            &ctx,initial,work_area,&mut parent_clicked,&mut decision_clicked
+        );
+
+        // A click on the disabled parent remains blocked by the nested modal.
+        let parent_pointer=parent.center();
         draw(&ctx,egui::RawInput{
             events:vec![
-                egui::Event::PointerMoved(pointer),
+                egui::Event::PointerMoved(parent_pointer),
                 egui::Event::PointerButton{
-                    pos:pointer,button:egui::PointerButton::Primary,
+                    pos:parent_pointer,button:egui::PointerButton::Primary,
+                    pressed:true,modifiers:egui::Modifiers::NONE
+                },
+                egui::Event::PointerButton{
+                    pos:parent_pointer,button:egui::PointerButton::Primary,
+                    pressed:false,modifiers:egui::Modifiers::NONE
+                }
+            ],
+            ..Default::default()
+        },work_area,&mut parent_clicked,&mut decision_clicked);
+        assert!(!parent_clicked,"the parent editor must stay blocked while its decision is open");
+
+        let decision_pointer=decision.center();
+        draw(&ctx,egui::RawInput{
+            events:vec![
+                egui::Event::PointerMoved(decision_pointer),
+                egui::Event::PointerButton{
+                    pos:decision_pointer,button:egui::PointerButton::Primary,
                     pressed:true,modifiers:egui::Modifiers::NONE
                 }
             ],
             ..Default::default()
-        },work_area,&mut clicked);
+        },work_area,&mut parent_clicked,&mut decision_clicked);
         draw(&ctx,egui::RawInput{
             events:vec![egui::Event::PointerButton{
-                pos:pointer,button:egui::PointerButton::Primary,
+                pos:decision_pointer,button:egui::PointerButton::Primary,
                 pressed:false,modifiers:egui::Modifiers::NONE
             }],
             ..Default::default()
-        },work_area,&mut clicked);
-        assert!(clicked,"the nested dialog action must remain interactive above its backdrop");
+        },work_area,&mut parent_clicked,&mut decision_clicked);
+        assert!(
+            decision_clicked,
+            "the nested discard action must receive a real pointer click"
+        );
     }
 }
