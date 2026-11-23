@@ -829,12 +829,15 @@ impl CategoryManager {
                                     self.begin_operation(&cats,catalog,Operation::Move);
                                 }
                             });
-                            if !is_root(&current.id)&&current.parent.is_empty(){
-                                body.label(typography::caption(
-                                    "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
-                                ));
-                            }
-
+                            let legacy_notice=(!is_root(&current.id)
+                                &&current.parent.is_empty()).then_some(
+                                "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
+                            );
+                            let notice_width=body.available_width();
+                            components::fixed_status_slot(
+                                body,notice_width,typography::METADATA_LINE_HEIGHT,
+                                legacy_notice,legacy_notice,theme::MUTED
+                            );
                             body.add_space(theme::SPACE_8);
                         }
                     });
