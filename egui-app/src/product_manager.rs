@@ -943,8 +943,10 @@ impl ProductManager {
             // Product Excel controls and optional add rows may consume
             // space; asynchronous loading and saving never do.
             // Protect the empty-state caption under the fixed header.
-            let empty_reserve=if self.products.is_empty()
-                && !self.result.pending() && self.error.is_none(){
+            // Empty result geometry is fixed during loading, errors, and
+            // settled results. Do not grow/shrink the viewport as soon as a
+            // pending query finishes.
+            let empty_reserve=if self.products.is_empty(){
                 theme::INPUT_HEIGHT
             }else{0.0};
             let scroll_max_height=components::management_single_list_scroll_height(
@@ -1883,6 +1885,8 @@ mod tests {
         assert!(list.contains(
             "let direct_filter_to_header=!self.adding&&!self.excel.open();"
         ));
+        assert!(list.contains("let empty_reserve=if self.products.is_empty(){"));
+        assert!(!list.contains("&& !self.result.pending() && self.error.is_none()"));
     }
     #[test]
     fn product_detail_inline_rows_leave_blank_space_under_fixed_320_image(){
