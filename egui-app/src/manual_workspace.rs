@@ -643,6 +643,14 @@ impl ManualWorkspace {
             self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
             return;
         }
+        let target=ManualCellTarget{
+            row,item:item.clone(),field:field.to_owned()
+        };
+        let pending=self.pending_quantity_cell();
+        if !manual_cell_allowed(pending.as_ref(),&target) {
+            self.error=Some("선택한 상품의 수량을 먼저 확정하세요.".into());
+            return;
+        }
         self.selected_recipient=row;
         self.selected_item=item;
         self.selected_field=field.to_owned();
