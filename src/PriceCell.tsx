@@ -26,7 +26,7 @@ export function PriceCell({
     [error, setError] = useState("");
   const saving = useRef(false),
     expected = useRef(value),
-    optimisticCommit = useRef<{ previous: Price; next: Price } | null>(null),
+    optimisticCommit = useRef<{ next: Price } | null>(null),
     input = useRef<HTMLInputElement>(null),
     skipBlurSave = useRef(false),
     lastReportedPending = useRef(false);
@@ -130,9 +130,8 @@ export function PriceCell({
     setStatus("저장 중");
     setError("");
     try {
-      const previous = expected.current;
-      await onSave(next, previous);
-      optimisticCommit.current = { previous, next };
+      await onSave(next, expected.current);
+      optimisticCommit.current = { next };
       expected.current = next;
       setStatus("저장됨");
       setError("");
