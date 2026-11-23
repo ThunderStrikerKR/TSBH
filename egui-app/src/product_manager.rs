@@ -1319,7 +1319,7 @@ impl ProductManager {
                     if response.clicked(){clicked_sort=Some(ProductSort::next(self.sort,column));}
                 }
                 if index<5{
-                    let edge=header_cells[index].right()+gap/2.0;
+                    let edge=header_cells[index].right()+theme::SPACE_8/2.0;
                     painter.line_segment(
                         [egui::pos2(edge,header_text_rect.top()),
                          egui::pos2(edge,header_text_rect.bottom())],
@@ -2175,7 +2175,7 @@ mod tests {
         let min_width=theme::PRODUCT_TABLE_MIN_WIDTH.max(
             base.iter().sum::<f32>()+5.0*theme::SPACE_8
         );
-        for viewport in [900.0,1100.0,1300.0,1760.0]{
+        for viewport in [900.0_f32,1100.0,1300.0,1760.0]{
             let data_width=viewport.max(min_width);
             let browse=product_table_column_widths(data_width);
             let edit=product_table_column_widths(data_width);
