@@ -117,6 +117,9 @@ mod management_async_layout_contract_tests {
         let mut measured=Vec::new();
         for count in [None,Some(27)]{
             let ctx=egui::Context::default();
+            // The production app installs its named emphasis font family
+            // before drawing KPI cards. The geometry test must do the same.
+            crate::typography::install(&ctx);
             let mut consumed=None;
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
