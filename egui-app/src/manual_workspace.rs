@@ -1602,7 +1602,7 @@ impl ManualWorkspace {
                         if theme::action(right,"초안에 적용",
                             ButtonRole::Primary,!busy && input_settled &&
                                 !has_pending_quantity
-                        ).clicked(){apply=true;}
+                        ).clicked(){self.complete_pending=true;}
                     }
                 );
             });
