@@ -163,6 +163,73 @@ mod management_async_layout_contract_tests {
     }
 }
 
+#[cfg(test)]
+mod shared_screen_component_contract_tests {
+    fn production_source(file:&str)->String {
+        file.split("#[cfg(test)]").next().unwrap_or(file).to_owned()
+    }
+
+    #[test]
+    fn standard_screens_do_not_rebuild_shared_controls(){
+        let cases=[
+            ("client_manager.rs",[
+                "egui::Button::new","egui::Frame::new",
+                "egui::TextEdit::singleline","egui::TextEdit::multiline",
+                "ui.checkbox(","row.checkbox("
+            ].as_slice()),
+            ("automatic_message_manager.rs",[
+                "egui::Button::new","egui::Frame::new",
+                "egui::TextEdit::singleline","egui::TextEdit::multiline",
+                "ui.checkbox(","row.checkbox("
+            ].as_slice()),
+            ("order_history_manager.rs",[
+                "egui::Button::new","egui::Frame::new",
+                "egui::TextEdit::singleline","egui::TextEdit::multiline",
+                "ui.checkbox(","row.checkbox("
+            ].as_slice()),
+            ("order_history_detail.rs",[
+                "egui::Button::new","egui::Frame::new",
+                "egui::TextEdit::singleline","egui::TextEdit::multiline",
+                "ui.checkbox(","row.checkbox("
+            ].as_slice()),
+        ];
+        for (name,forbidden) in cases {
+            let source=production_source(match name {
+                "client_manager.rs"=>include_str!("client_manager.rs"),
+                "automatic_message_manager.rs"=>include_str!("automatic_message_manager.rs"),
+                "order_history_manager.rs"=>include_str!("order_history_manager.rs"),
+                "order_history_detail.rs"=>include_str!("order_history_detail.rs"),
+                _=>unreachable!(),
+            });
+            for token in forbidden {
+                assert!(!source.contains(token),
+                    "{name} bypasses the shared UI layer with {token}");
+            }
+        }
+    }
+
+    #[test]
+    fn migrated_screens_keep_their_shared_component_entrypoints(){
+        let excel=production_source(include_str!("product_excel_ui.rs"));
+        assert!(excel.contains("components::management_readonly_table("));
+        assert!(excel.contains("components::checkbox("));
+
+        let vat=include_str!("main.rs")
+            .split("fn show_vat_settings(").nth(1).unwrap()
+            .split("\n    fn ").next().unwrap();
+        assert!(vat.contains("components::checkbox("));
+        assert!(vat.contains("components::checkbox_list_row("));
+        assert!(vat.contains("theme::modal_nested_frame()"));
+
+        let messages=production_source(include_str!("automatic_message_manager.rs"));
+        assert!(messages.contains("components::multiline_text_field("));
+
+        let history=production_source(include_str!("order_history_manager.rs"));
+        assert!(history.contains("components::management_date_text_field("));
+        assert!(history.contains("components::multiline_text_field("));
+    }
+}
+
 /// Semantic labels for management table columns. A screen selects the
 /// column role; the shared component owns the displayed header wording.
 /// This does not change the underlying product description or column size.
