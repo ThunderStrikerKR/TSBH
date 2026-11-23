@@ -1474,7 +1474,10 @@ impl ManualWorkspace {
                                 }
                                 if editor.has_focus(){
                                     let navigation=ctx.input(|input|{
-                                        if input.key_pressed(egui::Key::Enter){
+                                        if input.events.iter().any(|event|
+                                            matches!(event,egui::Event::Ime(_))
+                                        ){None}
+                                        else if input.key_pressed(egui::Key::Enter){
                                             Some(ManualNavigation::Next)
                                         }else if input.key_pressed(egui::Key::Tab){
                                             Some(if input.modifiers.shift{
