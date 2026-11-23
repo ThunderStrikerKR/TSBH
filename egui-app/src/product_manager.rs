@@ -277,6 +277,9 @@ fn parse_product_price(raw:&str,field_name:&str,zero_unregistered:bool)
     }
     if zero_unregistered && amount==0 {Ok(None)} else {Ok(Some(amount))}
 }
+fn accepts_catalog_revision(current:u64,incoming:u64)->bool{
+    incoming>=current
+}
 struct PriceDraft {
     original:Option<i64>,
     input:String,
@@ -458,7 +461,7 @@ impl ProductManager {
         let category=self.category.clone();
         let brand=self.brand.clone();
         let missing=self.missing;
-        self.error=None;
+        if !self.has_pending_prices(){self.error=None;}
         self.result.submit(ctx,move||{
             management_queries::query_management_products(
                 gateway.as_ref(),cached,&query,&category,&brand,missing,
@@ -697,11 +700,23 @@ impl ProductManager {
         if let Some(result)=self.result.poll(){
             match result{
                 Ok(result)=>{
-                    self.model_groups.set_catalog(&result.catalog,ctx);
-                    self.aliases.set_catalog(&result.catalog,ctx);
-                    self.catalog=Some(result.catalog);
-                    self.products=result.products;
-                    self.error=None;
+                    let current_revision=self.catalog.as_ref()
+                        .and_then(|catalog|catalog["revision"].as_u64())
+                        .unwrap_or(0);
+                    let incoming_revision=result.catalog["revision"].as_u64()
+                        .unwrap_or(0);
+                    if accepts_catalog_revision(current_revision,incoming_revision){
+                        self.model_groups.set_catalog(&result.catalog,ctx);
+                        self.aliases.set_catalog(&result.catalog,ctx);
+                        self.catalog=Some(result.catalog);
+                        self.products=result.products;
+                        if !self.has_pending_prices(){self.error=None;}
+                    }else{
+                        // A query started before a price write may finish
+                        // after it. Never let that older snapshot repaint
+                        // the newly committed price back to its prior value.
+                        self.reload(ctx.clone());
+                    }
                 }
                 Err(e)=>self.error=Some(e),
             }
@@ -2330,6 +2345,12 @@ mod tests {
         // Enter, Tab, focus change, or explicit mode-exit action.
         assert_eq!(draft.parse().unwrap(),Some(15000));
         assert!(draft.dirty());
+    }
+    #[test]
+    fn stale_catalog_queries_cannot_overwrite_newer_price_revisions(){
+        assert!(accepts_catalog_revision(12,12));
+        assert!(accepts_catalog_revision(12,13));
+        assert!(!accepts_catalog_revision(13,12));
     }
     #[test]
     fn price_cell_commit_contract_is_excel_style_without_action_popup(){
