@@ -938,6 +938,17 @@ pub fn kakao_slot_frame() -> Frame {
         .inner_margin(0)
 }
 
+/// Reception review issue/notice surface. The alternate table fill and
+/// compact inset distinguish review cards without creating a new local frame.
+pub fn review_issue_frame()->Frame{
+    Frame::new()
+        .fill(TABLE_ROW_ALT_BG)
+        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
+        .inner_margin(egui::Margin::symmetric(
+            SPACE_8 as i8,SPACE_8 as i8
+        ))
+}
+
 /// Unbordered preview surface for generated or copy-ready text. Keep the
 /// INPUT fill and 12pt inset shared instead of rebuilding a local Frame.
 pub fn preview_surface_frame()->Frame{
