@@ -6580,4 +6580,57 @@ mod modal_input_routing_tests {
             )
         );
     }
+
+    #[test]
+    fn nested_decision_window_button_receives_a_real_pointer_click(){
+        fn draw(
+            ctx:&egui::Context,
+            raw:egui::RawInput,
+            work_area:Rect,
+            clicked:&mut bool,
+        )->Rect{
+            let mut button_rect=Rect::NOTHING;
+            let _=ctx.run(raw,|ctx|{
+                modal_backdrop_for_window(
+                    ctx,"manual-nested-modal-backdrop","manual-discard-prompt"
+                );
+                decision_window(
+                    "수동 분류 변경 취소","manual-discard-prompt",work_area
+                ).show(ctx,|ui|{
+                    let response=ui.button("변경 취소");
+                    button_rect=response.rect;
+                    if response.clicked(){*clicked=true;}
+                });
+            });
+            button_rect
+        }
+
+        let ctx=egui::Context::default();
+        let work_area=Rect::from_min_size(
+            egui::Pos2::ZERO,Vec2::new(800.0,600.0)
+        );
+        let mut initial=egui::RawInput::default();
+        initial.screen_rect=Some(work_area);
+        let mut clicked=false;
+        let button=draw(&ctx,initial,work_area,&mut clicked);
+        let pointer=button.center();
+        draw(&ctx,egui::RawInput{
+            events:vec![
+                egui::Event::PointerMoved(pointer),
+                egui::Event::PointerButton{
+                    pos:pointer,button:egui::PointerButton::Primary,
+                    pressed:true,modifiers:egui::Modifiers::NONE
+                }
+            ],
+            ..Default::default()
+        },work_area,&mut clicked);
+        draw(&ctx,egui::RawInput{
+            events:vec![egui::Event::PointerButton{
+                pos:pointer,button:egui::PointerButton::Primary,
+                pressed:false,modifiers:egui::Modifiers::NONE
+            }],
+            ..Default::default()
+        },work_area,&mut clicked);
+        assert!(clicked,"the nested dialog action must remain interactive above its backdrop");
+    }
 }
