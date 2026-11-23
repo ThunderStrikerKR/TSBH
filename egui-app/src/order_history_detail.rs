@@ -183,7 +183,7 @@ fn billing_panel(ui:&mut Ui,order:&Value,billing:&Value){
             });
         });
     }
-    ui.separator();
+    components::soft_divider(ui);
     ui.horizontal(|line|{
         line.label(typography::section_heading("청구 합계"));
         line.with_layout(Layout::right_to_left(Align::Center),|right|{
