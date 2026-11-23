@@ -44,6 +44,86 @@ pub fn resolve_cell_navigation_target(
     }
     candidates.first().map(|cell| cell.id.clone())
 }
+
+/// Shared, focus-scoped spreadsheet input contract for egui TextEdit.
+/// Call BEFORE the TextEdit is rendered, then register the Response.id once
+/// rendered. Other fields (search, dates, memos, forms) are never intercepted.
+pub fn remember_worksheet_editor(
+    ctx:&eframe::egui::Context,slot:eframe::egui::Id,editor_id:eframe::egui::Id
+){
+    ctx.data_mut(|data|data.insert_temp(slot,editor_id));
+}
+
+/// Extract only worksheet keys; callers choose the Enter mapping. IME
+/// preedit ownership persists across frames, unlike a one-frame Ime check.
+fn worksheet_key_from_events(
+    events:&[eframe::egui::Event],ime_active:&mut bool,
+    enter:CellNavigationKey,shift_enter:CellNavigationKey
+)->Option<(eframe::egui::Key,eframe::egui::Modifiers,CellNavigationKey)>{
+    use eframe::egui::{Event,ImeEvent,Key};
+    let mut ime_event=false;
+    for event in events{
+        match event{
+            Event::Ime(ImeEvent::Preedit(text))=>{
+                *ime_active=!text.is_empty();
+                ime_event=true;
+            },
+            Event::Ime(ImeEvent::Commit(_))
+            |Event::Ime(ImeEvent::Disabled)=>{
+                *ime_active=false;
+                ime_event=true;
+            },
+            Event::Ime(_)=>{ime_event=true;},
+            _=>{}
+        }
+    }
+    if *ime_active || ime_event{return None;}
+    events.iter().find_map(|event|{
+        let Event::Key{key,pressed:true,modifiers,..}=event else{return None};
+        // Keep standard shortcuts out of the spreadsheet navigation path.
+        if modifiers.command||modifiers.ctrl||modifiers.alt{return None;}
+        let direction=match key{
+            Key::ArrowLeft=>CellNavigationKey::Left,
+            Key::ArrowRight=>CellNavigationKey::Right,
+            Key::ArrowUp=>CellNavigationKey::Up,
+            Key::ArrowDown=>CellNavigationKey::Down,
+            Key::Tab=>if modifiers.shift{
+                CellNavigationKey::Previous
+            }else{CellNavigationKey::Next},
+            Key::Enter=>if modifiers.shift{shift_enter}else{enter},
+            _=>return None
+        };
+        Some((*key,*modifiers,direction))
+    })
+}
+
+/// Return a worksheet navigation command only when the CURRENT editor
+/// owns egui keyboard focus. Consume it before TextEdit changes the caret.
+/// Do not call for normal search, document, date or standalone form fields.
+pub fn consume_worksheet_navigation_before_editor(
+    ctx:&eframe::egui::Context,slot:eframe::egui::Id,
+    enter:CellNavigationKey,shift_enter:CellNavigationKey
+)->Option<CellNavigationKey>{
+    let focused=ctx.data(|data|data.get_temp::<eframe::egui::Id>(slot))
+        .is_some_and(|id|ctx.memory(|memory|memory.has_focus(id)));
+    if !focused{return None;}
+    let mut ime_active=ctx.data(|data|data.get_temp::<bool>(slot.with("ime")))
+        .unwrap_or(false);
+    let events=ctx.input(|input|input.events.clone());
+    let navigation=worksheet_key_from_events(
+        &events,&mut ime_active,enter,shift_enter
+    );
+    ctx.data_mut(|data|data.insert_temp(slot.with("ime"),ime_active));
+    navigation.and_then(|(key,modifiers,direction)|{
+        let consumed=ctx.input_mut(|input|{
+            let mut any=false;
+            while input.consume_key(modifiers,key){any=true;}
+            any
+        });
+        consumed.then_some(direction)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
