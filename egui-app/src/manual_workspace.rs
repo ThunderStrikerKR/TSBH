@@ -69,6 +69,14 @@ pub fn native_order(
 /// Each decision is computed by native Rust off the egui frame and is
 /// paired with both recipient ID and exact address to reject stale matches.
 type RemoteRow=(String,String,Result<Value,String>);
+
+#[derive(Clone)]
+struct ManualHistoryFrame{
+    model:Value,
+    assignment_order:Vec<String>,
+    remote_rows:Vec<RemoteRow>,
+}
+
 fn resolve_remote_rows(gateway:&dyn BandoGateway,model:&Value)->Vec<RemoteRow>{
     list(model,"rows").iter().map(|row|{
         let id=text(row,"id").to_owned();
@@ -381,6 +389,8 @@ pub struct ManualWorkspace {
     selected_item:Option<String>,
     selected_field:String,
     edit_text:String,
+    focus_editor:bool,
+    history:Vec<ManualHistoryFrame>,
     confirm_discard:bool,
     product_search:Option<ProductSearch>,
     remove_recipient_pending:Option<String>,
@@ -429,7 +439,8 @@ impl ManualWorkspace {
             assignment_order:Vec::new(),remote_rows:Vec::new(),
             selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
-            edit_text:String::new(),confirm_discard:false,
+            edit_text:String::new(),focus_editor:false,history:Vec::new(),
+            confirm_discard:false,
             product_search:None,remove_recipient_pending:None,
             reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
@@ -446,6 +457,7 @@ impl ManualWorkspace {
         self.selected_recipient=index;
         self.selected_item=item;
         self.selected_field=field.to_owned();
+        self.focus_editor=true;
     }
     fn busy(&self)->bool {self.receiver.is_some()}
 
@@ -472,10 +484,19 @@ impl ManualWorkspace {
                 self.assignment_order=assignment_order;
                 self.receiver=None;
                 self.edit_text=self.current_value();
+                self.focus_editor=true;
             }
             Some(Ok(Ok(Outcome::Updated{
                 model,assignment_order,remote_rows
             })))=>{
+                if let Some(previous)=self.model.as_ref(){
+                    self.history.push(ManualHistoryFrame{
+                        model:previous.clone(),
+                        assignment_order:self.assignment_order.clone(),
+                        remote_rows:self.remote_rows.clone(),
+                    });
+                    if self.history.len()>100 {self.history.remove(0);}
+                }
                 self.remote_rows=remote_rows;
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
@@ -495,6 +516,7 @@ impl ManualWorkspace {
                 self.error=None;
                 self.receiver=None;
                 self.edit_text=self.current_value();
+                self.focus_editor=true;
             }
             Some(Ok(Ok(Outcome::Applied{
                 order,model,assignment_order,quote,quote_error
@@ -524,6 +546,41 @@ impl ManualWorkspace {
         self.selected_item=item;
         self.selected_field=field.to_owned();
         self.edit_text=self.current_value();
+        self.focus_editor=true;
+    }
+
+    fn undo(&mut self){
+        if self.busy() || self.product_search.is_some() ||
+            self.remove_recipient_pending.is_some() || self.reset_pending ||
+            self.confirm_discard {return;}
+        if self.edit_text!=self.current_value(){
+            self.edit_text=self.current_value();
+            self.error=None;
+            return;
+        }
+        let Some(frame)=self.history.pop() else {
+            self.error=Some("되돌릴 수 있는 변경사항이 없습니다.".into());
+            return;
+        };
+        self.model=Some(frame.model);
+        self.assignment_order=frame.assignment_order;
+        self.remote_rows=frame.remote_rows;
+        let count=self.model.as_ref().map(|model|list(model,"rows").len()).unwrap_or(0);
+        self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
+        if self.selected_item.as_ref().is_some_and(|id|
+            !self.model.as_ref().is_some_and(|model|
+                list(model,"rows").get(self.selected_recipient).is_some_and(|row|
+                    list(row,"items").iter().any(|item|text(item,"id")==id)
+                )
+            )
+        ){
+            self.selected_item=None;
+            self.selected_field="name".into();
+        }
+        self.edit_text=self.current_value();
+        self.dirty=true;
+        self.error=None;
+        self.focus_editor=true;
     }
 
     fn current_value(&self)->String {
@@ -699,6 +756,9 @@ impl ManualWorkspace {
         source_hover:&mut Option<source_highlight::LinkKey>,
     )->Option<Event> {
         self.poll();
+        if ctx.input(|input|input.modifiers.command && input.key_pressed(egui::Key::Z)){
+            self.undo();
+        }
         if let Some((order,quote,quote_error))=self.applied.take() {
             if order.get("id").and_then(Value::as_str)!=Some(self.order_id.as_str()) ||
                order.get("raw").and_then(Value::as_str)!=Some(self.raw.as_str()) {
