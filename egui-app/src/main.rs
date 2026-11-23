@@ -6463,11 +6463,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }
                     }
                     if let Some(analysis)=&self.analysis {
-                        if self.client_change.is_some() {
-                            components::reception_review_status(
-                                ui,"거래처 변경 계산 중"
-                            );
-                        }
                         let can_act=self.inline_change.is_none()
                             &&self.inline_editor.is_none()
                             &&self.manual_workspace.is_none()
