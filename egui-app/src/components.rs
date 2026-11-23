@@ -1724,7 +1724,9 @@ pub fn modal_backdrop(
 /// backdrop. A backdrop and its dialog can both use Foreground ordering; if
 /// the backdrop owns the layer, egui may reject every button in the dialog.
 pub fn modal_window_layer(id:&'static str)->egui::LayerId {
-    egui::LayerId::new(egui::Order::Foreground,egui::Id::new(id))
+    // Must match decision_window's Tooltip order, not the parent editor's
+    // Foreground order. This is the actual layer egui must allow to interact.
+    egui::LayerId::new(egui::Order::Tooltip,egui::Id::new(id))
 }
 
 /// Render a nested dim and route input to the actual Window created by
