@@ -894,23 +894,14 @@ impl ProductManager {
                 self.catalog.is_some()&&self.writing.is_none()
                     &&!self.has_pending_prices()
             );
-            // Keep the toolbar, header, and virtualized rows in one outline.
-            // Only the list body scrolls; the page title and controls do not.
-            if saving{
-                theme::management_list_strip_frame().show(panel,|status|{
-                    status.label(typography::caption("상품 변경 저장 중…"));
-                });
-            }
-            if self.result.pending(){
-                theme::management_list_strip_frame().show(panel,|status|{
-                    status.label(typography::caption("상품 가격표 조회 중…"));
-                });
-            }
-            // Only a DIRECT filter-to-table transition uses the approved
-            // 21pt strip. Inline saving/loading notices are separate
-            // information blocks, so preserve their original divider.
-            let direct_filter_to_header=!saving&&!self.result.pending()
-                &&!self.adding&&!self.excel.open();
+            // Product list geometry must NOT depend on transient fetch or
+            // save state. Inline "loading/saving" strips used to shift the
+            // sticky header and virtualized table whenever a filter changed.
+            // Loading is represented by existing disabled-action state;
+            // completed results and errors use their established channels.
+            // Only deliberately expanded editors alter the toolbar-to-table
+            // composition; pending queries never do.
+            let direct_filter_to_header=!self.adding&&!self.excel.open();
             if !direct_filter_to_header{
                 components::soft_divider(panel);
             }
@@ -949,8 +940,8 @@ impl ProductManager {
                 &self.products,&self.selected_variants,self.sort
             );
             let header_rect=layout.header_rect;
-            // Product Excel actions, optional add controls and transient
-            // notices have already consumed their measured space above.
+            // Product Excel controls and optional add rows may consume
+            // space; asynchronous loading and saving never do.
             // Protect the empty-state caption under the fixed header.
             let empty_reserve=if self.products.is_empty()
                 && !self.result.pending() && self.error.is_none(){
@@ -1881,6 +1872,18 @@ impl ProductManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn product_list_fetch_does_not_insert_transient_loading_strips(){
+        let source=include_str!("product_manager.rs");
+        let list=source.split("pub fn show_page(").nth(1).unwrap()
+            .split("    fn product_price_candidate(").next().unwrap();
+        assert!(!list.contains("상품 가격표 조회 중"));
+        assert!(!list.contains("상품 변경 저장 중"));
+        assert!(!list.contains("if self.result.pending(){\n                theme::management_list_strip_frame()"));
+        assert!(list.contains(
+            "let direct_filter_to_header=!self.adding&&!self.excel.open();"
+        ));
+    }
     #[test]
     fn product_detail_inline_rows_leave_blank_space_under_fixed_320_image(){
         let body=ProductManager::detail_section_body_height();
