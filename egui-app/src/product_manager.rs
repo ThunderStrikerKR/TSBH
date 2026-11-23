@@ -19,7 +19,7 @@ use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Pos
 use serde_json::{json, Value};
 use std::{
     cmp::Ordering,
-    collections::HashMap,
+    collections::{HashMap,VecDeque},
     sync::{mpsc::{self, Receiver, TryRecvError}, Arc},
     time::{Duration, Instant},
 };
@@ -340,6 +340,28 @@ impl PriceUpdate {
         true
     }
 }
+struct QueuedPriceWrite {
+    key:String,
+    data:Value,
+}
+impl QueuedPriceWrite {
+    fn from_draft(key:&str,draft:&PriceDraft)->Result<Self,String>{
+        let mut parts=key.splitn(3,':');
+        let (Some(product_id),Some(variant_id),Some(tier))=
+            (parts.next(),parts.next(),parts.next())else{
+            return Err("가격 셀 식별자를 확인할 수 없습니다.".into());
+        };
+        if product_id.is_empty()||variant_id.is_empty()
+            ||!["wholesale","semi","retail"].contains(&tier){
+            return Err("가격 셀 식별자를 확인할 수 없습니다.".into());
+        }
+        let value=draft.parse()?;
+        Ok(Self{key:key.to_owned(),data:json!({
+            "productId":product_id,"variantId":variant_id,"tier":tier,
+            "price":value,"expected":draft.original
+        })})
+    }
+}
 struct ProductWrite {
     kind:String,
     key:Option<String>,
@@ -369,7 +391,8 @@ pub struct ProductManager {
     confirm_archive:bool,
     price_mode:bool,
     price_drafts:HashMap<String,PriceDraft>,
-    active_price_editor:Option<String>,
+    price_write_queue:VecDeque<QueuedPriceWrite>,
+    price_mode_exit_requested:bool,
     selected_variants:HashMap<String,String>,
     sort:Option<ProductSort>,
     excel:ProductExcelUi,
@@ -399,7 +422,8 @@ impl ProductManager {
             adding:false,original_selected:None,detail_prices:HashMap::new(),
             confirm_discard:false,confirm_archive:false,
             price_mode:false,price_drafts:HashMap::new(),
-            active_price_editor:None,
+            price_write_queue:VecDeque::new(),
+            price_mode_exit_requested:false,
             selected_variants:HashMap::new(),sort:None,
             excel:ProductExcelUi::default(),
             photos:ProductImageCache::default(),
@@ -446,10 +470,61 @@ impl ProductManager {
         self.selected.is_some() || self.has_pending_prices()
             || self.writing.is_some() || self.excel.blocks_navigation()
     }
+    fn price_cell_busy(&self,key:&str)->bool{
+        self.writing.as_ref().is_some_and(|job|
+            job.kind=="set_price"&&job.key.as_deref()==Some(key)
+        )||self.price_write_queue.iter().any(|queued|queued.key==key)
+    }
+    fn queue_dirty_price_writes(&mut self,ctx:Context)->Result<(),String>{
+        let mut writes=Vec::new();
+        for (key,draft) in &self.price_drafts{
+            if draft.dirty()&&!self.price_cell_busy(key){
+                writes.push(QueuedPriceWrite::from_draft(key,draft)?);
+            }
+        }
+        for write in writes{
+            self.start_write("set_price",write.data,Some(write.key),ctx.clone());
+        }
+        Ok(())
+    }
+    fn finish_price_mode_exit_if_ready(&mut self){
+        if !self.price_mode_exit_requested||self.writing.is_some()
+            ||!self.price_write_queue.is_empty(){return;}
+        self.price_mode_exit_requested=false;
+        if !self.has_pending_prices(){
+            self.price_mode=false;
+            self.price_drafts.clear();
+        }
+    }
     fn start_write(
         &mut self,action:&str,data:Value,key:Option<String>,ctx:Context
     ){
+        if action=="set_price"{
+            let Some(price_key)=key.as_deref()else{
+                self.error=Some("가격 셀 식별자를 확인할 수 없습니다.".into());
+                return;
+            };
+            if self.price_cell_busy(price_key){return;}
+            if self.writing.is_some(){
+                if self.writing.as_ref().is_some_and(|job|job.kind=="set_price"){
+                    self.price_write_queue.push_back(QueuedPriceWrite{
+                        key:price_key.to_owned(),data
+                    });
+                }
+                return;
+            }
+        }else if self.writing.is_some(){return;}
+        self.launch_write(action,data,key,ctx);
+    }
+    fn launch_next_price_write(&mut self,ctx:Context){
         if self.writing.is_some(){return;}
+        if let Some(next)=self.price_write_queue.pop_front(){
+            self.launch_write("set_price",next.data,Some(next.key),ctx);
+        }
+    }
+    fn launch_write(
+        &mut self,action:&str,data:Value,key:Option<String>,ctx:Context
+    ){
         let Some(revision)=self.catalog.as_ref()
             .and_then(|catalog|catalog["revision"].as_u64()) else{
             self.error=Some("운영 상품 리비전을 확인할 수 없습니다.".into());
@@ -503,7 +578,9 @@ impl ProductManager {
         let written=self.writing.as_ref().map(|job|job.receiver.try_recv());
         match written {
             Some(Ok(Ok(catalog)))=>{
+                let mut price_job=false;
                 if let Some(job)=self.writing.take(){
+                    price_job=job.kind=="set_price";
                     if let Some(update)=job.price_update.as_ref(){
                         update.apply_to_products(&mut self.products);
                         if let Some(key)=job.key.as_deref(){
@@ -515,9 +592,6 @@ impl ProductManager {
                                         amount.to_string()
                                     ).unwrap_or_default()
                                 });
-                        }
-                        if self.active_price_editor.as_deref()==job.key.as_deref(){
-                            self.active_price_editor=None;
                         }
                     }
                     if job.kind=="save_alias" {
@@ -542,28 +616,38 @@ impl ProductManager {
                         }
                         Some(notice)
                     }else{None};
-                    self.notice=Some(category_notice.unwrap_or(match job.kind.as_str(){
-                        "set_price"=>"가격 변경을 저장했습니다.",
-                        "upsert_product"=>"상품 상세 정보를 저장했습니다.",
-                        "archive_product"=>"상품을 삭제하고 과거 기록을 보존했습니다.",
-                        "change_category"=>"카테고리 변경사항을 저장했습니다.",
-                        "delete_category"=>"빈 분류를 삭제했습니다.",
-                        "save_alias"=>"별칭을 저장했습니다.",
-                        "upsert_brand"=>"브랜드 정보를 저장했습니다. 기존 연결 상품은 유지됩니다.",
-                        _=>"상품 변경을 저장했습니다.",
-                    }).into());
+                    self.notice=if price_job&&!self.price_write_queue.is_empty(){
+                        None
+                    }else{
+                        Some(category_notice.unwrap_or(match job.kind.as_str(){
+                            "set_price"=>"가격 변경을 저장했습니다.",
+                            "upsert_product"=>"상품 상세 정보를 저장했습니다.",
+                            "archive_product"=>"상품을 삭제하고 과거 기록을 보존했습니다.",
+                            "change_category"=>"카테고리 변경사항을 저장했습니다.",
+                            "delete_category"=>"빈 분류를 삭제했습니다.",
+                            "save_alias"=>"별칭을 저장했습니다.",
+                            "upsert_brand"=>"브랜드 정보를 저장했습니다. 기존 연결 상품은 유지됩니다.",
+                            _=>"상품 변경을 저장했습니다.",
+                        }).into())
+                    };
                     self.model_groups.set_catalog(&catalog,ctx);
                     self.aliases.set_catalog(&catalog,ctx);
                     self.catalog=Some(catalog);
-                    self.reload(ctx.clone());
+                    if price_job&&!self.price_write_queue.is_empty(){
+                        self.launch_next_price_write(ctx.clone());
+                    }else{
+                        self.reload(ctx.clone());
+                        self.finish_price_mode_exit_if_ready();
+                    }
                 }
             }
             Some(Ok(Err(error)))=>{
                 if let Some(job)=self.writing.take(){
-                    // Match React PriceCell: failed writes keep their draft
-                    // and return the cell's explicit retry actions.
                     if job.kind=="set_price"{
-                        self.active_price_editor=job.key;
+                        // Keep every cell draft for correction/retry, but
+                        // discard queued snapshots so edits cannot go stale.
+                        self.price_write_queue.clear();
+                        self.price_mode_exit_requested=false;
                     }
                 }
                 if self.tab==1 {
@@ -581,10 +665,9 @@ impl ProductManager {
                 let disconnected=self.writing.take();
                 let brand_write=disconnected.as_ref()
                     .is_some_and(|job|job.kind=="upsert_brand");
-                if let Some(job)=disconnected{
-                    if job.kind=="set_price"{
-                        self.active_price_editor=job.key;
-                    }
+                if disconnected.as_ref().is_some_and(|job|job.kind=="set_price"){
+                    self.price_write_queue.clear();
+                    self.price_mode_exit_requested=false;
                 }
                 let message="상품 저장 도우미 응답이 중단됐습니다. 재조회 후 확인하세요.".to_owned();
                 if brand_write{self.brands.on_failed(message.clone());}
@@ -637,7 +720,7 @@ impl ProductManager {
         }
         if self.selected.is_some(){return false;}
         if self.has_pending_prices(){
-            self.error=Some("가격 셀의 변경사항을 저장하거나 취소한 뒤 이동하세요.".into());
+            self.error=Some("가격 입력을 마치고 저장이 완료된 뒤 이동하세요.".into());
             return false;
         }
         if self.tab==1 {
@@ -671,7 +754,7 @@ impl ProductManager {
     }
     fn begin_edit(&mut self,product:Value){
         if self.has_pending_prices(){
-            self.error=Some("가격 셀의 수정값부터 저장하거나 취소하세요.".into());
+            self.error=Some("가격 입력 저장이 완료된 뒤 상품 상세를 열 수 있습니다.".into());
             return;
         }
         self.detail_prices.clear();
@@ -758,7 +841,7 @@ impl ProductManager {
                     self.reload(ui.ctx().clone());
                 }
             }else if self.has_pending_prices(){
-                self.error=Some("가격 수정값을 저장하거나 취소한 뒤 탭을 이동하세요.".into());
+                self.error=Some("가격 입력 저장이 완료된 뒤 탭을 이동할 수 있습니다.".into());
             }
         }
         if self.category_manager.take_switch_to_list(){
@@ -882,7 +965,7 @@ impl ProductManager {
                     ).changed(){
                         if self.has_pending_prices(){
                             self.query=before;
-                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                            self.error=Some("가격 입력 저장이 완료된 뒤 검색 조건을 변경할 수 있습니다.".into());
                         }else{self.changed(filter.ctx());}
                     }
                     let category_nodes=self.catalog.as_ref()
@@ -902,7 +985,7 @@ impl ProductManager {
                     if self.category!=before_category{
                         if self.has_pending_prices(){
                             self.category=before_category;
-                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                            self.error=Some("가격 입력 저장이 완료된 뒤 검색 조건을 변경할 수 있습니다.".into());
                         }else{self.changed(filter.ctx());}
                     }
                     let before_brand=self.brand.clone();
@@ -916,14 +999,14 @@ impl ProductManager {
                     if self.brand!=before_brand{
                         if self.has_pending_prices(){
                             self.brand=before_brand;
-                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                            self.error=Some("가격 입력 저장이 완료된 뒤 검색 조건을 변경할 수 있습니다.".into());
                         }else{self.changed(filter.ctx());}
                     }
                     let before_missing=self.missing;
                     if filter.checkbox(&mut self.missing,"가격 미등록만").changed(){
                         if self.has_pending_prices(){
                             self.missing=before_missing;
-                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
+                            self.error=Some("가격 입력 저장이 완료된 뒤 검색 조건을 변경할 수 있습니다.".into());
                         }else{self.changed(filter.ctx());}
                     }
             });
@@ -963,12 +1046,17 @@ impl ProductManager {
                         else{theme::ButtonRole::Standard},
                         can_edit&&!saving
                     ).clicked(){
-                        if self.price_mode && self.has_pending_prices(){
-                            self.error=Some("저장하지 않은 가격이 있습니다. 각 가격 셀의 저장 또는 취소를 눌러주세요.".into());
+                        if self.price_mode{
+                            match self.queue_dirty_price_writes(actions.ctx().clone()){
+                                Ok(())=>{
+                                    self.price_mode_exit_requested=true;
+                                    self.finish_price_mode_exit_if_ready();
+                                }
+                                Err(message)=>self.error=Some(message),
+                            }
                         }else{
-                            self.price_mode=!self.price_mode;
-                            self.active_price_editor=None;
-                            if !self.price_mode{self.price_drafts.clear();}
+                            self.price_mode=true;
+                            self.price_mode_exit_requested=false;
                         }
                     }
                     // Match the shared management dropdown and overlay layer.
@@ -1177,7 +1265,11 @@ impl ProductManager {
                                                 .id_salt(("product-price-edit",key.as_str()))
                                                 .max_rect(price_rect)
                                                 .layout(Layout::left_to_right(Align::Center));
-                                            if saving{builder=builder.disabled();}
+                                            if (saving&&!self.writing.as_ref().is_some_and(
+                                                |job|job.kind=="set_price"
+                                            ))||self.price_cell_busy(&key){
+                                                builder=builder.disabled();
+                                            }
                                             row.scope_builder(builder,|inputs|{
                                                     // Do not clip TextEdit's
                                                     // focus stroke to its own
@@ -1203,94 +1295,30 @@ impl ProductManager {
                                                                 &entry.input,typography::numeric_editor_font(),
                                                                 false,8.0
                                                             );
-                                                            // Open the contextual actions for
-                                                            // the most recently edited dirty cell.
-                                                            // The popup floats above the grid:
-                                                            // it cannot resize the three price
-                                                            // columns or push later table cells.
-                                                            if response.changed() ||
-                                                                (response.clicked()&&entry.dirty()){
-                                                                self.active_price_editor=Some(key.clone());
-                                                            }
-                                                            let enter=response.lost_focus() &&
-                                                                inputs.input(|i|
-                                                                    i.key_pressed(egui::Key::Enter));
-                                                            if response.has_focus() &&
-                                                                inputs.input(|i|
-                                                                    i.key_pressed(egui::Key::Escape)){
+                                                            // Excel-style commit: leaving a cell or
+                                                            // pressing Enter/Tab commits its value.
+                                                            // Escape only restores the current cell.
+                                                            let escape=response.has_focus()&&inputs.input(
+                                                                |i|i.key_pressed(egui::Key::Escape)
+                                                            );
+                                                            if response.changed(){self.error=None;}
+                                                            if escape{
                                                                 entry.input=entry.original.map(|n|
                                                                     n.to_string()).unwrap_or_default();
-                                                                self.active_price_editor=None;
-                                                            }
-                                                            if entry.dirty(){
-                                                                if enter{
-                                                                    match entry.parse(){
-                                                                        Ok(value)=>{
-                                                                            price_write=Some((
-                                                                                key.clone(),json!({
-                                                                                    "productId":product_id,
-                                                                                    "variantId":field(variant,"id"),
-                                                                                    "tier":tier,"price":value,
-                                                                                    "expected":entry.original
-                                                                                })
-                                                                            ));
-                                                                            self.active_price_editor=None;
-                                                                        }
-                                                                        Err(message)=>self.error=Some(message),
+                                                            }else if response.lost_focus()&&entry.dirty()
+                                                                && !self.price_cell_busy(&key){
+                                                                match entry.parse(){
+                                                                    Ok(value)=>{
+                                                                        price_write=Some((
+                                                                            key.clone(),json!({
+                                                                                "productId":product_id,
+                                                                                "variantId":field(variant,"id"),
+                                                                                "tier":tier,"price":value,
+                                                                                "expected":entry.original
+                                                                            })
+                                                                        ));
                                                                     }
-                                                                }
-                                                                if self.active_price_editor.as_deref()
-                                                                    ==Some(key.as_str()){
-                                                                    let mut menu_open=true;
-                                                                    egui::Popup::from_response(&response)
-                                                                        .align(egui::RectAlign::BOTTOM_END)
-                                                                        .open_bool(&mut menu_open)
-                                                                        // React PriceCell keeps its
-                                                                        // Save/Cancel actions visible
-                                                                        // after blur. A focus change
-                                                                        // is not a save or a discard.
-                                                                        .close_behavior(
-                                                                            egui::PopupCloseBehavior::IgnoreClicks
-                                                                        )
-                                                                        .show(|menu|{
-                                                                            menu.horizontal(|actions|{
-                                                                                actions.spacing_mut().item_spacing.x=
-                                                                                    theme::SPACE_8;
-                                                                                if theme::action(
-                                                                                    actions,"저장",
-                                                                                    theme::ButtonRole::Standard,true
-                                                                                ).clicked(){
-                                                                                    match entry.parse(){
-                                                                                        Ok(value)=>{
-                                                                                            price_write=Some((
-                                                                                                key.clone(),json!({
-                                                                                                    "productId":product_id,
-                                                                                                    "variantId":field(variant,"id"),
-                                                                                                    "tier":tier,"price":value,
-                                                                                                    "expected":entry.original
-                                                                                                })
-                                                                                            ));
-                                                                                            self.active_price_editor=None;
-                                                                                            actions.close();
-                                                                                        }
-                                                                                        Err(message)=>self.error=Some(message),
-                                                                                    }
-                                                                                }
-                                                                                if theme::action(
-                                                                                    actions,"취소",
-                                                                                    theme::ButtonRole::Quiet,true
-                                                                                ).clicked(){
-                                                                                    entry.input=entry.original
-                                                                                        .map(|n|n.to_string())
-                                                                                        .unwrap_or_default();
-                                                                                    self.active_price_editor=None;
-                                                                                    actions.close();
-                                                                                }
-                                                                            });
-                                                                        });
-                                                                    if !menu_open{
-                                                                        self.active_price_editor=None;
-                                                                    }
+                                                                    Err(message)=>self.error=Some(message),
                                                                 }
                                                             }
                                                         }
@@ -1447,6 +1475,7 @@ impl ProductManager {
         if let Some((key,data))=price_write {
             self.start_write("set_price",data,Some(key),ui.ctx().clone());
         }
+        self.finish_price_mode_exit_if_ready();
         if let Some(product)=open_detail {
             self.begin_edit(product);
         }else if begin_new {
@@ -2275,12 +2304,45 @@ mod tests {
         let source=include_str!("product_manager.rs");
         let poll=source.split("fn poll(").nth(1).unwrap()
             .split("fn changed(").next().unwrap_or("");
-        assert!(poll.contains("self.active_price_editor=job.key;"));
+        assert!(poll.contains("self.price_write_queue.clear();"));
+        assert!(!poll.contains("active_price_editor"));
         let mut draft=PriceDraft{original:None,input:"15,000".into()};
         assert!(draft.dirty());
-        // No mark_saved call is made on the error path.
+        // Failed writes retain the value; retry is triggered by the next
+        // Enter, Tab, focus change, or explicit mode-exit action.
         assert_eq!(draft.parse().unwrap(),Some(15000));
         assert!(draft.dirty());
+    }
+    #[test]
+    fn price_cell_commit_contract_is_excel_style_without_action_popup(){
+        let source=include_str!("product_manager.rs");
+        let editor=source.split("// Excel-style commit:").nth(1).unwrap()
+            .split("if entry.dirty()").next().unwrap_or("");
+        assert!(editor.contains("response.lost_focus()"));
+        assert!(editor.contains("egui::Key::Escape"));
+        assert!(!source.contains("Popup::from_response(&response)"));
+        assert!(!source.contains("actions,\"저장\""));
+        assert!(!source.contains("actions,\"취소\""));
+    }
+    #[test]
+    fn excel_price_write_payload_commits_values_and_empty_as_null(){
+        let new=PriceDraft{original:None,input:"15,000".into()};
+        let write=QueuedPriceWrite::from_draft("p1:v1:wholesale",&new).unwrap();
+        assert_eq!(write.data["price"],json!(15000));
+        assert_eq!(write.data["expected"],Value::Null);
+        let clear=PriceDraft{original:Some(19000),input:String::new()};
+        let write=QueuedPriceWrite::from_draft("p1:v1:semi",&clear).unwrap();
+        assert_eq!(write.data["price"],Value::Null);
+        assert_eq!(write.data["expected"],json!(19000));
+    }
+    #[test]
+    fn price_write_queue_preserves_order_and_cell_identity(){
+        let mut queue=VecDeque::new();
+        queue.push_back(QueuedPriceWrite{key:"p1:v1:wholesale".into(),data:json!({"price":15000})});
+        queue.push_back(QueuedPriceWrite{key:"p2:v2:retail".into(),data:json!({"price":26000})});
+        assert_eq!(queue.pop_front().unwrap().key,"p1:v1:wholesale");
+        assert_eq!(queue.pop_front().unwrap().key,"p2:v2:retail");
+        assert!(queue.is_empty());
     }
     #[test]
     fn catalog_options_do_not_create_mutable_catalog_entries(){
