@@ -81,10 +81,9 @@ pub fn fixed_row<R>(
 )->(Rect,R){
     let width=size.x.min(ui.available_width()).max(0.0);
     let height=size.y.max(0.0);
-    let (rect,_)=ui.allocate_exact_size(Vec2::new(width,height),Sense::hover());
-    let output=ui.scope_builder(
-        UiBuilder::new().max_rect(rect).layout(layout),
-        |row|{
+    let output=ui.allocate_ui_with_layout(
+        Vec2::new(width,height),layout,|row|{
+            let rect=row.max_rect();
             row.set_clip_rect(rect);
             row.set_width(rect.width());
             row.set_height(rect.height());
@@ -92,7 +91,7 @@ pub fn fixed_row<R>(
             add_contents(row)
         }
     );
-    (rect,output.inner)
+    (output.response.rect,output.inner)
 }
 
 /// One-line status slot for state-dependent text. It always reserves the
