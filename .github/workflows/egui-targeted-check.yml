@@ -79,6 +79,13 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Forbid UI-local monospace fonts outside the central semantic policy
+        shell: bash
+        run: |
+          if git grep -n -E 'FontId::monospace|FontFamily::Monospace|\.monospace\(' -- egui-app/src ':!egui-app/src/typography.rs'; then
+            echo "UI-local monospace bypasses typography::data_value_font" >&2
+            exit 1
+          fi
       - name: Verify asynchronous pending, empty and loaded states preserve management geometry
         run: cargo test --manifest-path egui-app/Cargo.toml management_async_layout_contract_tests -- --nocapture
       - name: Verify React-compatible four sale states and legacy catalog labels
