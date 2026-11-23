@@ -169,8 +169,14 @@ mod fixed_layout_slot_contract_tests {
                 });
             });
         }
-        assert_eq!(measured[0].0,measured[1].0);
-        assert_eq!(measured[0].1,measured[1].1);
+        for current in measured.iter().skip(1){
+            assert_eq!(measured[0].0,current.0,
+                "status text must not alter the allocated status Rect");
+            assert_eq!(measured[0].1,current.1,
+                "status text must not move the following control");
+            assert!((current.2-current.3).abs()<0.5,
+                "status row must consume exactly one allocation");
+        }
         assert!((measured[0].0.height()-typography::METADATA_LINE_HEIGHT).abs()<0.5);
         assert!((measured[0].2-measured[0].3).abs()<0.5,
             "the fixed status row must consume exactly one parent allocation");
