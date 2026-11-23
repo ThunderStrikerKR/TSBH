@@ -2899,7 +2899,7 @@ fn management_dropdown_inner(
         ui,label,ink
     );
     let caption_x=rect.left()+if indicator.is_some(){
-        theme::SPACE_32
+        2.0*theme::SPACE_16
     }else{theme::SPACE_12};
     let text_clip=Rect::from_min_max(
         egui::pos2(caption_x,rect.top()),
