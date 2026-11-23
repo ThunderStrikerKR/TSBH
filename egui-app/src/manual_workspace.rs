@@ -102,10 +102,14 @@ fn item_quantity_pending(item:&Value)->bool{
     has_product && !confirmed
 }
 
+fn model_pending_quantity_count(model:&Value)->usize{
+    list(model,"rows").iter().map(|row|
+        list(row,"items").iter().filter(|item|item_quantity_pending(item)).count()
+    ).sum()
+}
+
 fn model_has_pending_quantity(model:&Value)->bool{
-    list(model,"rows").iter().any(|row|
-        list(row,"items").iter().any(item_quantity_pending)
-    )
+    model_pending_quantity_count(model)>0
 }
 
 /// While a product has just been selected, React locks every other cell
