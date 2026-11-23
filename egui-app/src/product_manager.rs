@@ -832,6 +832,10 @@ impl ProductManager {
     pub fn show_page(&mut self,ui:&mut Ui){
         let page_origin_y=ui.cursor().top();
         self.poll(ui.ctx());
+        // A pointer action supersedes any deferred keyboard focus target.
+        if ui.input(|input|input.pointer.any_click()){
+            self.price_focus_target=None;
+        }
         let price_result=self.notice.as_deref().is_some_and(|msg|
             msg.starts_with("가격 변경"));
         crate::floating_notice::sync(
@@ -1096,6 +1100,7 @@ impl ProductManager {
                         }else{
                             self.price_mode=true;
                             self.price_mode_exit_requested=false;
+                            self.price_focus_target=None;
                         }
                     }
                     // Match the shared management dropdown and overlay layer.
