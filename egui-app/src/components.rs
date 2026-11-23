@@ -5079,10 +5079,19 @@ mod management_dropdown_unification_tests {
             ("category_manager",include_str!("category_manager.rs"),1),
             ("client_manager",include_str!("client_manager.rs"),4),
             ("freight_manager",include_str!("freight_manager.rs"),5),
-            ("product_manager",include_str!("product_manager.rs"),7),
+            ("product_manager",include_str!("product_manager.rs"),6),
             ("manual_product_search",include_str!("manual_product_search.rs"),2),
             ("main",include_str!("main.rs"),1),
         ];
+        // Both category selectors moved to the shared hierarchical
+        // component; the six remaining standard product selectors still use
+        // the original management-dropdown master.
+        let products=include_str!("product_manager.rs");
+        assert_eq!(
+            products.matches("category_dropdown::category_dropdown(").count(),2
+        );
+        assert!(include_str!("category_manager.rs")
+            .contains("category_dropdown::category_dropdown("));
         for (name,source,minimum) in screens {
             assert!(!source.contains("ComboBox::"),
                 "{name} still contains a screen-local native ComboBox");
