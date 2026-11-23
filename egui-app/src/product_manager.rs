@@ -1077,8 +1077,10 @@ impl ProductManager {
                         if self.price_mode{
                             match self.queue_dirty_price_writes(actions.ctx().clone()){
                                 Ok(())=>{
+                                    // Defer exit until after the table has
+                                    // processed this frame's final keystroke
+                                    // and focus-loss commit.
                                     self.price_mode_exit_requested=true;
-                                    self.finish_price_mode_exit_if_ready();
                                 }
                                 Err(message)=>self.error=Some(message),
                             }
