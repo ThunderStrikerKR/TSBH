@@ -1965,8 +1965,9 @@ mod tests {
         assert!(list.contains("self.excel.show_menu("));
         assert!(!list.contains("self.excel.show_panel("));
         assert!(!list.contains("self.excel.open()"));
-        assert!(list.contains("let empty_reserve=if self.products.is_empty(){"));
-        assert!(!list.contains("&& !self.result.pending() && self.error.is_none()"));
+        assert!(!list.contains("let empty_reserve=if self.products.is_empty(){"));
+        assert!(list.contains("components::management_body_state_overlay("));
+        assert!(list.contains("let scroll_max_height=components::management_single_list_scroll_height("));
     }
     #[test]
     fn product_detail_inline_rows_leave_blank_space_under_fixed_320_image(){
