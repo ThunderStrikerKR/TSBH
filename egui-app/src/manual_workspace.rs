@@ -1288,6 +1288,7 @@ impl ManualWorkspace {
                                             rows.get(self.selected_recipient),
                                             self.selected_item.as_ref()
                                         ){
+                                            self.focus_editor=true;
                                             chosen=Some(("step_manual_quantity".into(),json!({
                                                 "cell":{"recipientId":text(row,"id"),
                                                     "itemId":item},
@@ -1302,6 +1303,7 @@ impl ManualWorkspace {
                                             rows.get(self.selected_recipient),
                                             self.selected_item.as_ref()
                                         ){
+                                            self.focus_editor=true;
                                             chosen=Some(("step_manual_quantity".into(),json!({
                                                 "cell":{"recipientId":text(row,"id"),
                                                     "itemId":item},
@@ -1468,6 +1470,18 @@ impl ManualWorkspace {
             if self.edit_text!=self.current_value() && !submit_direct {
                 self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
             }else{
+                if action=="assign_manual_block" &&
+                    self.selected_item.is_some() && self.selected_field=="product" {
+                    self.select_cell(
+                        self.selected_recipient,self.selected_item.clone(),"quantity"
+                    );
+                }
+                if action=="set_manual_product" &&
+                    self.selected_item.is_some() && self.selected_field=="product" {
+                    self.select_cell(
+                        self.selected_recipient,self.selected_item.clone(),"quantity"
+                    );
+                }
                 self.action(&action,payload,ctx);
             }
         }
