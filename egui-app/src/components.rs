@@ -1688,6 +1688,27 @@ pub fn flexible_text_field(
     ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
 }
 
+/// Shared date text field used inside the management date-group master.
+/// The caller owns navigation, parsing and validation; this component owns
+/// the centered, frameless editor, proportional date face and caret margin.
+pub fn management_date_text_field(
+    ui:&mut Ui,value:&mut String,width:f32,height:f32,hint:&str
+)->Response{
+    ui.add_sized(
+        Vec2::new(width,height),
+        egui::TextEdit::singleline(value)
+            .font(typography::data_value_font(
+                typography::DataValueKind::Date,
+                typography::DataValueContext::Form
+            ))
+            .frame(false)
+            .horizontal_align(Align::Center)
+            .vertical_align(Align::Center)
+            .margin(typography::management_date_text_margin())
+            .hint_text(hint)
+    )
+}
+
 /// Shared multiline editor for long-form messages and management memos.
 /// Screens provide only the existing width, row count and optional hint; the
 /// native TextEdit retains its standard click, selection and keyboard behavior.
@@ -4821,6 +4842,18 @@ fn management_readonly_table_content_width(widths:&[f32])->f32{
 
 fn management_readonly_table_row_advance()->f32{
     theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
+}
+
+#[cfg(test)]
+mod management_date_field_contract_tests {
+    #[test]
+    fn order_history_date_group_uses_shared_date_text_field(){
+        let source=include_str!("order_history_manager.rs");
+        let date=source.split("fn date_group(").nth(1).unwrap()
+            .split("fn date_range_toolbar(").next().unwrap();
+        assert!(date.contains("components::management_date_text_field("));
+        assert!(!date.contains("egui::TextEdit::singleline(date)"));
+    }
 }
 
 #[cfg(test)]
