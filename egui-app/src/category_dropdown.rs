@@ -595,9 +595,13 @@ mod tests{
             });
         });
         assert_eq!(heights,[34.0,34.0]);
+        // Inspect only the row renderer and its actual invocation.
+        // Searching the whole source also matches assertions in this test.
         let source=include_str!("category_dropdown.rs");
-        assert!(!source.contains("if searching{52.0}"));
-        assert!(!source.contains("rect.top()+37.0"));
+        let renderer=source.split("fn category_option_row(").nth(1).unwrap()
+            .split("fn crumb(").next().unwrap();
+        assert!(!renderer.contains("52.0"));
+        assert!(!renderer.contains("rect.top()+37.0"));
         assert!(source.contains("category_option_row(\n                    list,node,index,&path,list_width,selected,searching"));
     }
     #[test]
