@@ -1,0 +1,43 @@
+name: Manual classification modal and linked-source checks
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/egui-manual-classification-check.yml
+      - egui-app/src/manual_workspace.rs
+      - egui-app/src/manual_source_view.rs
+      - egui-app/src/source_highlight.rs
+      - egui-app/src/components.rs
+      - egui-app/src/main.rs
+      - egui-app/src/theme.rs
+      - egui-app/src/typography.rs
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: egui-manual-classification-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  manual-classification:
+    runs-on: windows-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: egui-app -> target
+      - name: Compile the native egui workspace
+        run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify nested modal input routing
+        run: cargo test --manifest-path egui-app/Cargo.toml modal_input_routing_tests -- --nocapture
+      - name: Verify manual modal routing and Escape behavior
+        run: cargo test --manifest-path egui-app/Cargo.toml manual_workspace_modal_routing_tests -- --nocapture
+      - name: Verify manual source ownership and Unicode hit testing
+        run: cargo test --manifest-path egui-app/Cargo.toml manual_span_projection_tests -- --nocapture
+      - name: Verify manual source click identity
+        run: cargo test --manifest-path egui-app/Cargo.toml manual_source_view::tests -- --nocapture
+      - name: Verify existing reception source highlighting remains stable
+        run: cargo test --manifest-path egui-app/Cargo.toml source_highlight::tests -- --nocapture
+      - name: Verify manual quantity, address and quote behavior
+        run: cargo test --manifest-path egui-app/Cargo.toml manual_remote_row_tests -- --nocapture
