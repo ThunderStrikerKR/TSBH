@@ -871,13 +871,17 @@ impl ProductManager {
                             if !self.price_mode{self.price_drafts.clear();}
                         }
                     }
-                    if theme::action(actions,"Excel 관리",
-                        theme::ButtonRole::Standard,!saving
-                    ).clicked(){
-                        if self.has_pending_prices(){
-                            self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
-                        }else{self.excel.toggle();}
-                    }
+                    // Match the shared management dropdown and overlay layer.
+                    let trigger=components::management_dropdown_trigger(
+                        actions,"Excel 관리",112.0,
+                        !saving&&!self.has_pending_prices(),
+                        "상품 Excel 관리",None
+                    );
+                    self.excel.show_menu(
+                        &trigger,Arc::clone(&self.gateway),
+                        self.catalog.is_some()&&self.writing.is_none()
+                            &&!self.has_pending_prices()
+                    );
                 }
             );
             if self.adding {
@@ -888,20 +892,14 @@ impl ProductManager {
                     ).clicked(){begin_new=true;}
                 });
             }
-            if self.excel.open(){panel.add_space(theme::SPACE_8);}
-            self.excel.show_panel(
-                panel,Arc::clone(&self.gateway),
-                self.catalog.is_some()&&self.writing.is_none()
-                    &&!self.has_pending_prices()
-            );
             // Product list geometry must NOT depend on transient fetch or
             // save state. Inline "loading/saving" strips used to shift the
             // sticky header and virtualized table whenever a filter changed.
             // Loading is represented by existing disabled-action state;
             // completed results and errors use their established channels.
-            // Only deliberately expanded editors alter the toolbar-to-table
-            // composition; pending queries never do.
-            let direct_filter_to_header=!self.adding&&!self.excel.open();
+            // Only the explicitly expanded registration editor changes
+            // the table layout. Excel is a floating popup.
+            let direct_filter_to_header=!self.adding;
             if !direct_filter_to_header{
                 components::soft_divider(panel);
             }
@@ -940,8 +938,8 @@ impl ProductManager {
                 &self.products,&self.selected_variants,self.sort
             );
             let header_rect=layout.header_rect;
-            // Product Excel controls and optional add rows may consume
-            // space; asynchronous loading and saving never do.
+            // Only optional add rows consume space; the Excel popup,
+            // asynchronous loading, and saving never do.
             // Protect the empty-state caption under the fixed header.
             // Empty result geometry is fixed during loading, errors, and
             // settled results. Do not grow/shrink the viewport as soon as a
@@ -1883,8 +1881,11 @@ mod tests {
         assert!(!list.contains("상품 변경 저장 중"));
         assert!(!list.contains("if self.result.pending(){\n                theme::management_list_strip_frame()"));
         assert!(list.contains(
-            "let direct_filter_to_header=!self.adding&&!self.excel.open();"
+            "let direct_filter_to_header=!self.adding;"
         ));
+        assert!(list.contains("self.excel.show_menu("));
+        assert!(!list.contains("self.excel.show_panel("));
+        assert!(!list.contains("self.excel.open()"));
         assert!(list.contains("let empty_reserve=if self.products.is_empty(){"));
         assert!(!list.contains("&& !self.result.pending() && self.error.is_none()"));
     }
