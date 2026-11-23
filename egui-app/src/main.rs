@@ -4078,23 +4078,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             editor.set_clip_rect(text_clip);
                             editor.set_width(text_view_rect.width());
                             editor.set_height(text_view_rect.height());
-                            editor.add_sized(
+                            components::multiline_text_field_sized(
+                                editor,
+                                &mut review.edited_text,
+                                true,
                                 text_view_rect.size(),
-                                egui::TextEdit::multiline(&mut review.edited_text)
-                                    // The unified workspace paints INPUT;
-                                    // remove TextEdit's own second outline.
-                                    .frame(false)
-                                    // Larger, dedicated OCR-review typography:
-                                    // compare misread model codes, numbers and
-                                    // addresses without changing other screens.
-                                    .font(egui::FontId::proportional(
-                                        typography::FONT_OCR_REVIEW_TEXT
-                                    ))
-                                    .margin(egui::Margin::same(
-                                        theme::SPACE_12 as i8
-                                    ))
-                                    .desired_width(text_view_rect.width())
-                                    .desired_rows(1)
+                                egui::FontId::proportional(
+                                    typography::FONT_OCR_REVIEW_TEXT
+                                ),
+                                false,
+                                egui::Margin::same(theme::SPACE_12 as i8),
+                                1
                             );
                         },
                     );
