@@ -9,7 +9,7 @@ use std::{sync::{Arc,mpsc::{self,Receiver}},thread,time::{SystemTime,UNIX_EPOCH}
 use eframe::egui::{self,Context};
 use serde_json::{json,Value};
 use crate::{
-    cell_navigation::{self,CellNavigationCell,CellNavigationKey},
+    cell_navigation::CellNavigationKey,
     gateway::{BandoGateway,ReadOperation},
     preview_store::WorkingReception,
     theme::{self,ButtonRole},
