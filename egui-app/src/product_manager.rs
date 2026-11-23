@@ -948,17 +948,11 @@ impl ProductManager {
             let header_rect=layout.header_rect;
             // Only optional add rows consume space; the Excel popup,
             // asynchronous loading, and saving never do.
-            // Protect the empty-state caption under the fixed header.
-            // Empty result geometry is fixed during loading, errors, and
-            // settled results. Do not grow/shrink the viewport as soon as a
-            // pending query finishes.
-            let empty_reserve=if self.products.is_empty(){
-                theme::INPUT_HEIGHT
-            }else{0.0};
+            // Pending, empty and populated results share ONE table height.
+            // Never subtract an empty-state row from the scroll viewport.
             let scroll_max_height=components::management_single_list_scroll_height(
-                panel,card_min_height,empty_reserve
+                panel,card_min_height,0.0
             );
-            // The empty-state reserve affects only viewport height.
             // The shared component owns the 7pt rail extension.
             let scroll_track=components::management_table_scroll_track_rect(
                 panel,scroll_max_height
@@ -1335,16 +1329,26 @@ impl ProductManager {
                 panel.ctx().request_repaint();
             }
             panel.spacing_mut().item_spacing.y=original_spacing;
-            if self.products.is_empty() && !self.result.pending() && self.error.is_none(){
-                theme::management_list_strip_frame().show(panel,|empty|{
-                    empty.label(typography::caption(
-                        if self.query.is_empty() && self.category.is_empty()
-                            && self.brand.is_empty() && !self.missing{
-                            "등록된 상품이 없습니다."
-                        }else{"조건에 맞는 상품이 없습니다."}
-                    ));
-                });
-            }
+            let empty_state=if self.products.is_empty()
+                && !self.result.pending() && self.error.is_none(){
+                Some(if self.query.is_empty() && self.category.is_empty()
+                    && self.brand.is_empty() && !self.missing{
+                    "등록된 상품이 없습니다."
+                }else{"조건에 맞는 상품이 없습니다."})
+            }else{None};
+            // Paint inside the preallocated body. An empty search result
+            // must not add a row or change scrollbar/table geometry.
+            let body_rect=Rect::from_min_size(
+                scroll_track.min,
+                Vec2::new(
+                    (layout.viewport_width-layout.scrollbar_gutter)
+                        .min(scroll_track.width()).max(0.0),
+                    scroll_max_height
+                )
+            );
+            components::management_body_state_overlay(
+                panel,body_rect,empty_state
+            );
         });
         if let Some((key,data))=price_write {
             self.start_write("set_price",data,Some(key),ui.ctx().clone());
