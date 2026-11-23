@@ -87,6 +87,111 @@ fn search_results<'a>(
     result.sort_by(|a,b|a.name.cmp(&b.name));
     result
 }
+// Contract for BOTH search results and ordinary category children.
+// A category option is always one 34pt row, regardless of depth or length.
+const CATEGORY_RESULT_ROW_HEIGHT:f32=theme::ACTION_STANDARD_HEIGHT;
+
+/// Compose a single horizontal path: muted ancestors and the bright leaf.
+/// Overlong paths discard old ancestors first; only if the leaf itself cannot
+/// fit do we ellipsize the END of the leaf. Never duplicate the leaf or wrap.
+fn fitted_category_row_text<F>(
+    path:&[&str],max_width:f32,measure:F
+)->(String,String)
+where F:Fn(&str)->f32 {
+    let Some((leaf,parents))=path.split_last()else{
+        return (String::new(),String::new());
+    };
+    let leaf=*leaf;
+    let normal_ancestors=if parents.is_empty(){String::new()}
+        else{format!("{} > ",parents.join(" > "))};
+    if measure(&normal_ancestors)+measure(leaf)<=max_width{
+        return (normal_ancestors,leaf.to_owned());
+    }
+    if measure(leaf)>max_width{
+        if measure("…")>max_width{
+            return (String::new(),String::new());
+        }
+        for (end,_) in leaf.char_indices().rev(){
+            if end==0{continue;}
+            let candidate=format!("{}…",&leaf[..end]);
+            if measure(&candidate)<=max_width{
+                return (String::new(),candidate);
+            }
+        }
+        return (String::new(),"…".to_owned());
+    }
+    // Keep the nearest parents when possible, folding earlier ancestors.
+    for keep in (0..parents.len()).rev(){
+        let suffix=parents[parents.len()-keep..].join(" > ");
+        let ancestors=if suffix.is_empty(){
+            "… > ".to_owned()
+        }else{format!("… > {suffix} > ")};
+        if measure(&ancestors)+measure(leaf)<=max_width{
+            return (ancestors,leaf.to_owned());
+        }
+    }
+    (String::new(),leaf.to_owned())
+}
+
+/// THE sole category list row renderer, used identically for search and
+/// normal navigation. One clipped baseline and one hit rectangle; only the
+/// text's ancestor segment differs between the two modes.
+fn category_option_row(
+    ui:&mut Ui,node:&CategoryNode,
+    index:&HashMap<&str,&CategoryNode>,path:&[String],
+    width:f32,selected:&str,show_ancestors:bool
+)->Response{
+    let (rect,response)=ui.allocate_exact_size(
+        Vec2::new(width,CATEGORY_RESULT_ROW_HEIGHT),Sense::click()
+    );
+    if node.id==selected{
+        ui.painter().rect(
+            rect,theme::CONTROL_RADIUS,theme::CATEGORY_EXPLORER_APPLIED_BG,
+            Stroke::new(
+                theme::SOFT_DIVIDER_WIDTH,theme::CATEGORY_EXPLORER_APPLIED_BORDER
+            ),egui::StrokeKind::Inside
+        );
+    }else if response.hovered()||response.has_focus(){
+        ui.painter().rect_filled(
+            rect,theme::CONTROL_RADIUS,theme::MANAGEMENT_DROPDOWN_HOVER_BG
+        );
+    }
+    let font=egui::FontId::proportional(typography::FONT_STANDARD_ACTION);
+    let mut labels=if show_ancestors{
+        path.iter().filter_map(|id|index.get(id.as_str()))
+            .map(|row|row.name.as_str()).collect::<Vec<_>>()
+    }else{Vec::new()};
+    if !show_ancestors{labels.push(&node.name);}
+    // The right chevron has a fixed, separate 16pt reserve. Text length
+    // cannot expand the row or alter the popup's fixed 546pt width.
+    let available=(rect.width()-theme::SPACE_8*2.0-theme::SPACE_16).max(0.0);
+    let measure=|value:&str|ui.painter().layout_no_wrap(
+        value.to_owned(),font.clone(),theme::TEXT
+    ).size().x;
+    let (ancestors,leaf)=fitted_category_row_text(&labels,available,measure);
+    let text_left=rect.left()+theme::SPACE_8;
+    let painter=ui.painter().with_clip_rect(rect.shrink(1.0));
+    let mut x=text_left;
+    if !ancestors.is_empty(){
+        painter.text(
+            egui::pos2(x,rect.center().y),Align2::LEFT_CENTER,&ancestors,
+            font.clone(),theme::MUTED
+        );
+        x+=ui.painter().layout_no_wrap(
+            ancestors,font.clone(),theme::MUTED
+        ).size().x;
+    }
+    painter.text(
+        egui::pos2(x,rect.center().y),Align2::LEFT_CENTER,leaf,
+        font.clone(),theme::TEXT
+    );
+    painter.text(
+        egui::pos2(rect.right()-theme::SPACE_12,rect.center().y),
+        Align2::CENTER_CENTER,"›",font,theme::SECONDARY
+    );
+    response
+}
+
 fn crumb(
     ui:&mut Ui,label:&str,width:f32,visual:CrumbVisual
 )->Response{
@@ -315,61 +420,9 @@ fn menu_body(
             for node in items{
                 let path=chain(index,&node.id);
                 let full=full_name(index,&path);
-                let height=if searching{52.0}else{theme::ACTION_STANDARD_HEIGHT};
-                let (rect,response)=list.allocate_exact_size(
-                    Vec2::new(list_width,height),Sense::click()
-                );
-                let hovered=response.hovered()||response.has_focus();
-                // The selected category is orange anywhere it is visible:
-                // breadcrumb, search result or direct child. Hover never
-                // overwrites its committed state with blue.
-                if node.id.as_str()==selected.as_str(){
-                    list.painter().rect(
-                        rect,theme::CONTROL_RADIUS,
-                        theme::CATEGORY_EXPLORER_APPLIED_BG,
-                        Stroke::new(
-                            theme::SOFT_DIVIDER_WIDTH,
-                            theme::CATEGORY_EXPLORER_APPLIED_BORDER
-                        ),egui::StrokeKind::Inside
-                    );
-                }else if hovered{
-                    list.painter().rect_filled(
-                        rect,theme::CONTROL_RADIUS,
-                        theme::MANAGEMENT_DROPDOWN_HOVER_BG
-                    );
-                }
-                let label=typography::fit_category_path(
-                    list,&node.name,(rect.width()-theme::SPACE_24).max(1.0),
-                    typography::CategoryPathFont::Body
-                );
-                let painter=list.painter().with_clip_rect(rect);
-                painter.text(
-                    egui::pos2(rect.left()+theme::SPACE_8,
-                        if searching{rect.top()+14.0}else{rect.center().y}),
-                    Align2::LEFT_CENTER,label,
-                    egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-                    theme::TEXT
-                );
-                if searching{
-                    let display=typography::fit_category_path(
-                        list,&full,(rect.width()-theme::SPACE_16).max(1.0),
-                        typography::CategoryPathFont::Body
-                    );
-                    painter.text(
-                        egui::pos2(rect.left()+theme::SPACE_8,rect.top()+37.0),
-                        Align2::LEFT_CENTER,display,
-                        egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-                        theme::SECONDARY
-                    );
-                }else{
-                    painter.text(
-                        egui::pos2(rect.right()-theme::SPACE_12,rect.center().y),
-                        Align2::CENTER_CENTER,"›",
-                        egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-                        theme::SECONDARY
-                    );
-                }
-                let response=response.on_hover_text(&full);
+                let response=category_option_row(
+                    list,node,index,&path,list_width,selected,searching
+                ).on_hover_text(&full);
                 if response.clicked(){next_path=Some(path);}
             }
         });
@@ -518,6 +571,49 @@ mod tests{
         assert!(fitted[0]<fitted[1]);
         assert!(fitted.iter().all(|width|*width>=26.0));
         assert!(fitted_crumb_widths(&[],100.0).is_empty());
+    }
+    #[test]
+    fn category_rows_use_one_fixed_height_and_one_painter_in_both_modes(){
+        assert_eq!(CATEGORY_RESULT_ROW_HEIGHT,34.0);
+        let nodes=vec![
+            CategoryNode{id:"root".into(),name:"반도스탠드".into(),parent:String::new()},
+            CategoryNode{id:"child".into(),name:"보면대".into(),parent:"root".into()},
+        ];
+        let index=tree_index(&nodes);
+        let path=chain(&index,"child");
+        let ctx=egui::Context::default();
+        let mut heights=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                for show_ancestors in [false,true]{
+                    let response=category_option_row(
+                        ui,&nodes[1],&index,&path,520.0,"",show_ancestors
+                    );
+                    heights.push(response.rect.height());
+                }
+            });
+        });
+        assert_eq!(heights,[34.0,34.0]);
+        let source=include_str!("category_dropdown.rs");
+        assert!(!source.contains("if searching{52.0}"));
+        assert!(!source.contains("rect.top()+37.0"));
+        assert!(source.contains("category_option_row(\n                    list,node,index,&path,list_width,selected,searching"));
+    }
+    #[test]
+    fn path_search_row_shows_leaf_once_with_muted_ancestors(){
+        let labels=["반도스탠드","보면대","책상,국악,성악용 보면대"];
+        let measure=|s:&str|s.chars().count() as f32;
+        let (parents,leaf)=fitted_category_row_text(&labels,100.0,measure);
+        assert_eq!(parents,"반도스탠드 > 보면대 > ");
+        assert_eq!(leaf,"책상,국악,성악용 보면대");
+        assert_eq!(format!("{parents}{leaf}").matches(&leaf).count(),1);
+        let (parents,leaf)=fitted_category_row_text(&labels,25.0,measure);
+        assert!(parents.starts_with('…') || parents.is_empty());
+        assert_eq!(leaf,"책상,국악,성악용 보면대");
+        let (parents,leaf)=fitted_category_row_text(&labels,10.0,measure);
+        assert!(parents.is_empty());
+        assert!(leaf.ends_with('…'));
+        assert!(measure(&leaf)<=10.0);
     }
     #[test]
     fn first_three_categories_are_never_hidden_by_the_depth_rule(){
