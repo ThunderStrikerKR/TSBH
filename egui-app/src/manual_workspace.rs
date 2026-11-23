@@ -1405,7 +1405,7 @@ impl ManualWorkspace {
                                                     if theme::action(
                                                         options,label,
                                                         if origin==value{ButtonRole::TableSecondary}
-                                                        else{ButtonRole::Standard},!busy
+                                                        else{ButtonRole::Standard},!busy && !pending_quantity_active
                                                     ).clicked(){
                                                         chosen=Some((
                                                             "set_manual_delivery_option".into(),
