@@ -132,11 +132,20 @@ pub fn management_pending_primary_card(ui:&mut Ui)->Rect{
 mod fixed_layout_slot_contract_tests {
     use super::*;
 
+    /// Mirror the application's native Context bootstrap so shared text
+    /// roles never reference an unregistered named font family in tests.
+    fn test_context()->egui::Context {
+        let ctx=egui::Context::default();
+        theme::install(&ctx);
+        typography::install(&ctx);
+        ctx
+    }
+
     #[test]
     fn optional_status_keeps_its_rect_and_the_next_control_fixed(){
         let mut measured=Vec::new();
         for message in [None,Some("상태 안내문이 표시됩니다.") ]{
-            let ctx=egui::Context::default();
+            let ctx=test_context();
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.set_width(520.0);
@@ -164,7 +173,7 @@ mod fixed_layout_slot_contract_tests {
     fn optional_action_keeps_its_row_and_the_next_control_fixed(){
         let mut measured=Vec::new();
         for visible in [false,true]{
-            let ctx=egui::Context::default();
+            let ctx=test_context();
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.set_width(520.0);
