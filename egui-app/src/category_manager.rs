@@ -927,12 +927,13 @@ impl CategoryManager {
                                 if count>0{
                                     modal.add_space(theme::SPACE_12);
                                     theme::modal_nested_frame().show(modal,|notice|{
-                                        notice.checkbox(&mut self.transfer,
-                                            if children(&cats,&current.id).is_empty(){
-                                                format!("직접 연결된 상품 {count}개를 새 하위 분류로 이전하는 데 동의합니다.")
-                                            }else{
-                                                format!("기존 직접 연결 상품 {count}개는 현재 분류에 남습니다. 하위 분류 추가를 확인했습니다.")
-                                            }
+                                        let transfer_label=if children(&cats,&current.id).is_empty(){
+                                            format!("직접 연결된 상품 {count}개를 새 하위 분류로 이전하는 데 동의합니다.")
+                                        }else{
+                                            format!("기존 직접 연결 상품 {count}개는 현재 분류에 남습니다. 하위 분류 추가를 확인했습니다.")
+                                        };
+                                        components::checkbox(
+                                            notice,&mut self.transfer,&transfer_label,true
                                         );
                                     });
                                 }
