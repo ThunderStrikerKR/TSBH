@@ -81,17 +81,21 @@ pub fn fixed_row<R>(
 )->(Rect,R){
     let width=size.x.min(ui.available_width()).max(0.0);
     let height=size.y.max(0.0);
-    let output=ui.allocate_ui_with_layout(
-        Vec2::new(width,height),layout,|row|{
-            let rect=row.max_rect();
-            row.set_clip_rect(rect);
-            row.set_width(rect.width());
-            row.set_height(rect.height());
-            row.spacing_mut().item_spacing.y=0.0;
-            add_contents(row)
-        }
+    // Allocate the parent footprint exactly once. allocate_ui_with_layout
+    // negotiates its response rect with the child's minimum content size,
+    // so a 20pt label could silently expand an intended 18pt status slot.
+    let (rect,_response)=ui.allocate_exact_size(
+        Vec2::new(width,height),Sense::hover()
     );
-    (output.response.rect,output.inner)
+    // Render in a detached child Ui: its content can grow internally, but
+    // it cannot advance the parent's cursor or move the next sibling.
+    let mut row=ui.new_child(
+        UiBuilder::new().max_rect(rect).layout(layout)
+    );
+    row.set_clip_rect(rect);
+    row.spacing_mut().item_spacing.y=0.0;
+    let result=add_contents(&mut row);
+    (rect,result)
 }
 
 /// One-line status slot for state-dependent text. It always reserves the
@@ -132,11 +136,20 @@ pub fn management_pending_primary_card(ui:&mut Ui)->Rect{
 mod fixed_layout_slot_contract_tests {
     use super::*;
 
+    /// Mirror the application's native Context bootstrap so shared text
+    /// roles never reference an unregistered named font family in tests.
+    fn test_context()->egui::Context {
+        let ctx=egui::Context::default();
+        theme::install(&ctx);
+        typography::install(&ctx);
+        ctx
+    }
+
     #[test]
     fn optional_status_keeps_its_rect_and_the_next_control_fixed(){
         let mut measured=Vec::new();
         for message in [None,Some("상태 안내문이 표시됩니다.") ]{
-            let ctx=egui::Context::default();
+            let ctx=test_context();
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.set_width(520.0);
@@ -164,7 +177,7 @@ mod fixed_layout_slot_contract_tests {
     fn optional_action_keeps_its_row_and_the_next_control_fixed(){
         let mut measured=Vec::new();
         for visible in [false,true]{
-            let ctx=egui::Context::default();
+            let ctx=test_context();
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.set_width(520.0);
@@ -456,7 +469,8 @@ mod management_async_behavior_regression_tests {
         let aliases=include_str!("alias_manager.rs");
         assert!(aliases.contains("fn alias_diagnostic_slot("));
         assert!(aliases.contains("alias_diagnostic_slot(info,item,&warnings);"));
-        assert!(aliases.contains("hit.on_hover_text(detail);"));
+        assert!(aliases.contains("components::fixed_status_slot("));
+        assert!(aliases.contains("detail.as_deref(),detail.as_deref(),theme::MUTED"));
 
         let main=include_str!("main.rs");
         assert!(main.contains("components::reception_client_summary_card("));
