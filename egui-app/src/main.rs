@@ -3879,7 +3879,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         egui::Label::new(
                                             egui::RichText::new(format!(
                                                 "{:>3.0}%",review.zoom*100.0
-                                            )).monospace()
+                                            ))
                                         )
                                     );
                                     zoom.add_sized(
