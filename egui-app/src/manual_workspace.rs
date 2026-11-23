@@ -1361,7 +1361,7 @@ impl ManualWorkspace {
                                                 }
                                             });
                                         if theme::action(ui,"상품 추가",ButtonRole::Standard,
-                                            !busy).clicked(){
+                                            !busy && !pending_quantity_active).clicked(){
                                             chosen=Some(("add_manual_item".into(),json!({
                                                 "recipientId":rid,"itemId":unique_id()
                                             })));
