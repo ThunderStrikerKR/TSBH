@@ -1671,13 +1671,13 @@ pub fn modal_section_surface(ui:&Ui,rect:Rect,header_height:f32) {
     );
 }
 
-/// A nested modal sits above the foreground dim surface of its parent.
-/// Both the window and modal input layer use Tooltip order so a later dim
-/// Area cannot cover the dialog or swallow its pointer events.
+/// A nested decision remains an interactive Foreground window.
+/// Tooltip order is reserved for transient overlays and is not a reliable
+/// interaction surface for modal actions in egui 0.33.
 pub fn nested_modal_window(
     title:&str,id:&'static str,work_area:egui::Rect
 )->egui::Window<'static>{
-    modal_window(title,id,work_area).order(egui::Order::Tooltip)
+    modal_window(title,id,work_area).order(egui::Order::Foreground)
 }
 
 pub fn decision_window(
