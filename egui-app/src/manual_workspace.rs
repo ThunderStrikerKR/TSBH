@@ -561,6 +561,7 @@ impl ManualWorkspace {
             self.product_search.is_some(),
             self.remove_recipient_pending.is_some(),
             self.reset_pending,
+            self.complete_pending,
             self.confirm_discard,
         )
     }
