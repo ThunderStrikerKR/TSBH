@@ -2456,7 +2456,7 @@ mod tests {
     #[test]
     fn price_cell_commit_contract_is_excel_style_without_action_popup(){
         let source=include_str!("product_manager.rs");
-        let editor=source.split("// Excel-style cell editing:").nth(1).unwrap()
+        let editor=source.split("let (enter_pressed,tab_pressed,").nth(1).unwrap()
             .split("let action_rect").next().unwrap_or("");
         assert!(editor.contains("response.lost_focus()"));
         assert!(editor.contains("egui::Key::Enter"));
