@@ -1448,7 +1448,7 @@ pub fn fixed_scroll_panel(
             content.set_width(scroll_rect.width());
             content.spacing_mut().item_spacing.y=0.0;
             egui::ScrollArea::vertical()
-                .id_salt(("fixed-scroll-panel",scroll_id))
+                .id_salt("fixed-scroll-panel")
                 .max_height(scroll_rect.height().max(1.0))
                 .auto_shrink([false,false])
                 .scroll_bar_visibility(
