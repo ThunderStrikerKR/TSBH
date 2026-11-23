@@ -963,9 +963,20 @@ impl ManualWorkspace {
                                                     let selected=index==self.selected_recipient &&
                                                         self.selected_item.is_none() &&
                                                         self.selected_field==field;
-                                                    if components::manual_table_cell(
+                                                    let response=components::manual_table_cell(
                                                         grid,text(row,field),width,selected
-                                                    ).clicked(){
+                                                    );
+                                                    let key=source_highlight::key(rid,rid,field);
+                                                    if response.hovered(){
+                                                        hovered_detail=Some(key.clone());
+                                                    }
+                                                    source_highlight::paint_active_if(
+                                                        grid,&response,
+                                                        source_highlight::is_active(
+                                                            active_link.as_ref(),&key
+                                                        )
+                                                    );
+                                                    if response.clicked(){
                                                         self.select_cell(index,None,field);
                                                     }
                                                 }
@@ -992,21 +1003,47 @@ impl ManualWorkspace {
                                                     let item_id=text(item,"id");
                                                     let selected=index==self.selected_recipient &&
                                                         self.selected_item.as_deref()==Some(item_id);
-                                                    if components::manual_table_cell(
+                                                    let product_response=components::manual_table_cell(
                                                         grid,text(item,"name"),
                                                         theme::MANUAL_TABLE_PRODUCT_COL,
                                                         selected && self.selected_field=="product"
-                                                    ).clicked() {
+                                                    );
+                                                    let product_key=source_highlight::key(
+                                                        rid,item_id,"product"
+                                                    );
+                                                    if product_response.hovered(){
+                                                        hovered_detail=Some(product_key.clone());
+                                                    }
+                                                    source_highlight::paint_active_if(
+                                                        grid,&product_response,
+                                                        source_highlight::is_active(
+                                                            active_link.as_ref(),&product_key
+                                                        )
+                                                    );
+                                                    if product_response.clicked() {
                                                         self.select_cell(index,Some(item_id.into()),"product");
                                                     }
                                                     let quantity=item.get("quantity")
                                                         .and_then(Value::as_i64)
                                                         .map(|n|n.to_string()).unwrap_or_default();
-                                                    if components::manual_table_cell(
+                                                    let quantity_response=components::manual_table_cell(
                                                         grid,&quantity,
                                                         theme::MANUAL_TABLE_QUANTITY_COL,
                                                         selected && self.selected_field=="quantity"
-                                                    ).clicked() {
+                                                    );
+                                                    let quantity_key=source_highlight::key(
+                                                        rid,item_id,"quantity"
+                                                    );
+                                                    if quantity_response.hovered(){
+                                                        hovered_detail=Some(quantity_key.clone());
+                                                    }
+                                                    source_highlight::paint_active_if(
+                                                        grid,&quantity_response,
+                                                        source_highlight::is_active(
+                                                            active_link.as_ref(),&quantity_key
+                                                        )
+                                                    );
+                                                    if quantity_response.clicked() {
                                                         self.select_cell(index,Some(item_id.into()),"quantity");
                                                     }
                                                     let price=item.get("unitPrice")
