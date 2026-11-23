@@ -128,9 +128,16 @@ mod tests {
             glyph.pos.x+glyph.advance_width*0.5,
             galley.rows[0].row.size.y*0.5
         );
+        // egui 0.33 resolves Area hit-testing using prior-frame geometry.
+        // Enter the glyph first, then verify hover on a stable second frame;
+        // this models a real pointer staying over the source for >50ms.
+        draw(&ctx,egui::RawInput{
+            events:vec![egui::Event::PointerMoved(pointer)],
+            time:Some(0.1),..Default::default()
+        },raw,&spans,&mut origin,true);
         let hovered=draw(&ctx,egui::RawInput{
             events:vec![egui::Event::PointerMoved(pointer)],
-            ..Default::default()
+            time:Some(0.2),..Default::default()
         },raw,&spans,&mut origin,true);
         assert_eq!(hovered.hovered,Some(key));
 
@@ -142,14 +149,14 @@ mod tests {
                     pressed:true,modifiers:egui::Modifiers::NONE
                 }
             ],
-            ..Default::default()
+            time:Some(0.3),..Default::default()
         },raw,&spans,&mut origin,true);
         let clicked=draw(&ctx,egui::RawInput{
             events:vec![egui::Event::PointerButton{
                 pos:pointer,button:egui::PointerButton::Primary,
                 pressed:false,modifiers:egui::Modifiers::NONE
             }],
-            ..Default::default()
+            time:Some(0.4),..Default::default()
         },raw,&spans,&mut origin,true);
         assert_eq!(clicked.clicked_block.as_deref(),Some("0:9"));
     }
