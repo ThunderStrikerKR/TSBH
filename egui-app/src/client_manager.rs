@@ -1036,3 +1036,61 @@ mod client_condition_summary_tests{
             "후불 / 부가세 포함 / 운임 청구 제외 / 거래 중지");
     }
 }
+
+#[cfg(test)]
+mod client_account_picker_tests{
+    use super::*;
+
+    #[test]
+    fn options_use_the_real_account_schema_and_full_account_label(){
+        let accounts=json!([
+            {"id":"bank-1","bank":"국민은행","number":"123-45-6789","holder":"김희준"}
+        ]);
+        assert_eq!(
+            client_account_choices(accounts.as_array().unwrap()),
+            vec![
+                (String::new(),CLIENT_ACCOUNT_EMPTY_LABEL.to_owned()),
+                ("bank-1".to_owned(),"국민은행 123-45-6789 김희준".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn incomplete_or_unidentified_accounts_are_not_selectable(){
+        let accounts=json!([
+            {"id":"missing-holder","bank":"국민은행","number":"123","holder":""},
+            {"id":"missing-number","bank":"신한은행","number":" ","holder":"예금주"},
+            {"id":"","bank":"우리은행","number":"456","holder":"예금주"},
+            {"id":"valid","bank":"농협","number":"789","holder":"예금주"}
+        ]);
+        assert_eq!(
+            client_account_choices(accounts.as_array().unwrap()),
+            vec![
+                (String::new(),CLIENT_ACCOUNT_EMPTY_LABEL.to_owned()),
+                ("valid".to_owned(),"농협 789 예금주".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn unassigned_choice_remains_available_when_no_account_exists(){
+        assert_eq!(
+            client_account_choices(&[]),
+            vec![(String::new(),CLIENT_ACCOUNT_EMPTY_LABEL.to_owned())]
+        );
+    }
+
+    #[test]
+    fn unknown_preferred_id_is_not_silently_overwritten_by_rendering(){
+        let accounts=json!([
+            {"id":"valid","bank":"농협","number":"789","holder":"예금주"}
+        ]);
+        let choices=client_account_choices(accounts.as_array().unwrap());
+        let selected="removed-account";
+        let label=choices.iter().find(|(id,_)|id==selected)
+            .map(|(_,label)|label.as_str())
+            .unwrap_or(CLIENT_ACCOUNT_EMPTY_LABEL);
+        assert_eq!(label,CLIENT_ACCOUNT_EMPTY_LABEL);
+        assert_eq!(selected,"removed-account");
+    }
+}
