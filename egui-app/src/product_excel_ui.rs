@@ -356,6 +356,46 @@ impl ProductExcelUi {
 mod tests {
     use super::*;
     #[test]
+    fn review_table_rows_preserve_filter_message_and_500_row_cap(){
+        let rows=(0..502).map(|index|serde_json::json!({
+            "status":"ADD","sheet":"상품","row":index+1,
+            "name":format!("상품 {index}"),"errors":[],
+            "changes":["가격 변경"]
+        })).collect::<Vec<_>>();
+        let review=serde_json::json!({"rows":rows});
+        let visible=review_table_rows(&review,ReviewFilter::All);
+        assert_eq!(visible.len(),500);
+        assert_eq!(visible[0][1],"1");
+        assert_eq!(visible[499][1],"500");
+        assert_eq!(visible[0][4],"가격 변경");
+    }
+
+    #[test]
+    fn review_table_rows_keep_existing_status_filter_and_message_fallback(){
+        let review=serde_json::json!({"rows":[
+            {"status":"ADD","sheet":"A","row":1,"name":"신규",
+                "errors":["오류 A","오류 B"]},
+            {"status":"HOLD","sheet":"B","row":2,"name":"보류",
+                "errors":[],"changes":["변경 A","변경 B"]},
+            {"status":"UNCHANGED","sheet":"C","row":3,"name":"동일"}
+        ]});
+        let errors=review_table_rows(&review,ReviewFilter::Error);
+        assert_eq!(errors.len(),2);
+        assert_eq!(errors[0][4],"오류 A / 오류 B");
+        assert_eq!(errors[1][4],"변경 A / 변경 B");
+        let all=review_table_rows(&review,ReviewFilter::All);
+        assert_eq!(all[2][4],"변경 없음");
+    }
+
+    #[test]
+    fn product_excel_review_uses_shared_virtual_management_table(){
+        let source=include_str!("product_excel_ui.rs");
+        assert!(source.contains("components::management_readonly_table("));
+        assert!(!source.contains("egui::ScrollArea::both()"));
+        assert!(!source.contains("table.horizontal(|line|"));
+    }
+
+    #[test]
     fn approval_rejects_hold_and_error_rows(){
         let mut ui=ProductExcelUi::default();
         ui.approved=true;
