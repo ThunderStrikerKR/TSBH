@@ -60,22 +60,27 @@ export function ProductManager({
     [detailPriceMode, setDetailPriceMode] = useState(false),
     [categoryPicker, setCategoryPicker] = useState(false);
   const priceWrites = useRef(0);
+  const priceWriteChain = useRef<Promise<void>>(Promise.resolve());
+  const pendingPriceIdsRef = useRef<string[]>([]);
   const editDirty = !!edit && !!originalEdit && !sameProductEditor(edit, originalEdit);
   const hasPendingPrices = pendingPriceIds.length > 0;
   const markPricePending = useCallback((id: string, pending: boolean) => {
-    setPendingPriceIds((previous) => {
-      const has = previous.includes(id);
-      if (has === pending) return previous;
-      return pending ? [...previous, id] : previous.filter((value) => value !== id);
-    });
+    const previous = pendingPriceIdsRef.current;
+    const has = previous.includes(id);
+    if (has === pending) return;
+    const next = pending
+      ? [...previous, id]
+      : previous.filter((value) => value !== id);
+    pendingPriceIdsRef.current = next;
+    setPendingPriceIds(next);
   }, []);
   const checkPriceDrafts = () => {
     if (priceWrites.current > 0) {
-      onNotice("가격 저장이 완료된 뒤 다음 작업으로 이동할 수 있습니다.", "error");
+      onNotice("가격 저장이 진행 중입니다. 저장 완료 후 다음 작업으로 이동할 수 있습니다.", "error");
       return false;
     }
-    if (!hasPendingPrices) return true;
-    onNotice("저장하지 않은 가격이 있습니다. 해당 가격 셀의 저장 또는 취소 버튼을 먼저 눌러주세요.", "error");
+    if (pendingPriceIdsRef.current.length === 0) return true;
+    onNotice("확정되지 않은 가격 입력이 있습니다. 오류가 표시된 셀을 수정하거나 Esc로 취소해 주세요.", "error");
     return false;
   };
   const [localImage, setLocalImage] = useState<{ id: string; data: string }>();
@@ -170,6 +175,7 @@ export function ProductManager({
       // Explicitly discard pending price-table edits only after the shared
       // page-leave confirmation, never just because input focus moved.
       setPriceMode(false);
+      pendingPriceIdsRef.current = [];
       setPendingPriceIds([]);
       setPriceResetEpoch((old) => old + 1);
     },
@@ -204,7 +210,17 @@ export function ProductManager({
     setOriginalEdit(clone(p));
   };
   const togglePriceMode = () => {
-    if (!priceMode || checkPriceDrafts()) setPriceMode(!priceMode);
+    if (!priceMode) {
+      setPriceMode(true);
+      return;
+    }
+    // A blur-triggered write is already committed to the save queue. It may
+    // finish in the background; only a failed/uncommitted draft blocks exit.
+    if (pendingPriceIdsRef.current.length > 0) {
+      onNotice("확정되지 않은 가격 입력이 있습니다. 오류가 표시된 셀을 수정하거나 Esc로 취소해 주세요.", "error");
+      return;
+    }
+    setPriceMode(false);
   };
   const remove = async (p: Product) => {
     if (
@@ -258,7 +274,7 @@ export function ProductManager({
                     title="상품 가격 수정"
                     purpose="등록된 상품의 도매가, 반도매가, 소매가를 확인하거나 변경하는 기능입니다."
                     when="판매 가격이 달라졌거나 잘못 등록한 가격을 고칠 때 사용합니다."
-                    steps={["가격 수정 모드를 켭니다.", "원하는 가격을 입력합니다.", "Enter 또는 가격 셀의 저장 버튼으로 저장합니다.", "다른 칸을 클릭해도 미저장 값은 유지되며, 취소 버튼 또는 Esc로 되돌릴 수 있습니다.", "저장 또는 취소를 마치면 가격 수정 모드를 종료합니다."]}
+                    steps={["가격 수정 모드를 켭니다.", "가격 셀을 클릭하고 금액을 입력합니다.", "Enter를 누르거나 다른 셀로 이동하면 자동 저장됩니다.", "Tab과 Shift+Tab으로 셀을 이동할 수 있습니다.", "Esc는 현재 셀의 저장되지 않은 입력만 취소합니다."]}
                     result="저장한 가격이 상품 가격표에 반영됩니다."
                     caution="수정 모드를 켜기 전에는 가격을 바꿀 수 없습니다. 가격이 비어 있으면 등록되지 않은 상태입니다."
                   />
@@ -357,9 +373,15 @@ export function ProductManager({
                                 label={`${p.name} ${variantLabel(v)} ${{ wholesale: "도매가", semi: "반도매가", retail: "소매가" }[tier]}`}
                                 onSave={async (n, expected) => {
                                   priceWrites.current++;
-                                  try {
+                                  const write = priceWriteChain.current.then(async () => {
                                     const committed = await window.bando!.setPrice(p.id, v.id, tier, n, expected);
                                     await onRefresh(committed);
+                                  });
+                                  // A failed cell remains editable, but must not
+                                  // poison later independent cell writes.
+                                  priceWriteChain.current = write.catch(() => {});
+                                  try {
+                                    await write;
                                   } finally {
                                     priceWrites.current--;
                                   }
