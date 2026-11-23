@@ -907,6 +907,7 @@ impl ManualWorkspace {
             self.selected_field=="quantity";
         if needs_commit{
             *submit_direct=true;
+            self.pending_select_after_apply=None;
             self.advance_after_apply=Some(navigation);
         }else{
             *navigate_now=Some(navigation);
@@ -917,6 +918,7 @@ impl ManualWorkspace {
         &mut self,target:ManualCellTarget,submit_direct:&mut bool
     ){
         if self.edit_text!=self.current_value(){
+            self.advance_after_apply=None;
             self.pending_select_after_apply=Some(target);
             *submit_direct=true;
         }else{
@@ -2002,13 +2004,20 @@ impl ManualWorkspace {
         if let Some(target)=self.remove_recipient_pending.clone(){
             let mut confirm=false;
             let mut cancel=false;
+            let current_count=self.model.as_ref().map(|model|
+                list(model,"rows").len()).unwrap_or(0);
+            let target_count=self.remove_recipient_target
+                .unwrap_or_else(||current_count.saturating_sub(1));
+            let removing_count=current_count.saturating_sub(target_count);
             components::decision_window("배송 건수 줄이기","manual-shipment-removal",work_area)
                 .constrain_to(work_area)
                 .show(ctx,|ui|{
                     cancel=components::modal_header(
                         ui,"배송 건수 줄이기","취소",true
                     );
-                    ui.label("마지막 배송 건의 입력값과 원문 배정을 제거할까요?");
+                    ui.label(format!(
+                        "마지막 {removing_count}개 배송 건의 입력값과 원문 배정을 제거할까요?"
+                    ));
                     components::modal_action_row(ui,|actions|{
                         if theme::action(actions,"확인",ButtonRole::Danger,true).clicked(){
                             confirm=true;
@@ -2286,6 +2295,45 @@ mod manual_workspace_modal_routing_tests {
     }
 
     #[test]
+    fn shipment_count_input_accepts_only_whole_numbers_from_one_to_one_hundred(){
+        assert_eq!(parse_manual_row_count("1"),Ok(1));
+        assert_eq!(parse_manual_row_count("12"),Ok(12));
+        assert_eq!(parse_manual_row_count("100"),Ok(100));
+        assert!(parse_manual_row_count("").is_err());
+        assert!(parse_manual_row_count("0").is_err());
+        assert!(parse_manual_row_count("101").is_err());
+        assert!(parse_manual_row_count("1.5").is_err());
+        assert!(parse_manual_row_count("-2").is_err());
+    }
+
+    #[test]
+    fn shipment_removal_detects_values_and_source_assignments_in_every_removed_row(){
+        let assignments=json!({"block-1":{"recipientId":"r2"}});
+        assert!(!manual_row_has_data(
+            &json!({"id":"r1","items":[{}]}),&assignments
+        ));
+        assert!(manual_row_has_data(
+            &json!({"id":"r2","items":[{}]}),&assignments
+        ));
+        assert!(manual_row_has_data(
+            &json!({"id":"r3","address":"강원도 홍천군","items":[{}]}),
+            &assignments
+        ));
+    }
+
+    #[test]
+    fn source_assignment_moves_to_the_next_missing_required_recipient_field(){
+        let model=json!({"rows":[
+            {"id":"r1","name":"홍길동","address":"","mobile":"010"},
+            {"id":"r2","name":"","address":"","mobile":""}
+        ]});
+        let next=next_missing_recipient_cell(&model,0,"name").unwrap();
+        assert_eq!(next,ManualCellTarget{
+            row:0,item:None,field:"address".into()
+        });
+    }
+
+    #[test]
     fn manual_undo_history_is_bounded_and_keeps_the_latest_frames(){
         let mut history=Vec::new();
         for value in 0..101{
@@ -2358,8 +2406,10 @@ mod manual_workspace_modal_routing_tests {
         assert!(render.contains("if apply_clicked{apply=true;}"));
         assert!(render.contains("피드백 없이 진행"));
         assert!(render.contains("AI 자동분류 개선"));
-        assert!(!render.contains("self.apply(ctx);"),
-            "applying the draft must occur only after the explicit completion choice");
+        assert!(render.contains("if proceed"));
+        assert!(render.contains("self.confirm_apply=false;"));
+        assert!(render.contains("self.apply(ctx);"),
+            "the native apply action must be reached from the explicit proceed branch");
         assert!(!render.contains("초안 적용 후 주문 확인 필요"),
             "the generic order-confirmation hint must not occupy a header row");
         assert!(render.contains("count.on_hover_text(reason)"),
