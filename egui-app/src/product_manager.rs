@@ -280,6 +280,17 @@ fn parse_product_price(raw:&str,field_name:&str,zero_unregistered:bool)
 fn accepts_catalog_revision(current:u64,incoming:u64)->bool{
     incoming>=current
 }
+fn price_navigation_target(
+    order:&[String],current:&str,offset:isize
+)->Option<String>{
+    let index=order.iter().position(|key|key==current)?;
+    let target=if offset<0{
+        index.checked_sub((-offset) as usize)?
+    }else{
+        index.checked_add(offset as usize)?
+    };
+    order.get(target).cloned()
+}
 struct PriceDraft {
     original:Option<i64>,
     input:String,
@@ -396,6 +407,7 @@ pub struct ProductManager {
     price_drafts:HashMap<String,PriceDraft>,
     price_write_queue:VecDeque<QueuedPriceWrite>,
     price_mode_exit_requested:bool,
+    price_focus_target:Option<String>,
     selected_variants:HashMap<String,String>,
     sort:Option<ProductSort>,
     excel:ProductExcelUi,
@@ -427,6 +439,7 @@ impl ProductManager {
             price_mode:false,price_drafts:HashMap::new(),
             price_write_queue:VecDeque::new(),
             price_mode_exit_requested:false,
+            price_focus_target:None,
             selected_variants:HashMap::new(),sort:None,
             excel:ProductExcelUi::default(),
             photos:ProductImageCache::default(),
@@ -447,6 +460,7 @@ impl ProductManager {
         self.selected_variants.clear();
         self.price_write_queue.clear();
         self.price_mode_exit_requested=false;
+        self.price_focus_target=None;
         self.confirm_archive=false;
         self.confirm_discard=false;
         self.next_query=None;
@@ -499,6 +513,7 @@ impl ProductManager {
         self.price_mode_exit_requested=false;
         if !self.has_pending_prices(){
             self.price_mode=false;
+            self.price_focus_target=None;
             self.price_drafts.clear();
         }
     }
@@ -1140,6 +1155,29 @@ impl ProductManager {
             let ordered=product_sort_order(
                 &self.products,&self.selected_variants,self.sort
             );
+            // The keyboard order follows the product sort and the selected
+            // variant in each row. Tab moves horizontally; Enter vertically.
+            let mut price_order=Vec::new();
+            for product_index in &ordered{
+                let product=&self.products[*product_index];
+                let product_id=field(product,"id");
+                let variants=rows(&product["variants"]);
+                let selected_id=self.selected_variants.get(product_id)
+                    .filter(|selected|variants.iter().any(|variant|
+                        field(variant,"id")==selected.as_str()
+                    ))
+                    .cloned()
+                    .or_else(||variants.first().map(|variant|
+                        field(variant,"id").to_owned()
+                    ));
+                if let Some(variant_id)=selected_id{
+                    for tier in ["wholesale","semi","retail"]{
+                        price_order.push(format!(
+                            "{}:{}:{}",product_id,variant_id,tier
+                        ));
+                    }
+                }
+            }
             let header_rect=layout.header_rect;
             // Only optional add rows consume space; the Excel popup,
             // asynchronous loading, and saving never do.
@@ -1315,6 +1353,13 @@ impl ProductManager {
                                                             // The field ends 2pt before its column,
                                                             // whereas display text ends 8pt before
                                                             // it: 8 - 2 = 6pt suffix inset.
+                                                            let (enter_pressed,tab_pressed,
+                                                                escape_pressed,shift_pressed)=inputs.input(|i|{
+                                                                (i.key_pressed(egui::Key::Enter),
+                                                                 i.key_pressed(egui::Key::Tab),
+                                                                 i.key_pressed(egui::Key::Escape),
+                                                                 i.modifiers.shift)
+                                                            });
                                                             let response=components::money_field_with_unit(
                                                                 inputs,&mut entry.input,true,"원",
                                                                 theme::SPACE_8-theme::SPACE_4/2.0
@@ -1324,16 +1369,49 @@ impl ProductManager {
                                                                 &entry.input,typography::numeric_editor_font(),
                                                                 false,8.0
                                                             );
-                                                            // Excel-style commit: leaving a cell or
-                                                            // pressing Enter/Tab commits its value.
-                                                            // Escape only restores the current cell.
-                                                            let escape=response.has_focus()&&inputs.input(
-                                                                |i|i.key_pressed(egui::Key::Escape)
-                                                            );
-                                                            if response.changed(){self.error=None;}
+                                                            // Excel-style cell editing: blur commits
+                                                            // automatically. Enter moves vertically,
+                                                            // Tab moves horizontally, and Escape only
+                                                            // restores this cell's last committed value.
+                                                            if response.clicked(){
+                                                                self.price_focus_target=None;
+                                                            }
+                                                            let escape=response.has_focus()&&escape_pressed;
+                                                            let keyboard_commit=(response.has_focus()
+                                                                ||response.lost_focus())
+                                                                &&(enter_pressed||tab_pressed);
                                                             if escape{
                                                                 entry.input=entry.original.map(|n|
                                                                     n.to_string()).unwrap_or_default();
+                                                                self.error=None;
+                                                            }else if keyboard_commit{
+                                                                let offset=if tab_pressed{
+                                                                    if shift_pressed{-1}else{1}
+                                                                }else if shift_pressed{-3}else{3};
+                                                                match entry.parse(){
+                                                                    Ok(value)=>{
+                                                                        self.price_focus_target=
+                                                                            price_navigation_target(
+                                                                                &price_order,&key,offset
+                                                                            );
+                                                                        response.surrender_focus();
+                                                                        if entry.dirty()&&!cell_busy{
+                                                                            price_write=Some((
+                                                                                key.clone(),json!({
+                                                                                    "productId":product_id,
+                                                                                    "variantId":field(variant,"id"),
+                                                                                    "tier":tier,"price":value,
+                                                                                    "expected":entry.original
+                                                                                })
+                                                                            ));
+                                                                        }
+                                                                    }
+                                                                    Err(message)=>{
+                                                                        self.error=Some(message);
+                                                                        self.price_focus_target=None;
+                                                                        response.request_focus();
+                                                                    }
+                                                                }
                                                             }else if response.lost_focus()&&entry.dirty()
                                                                 && !cell_busy{
                                                                 match entry.parse(){
@@ -1350,6 +1428,12 @@ impl ProductManager {
                                                                     Err(message)=>self.error=Some(message),
                                                                 }
                                                             }
+                                                            if self.price_focus_target.as_deref()
+                                                                ==Some(key.as_str()){
+                                                                response.request_focus();
+                                                                self.price_focus_target=None;
+                                                            }
+                                                            if response.changed(){self.error=None;}
                                                         }
                                                     );
                                                 }
@@ -2358,14 +2442,39 @@ mod tests {
     fn price_cell_commit_contract_is_excel_style_without_action_popup(){
         let source=include_str!("product_manager.rs");
         let production=source.split("#[cfg(test)]").next().unwrap();
-        let editor=production.split("// Excel-style commit:").nth(1).unwrap()
+        let editor=production.split("// Excel-style cell editing:").nth(1).unwrap()
             .split("let action_rect").next().unwrap_or("");
         assert!(editor.contains("response.lost_focus()"));
+        assert!(editor.contains("egui::Key::Enter"));
+        assert!(editor.contains("egui::Key::Tab"));
         assert!(editor.contains("egui::Key::Escape"));
+        assert!(editor.contains("response.surrender_focus()"));
+        assert!(editor.contains("response.request_focus()"));
         assert!(!editor.contains("Popup::"));
         assert!(!editor.contains("theme::action"));
         assert!(production.contains("self.price_write_queue.push_back("));
         assert!(production.contains("self.launch_next_price_write(ctx.clone())"));
+    }
+    #[test]
+    fn price_grid_keyboard_navigation_matches_spreadsheet_direction(){
+        let order=vec![
+            "p1:v1:wholesale".to_owned(),
+            "p1:v1:semi".to_owned(),
+            "p1:v1:retail".to_owned(),
+            "p2:v2:wholesale".to_owned(),
+            "p2:v2:semi".to_owned(),
+            "p2:v2:retail".to_owned(),
+        ];
+        assert_eq!(price_navigation_target(&order,"p1:v1:wholesale",1)
+            .as_deref(),Some("p1:v1:semi"));
+        assert_eq!(price_navigation_target(&order,"p1:v1:retail",1)
+            .as_deref(),Some("p2:v2:wholesale"));
+        assert_eq!(price_navigation_target(&order,"p1:v1:semi",3)
+            .as_deref(),Some("p2:v2:semi"));
+        assert_eq!(price_navigation_target(&order,"p2:v2:semi",-3)
+            .as_deref(),Some("p1:v1:semi"));
+        assert_eq!(price_navigation_target(&order,"p1:v1:wholesale",-1),None);
+        assert_eq!(price_navigation_target(&order,"p2:v2:retail",1),None);
     }
     #[test]
     fn excel_price_write_payload_commits_values_and_empty_as_null(){
