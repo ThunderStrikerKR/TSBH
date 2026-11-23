@@ -97,6 +97,8 @@ jobs:
           cargo test --manifest-path egui-app/Cargo.toml management_date_field_contract_tests -- --nocapture
       - name: Verify asynchronous pending, empty and loaded states preserve management geometry
         run: cargo test --manifest-path egui-app/Cargo.toml management_async_layout_contract_tests -- --nocapture
+      - name: Verify conditional status and action rows preserve exact egui Rects
+        run: cargo test --manifest-path egui-app/Cargo.toml fixed_layout_slot_contract_tests -- --nocapture
       - name: Verify pending-state actions, errors and edit evidence survive async transitions
         run: cargo test --manifest-path egui-app/Cargo.toml management_async_behavior_regression_tests -- --nocapture
       - name: Verify client-tier KPIs distinguish loading and failed reads from true zero counts
