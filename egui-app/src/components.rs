@@ -6,7 +6,7 @@ use chrono::{Datelike, Duration as Days, Months, NaiveDate};
 use crate::{source_highlight, theme, typography};
 
 #[cfg(test)]
-fn test_context()->egui::Context {
+pub(crate) fn test_context()->egui::Context {
     let ctx=egui::Context::default();
     theme::install(&ctx);
     typography::install(&ctx);
