@@ -534,17 +534,12 @@ impl DailySettlementManager{
                     );
                     components::soft_divider(section);
                     if date_changed{
-                        section.label(typography::caption(
-                            "변경한 결산 날짜를 조회하고 있습니다."
-                        ));
                         return;
                     }
                     let Some(report)=report else{
                         if let Some(error)=self.error.as_deref(){
                             section.label(typography::status(error,theme::DANGER));
-                        }else if self.receiver.is_some(){
-                            section.label(typography::caption("결산 자료 확인 중"));
-                        }else{
+                        }else if self.receiver.is_none(){
                             section.label(typography::caption(
                                 "해당 날짜의 결산 자료를 불러올 수 없습니다."
                             ));
