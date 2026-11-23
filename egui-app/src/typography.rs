@@ -87,7 +87,7 @@ pub fn data_value_font(kind:DataValueKind,context:DataValueContext)->FontId {
 /// geometry while rendering only the monetary tail with Consolas.
 /// Do not split the text into separate widgets: doing so adds egui spacing
 /// and moves the following inline action button.
-pub fn inline_body_money(prefix:&str,amount:&str)->egui::text::LayoutJob {
+pub fn inline_body_values(parts:&[(&str,Option<DataValueKind>)])->egui::text::LayoutJob {
     let body=spec(Role::Body);
     let regular=egui::TextFormat{
         font_id:FontId::proportional(body.size),
@@ -97,12 +97,20 @@ pub fn inline_body_money(prefix:&str,amount:&str)->egui::text::LayoutJob {
         ..Default::default()
     };
     let mut job=egui::text::LayoutJob::default();
-    job.append(prefix,0.0,regular.clone());
-    job.append(amount,0.0,egui::TextFormat{
-        font_id:data_value_font(DataValueKind::Money,DataValueContext::Form),
-        ..regular
-    });
+    for &(value,kind) in parts {
+        let mut format=regular.clone();
+        if let Some(kind)=kind {
+            format.font_id=data_value_font(kind,DataValueContext::Form);
+        }
+        job.append(value,0.0,format);
+    }
     job
+}
+
+pub fn inline_body_money(prefix:&str,amount:&str)->egui::text::LayoutJob {
+    inline_body_values(&[
+        (prefix,None),(amount,Some(DataValueKind::Money))
+    ])
 }
 
 pub fn data_value_align(kind:DataValueKind)->egui::Align {
@@ -966,6 +974,23 @@ mod management_table_type_roles_tests {
         assert_eq!(job.sections[0].format.line_height,Some(22.0));
         assert_eq!(job.sections[1].format.line_height,Some(22.0));
         assert_eq!(job.text,"709 · 2,000원");
+    }
+
+    #[test]
+    fn mixed_item_name_quantity_and_price_preserve_one_label(){
+        let job=inline_body_values(&[
+            ("◆ 709 × ",None),
+            ("30",Some(DataValueKind::Quantity)),
+            (" · 단가 ",None),
+            ("2,000원",Some(DataValueKind::Money)),
+        ]);
+        assert_eq!(job.sections.len(),4);
+        assert_eq!(job.sections[0].format.font_id,FontId::proportional(FONT_BODY));
+        assert_eq!(job.sections[1].format.font_id,FontId::monospace(FONT_BODY));
+        assert_eq!(job.sections[2].format.font_id,FontId::proportional(FONT_BODY));
+        assert_eq!(job.sections[3].format.font_id,FontId::monospace(FONT_BODY));
+        assert!(job.sections.iter().all(|section|section.format.line_height==Some(22.0)));
+        assert_eq!(job.text,"◆ 709 × 30 · 단가 2,000원");
     }
 
     #[test]
