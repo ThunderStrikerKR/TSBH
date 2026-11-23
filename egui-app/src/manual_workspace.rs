@@ -75,6 +75,9 @@ struct ManualHistoryFrame{
     model:Value,
     assignment_order:Vec<String>,
     remote_rows:Vec<RemoteRow>,
+    selected_recipient:usize,
+    selected_item:Option<String>,
+    selected_field:String,
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -90,6 +93,13 @@ struct ManualCellTarget{
     row:usize,
     item:Option<String>,
     field:String,
+}
+
+fn item_quantity_pending(item:&Value)->bool{
+    let has_product=item.get("productId").is_some_and(|value|!value.is_null()) ||
+        !text(item,"name").trim().is_empty();
+    let confirmed=item.get("quantityConfirmed").and_then(Value::as_bool)==Some(true);
+    has_product && !confirmed
 }
 
 fn push_manual_history(
@@ -434,6 +444,8 @@ pub struct ManualWorkspace {
     focus_editor:bool,
     history:Vec<ManualHistoryFrame>,
     advance_after_apply:Option<ManualNavigation>,
+    last_action:Option<String>,
+    action_pending:bool,
     confirm_discard:bool,
     product_search:Option<ProductSearch>,
     remove_recipient_pending:Option<String>,
@@ -483,7 +495,8 @@ impl ManualWorkspace {
             selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
             edit_text:String::new(),focus_editor:false,history:Vec::new(),
-            advance_after_apply:None,confirm_discard:false,
+            advance_after_apply:None,last_action:None,action_pending:false,
+            confirm_discard:false,
             product_search:None,remove_recipient_pending:None,
             reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
@@ -497,6 +510,10 @@ impl ManualWorkspace {
     pub fn focus_cell(&mut self,index:usize,item:Option<String>,field:&str){
         // Called before the asynchronous native model is initialized. The
         // Initial outcome then loads this exact cell's current value.
+        let same_cell=self.selected_recipient==index &&
+            self.selected_item.as_ref()==item.as_ref() &&
+            self.selected_field==field;
+        if !same_cell {self.last_action=None;}
         self.selected_recipient=index;
         self.selected_item=item;
         self.selected_field=field.to_owned();
@@ -537,6 +554,9 @@ impl ManualWorkspace {
                         model:previous.clone(),
                         assignment_order:self.assignment_order.clone(),
                         remote_rows:self.remote_rows.clone(),
+                        selected_recipient:self.selected_recipient,
+                        selected_item:self.selected_item.clone(),
+                        selected_field:self.selected_field.clone(),
                     });
                 }
                 self.remote_rows=remote_rows;
@@ -557,6 +577,7 @@ impl ManualWorkspace {
                 self.dirty=true;
                 self.error=None;
                 self.receiver=None;
+                self.action_pending=false;
                 self.edit_text=self.current_value();
                 if let Some(navigation)=self.advance_after_apply.take(){
                     self.move_selection(navigation);
@@ -573,11 +594,15 @@ impl ManualWorkspace {
             Some(Ok(Err(error)))=>{
                 self.error=Some(error);
                 self.advance_after_apply=None;
+                if self.action_pending {self.last_action=None;}
+                self.action_pending=false;
                 self.receiver=None;
             }
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
                 self.error=Some("Rust 수동 분류 처리가 중단되었습니다.".into());
                 self.advance_after_apply=None;
+                if self.action_pending {self.last_action=None;}
+                self.action_pending=false;
                 self.receiver=None;
             }
             _=>{}
@@ -611,6 +636,9 @@ impl ManualWorkspace {
         self.model=Some(frame.model);
         self.assignment_order=frame.assignment_order;
         self.remote_rows=frame.remote_rows;
+        self.selected_recipient=frame.selected_recipient;
+        self.selected_item=frame.selected_item;
+        self.selected_field=frame.selected_field;
         let count=self.model.as_ref().map(|model|list(model,"rows").len()).unwrap_or(0);
         self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
         if self.selected_item.as_ref().is_some_and(|id|
@@ -627,6 +655,8 @@ impl ManualWorkspace {
         self.dirty=true;
         self.error=None;
         self.focus_editor=true;
+        self.last_action=None;
+        self.action_pending=false;
     }
 
     fn move_selection(&mut self,navigation:ManualNavigation){
@@ -671,6 +701,16 @@ impl ManualWorkspace {
         }
     }
 
+    fn selected_quantity_pending(&self)->bool{
+        let Some(model)=self.model.as_ref() else{return false};
+        let Some(item_id)=self.selected_item.as_deref() else{return false};
+        list(model,"rows").get(self.selected_recipient)
+            .and_then(|row|list(row,"items").iter().find(|item|
+                text(item,"id")==item_id
+            ))
+            .is_some_and(item_quantity_pending)
+    }
+
     fn current_value(&self)->String {
         let Some(model)=self.model.as_ref() else{return String::new()};
         let Some(row)=list(model,"rows").get(self.selected_recipient) else {
@@ -708,6 +748,8 @@ impl ManualWorkspace {
         let (tx,rx)=mpsc::channel();
         self.receiver=Some(rx);
         self.error=None;
+        self.last_action=Some(action.clone());
+        self.action_pending=true;
         let ctx=ctx.clone();
         thread::spawn(move||{
             let result=(||->Result<Outcome,String>{
@@ -1795,6 +1837,9 @@ mod manual_workspace_modal_routing_tests {
                 model:json!({"value":value}),
                 assignment_order:Vec::new(),
                 remote_rows:Vec::new(),
+                selected_recipient:0,
+                selected_item:None,
+                selected_field:"name".into(),
             });
         }
         assert_eq!(history.len(),100);
