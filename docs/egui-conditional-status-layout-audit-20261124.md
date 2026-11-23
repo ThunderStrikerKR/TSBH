@@ -284,3 +284,14 @@ cargo test --manifest-path egui-app/Cargo.toml fixed_layout_slot_contract_tests 
   - 수정 커밋: `c9592355596deb4ae2c8fdefc977ab76c81510e4`
 - 최신 Windows targeted run `45273676221`은 이 fixture 수정 이후 재실행 중이다. 해당 run의 최종 결과 전까지 전체 targeted CI를 PASS로 기록하지 않는다.
 - 실제 Windows 앱 창의 픽셀 검증은 이번 테스트 Context 수정과 별개의 미완료 항목이다.
+
+
+### 추가로 발견한 오래된 카테고리 테스트 계약
+
+- 전체 targeted run `45273676221`에서 `category_map_no_empty_title_row_and_toolbar_has_master_spacing`가 실패했다.
+- 원인: `page.contains("section_heading(")`가 정상적으로 사용하는 `subsection_heading(`까지 부분 문자열로 오인했다.
+- 수정: 검사 대상을 실제 금지 대상인 `typography::section_heading(`로 한정했다. 화면 구현은 변경하지 않았다.
+- 커밋: `2defd7475d0eb6c36b5e31f713c55602861fc6d3`
+- `product_excel_ui::tests`와 `category_manager::modal_layout_contract_tests`를 컴파일 직후 실행하도록 targeted workflow 순서를 조정했다.
+- 워크플로 커밋: `f82322d146565b6d778b0422c20bd81e5d54b358`
+- 수정 후 Windows targeted run `45274707383`은 실행 중이며, 해당 두 테스트의 최신 SHA 기준 결과는 아직 미확정이다.
