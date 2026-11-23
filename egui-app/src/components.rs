@@ -181,8 +181,8 @@ mod management_async_layout_contract_tests {
     }
 
     #[test]
-    fn pending_and_loaded_primary_card_rects_match_at_reference_and_narrow_sizes(){
-        fn measure(screen:Vec2,pending:bool)->(f32,f32,f32,Rect,f32){
+    fn pending_card_helper_matches_shared_master_shell_at_reference_and_narrow_sizes(){
+        fn measure(screen:Vec2,use_pending_helper:bool)->(f32,f32,f32,Rect,f32){
             let ctx=egui::Context::default();
             crate::typography::install(&ctx);
             let mut measured=None;
@@ -215,7 +215,7 @@ mod management_async_layout_contract_tests {
                                 theme::SPACE_8,theme::SPACE_8
                             );
                             for label in ["등록 상품","모델군","별칭","브랜드"]{
-                                if pending{
+                                if use_pending_helper{
                                     management_summary_card_value(strip,label,"—");
                                 }else{
                                     management_summary_card(strip,label,27);
@@ -226,7 +226,7 @@ mod management_async_layout_contract_tests {
                     let kpi_bottom=ui.cursor().top();
                     ui.add_space(theme::SPACE_16);
                     align_management_primary_card(ui,page_origin_y);
-                    let card=if pending{
+                    let card=if use_pending_helper{
                         management_pending_primary_card(ui)
                     }else{
                         let min_height=management_master_table_card_min_inner_height(ui);
@@ -247,21 +247,21 @@ mod management_async_layout_contract_tests {
             Vec2::new(1366.0,768.0),
             Vec2::new(900.0,650.0)
         ]{
-            let pending=measure(screen,true);
-            let loaded=measure(screen,false);
-            assert!(near(pending.0,loaded.0),"title slot moved at {screen:?}");
-            assert!(near(pending.1,loaded.1),"tab slot moved at {screen:?}");
-            assert!(near(pending.2,loaded.2),"KPI slot moved at {screen:?}");
-            for (pending_edge,loaded_edge) in [
-                (pending.3.left(),loaded.3.left()),
-                (pending.3.top(),loaded.3.top()),
-                (pending.3.right(),loaded.3.right()),
-                (pending.3.bottom(),loaded.3.bottom()),
-                (pending.4,loaded.4)
+            let helper=measure(screen,true);
+            let direct=measure(screen,false);
+            assert!(near(helper.0,direct.0),"title slot moved at {screen:?}");
+            assert!(near(helper.1,direct.1),"tab slot moved at {screen:?}");
+            assert!(near(helper.2,direct.2),"KPI slot moved at {screen:?}");
+            for (helper_edge,direct_edge) in [
+                (helper.3.left(),direct.3.left()),
+                (helper.3.top(),direct.3.top()),
+                (helper.3.right(),direct.3.right()),
+                (helper.3.bottom(),direct.3.bottom()),
+                (helper.4,direct.4)
             ]{
-                assert!(near(pending_edge,loaded_edge),
-                    "primary card Rect changed at {screen:?}: pending={:?}, loaded={:?}",
-                    pending.3,loaded.3);
+                assert!(near(helper_edge,direct_edge),
+                    "pending helper Rect differs from shared master shell at {screen:?}: helper={:?}, direct={:?}",
+                    helper.3,direct.3);
             }
         }
     }
