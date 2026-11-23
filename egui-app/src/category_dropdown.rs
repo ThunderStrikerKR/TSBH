@@ -739,7 +739,7 @@ mod tests{
             assert!(nearly_equal(root.top()-back.bottom(),theme::SPACE_4),
                 "depth {depth} footer row gap is not 4pt");
             assert!(nearly_equal(apply.right(),right),
-                "depth {depth} Apply button is not right aligned");
+                "depth {depth} Apply button is not right aligned: apply={apply:?}, right={right:.2}, back={back:?}, root={root:?}");
             for control in [back,root,apply]{
                 assert!(nearly_equal(
                     control.height(),theme::CATEGORY_EXPLORER_CRUMB_HEIGHT
@@ -870,7 +870,7 @@ mod tests{
             .split("fn crumbs_row(").nth(1).unwrap()
             .split("fn menu_body(").next().unwrap();
         assert!(!footer.contains("bar.label(typography::caption(\"›\"))"));
-        assert_eq!(footer.matches("category_path_separator(bar);").count(),2);
+        assert_eq!(footer.matches("chevrons.push(category_path_separator(bar).rect);").count(),2);
     }
     #[test]
     fn popup_has_no_child_count_heading_above_the_fixed_six_row_list(){
