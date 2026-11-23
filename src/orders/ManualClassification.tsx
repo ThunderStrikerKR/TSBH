@@ -598,7 +598,7 @@ function ManualClassificationEditor({
     if (pendingRef.current) {
       if (cell.field === "quantity" && (event.key === "Enter" || event.key === "Tab")) {
         if (!(await finishQuantity())) return;
-        requestAnimationFrame(() => move(cell, event.key, event.shiftKey));
+        requestAnimationFrame(() => move(cell, navigationKey, event.shiftKey));
         return;
       } else {
         fail("수량을 확정하거나 상품 선택을 취소하세요.", pendingRef.current);
