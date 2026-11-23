@@ -894,7 +894,7 @@ impl ProductManager {
                         "상품 Excel 관리",None
                     );
                     self.excel.show_menu(
-                        &trigger,Arc::clone(&self.gateway),
+                        actions,&trigger,Arc::clone(&self.gateway),
                         self.catalog.is_some()&&self.writing.is_none()
                             &&!self.has_pending_prices()
                     );
