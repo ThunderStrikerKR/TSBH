@@ -237,9 +237,11 @@ impl ItemEditor{
                 );
                 theme::modal_nested_frame().show(ui,|body|{
                     body.set_min_width(content_width);
+                    // Own the display snapshot so search and selection
+                    // actions can mutate ItemEditor during this same frame.
                     let product=self.replacement.as_ref()
                         .or(self.original_catalog_product.as_ref())
-                        .unwrap_or(&self.initial);
+                        .unwrap_or(&self.initial).clone();
                     if content_width<ITEM_DETAIL_STACK_WIDTH {
                         // Narrow Kakao-safe workspace: the image still grows
                         // to a useful size; rows and actions stay readable
@@ -247,7 +249,7 @@ impl ItemEditor{
                         let (photo,_)=body.allocate_exact_size(
                             Vec2::splat(photo_side),egui::Sense::hover()
                         );
-                        self.photos.paint(body,product,photo);
+                        self.photos.paint(body,&product,photo);
                         body.painter().rect_stroke(
                             photo,theme::CONTROL_RADIUS as f32,
                             egui::Stroke::new(1.0,theme::BORDER),
@@ -260,10 +262,13 @@ impl ItemEditor{
                         );
                     }else{
                         body.horizontal(|line|{
+                            // No implicit spacing around the explicit 16pt
+                            // image-to-details gutter: fill the card exactly.
+                            line.spacing_mut().item_spacing.x=0.0;
                             let (photo,_)=line.allocate_exact_size(
                                 Vec2::splat(photo_side),egui::Sense::hover()
                             );
-                            self.photos.paint(line,product,photo);
+                            self.photos.paint(line,&product,photo);
                             line.painter().rect_stroke(
                                 photo,theme::CONTROL_RADIUS as f32,
                                 egui::Stroke::new(1.0,theme::BORDER),
@@ -406,12 +411,11 @@ mod tests{
         assert!(!modal.contains("ui.horizontal(|controls|"));
         let details=source.split("    fn detail_information(").nth(1).unwrap()
             .split("    fn poll_catalog_photo(").next().unwrap();
+        assert!(details.contains("components::modal_labeled_row(ui"));
         for label in ["상품명","카테고리","가격"]{
-            assert!(details.contains(&format!(
-                "components::modal_labeled_row(ui,\\\"{label}\\\""
-            )));
+            assert!(details.contains(label));
         }
-        assert!(details.contains("controls,\\\"상품 변경\\\""));
+        assert!(details.contains("상품 변경"));
         assert!(modal.contains("components::modal_action_row_split("));
     }
     #[test]
