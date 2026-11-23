@@ -31,7 +31,7 @@ fn label_edit(ui:&mut Ui,draft:&mut Value,key:&str,label:&str) {
 }
 fn bool_edit(ui:&mut Ui,draft:&mut Value,key:&str,title:&str) {
     let mut selected=draft.get(key).and_then(Value::as_bool).unwrap_or(false);
-    if ui.checkbox(&mut selected,title).changed(){
+    if components::checkbox(ui,&mut selected,title,true).changed(){
         draft[key]=json!(selected);
     }
 }
