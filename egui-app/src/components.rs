@@ -356,6 +356,32 @@ pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
     response.on_hover_text("카카오톡")
 }
 
+/// Shared checkbox control. The caller owns the checked state and its
+/// business transition; enabled state, widget construction and future visual
+/// policy are centralized here.
+pub fn checkbox(
+    ui:&mut Ui,checked:&mut bool,label:&str,enabled:bool
+)->Response{
+    ui.add_enabled(enabled,egui::Checkbox::new(checked,label))
+}
+
+/// One full-width, fixed-height checkbox-list row with stable identity.
+/// The row layout is shared while the caller retains domain-specific updates.
+pub fn checkbox_list_row(
+    ui:&mut Ui,id:impl std::hash::Hash,
+    checked:&mut bool,label:&str,enabled:bool,height:f32
+)->Response{
+    ui.allocate_ui_with_layout(
+        Vec2::new(ui.available_width(),height),
+        Layout::left_to_right(Align::Center),
+        |row|{
+            row.push_id(id,|cell|{
+                checkbox(cell,checked,label,enabled)
+            }).inner
+        }
+    ).inner
+}
+
 /// Shared compact icon-only action. Its 28pt hit target follows the
 /// management date-navigation control; glyph, tooltip and enabled state are
 /// supplied by the caller while hover paint stays in the common layer.
@@ -4720,6 +4746,21 @@ fn management_readonly_table_content_width(widths:&[f32])->f32{
 
 fn management_readonly_table_row_advance()->f32{
     theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
+}
+
+#[cfg(test)]
+mod shared_checkbox_contract_tests {
+    #[test]
+    fn vat_dialog_uses_shared_checkbox_and_nested_frame_components(){
+        let source=include_str!("main.rs");
+        let dialog=source.split("fn show_vat_settings(").nth(1).unwrap()
+            .split("fn show_edit_history(").next().unwrap();
+        assert!(dialog.contains("components::checkbox("));
+        assert!(dialog.contains("components::checkbox_list_row("));
+        assert!(dialog.contains("theme::modal_nested_frame()"));
+        assert!(!dialog.contains("egui::Checkbox::new("));
+        assert!(!dialog.contains("egui::Frame::new()"));
+    }
 }
 
 #[cfg(test)]
