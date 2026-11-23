@@ -1574,10 +1574,11 @@ impl ManualWorkspace {
                         let apply_button=theme::action(right,"초안에 적용",
                             ButtonRole::Primary,!busy && input_settled &&
                                 !has_pending_quantity);
+                        let apply_clicked=apply_button.clicked();
                         if let Some(reason)=guidance.as_deref(){
                             apply_button.on_hover_text(reason);
                         }
-                        if apply_button.clicked(){apply=true;}
+                        if apply_clicked{apply=true;}
                     }
                 );
             });
