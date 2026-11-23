@@ -4843,6 +4843,8 @@ mod shared_multiline_field_contract_tests {
         let messages=include_str!("automatic_message_manager.rs");
         assert_eq!(messages.matches("components::multiline_text_field(").count(),2);
         assert!(!messages.contains("TextEdit::multiline("));
+        assert_eq!(messages.matches("theme::preview_surface_frame()").count(),2);
+        assert!(!messages.contains("egui::Frame::new()"));
         let history=include_str!("order_history_manager.rs");
         let memo=history.split("pub fn show_memo_modal(").nth(1).unwrap()
             .split("pub fn ").next().unwrap();
