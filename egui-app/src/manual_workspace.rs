@@ -1165,7 +1165,7 @@ impl ManualWorkspace {
                                 panel.horizontal(|ui|{
                                 components::form_field_label(ui,"배송 건수");
                                 if theme::action(ui,"−",ButtonRole::Standard,
-                                    !busy && rows.len()>1).clicked(){
+                                    !busy && !pending_quantity_active && rows.len()>1).clicked(){
                                     let last=&rows[rows.len()-1];
                                     let rid=text(last,"id");
                                     let populated=["name","address","mobile","phone","note"]
