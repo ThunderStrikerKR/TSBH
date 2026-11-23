@@ -6786,3 +6786,132 @@ mod modal_input_routing_tests {
         assert!(!parent_clicked,"parent controls must remain blocked behind a decision modal");
     }
 }
+
+
+#[cfg(test)]
+mod manual_nested_prompt_regression_tests{
+    use super::*;
+
+    /// Reproduce the operational stack: Middle app backdrop, Foreground
+    /// worksheet disabled while prompting, and a clickable child decision.
+    /// The old extra full-screen Foreground dim must never be added here.
+    #[test]
+    fn both_decision_actions_remain_clickable_while_manual_worksheet_is_disabled(){
+        fn paint(
+            ctx:&egui::Context,mut raw:egui::RawInput,
+            keep_clicked:&mut bool,discard_clicked:&mut bool,
+            parent_clicked:&mut bool
+        )->(Rect,Rect,Rect){
+            let screen=Rect::from_min_size(
+                egui::Pos2::ZERO,Vec2::new(1200.0,800.0)
+            );
+            raw.screen_rect=Some(screen);
+            let work_area=screen.shrink(24.0);
+            let mut parent_rect=Rect::NOTHING;
+            let mut keep_rect=Rect::NOTHING;
+            let mut discard_rect=Rect::NOTHING;
+            let _=ctx.run(raw,|ctx|{
+                modal_backdrop(ctx,"manual-regression-main-backdrop",false);
+                modal_window("수동 분류","manual-regression-parent",work_area)
+                    .default_width(900.0)
+                    .default_height(650.0)
+                    .show(ctx,|parent|{
+                        parent.disable();
+                        let response=parent.button("background worksheet action");
+                        parent_rect=response.rect;
+                        if response.clicked(){*parent_clicked=true;}
+                    });
+                decision_window("수동 분류 나가기","manual-regression-child",work_area)
+                    .show(ctx,|decision|{
+                        decision.label("초안에 반영하지 않은 변경사항이 있습니다.");
+                        decision.horizontal(|row|{
+                            let keep=theme::action(
+                                row,"계속 편집",theme::ButtonRole::Standard,true
+                            );
+                            keep_rect=keep.rect;
+                            if keep.clicked(){*keep_clicked=true;}
+                            let discard=theme::action(
+                                row,"변경사항 버리고 닫기",theme::ButtonRole::Danger,true
+                            );
+                            discard_rect=discard.rect;
+                            if discard.clicked(){*discard_clicked=true;}
+                        });
+                    });
+                modal_foreground_for_window(ctx,"manual-regression-child");
+            });
+            assert_eq!(
+                ctx.memory(|memory|memory.top_modal_layer()),
+                Some(modal_window_layer("manual-regression-child"))
+            );
+            assert_eq!(
+                ctx.memory(|memory|memory.areas().top_layer_id(egui::Order::Foreground)),
+                Some(modal_window_layer("manual-regression-child"))
+            );
+            (parent_rect,keep_rect,discard_rect)
+        }
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        theme::install(&ctx);
+        let mut keep=false;
+        let mut discard=false;
+        let mut parent=false;
+        paint(&ctx,egui::RawInput::default(),&mut keep,&mut discard,&mut parent);
+        let (parent_rect,keep_rect,discard_rect)=paint(
+            &ctx,egui::RawInput{time:Some(0.1),..Default::default()},
+            &mut keep,&mut discard,&mut parent
+        );
+        for rect in [parent_rect,keep_rect,discard_rect]{
+            assert!(rect.is_positive(),"action hitbox must have non-zero area");
+        }
+        let mut click=|pos:egui::Pos2,offset:f64|{
+            paint(&ctx,egui::RawInput{
+                events:vec![egui::Event::PointerMoved(pos)],
+                time:Some(offset),..Default::default()
+            },&mut keep,&mut discard,&mut parent);
+            paint(&ctx,egui::RawInput{
+                events:vec![egui::Event::PointerButton{
+                    pos,button:egui::PointerButton::Primary,
+                    pressed:true,modifiers:egui::Modifiers::NONE
+                }],
+                time:Some(offset+0.1),..Default::default()
+            },&mut keep,&mut discard,&mut parent);
+            paint(&ctx,egui::RawInput{
+                events:vec![egui::Event::PointerButton{
+                    pos,button:egui::PointerButton::Primary,
+                    pressed:false,modifiers:egui::Modifiers::NONE
+                }],
+                time:Some(offset+0.2),..Default::default()
+            },&mut keep,&mut discard,&mut parent);
+        };
+        click(keep_rect.center(),1.0);
+        assert!(keep,"continue editing button did not receive pointer input");
+        click(discard_rect.center(),2.0);
+        assert!(discard,"discard button did not receive pointer input");
+        click(parent_rect.center(),3.0);
+        assert!(!parent,"disabled parent must not receive pointer input");
+    }
+
+    #[test]
+    fn manual_linked_cells_use_the_exact_shared_source_fill_and_outline(){
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        theme::install(&ctx);
+        let output=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                manual_linked_table_cell(ui,"김준희",240.0,true,true);
+                manual_linked_table_cell(ui,"표시나",240.0,false,false);
+            });
+        });
+        assert!(output.shapes.iter().any(|paint|
+            matches!(&paint.shape,
+                egui::Shape::Rect(rect) if rect.fill==source_highlight::ACTIVE_FILL
+            )
+        ),"shared blue source fill is absent from linked table cells");
+        assert!(output.shapes.iter().any(|paint|
+            matches!(&paint.shape,
+                egui::Shape::Rect(rect)
+                    if rect.stroke.color==source_highlight::ACTIVE_BORDER
+            )
+        ),"shared blue source border is absent from linked table cells");
+    }
+}
