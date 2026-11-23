@@ -472,11 +472,7 @@ fn menu_body(
         state.ancestors_open=false;
     }
     if state.ancestors_open && state.path.len()>3{
-        egui::Frame::new()
-            .fill(theme::INPUT)
-            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
-            .corner_radius(theme::CONTROL_RADIUS)
-            .inner_margin(theme::SPACE_8)
+        theme::category_ancestor_frame()
             .show(menu,|ancestor_menu|{
                 ancestor_menu.label(typography::caption("생략된 상위 경로"));
                 let path=state.path.clone();
