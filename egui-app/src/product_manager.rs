@@ -1268,7 +1268,11 @@ impl ProductManager {
                                                 field(variant,"id"),tier
                                             );
                                             let original=variant[*tier].as_i64();
-                                            let cell_busy=self.price_cell_busy(&key);
+                                            let cell_busy=self.writing.as_ref().is_some_and(|job|
+                                                job.kind=="set_price"&&job.key.as_deref()==Some(key.as_str())
+                                            )||self.price_write_queue.iter().any(|queued|
+                                                queued.key==key
+                                            );
                                             let other_write_busy=saving&&!self.writing.as_ref()
                                                 .is_some_and(|job|job.kind=="set_price");
                                             let entry=self.price_drafts.entry(key.clone())
