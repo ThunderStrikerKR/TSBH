@@ -1735,6 +1735,21 @@ pub fn modal_window_layer(id:&'static str)->egui::LayerId {
     egui::LayerId::new(egui::Order::Foreground,egui::Id::new(id))
 }
 
+/// A child decision is rendered AFTER its disabled parent worksheet. Raise
+/// only the real decision Window layer, and do so after Window::show created
+/// it. An extra full-screen Foreground Area can intercept every button when
+/// egui resolves previous-frame hit testing; the outer Middle backdrop and
+/// disabled parent already block background input.
+pub fn modal_foreground_for_window(
+    ctx:&egui::Context,window_id:&'static str
+){
+    let dialog_layer=modal_window_layer(window_id);
+    ctx.memory_mut(|memory|{
+        memory.areas_mut().move_to_top(dialog_layer);
+        memory.set_modal_layer(dialog_layer);
+    });
+}
+
 /// Render the nested dim first, then restore the decision window to the top
 /// of the Foreground stack. The full-screen backdrop itself can be marked
 /// topmost by egui when the pointer is pressed anywhere inside its rectangle.
@@ -2147,25 +2162,44 @@ pub fn management_search_field(
 /// Shared compact spreadsheet cell. Selection is an inset border;
 /// hovered cells do not resize the row, and a selected cell does not
 /// borrow the main navigation style.
-pub fn manual_table_cell(ui:&mut Ui,value:&str,width:f32,selected:bool)->Response {
+/// Manual worksheet value cells use the same blue evidence fill, text ink
+/// and 2pt outline as reception. Selection (amber) remains a separate state;
+/// an active source link takes visual precedence over selection.
+pub fn manual_linked_table_cell(
+    ui:&mut Ui,value:&str,width:f32,selected:bool,linked:bool
+)->Response {
     let label=if value.trim().is_empty(){"미입력"}else{value};
-    let border=if selected {
+    let border=if linked {
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
+    }else if selected {
         Stroke::new(theme::DOCK_SPLITTER_HOVER_LINE,theme::SELECTED_ORDER)
     }else{
-        // Two adjacent cells share one visual divider. Never create a
-        // double 2pt border on every table column.
+        // Two adjacent cells share one visual divider, not a doubled border.
         Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
     };
+    let text=typography::table_cell(label);
     let response=ui.add_sized(
         Vec2::new(width,theme::MANUAL_TABLE_ROW_HEIGHT),
-        egui::Button::new(typography::table_cell(label))
+        egui::Button::new(
+            if linked{text.color(source_highlight::ACTIVE_TEXT)}else{text}
+        )
             .truncate()
-            .fill(if selected{theme::RAISED}else{theme::INPUT})
+            .fill(if linked{source_highlight::ACTIVE_FILL}
+                  else if selected{theme::RAISED}else{theme::INPUT})
             .stroke(border)
             .corner_radius(0),
     );
-    theme::paint_button_hover(ui,&response,0.0);
+    if linked {
+        source_highlight::paint_active_if(ui,&response,true);
+    } else {
+        theme::paint_button_hover(ui,&response,0.0);
+    }
     response
+}
+
+/// Unlinked shipment/header cells retain their existing selected styling.
+pub fn manual_table_cell(ui:&mut Ui,value:&str,width:f32,selected:bool)->Response {
+    manual_linked_table_cell(ui,value,width,selected,false)
 }
 pub fn manual_table_heading(ui:&mut Ui,label:&str,width:f32){
     ui.add_sized(
