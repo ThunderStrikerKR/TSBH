@@ -297,8 +297,8 @@ fn fitted_crumb_widths(intrinsic:&[f32],budget:f32)->Vec<f32>{
         min_width+(width-min_width)*remaining/flexible
     ).collect()
 }
-/// The Back control uses the shared management-action typography and colors,
-/// with the same 36pt hit height as breadcrumbs and the Primary Apply action.
+/// The Back control sits on its own line above the footer breadcrumb.
+/// It keeps the shared 36pt management-action geometry and colors.
 fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
     let (fill,ink,border)=if enabled{
         (theme::RAISED,theme::TEXT,theme::BORDER)
@@ -309,7 +309,7 @@ fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
     let response=ui.add_enabled(
         enabled,
         egui::Button::new(typography::action_label(
-            "← 상위",typography::FONT_STANDARD_ACTION,false,ink
+            "← 상위로",typography::FONT_STANDARD_ACTION,false,ink
         ))
             .min_size(Vec2::new(
                 theme::CATEGORY_EXPLORER_BACK_WIDTH,
@@ -337,12 +337,11 @@ fn crumbs_row(
     let hidden=len-shown_count;
     let visible=path[hidden..].to_vec();
     let apply_width=theme::CATEGORY_EXPLORER_APPLY_WIDTH;
-    // Reserve all fixed-width controls, separators and their 4pt gaps BEFORE
-    // fitting category names. Back stays at far left; Apply stays at far right.
+    // Reserve fixed-width breadcrumb controls BEFORE fitting long names.
+    // Back is on the line ABOVE, so it never consumes path width.
     let separators=visible.len()+usize::from(hidden>0);
-    let widget_count=3+visible.len()+separators+usize::from(hidden>0);
-    let fixed=theme::CATEGORY_EXPLORER_BACK_WIDTH
-        +theme::CATEGORY_EXPLORER_ROOT_WIDTH
+    let widget_count=2+visible.len()+separators+usize::from(hidden>0);
+    let fixed=theme::CATEGORY_EXPLORER_ROOT_WIDTH
         +if hidden>0{31.0}else{0.0}
         +separators as f32*theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH
         +apply_width+theme::SPACE_8
@@ -364,9 +363,6 @@ fn crumbs_row(
     let mut apply=false;
     ui.horizontal(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-        if category_back_button(bar,!path.is_empty()).clicked(){
-            go_to=Some(path[..path.len()-1].to_vec());
-        }
         let role=if selected.is_empty() && allow_empty {
             CrumbVisual::Applied
         }else if path.is_empty(){CrumbVisual::Current}
@@ -506,7 +502,12 @@ fn menu_body(
             });
     }
     components::soft_divider(menu);
-    menu.label(typography::caption("현재 경로"));
+    // Independent Back action on the line ABOVE the breadcrumb; no caption.
+    if category_back_button(menu,!state.path.is_empty()).clicked(){
+        state.path.pop();
+        state.search.clear();
+        state.ancestors_open=false;
+    }
     crumbs_row(menu,state,index,selected,enabled,allow_empty,changed);
 }
 
@@ -705,15 +706,22 @@ mod tests{
         assert_eq!(heights,[36.0,36.0,36.0]);
     }
     #[test]
-    fn navigation_only_appears_before_all_category_in_the_footer(){
+    fn upper_level_control_precedes_breadcrumb_on_its_own_line(){
         let source=include_str!("category_dropdown.rs");
         let footer=source.split("fn crumbs_row(").nth(1).unwrap()
             .split("fn menu_body(").next().unwrap();
-        let back=footer.find("category_back_button(bar").unwrap();
-        let all=footer.find("crumb(bar,\"전체\"").unwrap();
-        assert!(back<all);
+        assert!(!footer.contains("category_back_button(bar"));
+        assert!(footer.contains("crumb(bar,\"전체\""));
         let body=source.split("fn menu_body(").nth(1).unwrap()
             .split("pub fn category_dropdown(").next().unwrap();
+        let last_section=body.rsplit("components::soft_divider(menu);")
+            .next().unwrap();
+        let back=last_section.find(
+            "category_back_button(menu,!state.path.is_empty())"
+        ).unwrap();
+        let crumbs=last_section.find("crumbs_row(menu,state,index").unwrap();
+        assert!(back<crumbs);
+        assert!(!last_section.contains("menu.label(typography::caption("));
         assert!(!body.contains("let can_go_back="));
         assert!(!body.contains("\"{}단계\""));
     }
