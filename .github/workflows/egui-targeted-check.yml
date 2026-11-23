@@ -78,6 +78,12 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify React-compatible four sale states and legacy catalog labels
+        run: cargo test --manifest-path egui-app/Cargo.toml four_sales_states_restore_react_values -- --nocapture
+      - name: Verify sale status edits persist without changing prices or variant identities
+        run: cargo test --manifest-path egui-app/Cargo.toml product_status_edit_persists_without_price_or_variant_loss -- --nocapture
+      - name: Verify native Rust catalog editor retains all four sale statuses
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib editor_persists_all_four_sales_states -- --nocapture
       - name: Verify actual egui modal boundary rects and 16pt workspace spacing
         run: cargo test --manifest-path egui-app/Cargo.toml modal_editor_workspace_geometry_tests -- --nocapture
       - name: Verify management search re-entry places caret after last query character
