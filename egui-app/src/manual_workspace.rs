@@ -1267,19 +1267,16 @@ impl ManualWorkspace {
                                                     let selected=index==self.selected_recipient &&
                                                         self.selected_item.is_none() &&
                                                         self.selected_field==field;
-                                                    let response=components::manual_table_cell(
-                                                        grid,text(row,field),width,selected
-                                                    );
                                                     let key=source_highlight::key(rid,rid,field);
-                                                    if response.hovered(){
-                                                        hovered_detail=Some(key.clone());
-                                                    }
-                                                    source_highlight::paint_active_if(
-                                                        grid,&response,
+                                                    let response=components::manual_linked_table_cell(
+                                                        grid,text(row,field),width,selected,
                                                         source_highlight::is_active(
                                                             active_link.as_ref(),&key
                                                         )
                                                     );
+                                                    if response.hovered(){
+                                                        hovered_detail=Some(key);
+                                                    }
                                                     if response.clicked(){
                                                         self.select_cell(index,None,field);
                                                     }
@@ -1307,46 +1304,40 @@ impl ManualWorkspace {
                                                     let item_id=text(item,"id");
                                                     let selected=index==self.selected_recipient &&
                                                         self.selected_item.as_deref()==Some(item_id);
-                                                    let product_response=components::manual_table_cell(
-                                                        grid,text(item,"name"),
-                                                        theme::MANUAL_TABLE_PRODUCT_COL,
-                                                        selected && self.selected_field=="product"
-                                                    );
                                                     let product_key=source_highlight::key(
                                                         rid,item_id,"product"
                                                     );
-                                                    if product_response.hovered(){
-                                                        hovered_detail=Some(product_key.clone());
-                                                    }
-                                                    source_highlight::paint_active_if(
-                                                        grid,&product_response,
+                                                    let product_response=components::manual_linked_table_cell(
+                                                        grid,text(item,"name"),
+                                                        theme::MANUAL_TABLE_PRODUCT_COL,
+                                                        selected && self.selected_field=="product",
                                                         source_highlight::is_active(
                                                             active_link.as_ref(),&product_key
                                                         )
                                                     );
+                                                    if product_response.hovered(){
+                                                        hovered_detail=Some(product_key);
+                                                    }
                                                     if product_response.clicked() {
                                                         self.select_cell(index,Some(item_id.into()),"product");
                                                     }
                                                     let quantity=item.get("quantity")
                                                         .and_then(Value::as_i64)
                                                         .map(|n|n.to_string()).unwrap_or_default();
-                                                    let quantity_response=components::manual_table_cell(
-                                                        grid,&quantity,
-                                                        theme::MANUAL_TABLE_QUANTITY_COL,
-                                                        selected && self.selected_field=="quantity"
-                                                    );
                                                     let quantity_key=source_highlight::key(
                                                         rid,item_id,"quantity"
                                                     );
-                                                    if quantity_response.hovered(){
-                                                        hovered_detail=Some(quantity_key.clone());
-                                                    }
-                                                    source_highlight::paint_active_if(
-                                                        grid,&quantity_response,
+                                                    let quantity_response=components::manual_linked_table_cell(
+                                                        grid,&quantity,
+                                                        theme::MANUAL_TABLE_QUANTITY_COL,
+                                                        selected && self.selected_field=="quantity",
                                                         source_highlight::is_active(
                                                             active_link.as_ref(),&quantity_key
                                                         )
                                                     );
+                                                    if quantity_response.hovered(){
+                                                        hovered_detail=Some(quantity_key);
+                                                    }
                                                     if quantity_response.clicked() {
                                                         self.select_cell(index,Some(item_id.into()),"quantity");
                                                     }
@@ -1639,11 +1630,10 @@ impl ManualWorkspace {
                 }
             }
         }
-        if let Some(window_id)=self.nested_modal_window_id(){
-            components::modal_backdrop_for_window(
-                ctx,"manual-nested-modal-backdrop",window_id
-            );
-        }
+        // The parent worksheet is already disabled during a nested prompt.
+        // Do not paint a second full-viewport Foreground backdrop: that
+        // surface can steal pointer input from every decision-window button.
+        // Restore the actual decision layer after rendering it below.
         let product_event=self.product_search.as_mut().and_then(|search|
             search.show(ctx,Arc::clone(&self.gateway),work_area)
         );
@@ -1858,22 +1848,30 @@ impl ManualWorkspace {
                 self.complete_pending=false;
             }
         }else if self.confirm_discard {
-            let mut confirm=true;
-            components::decision_window("수동 분류 변경 취소","manual-discard-prompt",work_area)
+            let mut keep_editing=false;
+            components::decision_window("수동 분류 나가기","manual-discard-prompt",work_area)
                 .constrain_to(work_area)
                 .show(ctx,|ui|{
-                    if components::modal_header(
-                        ui,"수동 분류 변경 취소","취소",true
-                    ){confirm=false;}
-                    ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
+                    keep_editing=components::modal_header(
+                        ui,"수동 분류 나가기","계속 편집",true
+                    );
+                    ui.label("초안에 반영하지 않은 변경사항이 있습니다. 변경사항을 버리고 닫을까요?");
                     components::modal_action_row(ui,|actions|{
-                        if theme::action(actions,"변경 취소",ButtonRole::Standard,true).clicked(){
+                        if theme::action(
+                            actions,"변경사항 버리고 닫기",ButtonRole::Danger,true
+                        ).clicked(){
                             discard_confirmed=true;
                         }
                     });
                 });
             if discard_confirmed {return Some(Event::Closed);}
-            if !confirm {self.confirm_discard=false;}
+            if keep_editing {self.confirm_discard=false;}
+        }
+        // Raise ONLY the actual nested dialog after it exists. The parent's
+        // disabled state plus the main Middle backdrop already protect
+        // background controls; avoid a pointer-blocking Foreground overlay.
+        if let Some(window_id)=self.nested_modal_window_id(){
+            components::modal_foreground_for_window(ctx,window_id);
         }
         if apply {
             if self.edit_text!=self.current_value() {
