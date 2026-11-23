@@ -301,24 +301,10 @@ fn fitted_crumb_widths(intrinsic:&[f32],budget:f32)->Vec<f32>{
 /// The Back control is an understated 36pt Ghost action on a separate footer
 /// row. Keep its hit area; show the shared blue hover emphasis only on hover.
 fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
-    let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
-    let response=ui.add_enabled(
-        enabled,
-        egui::Button::new(typography::action_label(
-            "← 상위로",typography::FONT_STANDARD_ACTION,false,ink
-        ))
-            .min_size(Vec2::new(
-                theme::CATEGORY_EXPLORER_BACK_WIDTH,
-                theme::CATEGORY_EXPLORER_CRUMB_HEIGHT
-            ))
-            .fill(Color32::TRANSPARENT)
-            .stroke(Stroke::NONE)
-            .corner_radius(theme::CONTROL_RADIUS)
-    );
-    if enabled{
-        theme::paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);
-    }
-    response
+    theme::action_with_min_width(
+        ui,"← 상위로",theme::ButtonRole::Ghost,enabled,
+        theme::CATEGORY_EXPLORER_BACK_WIDTH
+    )
 }
 fn crumbs_row(
     ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
