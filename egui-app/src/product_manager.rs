@@ -2482,6 +2482,8 @@ mod tests {
         let editor=source.split("let (enter_pressed,tab_pressed,").nth(1).unwrap()
             .split("let action_rect").next().unwrap_or("");
         assert!(editor.contains("response.lost_focus()"));
+        assert!(editor.contains("response.gained_focus()"));
+        assert!(editor.contains("select_all_price_text("));
         assert!(editor.contains("egui::Key::Enter"));
         assert!(editor.contains("egui::Key::Tab"));
         assert!(editor.contains("egui::Key::ArrowUp"));
