@@ -143,19 +143,75 @@ fn direct_count(catalog:&Value,id:&str)->usize{
         .filter(|p|items(p,"categories").iter().any(|cat|cat.as_str()==Some(id)))
         .count()
 }
-fn total_count(catalog:&Value,cats:&[Category],id:&str)->usize{
-    items(catalog,"products").iter()
-        .filter(|p|field(p,"deletedAt").is_empty()&&field(p,"supersededBy").is_empty())
-        .filter(|p|items(p,"categories").iter().filter_map(Value::as_str)
-            .any(|cid|under(cats,cid,id)))
-        .count()
+/// Build the category tree's child links, deduplicated product totals and
+/// search visibility ONCE per map render. The old row renderer scanned every
+/// product and walked its entire category ancestry for EACH visible row,
+/// multiplying the work by the number of expanded categories every frame.
+struct CategoryMapIndex {
+    children:HashMap<String,Vec<usize>>,
+    totals:HashMap<String,usize>,
+    visible:Option<HashSet<String>>,
 }
-fn matches(cats:&[Category],node:&Category,query:&str)->bool{
-    if query.trim().is_empty(){return true;}
-    let q=query.trim().to_lowercase();
-    path_text(cats,&node.id).to_lowercase().contains(&q) ||
-    cats.iter().any(|item|under(cats,&item.id,&node.id) &&
-        item.name.to_lowercase().contains(&q))
+impl CategoryMapIndex {
+    fn new(cats:&[Category],catalog:&Value,query:&str)->Self{
+        let mut children:HashMap<String,Vec<usize>>=HashMap::new();
+        let mut by_id:HashMap<&str,usize>=HashMap::new();
+        for (index,item) in cats.iter().enumerate(){
+            children.entry(item.parent.clone()).or_default().push(index);
+            // Match path()'s first-ID-wins lookup if catalog data is malformed.
+            by_id.entry(item.id.as_str()).or_insert(index);
+        }
+        let mut totals=HashMap::new();
+        // A product contributes at most once to any ancestor even when it
+        // belongs to multiple nested categories. Deleted or superseded
+        // products remain excluded exactly as in the original total_count().
+        let mut counted=HashSet::new();
+        let mut walked=HashSet::new();
+        for product in items(catalog,"products").iter().filter(|p|
+            field(p,"deletedAt").is_empty() &&
+            field(p,"supersededBy").is_empty()
+        ){
+            counted.clear();
+            for category in items(product,"categories").iter()
+                .filter_map(Value::as_str){
+                walked.clear();
+                let mut cursor=category;
+                while let Some(&index)=by_id.get(cursor){
+                    if !walked.insert(index){break;}
+                    if counted.insert(index){
+                        *totals.entry(cats[index].id.clone()).or_insert(0_usize)+=1;
+                    }
+                    cursor=cats[index].parent.as_str();
+                }
+            }
+        }
+        let q=query.trim().to_lowercase();
+        let visible=if q.is_empty(){None}else{
+            let mut visible=HashSet::new();
+            // A matching path shows its ancestors; a matching ancestor's
+            // name is already included in every descendant's full path.
+            // This is equivalent to the old recursive matches() but avoids
+            // scanning the whole tree once per rendered child.
+            for item in cats{
+                let ancestors=path(cats,&item.id);
+                if ancestors.iter().map(|c|c.name.as_str())
+                    .collect::<Vec<_>>().join(" > ").to_lowercase().contains(&q){
+                    visible.extend(ancestors.into_iter().map(|c|c.id));
+                }
+            }
+            Some(visible)
+        };
+        Self{children,totals,visible}
+    }
+    fn branches(&self,id:&str)->&[usize]{
+        self.children.get(id).map(Vec::as_slice).unwrap_or(&[])
+    }
+    fn total(&self,id:&str)->usize{
+        self.totals.get(id).copied().unwrap_or(0)
+    }
+    fn shows(&self,id:&str)->bool{
+        self.visible.as_ref().is_none_or(|visible|visible.contains(id))
+    }
 }
 impl CategoryManager {
     fn current(&self,cats:&[Category])->Option<Category>{
@@ -361,10 +417,10 @@ impl CategoryManager {
         }
         self.confirm=None;
     }
-    fn node(&mut self,ui:&mut Ui,cats:&[Category],catalog:&Value,
+    fn node(&mut self,ui:&mut Ui,cats:&[Category],index:&CategoryMapIndex,
         item:&Category,depth:usize,ancestor_guides:&[bool],is_last:bool){
-        if !matches(cats,item,&self.query){return;}
-        let branches=children(cats,&item.id);
+        if !index.shows(&item.id){return;}
+        let branches=index.branches(&item.id);
         let open=self.expanded.contains(&item.id)||!self.query.trim().is_empty();
         let width=ui.available_width();
         let height=if is_root(&item.id){
@@ -459,7 +515,7 @@ impl CategoryManager {
             egui::pos2(folder_right,folder_bottom),
             egui::pos2(folder_x,folder_bottom)
         ],egui::Stroke::new(1.0,theme::SECONDARY)));
-        let count=total_count(catalog,cats,&item.id);
+        let count=index.total(&item.id);
         // Show totals immediately after the category name, not in a
         // spreadsheet-style column at the far right of the workspace.
         // Count includes this category and every descendant; the child
@@ -518,14 +574,14 @@ impl CategoryManager {
             }
         }
         if open {
-            let next=branches.into_iter()
-                .filter(|child|matches(cats,child,&self.query))
-                .cloned().collect::<Vec<_>>();
+            let visible_children=branches.iter()
+                .copied().filter(|&child|index.shows(&cats[child].id))
+                .collect::<Vec<_>>();
             let mut child_guides=ancestor_guides.to_vec();
             if depth>0{child_guides.push(!is_last);}
-            for (index,child) in next.iter().enumerate(){
-                self.node(ui,cats,catalog,child,depth+1,
-                    &child_guides,index+1==next.len());
+            for (position,&child) in visible_children.iter().enumerate(){
+                self.node(ui,cats,index,&cats[child],depth+1,
+                    &child_guides,position+1==visible_children.len());
             }
         }
     }
@@ -535,7 +591,6 @@ impl CategoryManager {
         theme::section_frame().show(ui,|panel|{
             components::fill_management_primary_card(panel,card_min_height);
             panel.horizontal(|header|{
-                header.label(typography::section_heading("카테고리 맵"));
                 header.with_layout(Layout::right_to_left(Align::Center),|actions|{
                     if theme::action(actions,"+ 하위 분류 추가",
                         theme::ButtonRole::Primary,editable&&!busy &&
@@ -552,15 +607,13 @@ impl CategoryManager {
                     }
                 });
             });
-            panel.label(typography::caption(
-                "분류 행을 클릭하면 하위 구성이 접히거나 펼쳐집니다."
-            ));
             panel.add_space(theme::SPACE_8);
             panel.horizontal_wrapped(|search|{
                 components::management_search_field(search,&mut self.query,
                     theme::CATALOG_SEARCH_WIDTH,"카테고리 이름 또는 전체 경로 검색");
             });
             components::soft_divider(panel);
+            let index=CategoryMapIndex::new(&cats,catalog,&self.query);
             egui::ScrollArea::vertical()
                 .id_salt("category-map-tree")
                 .auto_shrink([false,false])
@@ -571,7 +624,7 @@ impl CategoryManager {
                     tree.spacing_mut().item_spacing.y=0.0;
                     for (id,_) in ROOTS{
                         if let Some(current)=cats.iter().find(|c|c.id==id){
-                            self.node(tree,&cats,catalog,current,0,&[],true);
+                            self.node(tree,&cats,&index,current,0,&[],true);
                         }
                     }
                     let legacy=cats.iter().filter(|c|c.parent.is_empty()&&!is_root(&c.id))
@@ -585,7 +638,7 @@ impl CategoryManager {
                             "기존 분류의 소속은 자동으로 변경하지 않습니다. 선택 후 위치를 지정하세요."
                         ));
                         for row in &legacy{
-                            self.node(tree,&cats,catalog,row,0,&[],true);
+                            self.node(tree,&cats,&index,row,0,&[],true);
                         }
                     }
                 });
@@ -918,6 +971,73 @@ impl CategoryManager {
 
 #[cfg(test)]
 mod modal_layout_contract_tests{
+    use super::*;
+    #[test]
+    fn category_map_index_counts_each_product_once_per_ancestor(){
+        let cats=categories(&json!({"categories":[
+            {"id":"a","name":"악기","parentId":"catalog-root:BANDOSTAND"},
+            {"id":"b","name":"보면대","parentId":"a"},
+            {"id":"c","name":"접이식","parentId":"b"},
+            {"id":"d","name":"고정식","parentId":"b"}
+        ]}));
+        let catalog=json!({"products":[
+            {"id":"p1","categories":["b","c"]},
+            {"id":"p2","categories":["c"]},
+            {"id":"p3","categories":["d"]},
+            {"id":"p4","categories":["c"],"deletedAt":"2026-01-01"},
+            {"id":"p5","categories":["d"],"supersededBy":"p6"},
+            {"id":"p6","categories":["missing"]}
+        ]});
+        let index=CategoryMapIndex::new(&cats,&catalog,"");
+        for (id,expected) in [
+            ("catalog-root:BANDOSTAND",3),
+            ("catalog-root:BANDOMALL",0),
+            ("a",3),("b",3),("c",2),("d",1)
+        ]{
+            assert_eq!(index.total(id),expected,"{id}");
+        }
+        assert_eq!(index.branches("b").len(),2);
+        assert!(index.shows("d"));
+    }
+    #[test]
+    fn category_map_query_preserves_ancestor_and_descendant_visibility(){
+        let cats=categories(&json!({"categories":[
+            {"id":"a","name":"키보드","parentId":"catalog-root:BANDOSTAND"},
+            {"id":"b","name":"X자형","parentId":"a"},
+            {"id":"c","name":"Z자형","parentId":"a"},
+            {"id":"d","name":"보면대","parentId":"catalog-root:BANDOSTAND"}
+        ]}));
+        let catalog=json!({"products":[]});
+        let by_leaf=CategoryMapIndex::new(&cats,&catalog,"X자형");
+        for id in ["catalog-root:BANDOSTAND","a","b"]{
+            assert!(by_leaf.shows(id),"{id} must be visible");
+        }
+        for id in ["c","d","catalog-root:BANDOMALL"]{
+            assert!(!by_leaf.shows(id),"{id} must be hidden");
+        }
+        let by_parent=CategoryMapIndex::new(&cats,&catalog,"키보드");
+        for id in ["catalog-root:BANDOSTAND","a","b","c"]{
+            assert!(by_parent.shows(id),"{id} must be visible");
+        }
+        assert!(!by_parent.shows("d"));
+        let by_path=CategoryMapIndex::new(&cats,&catalog,"키보드 > Z자형");
+        assert!(by_path.shows("c"));
+        assert!(by_path.shows("a"));
+        assert!(!by_path.shows("b"));
+        assert!(CategoryMapIndex::new(&cats,&catalog," ").shows("d"));
+    }
+    #[test]
+    fn category_map_does_not_scan_products_inside_each_tree_row(){
+        let source=include_str!("category_manager.rs");
+        let node=source.split("    fn node(").nth(1).unwrap()
+            .split("    pub fn show_page(").next().unwrap();
+        assert!(!node.contains("items(catalog,\"products\")"));
+        assert!(!node.contains("total_count("));
+        assert!(!node.contains("matches(cats"));
+        assert!(node.contains("index.total(&item.id)"));
+        assert!(!source.contains("section_heading(\"카테고리 맵\")"));
+        assert!(!source.contains("분류 행을 클릭하면 하위 구성이 접히거나 펼쳐집니다."));
+    }
     #[test]
     fn category_editor_add_move_use_only_shared_inline_form_rows(){
         // The form contract covers all five labeled value/input slots:
