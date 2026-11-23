@@ -47,3 +47,10 @@
 ## 남은 React 대비 차이
 
 React는 각 구성표 입력 셀에서 직접 문자열을 수정할 수 있으나, egui의 현재 수동분류 구성표는 표에서 셀을 선택한 뒤 하단 단일 입력창으로 변경·반영하는 구조다. 이는 사용성과 데이터 처리 로직을 크게 바꾸는 작업이므로 이번 모달 복구와 혼합하지 않았다. 우선 잠김/데이터 손실 회귀를 방지하고, 직접 셀 편집은 별도 검수 항목으로 관리한다.
+
+## 원문 호버 실제 코드 오류 추가 발견
+
+- 실제 Windows 테스트 로그에서 수동 원문 텍스트의 egui Response는 `hovered=true`이나 `interact_pointer_pos()=None`을 반환했다. 순수 호버에는 상호작용(누름/드래그) 좌표가 없을 수 있으므로 원문 링크 검색이 작동하지 않았다.
+- `manual_source_view::source_document`는 위젯의 `response.hovered() || response.clicked()` 보호 조건을 통과할 때 `interact_pointer_pos()`를 우선 사용하고, 비어 있으면 `input.pointer.hover_pos()`를 사용한다.
+- 장애물 뒤/비활성 화면에서 포인터 위치만으로 링크가 활성화되지 않도록 위젯의 hovered/clicked 조건은 유지한다.
+- UI 색상 변경만으로 해결되는 문제가 아니며, 이 좌표 수정이 원문↔구성표 호버 동작의 필수 수정이다. Windows 실제 포인터 이벤트 테스트를 통해 검증한다.
