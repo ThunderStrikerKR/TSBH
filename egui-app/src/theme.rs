@@ -1032,7 +1032,7 @@ pub fn action_with_min_width(
     // egui's generic disabled tint alone was too close to the enabled state.
     // Respect disabled parent Ui scopes as well as the local enabled flag.
     let effective_enabled=enabled && ui.is_enabled();
-    let (fill,color,stroke)=if !effective_enabled && role==ButtonRole::Ghost {
+    let (fill,color,stroke)=if !effective_enabled && matches!(role,ButtonRole::Ghost) {
         (Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE)
     }else if !effective_enabled
         && matches!(role,
