@@ -722,7 +722,7 @@ mod tests{
         let back=last_section.find(
             "category_back_button(row,!state.path.is_empty())"
         ).unwrap();
-        let crumbs=last_section.find("crumbs_row(menu,state,index").unwrap();
+        let crumbs=last_section.find("crumbs_row(footer,state,index").unwrap();
         assert!(back<crumbs);
         assert!(!last_section.contains("menu.label(typography::caption("));
         assert!(!body.contains("let can_go_back="));
@@ -768,7 +768,7 @@ mod tests{
         let body=include_str!("category_dropdown.rs")
             .split("fn menu_body(").nth(1).unwrap()
             .split("pub fn category_dropdown(").next().unwrap();
-        assert!(body.contains("menu.horizontal(|row|"));
+        assert!(body.contains("footer.horizontal(|row|"));
         assert!(body.contains("category_back_button(row,!state.path.is_empty())"));
     }
     #[test]
