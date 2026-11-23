@@ -525,7 +525,6 @@ impl SettingsView{
             ui.add_space(theme::SPACE_8);
         }
         if !self.loaded{
-            ui.label(typography::caption("설정을 불러오는 중입니다."));
             return;
         }
         if self.source.is_null(){return;}
@@ -927,7 +926,7 @@ impl SettingsView{
             }
             bar.with_layout(Layout::right_to_left(Align::Center),|actions|{
                 if theme::action(
-                    actions,if self.saving.is_some(){"저장 중…"}else{"설정 저장"},
+                    actions,"설정 저장",
                     ButtonRole::Primary,!self.read_only()&&!self.busy()
                 ).clicked(){
                     self.save(gateway.clone(),actions.ctx().clone());
@@ -940,9 +939,7 @@ impl SettingsView{
         let reading=self.data_request.is_some()||self.loading.is_some();
         card(ui,"접수 원문 감사 보관함",|panel|{
             if theme::action(panel,
-                if self.data_request.as_ref().is_some_and(|(op,_)|op=="archive"){
-                    "기록 조회 중…"
-                }else{"감사 기록 열기"},ButtonRole::Standard,
+                "감사 기록 열기",ButtonRole::Standard,
                 business&&self.data_available()&&!reading
             ).clicked(){
                 self.data_action("archive",None,Arc::clone(&gateway),panel.ctx().clone());
