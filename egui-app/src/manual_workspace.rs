@@ -2003,6 +2003,75 @@ mod manual_workspace_modal_routing_tests {
 }
 
 #[cfg(test)]
+mod manual_pending_interaction_tests {
+    use super::*;
+
+    #[test]
+    fn pending_quantity_locks_other_cells_but_keeps_its_own_cell_editable(){
+        let pending=ManualCellTarget{
+            row:1,item:Some("item-2".into()),field:"quantity".into()
+        };
+        let same=ManualCellTarget{
+            row:1,item:Some("item-2".into()),field:"quantity".into()
+        };
+        let other_field=ManualCellTarget{
+            row:1,item:Some("item-2".into()),field:"product".into()
+        };
+        let other_item=ManualCellTarget{
+            row:1,item:Some("item-3".into()),field:"quantity".into()
+        };
+        let other_recipient=ManualCellTarget{
+            row:0,item:Some("item-2".into()),field:"quantity".into()
+        };
+        assert!(manual_cell_allowed(Some(&pending),&same));
+        assert!(!manual_cell_allowed(Some(&pending),&other_field));
+        assert!(!manual_cell_allowed(Some(&pending),&other_item));
+        assert!(!manual_cell_allowed(Some(&pending),&other_recipient));
+        assert!(manual_cell_allowed(None,&other_field));
+    }
+
+    #[test]
+    fn source_assignment_guard_matches_react_use_block_contract(){
+        // No active product/quantity hand-off: any valid block can be used.
+        assert!(manual_source_assignment_allowed(false,None,None,"product"));
+        assert!(manual_source_assignment_allowed(true,Some("item-1"),None,"name"));
+
+        // An already assigned block on the same pending item may be released.
+        assert!(manual_source_assignment_allowed(
+            true,Some("item-1"),Some("item-1"),"product"
+        ));
+        // A block owned by another item or recipient must not be released.
+        assert!(!manual_source_assignment_allowed(
+            true,Some("item-2"),Some("item-1"),"product"
+        ));
+        assert!(!manual_source_assignment_allowed(
+            true,None,Some("item-1"),"name"
+        ));
+        // Only the matching quantity evidence can complete the pending item.
+        assert!(manual_source_assignment_allowed(
+            false,None,Some("item-1"),"quantity"
+        ));
+        assert!(!manual_source_assignment_allowed(
+            false,None,Some("item-1"),"product"
+        ));
+    }
+
+    #[test]
+    fn any_unconfirmed_product_quantity_blocks_final_apply(){
+        let ready=json!({"rows":[{"items":[
+            {"productId":"p1","quantity":2,"quantityConfirmed":true}
+        ]}]});
+        let pending=json!({"rows":[{"items":[
+            {"productId":"p1","quantity":null,"quantityConfirmed":false}
+        ]}]});
+        let empty=json!({"rows":[{"items":[{"quantity":null}]}]});
+        assert!(!model_has_pending_quantity(&ready));
+        assert!(model_has_pending_quantity(&pending));
+        assert!(!model_has_pending_quantity(&empty));
+    }
+}
+
+#[cfg(test)]
 mod manual_remote_row_tests {
     use super::*;
     #[test]
