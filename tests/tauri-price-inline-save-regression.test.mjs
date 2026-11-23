@@ -5,45 +5,56 @@ import { fileURLToPath } from "node:url";
 
 const source = (file) => readFileSync(fileURLToPath(new URL("../src/" + file, import.meta.url)), "utf8");
 
-test("each inline price can be saved or cancelled by mouse without losing its draft on blur", () => {
+test("price cells autosave on blur and expose no per-cell Save/Cancel controls", () => {
   const cell = source("PriceCell.tsx");
-  assert.match(cell, /className="price-cell-actions"/);
-  assert.match(cell, /type="button"[\s\S]*?aria-label=\{label \+ " 저장"\}[\s\S]*?onClick=\{\(\) => void save\(\)\}/);
-  assert.match(cell, /type="button"[\s\S]*?aria-label=\{label \+ " 취소"\}[\s\S]*?onClick=\{cancel\}/);
-  assert.match(cell, /if \(e\.key === "Enter"\)[\s\S]*?void save\(\)/);
-  assert.match(cell, /if \(e\.key === "Escape"\)[\s\S]*?cancel\(\)/);
+  const css = source("styles/table-density.css");
   const blur = cell.slice(cell.indexOf("onBlur={() => {"), cell.indexOf("onKeyDown={(e) => {"));
-  assert.ok(blur.length > 0 && blur.length < 1000);
-  assert.doesNotMatch(blur, /setDraft\(|setEditing\(false\)|void save\(\)|await onSave\(/);
-  assert.match(blur, /if \(pending\) setStatus\("미저장/);
+  assert.ok(blur.length > 0 && blur.length < 1200);
+  assert.match(blur, /if \(pending\) \{\s*void save\(\);/);
+  assert.match(cell, /if \(e\.key === "Enter"\) offset = e\.shiftKey \? -3 : 3;/);
+  assert.match(cell, /else if \(e\.key === "Tab"\) offset = e\.shiftKey \? -1 : 1;/);
+  assert.match(cell, /else if \(e\.key === "ArrowDown"\) offset = 3;/);
+  assert.match(cell, /else if \(e\.key === "ArrowUp"\) offset = -3;/);
+  assert.match(cell, /if \(e\.key === "Escape"\)[\s\S]*?cancel\(\)/);
+  assert.match(cell, /const findPriceCell = \(offset: number\)/);
+  assert.doesNotMatch(cell, /price-cell-actions|price-cell-save|price-cell-cancel|<button/);
+  assert.doesNotMatch(css, /price-cell-actions|price-cell-save|price-cell-cancel/);
+  assert.match(css, /\.price-cell\.pending/);
 });
 
-test("inline price changes are persisted by expected-value protected native setPrice, not a TS table mutation", () => {
+test("automatic cell commits use expected-value native writes serialized through one queue", () => {
   const cell = source("PriceCell.tsx");
   const manager = source("ProductManager.tsx");
-  assert.match(cell, /await onSave\(n, expected\.current\)/);
+  assert.match(cell, /await onSave\(next, expected\.current\)/);
   assert.match(cell, /catch \(e\) \{[\s\S]*?setError\(readableError\(e\)\)/);
-  assert.match(cell, /setEditing\(false\);[\s\S]*?catch \(e\)/);
+  assert.match(cell, /optimisticCommit\.current = \{ next \}/);
+  assert.match(cell, /if \(optimistic && value !== optimistic\.next\) return/);
   assert.match(manager, /await window\.bando!\.setPrice\(p\.id, v\.id, tier, n, expected\)/);
   assert.match(manager, /await onRefresh\(committed\)/);
+  assert.match(manager, /priceWriteChain\.current = write\.catch\(\(\) => \{\}\)/);
+  assert.match(manager, /priceWrites\.current\+\+/);
+  assert.match(manager, /finally \{\s*priceWrites\.current--/);
   assert.doesNotMatch(manager, /const \{ next \} = .*priceHistory/);
 });
 
-test("price-table draft stays visible until Save/Cancel and remains guarded on filtering or page exit", () => {
+test("price draft state distinguishes unsaved input from an in-flight write and guards navigation", () => {
   const cell = source("PriceCell.tsx");
   const manager = source("ProductManager.tsx");
   const css = source("styles/table-density.css");
-  assert.match(cell, /value=\{editing \? draft : value === null \? "" : value\.toLocaleString/);
   assert.match(cell, /data-price-pending=\{pending\}/);
+  assert.match(cell, /data-price-saving=\{busy\}/);
   assert.match(cell, /if \(lastReportedPending\.current === pending\) return/);
   assert.match(cell, /pendingRef\.current\?\.\(pending\)/);
+  assert.match(cell, /if \(lastReportedPending\.current\) \{[\s\S]*?pendingRef\.current\?\.\(false\)/);
   assert.match(manager, /hasChanges: \(\) => editDirty \|\| hasPendingPrices/);
   assert.match(manager, /busy: \(\) => savingView \|\| priceWrites\.current > 0/);
-  assert.match(manager, /priceWrites\.current\+\+/);
-  assert.match(manager, /finally \{\s*priceWrites\.current--/);
+  assert.match(manager, /const pendingPriceIdsRef = useRef<string\[\]>\(\[\]\)/);
   assert.match(manager, /const checkPriceDrafts = \(\) => \{/);
-  assert.match(manager, /const togglePriceMode = \(\) => \{[\s\S]*?if \(!priceMode \|\| checkPriceDrafts\(\)\)/);
+  assert.match(manager, /if \(pendingPriceIdsRef\.current\.length === 0\) return true/);
+  assert.match(manager, /const togglePriceMode = \(\) => \{[\s\S]*?if \(pendingPriceIdsRef\.current\.length > 0\)/);
   assert.match(manager, /onChange=\{\(value\) => \{ if \(checkPriceDrafts\(\)\) setSearch\(value\); \}\}/);
-  assert.match(css, /\.price-cell-actions\s*\{[\s\S]*?position:\s*absolute/);
-  assert.match(css, /\.price-cell\.pending/);
+  assert.match(manager, /disabled=\{priceWrites\.current > 0 \|\| pendingPriceIdsRef\.current\.length > 0\}/);
+  assert.match(cell, /displayedValue === null/);
+  assert.match(css, /\.price-cell\.busy/);
+  assert.doesNotMatch(css, /price-cell-actions/);
 });
