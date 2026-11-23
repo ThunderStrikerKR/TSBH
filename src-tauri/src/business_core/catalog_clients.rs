@@ -364,6 +364,24 @@ mod tests {
             .unwrap_err().contains("색상"));
     }
     #[test]
+    fn editor_persists_all_four_sales_states_without_touching_orders_or_prices(){
+        for status in ["판매중","품절","판매준비중","판매중지"]{
+            let s=state();
+            let mut p=product();
+            p["saleStatus"]=json!(status);
+            // The React editor uses active=true for all explicit choices;
+            // the separate saleStatus is authoritative for the 4 states.
+            p["active"]=json!(true);
+            let result=execute("upsert_product_from_editor",json!({
+                "state":s,"product":p,"updatedAt":"2026-11-23T00:00:00Z"
+            })).unwrap();
+            assert_eq!(result["state"]["products"][0]["saleStatus"],status);
+            assert_eq!(result["state"]["products"][0]["active"],true);
+            assert_eq!(result["state"]["products"][0]["variants"][0]["retail"],12000);
+            assert_eq!(result["state"]["orders"][0]["id"],"old-order");
+        }
+    }
+    #[test]
     fn a_new_duplicate_product_is_rejected_but_edit_is_allowed() {
         let mut s=state();
         s["products"]=json!([product()]);
