@@ -1402,6 +1402,65 @@ pub fn modal_backdrop(
     });
 }
 
+/// Reusable absolute-layout panel with a fixed title band and an
+/// independently scrolling body. The caller supplies approved geometry and
+/// stable IDs; clipping, frame paint, title placement and scroll ownership
+/// remain identical across detail dashboards.
+pub fn fixed_scroll_panel(
+    ui:&mut Ui,
+    rect:Rect,
+    title:&str,
+    heading_id:impl std::hash::Hash,
+    scroll_id:impl std::hash::Hash,
+    inset:Vec2,
+    title_height:f32,
+    title_to_body_gap:f32,
+    body:impl FnOnce(&mut Ui),
+){
+    if rect.width()<2.0||rect.height()<2.0{return;}
+    ui.painter().rect(
+        rect,theme::CONTROL_RADIUS as f32,theme::INPUT,
+        Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER),
+        egui::StrokeKind::Inside
+    );
+    let inner=rect.shrink2(inset);
+    let parent_clip=ui.clip_rect();
+    let title_rect=Rect::from_min_size(
+        inner.min,Vec2::new(
+            inner.width(),(title_height-title_to_body_gap).max(0.0)
+        )
+    );
+    let scroll_rect=Rect::from_min_max(
+        egui::pos2(inner.left(),inner.top()+title_height),inner.max
+    );
+    ui.scope_builder(UiBuilder::new()
+        .id_salt(heading_id)
+        .max_rect(title_rect)
+        .layout(Layout::top_down(Align::Min)),|heading|{
+            heading.set_clip_rect(title_rect.intersect(parent_clip));
+            heading.label(typography::section_heading(title));
+        });
+    ui.scope_builder(UiBuilder::new()
+        .id_salt(scroll_id)
+        .max_rect(scroll_rect)
+        .layout(Layout::top_down(Align::Min)),|content|{
+            content.set_clip_rect(scroll_rect.intersect(parent_clip));
+            content.set_width(scroll_rect.width());
+            content.spacing_mut().item_spacing.y=0.0;
+            egui::ScrollArea::vertical()
+                .id_salt(("fixed-scroll-panel",scroll_id))
+                .max_height(scroll_rect.height().max(1.0))
+                .auto_shrink([false,false])
+                .scroll_bar_visibility(
+                    egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                )
+                .show(content,|scroll|{
+                    scroll.spacing_mut().item_spacing.y=theme::SPACE_4;
+                    body(scroll);
+                });
+        });
+}
+
 /// A 36pt inline form label. Unlike natural-height ui.label(), the text is
 /// measured and painted inside the SAME row height as its sibling TextEdit.
 /// Optical adjustment comes from the typography layer, not each screen.
@@ -4762,6 +4821,19 @@ fn management_readonly_table_content_width(widths:&[f32])->f32{
 
 fn management_readonly_table_row_advance()->f32{
     theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
+}
+
+#[cfg(test)]
+mod fixed_scroll_panel_contract_tests {
+    #[test]
+    fn order_detail_panes_delegate_frame_title_and_scroller_to_shared_component(){
+        let source=include_str!("order_history_detail.rs");
+        let section=source.split("fn section_panel(").nth(1).unwrap()
+            .split("fn overview(").next().unwrap();
+        assert!(section.contains("components::fixed_scroll_panel("));
+        assert!(!section.contains("egui::ScrollArea::vertical()"));
+        assert!(!section.contains("ui.painter().rect("));
+    }
 }
 
 #[cfg(test)]
