@@ -8,6 +8,7 @@ mod theme;
 mod typography;
 mod layout;
 mod components;
+mod cell_navigation;
 mod floating_notice;
 mod reception_service;
 mod review_panel;

@@ -1480,6 +1480,10 @@ impl ManualWorkspace {
                                             Some(if input.modifiers.shift{
                                                 ManualNavigation::Previous
                                             }else{ManualNavigation::Next})
+                                        }else if input.key_pressed(egui::Key::ArrowLeft){
+                                            Some(ManualNavigation::Previous)
+                                        }else if input.key_pressed(egui::Key::ArrowRight){
+                                            Some(ManualNavigation::Next)
                                         }else if input.key_pressed(egui::Key::ArrowUp){
                                             Some(ManualNavigation::RowUp)
                                         }else if input.key_pressed(egui::Key::ArrowDown){

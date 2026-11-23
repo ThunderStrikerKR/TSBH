@@ -4,6 +4,7 @@
 use crate::{
     category_manager::{CategoryManager,ROOTS},
     category_dropdown,
+    cell_navigation::{self, CellNavigationCell, CellNavigationKey},
     alias_manager::AliasManager,
     brand_manager::BrandManager,
     model_group_manager::ModelGroupManager,
@@ -296,25 +297,21 @@ fn parse_product_price(raw:&str,field_name:&str,zero_unregistered:bool)
 fn accepts_catalog_revision(current:u64,incoming:u64)->bool{
     incoming>=current
 }
-fn price_navigation_offset(
-    enter:bool,tab:bool,up:bool,down:bool,shift:bool
-)->isize{
-    if tab{if shift{-1}else{1}}
-    else if enter{if shift{-3}else{3}}
-    else if down{3}
-    else if up{-3}
-    else{0}
+fn price_navigation_key(
+    enter:bool,tab:bool,left:bool,right:bool,up:bool,down:bool,shift:bool
+)->Option<CellNavigationKey>{
+    if tab{Some(if shift{CellNavigationKey::Previous}else{CellNavigationKey::Next})}
+    else if enter{Some(if shift{CellNavigationKey::Up}else{CellNavigationKey::Down})}
+    else if left{Some(CellNavigationKey::Left)}
+    else if right{Some(CellNavigationKey::Right)}
+    else if up{Some(CellNavigationKey::Up)}
+    else if down{Some(CellNavigationKey::Down)}
+    else{None}
 }
 fn price_navigation_target(
-    order:&[String],current:&str,offset:isize
+    order:&[CellNavigationCell],current:&str,key:CellNavigationKey
 )->Option<String>{
-    let index=order.iter().position(|key|key==current)?;
-    let target=if offset<0{
-        index.checked_sub((-offset) as usize)?
-    }else{
-        index.checked_add(offset as usize)?
-    };
-    order.get(target).cloned()
+    cell_navigation::resolve_cell_navigation_target(order,current,key)
 }
 struct PriceDraft {
     original:Option<i64>,
@@ -1209,33 +1206,33 @@ impl ProductManager {
             let ordered=product_sort_order(
                 &self.products,&self.selected_variants,self.sort
             );
-            // The keyboard order follows the product sort and the selected
-            // variant in each row. Tab moves horizontally; Enter vertically.
+            // Each selected variant contributes an explicit three-column row.
+            // Busy cells remain in the map as disabled slots so coordinates
+            // never shift when an asynchronous write is in flight.
             let mut price_order=Vec::new();
             let other_price_write_busy=self.writing.as_ref()
                 .is_some_and(|job|job.kind!="set_price");
-            // Match React's findPriceCell: keyboard navigation skips cells
-            // that are currently disabled by an in-flight write or mode exit.
-            if !other_price_write_busy&&!self.price_mode_exit_requested{
-                for product_index in &ordered{
-                    let product=&self.products[*product_index];
-                    let product_id=field(product,"id");
-                    let variants=rows(&product["variants"]);
-                    let selected_id=self.selected_variants.get(product_id)
-                        .filter(|selected|variants.iter().any(|variant|
-                            field(variant,"id")==selected.as_str()
-                        ))
-                        .cloned()
-                        .or_else(||variants.first().map(|variant|
-                            field(variant,"id").to_owned()
-                        ));
-                    if let Some(variant_id)=selected_id{
-                        for tier in ["wholesale","semi","retail"]{
-                            let key=format!("{}:{}:{}",product_id,variant_id,tier);
-                            if !self.price_cell_busy(&key){
-                                price_order.push(key);
-                            }
-                        }
+            for (row_index,product_index) in ordered.iter().enumerate(){
+                let product=&self.products[*product_index];
+                let product_id=field(product,"id");
+                let variants=rows(&product["variants"]);
+                let selected_id=self.selected_variants.get(product_id)
+                    .filter(|selected|variants.iter().any(|variant|
+                        field(variant,"id")==selected.as_str()
+                    ))
+                    .cloned()
+                    .or_else(||variants.first().map(|variant|
+                        field(variant,"id").to_owned()));
+                if let Some(variant_id)=selected_id{
+                    for (column,tier) in ["wholesale","semi","retail"].iter().copied().enumerate(){
+                        let key=format!("{}:{}:{}",product_id,variant_id,tier);
+                        price_order.push(CellNavigationCell{
+                            id:key.clone(),row:row_index,column,
+                            order:row_index*3+column,
+                            enabled:!other_price_write_busy &&
+                                !self.price_mode_exit_requested &&
+                                !self.price_cell_busy(&key),
+                        });
                     }
                 }
             }
@@ -1416,10 +1413,13 @@ impl ProductManager {
                                                             // whereas display text ends 8pt before
                                                             // it: 8 - 2 = 6pt suffix inset.
                                                             let (enter_pressed,tab_pressed,
+                                                                left_pressed,right_pressed,
                                                                 up_pressed,down_pressed,
                                                                 escape_pressed,shift_pressed)=inputs.input(|i|{
                                                                 (i.key_pressed(egui::Key::Enter),
                                                                  i.key_pressed(egui::Key::Tab),
+                                                                 i.key_pressed(egui::Key::ArrowLeft),
+                                                                 i.key_pressed(egui::Key::ArrowRight),
                                                                  i.key_pressed(egui::Key::ArrowUp),
                                                                  i.key_pressed(egui::Key::ArrowDown),
                                                                  i.key_pressed(egui::Key::Escape),
@@ -1447,31 +1447,32 @@ impl ProductManager {
                                                                 self.price_focus_target=None;
                                                             }
                                                             let escape=response.has_focus()&&escape_pressed;
-                                                            let vertical_edge=(up_pressed||down_pressed)
-                                                                &&price_navigation_target(
-                                                                    &price_order,&key,
-                                                                    if up_pressed{-3}else{3}
-                                                                ).is_none();
+                                                            let navigation_key=price_navigation_key(
+                                                                enter_pressed,tab_pressed,left_pressed,
+                                                                right_pressed,up_pressed,down_pressed,
+                                                                shift_pressed
+                                                            );
+                                                            let navigation_target=navigation_key
+                                                                .and_then(|navigation|
+                                                                    price_navigation_target(
+                                                                        &price_order,&key,navigation
+                                                                    )
+                                                                );
+                                                            let arrow_edge=(left_pressed||right_pressed||
+                                                                up_pressed||down_pressed)
+                                                                &&navigation_target.is_none();
                                                             let keyboard_commit=(response.has_focus()
                                                                 ||response.lost_focus())
-                                                                &&(enter_pressed||tab_pressed
-                                                                    ||up_pressed||down_pressed)
-                                                                &&!vertical_edge;
+                                                                &&navigation_key.is_some()
+                                                                &&!arrow_edge;
                                                             if escape{
                                                                 entry.reset_to_original();
                                                                 response.surrender_focus();
                                                                 self.error=None;
                                                             }else if keyboard_commit{
-                                                                let offset=price_navigation_offset(
-                                                                    enter_pressed,tab_pressed,
-                                                                    up_pressed,down_pressed,shift_pressed
-                                                                );
                                                                 match entry.parse(){
                                                                     Ok(value)=>{
-                                                                        self.price_focus_target=
-                                                                            price_navigation_target(
-                                                                                &price_order,&key,offset
-                                                                            );
+                                                                        self.price_focus_target=navigation_target;
                                                                         response.surrender_focus();
                                                                         if entry.dirty()&&!cell_busy{
                                                                             price_write=Some((
@@ -2611,36 +2612,32 @@ mod tests {
         assert!(source.contains("||self.price_mode_exit_requested"));
     }
     #[test]
-    fn spreadsheet_navigation_offsets_match_enter_tab_and_arrow_semantics(){
-        assert_eq!(price_navigation_offset(true,false,false,false,false),3);
-        assert_eq!(price_navigation_offset(true,false,false,false,true),-3);
-        assert_eq!(price_navigation_offset(false,true,false,false,false),1);
-        assert_eq!(price_navigation_offset(false,true,false,false,true),-1);
-        assert_eq!(price_navigation_offset(false,false,false,true,false),3);
-        assert_eq!(price_navigation_offset(false,false,false,true,true),3);
-        assert_eq!(price_navigation_offset(false,false,true,false,false),-3);
-        assert_eq!(price_navigation_offset(false,false,true,false,true),-3);
+    fn spreadsheet_navigation_keys_match_enter_tab_and_arrow_semantics(){
+        assert_eq!(price_navigation_key(true,false,false,false,false,false,false),Some(CellNavigationKey::Down));
+        assert_eq!(price_navigation_key(true,false,false,false,false,false,true),Some(CellNavigationKey::Up));
+        assert_eq!(price_navigation_key(false,true,false,false,false,false,false),Some(CellNavigationKey::Next));
+        assert_eq!(price_navigation_key(false,true,false,false,false,false,true),Some(CellNavigationKey::Previous));
+        assert_eq!(price_navigation_key(false,false,true,false,false,false,false),Some(CellNavigationKey::Left));
+        assert_eq!(price_navigation_key(false,false,false,true,false,false,false),Some(CellNavigationKey::Right));
+        assert_eq!(price_navigation_key(false,false,false,false,true,false,false),Some(CellNavigationKey::Up));
+        assert_eq!(price_navigation_key(false,false,false,false,false,true,false),Some(CellNavigationKey::Down));
     }
     #[test]
-    fn price_grid_keyboard_navigation_matches_spreadsheet_direction(){
+    fn price_grid_keyboard_navigation_uses_explicit_rows_and_columns(){
         let order=vec![
-            "p1:v1:wholesale".to_owned(),
-            "p1:v1:semi".to_owned(),
-            "p1:v1:retail".to_owned(),
-            "p2:v2:wholesale".to_owned(),
-            "p2:v2:semi".to_owned(),
-            "p2:v2:retail".to_owned(),
+            CellNavigationCell{id:"p1:w".into(),row:0,column:0,order:0,enabled:true},
+            CellNavigationCell{id:"p1:s".into(),row:0,column:1,order:1,enabled:true},
+            CellNavigationCell{id:"p1:r".into(),row:0,column:2,order:2,enabled:true},
+            CellNavigationCell{id:"p2:w".into(),row:1,column:0,order:3,enabled:true},
+            CellNavigationCell{id:"p2:s".into(),row:1,column:1,order:4,enabled:true},
+            CellNavigationCell{id:"p2:r".into(),row:1,column:2,order:5,enabled:true},
         ];
-        assert_eq!(price_navigation_target(&order,"p1:v1:wholesale",1)
-            .as_deref(),Some("p1:v1:semi"));
-        assert_eq!(price_navigation_target(&order,"p1:v1:retail",1)
-            .as_deref(),Some("p2:v2:wholesale"));
-        assert_eq!(price_navigation_target(&order,"p1:v1:semi",3)
-            .as_deref(),Some("p2:v2:semi"));
-        assert_eq!(price_navigation_target(&order,"p2:v2:semi",-3)
-            .as_deref(),Some("p1:v1:semi"));
-        assert_eq!(price_navigation_target(&order,"p1:v1:wholesale",-1),None);
-        assert_eq!(price_navigation_target(&order,"p2:v2:retail",1),None);
+        assert_eq!(price_navigation_target(&order,"p1:w",CellNavigationKey::Right).as_deref(),Some("p1:s"));
+        assert_eq!(price_navigation_target(&order,"p1:r",CellNavigationKey::Left).as_deref(),Some("p1:s"));
+        assert_eq!(price_navigation_target(&order,"p1:s",CellNavigationKey::Down).as_deref(),Some("p2:s"));
+        assert_eq!(price_navigation_target(&order,"p2:s",CellNavigationKey::Up).as_deref(),Some("p1:s"));
+        assert_eq!(price_navigation_target(&order,"p1:r",CellNavigationKey::Right),None);
+        assert_eq!(price_navigation_target(&order,"p1:w",CellNavigationKey::Left),None);
     }
     #[test]
     fn excel_price_write_payload_commits_values_and_empty_as_null(){
