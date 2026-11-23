@@ -26,6 +26,7 @@ export function PriceCell({
     [error, setError] = useState("");
   const saving = useRef(false),
     expected = useRef(value),
+    optimisticCommit = useRef<{ previous: Price; next: Price } | null>(null),
     input = useRef<HTMLInputElement>(null),
     skipBlurSave = useRef(false),
     lastReportedPending = useRef(false);
@@ -58,6 +59,13 @@ export function PriceCell({
 
   useEffect(() => {
     if (!editing) {
+      const optimistic = optimisticCommit.current;
+      // A list refresh may briefly return the pre-write snapshot. Keep the
+      // committed cell value until the refreshed row catches up.
+      if (optimistic && value === optimistic.previous && value !== optimistic.next) {
+        return;
+      }
+      optimisticCommit.current = null;
       expected.current = value;
       setDraft(value === null ? "" : String(value));
     }
@@ -124,7 +132,9 @@ export function PriceCell({
     setStatus("저장 중");
     setError("");
     try {
-      await onSave(next, expected.current);
+      const previous = expected.current;
+      await onSave(next, previous);
+      optimisticCommit.current = { previous, next };
       expected.current = next;
       setStatus("저장됨");
       setError("");
@@ -190,8 +200,9 @@ export function PriceCell({
           skipBlurSave.current = false;
           if (!enabled || busy) return;
           if (!editing) {
-            expected.current = value;
-            setDraft(value === null ? "" : value.toLocaleString("ko-KR"));
+            const baseline = optimisticCommit.current ? expected.current : value;
+            expected.current = baseline;
+            setDraft(baseline === null ? "" : baseline.toLocaleString("ko-KR"));
             setEditing(true);
             setStatus("");
             setError("");
