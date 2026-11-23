@@ -1054,9 +1054,16 @@ impl ManualWorkspace {
                         status.with_layout(
                             egui::Layout::right_to_left(egui::Align::Center),
                             |right|{
-                                right.label(typography::caption(
-                                    "정식 접수는 주문 확인 완료"
-                                ));
+                                if pending_quantity_count>0 {
+                                    right.label(typography::status(
+                                        &format!("수량 확인 필요: {pending_quantity_count}건"),
+                                        theme::SELECTED_ORDER
+                                    ));
+                                }else{
+                                    right.label(typography::caption(
+                                        "정식 접수는 주문 확인 완료"
+                                    ));
+                                }
                             }
                         );
                     }else{
