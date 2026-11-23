@@ -83,3 +83,51 @@ export function focusCellElement(target: HTMLElement | null | undefined): boolea
   target.scrollIntoView({ block: "nearest", inline: "nearest" });
   return true;
 }
+
+export type CellNavigationKeyboardEvent = CompositionState & {
+  key: string;
+  shiftKey: boolean;
+  currentTarget: HTMLElement;
+  preventDefault: () => void;
+};
+export type CellNavigationKeyHandlerOptions = {
+  enterMode?: CellNavigationEnterMode;
+  resolveTarget?: (
+    current: HTMLElement, key: CellNavigationKey, shift: boolean,
+    enterMode: CellNavigationEnterMode,
+  ) => HTMLElement | null;
+  focusTarget?: (target: HTMLElement | null) => boolean;
+  onEscape?: (event: CellNavigationKeyboardEvent) => void;
+  onBeforeMove?: (
+    key: CellNavigationKey, target: HTMLElement | null,
+    event: CellNavigationKeyboardEvent,
+  ) => boolean | void;
+  onBoundary?: (key: CellNavigationKey, event: CellNavigationKeyboardEvent) => void;
+};
+/** Shared React key-event policy; screens supply only save/cancel side effects. */
+export function handleCellNavigationKey(
+  event: CellNavigationKeyboardEvent,
+  options: CellNavigationKeyHandlerOptions = {},
+): boolean {
+  if (isImeComposing(event)) return false;
+  if (event.key === "Escape" && options.onEscape) {
+    event.preventDefault();
+    options.onEscape(event);
+    return true;
+  }
+  if (!isCellNavigationKey(event.key)) return false;
+  const key = event.key;
+  const enterMode = options.enterMode ?? "linear";
+  const resolveTarget = options.resolveTarget ?? findCellNavigationTarget;
+  const target = resolveTarget(event.currentTarget, key, event.shiftKey, enterMode);
+  // Let the browser leave the grid naturally when Tab has no in-grid target.
+  if (key === "Tab" && !target) return false;
+  if (target || key !== "Tab") event.preventDefault();
+  if (options.onBeforeMove?.(key, target, event) === false) return true;
+  if (target) {
+    (options.focusTarget ?? focusCellElement)(target);
+  } else if (key === "Enter") {
+    options.onBoundary?.(key, event);
+  }
+  return true;
+}

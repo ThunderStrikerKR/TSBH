@@ -13,12 +13,7 @@ import { StaffChecks } from "./StaffChecks";
 import { useReadyContentFade } from "./shared/useReadyContentFade";
 import { WorkflowFooter, WorkflowFreightRows } from "./WorkflowFooter";
 import { won } from "./domain";
-import {
-  findCellNavigationTarget,
-  focusCellElement,
-  isCellNavigationKey,
-  isImeComposing,
-} from "./ui/cell-navigation";
+import { handleCellNavigationKey } from "./ui/cell-navigation";
 
 import { internalModel } from "./matching";
 import { useOrderDesk, type OrderDeskProps } from "./orders/useOrderDesk";
@@ -666,19 +661,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                             );
                                           });
                                         }}
-                                        onKeyDown={(e) => {
-                                          if (isImeComposing(e) || !isCellNavigationKey(e.key)) return;
-                                          const target = findCellNavigationTarget(
-                                            e.currentTarget, e.key, e.shiftKey,
-                                          );
-                                          if (e.key === "Tab" && !target) return;
-                                          if (target) {
-                                            e.preventDefault();
-                                            focusCellElement(target);
-                                          } else if (e.key !== "Tab") {
-                                            e.preventDefault();
-                                          }
-                                        }}
+                                        onKeyDown={(e) => handleCellNavigationKey(e)}
                                       />
                                     </Linked>
                                   </td>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { readableError } from "./errors";
-import { findCellNavigationTarget, focusCellElement, isCellNavigationKey, isImeComposing } from "./ui/cell-navigation";
+import { handleCellNavigationKey } from "./ui/cell-navigation";
 import type { Price } from "./types";
 
 type ParsedPrice =
@@ -236,36 +236,22 @@ export function PriceCell({
           }
         }}
         onKeyDown={(e) => {
-          if (!enabled || busy || isImeComposing(e)) return;
-          if (e.key === "Escape") {
-            e.preventDefault();
-            cancel();
-            return;
-          }
-          if (!isCellNavigationKey(e.key)) return;
-          const target = findCellNavigationTarget(
-            e.currentTarget, e.key, e.shiftKey, "same-column",
-          );
-          if (e.key === "Tab" && !target) return;
-          if (target) {
-            e.preventDefault();
-            if (!parseDraft().ok) {
-              showValidationError();
-              return;
-            }
-            void save();
-            focusCellElement(target);
-            return;
-          }
-          if (e.key !== "Tab") e.preventDefault();
-          if (e.key === "Enter") {
-            if (!parseDraft().ok) {
-              showValidationError();
-              return;
-            }
-            void save();
-            input.current?.blur();
-          }
+          if (!enabled || busy) return;
+          handleCellNavigationKey(e, {
+            enterMode: "same-column",
+            onEscape: () => cancel(),
+            onBeforeMove: (key, target) => {
+              if (!target && key !== "Enter") return;
+              if (!parseDraft().ok) {
+                showValidationError();
+                return false;
+              }
+              void save();
+            },
+            onBoundary: (key) => {
+              if (key === "Enter") input.current?.blur();
+            },
+          });
         }}
       />
       <small

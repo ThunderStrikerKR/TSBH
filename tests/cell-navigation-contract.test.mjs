@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { tsImport } from "tsx/esm/api";
 const read = path => readFileSync(new URL("../" + path, import.meta.url), "utf8");
-const { isCellNavigationKey, isImeComposing, resolveCellNavigationTarget } =
+const { handleCellNavigationKey, isCellNavigationKey, isImeComposing, resolveCellNavigationTarget } =
   await tsImport("../src/ui/cell-navigation.ts", import.meta.url);
 const grid = [
   { id: "a", row: 0, column: 0, order: 0 },
@@ -49,4 +49,57 @@ test("React cell editors use the shared contract and retain manual quantity gati
   assert.match(read("src/OrderDesk.tsx"), /data-cell-nav-grid="order-intake"/);
   assert.match(read("src/WorkflowFooter.tsx"), /findCellNavigationTarget\(e\.currentTarget, e\.key, e\.shiftKey\)/);
   assert.match(read("src/orders/ManualClassification.tsx"), /resolveCellNavigationTarget\(/);
+});
+
+test("shared React key handler saves before moving and focuses the explicit target", () => {
+  const calls = [];
+  const event = {
+    key: "ArrowRight", shiftKey: false, currentTarget: {},
+    preventDefault() { this.defaultPrevented = true; },
+  };
+  const handled = handleCellNavigationKey(event, {
+    resolveTarget: () => ({}),
+    onBeforeMove: () => { calls.push("save"); },
+    focusTarget: () => { calls.push("focus"); return true; },
+  });
+  assert.equal(handled, true);
+  assert.equal(event.defaultPrevented, true);
+  assert.deepEqual(calls, ["save", "focus"]);
+});
+
+test("shared React key handler lets Tab exit at the grid boundary and traps arrow boundaries", () => {
+  let beforeMove = 0;
+  const tab = {
+    key: "Tab", shiftKey: false, currentTarget: {},
+    preventDefault() { this.defaultPrevented = true; },
+  };
+  assert.equal(handleCellNavigationKey(tab, {
+    resolveTarget: () => null,
+    onBeforeMove: () => { beforeMove += 1; },
+  }), false);
+  assert.equal(tab.defaultPrevented, undefined);
+  assert.equal(beforeMove, 0);
+  const arrow = {
+    key: "ArrowDown", shiftKey: false, currentTarget: {},
+    preventDefault() { this.defaultPrevented = true; },
+  };
+  assert.equal(handleCellNavigationKey(arrow, { resolveTarget: () => null }), true);
+  assert.equal(arrow.defaultPrevented, true);
+});
+
+test("shared React key handler protects IME composition and delegates Escape cancellation", () => {
+  const composing = {
+    key: "ArrowRight", shiftKey: false, isComposing: true, currentTarget: {},
+    preventDefault() { this.defaultPrevented = true; },
+  };
+  assert.equal(handleCellNavigationKey(composing, { resolveTarget: () => ({}) }), false);
+  assert.equal(composing.defaultPrevented, undefined);
+  const escape = {
+    key: "Escape", shiftKey: false, currentTarget: {},
+    preventDefault() { this.defaultPrevented = true; },
+  };
+  let cancelled = false;
+  assert.equal(handleCellNavigationKey(escape, { onEscape: () => { cancelled = true; } }), true);
+  assert.equal(escape.defaultPrevented, true);
+  assert.equal(cancelled, true);
 });

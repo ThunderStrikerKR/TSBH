@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Origin, Price, State } from "./types";
-import {
-  findCellNavigationTarget,
-  focusCellElement,
-  isCellNavigationKey,
-  isImeComposing,
-} from "./ui/cell-navigation";
+import { handleCellNavigationKey } from "./ui/cell-navigation";
 import { shipmentContext } from "./workflow-view";
 import type { WorkflowShipment } from "./workflow-types";
 /** Keep freight typing local; native totals run on blur, Enter or unmount. */
@@ -79,21 +74,17 @@ function FreightAmountInput({ label, value, disabled, onCommit, navigationRow, n
         });
       }}
       onBlur={flush}
-      onKeyDown={(e) => {
-        if (isImeComposing(e) || !isCellNavigationKey(e.key)) return;
-        const target = findCellNavigationTarget(e.currentTarget, e.key, e.shiftKey);
-        if (e.key === "Tab" && !target) return;
-        if (target) {
-          e.preventDefault();
-          focusCellElement(target);
-          return;
-        }
-        if (e.key !== "Tab") e.preventDefault();
-        if (e.key === "Enter") {
-          flush();
-          e.currentTarget.blur();
-        }
-      }}
+      onKeyDown={(e) => handleCellNavigationKey(e, {
+        onBeforeMove: (key, target) => {
+          if (target) flush();
+        },
+        onBoundary: (key, event) => {
+          if (key === "Enter") {
+            flush();
+            event.currentTarget.blur();
+          }
+        },
+      })}
     />
   );
 }
