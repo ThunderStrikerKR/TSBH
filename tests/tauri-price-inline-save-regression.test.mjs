@@ -12,9 +12,8 @@ test("price cells autosave on blur and expose no per-cell Save/Cancel controls",
   assert.ok(blur.length > 0 && blur.length < 1200);
   assert.match(blur, /if \(pending\) \{\s*void save\(\);/);
   assert.match(blur, /if \(pending\) \{\s*void save\(\);/);
-  assert.match(cell, /findCellNavigationTarget\(\s*e\.currentTarget, e\.key, e\.shiftKey, "same-column"/);
-  assert.match(cell, /isImeComposing\(e\)/);
-  assert.match(cell, /focusCellElement\(target\)/);
+  assert.match(cell, /handleCellNavigationKey\(e, \{/);
+  assert.match(cell, /enterMode: "same-column"/);
   assert.match(cell, /if \(e\.key === "Escape"\)[\s\S]*?cancel\(\)/);
   assert.doesNotMatch(cell, /price-cell-actions|price-cell-save|price-cell-cancel|<button/);
   assert.doesNotMatch(css, /price-cell-actions|price-cell-save|price-cell-cancel/);

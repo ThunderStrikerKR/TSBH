@@ -83,9 +83,8 @@ test("both freight editors display Close and disable Save when unchanged",()=>{
 test("price cells autosave on blur and navigate like a spreadsheet without action buttons",()=>{
   const s=src("PriceCell.tsx");
   assert.match(s,/onBlur=\{\(\) => \{[\s\S]*?if \(pending\) \{\s*void save\(\);/);
-  assert.match(s,/findCellNavigationTarget\(\s*e\.currentTarget, e\.key, e\.shiftKey, "same-column"/);
-  assert.match(s,/isImeComposing\(e\)/);
-  assert.match(s,/focusCellElement\(target\)/);
+  assert.match(s,/handleCellNavigationKey\(e, \{/);
+  assert.match(s,/enterMode: "same-column"/);
   assert.match(s,/if \(e\.key === "Escape"\) \{\s*e\.preventDefault\(\);\s*cancel\(\);/);
   assert.doesNotMatch(s,/price-cell-actions|price-cell-save|price-cell-cancel|<button/);
 });
