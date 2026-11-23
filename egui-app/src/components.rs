@@ -72,6 +72,53 @@ pub fn management_body_state_overlay(
     );
 }
 
+/// Allocate a row with an immutable parent footprint. The child can
+/// render optional labels, validation messages or actions without changing
+/// the next sibling's Rect when its contents appear or disappear.
+pub fn fixed_row<R>(
+    ui:&mut Ui,size:Vec2,layout:Layout,
+    add_contents:impl FnOnce(&mut Ui)->R,
+)->(Rect,R){
+    let width=size.x.min(ui.available_width()).max(0.0);
+    let height=size.y.max(0.0);
+    let (rect,_)=ui.allocate_exact_size(Vec2::new(width,height),Sense::hover());
+    let output=ui.scope_builder(
+        UiBuilder::new().max_rect(rect).layout(layout),
+        |row|{
+            row.set_clip_rect(rect);
+            row.set_width(rect.width());
+            row.set_height(rect.height());
+            row.spacing_mut().item_spacing.y=0.0;
+            add_contents(row)
+        }
+    );
+    (rect,output.inner)
+}
+
+/// One-line status slot for state-dependent text. It always reserves the
+/// same width and height; long messages are clipped visually and remain
+/// available in the hover tooltip. Use a fixed-height row for action controls.
+pub fn fixed_status_slot(
+    ui:&mut Ui,width:f32,height:f32,display:Option<&str>,
+    tooltip:Option<&str>,color:Color32,
+)->Rect{
+    let width=width.min(ui.available_width()).max(0.0);
+    let (rect,())=fixed_row(
+        ui,Vec2::new(width,height),Layout::left_to_right(Align::Center),
+        |slot|{
+            if let Some(text)=display.filter(|text|!text.trim().is_empty()){
+                let response=slot.add(
+                    egui::Label::new(typography::status(text,color)).truncate()
+                );
+                if let Some(tooltip)=tooltip{
+                    response.on_hover_text(tooltip);
+                }
+            }
+        }
+    );
+    rect
+}
+
 /// Reserve a management page's approved primary-card footprint before its
 /// asynchronous data source is ready. Its real content can replace this
 /// placeholder without moving the top edge of the card or lower page slots.
@@ -80,6 +127,61 @@ pub fn management_pending_primary_card(ui:&mut Ui)->Rect{
     theme::management_master_table_frame().show(ui,|panel|{
         fill_management_primary_card(panel,min_height);
     }).response.rect
+}
+
+#[cfg(test)]
+mod fixed_layout_slot_contract_tests {
+    use super::*;
+
+    #[test]
+    fn optional_status_keeps_its_rect_and_the_next_control_fixed(){
+        let mut measured=Vec::new();
+        for message in [None,Some("상태 안내문이 표시됩니다.") ]{
+            let ctx=egui::Context::default();
+            let _=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(520.0);
+                    let slot=fixed_status_slot(
+                        ui,ui.available_width(),typography::METADATA_LINE_HEIGHT,
+                        message,message,theme::DANGER
+                    );
+                    let (next,_)=ui.allocate_exact_size(
+                        Vec2::new(120.0,theme::ACTION_STANDARD_HEIGHT),Sense::hover()
+                    );
+                    measured.push((slot,next));
+                });
+            });
+        }
+        assert_eq!(measured[0].0,measured[1].0);
+        assert_eq!(measured[0].1,measured[1].1);
+    }
+
+    #[test]
+    fn optional_action_keeps_its_row_and_the_next_control_fixed(){
+        let mut measured=Vec::new();
+        for visible in [false,true]{
+            let ctx=egui::Context::default();
+            let _=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(520.0);
+                    let (row,_)=fixed_row(
+                        ui,Vec2::new(ui.available_width(),theme::ACTION_STANDARD_HEIGHT),
+                        Layout::left_to_right(Align::Center),|contents|{
+                            if visible{theme::action(
+                                contents,"설정",theme::ButtonRole::Standard,true
+                            );}
+                        }
+                    );
+                    let (next,_)=ui.allocate_exact_size(
+                        Vec2::new(120.0,theme::ACTION_STANDARD_HEIGHT),Sense::hover()
+                    );
+                    measured.push((row,next));
+                });
+            });
+        }
+        assert_eq!(measured[0].0,measured[1].0);
+        assert_eq!(measured[0].1,measured[1].1);
+    }
 }
 
 #[cfg(test)]
@@ -4543,9 +4645,11 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
                 ui.label(typography::summary_value(value));
             });
         });
-        if !footnote.trim().is_empty() {
-            ui.label(typography::caption(footnote));
-        }
+        fixed_status_slot(
+            ui,ui.available_width(),typography::METADATA_LINE_HEIGHT,
+            (!footnote.trim().is_empty()).then_some(footnote),
+            (!footnote.trim().is_empty()).then_some(footnote),theme::MUTED
+        );
     });
 }
 
