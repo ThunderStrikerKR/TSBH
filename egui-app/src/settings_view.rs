@@ -489,9 +489,28 @@ impl SettingsView{
             ui.ctx(),"settings.error","settings.action",
             crate::floating_notice::Tone::Error,self.error.as_deref()
         );
+        // Conflict recovery stays in the existing title bar instead of
+        // inserting a row between tabs and content on an async error.
+        let conflict=self.error.as_deref().is_some_and(|error|
+            error.contains("다른 화면에서 바뀌었습니다")
+                ||error.contains("다른 작업에서 변경된 설정")
+                ||error.contains("설정 충돌")
+        );
         components::management_page_title_top_gap(ui);
         components::management_top_content(ui,|top|{
-            top.label(typography::page_heading("설정"));
+            top.horizontal(|heading|{
+                heading.label(typography::page_heading("설정"));
+                if conflict{
+                    heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                        if theme::action(
+                            actions,"저장된 설정 불러오기",ButtonRole::Standard,
+                            !self.busy()
+                        ).clicked(){
+                            self.reload_confirmation=true;
+                        }
+                    });
+                }
+            });
         });
         ui.add_space(theme::SPACE_8);
         let selected_tab=components::management_top_content(ui,|top|
@@ -506,23 +525,6 @@ impl SettingsView{
             self.request_tab(SettingsTab::ALL[tab]);
         }
         ui.add_space(theme::SPACE_16);
-        if let Some(error)=self.error.as_deref(){
-            // React SettingsPanel conflict recovery: the employee can
-            // reopen the saved version after acknowledging draft loss.
-            let conflict=error.contains("다른 화면에서 바뀌었습니다")
-                || error.contains("다른 작업에서 변경된 설정")
-                || error.contains("설정 충돌");
-            // Suppress unsolicited error prose; retain the targeted
-            // conflict recovery action and its existing validation state.
-            if conflict && components::management_top_content(ui,|top|{
-                theme::action(
-                    top,"저장된 설정 불러오기",ButtonRole::Standard,
-                    !self.busy()
-                ).clicked()
-            }){
-                self.reload_confirmation=true;
-            }
-        }
         if !self.loaded || self.source.is_null(){
             if self.tab!=SettingsTab::Basic{
                 components::align_management_primary_card(ui,page_origin_y);
