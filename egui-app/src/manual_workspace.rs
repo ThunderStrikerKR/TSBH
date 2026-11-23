@@ -629,6 +629,10 @@ impl ManualWorkspace {
             self.error=None;
             return;
         }
+        let cancel_product=matches!(
+            self.last_action.as_deref(),
+            Some("set_manual_product"|"assign_manual_block")
+        );
         let Some(frame)=self.history.pop() else {
             self.error=Some("되돌릴 수 있는 변경사항이 없습니다.".into());
             return;
@@ -638,7 +642,9 @@ impl ManualWorkspace {
         self.remote_rows=frame.remote_rows;
         self.selected_recipient=frame.selected_recipient;
         self.selected_item=frame.selected_item;
-        self.selected_field=frame.selected_field;
+        self.selected_field=if cancel_product{
+            "product".into()
+        }else{frame.selected_field};
         let count=self.model.as_ref().map(|model|list(model,"rows").len()).unwrap_or(0);
         self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
         if self.selected_item.as_ref().is_some_and(|id|
@@ -1468,6 +1474,14 @@ impl ManualWorkspace {
                                             })));
                                         }
                                     }
+                                    if self.selected_quantity_pending() &&
+                                        matches!(self.last_action.as_deref(),
+                                            Some("set_manual_product"|"assign_manual_block")) &&
+                                        theme::action(ui,"상품 선택 취소",ButtonRole::Quiet,
+                                            !busy && settled
+                                        ).clicked(){
+                                        self.undo();
+                                    }
                                 }
                                 if theme::action(ui,"입력 반영",ButtonRole::Standard,
                                     !busy && self.edit_text!=self.current_value()
@@ -1809,6 +1823,22 @@ fn nested_modal_id(
 #[cfg(test)]
 mod manual_workspace_modal_routing_tests {
     use super::*;
+
+    #[test]
+    fn product_selection_requires_a_confirmed_quantity_before_it_is_complete(){
+        assert!(item_quantity_pending(&json!({
+            "productId":"p1","quantity":null,"quantityConfirmed":false
+        })));
+        assert!(item_quantity_pending(&json!({
+            "name":"BD 709","quantity":0,"quantityConfirmed":false
+        })));
+        assert!(!item_quantity_pending(&json!({
+            "quantity":2,"quantityConfirmed":true
+        })));
+        assert!(!item_quantity_pending(&json!({
+            "productId":"p1","quantity":2,"quantityConfirmed":true
+        })));
+    }
 
     #[test]
     fn keyboard_cell_order_matches_the_manual_worksheet(){
