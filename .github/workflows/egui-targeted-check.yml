@@ -79,6 +79,8 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify asynchronous pending, empty and loaded states preserve management geometry
+        run: cargo test --manifest-path egui-app/Cargo.toml management_async_layout_contract_tests -- --nocapture
       - name: Verify React-compatible four sale states and legacy catalog labels
         run: cargo test --manifest-path egui-app/Cargo.toml four_sales_states_restore_react_values -- --nocapture
       - name: Verify sale status edits persist without changing prices or variant identities
