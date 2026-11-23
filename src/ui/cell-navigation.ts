@@ -120,7 +120,8 @@ export function handleCellNavigationKey(
   const key = event.key;
   const enterMode = options.enterMode ?? "linear";
   const resolveTarget = options.resolveTarget ?? findCellNavigationTarget;
-  const target = resolveTarget(event.currentTarget, key, event.shiftKey, enterMode);
+  const currentTarget = event.currentTarget;
+  const target = resolveTarget(currentTarget, key, event.shiftKey, enterMode);
   const beforeMove = options.onBeforeMove?.(key, target, event);
   const isPending = (value: boolean | void | Promise<boolean | void>): value is Promise<boolean | void> =>
     !!value && typeof value === "object" && "then" in value &&
@@ -142,8 +143,8 @@ export function handleCellNavigationKey(
     }
     if (isPending(beforeMove)) {
       void Promise.resolve(beforeMove).then(
-        (allowed) => { if (allowed === false) focusCellElement(event.currentTarget); },
-        () => focusCellElement(event.currentTarget),
+        (allowed) => { if (allowed === false) focusCellElement(currentTarget); },
+        () => focusCellElement(currentTarget),
       );
     }
     return false;
