@@ -317,6 +317,15 @@ impl PriceDraft {
         self.original=value;
         self.input=value.map(|amount|amount.to_string()).unwrap_or_default();
     }
+    /// When the edited text is numerically identical to the committed value,
+    /// restore the canonical representation on blur (e.g. 0 on an empty cell
+    /// means "unregistered", not a visible literal zero).
+    fn normalize_if_unchanged(&mut self){
+        if !self.dirty(){
+            self.input=self.original.map(|amount|amount.to_string())
+                .unwrap_or_default();
+        }
+    }
     fn dirty(&self)->bool{
         // Historic price rows may store literal 0. Their initial "0" must
         // stay pristine until an operator actually changes the field.
@@ -1413,8 +1422,7 @@ impl ProductManager {
                                                                 &&(enter_pressed||tab_pressed
                                                                     ||up_pressed||down_pressed);
                                                             if escape{
-                                                                entry.input=entry.original.map(|n|
-                                                                    n.to_string()).unwrap_or_default();
+                                                                entry.normalize_if_unchanged();
                                                                 self.error=None;
                                                             }else if keyboard_commit{
                                                                 let offset=if tab_pressed{
@@ -1450,9 +1458,12 @@ impl ProductManager {
                                                                         response.request_focus();
                                                                     }
                                                                 }
-                                                            }else if response.lost_focus()&&entry.dirty()
-                                                                && !cell_busy{
-                                                                match entry.parse(){
+                                                                if !entry.dirty(){
+                                                                    entry.normalize_if_unchanged();
+                                                                }
+                                                            }else if response.lost_focus(){
+                                                                if entry.dirty()&&!cell_busy{
+                                                                    match entry.parse(){
                                                                     Ok(value)=>{
                                                                         price_write=Some((
                                                                             key.clone(),json!({
@@ -1463,7 +1474,10 @@ impl ProductManager {
                                                                             })
                                                                         ));
                                                                     }
-                                                                    Err(message)=>self.error=Some(message),
+                                                                        Err(message)=>self.error=Some(message),
+                                                                    }
+                                                                }else if !entry.dirty(){
+                                                                    entry.normalize_if_unchanged();
                                                                 }
                                                             }
                                                             if self.price_focus_target.as_deref()
@@ -2418,6 +2432,20 @@ mod tests {
         assert_eq!(parse_product_price("4,500","금액",true).unwrap(),Some(4500));
         assert!(parse_product_price("-1","가격",false).is_err());
         assert!(parse_product_price("9007199254740992","가격",false).is_err());
+    }
+    #[test]
+    fn clean_price_drafts_restore_react_display_value_after_blur(){
+        let mut empty_zero=PriceDraft{original:None,input:"0".into()};
+        assert!(!empty_zero.dirty());
+        empty_zero.normalize_if_unchanged();
+        assert_eq!(empty_zero.input,"");
+        let mut same_amount=PriceDraft{original:Some(15000),input:"015000".into()};
+        assert!(!same_amount.dirty());
+        same_amount.normalize_if_unchanged();
+        assert_eq!(same_amount.input,"15000");
+        let mut historical_zero=PriceDraft{original:Some(0),input:"0".into()};
+        historical_zero.normalize_if_unchanged();
+        assert_eq!(historical_zero.input,"0");
     }
     #[test]
     fn committed_price_draft_advances_before_stale_query_rows_repaint(){
