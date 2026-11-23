@@ -219,9 +219,13 @@ fn crumb(
     let stroke=if border==Color32::TRANSPARENT{Stroke::NONE}
         else{Stroke::new(theme::SOFT_DIVIDER_WIDTH,border)};
     let painter=ui.painter().with_clip_rect(rect);
-    painter.rect(
-        rect,theme::CONTROL_RADIUS,background,stroke,egui::StrokeKind::Inside
-    );
+    // The current category is a location, not a selected chip:
+    // keep its bright text but NEVER draw a background or border.
+    if visual!=CrumbVisual::Current{
+        painter.rect(
+            rect,theme::CONTROL_RADIUS,background,stroke,egui::StrokeKind::Inside
+        );
+    }
     // A breadcrumb is a single category, not a whole path. Keep its first
     // characters on overflow (ending ellipsis), never the trailing suffix
     // produced by fit_category_path's category-leaf algorithm.
@@ -231,6 +235,29 @@ fn crumb(
         egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
     );
     response.on_hover_text(label)
+}
+/// The separator has the exact same vertical center as the footer controls.
+/// A drawn chevron is independent of font metrics, caption baselines, or text
+/// wrapping, so all path arrows remain aligned at every category depth.
+fn category_path_separator(ui:&mut Ui)->Response{
+    let (rect,response)=ui.allocate_exact_size(
+        Vec2::new(
+            theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH,
+            theme::CATEGORY_EXPLORER_CRUMB_HEIGHT
+        ),Sense::hover()
+    );
+    let mid=rect.center();
+    let stroke=Stroke::new(1.25,theme::SECONDARY);
+    let painter=ui.painter().with_clip_rect(rect);
+    painter.line_segment([
+        egui::pos2(mid.x-2.0,mid.y-4.0),
+        egui::pos2(mid.x+2.0,mid.y)
+    ],stroke);
+    painter.line_segment([
+        egui::pos2(mid.x+2.0,mid.y),
+        egui::pos2(mid.x-2.0,mid.y+4.0)
+    ],stroke);
+    response
 }
 /// A breadcrumb represents ONE category, not a flattened category path.
 /// Retain its beginning on overflow; full text is still available on hover.
@@ -317,7 +344,8 @@ fn crumbs_row(
     let fixed=theme::CATEGORY_EXPLORER_BACK_WIDTH
         +theme::CATEGORY_EXPLORER_ROOT_WIDTH
         +if hidden>0{31.0}else{0.0}
-        +separators as f32*10.0+apply_width+theme::SPACE_8
+        +separators as f32*theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH
+        +apply_width+theme::SPACE_8
         +widget_count.saturating_sub(1) as f32*theme::SPACE_4;
     let budget=(row_width-fixed).max(0.0);
     let intrinsic=visible.iter().map(|id|{
@@ -347,13 +375,13 @@ fn crumbs_row(
             go_to=Some(Vec::new());
         }
         if hidden>0{
-            bar.label(typography::caption("›"));
+            category_path_separator(bar);
             if crumb(bar,"···",31.0,CrumbVisual::Ordinary).clicked(){
                 toggle_ancestors=true;
             }
         }
         for (offset,id) in visible.iter().enumerate(){
-            bar.label(typography::caption("›"));
+            category_path_separator(bar);
             let name=index.get(id.as_str()).map(|n|n.name.as_str())
                 .unwrap_or("분류 없음");
             let role=if id.as_str()==selected.as_str(){CrumbVisual::Applied}
@@ -416,12 +444,6 @@ fn menu_body(
             nodes,index,state.path.last().map(String::as_str).unwrap_or("")
         )
     };
-    menu.horizontal(|heading|{
-        heading.label(typography::caption(if searching{
-            "카테고리 검색 결과"
-        }else{"하위 카테고리"}));
-        heading.label(typography::caption(&format!("{}개",items.len())));
-    });
     // Stable six-row viewport in search, navigation and empty states.
     // Reduce it only if the OS viewport cannot physically fit the popup.
     let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
@@ -694,6 +716,46 @@ mod tests{
             .split("pub fn category_dropdown(").next().unwrap();
         assert!(!body.contains("let can_go_back="));
         assert!(!body.contains("\"{}단계\""));
+    }
+    #[test]
+    fn current_category_is_plain_text_and_selected_category_remains_orange(){
+        assert_eq!(theme::CATEGORY_EXPLORER_CURRENT_BG,Color32::TRANSPARENT);
+        assert_eq!(theme::CATEGORY_EXPLORER_CURRENT_BORDER,Color32::TRANSPARENT);
+        assert_ne!(theme::CATEGORY_EXPLORER_APPLIED_BG,Color32::TRANSPARENT);
+        let crumb_source=include_str!("category_dropdown.rs")
+            .split("fn crumb(").nth(1).unwrap()
+            .split("fn category_path_separator(").next().unwrap();
+        assert!(crumb_source.contains("if visual!=CrumbVisual::Current{"));
+    }
+    #[test]
+    fn all_path_arrows_are_vertically_centered_and_match_control_height(){
+        let ctx=egui::Context::default();
+        let mut arrows=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                arrows.push(category_path_separator(ui).rect);
+                arrows.push(category_path_separator(ui).rect);
+            });
+        });
+        assert_eq!(arrows.len(),2);
+        for rect in arrows{
+            assert_eq!(rect.width(),theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH);
+            assert_eq!(rect.height(),theme::CATEGORY_EXPLORER_CRUMB_HEIGHT);
+        }
+        let footer=include_str!("category_dropdown.rs")
+            .split("fn crumbs_row(").nth(1).unwrap()
+            .split("fn menu_body(").next().unwrap();
+        assert!(!footer.contains("bar.label(typography::caption(\"›\"))"));
+        assert_eq!(footer.matches("category_path_separator(bar);").count(),2);
+    }
+    #[test]
+    fn popup_has_no_child_count_heading_above_the_fixed_six_row_list(){
+        let body=include_str!("category_dropdown.rs")
+            .split("fn menu_body(").nth(1).unwrap()
+            .split("pub fn category_dropdown(").next().unwrap();
+        assert!(!body.contains("menu.horizontal(|heading|"));
+        assert!(!body.contains("items.len()"));
+        assert!(body.contains(".auto_shrink([false,false])"));
     }
     #[test]
     fn category_list_reserves_six_rows_regardless_of_item_count(){
