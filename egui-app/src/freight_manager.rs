@@ -1165,7 +1165,17 @@ impl FreightManager {
                         None=>"전체 운임 기준을 변경하면 이전 운임의 자동 추천을 중단합니다. 새 운임을 다시 확인해 등록해야 합니다.",
                         Some(_)=>"선택한 그룹의 이전 운임 추천을 중단하고 새 운임 기준으로 변경합니다."
                     };
-                    dialog.label(typography::body(warning));
+                    let warning_width=dialog.available_width();
+                    let _=components::fixed_row(
+                        dialog,egui::Vec2::new(
+                            warning_width,typography::METADATA_LINE_HEIGHT
+                        ),egui::Layout::left_to_right(egui::Align::Center),|row|{
+                            let response=row.add(
+                                egui::Label::new(typography::body(warning)).truncate()
+                            );
+                            response.on_hover_text(warning);
+                        }
+                    );
                     components::modal_action_row(dialog,|bar|{
                         if theme::action(bar,"기준 변경",
                             theme::ButtonRole::Danger,enabled).clicked(){
