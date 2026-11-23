@@ -154,6 +154,10 @@ export function PriceCell({
     }
   };
 
+  const displayedValue = optimisticCommit.current
+    ? optimisticCommit.current.next
+    : value;
+
   const findPriceCell = (offset: number) => {
     const current = input.current;
     const body = current?.closest("tbody");
@@ -191,9 +195,9 @@ export function PriceCell({
         value={
           editing
             ? draft
-            : value === null
+            : displayedValue === null
               ? ""
-              : value.toLocaleString("ko-KR")
+              : displayedValue.toLocaleString("ko-KR")
         }
         placeholder="미등록"
         onFocus={(e) => {
