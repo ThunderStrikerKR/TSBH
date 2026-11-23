@@ -516,7 +516,6 @@ impl ManualWorkspace {
                 self.error=None;
                 self.receiver=None;
                 self.edit_text=self.current_value();
-                self.focus_editor=true;
             }
             Some(Ok(Ok(Outcome::Applied{
                 order,model,assignment_order,quote,quote_error
@@ -1413,6 +1412,7 @@ impl ManualWorkspace {
         }
 
         if submit_direct {
+            self.focus_editor=true;
             let rid=self.model.as_ref().and_then(|m|list(m,"rows")
                 .get(self.selected_recipient)).and_then(|r|r.get("id"))
                 .and_then(Value::as_str).map(str::to_owned);
