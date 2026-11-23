@@ -110,8 +110,8 @@ pub struct ClientManager {
     messages:Option<AutomaticMessageManager>,
 }
 
-fn client_tier_kpi_values(ready:bool,counts:[usize;4])->[String;4]{
-    if ready{
+fn client_tier_kpi_values(available:bool,counts:[usize;4])->[String;4]{
+    if available{
         counts.map(|count|count.to_string())
     }else{
         std::array::from_fn(|_|"—".to_owned())
@@ -363,6 +363,8 @@ impl ClientManager {
         }
         let list_status=if !self.ready{
             "불러오는 중".to_owned()
+        }else if !self.state.is_object(){
+            "조회 실패".to_owned()
         }else if self.searching{
             "검색 중".to_owned()
         }else{
@@ -424,7 +426,7 @@ impl ClientManager {
                 strip.spacing_mut().item_spacing=egui::vec2(
                     theme::SPACE_8,theme::SPACE_8
                 );
-                let values=client_tier_kpi_values(self.ready,tier_counts);
+                let values=client_tier_kpi_values(self.state.is_object(),tier_counts);
                 for (label,value) in [
                     "도매","반도매","소매","특수"
                 ].into_iter().zip(values.iter()){
