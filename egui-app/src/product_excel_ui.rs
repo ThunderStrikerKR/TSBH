@@ -1,7 +1,7 @@
 //! Excel 관리 UI for ProductManager. File I/O stays on native worker threads;
 //! authoritative price/catalog changes belong to the existing Rust reducer.
 use crate::{components,gateway::BandoGateway,product_excel,theme,typography};
-use eframe::egui::{self,Context};
+use eframe::egui::{self,Context,Ui};
 use serde_json::Value;
 use std::{path::PathBuf,sync::{Arc,mpsc::{self,Receiver,TryRecvError}}};
 
@@ -142,16 +142,16 @@ impl ProductExcelUi {
     /// Anchored menu overlays the product table without taking layout space.
     /// Popup owns outside-click/Escape dismissal and closes after either action.
     pub fn show_menu(
-        &mut self,trigger:&egui::Response,gateway:Arc<dyn BandoGateway>,
-        allowed:bool
+        &mut self,ui:&Ui,trigger:&egui::Response,
+        gateway:Arc<dyn BandoGateway>,allowed:bool
     ){
         // Result messages must remain visible after the popup closes.
         crate::floating_notice::sync(
-            trigger.ctx(),"products.excel.result","products.excel",
+            ui.ctx(),"products.excel.result","products.excel",
             crate::floating_notice::Tone::Success,self.notice.as_deref()
         );
         crate::floating_notice::sync(
-            trigger.ctx(),"products.excel.error","products.excel",
+            ui.ctx(),"products.excel.error","products.excel",
             crate::floating_notice::Tone::Error,
             if self.review.is_none(){self.error.as_deref()}else{None}
         );
