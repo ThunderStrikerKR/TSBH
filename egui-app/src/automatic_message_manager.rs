@@ -611,7 +611,7 @@ impl AutomaticMessageManager {
         if !self.loaded{
             if let Some(error)=&self.error{
                 ui.label(typography::status(error,theme::DANGER));
-            }else{ui.label(typography::caption("자동 메시지 설정을 불러오는 중입니다."));}
+            }
             return;
         }
         let mut target=tab.map(|index|Destination::Subtab(
@@ -671,7 +671,7 @@ impl AutomaticMessageManager {
                             }
                             footer.with_layout(Layout::right_to_left(Align::Center),|right|{
                                 save=theme::action(right,
-                                    if self.busy(){"저장 중"}else{"변경사항 저장"},
+                                    "변경사항 저장",
                                     ButtonRole::Primary,self.writable()&&!self.busy()
                                         &&self.dirty()).clicked();
                             });
