@@ -61,7 +61,9 @@ pub const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = Color32::from_rgb(37, 62, 8
 pub const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118);
 // Hierarchical category explorer reuses the management dropdown master.
 // Exploration is neutral; confirmed filtering uses the existing orange role.
-pub const CATEGORY_EXPLORER_POPUP_WIDTH:f32=420.0;
+// Fixed popup width, 30% wider than the former 420pt explorer.
+// Only a genuinely narrower viewport may reduce this width.
+pub const CATEGORY_EXPLORER_POPUP_WIDTH:f32=546.0;
 pub const CATEGORY_EXPLORER_LIST_MAX_HEIGHT:f32=216.0;
 pub const CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT:f32=144.0;
 pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=28.0;
