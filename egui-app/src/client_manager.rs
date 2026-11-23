@@ -636,40 +636,9 @@ impl ClientManager {
                         theme::SPACE_8,theme::SPACE_8
                     );
                     for tag in &tags{
-                        // Master INPUT surface and soft outline; each chip
-                        // stays a unit while the row wraps at modal width.
-                        egui::Frame::new()
-                            .fill(theme::INPUT)
-                            .stroke(egui::Stroke::new(
-                                theme::FRAME_STROKE_WIDTH,theme::DIVIDER
-                            ))
-                            .corner_radius(egui::CornerRadius::same(
-                                theme::CONTROL_RADIUS
-                            ))
-                            .inner_margin(egui::Margin::symmetric(8,2))
-                            .show(chips,|chip|{
-                                chip.horizontal(|line|{
-                                    line.spacing_mut().item_spacing.x=theme::SPACE_4;
-                                    let visible=if tag.chars().count()>22 {
-                                        format!("{}…",tag.chars().take(22)
-                                            .collect::<String>())
-                                    }else{tag.to_owned()};
-                                    line.label(typography::body(&visible))
-                                        .on_hover_text(tag.as_str());
-                                    // The close target uses the existing
-                                    // shared 28pt navigation hit-area token.
-                                    if line.add(egui::Button::new("×")
-                                        .frame(false)
-                                        .min_size(egui::vec2(
-                                            theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH,
-                                            theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH
-                                        )))
-                                        .on_hover_text(format!("검색 태그 '{tag}' 삭제"))
-                                        .clicked(){
-                                        removed=Some(tag.to_owned());
-                                    }
-                                });
-                            });
+                        if components::removable_tag_chip(chips,tag).clicked(){
+                            removed=Some(tag.to_owned());
+                        }
                     }
                 });
                 if let Some(tag)=removed{
