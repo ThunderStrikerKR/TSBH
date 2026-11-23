@@ -113,6 +113,30 @@ mod management_async_layout_contract_tests {
     }
 
     #[test]
+    fn pending_and_loaded_kpis_consume_identical_height(){
+        let mut measured=Vec::new();
+        for count in [None,Some(27)]{
+            let ctx=egui::Context::default();
+            let mut consumed=None;
+            let _=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(600.0);
+                    let start=ui.cursor().top();
+                    if let Some(count)=count{
+                        management_summary_card(ui,"등록 상품",count);
+                    }else{
+                        management_summary_card_value(ui,"등록 상품","—");
+                    }
+                    consumed=Some(ui.cursor().top()-start);
+                });
+            });
+            measured.push(consumed.expect("KPI was laid out"));
+        }
+        assert_eq!(measured[0],measured[1],
+            "placeholder KPI must use exact production card geometry");
+    }
+
+    #[test]
     fn management_async_renderers_keep_table_slots_invariant(){
         let products=include_str!("product_manager.rs");
         assert!(products.contains("components::management_body_state_overlay("));
@@ -123,6 +147,12 @@ mod management_async_layout_contract_tests {
         assert!(settlement.contains("for (name,value) in ["));
         let model_groups=include_str!("model_group_manager.rs");
         assert!(!model_groups.contains("if self.dirty(){\n                                components::soft_divider(right);"));
+        let aliases=include_str!("alias_manager.rs");
+        assert!(aliases.contains("let slot_width=info.min_rect().width().max(1.0);"));
+        assert!(aliases.contains("hit.on_hover_text(detail);"));
+        let settings=include_str!("settings_view.rs");
+        assert!(settings.contains("if conflict{\n                    heading.with_layout("));
+        assert!(!settings.contains("if conflict && components::management_top_content"));
     }
 }
 
