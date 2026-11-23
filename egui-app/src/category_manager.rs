@@ -585,34 +585,114 @@ impl CategoryManager {
             }
         }
     }
+    /// Only action controls remain from the former title row. Both wide and
+    /// narrow layouts render the same actions with the approved button roles.
+    fn map_toolbar_actions(
+        &mut self,actions:&mut Ui,cats:&[Category],catalog:&Value,
+        editable:bool,busy:bool
+    ){
+        if theme::action(actions,"+ 하위 분류 추가",
+            theme::ButtonRole::Primary,editable&&!busy &&
+                self.current(cats).is_some()).clicked(){
+            self.begin_operation(cats,catalog,Operation::Add);
+        }
+        if theme::action(actions,"선택 분류 편집",
+            theme::ButtonRole::Standard,!busy &&
+                self.current(cats).is_some()).clicked(){
+            if let Some(current)=self.current(cats){
+                self.name=current.name;
+                self.editor=true;
+            }
+        }
+    }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
         let cats=categories(catalog);
-        let card_min_height=components::management_primary_card_min_inner_height(ui,theme::SECTION_PADDING);
+        let card_min_height=components::management_primary_card_min_inner_height(
+            ui,theme::SECTION_PADDING
+        );
         theme::section_frame().show(ui,|panel|{
             components::fill_management_primary_card(panel,card_min_height);
-            panel.horizontal(|header|{
-                header.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                    if theme::action(actions,"+ 하위 분류 추가",
-                        theme::ButtonRole::Primary,editable&&!busy &&
-                            self.current(&cats).is_some()).clicked(){
-                        self.begin_operation(&cats,catalog,Operation::Add);
+            // No vacated heading or help-text rows. Reserve one 36pt
+            // search-and-actions toolbar, exactly as the management master.
+            panel.spacing_mut().item_spacing.y=0.0;
+            let width=panel.available_width().max(1.0);
+            if width<theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH{
+                // On a narrow pane, preserve usable search and button hit
+                // targets instead of squeezing them into clipped columns.
+                let (actions_rect,_)=panel.allocate_exact_size(
+                    Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
+                );
+                panel.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("category-map-actions-narrow")
+                        .max_rect(actions_rect)
+                        .layout(Layout::right_to_left(Align::Center)),
+                    |actions|{
+                        actions.set_width(actions_rect.width());
+                        self.map_toolbar_actions(actions,&cats,catalog,editable,busy);
                     }
-                    if theme::action(actions,"선택 분류 편집",
-                        theme::ButtonRole::Standard,!busy &&
-                            self.current(&cats).is_some()).clicked(){
-                        if let Some(current)=self.current(&cats){
-                            self.name=current.name;
-                            self.editor=true;
-                        }
+                );
+                panel.add_space(theme::SPACE_8);
+                let (search_rect,_)=panel.allocate_exact_size(
+                    Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
+                );
+                panel.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("category-map-search-narrow")
+                        .max_rect(search_rect)
+                        .layout(Layout::left_to_right(Align::Center)),
+                    |search|{
+                        search.set_width(search_rect.width());
+                        components::management_search_field(
+                            search,&mut self.query,
+                            theme::CATALOG_SEARCH_WIDTH.min(search_rect.width()),
+                            "카테고리 이름 또는 전체 경로 검색"
+                        );
                     }
-                });
-            });
-            panel.add_space(theme::SPACE_8);
-            panel.horizontal_wrapped(|search|{
-                components::management_search_field(search,&mut self.query,
-                    theme::CATALOG_SEARCH_WIDTH,"카테고리 이름 또는 전체 경로 검색");
-            });
+                );
+            }else{
+                let (toolbar_rect,_)=panel.allocate_exact_size(
+                    Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
+                );
+                let actions_width=theme::CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH;
+                let search_width=theme::CATALOG_SEARCH_WIDTH.min(
+                    (toolbar_rect.width()-actions_width-theme::SPACE_16).max(1.0)
+                );
+                let search_rect=Rect::from_min_size(
+                    toolbar_rect.min,Vec2::new(search_width,toolbar_rect.height())
+                );
+                let actions_rect=components::management_toolbar_trailing_rect(
+                    toolbar_rect,actions_width,0.0,toolbar_rect.height()
+                );
+                panel.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("category-map-search-toolbar")
+                        .max_rect(search_rect)
+                        .layout(Layout::left_to_right(Align::Center)),
+                    |search|{
+                        search.set_width(search_rect.width());
+                        components::management_search_field(
+                            search,&mut self.query,search_rect.width(),
+                            "카테고리 이름 또는 전체 경로 검색"
+                        );
+                    }
+                );
+                panel.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("category-map-actions-toolbar")
+                        .max_rect(actions_rect)
+                        .layout(Layout::right_to_left(Align::Center)),
+                    |actions|{
+                        actions.set_width(actions_rect.width());
+                        self.map_toolbar_actions(actions,&cats,catalog,editable,busy);
+                    }
+                );
+            }
+            // One explicit 21pt toolbar-to-tree transition: 16/1/4.
+            // No implicit egui gaps or phantom title/help-row spacing.
+            panel.add_space(theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP);
             components::soft_divider(panel);
+            panel.add_space(theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP);
             let index=CategoryMapIndex::new(&cats,catalog,&self.query);
             egui::ScrollArea::vertical()
                 .id_salt("category-map-tree")
@@ -1041,6 +1121,31 @@ mod modal_layout_contract_tests{
             .split("    pub fn show_overlays(").next().unwrap();
         assert!(!page.contains("section_heading(\"카테고리 맵\")"));
         assert!(!page.contains("분류 행을 클릭하면 하위 구성이 접히거나 펼쳐집니다."));
+    }
+    #[test]
+    fn category_map_no_empty_title_row_and_toolbar_has_master_spacing(){
+        let source=include_str!("category_manager.rs");
+        let page=source.split("    pub fn show_page(").nth(1).unwrap()
+            .split("    pub fn show_overlays(").next().unwrap();
+        assert!(!page.contains("section_heading("));
+        assert!(!page.contains("분류 행을 클릭하면"));
+        assert!(!page.contains("panel.horizontal(|header|"));
+        assert!(!page.contains("panel.horizontal_wrapped(|search|"));
+        assert!(page.contains("section_frame().show(ui"));
+        assert!(page.contains("fill_management_primary_card(panel,card_min_height)"));
+        assert!(page.contains("panel.spacing_mut().item_spacing.y=0.0;"));
+        assert!(page.contains("management_toolbar_trailing_rect("));
+        assert!(page.contains("theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH"));
+        assert!(page.contains("self.map_toolbar_actions("));
+        assert!(page.contains("theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP"));
+        assert!(page.contains("theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP"));
+        assert!(!page.contains("panel.add_space(theme::SPACE_8);\n            panel.horizontal_wrapped"));
+        assert_eq!(
+            theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
+                +theme::SOFT_DIVIDER_WIDTH
+                +theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP,
+            21.0
+        );
     }
     #[test]
     fn category_editor_add_move_use_only_shared_inline_form_rows(){
