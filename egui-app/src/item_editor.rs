@@ -310,8 +310,9 @@ impl ItemEditor{
                 let status_color=if self.error.is_some()||invalid_selection{
                     theme::DANGER
                 }else{theme::SECONDARY};
+                let status_width=ui.available_width();
                 components::fixed_status_slot(
-                    ui,ui.available_width(),typography::METADATA_LINE_HEIGHT,
+                    ui,status_width,typography::METADATA_LINE_HEIGHT,
                     (!status_text.is_empty()).then_some(status_text.as_str()),
                     (!status_text.is_empty()).then_some(status_text.as_str()),
                     status_color
