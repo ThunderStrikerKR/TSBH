@@ -268,10 +268,14 @@ impl ProductExcelUi {
                         ));
                     }
                 });
-                if missing>0{
-                    ui.colored_label(theme::SECONDARY,
-                        format!("Excel에서 누락된 기존 상품 {missing}개는 삭제하거나 판매중지하지 않고 그대로 유지합니다."));
-                }
+                let missing_note=(missing>0).then(||format!(
+                    "Excel에서 누락된 기존 상품 {missing}개는 삭제하거나 판매중지하지 않고 그대로 유지합니다."
+                ));
+                let missing_width=ui.available_width();
+                components::fixed_status_slot(
+                    ui,missing_width,typography::METADATA_LINE_HEIGHT,
+                    missing_note.as_deref(),missing_note.as_deref(),theme::SECONDARY
+                );
                 ui.horizontal(|filters|{
                     for (value,label) in ReviewFilter::options(){
                         if theme::action(filters,label,
@@ -296,11 +300,14 @@ impl ProductExcelUi {
                         vec![86.0,52.0,name,70.0,message]
                     }
                 );
-                if full.len()>500{
-                    ui.label(typography::caption(
-                        "표에는 최대 500행을 표시하며 모든 행을 검증합니다."
-                    ));
-                }
+                let large_table_note=(full.len()>500).then_some(
+                    "표에는 최대 500행을 표시하며 모든 행을 검증합니다."
+                );
+                let table_note_width=ui.available_width();
+                components::fixed_status_slot(
+                    ui,table_note_width,typography::METADATA_LINE_HEIGHT,
+                    large_table_note,large_table_note,theme::MUTED
+                );
                 ui.label(typography::caption(
                     "홈페이지 등록 여부와 관계없이 신규 등록 및 수정할 수 있습니다. 기존 상품 ID와 가격 기록 ID, 주문 이력, 이미지 및 홈페이지 연결 정보는 보존됩니다."
                 ));
@@ -309,9 +316,11 @@ impl ProductExcelUi {
                     "Excel 변경사항과 오류를 확인했고, 누락 행은 보존한 채 변경사항만 반영하는 데 동의합니다.",
                     true
                 );
-                if let Some(err)=&self.error{
-                    ui.colored_label(theme::DANGER,err);
-                }
+                let error_width=ui.available_width();
+                components::fixed_status_slot(
+                    ui,error_width,typography::METADATA_LINE_HEIGHT,
+                    self.error.as_deref(),self.error.as_deref(),theme::DANGER
+                );
                 ui.add_space(theme::SPACE_12);
                 components::modal_action_row(ui,|buttons|{
                     if theme::action(buttons,
