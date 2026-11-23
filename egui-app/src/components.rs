@@ -1,7 +1,7 @@
 //! Reusable egui controls. A screen specifies business purpose and data,
 //! while colors, sizes and alignment are owned by the shared UI layer.
 
-use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, Stroke, Ui, UiBuilder, Vec2};
 use chrono::{Datelike, Duration as Days, Months, NaiveDate};
 use crate::{source_highlight, theme, typography};
 
