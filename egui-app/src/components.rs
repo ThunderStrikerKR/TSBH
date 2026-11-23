@@ -72,6 +72,16 @@ pub fn management_body_state_overlay(
     );
 }
 
+/// Reserve a management page's approved primary-card footprint before its
+/// asynchronous data source is ready. Its real content can replace this
+/// placeholder without moving the top edge of the card or lower page slots.
+pub fn management_pending_primary_card(ui:&mut Ui){
+    let min_height=management_master_table_card_min_inner_height(ui);
+    theme::management_master_table_frame().show(ui,|panel|{
+        fill_management_primary_card(panel,min_height);
+    });
+}
+
 #[cfg(test)]
 mod management_async_layout_contract_tests {
     use super::*;
@@ -2377,6 +2387,12 @@ pub fn date_calendar(
 /// and any other page copying their heading / tabs / KPI hierarchy.
 /// Keep the 228pt card, 28pt value, 13pt caption and insets in one place.
 pub fn management_summary_card(ui:&mut Ui,label:&str,count:usize){
+    management_summary_card_value(ui,label,&count.to_string());
+}
+
+/// The same KPI geometry with an explicit display value, including "—"
+/// while data is pending. Never report a fabricated zero before a fetch.
+pub fn management_summary_card_value(ui:&mut Ui,label:&str,value:&str){
     let card_width=theme::FREIGHT_SUMMARY_CARD_WIDTH;
     ui.allocate_ui_with_layout(
         egui::vec2(card_width,theme::FREIGHT_SUMMARY_CARD_HEIGHT),
@@ -2397,7 +2413,7 @@ pub fn management_summary_card(ui:&mut Ui,label:&str,count:usize){
                     egui::Sense::hover()
                 );
                 let number=typography::freight_summary_large_number_galley(
-                    cell,&count.to_string()
+                    cell,value
                 );
                 let caption=typography::freight_summary_small_label_galley(cell,label);
                 cell.painter().galley(
