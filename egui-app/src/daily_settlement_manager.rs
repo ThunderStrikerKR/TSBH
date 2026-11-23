@@ -495,26 +495,33 @@ impl DailySettlementManager{
         components::management_top_content(ui,|top|{
             top.label(typography::page_heading("일일 결산"));
         });
-        // Keep genuine report KPIs above the big card. When data is still
-        // loading or failed, the date picker inside the card stays available.
-        if let Some(report)=self.report.as_ref(){
-        let orders=rows(&report["orderRows"]);
-        // The four native Rust summary values are NOT interchangeable:
-        // billed totals are reception-day values; cash is bank-deposit day.
-        // Match the same 16pt horizontal guide as the title and Freight KPIs.
+        // Always reserve four KPI slots so async report arrival never moves
+        // the date toolbar or the master card below the summary row.
+        // Missing values are placeholders, not fabricated settlement totals.
+        let report=self.report.as_ref();
+        let values=[
+            report.map(|r|format!("{}건",rows(&r["orderRows"]).len()))
+                .unwrap_or_else(||"—".to_owned()),
+            report.map(|r|won(&r["billedKnown"]))
+                .unwrap_or_else(||"—".to_owned()),
+            report.map(|r|won(&r["paidCash"]))
+                .unwrap_or_else(||"—".to_owned()),
+            report.map(|r|format!(
+                "{}건",r["billedUnknown"].as_u64().unwrap_or(0)
+            )).unwrap_or_else(||"—".to_owned()),
+        ];
         components::management_top_content(ui,|top|{
             top.horizontal_wrapped(|strip|{
                 strip.spacing_mut().item_spacing=
                     Vec2::new(theme::SPACE_8,theme::SPACE_8);
-                kpi(strip,"접수 주문",&format!("{}건",orders.len()));
-                kpi(strip,"청구 합계 확인분",&won(&report["billedKnown"]));
-                kpi(strip,"실제 계좌 입금",&won(&report["paidCash"]));
-                kpi(strip,"미확정 청구 주문",&format!(
-                    "{}건",report["billedUnknown"].as_u64().unwrap_or(0)
-                ));
+                for (name,value) in [
+                    "접수 주문","청구 합계 확인분",
+                    "실제 계좌 입금","미확정 청구 주문"
+                ].into_iter().zip(values.iter()){
+                    kpi(strip,name,value);
+                }
             });
         });
-        }
         ui.add_space(theme::SPACE_16);
         components::align_management_primary_card(ui,page_origin_y);
         let report=self.report.as_ref();
