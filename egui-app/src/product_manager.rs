@@ -1424,6 +1424,7 @@ impl ProductManager {
                                                                     ||up_pressed||down_pressed);
                                                             if escape{
                                                                 entry.reset_to_original();
+                                                                response.surrender_focus();
                                                                 self.error=None;
                                                             }else if keyboard_commit{
                                                                 let offset=if tab_pressed{
@@ -2522,6 +2523,9 @@ mod tests {
         assert!(editor.contains("egui::Key::ArrowDown"));
         assert!(editor.contains("egui::Key::Escape"));
         assert!(editor.contains("entry.reset_to_original()"));
+        let escape_branch=editor.split("if escape{").nth(1).unwrap()
+            .split("}else if keyboard_commit").next().unwrap_or("");
+        assert!(escape_branch.contains("response.surrender_focus()"));
         assert!(editor.contains("response.surrender_focus()"));
         assert!(editor.contains("response.request_focus()"));
         assert!(!editor.contains("Popup::"));
