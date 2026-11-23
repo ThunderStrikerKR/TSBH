@@ -17,6 +17,20 @@ use crate::{
 fn field<'a>(v:&'a Value,key:&str)->&'a str{
     v.get(key).and_then(Value::as_str).unwrap_or("")
 }
+// The reception item editor is a product-inspection dialog, not a compact
+// search result row. Scale the image with the Kakao-safe work area while
+// keeping room for the shared title/header, messages and action footer.
+const ITEM_DETAIL_PHOTO_MAX:f32=300.0;
+const ITEM_DETAIL_PHOTO_MIN:f32=176.0;
+const ITEM_DETAIL_PANEL_GAP:f32=theme::SPACE_16;
+const ITEM_DETAIL_STACK_WIDTH:f32=510.0;
+fn item_detail_photo_side(available_width:f32,work_height:f32)->f32{
+    (available_width*0.42)
+        .min(ITEM_DETAIL_PHOTO_MAX)
+        .min((work_height-240.0).max(ITEM_DETAIL_PHOTO_MIN))
+        .max(ITEM_DETAIL_PHOTO_MIN)
+}
+
 pub enum Event{
     Closed,
     Apply(Value),
@@ -93,6 +107,50 @@ impl ItemEditor{
             self.client_id.clone(),query,gateway,ctx.clone()
         ));
     }
+    /// Existing field names and mutations are retained; each label/value
+    /// shares one horizontal row instead of three stacked caption pairs.
+    /// Product replacement belongs inside this information column, not in
+    /// an orphaned action row under the thumbnail.
+    fn detail_information(
+        &mut self,ui:&mut egui::Ui,name:&str,category:&str,price:&str,
+        gateway:Arc<dyn BandoGateway>,ctx:&Context,
+        busy:bool,edited:bool,align_height:Option<f32>
+    ){
+        let top=ui.cursor().top();
+        ui.spacing_mut().item_spacing.y=theme::SPACE_8;
+        components::modal_labeled_row(ui,"상품명",|row|{
+            row.label(typography::subsection_heading(name));
+        });
+        components::modal_labeled_row(ui,"카테고리",|row|{
+            row.label(typography::body(category));
+        });
+        components::modal_labeled_row(ui,"가격",|row|{
+            row.label(typography::body(price));
+        });
+        if let Some(height)=align_height{
+            // Dynamic text may wrap. Only reserve the unused vertical
+            // portion, never push the footer below a long product name.
+            let used=ui.cursor().top()-top;
+            ui.add_space((height-used-theme::ACTION_STANDARD_HEIGHT
+                -theme::SPACE_8).max(theme::SPACE_8));
+        }else{
+            ui.add_space(theme::SPACE_16);
+        }
+        ui.horizontal(|controls|{
+            if theme::action(
+                controls,"상품 변경",ButtonRole::Standard,!busy
+            ).clicked(){
+                self.open_search(Arc::clone(&gateway),ctx);
+            }
+            if edited && theme::action(
+                controls,"선택 취소",ButtonRole::Quiet,!busy
+            ).clicked(){
+                self.replacement=None;
+                self.error=None;
+            }
+        });
+    }
+
     fn poll_catalog_photo(&mut self,gateway:Arc<dyn BandoGateway>,ctx:&Context){
         if !self.photo_requested{
             self.photo_requested=true;
@@ -168,43 +226,62 @@ impl ItemEditor{
                     result=self.close();
                 }
                 ui.add_space(theme::SPACE_8);
+                let outer_width=ui.available_width().max(1.0);
+                // The approved nested frame has an 8pt internal inset on
+                // each side. Its content fills the whole modal, not just
+                // the natural 128pt thumbnail + a short text column.
+                let content_width=(outer_width-2.0*theme::SPACE_8
+                    -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
+                let photo_side=item_detail_photo_side(
+                    content_width,work_area.height()
+                );
                 theme::modal_nested_frame().show(ui,|body|{
-                    body.horizontal(|line|{
-                        let (photo,_) = line.allocate_exact_size(
-                            Vec2::new(128.0,128.0),egui::Sense::hover()
+                    body.set_min_width(content_width);
+                    let product=self.replacement.as_ref()
+                        .or(self.original_catalog_product.as_ref())
+                        .unwrap_or(&self.initial);
+                    if content_width<ITEM_DETAIL_STACK_WIDTH {
+                        // Narrow Kakao-safe workspace: the image still grows
+                        // to a useful size; rows and actions stay readable
+                        // instead of being squeezed beside the image.
+                        let (photo,_)=body.allocate_exact_size(
+                            Vec2::splat(photo_side),egui::Sense::hover()
                         );
-                        // React: replacement product overrides the original
-                        // catalog photo; HIDDEN/MANUAL rules are shared with
-                        // the ProductManager photo projection.
-                        let product=self.replacement.as_ref()
-                            .or(self.original_catalog_product.as_ref())
-                            .unwrap_or(&self.initial);
-                        self.photos.paint(line,product,photo);
-                        line.add_space(theme::SPACE_16);
-                        line.vertical(|details|{
-                            details.label(typography::caption("상품명"));
-                            details.label(typography::body(name));
-                            details.add_space(theme::SPACE_8);
-                            details.label(typography::caption("카테고리"));
-                            details.label(typography::body(category));
-                            details.add_space(theme::SPACE_8);
-                            details.label(typography::caption("가격"));
-                            details.label(typography::body(&price));
+                        self.photos.paint(body,product,photo);
+                        body.painter().rect_stroke(
+                            photo,theme::CONTROL_RADIUS as f32,
+                            egui::Stroke::new(1.0,theme::BORDER),
+                            egui::StrokeKind::Inside
+                        );
+                        body.add_space(theme::SPACE_16);
+                        self.detail_information(
+                            body,name,category,&price,Arc::clone(&gateway),
+                            ctx,busy,edited,None
+                        );
+                    }else{
+                        body.horizontal(|line|{
+                            let (photo,_)=line.allocate_exact_size(
+                                Vec2::splat(photo_side),egui::Sense::hover()
+                            );
+                            self.photos.paint(line,product,photo);
+                            line.painter().rect_stroke(
+                                photo,theme::CONTROL_RADIUS as f32,
+                                egui::Stroke::new(1.0,theme::BORDER),
+                                egui::StrokeKind::Inside
+                            );
+                            line.add_space(ITEM_DETAIL_PANEL_GAP);
+                            let detail_width=(content_width-photo_side
+                                -ITEM_DETAIL_PANEL_GAP).max(1.0);
+                            line.vertical(|details|{
+                                details.set_width(detail_width);
+                                details.set_min_height(photo_side);
+                                self.detail_information(
+                                    details,name,category,&price,
+                                    Arc::clone(&gateway),ctx,
+                                    busy,edited,Some(photo_side)
+                                );
+                            });
                         });
-                    });
-                });
-                ui.add_space(theme::SPACE_16);
-                ui.horizontal(|controls|{
-                    if theme::action(
-                        controls,"상품 변경",ButtonRole::Standard,!busy
-                    ).clicked(){
-                        self.open_search(Arc::clone(&gateway),ctx);
-                    }
-                    if edited && theme::action(
-                        controls,"선택 취소",ButtonRole::Quiet,!busy
-                    ).clicked(){
-                        self.replacement=None;
-                        self.error=None;
                     }
                 });
                 if invalid_selection{
@@ -306,6 +383,36 @@ mod tests{
                 "quantity":4,"quantityConfirmed":true,
                 "unitPrice":59000}),"client-1".into(),Some(59000)
         )
+    }
+    #[test]
+    fn large_reception_item_photo_uses_full_width_and_safe_height(){
+        assert_eq!(item_detail_photo_side(724.0,900.0),300.0);
+        assert_eq!(item_detail_photo_side(724.0,500.0),260.0);
+        assert!(item_detail_photo_side(480.0,480.0)>=200.0);
+        assert_eq!(item_detail_photo_side(800.0,1100.0),300.0);
+        assert!(ITEM_DETAIL_STACK_WIDTH>=ITEM_DETAIL_PHOTO_MIN
+            +theme::MODAL_FORM_LABEL_WIDTH);
+    }
+    #[test]
+    fn item_detail_modal_has_one_full_width_two_column_card_and_inline_info(){
+        let source=include_str!("item_editor.rs");
+        let modal=source.split("    pub fn show(").nth(1).unwrap()
+            .split("        if delete_clicked{").next().unwrap();
+        assert!(modal.contains("body.set_min_width(content_width)"));
+        assert!(modal.contains("line.add_space(ITEM_DETAIL_PANEL_GAP)"));
+        assert!(modal.contains("Vec2::splat(photo_side)"));
+        assert!(modal.contains("self.detail_information("));
+        assert!(!modal.contains("Vec2::new(128.0,128.0)"));
+        assert!(!modal.contains("ui.horizontal(|controls|"));
+        let details=source.split("    fn detail_information(").nth(1).unwrap()
+            .split("    fn poll_catalog_photo(").next().unwrap();
+        for label in ["상품명","카테고리","가격"]{
+            assert!(details.contains(&format!(
+                "components::modal_labeled_row(ui,\\\"{label}\\\""
+            )));
+        }
+        assert!(details.contains("controls,\\\"상품 변경\\\""));
+        assert!(modal.contains("components::modal_action_row_split("));
     }
     #[test]
     fn only_real_product_changes_with_confirmed_quantity_can_apply(){
