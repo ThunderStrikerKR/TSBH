@@ -1819,7 +1819,8 @@ impl ManualWorkspace {
             // Dirty typed text is just as important as a completed Rust edit.
             // A parent close cannot destroy an active modal/async operation.
             if self.busy() || self.product_search.is_some() ||
-               self.remove_recipient_pending.is_some() || self.reset_pending {
+               self.remove_recipient_pending.is_some() || self.reset_pending ||
+               self.complete_pending {
                 return None;
             }
             if self.dirty || self.edit_text!=self.current_value() {
