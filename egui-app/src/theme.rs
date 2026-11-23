@@ -469,6 +469,10 @@ pub const CATALOG_SEARCH_WIDTH:f32 = 560.0;
 // Category breadcrumb selectors must reserve a predictable width so that
 // trailing ancestors are preserved via typography::fit_category_path.
 pub const CATEGORY_PATH_PICKER_WIDTH:f32 = 280.0;
+// Product-list filter trigger only; do not enlarge the modal category picker
+// or the separate 655pt popup. 280pt × 1.30 = 364pt.
+pub const PRODUCT_CATEGORY_FILTER_TRIGGER_WIDTH:f32 =
+    CATEGORY_PATH_PICKER_WIDTH*1.30;
 pub const CATEGORY_PATH_PICKER_TEXT_PADDING:f32 = 32.0;
 // Reserve the right-side change-location action when painting a category
 // ancestor path in the editable category detail pane.
