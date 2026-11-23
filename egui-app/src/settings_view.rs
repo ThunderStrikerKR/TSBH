@@ -177,7 +177,7 @@ fn settings_title_row(
         let width=top.available_width().max(1.0);
         content_right=top.available_rect_before_wrap().right();
         let row=top.allocate_ui_with_layout(
-            Vec2::new(width,theme::ACTION_PRIMARY_HEIGHT),
+            Vec2::new(width,theme::ACTION_STANDARD_HEIGHT),
             Layout::left_to_right(Align::Center),
             |heading|{
                 heading.label(typography::page_heading("설정"));
@@ -1220,7 +1220,7 @@ mod management_async_layout_tests{
             "conflict action changed the tab row height");
         assert!(near(normal.3.top(),conflict.3.top()));
         assert!(near(normal.3.bottom(),conflict.3.bottom()));
-        assert!(near(conflict.3.height(),theme::ACTION_PRIMARY_HEIGHT));
+        assert!(near(conflict.3.height(),theme::ACTION_STANDARD_HEIGHT));
         let button=conflict.4.expect("conflict state must expose restore action");
         assert!(near(button.right(),conflict.5),
             "restore action is not aligned to the title content's right edge");
