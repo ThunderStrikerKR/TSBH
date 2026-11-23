@@ -1067,9 +1067,14 @@ impl ManualWorkspace {
                             }
                         );
                     }else{
-                        // The explanation remains available when the window
-                        // is too narrow for two unbroken status labels.
-                        count.on_hover_text("정식 접수는 주문 확인 완료");
+                        // Preserve the same apply-blocking reason in a
+                        // narrow workspace where the right status cannot fit.
+                        let explanation=if pending_quantity_count>0 {
+                            format!("수량 확인 필요: {pending_quantity_count}건")
+                        }else{
+                            "정식 접수는 주문 확인 완료".to_owned()
+                        };
+                        count.on_hover_text(explanation);
                     }
                 });
                 ui.separator();
@@ -1810,13 +1815,6 @@ impl ManualWorkspace {
                 }),ctx);
             }
         }
-        if apply {
-            if self.edit_text!=self.current_value() {
-                self.error=Some("아직 반영되지 않은 입력 내용이 있습니다.".into());
-            }else{
-                self.apply(ctx);
-            }
-        }
         if discard || !open {
             // Dirty typed text is just as important as a completed Rust edit.
             // A parent close cannot destroy an active modal/async operation.
@@ -1875,6 +1873,13 @@ impl ManualWorkspace {
                 });
             if discard_confirmed {return Some(Event::Closed);}
             if !confirm {self.confirm_discard=false;}
+        }
+        if apply {
+            if self.edit_text!=self.current_value() {
+                self.error=Some("아직 반영되지 않은 입력 내용이 있습니다.".into());
+            }else{
+                self.apply(ctx);
+            }
         }
         let hovered=hovered_detail.or_else(||hovered_source.clone())
             .filter(|key|spans.iter().any(|span|span.key==*key));
