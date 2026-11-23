@@ -27,6 +27,9 @@ pub struct LinkedSpan {
     pub start_char: usize, // egui character cursor
     pub end_char: usize,
     pub key: LinkKey,
+    /// Manual-classification source block ID; ordinary recognition spans
+    /// leave this empty. The visual component still owns hit testing.
+    pub source_id: Option<String>,
 }
 
 #[derive(Default)]
@@ -147,6 +150,7 @@ fn add(raw:&str, owner:&str, span:&Value, out:&mut Vec<LinkedSpan>) {
         key:LinkKey {
             recipient_id:owner.into(),target_id:target.into(),field:field.into(),
         },
+        source_id:None,
     });
 }
 
@@ -293,6 +297,71 @@ pub fn collect(raw:&str, recognition:&Value)->Vec<LinkedSpan>{
     spans
 }
 
+/// Build the same linked-span projection for the editable manual worksheet.
+/// Assigned blocks follow the employee's current recipient/item/field target;
+/// unassigned blocks retain their original Rust-recognized target. No text
+/// matching or ownership inference is performed in the UI.
+pub fn collect_manual(
+    raw:&str,rows:&[Value],blocks:&[Value],assignments:&Value
+)->Vec<LinkedSpan>{
+    let mut ordered=blocks.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|block|
+        block.get("start").and_then(Value::as_u64).unwrap_or(u64::MAX)
+    );
+    let mut spans=Vec::new();
+    let mut last_end=0usize;
+    for block in ordered {
+        if spans.len()>=MAX_SPANS {break;}
+        let id=text(block,"id");
+        let field=text(block,"field");
+        let (Some(start),Some(end))=(
+            block.get("start").and_then(Value::as_u64),
+            block.get("end").and_then(Value::as_u64)
+        )else{continue};
+        let (Some((start_byte,start_char)),Some((end_byte,end_char)))=(
+            boundary(raw,start as usize),boundary(raw,end as usize)
+        )else{continue};
+        if id.is_empty() || field.is_empty() || end_byte<=start_byte ||
+            start_byte<last_end || &raw[start_byte..end_byte]!=text(block,"text") {
+            continue;
+        }
+        let assignment=assignments.get(id).filter(|value|value.is_object());
+        let (owner,target,linked_field)=if let Some(assignment)=assignment {
+            let owner=text(assignment,"recipientId");
+            let item=text(assignment,"itemId");
+            let linked_field=text(assignment,"field");
+            let target=if item.is_empty(){owner}else{item};
+            (owner,target,linked_field)
+        }else{
+            let original_target=text(block,"targetId");
+            let row=rows.iter().find(|row|
+                text(row,"id")==original_target ||
+                row.get("items").and_then(Value::as_array).is_some_and(|items|
+                    items.iter().any(|item|text(item,"id")==original_target))
+            );
+            let owner=row.map(|row|text(row,"id")).unwrap_or(original_target);
+            let is_item=row.is_some_and(|row|
+                row.get("items").and_then(Value::as_array).is_some_and(|items|
+                    items.iter().any(|item|text(item,"id")==original_target))
+            );
+            let target=if is_item{original_target}else{owner};
+            (owner,target,field)
+        };
+        if owner.is_empty() || target.is_empty() || linked_field.is_empty(){continue;}
+        spans.push(LinkedSpan{
+            start:start_byte,end:end_byte,start_char,end_char,
+            key:LinkKey{
+                recipient_id:owner.to_owned(),
+                target_id:target.to_owned(),
+                field:linked_field.to_owned()
+            },
+            source_id:Some(id.to_owned())
+        });
+        last_end=end_byte;
+    }
+    spans
+}
+
 pub fn key(recipient:&str,target:&str,field:&str)->LinkKey {
     LinkKey{recipient_id:recipient.into(),target_id:target.into(),field:field.into()}
 }
@@ -339,10 +408,10 @@ fn same_target(left:&LinkKey,right:&LinkKey)->bool {
 /// cursor_from_pos snaps to the next insertion index on the right half of
 /// a character, making the final glyph of a source name lose its link.
 /// Match the exact Rust evidence ownership, including wrapped/newline rows.
-pub fn hovered_key_at_pointer(
+pub fn hovered_span_index_at_pointer(
     raw:&str,spans:&[LinkedSpan],galley:&egui::Galley,
     galley_pos:egui::Pos2,pointer:egui::Pos2
-)->Option<LinkKey>{
+)->Option<usize>{
     let characters:Vec<char>=raw.chars().collect();
     let mut row_start=0usize;
     for (row_index,placed) in galley.rows.iter().enumerate(){
@@ -355,9 +424,9 @@ pub fn hovered_key_at_pointer(
                 let right=left+glyph.advance_width;
                 if pointer.x>=left && pointer.x<right {
                     let char_index=row_start+index;
-                    return spans.iter().find(|span|
+                    return spans.iter().position(|span|
                         span.start_char<=char_index && char_index<span.end_char
-                    ).map(|span|span.key.clone());
+                    );
                 }
             }
             return None;
@@ -369,6 +438,15 @@ pub fn hovered_key_at_pointer(
         }
     }
     None
+}
+
+pub fn hovered_key_at_pointer(
+    raw:&str,spans:&[LinkedSpan],galley:&egui::Galley,
+    galley_pos:egui::Pos2,pointer:egui::Pos2
+)->Option<LinkKey>{
+    hovered_span_index_at_pointer(raw,spans,galley,galley_pos,pointer)
+        .and_then(|index|spans.get(index))
+        .map(|span|span.key.clone())
 }
 
 // The React source token palette is intentionally quiet in this dark theme.
