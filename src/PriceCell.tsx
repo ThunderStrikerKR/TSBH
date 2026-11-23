@@ -32,11 +32,11 @@ export function PriceCell({
   const pendingRef = useRef(onPendingChange);
   pendingRef.current = onPendingChange;
 
-  const parseDraft = (): ParsedPrice => {
-    const text = draft.replaceAll(",", "");
+  const parseDraft = (raw = draft): ParsedPrice => {
+    const text = raw.replaceAll(",", "");
     if (
       text !== "" &&
-      (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(draft) ||
+      (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(raw) ||
         !Number.isSafeInteger(Number(text)))
     ) {
       return { ok: false };
@@ -47,10 +47,10 @@ export function PriceCell({
     };
   };
 
-  const isDraftDirty = () => {
+  const isDraftDirty = (raw = draft) => {
     const initial = expected.current === null ? "" : String(expected.current);
-    if (draft.replaceAll(",", "") === initial) return false;
-    const parsed = parseDraft();
+    if (raw.replaceAll(",", "") === initial) return false;
+    const parsed = parseDraft(raw);
     return !parsed.ok || parsed.value !== expected.current;
   };
 
@@ -81,6 +81,10 @@ export function PriceCell({
   const cancel = () => {
     if (saving.current) return;
     skipBlurSave.current = true;
+    if (lastReportedPending.current) {
+      lastReportedPending.current = false;
+      pendingRef.current?.(false);
+    }
     setDraft(
       expected.current === null
         ? ""
@@ -101,6 +105,10 @@ export function PriceCell({
     }
     const next = parsed.value;
     if (!isDraftDirty() || next === expected.current) {
+      if (lastReportedPending.current) {
+        lastReportedPending.current = false;
+        pendingRef.current?.(false);
+      }
       setEditing(false);
       setError("");
       setStatus("");
@@ -124,6 +132,10 @@ export function PriceCell({
     } catch (e) {
       // Keep the cell's value and comparison baseline for an automatic retry
       // on the next Enter, Tab, or focus change.
+      if (!lastReportedPending.current) {
+        lastReportedPending.current = true;
+        pendingRef.current?.(true);
+      }
       setError(readableError(e));
       setStatus("저장 실패");
     } finally {
@@ -188,7 +200,13 @@ export function PriceCell({
         }}
         onChange={(e) => {
           if (enabled && !busy) {
-            setDraft(e.target.value);
+            const next = e.target.value;
+            setDraft(next);
+            const nextPending = isDraftDirty(next);
+            if (lastReportedPending.current !== nextPending) {
+              lastReportedPending.current = nextPending;
+              pendingRef.current?.(nextPending);
+            }
             setError("");
             setStatus("");
           }
