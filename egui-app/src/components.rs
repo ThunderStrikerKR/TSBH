@@ -147,7 +147,11 @@ mod fixed_layout_slot_contract_tests {
     #[test]
     fn optional_status_keeps_its_rect_and_the_next_control_fixed(){
         let mut measured=Vec::new();
-        for message in [None,Some("상태 안내문이 표시됩니다.") ]{
+        for message in [
+            None,
+            Some("상태 안내문이 표시됩니다."),
+            Some("수량 확인 필요: 123건 / 저장 중인 변경사항과 검증 오류가 있어 적용할 수 없습니다."),
+        ]{
             let ctx=test_context();
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
