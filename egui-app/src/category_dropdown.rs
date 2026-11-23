@@ -129,7 +129,7 @@ fn crumb(
 }
 fn crumbs_row(
     ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
-    selected:&mut String,enabled:bool,changed:&mut bool
+    selected:&mut String,enabled:bool,allow_empty:bool,changed:&mut bool
 ){
     let path=state.path.clone();
     let len=path.len();
@@ -178,7 +178,8 @@ fn crumbs_row(
         if spacer>0.0 {bar.add_space(spacer);}
         if theme::action(
             bar,"적용",theme::ButtonRole::Primary,
-            enabled && path.last().map(String::as_str).unwrap_or("")!=selected
+            enabled && (allow_empty || !path.is_empty())
+                && path.last().map(String::as_str).unwrap_or("")!=selected
         ).clicked(){apply=true;}
     });
     if toggle_ancestors{state.ancestors_open=!state.ancestors_open;}
@@ -195,7 +196,7 @@ fn crumbs_row(
 fn menu_body(
     menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
     state:&mut ExplorerState,selected:&mut String,enabled:bool,
-    changed:&mut bool,trigger_rect:egui::Rect,popup_width:f32,
+    allow_empty:bool,changed:&mut bool,trigger_rect:egui::Rect,popup_width:f32,
 ){
     floating_notice::dropdown_popup_trigger(menu.ctx(),trigger_rect);
     menu.set_min_width(popup_width);
@@ -337,7 +338,7 @@ fn menu_body(
     }
     components::soft_divider(menu);
     menu.label(typography::caption("현재 경로"));
-    crumbs_row(menu,state,index,selected,enabled,changed);
+    crumbs_row(menu,state,index,selected,enabled,allow_empty,changed);
 }
 
 /// Same trigger, same popup owner, same hover and one-shot feedback anchor as
@@ -345,7 +346,7 @@ fn menu_body(
 /// navigation and a fixed, explicitly committed category ID.
 pub fn category_dropdown(
     ui:&mut Ui,nodes:&[CategoryNode],selected:&mut String,
-    width:f32,empty_label:&str,enabled:bool
+    width:f32,empty_label:&str,enabled:bool,allow_empty:bool
 )->Response{
     let index=tree_index(nodes);
     let full=if selected.is_empty(){empty_label.to_owned()}else{
@@ -378,8 +379,8 @@ pub fn category_dropdown(
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
             menu_body(
-                menu,nodes,&index,&mut state,selected,enabled,&mut changed,
-                trigger.rect,popup_width
+                menu,nodes,&index,&mut state,selected,enabled,allow_empty,
+                &mut changed,trigger.rect,popup_width
             );
         });
     ctx.data_mut(|data|data.insert_temp(state_id,state));
