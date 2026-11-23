@@ -1725,17 +1725,18 @@ pub fn modal_backdrop(
     });
 }
 
-/// Nested decision windows must own the modal input layer, not their dim
-/// backdrop. A backdrop and its dialog can both use Foreground ordering; if
-/// the backdrop owns the layer, egui may reject every button in the dialog.
+/// Layer occupied by the interactive nested decision window.
+/// It intentionally shares Foreground order with its parent and backdrop;
+/// explicit stacking below keeps the dialog above the full-screen dim Area.
 pub fn modal_window_layer(id:&'static str)->egui::LayerId {
-    // Must match decision_window's Tooltip order, not the parent editor's
-    // Foreground order. This is the actual layer egui must allow to interact.
-    egui::LayerId::new(egui::Order::Tooltip,egui::Id::new(id))
+    egui::LayerId::new(egui::Order::Foreground,egui::Id::new(id))
 }
 
-/// Render a nested dim and route input to the actual Window created by
-/// modal_window/decision_window with the same stable ID.
+/// Render the nested dim first, then restore the decision window to the top
+/// of the Foreground stack. The full-screen backdrop itself can be marked
+/// topmost by egui when the pointer is pressed anywhere inside its rectangle.
+/// Without this explicit reordering, the backdrop can move above the dialog
+/// and swallow every button. The modal input boundary is the dialog layer.
 pub fn modal_backdrop_for_window(
     ctx:&egui::Context,backdrop_id:&'static str,window_id:&'static str
 ) {
@@ -1746,7 +1747,6 @@ pub fn modal_backdrop_for_window(
         .movable(false)
         .interactable(false)
         .sense(egui::Sense::hover());
-    ctx.memory_mut(|memory|memory.set_modal_layer(modal_window_layer(window_id)));
     area.show(ctx,|ui|{
         let (rect,_)=ui.allocate_exact_size(
             viewport.size(),egui::Sense::hover()
@@ -1756,6 +1756,11 @@ pub fn modal_backdrop_for_window(
                 theme::MODAL_NESTED_BACKDROP_ALPHA
             )
         );
+    });
+    let dialog_layer=modal_window_layer(window_id);
+    ctx.memory_mut(|memory|{
+        memory.areas_mut().move_to_top(dialog_layer);
+        memory.set_modal_layer(dialog_layer);
     });
 }
 
