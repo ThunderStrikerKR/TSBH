@@ -2978,6 +2978,87 @@ fn management_dropdown_inner(
     trigger
 }
 
+/// One search-capable choice for a management single-select dropdown.
+/// Its stable ID is the value passed to the existing catalog/filter workflow;
+/// search_text can additionally contain localized names and registry aliases.
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub struct ManagementSearchChoice {
+    pub value:String,
+    pub label:String,
+    pub search_text:String,
+}
+impl ManagementSearchChoice {
+    pub fn new(value:String,label:String,search_text:String)->Self{
+        Self{value,label,search_text}
+    }
+}
+
+fn management_search_choice_matches(
+    choice:&ManagementSearchChoice,query:&str
+)->bool{
+    let query=query.trim().to_lowercase();
+    query.is_empty()
+        ||choice.label.to_lowercase().contains(&query)
+        ||choice.search_text.to_lowercase().contains(&query)
+}
+
+/// A searchable variant of the existing single-select master. The trigger,
+/// palette, selection semantics, 28pt option rows, click-to-close and toast
+/// anchor all remain shared; only a 36pt search field is added above the
+/// internally scrolling choices. Search never changes the selected value.
+pub fn management_searchable_dropdown(
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    current:&mut String,options:&[ManagementSearchChoice],hint:&str,
+)->Response{
+    let trigger=management_dropdown_trigger(ui,label,width,enabled,tooltip,None);
+    let rect=trigger.rect;
+    let id=trigger.id.with("management-searchable-dropdown");
+    let ctx=ui.ctx().clone();
+    let mut search=ctx.data_mut(|data|
+        data.get_temp::<String>(id).unwrap_or_default()
+    );
+    if trigger.clicked(){search.clear();}
+    // The search field needs room even on a 148pt toolbar trigger, but
+    // long brand names must never stretch the popup or surrounding toolbar.
+    let popup_width=width.max(theme::MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH)
+        .min((ctx.screen_rect().width()-theme::SPACE_24).max(1.0));
+    egui::Popup::menu(&trigger)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|menu|{
+            crate::floating_notice::dropdown_popup_trigger(menu.ctx(),rect);
+            menu.set_min_width(popup_width);
+            menu.set_max_width(popup_width);
+            menu.set_width(popup_width);
+            management_dropdown_option_palette(menu);
+            menu.spacing_mut().item_spacing.y=theme::SPACE_4;
+            let input_width=menu.available_width().max(1.0);
+            management_search_field(menu,&mut search,input_width,hint);
+            let visible=options.iter()
+                .filter(|choice|management_search_choice_matches(choice,&search))
+                .collect::<Vec<_>>();
+            egui::ScrollArea::vertical()
+                .id_salt("management-searchable-options")
+                .max_height(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
+                .auto_shrink([false,true])
+                .show(menu,|list|{
+                    list.spacing_mut().item_spacing.y=theme::SPACE_4;
+                    list.spacing_mut().interact_size.y=
+                        theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
+                    if visible.is_empty(){
+                        list.label(typography::caption("검색 결과가 없습니다."));
+                    }else{
+                        for choice in visible{
+                            management_dropdown_option(
+                                list,current,choice.value.clone(),&choice.label
+                            );
+                        }
+                    }
+                });
+        });
+    ctx.data_mut(|data|data.insert_temp(id,search));
+    trigger
+}
+
 /// Paint only the option glyphs using the shared -1pt optical correction.
 /// Native widgets still own row sizing, selection fill, hover, focus and clicks.
 /// Normal options stay left-aligned; short two-choice menus stay centered.
@@ -5068,6 +5149,44 @@ mod management_date_group_tests{
 
 #[cfg(test)]
 mod management_dropdown_unification_tests {
+    #[test]
+    fn searchable_single_select_matches_name_localized_form_and_alias(){
+        let choices=[
+            super::ManagementSearchChoice::new(
+                "a".into(),"Bando".into(),"Bando 반도 별칭보면대".into()
+            ),
+            super::ManagementSearchChoice::new(
+                "b".into(),"K&M".into(),"K&M 케이앤엠".into()
+            ),
+        ];
+        for query in ["bando","BANDO","반도","별칭보면대","  반도  "]{
+            assert!(super::management_search_choice_matches(&choices[0],query));
+            assert!(!super::management_search_choice_matches(&choices[1],query));
+        }
+        assert!(super::management_search_choice_matches(&choices[1],"케이앤엠"));
+        assert!(super::management_search_choice_matches(&choices[0],""));
+        assert!(super::management_search_choice_matches(&choices[1],""));
+        assert!(!super::management_search_choice_matches(&choices[0],"없음"));
+    }
+    #[test]
+    fn searchable_dropdown_keeps_shared_trigger_and_one_line_options(){
+        let source=include_str!("components.rs");
+        let block=source.split("pub fn management_searchable_dropdown(").nth(1).unwrap()
+            .split("/// Paint only the option glyphs").next().unwrap();
+        for required in [
+            "management_dropdown_trigger(",
+            "management_dropdown_option_palette(menu)",
+            "management_search_field(menu,&mut search,input_width,hint)",
+            "management_dropdown_option(",
+            "dropdown_popup_trigger(menu.ctx(),rect)",
+            "MANAGEMENT_DROPDOWN_OPTION_HEIGHT",
+            "MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT",
+        ]{
+            assert!(block.contains(required),"{required} missing");
+        }
+        assert!(!block.contains("ui.vertical(|"));
+    }
+
     use super::*;
 
     #[test]
