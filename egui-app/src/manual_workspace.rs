@@ -747,6 +747,19 @@ impl ManualWorkspace {
             .is_some_and(item_quantity_pending)
     }
 
+    fn pending_quantity_cell(&self)->Option<ManualCellTarget>{
+        if !self.selected_quantity_pending() ||
+            !matches!(self.last_action.as_deref(),
+                Some("set_manual_product"|"assign_manual_block")) {
+            return None;
+        }
+        Some(ManualCellTarget{
+            row:self.selected_recipient,
+            item:self.selected_item.clone(),
+            field:"quantity".into(),
+        })
+    }
+
     fn current_value(&self)->String {
         let Some(model)=self.model.as_ref() else{return String::new()};
         let Some(row)=list(model,"rows").get(self.selected_recipient) else {
