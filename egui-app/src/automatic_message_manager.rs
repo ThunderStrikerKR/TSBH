@@ -511,8 +511,9 @@ impl AutomaticMessageManager {
         ui.label(typography::field_label("복사용 자동 메시지 편집"));
         let mut content=Self::template_value(&self.draft_templates,def);
         let width=ui.available_width();
-        if ui.add_enabled(!self.busy(),egui::TextEdit::multiline(&mut content)
-            .desired_width(width).desired_rows(6)).changed(){
+        if components::multiline_text_field(
+            ui,&mut content,!self.busy(),width,6,None
+        ).changed(){
             self.draft_templates.insert(def.id.into(),json!(content.clone()));
             self.error=None;
         }
@@ -559,9 +560,9 @@ impl AutomaticMessageManager {
                 "잠정 선택 시 복사용 계좌안내에 추가할 문구"
             ));
             let width=ui.available_width();
-            if ui.add_enabled(!self.busy(),egui::TextEdit::multiline(&mut content)
-                .desired_width(width).desired_rows(5)
-                .hint_text("예: 709는 상판에 구멍이 있습니다. 구멍이 없는 제품은 709-1 모델을 확인해 주세요.")
+            if components::multiline_text_field(
+                ui,&mut content,!self.busy(),width,5,
+                Some("예: 709는 상판에 구멍이 있습니다. 구멍이 없는 제품은 709-1 모델을 확인해 주세요.")
             ).changed(){
                 if content.trim().is_empty(){self.draft_notices.remove(id);}
                 else{self.draft_notices.insert(id.into(),json!(content.clone()));}
