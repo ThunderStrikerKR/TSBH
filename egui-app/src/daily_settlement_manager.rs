@@ -244,7 +244,12 @@ fn metric(ui:&mut Ui,label:&str,value:String){
     ui.horizontal(|line|{
         line.spacing_mut().item_spacing.x=theme::SPACE_4;
         line.label(typography::field_label(label));
-        line.label(typography::body(&value));
+        // Preserve the original 22pt body line box while displaying a
+        // standalone monetary figure in the shared numeric data face.
+        line.label(typography::data_value_text(
+            &value,typography::DataValueKind::Money,
+            typography::DataValueContext::Form
+        ).line_height(Some(22.0)));
     });
 }
 fn cells<const N:usize>(
