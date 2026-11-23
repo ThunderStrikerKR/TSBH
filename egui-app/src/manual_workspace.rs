@@ -1030,7 +1030,7 @@ impl ManualWorkspace {
                 // open. The background worksheet remains visible but inert.
                 if self.busy() || self.product_search.is_some() ||
                     self.remove_recipient_pending.is_some() ||
-                    self.reset_pending || self.confirm_discard {
+                    self.reset_pending || self.complete_pending || self.confirm_discard {
                     ui.disable();
                 }
                 let Some(model)=self.model.as_ref() else {return};
