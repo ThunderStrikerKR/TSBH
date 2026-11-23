@@ -834,6 +834,24 @@ impl FreightManager {
         ui.add_space(theme::SPACE_12);
         let (Some(state), Some(projection)) = (self.state.as_ref(), self.projection.as_ref())
         else {
+            // Initial loading/error state gets the SAME four KPI footprints
+            // and principal-card top edge; only the real table contents await
+            // the native state/projection. Never represent missing data as 0.
+            freight_top_content(ui,|top|{
+                top.horizontal_wrapped(|strip|{
+                    strip.spacing_mut().item_spacing=egui::vec2(
+                        theme::SPACE_8,theme::SPACE_8
+                    );
+                    for label in [
+                        "등록 상품","그룹 지정 완료","그룹 미지정","배송 그룹"
+                    ]{
+                        components::management_summary_card_value(strip,label,"—");
+                    }
+                });
+            });
+            ui.add_space(theme::SPACE_16);
+            components::align_management_primary_card(ui,page_origin_y);
+            components::management_pending_primary_card(ui);
             return;
         };
         let shipping = &state["shipping"];
