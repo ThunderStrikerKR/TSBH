@@ -93,11 +93,14 @@ fn settlement_date_toolbar(
             changed=true;
         }
     });
-    if !valid_date(date_input){
-        ui.label(typography::status(
-            "결산 날짜는 YYYY-MM-DD 형식으로 입력하세요.",theme::DANGER
-        ));
-    }
+    let date_error=(!valid_date(date_input)).then_some(
+        "결산 날짜는 YYYY-MM-DD 형식으로 입력하세요."
+    );
+    let status_width=ui.available_width();
+    components::fixed_status_slot(
+        ui,status_width,typography::METADATA_LINE_HEIGHT,
+        date_error,date_error,theme::DANGER
+    );
     changed
 }
 
