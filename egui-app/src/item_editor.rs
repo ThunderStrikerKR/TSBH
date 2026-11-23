@@ -125,7 +125,10 @@ impl ItemEditor{
             row.label(typography::body(category));
         });
         components::modal_labeled_row(ui,"가격",|row|{
-            row.label(typography::body(price));
+            row.label(typography::data_value_text(
+                price,typography::DataValueKind::Money,
+                typography::DataValueContext::Form
+            ).line_height(Some(22.0)));
         });
         if let Some(height)=align_height{
             // Dynamic text may wrap. Only reserve the unused vertical
