@@ -749,8 +749,6 @@ impl ProductManager {
                 if let Some(data)=self.brands.show_page(ui,catalog,can_edit,saving){
                     self.start_write("upsert_brand",data,None,ui.ctx().clone());
                 }
-            }else{
-                ui.label(typography::caption("브랜드 목록을 불러오는 중입니다."));
             }
             return;
         }
@@ -761,24 +759,18 @@ impl ProductManager {
                 ){
                     self.start_write("save_alias",data,None,ui.ctx().clone());
                 }
-            }else{
-                ui.label(typography::caption("별칭 목록을 불러오는 중입니다."));
             }
             return;
         }
         if self.tab==2 {
             if let Some(catalog)=self.catalog.as_ref(){
                 self.model_groups.show_page(ui,catalog,Arc::clone(&self.gateway));
-            }else{
-                ui.label(typography::caption("모델군 목록을 불러오는 중입니다."));
             }
             return;
         }
         if self.tab==1 {
             if let Some(catalog)=self.catalog.as_ref(){
                 self.category_manager.show_page(ui,catalog,can_edit,saving);
-            } else {
-                ui.label(typography::caption("카테고리 목록을 불러오는 중입니다."));
             }
             return;
         }
