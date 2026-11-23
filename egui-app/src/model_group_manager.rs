@@ -472,9 +472,10 @@ impl ModelGroupManager {
                             right.horizontal(|footer|{
                                 footer.label(typography::caption(if self.dirty(){"저장하지 않은 변경사항 있음"} else {"변경사항 없음"}));
                                 footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                                    if self.dirty()&&theme::action(buttons,
+                                    if theme::action(buttons,
                                         "변경사항 저장",
-                                        theme::ButtonRole::Primary,writable&&!busy).clicked(){
+                                        theme::ButtonRole::Primary,
+                                        writable&&!busy&&self.dirty()).clicked(){
                                         save=true;
                                     }
                                     if theme::action(buttons,"닫기",
@@ -486,20 +487,24 @@ impl ModelGroupManager {
                         }else{
                             right.label(typography::body(
                                 "모델군을 만든 다음 상품을 추가하고 대표모델을 직접 지정하세요."));
-                            if self.dirty(){
-                                components::soft_divider(right);
-                                right.horizontal(|footer|{
-                                    footer.label(typography::caption("저장하지 않은 변경사항 있음"));
-                                    if theme::action(footer,"닫기",
-                                        theme::ButtonRole::Standard,!busy).clicked(){
-                                        self.request_exit(Exit::Close);
-                                    }
-                                    if theme::action(footer,"변경사항 저장",
-                                        theme::ButtonRole::Primary,writable&&!busy).clicked(){
-                                        save=true;
-                                    }
-                                });
-                            }
+                            // Keep the footer, both actions and their hit
+                            // rectangles stable when dirty state changes.
+                            components::soft_divider(right);
+                            right.horizontal(|footer|{
+                                footer.label(typography::caption(
+                                    if self.dirty(){"저장하지 않은 변경사항 있음"}
+                                    else{"변경사항 없음"}
+                                ));
+                                if theme::action(footer,"닫기",
+                                    theme::ButtonRole::Standard,!busy).clicked(){
+                                    self.request_exit(Exit::Close);
+                                }
+                                if theme::action(footer,"변경사항 저장",
+                                    theme::ButtonRole::Primary,
+                                    writable&&!busy&&self.dirty()).clicked(){
+                                    save=true;
+                                }
+                            });
                         }
                     }
                 );
