@@ -166,7 +166,7 @@ fn crumbs_row(
             bar.label(typography::caption("›"));
             let name=index.get(id.as_str()).map(|n|n.name.as_str())
                 .unwrap_or("분류 없음");
-            let role=if id==selected{CrumbVisual::Applied}
+            let role=if id.as_str()==selected.as_str(){CrumbVisual::Applied}
                 else if offset+hidden+1==len{CrumbVisual::Current}
                 else{CrumbVisual::Ordinary};
             if crumb(bar,name,crumb_width,role).clicked()
@@ -179,7 +179,7 @@ fn crumbs_row(
         if theme::action(
             bar,"적용",theme::ButtonRole::Primary,
             enabled && (allow_empty || !path.is_empty())
-                && path.last().map(String::as_str).unwrap_or("")!=selected
+                && path.last().map(String::as_str).unwrap_or("")!=selected.as_str()
         ).clicked(){apply=true;}
     });
     if toggle_ancestors{state.ancestors_open=!state.ancestors_open;}
