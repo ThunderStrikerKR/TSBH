@@ -54,3 +54,13 @@ React는 각 구성표 입력 셀에서 직접 문자열을 수정할 수 있으
 - `manual_source_view::source_document`는 위젯의 `response.hovered() || response.clicked()` 보호 조건을 통과할 때 `interact_pointer_pos()`를 우선 사용하고, 비어 있으면 `input.pointer.hover_pos()`를 사용한다.
 - 장애물 뒤/비활성 화면에서 포인터 위치만으로 링크가 활성화되지 않도록 위젯의 hovered/clicked 조건은 유지한다.
 - UI 색상 변경만으로 해결되는 문제가 아니며, 이 좌표 수정이 원문↔구성표 호버 동작의 필수 수정이다. Windows 실제 포인터 이벤트 테스트를 통해 검증한다.
+
+## 검증 결과 (Windows 실시간 CI)
+
+- [수동분류 모달·하이라이트 회귀 검증](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45218790023) — `success`, 검증 대상 구현 커밋 `224249d3`
+- egui `cargo check`: 성공
+- 실제 마우스 누름/뗌, 자식 확인창 두 버튼, 부모 입력 차단, 파란 연결 셀: 성공
+- 수동분류 Esc·취소·적용 가드 및 UI 흐름: 성공
+- 원문 링크의 마우스 호버·클릭(순수 호버 좌표 결손 수정): 성공
+- source span 소유자·UTF-16 경계·동일 ID 연결·입출 지연: 성공
+- 결과는 Windows CI의 egui 컴파일·headless 포인터 시뮬레이션 검증이다. 사용자 운영 화면과 DB를 직접 연 테스트는 아니므로 별도 스크린샷 확인을 최종 UI 판정으로 남긴다.
