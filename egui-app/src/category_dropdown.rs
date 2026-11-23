@@ -793,9 +793,11 @@ mod tests{
         let source=include_str!("category_dropdown.rs");
         let button=source.split("fn category_back_button(").nth(1).unwrap()
             .split("fn crumbs_row(").next().unwrap();
-        assert!(button.contains(".fill(Color32::TRANSPARENT)"));
-        assert!(button.contains(".stroke(Stroke::NONE)"));
-        assert!(button.contains("theme::paint_button_hover"));
+        // The category control delegates Ghost visuals to the shared
+        // action component; its visual contract is tested centrally.
+        assert!(button.contains("theme::action_with_min_width("));
+        assert!(button.contains("theme::ButtonRole::Ghost"));
+        assert!(button.contains("theme::CATEGORY_EXPLORER_BACK_WIDTH"));
         let body=source.split("fn menu_body(").nth(1).unwrap()
             .split("pub fn category_dropdown(").next().unwrap();
         let footer=body.rsplit("components::soft_divider(menu);")
