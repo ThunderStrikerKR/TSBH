@@ -52,13 +52,13 @@ pub fn source_document(
             )
         )
     }else{None};
-    if let Some(index)=hovered_index.and_then(|index|spans.get(index)){
-        result.hovered=Some(index.key.clone());
-        if enabled {
+    if enabled {
+        if let Some(index)=hovered_index.and_then(|index|spans.get(index)){
+            result.hovered=Some(index.key.clone());
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        if response.clicked(){
-            result.clicked_block=index.source_id.clone();
+            if response.clicked(){
+                result.clicked_block=index.source_id.clone();
+            }
         }
     }
     if let Some(key)=scroll_to {
