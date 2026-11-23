@@ -282,7 +282,8 @@ mod management_async_layout_contract_tests {
         let model_groups=include_str!("model_group_manager.rs");
         assert!(!model_groups.contains("if self.dirty(){\n                                components::soft_divider(right);"));
         let aliases=include_str!("alias_manager.rs");
-        assert!(aliases.contains("let slot_width=info.min_rect().width().max(1.0);"));
+        assert!(aliases.contains("fn alias_diagnostic_slot("));
+assert!(aliases.contains("alias_diagnostic_slot(info,item,&warnings);"));
         assert!(aliases.contains("hit.on_hover_text(detail);"));
         let settings=include_str!("settings_view.rs");
         assert!(settings.contains("if conflict{\n                    heading.with_layout("));
@@ -340,7 +341,8 @@ mod management_async_behavior_regression_tests {
         assert!(model_groups.contains("theme::action(footer,\"닫기\""));
 
         let aliases=include_str!("alias_manager.rs");
-        assert!(aliases.contains("let slot_width=info.min_rect().width().max(1.0);"));
+        assert!(aliases.contains("fn alias_diagnostic_slot("));
+assert!(aliases.contains("alias_diagnostic_slot(info,item,&warnings);"));
         assert!(aliases.contains("hit.on_hover_text(detail);"));
 
         let main=include_str!("main.rs");
