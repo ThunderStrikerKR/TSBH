@@ -53,6 +53,69 @@ pub fn virtual_fixed_rows<R>(
 
 pub const TABLE_HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 
+/// Zero-layout feedback for fixed management table/scroll viewports.
+///
+/// Pending, empty and no-result text must never create an egui row, change a
+/// header's Y coordinate, consume scrollbar height or resize the enclosing
+/// card. Call this ONLY after the caller has reserved a stable body rectangle.
+/// Operational errors and decisions continue through FloatingNotice/modals.
+pub fn management_body_state_overlay(
+    ui:&Ui,viewport:Rect,caption:Option<&str>
+){
+    let Some(caption)=caption else {return};
+    let visible=viewport.intersect(ui.clip_rect());
+    if visible.width()<=0.0 || visible.height()<=0.0{return;}
+    ui.painter().with_clip_rect(visible).text(
+        visible.center(),egui::Align2::CENTER_CENTER,caption,
+        egui::FontId::proportional(typography::FONT_METADATA),
+        theme::MUTED
+    );
+}
+
+#[cfg(test)]
+mod management_async_layout_contract_tests {
+    use super::*;
+
+    #[test]
+    fn loading_and_empty_overlays_do_not_advance_parent_cursor(){
+        let ctx=egui::Context::default();
+        let mut checked=false;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(480.0);
+                let body=ui.available_rect_before_wrap();
+                let cursor=ui.cursor();
+                for caption in [
+                    None,Some("자료 조회 중"),Some("검색 결과가 없습니다."),
+                    Some("완료"),None
+                ]{
+                    management_body_state_overlay(
+                        ui,Rect::from_min_size(body.min,Vec2::new(300.0,100.0)),
+                        caption
+                    );
+                    assert_eq!(ui.cursor(),cursor,
+                        "asynchronous state must not allocate a layout row");
+                }
+                checked=true;
+            });
+        });
+        assert!(checked);
+    }
+
+    #[test]
+    fn management_async_renderers_keep_table_slots_invariant(){
+        let products=include_str!("product_manager.rs");
+        assert!(products.contains("components::management_body_state_overlay("));
+        assert!(!products.contains("let empty_reserve=if self.products.is_empty()"));
+        assert!(!products.contains("management_list_strip_frame().show(panel,|empty|"));
+        let settlement=include_str!("daily_settlement_manager.rs");
+        assert!(settlement.contains("let values=["));
+        assert!(settlement.contains("for (name,value) in ["));
+        let model_groups=include_str!("model_group_manager.rs");
+        assert!(!model_groups.contains("if self.dirty(){\n                                components::soft_divider(right);"));
+    }
+}
+
 /// Semantic labels for management table columns. A screen selects the
 /// column role; the shared component owns the displayed header wording.
 /// This does not change the underlying product description or column size.
