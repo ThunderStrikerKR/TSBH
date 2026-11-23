@@ -394,13 +394,14 @@ pub fn management_primary_card_top_offset(available_width: f32) -> f32 {
         + summary_height + SPACE_16 + SPACING * 3.0
 }
 
-// Original React manual workspace: max 1760, viewport side gap 36,
-// source-to-sheet columns 34:66 (.manual-workspace .manual-columns).
+// Manual classification keeps the modal master geometry but gives the
+// source its own readable width now that recipient fields are stacked.
+// The React 34:66 historical sheet ratio caused truncated text here.
 pub const MANUAL_DIALOG_MAX_WIDTH: f32 = 1760.0;
 pub const MANUAL_DIALOG_SIDE_GAP: f32 = 36.0;
 pub const MANUAL_DIALOG_VERTICAL_GAP: f32 = 44.0;
-pub const MANUAL_SOURCE_SHARE: f32 = 0.34;
-pub const MANUAL_SOURCE_MIN_WIDTH: f32 = 260.0;
+pub const MANUAL_SOURCE_SHARE: f32 = 0.40;
+pub const MANUAL_SOURCE_MIN_WIDTH: f32 = 300.0;
 pub const MANUAL_SHEET_MIN_WIDTH: f32 = 440.0;
 pub const MANUAL_COLUMN_GAP: f32 = SPACE_12;
 pub const MANUAL_SEARCH_DIALOG_WIDTH: f32 = MODAL_DEFAULT_MAX_WIDTH;
@@ -696,7 +697,7 @@ pub const MANAGEMENT_MODAL_BODY_MAX_HEIGHT: f32 = 670.0;
 pub const MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH:f32 = 172.0;
 pub const MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH:f32 = 154.0;
 pub const MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH:f32 = 350.0;
-pub const MANUAL_TABLE_MIN_WIDTH: f32 = 620.0;
+pub const MANUAL_TABLE_MIN_WIDTH: f32 = 560.0;
 pub const MANUAL_TABLE_HEADER_HEIGHT: f32 = 36.0;
 pub const MANUAL_TABLE_ROW_HEIGHT: f32 = 42.0;
 pub const MANUAL_TABLE_DELIVERY_COL: f32 = 82.0;
