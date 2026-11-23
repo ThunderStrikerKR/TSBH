@@ -1629,6 +1629,22 @@ pub fn flexible_text_field(
     ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
 }
 
+/// Shared multiline editor for long-form messages and management memos.
+/// Screens provide only the existing width, row count and optional hint; the
+/// native TextEdit retains its standard click, selection and keyboard behavior.
+pub fn multiline_text_field(
+    ui:&mut Ui,value:&mut String,enabled:bool,
+    desired_width:f32,desired_rows:usize,hint:Option<&str>
+)->Response{
+    let mut editor=egui::TextEdit::multiline(value)
+        .desired_width(desired_width)
+        .desired_rows(desired_rows);
+    if let Some(hint)=hint{
+        editor=editor.hint_text(hint);
+    }
+    ui.add_enabled(enabled,editor)
+}
+
 /// Search inputs are append-first: a normal pointer click to resume an
 /// existing filter places the caret after its last Unicode character, even
 /// when the click lands over the first character. This does NOT alter ordinary
@@ -4746,6 +4762,21 @@ fn management_readonly_table_content_width(widths:&[f32])->f32{
 
 fn management_readonly_table_row_advance()->f32{
     theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
+}
+
+#[cfg(test)]
+mod shared_multiline_field_contract_tests {
+    #[test]
+    fn automatic_message_and_history_memo_use_shared_multiline_editor(){
+        let messages=include_str!("automatic_message_manager.rs");
+        assert_eq!(messages.matches("components::multiline_text_field(").count(),2);
+        assert!(!messages.contains("TextEdit::multiline("));
+        let history=include_str!("order_history_manager.rs");
+        let memo=history.split("pub fn show_memo_modal(").nth(1).unwrap()
+            .split("pub fn ").next().unwrap();
+        assert!(memo.contains("components::multiline_text_field("));
+        assert!(!memo.contains("TextEdit::multiline("));
+    }
 }
 
 #[cfg(test)]
