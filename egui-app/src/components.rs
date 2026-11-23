@@ -6619,7 +6619,7 @@ mod modal_input_routing_tests {
                     ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
                     modal_action_row(ui,|actions|{
                         let response=theme::action(
-                            actions,"변경 취소",ButtonRole::Standard,true
+                            actions,"변경 취소",theme::ButtonRole::Standard,true
                         );
                         button_rect=response.rect;
                         if response.clicked(){*clicked=true;}
@@ -6699,7 +6699,7 @@ mod modal_input_routing_tests {
                 ).show(ctx,|ui|{
                     ui.label("discard?");
                     modal_action_row(ui,|actions|{
-                        theme::action(actions,"변경 취소",ButtonRole::Standard,true);
+                        theme::action(actions,"변경 취소",theme::ButtonRole::Standard,true);
                     });
                 });
             });
