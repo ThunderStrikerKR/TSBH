@@ -133,6 +133,11 @@ pub const WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT: f32 = 32.0;
 pub const ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS: f32 = 4.0;
 pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
 pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
+// Product sales status (management dropdown only): same four values as React.
+pub const SALE_STATUS_SELLING: Color32 = Color32::from_rgb(123, 207, 148);
+pub const SALE_STATUS_SOLD_OUT: Color32 = Color32::from_rgb(231, 122, 120);
+pub const SALE_STATUS_PREPARING: Color32 = Color32::from_rgb(228, 195, 104);
+pub const SALE_STATUS_STOPPED: Color32 = Color32::from_rgb(145, 145, 145);
 pub const BRIGHT: Color32 = Color32::WHITE;
 pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
 // Compact inline-cell edit inset; shared with the 4pt and 8pt layout tokens.
