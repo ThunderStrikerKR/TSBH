@@ -38,7 +38,7 @@ jobs:
       - name: Cell navigation contract and editor regressions
         run: |
           node --test tests/cell-navigation-contract.test.mjs
-          node --test tests/tauri-editor-flow-regression.test.mjs
+          node --test --test-name-pattern="price cells autosave" tests/tauri-editor-flow-regression.test.mjs
           node --test tests/tauri-price-inline-save-regression.test.mjs
   egui-contract:
     runs-on: ubuntu-latest

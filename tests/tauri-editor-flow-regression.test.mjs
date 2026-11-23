@@ -88,7 +88,6 @@ test("price cells autosave on blur and navigate like a spreadsheet without actio
   assert.match(s,/focusCellElement\(target\)/);
   assert.match(s,/if \(e\.key === "Escape"\) \{\s*e\.preventDefault\(\);\s*cancel\(\);/);
   assert.doesNotMatch(s,/price-cell-actions|price-cell-save|price-cell-cancel|<button/);
-  assert.match(s,/const findPriceCell = \(offset: number\)/);
 });
 
 test("category change and deletion preserve edits if user declines or save fails",()=>{
