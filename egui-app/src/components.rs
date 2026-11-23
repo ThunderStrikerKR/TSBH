@@ -356,6 +356,49 @@ pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
     response.on_hover_text("카카오톡")
 }
 
+/// Shared compact icon-only action. Its 28pt hit target follows the
+/// management date-navigation control; glyph, tooltip and enabled state are
+/// supplied by the caller while hover paint stays in the common layer.
+pub fn icon_action_button(
+    ui:&mut Ui,label:&str,tooltip:&str,enabled:bool
+)->Response{
+    let response=ui.scope(|button|{
+        button.spacing_mut().button_padding=Vec2::ZERO;
+        button.add_enabled(
+            enabled,
+            egui::Button::new(label)
+                .frame(false)
+                .min_size(Vec2::splat(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH))
+        )
+    }).inner;
+    if enabled{
+        theme::paint_button_hover(
+            ui,&response,theme::CONTROL_RADIUS as f32
+        );
+    }
+    response.on_hover_text(tooltip)
+}
+
+/// Removable search-tag chip. The modal nested-frame master owns its fill,
+/// outline and radius; only the chip's approved compact vertical inset differs.
+pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
+    let visible=if tag.chars().count()>22{
+        format!("{}…",tag.chars().take(22).collect::<String>())
+    }else{tag.to_owned()};
+    theme::modal_nested_frame()
+        .inner_margin(egui::Margin::symmetric(8,2))
+        .show(ui,|chip|{
+            chip.horizontal(|line|{
+                line.spacing_mut().item_spacing.x=theme::SPACE_4;
+                line.label(typography::body(&visible))
+                    .on_hover_text(tag);
+                icon_action_button(
+                    line,"×",&format!("검색 태그 '{tag}' 삭제"),true
+                )
+            }).inner
+        }).inner
+}
+
 /// Keep paired reception actions at their content widths. Available pane
 /// space stays empty rather than stretching two buttons to the pane edges.
 /// The row wraps only if Korean labels cannot fit without clipping.
@@ -4677,6 +4720,19 @@ fn management_readonly_table_content_width(widths:&[f32])->f32{
 
 fn management_readonly_table_row_advance()->f32{
     theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
+}
+
+#[cfg(test)]
+mod shared_tag_chip_contract_tests {
+    #[test]
+    fn client_search_tags_use_shared_chip_and_icon_action(){
+        let source=include_str!("client_manager.rs");
+        let editor=source.split("fn search_tag_editor(").nth(1).unwrap()
+            .split("fn editor_fields(").next().unwrap();
+        assert!(editor.contains("components::removable_tag_chip("));
+        assert!(!editor.contains("egui::Frame::new()"));
+        assert!(!editor.contains("egui::Button::new("));
+    }
 }
 
 #[cfg(test)]
