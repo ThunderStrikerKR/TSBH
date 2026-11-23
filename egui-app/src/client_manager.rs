@@ -1038,6 +1038,15 @@ mod client_async_kpi_tests{
             client_tier_kpi_values(true,[3,0,5,1]),
             ["3".to_owned(),"0".to_owned(),"5".to_owned(),"1".to_owned()]
         );
+        let source=include_str!("client_manager.rs");
+        let page=source.split("pub fn show_page(").nth(1).unwrap()
+            .split("let mut rows=").next().unwrap();
+        assert!(page.contains(
+            "client_tier_kpi_values(self.state.is_object(),tier_counts)"
+        ));
+        assert!(page.contains(
+            "components::management_summary_card_value(strip,label,value)"
+        ));
     }
 }
 
