@@ -353,17 +353,28 @@ impl AliasManager {
                                 info.label(typography::body(field(item,"text")));
                                 info.label(typography::caption(
                                     &format!("→ {target} / {scope}")));
-                                // Data-level alias collisions are an actual
-                                // conflict annotation promised by this page,
-                                // not a generic save-success/error message.
+                                // Native alias diagnostics finish asynchronously.
+                                // Reserve the third caption line for EVERY row;
+                                // its height and the next alias's Y coordinate
+                                // must never change after warnings arrive.
+                                let (slot,hit)=info.allocate_exact_size(
+                                    egui::vec2(
+                                        info.min_rect().width().max(1.0),
+                                        typography::FONT_METADATA+theme::SPACE_4
+                                    ),egui::Sense::hover()
+                                );
                                 if let Some(issues)=warnings.get(id).filter(|v|!v.is_empty()){
-                                    info.label(typography::caption(
-                                        &format!("충돌: {} / 영향 범위: {}",
-                                            issues.join(" / "),
-                                            if field(item,"clientId").is_empty(){
-                                                "모든 거래처의 이후 주문"
-                                            }else{"해당 거래처의 이후 주문"})
-                                    ));
+                                    let detail=format!("충돌: {} / 영향 범위: {}",
+                                        issues.join(" / "),
+                                        if field(item,"clientId").is_empty(){
+                                            "모든 거래처의 이후 주문"
+                                        }else{"해당 거래처의 이후 주문"});
+                                    info.painter().with_clip_rect(slot).text(
+                                        slot.left_center(),egui::Align2::LEFT_CENTER,&detail,
+                                        egui::FontId::proportional(typography::FONT_METADATA),
+                                        theme::MUTED
+                                    );
+                                    hit.on_hover_text(detail);
                                 }
                             });
                             row.with_layout(Layout::right_to_left(Align::Center),|actions|{
